@@ -1,54 +1,89 @@
 // app/api/ingest/route.ts
 import { NextResponse } from 'next/server'
-import clientPromise from '../../../lib/db'
 
-const KEY = process.env.ADMIN_INGEST_KEY
-const DB_NAME = process.env.MONGO_DB_NAME || 'random'
-const COLLECTION = process.env.MONGO_COLLECTION || 'contents'
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+/** Charge le module db de façon robuste et renvoie une instance de DB. */
+async function loadDb() {
+  // ⬇️ adapte ce chemin si ton db.ts n'est pas dans /lib
+  const mod: any = await import('@/lib/db').catch(() => ({}))
+
+  if (typeof mod.getDb === 'function') {
+    return await mod.getDb()
+  }
+  if (typeof mod.default === 'function') {
+    // default export = fonction qui renvoie la DB
+    return await mod.default()
+  }
+  if (typeof mod.connectToDatabase === 'function') {
+    const res = await mod.connectToDatabase()
+    // support both { db } or a db directly
+    return res?.db ?? res
+  }
+
+  throw new Error(
+    "lib/db must export one of: `getDb()`, `default()`, or `connectToDatabase()`"
+  )
+}
+
+function isAuthorized(req: Request) {
+  // Optionnel: protège avec une clé (query ?key=... ou header x-admin-ingest-key)
+  const url = new URL(req.url)
+  const key =
+    url.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || ''
+  const expected = process.env.ADMIN_INGEST_KEY || ''
+  return expected ? key === expected : true
+}
+
+export async function GET(req: Request) {
+  try {
+    let db
+    try {
+      db = await loadDb()
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: 'Missing or invalid MONGO_URI / MONGODB_URI' },
+        { status: 500 }
+      )
+    }
+    await db.command?.({ ping: 1 }) // no-op si pas supporté
+    return NextResponse.json({ ok: true, db: db.databaseName ?? 'unknown' })
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
+  }
+}
 
 export async function POST(req: Request) {
-  // Sécurité: clé d’admin
-  const incoming = req.headers.get('x-admin-key') || ''
-  if (!KEY || incoming !== KEY) {
-    return NextResponse.json({ ok: false, error: 'UNAUTHORIZED' }, { status: 401 })
-  }
-
-  let data: any
   try {
-    data = await req.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'INVALID_JSON' }, { status: 400 })
-  }
+    if (!isAuthorized(req)) {
+      return new NextResponse('Unauthorized', { status: 401 })
+    }
 
-  if (!Array.isArray(data) || data.length === 0) {
-    return NextResponse.json({ ok: false, error: 'EMPTY_PAYLOAD' }, { status: 400 })
-  }
+    let db
+    try {
+      db = await loadDb()
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: 'Missing or invalid MONGO_URI / MONGODB_URI' },
+        { status: 500 }
+      )
+    }
 
-  try {
-    const client = await clientPromise
-    const db = client.db(DB_NAME)
-    const col = db.collection(COLLECTION)
+    const body = (await req.json().catch(() => ({}))) as Record<string, any>
 
-    const docs = data.map((d: any) => ({
-      type: d.type,
-      lang: d.lang ?? 'en',
-      text: d.text,
-      author: d.author,
-      url: d.url,
-      thumbUrl: d.thumbUrl,
-      width: d.width,
-      height: d.height,
-      source: d.source,
-      tags: d.tags ?? [],
-      nsfw: !!d.nsfw,
-      createdAt: d.createdAt ? new Date(d.createdAt) : new Date(),
-      fetchedAt: d.fetchedAt ? new Date(d.fetchedAt) : null,
-    }))
+    const doc = {
+      ...body,
+      _ingestedAt: new Date(),
+      _source: 'api/ingest',
+    }
 
-    const res = await col.insertMany(docs)
-    return NextResponse.json({ ok: true, insertedCount: res.insertedCount }, { status: 200 })
-  } catch (e) {
-    console.error(e)
-    return NextResponse.json({ ok: false, error: 'DB_ERROR' }, { status: 500 })
+    const coll = db.collection?.('ingest') ?? (await db.collection('ingest')) // compat légère
+    const res = await coll.insertOne(doc)
+
+    return NextResponse.json({ ok: true, id: res.insertedId })
+  } catch (e: any) {
+    console.error('INGEST error:', e)
+    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
   }
 }
