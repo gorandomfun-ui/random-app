@@ -1,7 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/videos", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/web",    "schedule": "20 4 * * *" },
-    { "path": "/api/cron/images", "schedule": "40 4 * * *" }
+    { "path": "/api/ingest/videos", "schedule": "0 * * * *" },
+    { "path": "/api/ingest/web",    "schedule": "30 3 * * *" }
   ]
 }
