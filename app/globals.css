@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow-x:hidden}
+body{font-family:var(--font-inter-tight),system-ui,sans-serif}
+
+/* réserve de place si la pub est fixée en bas */
+@media (max-width: 768px){
+  body { padding-bottom: 68px; }
+}

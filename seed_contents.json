@@ -1,0 +1,55 @@
+[
+  {
+    "type": "quote",
+    "lang": "fr",
+    "text": "Le hasard, c’est Dieu qui se promène incognito.",
+    "author": "Albert Einstein"
+  },
+  {
+    "type": "quote",
+    "lang": "de",
+    "text": "Wer kämpft, kann verlieren. Wer nicht kämpft, hat schon verloren.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "type": "quote",
+    "lang": "jp",
+    "text": "失敗は成功のもと。",
+    "author": "ことわざ"
+  },
+  {
+    "type": "fact",
+    "lang": "en",
+    "text": "Honey never spoils."
+  },
+  {
+    "type": "fact",
+    "lang": "fr",
+    "text": "La Lune s’éloigne de la Terre d’environ 3,8 cm par an."
+  },
+  {
+    "type": "fact",
+    "lang": "de",
+    "text": "Bananen sind Beeren."
+  },
+  {
+    "type": "image",
+    "lang": "en",
+    "url": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee",
+    "thumbUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=400",
+    "width": 1600,
+    "height": 1067,
+    "source": { "name": "Unsplash", "url": "https://unsplash.com" },
+    "tags": ["nature"]
+  },
+  {
+    "type": "image",
+    "lang": "en",
+    "url": "https://images.unsplash.com/photo-1519681393784-d120267933ba",
+    "thumbUrl": "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=400",
+    "width": 1600,
+    "height": 1067,
+    "source": { "name": "Unsplash", "url": "https://unsplash.com" },
+    "tags": ["abstract"]
+  }
+]

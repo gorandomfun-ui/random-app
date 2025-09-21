@@ -1,0 +1,25 @@
+{
+  "core": [
+    "living room session", "kitchen session", "porch session", "basement show",
+    "rooftop concert", "subway performance", "market busking", "church reverb",
+    "vhs concert", "camcorder wedding", "super 8 parade", "crt capture",
+    "cassette demo", "vinyl rip", "reel to reel transfer",
+    "amateur animation", "paper stop motion", "claymation", "flash animation",
+    "pixel art cutscene", "8bit cover", "retro longplay",
+    "homemade instrument", "one man band", "toy orchestra", "theremin noir",
+    "handpan improv", "washboard skiffle",
+    "public access tv", "local tv showcase", "newsreel march",
+    "rural games", "stone lifting", "log toss",
+    "tiny desk cover", "busking tokyo", "choir stairwell"
+  ],
+  "folk": [
+    "yodel tyrol", "joik sapmi", "rebetiko athens", "fado lisbon",
+    "klezmer poland", "gnawa essaouira", "dabke lebanon", "qawwali lahore",
+    "forró northeast brazil", "cumbia colombia", "rai oran", "tango buenos aires",
+    "bluegrass kentucky", "old time appalachia", "mbira zimbabwe", "kora mali"
+  ],
+  "fun": [
+    "funny sketch low budget", "vintage commercial", "psa announcement",
+    "station ident", "weird sport", "odd instrument jam","sex","sexy","vhs","camcoder"
+  ]
+}

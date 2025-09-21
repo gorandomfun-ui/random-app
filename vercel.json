@@ -1,0 +1,18 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/videos",
+      "schedule": "0 4 * * *",
+      "headers": { "x-admin-ingest-key": "@admin_ingest_key" }
+    },
+    {
+      "path": "/api/cron/web",
+      "schedule": "20 4 * * *"
+    },
+    {
+      "path": "/api/cron/images",
+      "schedule": "40 4 * * *",
+      "headers": { "x-admin-ingest-key": "@admin_ingest_key" }
+    }
+  ]
+}

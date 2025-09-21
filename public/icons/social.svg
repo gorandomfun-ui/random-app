@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_3" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 22">
+  <!-- Generator: Adobe Illustrator 29.8.1, SVG Export Plug-In . SVG Version: 2.1.1 Build 2)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #fefbe8;
+      }
+    </style>
+  </defs>
+  <path class="st0" d="M8.846,21.6h-2c0-3.003-2.443-5.445-5.446-5.445v-2c4.105,0,7.446,3.34,7.446,7.445Z"/>
+  <path class="st0" d="M15.484,21.6h-2c0-6.663-5.421-12.084-12.084-12.084v-2c7.766,0,14.084,6.318,14.084,14.084Z"/>
+  <path class="st0" d="M22.751,21.6h-2C20.751,10.93,12.07,2.249,1.4,2.249V.249C13.173.249,22.751,9.827,22.751,21.6Z"/>
+</svg>
