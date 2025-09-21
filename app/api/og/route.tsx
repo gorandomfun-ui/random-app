@@ -2,15 +2,19 @@
 import { ImageResponse } from 'next/og'
 
 export const runtime = 'edge'
-export const alt = 'Random share'
-export const size = { width: 1200, height: 630 }
-export const contentType = 'image/png'
+
+// On garde tes valeurs, mais en variables locales (pas exportées)
+const ALT = 'Random share'
+const SIZE = { width: 1200, height: 630 }
+const CONTENT_TYPE = 'image/png'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const t = searchParams.get('t') || 'Random content'
-  const bg = '#0d3df0'  // deep
+  const bg = '#0d3df0' // deep
 
+  // ImageResponse fixe déjà le content-type (image/png) ;
+  // on passe la taille via les options { width, height }.
   return new ImageResponse(
     (
       <div
@@ -24,8 +28,9 @@ export async function GET(req: Request) {
           color: '#fff4dc',
           padding: 48,
         }}
+        aria-label={ALT}
       >
-        <div style={{ fontSize: 22, opacity: .9, letterSpacing: 4 }}>RANDOM</div>
+        <div style={{ fontSize: 22, opacity: 0.9, letterSpacing: 4 }}>RANDOM</div>
         <div style={{ fontSize: 72, lineHeight: 1.05, fontWeight: 800 }}>{t}</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <span
@@ -42,6 +47,11 @@ export async function GET(req: Request) {
         </div>
       </div>
     ),
-    size
+    {
+      width: SIZE.width,
+      height: SIZE.height,
+      // Si tu veux vraiment forcer le content-type (optionnel, ImageResponse le met en png par défaut)
+      // headers: { 'content-type': CONTENT_TYPE },
+    }
   )
 }
