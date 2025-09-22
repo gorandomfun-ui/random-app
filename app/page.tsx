@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from 'react'
 import LogoAnimated from '../components/LogoAnimated'
 import RandomModal from '../components/RandomModal'
 import LanguageSwitcher from '../components/LanguageSwitcher'
@@ -72,6 +72,7 @@ export default function HomePage() {
   const heroRef = useRef<HTMLElement | null>(null)
   const footerRef = useRef<HTMLElement | null>(null)
   const adRef = useRef<HTMLDivElement | null>(null)
+  const adContainerRef = useRef<HTMLDivElement | null>(null)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isShuffleOpen, setIsShuffleOpen] = useState(false)
@@ -81,6 +82,7 @@ export default function HomePage() {
   const [themeIdx, setThemeIdx] = useState(0)
   const [modalThemeIdx, setModalThemeIdx] = useState(1)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H + AD_H)
   const [adHeight, setAdHeight] = useState(AD_H)
 
@@ -108,6 +110,7 @@ export default function HomePage() {
     const measure = () => {
       frame = null
       setViewportHeight(window.innerHeight)
+      setViewportWidth(window.innerWidth)
       const headerH = headerRef.current?.getBoundingClientRect().height ?? HEADER_H
       const footerH = footerRef.current?.getBoundingClientRect().height ?? FOOTER_H
       const adH = adRef.current?.getBoundingClientRect().height ?? AD_H
@@ -203,6 +206,12 @@ export default function HomePage() {
     ? Math.max(heroAvailable, 360)
     : `calc(100dvh - ${reservedHeight}px)`
 
+  const adFormat = useMemo(() => {
+    const width = viewportWidth ?? 0
+    if (width && width >= 768) return { width: 728, height: 90, key: '73f612ccc809ea65224eeaa902074c14' }
+    return { width: 320, height: 50, key: '829b07c59ef385884d3865c542e6aafa' }
+  }, [viewportWidth])
+
   const shareFromFooter = () => {
     if (navigator.share) navigator.share({ title: 'Random', text: 'Random app', url: location.href }).catch(() => {})
     else { navigator.clipboard?.writeText(location.href); alert('Link copied!') }
@@ -210,6 +219,41 @@ export default function HomePage() {
 
   /* ---------- largeur bouton : mesure du conteneur du logo ---------- */
   const targetBtnW = useButtonWidth(heroRef)
+
+  const lastAdRefreshRef = useRef<number>(0)
+
+  const injectAdTag = useCallback(() => {
+    if (!adContainerRef.current) return
+    const container = adContainerRef.current
+    container.innerHTML = ''
+
+    const optionsScript = document.createElement('script')
+    optionsScript.type = 'text/javascript'
+    optionsScript.text = `atOptions = { key: '${adFormat.key}', format: 'iframe', height: ${adFormat.height}, width: ${adFormat.width}, params: {} };`
+
+    const tagScript = document.createElement('script')
+    tagScript.type = 'text/javascript'
+    tagScript.src = `//www.highperformanceformat.com/${adFormat.key}/invoke.js`
+    tagScript.async = true
+
+    container.appendChild(optionsScript)
+    container.appendChild(tagScript)
+    lastAdRefreshRef.current = Date.now()
+  }, [adFormat.height, adFormat.key, adFormat.width])
+
+  useEffect(() => {
+    injectAdTag()
+    document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
+    return () => {
+      document.documentElement.style.removeProperty('--ad-bar-height')
+    }
+  }, [injectAdTag, adFormat.height])
+
+  useEffect(() => {
+    const now = Date.now()
+    if (now - lastAdRefreshRef.current < 45000) return
+    injectAdTag()
+  }, [trigger, injectAdTag])
 
   return (
      <>
@@ -319,10 +363,16 @@ export default function HomePage() {
       <div
         ref={adRef}
         id="ad-bar"
-        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-center"
-        style={{ height: AD_H, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
+        style={{ minHeight: adFormat.height, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 60 }}
       >
-        <span className="font-inter font-semibold opacity-70">Ad space</span>
+        <div
+          ref={adContainerRef}
+          className="flex items-center justify-center"
+          style={{ width: adFormat.width, minHeight: adFormat.height }}
+        >
+          <span className="font-inter font-semibold opacity-70">Ad space</span>
+        </div>
       </div>
 
       {/* Popups */}

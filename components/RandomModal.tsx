@@ -388,7 +388,7 @@ export default function RandomModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,.55)' }}
+      style={{ background: 'rgba(0,0,0,.55)', paddingBottom: 'calc(var(--ad-bar-height, 0px) + 16px)' }}
     >
       <div
         className="relative w-[min(95vw,1000px)] max-h-[86dvh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
