@@ -35,7 +35,7 @@ export async function GET() {
     });
 
     const json = await res.json();
-    return NextResponse.json({ ok: true, queries, upstream: json });
+    return NextResponse.json({ ok: true, queries, upstream: json, triggeredAt: new Date().toISOString() });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'cron failed' }, { status: 500 });
   }

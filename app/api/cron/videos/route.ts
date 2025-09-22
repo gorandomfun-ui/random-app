@@ -14,7 +14,7 @@ function pickMany<T>(arr: T[], n: number): T[] {
 }
 
 async function loadKeywords(): Promise<{ core: string[]; folk: string[]; fun: string[] }> {
-  const p = path.resolve(process.cwd(), 'lib/ingest/keywords/videos.json');
+  const p = path.resolve(process.cwd(), 'lib/ingest/keywords/video.json');
   const raw = await fs.readFile(p, 'utf8');
   return JSON.parse(raw);
 }
@@ -46,7 +46,7 @@ export async function GET() {
     });
 
     const json = await res.json();
-    return NextResponse.json({ ok: true, queries, upstream: json });
+    return NextResponse.json({ ok: true, queries, upstream: json, triggeredAt: new Date().toISOString() });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'cron failed' }, { status: 500 });
   }

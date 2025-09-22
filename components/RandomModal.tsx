@@ -242,14 +242,24 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
     if (!id && item.url) id = item.url.split('/').pop() || ''
     const src = `https://www.youtube-nocookie.com/embed/${id}?rel=0`
     return (
-      <div className="w-full" style={{ aspectRatio: '16 / 9' }}>
-        <iframe
-          src={src}
-          className="w-full h-full rounded-lg"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-          title="YouTube"
-        />
+      <div className="w-full flex flex-col items-center">
+        {item.text ? (
+          <p
+            className="mb-4 text-lg md:text-xl font-tomorrow font-bold text-center"
+            style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
+          >
+            {item.text}
+          </p>
+        ) : null}
+        <div className="w-full" style={{ aspectRatio: '16 / 9' }}>
+          <iframe
+            src={src}
+            className="w-full h-full rounded-lg"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            title={item.text || 'YouTube'}
+          />
+        </div>
       </div>
     )
   }

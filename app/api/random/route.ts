@@ -5,6 +5,8 @@ import type { Db } from 'mongodb'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getDb } from '@/lib/db'
+import videoKeywordJson from '@/lib/ingest/keywords/video.json'
+import webKeywordJson from '@/lib/ingest/keywords/web.json'
 
 type ItemType = 'image'|'quote'|'fact'|'joke'|'video'|'web'
 type Lang = 'en'|'fr'|'de'|'jp'
@@ -13,6 +15,22 @@ const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)]
 const orderAsGiven = <T,>(arr: T[]) => arr
 
 const PROVIDER_TIMEOUT_MS = Number(process.env.RANDOM_PROVIDER_TIMEOUT_MS || 2500)
+const VIDEO_KEYWORD_LISTS = videoKeywordJson as { core: string[]; folk: string[]; fun: string[] }
+const WEB_KEYWORD_LISTS = webKeywordJson as { A: string[]; B: string[]; C: string[] }
+
+const INGEST_VIDEO_KEYWORDS = Array.from(new Set(
+  [...VIDEO_KEYWORD_LISTS.core, ...VIDEO_KEYWORD_LISTS.folk, ...VIDEO_KEYWORD_LISTS.fun]
+    .map(s => s.trim())
+    .filter(Boolean)
+))
+
+const LIMITED_AUTHORS = ['kanye west']
+const LIMITED_AUTHOR_EXACTS = ['Kanye West']
+const isLimitedAuthor = (author?: string | null) => {
+  if (!author) return false
+  const normalized = author.toLowerCase()
+  return LIMITED_AUTHORS.some(name => normalized.includes(name))
+}
 
 async function fetchWithTimeout(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1], timeout = PROVIDER_TIMEOUT_MS): Promise<Response | null> {
   if (typeof AbortController === 'undefined') {
@@ -80,12 +98,16 @@ async function sampleFromCache(type: ItemType, extraMatch: Record<string, any> =
 }
 
 /* --- NEW: quote sampler that avoids the recent buffer --- */
-async function sampleQuoteFromCache(): Promise<any | null> {
+async function sampleQuoteFromCache(options?: { avoidAuthors?: string[] }): Promise<any | null> {
   const db = await getDbSafe()
   if (!db) return null
   try {
+    const match: Record<string, any> = { type: 'quote', text: { $nin: recentQuotes } }
+    if (options?.avoidAuthors?.length) {
+      match.author = { $nin: options.avoidAuthors }
+    }
     const arr = await db.collection('items').aggregate([
-      { $match: { type: 'quote', text: { $nin: recentQuotes } } },
+      { $match: match },
       { $sample: { size: 1 } },
     ]).toArray()
     return arr[0] || null
@@ -338,6 +360,33 @@ function markRecentQuote(text: string) {
 const isRecentQuote = (t?: string) => !!t && recentQuotes.includes((t || '').trim())
 
 /* --- REPLACED: fetchLiveQuote keeps providers + DB + local --- */
+async function fetchZenQuote(): Promise<any | null> {
+  try {
+    const res = await fetchWithTimeout('https://zenquotes.io/api/random', { cache: 'no-store' })
+    if (!res?.ok) return null
+    const data: any = await res.json()
+    const entry: any = Array.isArray(data) ? data[0] : data
+    const text = typeof entry?.q === 'string' ? entry.q.trim() : ''
+    if (!text) return null
+    const author = typeof entry?.a === 'string' ? entry.a.trim() : ''
+    if (isLimitedAuthor(author) && Math.random() < 0.8) return null
+
+    const item = {
+      type: 'quote' as const,
+      text,
+      author,
+      source: { name: 'ZenQuotes.io', url: 'https://zenquotes.io/' },
+      provider: 'zenquotes',
+    }
+    await upsertCache('quote', { text }, { author, source: item.source, provider: item.provider })
+    await touchLastShown('quote', { text })
+    markRecentQuote(text)
+    return item
+  } catch {
+    return null
+  }
+}
+
 async function fetchLiveQuote(): Promise<any | null> {
   const base = process.env.QUOTABLE_BASE || 'https://api.quotable.io'
 
@@ -348,9 +397,10 @@ async function fetchLiveQuote(): Promise<any | null> {
       const data: any[] = await res.json()
       const candidates = (Array.isArray(data) ? data : [data])
         .filter(q => q?.content && !isRecentQuote(q.content))
-
-      const q = candidates.length
-        ? candidates[Math.floor(Math.random() * candidates.length)]
+      const preferred = candidates.filter(q => !isLimitedAuthor(q?.author))
+      const pool = preferred.length ? preferred : candidates
+      const q = pool.length
+        ? pool[Math.floor(Math.random() * pool.length)]
         : null
 
       if (q?.content) {
@@ -373,9 +423,17 @@ async function fetchLiveQuote(): Promise<any | null> {
     }
   } catch {}
 
+  const zen = await fetchZenQuote()
+  if (zen) return zen
+
   // 2) DB cache (exclude recent)
-  const cached = await sampleQuoteFromCache()
+  let cached = await sampleQuoteFromCache({ avoidAuthors: LIMITED_AUTHOR_EXACTS })
+  if (!cached) cached = await sampleQuoteFromCache()
   if (cached?.text) {
+    if (isLimitedAuthor(cached.author) && Math.random() < 0.7) {
+      const alt = await sampleQuoteFromCache({ avoidAuthors: LIMITED_AUTHOR_EXACTS })
+      if (alt?.text) cached = alt
+    }
     touchLastShown('quote', { text: cached.text })
     markRecentQuote(cached.text)
     return {
@@ -391,7 +449,10 @@ async function fetchLiveQuote(): Promise<any | null> {
     'Simplicity is the soul of efficiency.',
     'Make it work, make it right, make it fast.',
     'Creativity is intelligence having fun.',
-    'The best way to predict the future is to invent it.'
+    'The best way to predict the future is to invent it.',
+    'Imagination rules the world.',
+    'Stay curious and keep exploring.',
+    'Every great idea started as something weird.',
   ]
   const text = local.find(t => !isRecentQuote(t)) || local[Math.floor(Math.random() * local.length)]
   markRecentQuote(text)
@@ -542,7 +603,7 @@ async function fetchLiveJoke(): Promise<any | null> {
 
 // ------------------------------ LIVE: VIDEO -------------------------------
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3'
-const KEYWORDS: string[] = [
+const BASE_VIDEO_KEYWORDS: string[] = [
  'weird','obscure','retro','vintage','lofi','lo-fi','analog','super 8','vhs','camcorder',
   'crt scanlines','mono audio','field recording','one take','bedroom recording','demo tape',
   'b-side','bootleg','lost media','found footage','public access tv','community tv',
@@ -559,11 +620,18 @@ const KEYWORDS: string[] = [
   'outsider art','performance art','site specific art','happening','kinetic sculpture','sex','love','chocolate','sexy',
   'cake','cook','kitchen','sugar','recipe','vintage commercial','psa announcement','station ident','closing theme','end credits'
 ]
+const KEYWORDS: string[] = Array.from(new Set([...BASE_VIDEO_KEYWORDS, ...INGEST_VIDEO_KEYWORDS]))
 const COMBOS: [string, string][] = [ ['gospel','romania'], ['festival','village'], ['folk','iceland'], ['choir','argentina'], ['busking','japan'], ['retro game','speedrun'], ['home made','instrument'], ['toy','orchestra'], ['amateur','sport'], ['art','fun'], ['obscure','retro'], ['rare','game'], ['sea shanty','brittany'], ['sea shanty','cornwall'], ['polyphonic','georgia'], ['brass band','serbia'], ['klezmer','poland'], ['fado','lisbon'], ['flamenco','andalusia'], ['rebetiko','athens'], ['tarantella','naples'], ['cumbia','colombia'], ['forró','northeast brazil'], ['samba','bahia'], ['huapongo','mexico'], ['tango','buenos aires'], ['gnawa','essaouira'], ['rai','oran'], ['dabke','lebanon'], ['qawwali','lahore'], ['bhajan','varanasi'], ['enka','tokyo'], ['minyo','tohoku'], ['joik','sapmi'], ['yodel','tyrol'], ['bluegrass','kentucky'], ['old-time','appalachia'], ['zydeco','louisiana'], ['kora','mali'], ['mbira','zimbabwe'], ['hurdy-gurdy','drone'], ['nyckelharpa','folk'], ['charango','andean'], ['bandoneon','milonga'], ['oud','taqsim'], ['saz','anatolian'], ['kanun','takht'], ['duduk','lament'], ['kaval','shepherd'], ['bagpipes','procession'], ['steelpan','street'], ['handpan','improv'], ['theremin','noir'], ['washboard','skiffle'], ['lap steel','hawaiian'], ['hardanger','waltz'], ['tiny desk','cover'], ['tiny desk','choir'], ['living room','session'], ['kitchen','session'], ['porch','session'], ['barn','session'], ['backyard','concert'], ['rooftop','concert'], ['basement','show'], ['subway','performance'], ['market','busking'], ['train platform','choir'], ['church','reverb'], ['cave','echo'], ['lighthouse','stairwell'], ['factory','reverb'], ['courtyard','ensemble'], ['river bank','song'], ['forest','chorus'], ['tea house','duo'], ['izakaya','live'], ['yurt','jam'], ['vhs','concert'], ['camcorder','wedding'], ['super 8','parade'], ['black and white','choir'], ['sepia','waltz'], ['cassette','demo'], ['vinyl','rip'], ['reel to reel','transfer'], ['public access','variety'], ['local tv','showcase'], ['newsreel','march'], ['colorized','archive'], ['school','recital'], ['talent','show'], ['family','band'], ['birthday','serenade'], ['farewell','song'], ['lullaby','grandma'], ['flash','animation'], ['pixel','cutscene'], ['8bit','cover'], ['chip','remix'], ['crt','capture'], ['lan','party'], ['speedrun','glitch'], ['retro','longplay'], ['odd','sport'], ['rural','games'], ['stone','lifting'], ['log','toss'], ['banjo','spaghetti'], ['pingouin','synthwave'], ['moquette','symphonie'], ['baguette','laser'], ['chaussette','opera'], ['brume','karaoké'], ['pyramide','yodel'], ['pastèque','minuet'], ['escargot','free-jazz'], ['moustache','autotune'], ['chausson','dubstep'], ['fondue','breakbeat'], ['poney','maracas'], ['bibliothèque','techno'], ['chandelle','hip-hop'], ['parapluie','boléro'], ['cornichon','requiem'], ['béret','sitar'], ['météorite','berceuse'], ['citron','dissonance'], ['radis','madrigal'], ['cartouche','tamboo'], ['serpent','bal musette'], ['biscotte','koto'], ['zanzibar','trombone'], ['tortue','clapping'], ['larme','tambourin'], ['nuage','scat'], ['mouette','bossa'], ['glaçon','ragtime'], ['gruyère','chorale'], ['caméléon','vocoder'], ['chausson','kazoo'], ['tuba','grenadine'], ['haricot','fugue'], ['bretzel','ukulélé'], ['chou-fleur','clavecin'], ['pamplemousse','gamelan'], ['cornemuse','bubblegum'], ['pierre','beatbox'], ['sabayon','timbales'], ['yéti','harmonium'], ['cactus','bongos'], ['hamac','arpèges'], ['baleine','triangle'], ['girafe','sifflement'], ['lama','riff'], ['café','tremolo'], ['soufflé','chorus'], ['ampoule','bpm'], ['glacier','cassette'], ['patate','vibrato'], ['courgette','polyrythmie'], ['mangue','contrepoint'], ['poussière','refrain'], ['aquarium','dub'], ['navet','flanger'], ['fantôme','clave'], ['cerf-volant','toccata'], ['scaphandre','mazurka'], ['parpaing','salsa'], ['lutin','samba'], ['orage','menuet'], ['tornade','cadenza'], ['brouillard','beat'], ['valise','glissando'], ['tournesol','rave'], ['boussole','nocturne'], ['bouchon','aria'], ['gaufre','chorinho'], ['sardine','cantate'], ['chouette','grind'], ['mirabelle','groove'], ['crocodile','valse'], ['rose des vents','hocket'], ['bourdon','limbique'], ['cabane','syncopes'], ['fenouil','crescendo'], ['fourchette','counter-melody'], ['serrure','harmoniques'], ['ballon','distorsion'], ['soucoupe','reverb'], ['marmotte','fadeout'], ['moutarde','autopan'], ['pastel','sidechain'], ['puzzle','clave'], ['cathédrale','lo-fi'], ['cymbale','confettis'], ['pissenlit','drop'], ['brouette','riff'], ['tapir','chorale'], ['pluie','sample'], ['savonnette','drone'], ['poubelle','oratorio'], ['carton','808'], ['bretelle','arpège'], ['bourricot','syncopé'], ['clairière','harmonie'], ['kiwi','sustain'], ['grenouille','snare'] ]
 const recentVideoIds: string[] = []
 function markRecentVideo(id: string) { const i = recentVideoIds.indexOf(id); if (i >= 0) recentVideoIds.splice(i, 1); recentVideoIds.push(id); if (recentVideoIds.length > 30) recentVideoIds.shift() }
 const isRecentVideo = (id?: string) => !!id && recentVideoIds.includes(id)
-function buildYouTubeQuery(): string { return Math.random() < 0.45 ? pick(KEYWORDS) : `${pick(COMBOS)[0]} ${pick(COMBOS)[1]}` }
+function buildYouTubeQuery(): string {
+  const roll = Math.random()
+  if (roll < 0.5 && INGEST_VIDEO_KEYWORDS.length) return pick(INGEST_VIDEO_KEYWORDS)
+  if (roll < 0.8) return pick(KEYWORDS)
+  const [a, b] = pick(COMBOS)
+  return `${a} ${b}`
+}
 
 async function fetchFromRedditFunnyYouTube(): Promise<any | null> {
   try {
@@ -717,9 +785,18 @@ async function fetchLiveWeb(): Promise<any | null> {
     return null
   }
 
-  const A = ['weird','forgotten','retro','vintage','ascii','obscure','random','tiny','handmade','zine','folk','outsider','underground','amateur','mini','old web','geocities','blogspot','freewebs','tripod','myspace','lofi','lo-fi','pixel','8bit','chiptune','crt','scanlines','vhs','camcorder','super 8','blinkies','glitter','marquee','under construction','guestbook-core','y2k','webcore','brutalist','demoscene','net.art','netlabel','homebrew','shareware','abandonware','warez','torrent-era','java applet','shockwave','flash','frameset','table layout','iframes','cursor trail','hit counter','animated gif','sprite','midi','soundfont','winamp skin','realplayer','quicktime','silverlight','bbs','gopher','telnet','irc','icq','msn','aim','neocities']
-  const B = ['blog','diary','gallery','generator','zine','festival','toy','museum','game','playlist','lyrics','fan page','tutorial','archive','personal site','homepage','forum','webring','guestbook','shoutbox','tagboard','message board','bulletin board','imageboard','chan','wiki','knowledge base','faq','how-to','cookbook','cheatsheet','guide','blogroll','link list','directory','portal','start page','topsites','ring hub','rss feed','newsletter','mirror','ftp dump','pastebin','snippet vault','userscripts','bookmarklet','rom hack','mod','skin pack','cursor pack','icon set','avatar gallery','wallpaper pack','screensaver','soundfont pack','midi pack','sprite sheet','tileset','amv hub','fanfic archive','scanlation','pet game','virtual pet','clicker','quiz','personality test','shrine','guestmap','netlabel','tape archive','radio stream','dj set','mix series','field recordings','toolkit','toybox','sandbox','playground','lab','experiments']
-  const C = ['1998','2003','2007','romania','argentina','finland','iceland','japan','france','village','basement','attic','garage','1996','1999','2000','2001','2002','2004','2005','2006','2008','2009','2010','2012','poland','serbia','georgia','brittany','sardinia','mexico','brazil','colombia','morocco','lebanon','turkey','greece','portugal','scotland','internet cafe','cybercafe','school computer lab','library','dorm room','bedroom','rooftop','cellar','shed','barn','market square','village hall','church hall','community center','subway','train platform','pier','lighthouse','forest','river bank']
+  const A = Array.from(new Set([
+    ...(WEB_KEYWORD_LISTS.A || []),
+    'weird','forgotten','retro','vintage','ascii','obscure','random','tiny','handmade','zine','folk','outsider','underground','amateur','mini','old web','geocities','blogspot','freewebs','tripod','myspace','lofi','lo-fi','pixel','8bit','chiptune','crt','scanlines','vhs','camcorder','super 8','blinkies','glitter','marquee','under construction','guestbook-core','y2k','webcore','brutalist','demoscene','net.art','netlabel','homebrew','shareware','abandonware','warez','torrent-era','java applet','shockwave','flash','frameset','table layout','iframes','cursor trail','hit counter','animated gif','sprite','midi','soundfont','winamp skin','realplayer','quicktime','silverlight','bbs','gopher','telnet','irc','icq','msn','aim','neocities'
+  ]))
+  const B = Array.from(new Set([
+    ...(WEB_KEYWORD_LISTS.B || []),
+    'blog','diary','gallery','generator','zine','festival','toy','museum','game','playlist','lyrics','fan page','tutorial','archive','personal site','homepage','forum','webring','guestbook','shoutbox','tagboard','message board','bulletin board','imageboard','chan','wiki','knowledge base','faq','how-to','cookbook','cheatsheet','guide','blogroll','link list','directory','portal','start page','topsites','ring hub','rss feed','newsletter','mirror','ftp dump','pastebin','snippet vault','userscripts','bookmarklet','rom hack','mod','skin pack','cursor pack','icon set','avatar gallery','wallpaper pack','screensaver','soundfont pack','midi pack','sprite sheet','tileset','amv hub','fanfic archive','scanlation','pet game','virtual pet','clicker','quiz','personality test','shrine','guestmap','netlabel','tape archive','radio stream','dj set','mix series','field recordings','toolkit','toybox','sandbox','playground','lab','experiments'
+  ]))
+  const C = Array.from(new Set([
+    ...(WEB_KEYWORD_LISTS.C || []),
+    '1998','2003','2007','romania','argentina','finland','iceland','japan','france','village','basement','attic','garage','1996','1999','2000','2001','2002','2004','2005','2006','2008','2009','2010','2012','poland','serbia','georgia','brittany','sardinia','mexico','brazil','colombia','morocco','lebanon','turkey','greece','portugal','scotland','internet cafe','cybercafe','school computer lab','library','dorm room','bedroom','rooftop','cellar','shed','barn','market square','village hall','church hall','community center','subway','train platform','pier','lighthouse','forest','river bank'
+  ]))
   const q = `${pick(A)} ${pick(B)} ${pick(C)}`
   const start = String([1,1,1,11,21,31][Math.floor(Math.random()*6)])
   const num = String([10,10,10,9,8][Math.floor(Math.random()*5)])
@@ -729,18 +806,29 @@ async function fetchLiveWeb(): Promise<any | null> {
     if (!res?.ok) throw new Error('cse-failed')
     const data: any = await res.json()
     const items: any[] = data?.items || []
-    const chosen: any = items[Math.floor(Math.random() * (items.length || 1))] || null
+    const ranked = items.filter(it => {
+      const link: string | undefined = it?.link
+      if (!link) return false
+      try {
+        const host = new URL(link).host.replace(/^www\./, '')
+        return !isRecentHost(host)
+      } catch {
+        return true
+      }
+    })
+    const pool = ranked.length ? ranked : items
+    const chosen: any = pool[Math.floor(Math.random() * (pool.length || 1))] || null
     const link: string | undefined = chosen?.link
     if (!link) throw new Error('no-link')
 
     let host = ''
     try { host = new URL(link).host.replace(/^www\./,'') } catch {}
-    markRecentHost(host)
+    if (host) markRecentHost(host)
 
     const ogImage = await fetchOgImage(link)
     const item = { type:'web', url: link, text: chosen?.title || host || link, ogImage: ogImage || null, source: { name:'Google', url: link } }
-    upsertCache('web', { url: link }, { title: item.text, host, ogImage: item.ogImage, provider: 'google-cse' })
-    touchLastShown('web', { url: link })
+    await upsertCache('web', { url: link }, { title: item.text, host, ogImage: item.ogImage, provider: 'google-cse' })
+    await touchLastShown('web', { url: link })
     return item
   } catch {
     const cached = await sampleFromCache('web')
