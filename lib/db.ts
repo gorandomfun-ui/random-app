@@ -1,9 +1,9 @@
 // lib/db.ts
 import { MongoClient } from 'mongodb'
 
-const uri = process.env.MONGO_URI
+const uri = process.env.MONGO_URI || process.env.MONGODB_URI
 if (!uri) {
-  throw new Error('Missing MONGO_URI in .env.local')
+  throw new Error('Missing MONGO_URI / MONGODB_URI in .env.local')
 }
 
 let client: MongoClient
@@ -26,3 +26,8 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 export default clientPromise
+
+export async function getDb(dbName?: string) {
+  const c = await clientPromise
+  return c.db(dbName)
+}
