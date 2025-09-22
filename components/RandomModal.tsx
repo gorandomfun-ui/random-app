@@ -392,7 +392,7 @@ export default function RandomModal({
     >
       <div
         className="relative w-[min(95vw,1000px)] max-h-[86dvh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-        style={{ background: theme.bg, color: theme.cream, transform: 'translateY(-4vh)' }}
+        style={{ background: theme.bg, color: theme.cream, marginTop: 'clamp(16px, 8vh, 96px)' }}
       >
         {/* header */}
         <div className="px-4 py-3 border-b border-white/20 shrink-0">
