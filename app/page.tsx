@@ -220,6 +220,7 @@ export default function HomePage() {
   const targetBtnW = useButtonWidth(heroRef)
 
   useEffect(() => {
+    if (typeof document === 'undefined') return
     document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
     return () => {
       document.documentElement.style.removeProperty('--ad-bar-height')

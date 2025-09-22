@@ -54,8 +54,11 @@ export default function LikesPage() {
   }, [vw])
 
   useEffect(() => {
+    if (typeof document === 'undefined') return
     document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
-    return () => document.documentElement.style.removeProperty('--ad-bar-height')
+    return () => {
+      document.documentElement.style.removeProperty('--ad-bar-height')
+    }
   }, [adFormat.height])
 
   return (
