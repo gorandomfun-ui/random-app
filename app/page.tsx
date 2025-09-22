@@ -230,10 +230,14 @@ export default function HomePage() {
       {/* Centre */}
       <section
         ref={heroRef}
-        className="flex flex-1 flex-col px-4"
-        style={{ minHeight: heroMinHeight }}
+        className="flex flex-col items-center px-4 flex-1 justify-center text-center"
+        style={{
+          minHeight: heroMinHeight,
+          paddingTop: 'clamp(12px, 4vh, 48px)',
+          paddingBottom: `calc(clamp(28px, 5vh, 56px) + env(safe-area-inset-bottom, 0px))`,
+        }}
       >
-        <div className="flex flex-1 flex-col items-center justify-center">
+        <div className="flex flex-col items-center w-full" style={{ marginTop: 'calc(-1 * clamp(20px, 8vh, 80px))' }}>
           <LogoAnimated
             className="mx-auto"
             trigger={trigger}
@@ -263,32 +267,32 @@ export default function HomePage() {
               {dict?.hero?.startButton ?? 'GO RANDOM'}
             </button>
           </div>
-        </div>
 
-        <p
-          className="mt-8 text-center font-tomorrow font-bold text-lg md:text-xl leading-snug"
-          style={{ color: theme.text, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
-        >
-          {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
-          {(dict?.hero?.tagline2 ?? 'NO NEWS, NO REASON, NO SENSE.')}<br />
-          {(dict?.hero?.tagline3 ?? 'ONLY USELESS SURPRISE.')}
-        </p>
+          <p
+            className="mt-5 font-tomorrow font-bold text-lg md:text-xl leading-snug"
+            style={{ color: theme.text, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
+          >
+            {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
+            {(dict?.hero?.tagline2 ?? 'NO NEWS, NO REASON, NO SENSE.')}<br />
+            {(dict?.hero?.tagline3 ?? 'ONLY USELESS SURPRISE.')}
+          </p>
 
-        {/* Descriptif 4 + 2 */}
-        <div className="mt-4 hidden flex-col items-center font-inter font-semibold md:flex" style={{ color: theme.text }}>
-          <div className="flex items-center justify-center gap-x-3">
-            <span className="flex items-center gap-1.5"><img src="/icons/image.svg" className="h-5 w-5" alt="" /> {dict?.nav?.images ?? 'images'}</span>
-            <span className="opacity-50 mx-1 select-none">/</span>
-            <span className="flex items-center gap-1.5"><img src="/icons/Video.svg" className="h-5 w-5" alt="" /> {dict?.nav?.videos ?? 'videos'}</span>
-            <span className="opacity-50 mx-1 select-none">/</span>
-            <span className="flex items-center gap-1.5"><img src="/icons/web.svg" className="h-5 w-5" alt="" /> {dict?.nav?.web ?? 'web'}</span>
-            <span className="opacity-50 mx-1 select-none">/</span>
-            <span className="flex items-center gap-1.5"><img src="/icons/quote.svg" className="h-5 w-5" alt="" /> {dict?.nav?.quotes ?? 'quotes'}</span>
-          </div>
-          <div className="mt-2 flex items-center justify-center gap-x-3">
-            <span className="flex items-center gap-1.5"><img src="/icons/joke.svg" className="h-5 w-5" alt="" /> {dict?.nav?.jokes ?? 'funny jokes'}</span>
-            <span className="opacity-50 mx-1 select-none">/</span>
-            <span className="flex items-center gap-1.5"><img src="/icons/fact.svg" className="h-5 w-5" alt="" /> {dict?.nav?.facts ?? 'facts'}</span>
+          {/* Descriptif 4 + 2 */}
+          <div className="mt-4 hidden flex-col items-center font-inter font-semibold md:flex" style={{ color: theme.text }}>
+            <div className="flex items-center justify-center gap-x-3">
+              <span className="flex items-center gap-1.5"><img src="/icons/image.svg" className="h-5 w-5" alt="" /> {dict?.nav?.images ?? 'images'}</span>
+              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="flex items-center gap-1.5"><img src="/icons/Video.svg" className="h-5 w-5" alt="" /> {dict?.nav?.videos ?? 'videos'}</span>
+              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="flex items-center gap-1.5"><img src="/icons/web.svg" className="h-5 w-5" alt="" /> {dict?.nav?.web ?? 'web'}</span>
+              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="flex items-center gap-1.5"><img src="/icons/quote.svg" className="h-5 w-5" alt="" /> {dict?.nav?.quotes ?? 'quotes'}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-center gap-x-3">
+              <span className="flex items-center gap-1.5"><img src="/icons/joke.svg" className="h-5 w-5" alt="" /> {dict?.nav?.jokes ?? 'funny jokes'}</span>
+              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="flex items-center gap-1.5"><img src="/icons/fact.svg" className="h-5 w-5" alt="" /> {dict?.nav?.facts ?? 'facts'}</span>
+            </div>
           </div>
         </div>
       </section>
