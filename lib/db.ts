@@ -6,6 +6,8 @@ if (!uri) {
   throw new Error('Missing MONGO_URI / MONGODB_URI in .env.local')
 }
 
+const DEFAULT_DB = process.env.MONGODB_DB || process.env.MONGO_DB || 'randomapp'
+
 let client: MongoClient
 let clientPromise: Promise<MongoClient>
 
@@ -29,5 +31,5 @@ export default clientPromise
 
 export async function getDb(dbName?: string) {
   const c = await clientPromise
-  return c.db(dbName)
+  return c.db(dbName ?? DEFAULT_DB)
 }

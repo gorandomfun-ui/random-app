@@ -40,6 +40,7 @@ const shuffle = <T,>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5)
 
 /* ---------- THEMES ---------- */
 function getExternalThemes(): Theme[] | null {
+  if (typeof window === 'undefined') return null
   try {
     const bag = window.__RANDOM_THEMES
     if (Array.isArray(bag) && bag.length) {
@@ -76,7 +77,8 @@ function* makeMessageGen(list: string[]) {
 
 /* ---------- ICON TIERS (1–10 / 11–20 / 21–30) ---------- */
 function getIconCount(): number {
-  const n = Number(window.__ENCOURAGE_ICON_COUNT || DEFAULT_ICON_COUNT)
+  const seed = typeof window !== 'undefined' ? window.__ENCOURAGE_ICON_COUNT : DEFAULT_ICON_COUNT
+  const n = Number(seed || DEFAULT_ICON_COUNT)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_ICON_COUNT
 }
 function splitInTiers(total: number): Array<{start:number,end:number}> {
@@ -108,11 +110,15 @@ export default function EncouragementLayer({ lang }: { lang?: Language }) {
   /* Locale */
   const [locale, setLocale] = useState<Language>(() => {
     if (lang) return lang
-    const htmlLang = document?.documentElement.getAttribute('lang') || ''
-    return normalizeLocale(htmlLang || navigator?.language || 'en')
+    const htmlLang = typeof document !== 'undefined'
+      ? document.documentElement.getAttribute('lang') || ''
+      : ''
+    const navLang = typeof navigator !== 'undefined' ? navigator.language : 'en'
+    return normalizeLocale(htmlLang || navLang || 'en')
   })
   useEffect(() => { if (lang) setLocale(lang) }, [lang])
   useEffect(() => {
+    if (typeof document === 'undefined') return
     const el = document.documentElement
     const obs = new MutationObserver(() => setLocale(normalizeLocale(el.getAttribute('lang') || '')))
     obs.observe(el, { attributes: true, attributeFilter: ['lang'] })
@@ -120,8 +126,15 @@ export default function EncouragementLayer({ lang }: { lang?: Language }) {
       const d = (e as CustomEvent).detail as string | undefined
       if (d) setLocale(normalizeLocale(d))
     }
-    window.addEventListener('i18n:changed', onCustom as any)
-    return () => { obs.disconnect(); window.removeEventListener('i18n:changed', onCustom as any) }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('i18n:changed', onCustom as any)
+    }
+    return () => {
+      obs.disconnect()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('i18n:changed', onCustom as any)
+      }
+    }
   }, [])
 
   /* Messages */
@@ -176,6 +189,7 @@ export default function EncouragementLayer({ lang }: { lang?: Language }) {
 
   /* Listen to unified click event(s) and count internally */
   useEffect(() => {
+    if (typeof window === 'undefined') return
     const handler = () => {
       clicksRef.current += 1
       const count = clicksRef.current

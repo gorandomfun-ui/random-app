@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { getDb } from '@/lib/db'
 
 type ItemType = 'image'|'quote'|'fact'|'joke'|'video'|'web'
 type Lang = 'en'|'fr'|'de'|'jp'
@@ -12,20 +13,15 @@ const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)]
 const orderAsGiven = <T,>(arr: T[]) => arr
 
 /* --------------------------- DB light cache helpers ----------------------- */
-let _db: Db | null = null
+let cachedDb: Db | null = null
 async function getDbSafe(): Promise<Db | null> {
   try {
-    const { MongoClient } = await import('mongodb')
-    const uri = process.env.MONGODB_URI || process.env.MONGO_URI
-    const dbName = process.env.MONGODB_DB || 'randomapp'
-    if (!uri) return null
-    if (!_db) {
-      const client = new MongoClient(uri)
-      await client.connect()
-      _db = client.db(dbName)
-    }
-    return _db
-  } catch { return null }
+    if (cachedDb) return cachedDb
+    cachedDb = await getDb(process.env.MONGODB_DB || process.env.MONGO_DB || 'randomapp')
+    return cachedDb
+  } catch {
+    return null
+  }
 }
 
 async function upsertCache(type: ItemType, key: Record<string, any>, doc: Record<string, any>) {
