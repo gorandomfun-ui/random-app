@@ -12,6 +12,29 @@ type Lang = 'en'|'fr'|'de'|'jp'
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)]
 const orderAsGiven = <T,>(arr: T[]) => arr
 
+const PROVIDER_TIMEOUT_MS = Number(process.env.RANDOM_PROVIDER_TIMEOUT_MS || 2500)
+
+async function fetchWithTimeout(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1], timeout = PROVIDER_TIMEOUT_MS): Promise<Response | null> {
+  if (typeof AbortController === 'undefined') {
+    return Promise.race([
+      fetch(input, init),
+      new Promise<Response | null>((resolve) => setTimeout(() => resolve(null), timeout)),
+    ])
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    const res = await fetch(input, { ...(init || {}), signal: controller.signal })
+    return res
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return null
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /* --------------------------- DB light cache helpers ----------------------- */
 let cachedDb: Db | null = null
 async function getDbSafe(): Promise<Db | null> {
@@ -89,8 +112,8 @@ async function fetchFromPixabay(query: string): Promise<any | null> {
   url.searchParams.set('safesearch', 'true')
   url.searchParams.set('per_page', '50')
 
-  const res = await fetch(url, { cache: 'no-store' })
-  if (!res.ok) return null
+  const res = await fetchWithTimeout(url, { cache: 'no-store' })
+  if (!res?.ok) return null
   const data: any = await res.json()
   const hits: any[] = data?.hits || []
   if (!hits.length) return null
@@ -123,8 +146,8 @@ async function fetchFromTenor(query: string): Promise<any | null> {
   u.searchParams.set('media_filter', 'gif,tinygif')
   u.searchParams.set('random', 'true')
 
-  const res = await fetch(u.toString(), { cache: 'no-store' })
-  if (!res.ok) return null
+  const res = await fetchWithTimeout(u.toString(), { cache: 'no-store' })
+  if (!res?.ok) return null
   const d: any = await res.json()
   const r: any[] = d?.results || []
   if (!r.length) return null
@@ -151,8 +174,8 @@ async function fetchFromTenor(query: string): Promise<any | null> {
 /** Imgflip (meme templates – pas de clé) */
 async function fetchFromImgflip(): Promise<any | null> {
   try {
-    const res = await fetch('https://api.imgflip.com/get_memes', { cache: 'no-store' })
-    if (!res.ok) return null
+    const res = await fetchWithTimeout('https://api.imgflip.com/get_memes', { cache: 'no-store' })
+    if (!res?.ok) return null
     const d: any = await res.json()
     const arr: any[] = d?.data?.memes || []
     if (!arr.length) return null
@@ -203,8 +226,8 @@ async function fetchLiveImage(): Promise<any | null> {
       if (prov === 'giphy' && GIPHY_KEY) {
         const q = isGifFirst ? queryGif : queryPhoto
         const url = `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=50&rating=g`
-        const res = await fetch(url, { cache: 'no-store' })
-        if (res.ok) {
+        const res = await fetchWithTimeout(url, { cache: 'no-store' })
+        if (res?.ok) {
           const data: any = await res.json()
           const items: any[] = data?.data || []
           if (items.length) {
@@ -235,8 +258,8 @@ async function fetchLiveImage(): Promise<any | null> {
       if (prov === 'pexels' && PEXELS_KEY) {
         const q = queryPhoto
         const url = `https://api.pexels.com/v1/search?per_page=80&query=${encodeURIComponent(q)}`
-        const res = await fetch(url, { headers: { Authorization: PEXELS_KEY }, cache: 'no-store' })
-        if (res.ok) {
+        const res = await fetchWithTimeout(url, { headers: { Authorization: PEXELS_KEY }, cache: 'no-store' })
+        if (res?.ok) {
           const data: any = await res.json()
           const photos: any[] = data?.photos || []
           if (photos.length) {
@@ -262,8 +285,8 @@ async function fetchLiveImage(): Promise<any | null> {
       if (prov === 'unsplash' && UNSPLASH_KEY) {
         const q = queryPhoto
         const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(q)}&count=1&client_id=${UNSPLASH_KEY}`
-        const res = await fetch(url, { cache: 'no-store' })
-        if (res.ok) {
+        const res = await fetchWithTimeout(url, { cache: 'no-store' })
+        if (res?.ok) {
           const data: any = await res.json()
           const it: any = Array.isArray(data) ? data[0] : data
           const urls: any = it?.urls || {}
@@ -320,8 +343,8 @@ async function fetchLiveQuote(): Promise<any | null> {
 
   // 1) Try batch from provider
   try {
-    const res = await fetch(`${base}/quotes/random?limit=5`, { cache: 'no-store' })
-    if (res.ok) {
+    const res = await fetchWithTimeout(`${base}/quotes/random?limit=5`, { cache: 'no-store' })
+    if (res?.ok) {
       const data: any[] = await res.json()
       const candidates = (Array.isArray(data) ? data : [data])
         .filter(q => q?.content && !isRecentQuote(q.content))
@@ -445,8 +468,8 @@ async function fetchLiveFact(): Promise<any | null> {
 async function fetchChuckNorrisJoke(): Promise<any | null> {
   const base = process.env.CHUCK_BASE || 'https://api.chucknorris.io'
   try {
-    const res = await fetch(`${base}/jokes/random`, { cache: 'no-store' })
-    if (!res.ok) return null
+    const res = await fetchWithTimeout(`${base}/jokes/random`, { cache: 'no-store' })
+    if (!res?.ok) return null
     const d: any = await res.json()
     if (!d?.value) return null
     return {
@@ -483,8 +506,8 @@ async function fetchLiveJoke(): Promise<any | null> {
   const roll = Math.random()
   if (roll < 0.50) {
     try {
-      const res = await fetch('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
-      if (res.ok) {
+      const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
+      if (res?.ok) {
         const j: any = await res.json()
         if (j?.joke) return { type: 'joke', text: j.joke, source: { name: 'JokeAPI', url: 'https://jokeapi.dev' } }
       }
@@ -495,8 +518,8 @@ async function fetchLiveJoke(): Promise<any | null> {
   } else if (roll < 0.80) {
     const chuck = await fetchChuckNorrisJoke(); if (chuck) return chuck
     try {
-      const res = await fetch('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
-      if (res.ok) {
+      const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
+      if (res?.ok) {
         const j: any = await res.json()
         if (j?.joke) return { type: 'joke', text: j.joke, source: { name: 'JokeAPI', url: 'https://jokeapi.dev' } }
       }
@@ -506,8 +529,8 @@ async function fetchLiveJoke(): Promise<any | null> {
   } else {
     const csv = await getShortJokeFromCSV(); if (csv) return csv
     try {
-      const res = await fetch('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
-      if (res.ok) {
+      const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
+      if (res?.ok) {
         const j: any = await res.json()
         if (j?.joke) return { type: 'joke', text: j.joke, source: { name: 'JokeAPI', url: 'https://jokeapi.dev' } }
       }
@@ -544,8 +567,8 @@ function buildYouTubeQuery(): string { return Math.random() < 0.45 ? pick(KEYWOR
 
 async function fetchFromRedditFunnyYouTube(): Promise<any | null> {
   try {
-    const res = await fetch('https://www.reddit.com/r/funnyvideos/.json?limit=20', { cache: 'no-store' })
-    if (!res.ok) return null
+    const res = await fetchWithTimeout('https://www.reddit.com/r/funnyvideos/.json?limit=20', { cache: 'no-store' })
+    if (!res?.ok) return null
     const j: any = await res.json()
     const posts: any[] = j?.data?.children?.map((c: any) => c?.data).filter(Boolean) || []
     const yt = posts.filter(p => /youtu\.be\/|youtube\.com\/watch\?/.test((p?.url || '').toString()))
@@ -573,8 +596,8 @@ async function fetchFromVimeo(query: string): Promise<any | null> {
     u.searchParams.set('query', query)
     u.searchParams.set('per_page', '20')
     u.searchParams.set('sort', 'relevant')
-    const res = await fetch(u.toString(), { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } })
-    if (!res.ok) return null
+    const res = await fetchWithTimeout(u.toString(), { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } })
+    if (!res?.ok) return null
     const d: any = await res.json()
     const arr: any[] = d?.data || []
     if (!arr.length) return null
@@ -611,8 +634,8 @@ async function fetchLiveVideo(): Promise<any | null> {
       const publishedAfter = new Date(Date.now() - 1000 * 60 * 60 * 24 * 120).toISOString()
       const params = new URLSearchParams({ key: KEY, part: 'snippet', type: 'video', maxResults: '25', q, order: Math.random() < 0.5 ? 'date' : 'relevance', publishedAfter, videoEmbeddable: 'true' })
       try {
-        const res = await fetch(`${YT_ENDPOINT}/search?${params.toString()}`, { cache: 'no-store' })
-        if (res.ok) {
+        const res = await fetchWithTimeout(`${YT_ENDPOINT}/search?${params.toString()}`, { cache: 'no-store' })
+        if (res?.ok) {
           const data: any = await res.json()
           const items: any[] = data?.items || []
           const pool = items.filter((it: any) => !isRecentVideo(it?.id?.videoId))
@@ -666,11 +689,12 @@ const isRecentHost = (h?: string) => !!h && recentHosts.includes(h)
 
 async function fetchOgImage(link: string): Promise<string | null> {
   try {
-    const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 1500)
-    const res = await fetch(link, { cache: 'no-store', signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (RandomApp Bot; +https://example.com)' } })
-    clearTimeout(t)
-    if (!res.ok) return null
+    const res = await fetchWithTimeout(
+      link,
+      { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0 (RandomApp Bot; +https://example.com)' } },
+      1500,
+    )
+    if (!res?.ok) return null
     const html = await res.text()
     const og = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1]
       || /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1]
@@ -701,8 +725,8 @@ async function fetchLiveWeb(): Promise<any | null> {
   const num = String([10,10,10,9,8][Math.floor(Math.random()*5)])
 
   try {
-    const res = await fetch(`https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(q)}&num=${num}&start=${start}&safe=off`, { cache: 'no-store' })
-    if (!res.ok) throw new Error('cse-failed')
+    const res = await fetchWithTimeout(`https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(q)}&num=${num}&start=${start}&safe=off`, { cache: 'no-store' })
+    if (!res?.ok) throw new Error('cse-failed')
     const data: any = await res.json()
     const items: any[] = data?.items || []
     const chosen: any = items[Math.floor(Math.random() * (items.length || 1))] || null
