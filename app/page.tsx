@@ -64,6 +64,15 @@ function useButtonWidth(heroRef: React.RefObject<HTMLElement | null>) {
 export default function HomePage() {
   const { dict, locale } = useI18n() as any
 
+  const HEADER_H = 56
+  const FOOTER_H = 56
+  const AD_H = 108
+
+  const headerRef = useRef<HTMLElement | null>(null)
+  const heroRef = useRef<HTMLElement | null>(null)
+  const footerRef = useRef<HTMLElement | null>(null)
+  const adRef = useRef<HTMLDivElement | null>(null)
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isShuffleOpen, setIsShuffleOpen] = useState(false)
   const [isLegalOpen, setIsLegalOpen] = useState(false)
@@ -72,6 +81,8 @@ export default function HomePage() {
   const [themeIdx, setThemeIdx] = useState(0)
   const [modalThemeIdx, setModalThemeIdx] = useState(1)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
+  const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H + AD_H)
+  const [adHeight, setAdHeight] = useState(AD_H)
 
   // sélection utilisateur (par défaut : tout)
   const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(['image','video','quote','joke','fact','web'])
@@ -90,17 +101,42 @@ export default function HomePage() {
   const modalTheme = THEMES[modalThemeIdx]
 
   useLayoutEffect(() => {
-    const captureHeight = () => {
-      if (typeof window === 'undefined') return
+    if (typeof window === 'undefined') return
+
+    let frame: number | null = null
+
+    const measure = () => {
+      frame = null
       setViewportHeight(window.innerHeight)
+      const headerH = headerRef.current?.getBoundingClientRect().height ?? HEADER_H
+      const footerH = footerRef.current?.getBoundingClientRect().height ?? FOOTER_H
+      const adH = adRef.current?.getBoundingClientRect().height ?? AD_H
+      setReservedHeight(headerH + footerH + adH)
+      setAdHeight(adH)
     }
 
-    captureHeight()
-    window.addEventListener('resize', captureHeight)
-    window.addEventListener('orientationchange', captureHeight)
+    const schedule = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    }
+
+    schedule()
+    window.addEventListener('resize', schedule)
+    window.addEventListener('orientationchange', schedule)
+    window.visualViewport?.addEventListener('resize', schedule)
+
+    const node = adRef.current
+    const resizeObs = node && 'ResizeObserver' in window
+      ? new ResizeObserver(schedule)
+      : null
+    if (resizeObs && node) resizeObs.observe(node)
+
     return () => {
-      window.removeEventListener('resize', captureHeight)
-      window.removeEventListener('orientationchange', captureHeight)
+      if (frame !== null) cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('orientationchange', schedule)
+      window.visualViewport?.removeEventListener('resize', schedule)
+      resizeObs?.disconnect()
     }
   }, [])
 
@@ -162,11 +198,10 @@ export default function HomePage() {
     playAgain()
   }
 
-  const HEADER_H = 56, FOOTER_H = 56, AD_H = 108
-  const RESERVED_SPACE = HEADER_H + FOOTER_H + AD_H
-  const heroMinHeight: number | string = viewportHeight != null
-    ? Math.max(viewportHeight - RESERVED_SPACE, 320)
-    : `calc(100vh - ${RESERVED_SPACE}px)`
+  const heroAvailable = viewportHeight != null ? viewportHeight - reservedHeight : null
+  const heroMinHeight: number | string = heroAvailable != null
+    ? Math.max(heroAvailable, 360)
+    : `calc(100dvh - ${reservedHeight}px)`
 
   const shareFromFooter = () => {
     if (navigator.share) navigator.share({ title: 'Random', text: 'Random app', url: location.href }).catch(() => {})
@@ -174,14 +209,13 @@ export default function HomePage() {
   }
 
   /* ---------- largeur bouton : mesure du conteneur du logo ---------- */
-  const heroRef = useRef<HTMLElement | null>(null)
   const targetBtnW = useButtonWidth(heroRef)
 
   return (
      <>
     <main className="min-h-screen flex flex-col" style={{ backgroundColor: theme.bg, color: theme.cream }}>
       {/* Header */}
-      <header className="relative flex items-center justify-between px-4 pt-4 pb-2" style={{ height: HEADER_H }}>
+      <header ref={headerRef} className="relative flex items-center justify-between px-4 pt-4 pb-2" style={{ height: HEADER_H }}>
         <LikesMenu theme={theme} />
 
         <button className="absolute left-1/2 -translate-x-1/2" onClick={() => setIsShuffleOpen(true)} aria-label={dict?.shuffle?.title ?? 'Shuffle'}>
@@ -196,41 +230,43 @@ export default function HomePage() {
       {/* Centre */}
       <section
         ref={heroRef}
-        className="flex flex-col items-center px-4 flex-1 justify-center"
+        className="flex flex-1 flex-col px-4"
         style={{ minHeight: heroMinHeight }}
       >
-        <LogoAnimated
-          className="mx-auto"
-          trigger={trigger}
-          toSecond={isSecond}
-          twoLineOnMobile
-          vhMobile={18}
-          vhDesktop={40}
-          gapMobile={5}
-          gapDesktop={5}
-        />
+        <div className="flex flex-1 flex-col items-center justify-center">
+          <LogoAnimated
+            className="mx-auto"
+            trigger={trigger}
+            toSecond={isSecond}
+            twoLineOnMobile
+            vhMobile={18}
+            vhDesktop={40}
+            gapMobile={5}
+            gapDesktop={5}
+          />
 
-        {/* bouton calé “2 lignes” — fallback CSS pour le premier paint */}
-        <div
-          className="mt-6 mx-auto w-full max-w-[880px]"
-          style={{ width: targetBtnW ? `${targetBtnW}px` : undefined }}
-        >
-          <button
-            onClick={startRandom}
-            className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase"
-            style={{
-              backgroundColor: theme.deep,
-              color: theme.cream,
-              fontFamily: "'Tomorrow', sans-serif",
-              fontWeight: 700,
-            }}
+          {/* bouton calé “2 lignes” — fallback CSS pour le premier paint */}
+          <div
+            className="mt-6 mx-auto w-full max-w-[880px]"
+            style={{ width: targetBtnW ? `${targetBtnW}px` : undefined }}
           >
-            {dict?.hero?.startButton ?? 'GO RANDOM'}
-          </button>
+            <button
+              onClick={startRandom}
+              className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase"
+              style={{
+                backgroundColor: theme.deep,
+                color: theme.cream,
+                fontFamily: "'Tomorrow', sans-serif",
+                fontWeight: 700,
+              }}
+            >
+              {dict?.hero?.startButton ?? 'GO RANDOM'}
+            </button>
+          </div>
         </div>
 
         <p
-          className="mt-5 text-center font-tomorrow font-bold text-lg md:text-xl leading-snug"
+          className="mt-8 text-center font-tomorrow font-bold text-lg md:text-xl leading-snug"
           style={{ color: theme.text, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
         >
           {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
@@ -258,7 +294,7 @@ export default function HomePage() {
       </section>
 
       {/* Footer */}
-      <footer className="fixed left-0 right-0 z-20" style={{ bottom: AD_H, height: FOOTER_H }}>
+      <footer ref={footerRef} className="fixed left-0 right-0 z-20" style={{ bottom: `calc(${adHeight}px + env(safe-area-inset-bottom, 0px))`, height: FOOTER_H }}>
         <div className="w-full px-4 h-full flex items-center justify-between">
           <SocialPopover theme={theme} />
           <button className="flex items-center gap-2" onClick={() => setIsLegalOpen(true)}>
@@ -273,8 +309,12 @@ export default function HomePage() {
       </footer>
 
       {/* Ad bar */}
-      <div id="ad-bar" className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-center"
-           style={{ height: AD_H, backgroundColor: '#ffffff', color: '#111' }}>
+      <div
+        ref={adRef}
+        id="ad-bar"
+        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-center"
+        style={{ height: AD_H, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         <span className="font-inter font-semibold opacity-70">Ad space</span>
       </div>
 
