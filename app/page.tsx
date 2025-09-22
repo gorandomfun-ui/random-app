@@ -17,12 +17,12 @@ import { registerRandomClick } from '../lib/encourage/register'
 type ItemType = 'image'|'video'|'quote'|'joke'|'fact'|'web'
 
 const THEMES = [
-  { bg:'#f8c021', deep:'#ff3500', cream:'#FEFBE8', text:'#ff3500' },
-  { bg:'#ff7a3b', deep:'#b90045', cream:'#fff7e2', text:'#b90045' },
-  { bg:'#347ad9', deep:'#0013a4', cream:'#fff6ee', text:'#0013a4' },
-  { bg:'#ff3500', deep:'#ffc300', cream:'#eefdf3', text:'#ffc300' },
-  { bg:'#00d440', deep:'#007861', cream:'#f7efff', text:'#007861' },
-  { bg:'#7706b2', deep:'#4ecc7f', cream:'#f6fbff', text:'#4ecc7f' },
+  { bg:'#65002d', deep:'#8c0040', cream:'#FEFBE8', text:'#00b176' },
+  { bg:'#191916', deep:'#2d2d27', cream:'#fff7e2', text:'#d90845' },
+  { bg:'#08203d', deep:'#0f2f53', cream:'#fff6ee', text:'#0078a4' },
+  { bg:'#0c390d', deep:'#145b16', cream:'#eefdf3', text:'#ff978f' },
+  { bg:'#4ecc7f', deep:'#2c8a56', cream:'#f7efff', text:'#007861' },
+  { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
 // séquence fixe (on applique ensuite le filtre de ShufflePicker)
@@ -276,8 +276,8 @@ export default function HomePage() {
               onClick={startRandom}
               className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase"
               style={{
-                backgroundColor: theme.deep,
-                color: theme.cream,
+                backgroundColor: theme.text,
+                color: theme.bg,
                 fontFamily: "'Tomorrow', sans-serif",
                 fontWeight: 700,
               }}
@@ -296,19 +296,22 @@ export default function HomePage() {
           </p>
 
           {/* Descriptif 4 + 2 */}
-          <div className="mt-4 hidden flex-col items-center font-inter font-semibold md:flex" style={{ color: theme.text }}>
-            <div className="flex items-center justify-center gap-x-3">
+          <div
+            className="mt-6 flex flex-col items-center font-inter font-semibold text-sm md:text-base"
+            style={{ color: '#ffffff' }}
+          >
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 md:gap-x-4">
               <span className="flex items-center gap-1.5"><img src="/icons/image.svg" className="h-5 w-5" alt="" /> {dict?.nav?.images ?? 'images'}</span>
-              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="opacity-50 select-none">/</span>
               <span className="flex items-center gap-1.5"><img src="/icons/Video.svg" className="h-5 w-5" alt="" /> {dict?.nav?.videos ?? 'videos'}</span>
-              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="opacity-50 select-none">/</span>
               <span className="flex items-center gap-1.5"><img src="/icons/web.svg" className="h-5 w-5" alt="" /> {dict?.nav?.web ?? 'web'}</span>
-              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="opacity-50 select-none">/</span>
               <span className="flex items-center gap-1.5"><img src="/icons/quote.svg" className="h-5 w-5" alt="" /> {dict?.nav?.quotes ?? 'quotes'}</span>
             </div>
-            <div className="mt-2 flex items-center justify-center gap-x-3">
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 md:gap-x-4">
               <span className="flex items-center gap-1.5"><img src="/icons/joke.svg" className="h-5 w-5" alt="" /> {dict?.nav?.jokes ?? 'funny jokes'}</span>
-              <span className="opacity-50 mx-1 select-none">/</span>
+              <span className="opacity-50 select-none">/</span>
               <span className="flex items-center gap-1.5"><img src="/icons/fact.svg" className="h-5 w-5" alt="" /> {dict?.nav?.facts ?? 'facts'}</span>
             </div>
           </div>

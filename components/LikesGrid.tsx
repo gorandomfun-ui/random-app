@@ -10,12 +10,12 @@ type Props = {
 
 /** Palette fallback si l'item n'a pas de theme sauvegardé */
 const PALETTE = [
-  { bg:'#f8c021', deep:'#ff3500', cream:'#FEFBE8', text:'#ff3500' },
-  { bg:'#ff7a3b', deep:'#b90045', cream:'#fff7e2', text:'#b90045' },
-  { bg:'#347ad9', deep:'#0013a4', cream:'#fff6ee', text:'#0013a4' },
-  { bg:'#ff3500', deep:'#ffc300', cream:'#eefdf3', text:'#ffc300' },
-  { bg:'#00d440', deep:'#007861', cream:'#f7efff', text:'#007861' },
-  { bg:'#7706b2', deep:'#4ecc7f', cream:'#f6fbff', text:'#4ecc7f' },
+  { bg:'#65002d', deep:'#8c0040', cream:'#FEFBE8', text:'#00b176' },
+  { bg:'#191916', deep:'#2d2d27', cream:'#fff7e2', text:'#d90845' },
+  { bg:'#08203d', deep:'#0f2f53', cream:'#fff6ee', text:'#0078a4' },
+  { bg:'#0c390d', deep:'#145b16', cream:'#eefdf3', text:'#ff978f' },
+  { bg:'#4ecc7f', deep:'#2c8a56', cream:'#f7efff', text:'#007861' },
+  { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
 /** colonnes effectives en fonction des breakpoints de la grille */

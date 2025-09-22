@@ -50,12 +50,12 @@ function getExternalThemes(): Theme[] | null {
   return null
 }
 const FALLBACK_THEMES: Theme[] = [
-  { bg:'#f8c021', text:'#ff3500' },
-  { bg:'#ff7a3b', text:'#b90045' },
-  { bg:'#347ad9', text:'#0013a4' },
-  { bg:'#ff3500', text:'#ffc300' },
-  { bg:'#00d440', text:'#007861' },
-  { bg:'#7706b2', text:'#4ecc7f' },
+  { bg:'#65002d', text:'#00b176' },
+  { bg:'#191916', text:'#d90845' },
+  { bg:'#08203d', text:'#0078a4' },
+  { bg:'#0c390d', text:'#ff978f' },
+  { bg:'#4ecc7f', text:'#007861' },
+  { bg:'#ff978f', text:'#463b46' },
 ]
 const pickTheme = (): Theme => {
   const themes = getExternalThemes() || FALLBACK_THEMES

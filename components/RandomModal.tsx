@@ -122,9 +122,17 @@ function SharePopover({
     <div
       className={`absolute ${placeAbove ? 'bottom-full mb-2' : 'top-full mt-2'} right-0 w-[260px] rounded-xl shadow-xl p-3 z-50`}
       style={{ background: theme.deep, color: theme.cream }}
-      onMouseLeave={onClose}
     >
-      <div className="text-xs uppercase tracking-wide opacity-80 mb-2">Share</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-wide opacity-80">Share</div>
+        <button
+          className="text-lg leading-none opacity-80 hover:opacity-100"
+          onClick={onClose}
+          aria-label="Close share"
+        >
+          ×
+        </button>
+      </div>
       <div className="flex flex-col gap-2">
         <button className="text-left px-3 py-2 rounded hover:opacity-90" onClick={nativeShare}>
           • Native share (mobile)
@@ -386,13 +394,14 @@ export default function RandomModal({
   const LOGO_GAP_DESKTOP = 2
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,.55)', paddingBottom: 'calc(var(--ad-bar-height, 0px) + 16px)' }}
     >
       <div
-        className="relative w-[min(95vw,1000px)] max-h-[86dvh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-        style={{ background: theme.bg, color: theme.cream, marginTop: 'clamp(16px, 8vh, 96px)' }}
+        className="relative w-[min(95vw,1000px)] max-h-[80dvh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ background: theme.bg, color: theme.cream, marginTop: 'clamp(24px, 12vh, 120px)', marginBottom: 'calc(var(--ad-bar-height, 0px) + 24px)' }}
       >
         {/* header */}
         <div className="px-4 py-3 border-b border-white/20 shrink-0">
@@ -468,7 +477,7 @@ export default function RandomModal({
           <div className="grid grid-cols-3 items-center">
             <div className="flex items-center gap-4 justify-start">
               <button
-                className="p-2 rounded-full hover:opacity-90"
+                className={`like-button p-2 rounded-full ${liked ? 'liked' : ''}`}
                 aria-label="Like"
                 onClick={() => {
                   if (!viewItem) return
@@ -495,7 +504,12 @@ export default function RandomModal({
                   } catch {}
                 }}
               >
-                <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={28} />
+                <MonoIcon
+                  src="/icons/Heart.svg"
+                  color={liked ? '#ff4d78' : theme.cream}
+                  size={28}
+                  className="transition-[background-color] duration-300"
+                />
               </button>
 
             </div>
@@ -504,7 +518,7 @@ export default function RandomModal({
               <button
                 className="px-10 md:px-14 py-2 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase whitespace-nowrap"
                 style={{
-                  backgroundColor: theme.deep,
+                  backgroundColor: theme.text,
                   color: theme.cream,
                   fontFamily: "'Tomorrow', sans-serif",
                   fontWeight: 700,
@@ -539,5 +553,24 @@ export default function RandomModal({
         </div>
       </div>
     </div>
+    <style jsx>{`
+      .like-button {
+        transition: transform 0.3s ease;
+      }
+      .like-button:hover {
+        transform: scale(1.05);
+      }
+      .like-button.liked {
+        transform: scale(1.1);
+        animation: heartPulse 0.45s ease;
+      }
+      @keyframes heartPulse {
+        0% { transform: scale(1); }
+        30% { transform: scale(1.25); }
+        60% { transform: scale(0.95); }
+        100% { transform: scale(1.1); }
+      }
+    `}</style>
+    </>
   )
 }
