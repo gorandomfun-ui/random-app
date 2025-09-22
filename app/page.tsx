@@ -146,7 +146,7 @@ export default function HomePage() {
     playAgain()
   }
 
-  const HEADER_H = 56, FOOTER_H = 56, AD_H = 120
+  const HEADER_H = 56, FOOTER_H = 56, AD_H = 108
 
   const shareFromFooter = () => {
     if (navigator.share) navigator.share({ title: 'Random', text: 'Random app', url: location.href }).catch(() => {})
@@ -219,7 +219,7 @@ export default function HomePage() {
         </p>
 
         {/* Descriptif 4 + 2 */}
-        <div className="mt-4 flex flex-col items-center font-inter font-semibold" style={{ color: theme.text }}>
+        <div className="mt-4 hidden flex-col items-center font-inter font-semibold md:flex" style={{ color: theme.text }}>
           <div className="flex items-center justify-center gap-x-3">
             <span className="flex items-center gap-1.5"><img src="/icons/image.svg" className="h-5 w-5" alt="" /> {dict?.nav?.images ?? 'images'}</span>
             <span className="opacity-50 mx-1 select-none">/</span>

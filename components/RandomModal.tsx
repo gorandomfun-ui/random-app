@@ -488,24 +488,6 @@ export default function RandomModal({
                 <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={28} />
               </button>
 
-              <button
-                className="p-2 rounded-full hover:opacity-90"
-                aria-label="Dislike"
-                onClick={() => {
-                  try {
-                    const a = JSON.parse(localStorage.getItem('dislikes') || '[]')
-                    a.unshift({
-                      url: viewItem?.url || location.href,
-                      ts: Date.now(),
-                      type: viewItem?.type,
-                    })
-                    localStorage.setItem('dislikes', JSON.stringify(a.slice(0, 6)))
-                  } catch {}
-                  handleRandomAgain()
-                }}
-              >
-                <MonoIcon src="/icons/Dislike.svg" color={theme.cream} size={28} />
-              </button>
             </div>
 
             <div className="flex justify-center">
