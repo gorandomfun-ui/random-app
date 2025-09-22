@@ -71,6 +71,7 @@ export default function HomePage() {
   const [isSecond, setIsSecond] = useState(false)
   const [themeIdx, setThemeIdx] = useState(0)
   const [modalThemeIdx, setModalThemeIdx] = useState(1)
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null)
 
   // sélection utilisateur (par défaut : tout)
   const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(['image','video','quote','joke','fact','web'])
@@ -87,6 +88,21 @@ export default function HomePage() {
 
   const theme = THEMES[themeIdx]
   const modalTheme = THEMES[modalThemeIdx]
+
+  useLayoutEffect(() => {
+    const captureHeight = () => {
+      if (typeof window === 'undefined') return
+      setViewportHeight(window.innerHeight)
+    }
+
+    captureHeight()
+    window.addEventListener('resize', captureHeight)
+    window.addEventListener('orientationchange', captureHeight)
+    return () => {
+      window.removeEventListener('resize', captureHeight)
+      window.removeEventListener('orientationchange', captureHeight)
+    }
+  }, [])
 
   // séquence filtrée (on conserve l'ordre)
   const filteredSequence = useMemo<ItemType[]>(() => {
@@ -147,6 +163,10 @@ export default function HomePage() {
   }
 
   const HEADER_H = 56, FOOTER_H = 56, AD_H = 108
+  const RESERVED_SPACE = HEADER_H + FOOTER_H + AD_H
+  const heroMinHeight: number | string = viewportHeight != null
+    ? Math.max(viewportHeight - RESERVED_SPACE, 320)
+    : `calc(100vh - ${RESERVED_SPACE}px)`
 
   const shareFromFooter = () => {
     if (navigator.share) navigator.share({ title: 'Random', text: 'Random app', url: location.href }).catch(() => {})
@@ -176,8 +196,8 @@ export default function HomePage() {
       {/* Centre */}
       <section
         ref={heroRef}
-        className="flex flex-col items-center px-4 flex-1 justify-center mb-[72px] md:mb-16 lg:mb-[200px]"
-        style={{ minHeight: `calc(100vh - ${HEADER_H + FOOTER_H + AD_H}px)` }}
+        className="flex flex-col items-center px-4 flex-1 justify-center"
+        style={{ minHeight: heroMinHeight }}
       >
         <LogoAnimated
           className="mx-auto"
