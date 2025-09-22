@@ -233,11 +233,14 @@ export default function HomePage() {
         className="flex flex-col items-center px-4 flex-1 justify-center text-center"
         style={{
           minHeight: heroMinHeight,
-          paddingTop: 'clamp(12px, 4vh, 48px)',
-          paddingBottom: `calc(clamp(28px, 5vh, 56px) + env(safe-area-inset-bottom, 0px))`,
+          paddingTop: 'calc(max(12px, env(safe-area-inset-top, 0px)) + 12px)',
+          paddingBottom: `calc(${FOOTER_H}px + 24px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
-        <div className="flex flex-col items-center w-full" style={{ marginTop: 'calc(-1 * clamp(20px, 8vh, 80px))' }}>
+        <div
+          className="flex flex-col items-center w-full"
+          style={{ transform: 'translateY(calc(-1 * clamp(36px, 10vh, 160px)))' }}
+        >
           <LogoAnimated
             className="mx-auto"
             trigger={trigger}
@@ -269,7 +272,7 @@ export default function HomePage() {
           </div>
 
           <p
-            className="mt-5 font-tomorrow font-bold text-lg md:text-xl leading-snug"
+            className="mt-4 font-tomorrow font-bold text-lg md:text-xl leading-snug"
             style={{ color: theme.text, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
           >
             {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
