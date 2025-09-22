@@ -176,8 +176,8 @@ export default function HomePage() {
       {/* Centre */}
       <section
         ref={heroRef}
-        className="flex flex-col items-center px-4 flex-1 justify-center"
-        style={{ minHeight: `calc(100vh - ${HEADER_H + FOOTER_H + AD_H}px)`, paddingBottom: 200 }}
+        className="flex flex-col items-center px-4 flex-1 justify-center pb-[72px] md:pb-16 lg:pb-[200px]"
+        style={{ minHeight: `calc(100vh - ${HEADER_H + FOOTER_H + AD_H}px)` }}
       >
         <LogoAnimated
           className="mx-auto"

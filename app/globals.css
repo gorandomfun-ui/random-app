@@ -6,7 +6,4 @@
 html,body{height:100%;overflow-x:hidden}
 body{font-family:var(--font-inter-tight),system-ui,sans-serif}
 
-/* réserve de place si la pub est fixée en bas */
-@media (max-width: 768px){
-  body { padding-bottom: 68px; }
-}
+/* Les éléments fixes gèrent eux-mêmes la marge en bas. */
