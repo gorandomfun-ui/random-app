@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
 import LogoAnimated from '../components/LogoAnimated'
 import RandomModal from '../components/RandomModal'
 import LanguageSwitcher from '../components/LanguageSwitcher'
@@ -72,7 +72,6 @@ export default function HomePage() {
   const heroRef = useRef<HTMLElement | null>(null)
   const footerRef = useRef<HTMLElement | null>(null)
   const adRef = useRef<HTMLDivElement | null>(null)
-  const adContainerRef = useRef<HTMLDivElement | null>(null)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isShuffleOpen, setIsShuffleOpen] = useState(false)
@@ -208,8 +207,8 @@ export default function HomePage() {
 
   const adFormat = useMemo(() => {
     const width = viewportWidth ?? 0
-    if (width && width >= 768) return { width: 728, height: 90, key: '73f612ccc809ea65224eeaa902074c14' }
-    return { width: 320, height: 50, key: '829b07c59ef385884d3865c542e6aafa' }
+    if (width && width >= 768) return { width: 728, height: 90 }
+    return { width: 320, height: 50 }
   }, [viewportWidth])
 
   const shareFromFooter = () => {
@@ -220,40 +219,12 @@ export default function HomePage() {
   /* ---------- largeur bouton : mesure du conteneur du logo ---------- */
   const targetBtnW = useButtonWidth(heroRef)
 
-  const lastAdRefreshRef = useRef<number>(0)
-
-  const injectAdTag = useCallback(() => {
-    if (!adContainerRef.current) return
-    const container = adContainerRef.current
-    container.innerHTML = ''
-
-    const optionsScript = document.createElement('script')
-    optionsScript.type = 'text/javascript'
-    optionsScript.text = `atOptions = { key: '${adFormat.key}', format: 'iframe', height: ${adFormat.height}, width: ${adFormat.width}, params: {} };`
-
-    const tagScript = document.createElement('script')
-    tagScript.type = 'text/javascript'
-    tagScript.src = `//www.highperformanceformat.com/${adFormat.key}/invoke.js`
-    tagScript.async = true
-
-    container.appendChild(optionsScript)
-    container.appendChild(tagScript)
-    lastAdRefreshRef.current = Date.now()
-  }, [adFormat.height, adFormat.key, adFormat.width])
-
   useEffect(() => {
-    injectAdTag()
     document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
     return () => {
       document.documentElement.style.removeProperty('--ad-bar-height')
     }
-  }, [injectAdTag, adFormat.height])
-
-  useEffect(() => {
-    const now = Date.now()
-    if (now - lastAdRefreshRef.current < 45000) return
-    injectAdTag()
-  }, [trigger, injectAdTag])
+  }, [adFormat.height])
 
   return (
      <>
@@ -367,8 +338,7 @@ export default function HomePage() {
         style={{ minHeight: adFormat.height, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 60 }}
       >
         <div
-          ref={adContainerRef}
-          className="flex items-center justify-center"
+          className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
           style={{ width: adFormat.width, minHeight: adFormat.height }}
         >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
