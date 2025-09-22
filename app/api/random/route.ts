@@ -741,7 +741,7 @@ async function fetchLiveVideo(): Promise<any | null> {
     }
   }
 
-  const cachedWeb = await sampleFromCache('web', { provider: 'vimeo' })
+  const cachedWeb = await sampleFromCache('web', { provider: 'vimeo', ogImage: { $nin: [null, '', false] } })
   if (cachedWeb?.url) {
     touchLastShown('web', { url: cachedWeb.url })
     return { type: 'web', url: cachedWeb.url, text: cachedWeb.title || cachedWeb.url, ogImage: cachedWeb.ogImage || null, source: { name: 'Vimeo', url: cachedWeb.url } }
@@ -776,8 +776,10 @@ async function fetchLiveWeb(): Promise<any | null> {
   const KEY = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_API_KEY
   const CX  = process.env.GOOGLE_CSE_CX  || process.env.GOOGLE_CSE_ID
 
+  const imageMatch = { ogImage: { $nin: [null, '', false] } }
+
   if (!KEY || !CX) {
-    const cached = await sampleFromCache('web')
+    const cached = await sampleFromCache('web', imageMatch)
     if (cached?.url) {
       touchLastShown('web', { url: cached.url })
       return { type:'web', url: cached.url, text: cached.title || cached.host || cached.url, ogImage: cached.ogImage || null, source: { name:'cache', url: cached.url } }
@@ -817,21 +819,26 @@ async function fetchLiveWeb(): Promise<any | null> {
       }
     })
     const pool = ranked.length ? ranked : items
-    const chosen: any = pool[Math.floor(Math.random() * (pool.length || 1))] || null
-    const link: string | undefined = chosen?.link
-    if (!link) throw new Error('no-link')
 
-    let host = ''
-    try { host = new URL(link).host.replace(/^www\./,'') } catch {}
-    if (host) markRecentHost(host)
+    for (const candidate of shuffle(pool.slice())) {
+      const link: string | undefined = candidate?.link
+      if (!link) continue
+      let host = ''
+      try { host = new URL(link).host.replace(/^www\./,'') } catch {}
+      if (host && isRecentHost(host)) continue
 
-    const ogImage = await fetchOgImage(link)
-    const item = { type:'web', url: link, text: chosen?.title || host || link, ogImage: ogImage || null, source: { name:'Google', url: link } }
-    await upsertCache('web', { url: link }, { title: item.text, host, ogImage: item.ogImage, provider: 'google-cse' })
-    await touchLastShown('web', { url: link })
-    return item
+      const ogImage = await fetchOgImage(link)
+      if (!ogImage) continue
+
+      if (host) markRecentHost(host)
+      const item = { type:'web', url: link, text: candidate?.title || host || link, ogImage, source: { name:'Google', url: link } }
+      await upsertCache('web', { url: link }, { title: item.text, host, ogImage, provider: 'google-cse' })
+      await touchLastShown('web', { url: link })
+      return item
+    }
+    throw new Error('no-og-image')
   } catch {
-    const cached = await sampleFromCache('web')
+    const cached = await sampleFromCache('web', imageMatch)
     if (cached?.url) {
       touchLastShown('web', { url: cached.url })
       return { type:'web', url: cached.url, text: cached.title || cached.host || cached.url, ogImage: cached.ogImage || null, source: { name:'cache', url: cached.url } }

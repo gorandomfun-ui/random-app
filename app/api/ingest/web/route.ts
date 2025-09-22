@@ -111,8 +111,9 @@ async function runGoogleCSE(queries: string[], per: number, pages: number) {
   for (const row of out) {
     try {
       const og = await fetchOgImage(row.url)
-      enriched.push({ ...row, ogImage: og || null })
-    } catch { enriched.push(row) }
+      if (!og) continue
+      enriched.push({ ...row, ogImage: og })
+    } catch {}
   }
   return enriched
 }

@@ -21,6 +21,7 @@ type Props = {
 }
 
 const DUR = 1100
+const ANIM_VARIANTS = 6
 const BP = 1024
 
 export default function LogoAnimated({
@@ -80,7 +81,7 @@ export default function LogoAnimated({
       return
     }
     if (toSecond === showSecond) return
-    setAnimId(Math.floor(Math.random() * 11)) // 0..10
+    setAnimId(Math.floor(Math.random() * ANIM_VARIANTS))
     setPlaying(true)
     const t = setTimeout(() => {
       setPlaying(false)
@@ -103,6 +104,7 @@ export default function LogoAnimated({
         className={[
           'animated-word',
           playing ? `anim-${animId}` : '',
+          playing ? 'is-playing' : '',
           dir12 ? 'dir-12' : '',
           dir21 ? 'dir-21' : '',
           twoLineOnMobile ? 'two-line-mobile' : 'one-line',
@@ -214,141 +216,79 @@ export default function LogoAnimated({
           visibility: hidden;
         }
 
-        /* ===== Animations puissantes (0..10) ===== */
-        /* 0) ROLL-UP / DOWN */
-        .anim-0.dir-12 .img1.out {
-          animation: rollOldUp ${DUR}ms cubic-bezier(.12,.98,.04,1) forwards;
+        /* ===== Animation Variants (0..5) ===== */
+        .animated-word.is-playing .letter-wrap {
+          overflow: visible;
         }
-        .anim-0.dir-12 .img2.in {
-          animation: rollNewUp ${DUR}ms cubic-bezier(.12,.98,.04,1) forwards;
-        }
-        .anim-0.dir-21 .img2.out {
-          animation: rollOldDown ${DUR}ms cubic-bezier(.12,.98,.04,1) forwards;
-        }
-        .anim-0.dir-21 .img1.in {
-          animation: rollNewDown ${DUR}ms cubic-bezier(.12,.98,.04,1) forwards;
-        }
-        @keyframes rollOldUp {
-          0% { opacity: 1; transform: translate3d(0,0,0) }
-          30% { opacity: 0 }
-          100% { opacity: 0; transform: translate3d(0,-520px,0) }
-        }
-        @keyframes rollNewUp {
-          0% { opacity: 0; transform: translate3d(0,520px,0) }
-          12% { opacity: 1 }
-          100% { opacity: 1; transform: translate3d(0,0,0) }
-        }
-        @keyframes rollOldDown {
-          0% { opacity: 1; transform: translate3d(0,0,0) }
-          30% { opacity: 0 }
-          100% { opacity: 0; transform: translate3d(0,520px,0) }
-        }
-        @keyframes rollNewDown {
-          0% { opacity: 0; transform: translate3d(0,-520px,0) }
-          12% { opacity: 1 }
-          100% { opacity: 1; transform: translate3d(0,0,0) }
+        .animated-word.is-playing .letter {
+          will-change: transform, opacity, filter;
         }
 
-        /* 1) WHEEL (Y) */
+        /* Pulse ignite */
+        .anim-0.is-playing .letter-wrap { animation: pulseWrap 1100ms cubic-bezier(.25,1,.35,1) both; }
+        .anim-0.dir-12 .img1.out,
+        .anim-0.dir-21 .img2.out { animation: pulseFadeOut 1100ms cubic-bezier(.22,.95,.21,.99) forwards; }
+        .anim-0.dir-12 .img2.in,
+        .anim-0.dir-21 .img1.in { animation: pulsePopIn 1100ms cubic-bezier(.22,.95,.21,.99) forwards; }
+
+        /* Tilt flip */
+        .anim-1.is-playing .letter-wrap { animation: tiltWrap 1100ms ease-in-out both; }
         .anim-1.dir-12 .img1.out,
-        .anim-1.dir-21 .img2.out {
-          animation: wheelOutL ${DUR}ms ease-in-out forwards;
-        }
+        .anim-1.dir-21 .img2.out { animation: tiltExit 1100ms ease-in-out forwards; }
         .anim-1.dir-12 .img2.in,
-        .anim-1.dir-21 .img1.in {
-          animation: wheelInR ${DUR}ms ease-in-out forwards;
-        }
-        @keyframes wheelOutL {
-          0% { opacity: 1; transform: rotateY(0) }
-          30% { opacity: 0 }
-          100% { opacity: 0; transform: rotateY(-260deg) }
-        }
-        @keyframes wheelInR {
-          0% { opacity: 0; transform: rotateY(260deg) }
-          10% { opacity: 1 }
-          100% { opacity: 1; transform: rotateY(0) }
-        }
+        .anim-1.dir-21 .img1.in { animation: tiltEnter 1100ms ease-in-out forwards; }
 
-        /* 2) SWIPE ULTRA */
-        .anim-2.dir-12 .img1.out { animation: swipeLeftOut ${DUR}ms cubic-bezier(.16,1,.06,1) forwards; }
-        .anim-2.dir-12 .img2.in  { animation: swipeLeftIn  ${DUR}ms cubic-bezier(.16,1,.06,1) forwards; }
-        .anim-2.dir-21 .img2.out { animation: swipeRightOut ${DUR}ms cubic-bezier(.16,1,.06,1) forwards; }
-        .anim-2.dir-21 .img1.in  { animation: swipeRightIn  ${DUR}ms cubic-bezier(.16,1,.06,1) forwards; }
-        @keyframes swipeLeftOut  { 0%{opacity:1;transform:translate3d(0,0,0)} 30%{opacity:0} 100%{opacity:0;transform:translate3d(-820px,0,0)} }
-        @keyframes swipeLeftIn   { 0%{opacity:0;transform:translate3d(820px,0,0)} 12%{opacity:1} 88%{transform:translate3d(-20px,0,0)} 100%{transform:translate3d(0,0,0)} }
-        @keyframes swipeRightOut { 0%{opacity:1;transform:translate3d(0,0,0)} 30%{opacity:0} 100%{opacity:0;transform:translate3d(820px,0,0)} }
-        @keyframes swipeRightIn  { 0%{opacity:0;transform:translate3d(-820px,0,0)} 12%{opacity:1} 88%{transform:translate3d(20px,0,0)} 100%{transform:translate3d(0,0,0)} }
+        /* Glitch burst */
+        .anim-2.is-playing .letter-wrap { animation: glitchWrap 1100ms steps(4, end) forwards; }
+        .anim-2.dir-12 .img1.out,
+        .anim-2.dir-21 .img2.out { animation: glitchExit 1100ms linear forwards; }
+        .anim-2.dir-12 .img2.in,
+        .anim-2.dir-21 .img1.in { animation: glitchEnter 1100ms linear forwards; }
 
-        /* 3) FLIP COUNTDOWN */
-        .anim-3 .letter-wrap { animation: tickWrap ${DUR}ms ease-in-out both; }
-        .anim-3.dir-12 .img1.out, .anim-3.dir-21 .img2.out { animation: flipOut ${DUR}ms ease-in-out forwards; }
-        .anim-3.dir-12 .img2.in,  .anim-3.dir-21 .img1.in  { animation: flipIn  ${DUR}ms ease-in-out forwards; }
-        @keyframes tickWrap { 0%{transform:rotate(0)} 22%{transform:rotate(3deg)} 48%{transform:rotate(-3deg)} 74%{transform:rotate(1.6deg)} 100%{transform:rotate(0)} }
-        @keyframes flipOut  { 0%{opacity:1;transform:rotateX(0)} 30%{opacity:0} 100%{opacity:0;transform:rotateX(-300deg)} }
-        @keyframes flipIn   { 0%{opacity:0;transform:rotateX(300deg) scale(1.08)} 10%{opacity:1} 100%{opacity:1;transform:rotateX(0) scale(1)} }
+        /* Warp stretch */
+        .anim-3.is-playing .letter-wrap { animation: warpWrap 1100ms cubic-bezier(.26,1,.32,1) both; }
+        .anim-3.dir-12 .img1.out,
+        .anim-3.dir-21 .img2.out { animation: warpExit 1100ms cubic-bezier(.26,1,.32,1) forwards; }
+        .anim-3.dir-12 .img2.in,
+        .anim-3.dir-21 .img1.in { animation: warpEnter 1100ms cubic-bezier(.26,1,.32,1) forwards; }
 
-        /* 4) EXPLODE & GATHER */
-        .anim-4 .letter-wrap { animation: scatterWrap ${DUR}ms cubic-bezier(.18,.99,.12,1) both; }
-        .anim-4.dir-12 .img1.out, .anim-4.dir-21 .img2.out { animation: explodeOut ${DUR}ms cubic-bezier(.18,.99,.12,1) forwards; }
-        .anim-4.dir-12 .img2.in,  .anim-4.dir-21 .img1.in  { animation: gatherIn   ${DUR}ms cubic-bezier(.18,.99,.12,1) forwards; }
-        @keyframes scatterWrap { 0%{transform:scale(.9)} 52%{transform:scale(1.26)} 100%{transform:scale(1)} }
-        @keyframes explodeOut  { 0%{opacity:1;transform:translate3d(0,0,0) rotate(0) scale(1)} 28%{opacity:0} 100%{opacity:0;transform:translate3d(300px,-260px,0) rotate(-42deg) scale(.28);filter:blur(1.6px)} }
-        @keyframes gatherIn    { 0%{opacity:0;transform:translate3d(-300px,260px,0) rotate(26deg) scale(1.6);filter:blur(1.2px)} 14%{opacity:1} 100%{opacity:1;transform:translate3d(0,0,0) rotate(0) scale(1);filter:blur(0)} }
+        /* Slide smear */
+        .anim-4.is-playing .letter-wrap { animation: smearWrap 1100ms cubic-bezier(.18,.96,.16,1) both; }
+        .anim-4.dir-12 .img1.out,
+        .anim-4.dir-21 .img2.out { animation: smearExit 1100ms cubic-bezier(.18,.96,.16,1) forwards; }
+        .anim-4.dir-12 .img2.in,
+        .anim-4.dir-21 .img1.in { animation: smearEnter 1100ms cubic-bezier(.18,.96,.16,1) forwards; }
 
-        /* 5) CANNON / IMPACT */
-        .anim-5.dir-12 .img1.out, .anim-5.dir-21 .img2.out { animation: impactOut ${DUR}ms cubic-bezier(.1,.9,.03,1) forwards; }
-        .anim-5.dir-12 .img2.in,  .anim-5.dir-21 .img1.in  { animation: cannonIn  ${DUR}ms cubic-bezier(.1,.9,.03,1) forwards; }
-        @keyframes cannonIn  { 0%{opacity:0;transform:translate3d(-980px,0,0) scale(1.2) skewX(-10deg)} 42%{opacity:1;transform:translate3d(22px,0,0)} 100%{opacity:1;transform:translate3d(0,0,0) skewX(0)} }
-        @keyframes impactOut { 0%{opacity:1;transform:translate3d(0,0,0)} 28%{opacity:0} 100%{opacity:0;transform:translate3d(980px,0,0) rotate(24deg)} }
+        /* Ripple bounce */
+        .anim-5.is-playing .letter-wrap { animation: rippleWrap 1100ms cubic-bezier(.25,.95,.27,1) both; }
+        .anim-5.dir-12 .img1.out,
+        .anim-5.dir-21 .img2.out { animation: rippleExit 1100ms cubic-bezier(.25,.95,.27,1) forwards; }
+        .anim-5.dir-12 .img2.in,
+        .anim-5.dir-21 .img1.in { animation: rippleEnter 1100ms cubic-bezier(.25,.95,.27,1) forwards; }
 
-        /* 6) MEGA-EXPLODE (+ shake subtil du mot) */
-        .anim-6 { animation: shake ${DUR}ms ease-in-out both; }
-        .anim-6.dir-12 .img1.out, .anim-6.dir-21 .img2.out { animation: blastOut ${DUR}ms cubic-bezier(.12,1,.06,1) forwards; }
-        .anim-6.dir-12 .img2.in,  .anim-6.dir-21 .img1.in  { animation: blastIn  ${DUR}ms cubic-bezier(.2,.95,.08,1) forwards; }
-        .anim-6 .letter-wrap:nth-child(1) .img1.out, .anim-6 .letter-wrap:nth-child(1) .img2.out { --dx:-520px; --dy:-360px; --rot:-40deg; }
-        .anim-6 .letter-wrap:nth-child(2) .img1.out, .anim-6 .letter-wrap:nth-child(2) .img2.out { --dx: 560px; --dy:-340px; --rot: 42deg; }
-        .anim-6 .letter-wrap:nth-child(3) .img1.out, .anim-6 .letter-wrap:nth-child(3) .img2.out { --dx:-500px; --dy: 360px; --rot:-36deg; }
-        .anim-6 .letter-wrap:nth-child(4) .img1.out, .anim-6 .letter-wrap:nth-child(4) .img2.out { --dx: 520px; --dy: 360px; --rot: 38deg; }
-        .anim-6 .letter-wrap:nth-child(5) .img1.out, .anim-6 .letter-wrap:nth-child(5) .img2.out { --dx:-440px; --dy:-440px; --rot:-44deg; }
-        .anim-6 .letter-wrap:nth-child(6) .img1.out, .anim-6 .letter-wrap:nth-child(6) .img2.out { --dx: 480px; --dy: 420px; --rot: 44deg; }
-        @keyframes blastOut { 0%{opacity:1;transform:translate3d(0,0,0) scale(1) rotate(0);filter:blur(0)} 28%{opacity:0} 100%{opacity:0;transform:translate3d(var(--dx,520px),var(--dy,360px),0) scale(.26) rotate(var(--rot,40deg));filter:blur(3.4px) drop-shadow(0 5px 12px rgba(0,0,0,.32))} }
-        @keyframes blastIn  { 0%{opacity:0;transform:scale(1.7) translate3d(0,36px,0) skewX(10deg);filter:blur(1.4px)} 16%{opacity:1} 100%{opacity:1;transform:scale(1) translate3d(0,0,0) skewX(0);filter:blur(0)} }
-        @keyframes shake { 0%{transform:translate3d(0,0,0)} 25%{transform:translate3d(3px,-3px,0)} 50%{transform:translate3d(-3px,3px,0)} 75%{transform:translate3d(2px,0,0)} 100%{transform:translate3d(0,0,0)} }
+        @keyframes pulseWrap { 0%%{transform:scale(1)} 45%%{transform:scale(1.04)} 100%%{transform:scale(1)} }
+        @keyframes pulseFadeOut { 0%%{opacity:1;transform:scale(1);filter:none} 30%%{transform:scale(1.12)} 60%%{opacity:.58;transform:scale(.86);filter:blur(.6px)} 100%%{opacity:0;transform:scale(.72);filter:blur(1.1px)} }
+        @keyframes pulsePopIn { 0%%{opacity:0;transform:scale(1.3);filter:blur(1.6px)} 18%%{opacity:1} 45%%{transform:scale(.94);filter:blur(.4px)} 100%%{transform:scale(1);filter:none} }
 
-        /* 7) WARP-SWIPE */
-        .anim-7.dir-12 .img1.out { animation: warpOutL ${DUR}ms cubic-bezier(.14,1,.06,1) forwards; }
-        .anim-7.dir-12 .img2.in  { animation: warpInL  ${DUR}ms cubic-bezier(.14,1,.06,1) forwards; }
-        .anim-7.dir-21 .img2.out { animation: warpOutR ${DUR}ms cubic-bezier(.14,1,.06,1) forwards; }
-        .anim-7.dir-21 .img1.in  { animation: warpInR  ${DUR}ms cubic-bezier(.14,1,.06,1) forwards; }
-        @keyframes warpOutL { 0%{opacity:1;transform:skewX(0) scale(1)} 30%{opacity:0} 100%{opacity:0;transform:translate3d(-980px,0,0) skewX(-18deg) scale(.78)} }
-        @keyframes warpInL  { 0%{opacity:0;transform:translate3d(980px,0,0) skewX(20deg) scale(1.24)} 12%{opacity:1} 100%{opacity:1;transform:translate3d(0,0,0) skewX(0) scale(1)} }
-        @keyframes warpOutR { 0%{opacity:1;transform:skewX(0) scale(1)} 30%{opacity:0} 100%{opacity:0;transform:translate3d(980px,0,0) skewX(18deg) scale(.78)} }
-        @keyframes warpInR  { 0%{opacity:0;transform:translate3d(-980px,0,0) skewX(-20deg) scale(1.24)} 12%{opacity:1} 100%{opacity:1;transform:translate3d(0,0,0) skewX(0) scale(1)} }
+        @keyframes tiltWrap { 0%%{transform:rotateX(0)} 45%%{transform:rotateX(3deg)} 100%%{transform:rotateX(0)} }
+        @keyframes tiltExit { 0%%{opacity:1;transform:rotateY(0deg) translateZ(0);filter:none} 40%%{opacity:.45} 100%%{opacity:0;transform:rotateY(-80deg) translateZ(-60px);filter:blur(1px)} }
+        @keyframes tiltEnter { 0%%{opacity:0;transform:rotateY(80deg) translateZ(-60px) scale(1.02);filter:blur(1.2px)} 25%%{opacity:1} 100%%{opacity:1;transform:rotateY(0) translateZ(0) scale(1);filter:none} }
 
-        /* 8) HYPER-COUNTDOWN */
-        .anim-8 .letter-wrap { animation: hyperTick ${DUR}ms ease-in-out both; }
-        .anim-8.dir-12 .img1.out, .anim-8.dir-21 .img2.out { animation: hyperOut ${DUR}ms ease-in-out forwards; }
-        .anim-8.dir-12 .img2.in,  .anim-8.dir-21 .img1.in  { animation: hyperIn  ${DUR}ms ease-in-out forwards; }
-        @keyframes hyperTick { 0%{transform:scale(1)} 20%{transform:scale(1.12) rotate(3.2deg)} 48%{transform:scale(.9) rotate(-3.2deg)} 76%{transform:scale(1.06)} 100%{transform:scale(1)} }
-        @keyframes hyperOut  { 0%{opacity:1;transform:rotateX(0) scale(1)} 28%{opacity:0} 100%{opacity:0;transform:rotateX(-340deg) scale(.74)} }
-        @keyframes hyperIn   { 0%{opacity:0;transform:rotateX(340deg) scale(1.26)} 10%{opacity:1} 100%{opacity:1;transform:rotateX(0) scale(1)} }
+        @keyframes glitchWrap { 0%%,100%%{transform:translate3d(0,0,0)} 20%%{transform:translate3d(-1px,1px,0)} 40%%{transform:translate3d(1px,-1px,0)} 60%%{transform:translate3d(-2px,0,0)} 80%%{transform:translate3d(2px,0,0)} }
+        @keyframes glitchExit { 0%%{opacity:1;transform:translate3d(0,0,0);filter:none} 20%%{filter:drop-shadow(-2px 0 #ff1266) drop-shadow(2px 0 #00f6ff)} 45%%{opacity:.6;transform:translate3d(-8px,-2px,0) skewX(-4deg);filter:drop-shadow(-6px 0 #ff1266) drop-shadow(6px 0 #00f6ff)} 70%%{opacity:.25;transform:translate3d(9px,2px,0) skewX(5deg) scale(.94);filter:drop-shadow(8px 0 rgba(0,246,255,.6))} 100%%{opacity:0;transform:translate3d(-18px,0,0) scale(.82);filter:blur(1.4px)} }
+        @keyframes glitchEnter { 0%%{opacity:0;transform:translate3d(16px,0,0) skewX(8deg) scale(1.18);filter:drop-shadow(6px 0 #00f6ff) drop-shadow(-6px 0 #ff1266)} 20%%{opacity:1;transform:translate3d(-4px,1px,0) skewX(-4deg)} 40%%{transform:translate3d(3px,-1px,0) skewX(2deg)} 65%%{transform:translate3d(-2px,0,0) skewX(-1deg)} 100%%{transform:translate3d(0,0,0) skewX(0) scale(1);filter:none} }
 
-        /* 9) SHOCKWAVE */
-        .anim-9 .letter-wrap { animation: shockWaveWrap ${DUR}ms cubic-bezier(.18,.98,.12,1) both; }
-        .anim-9.dir-12 .img1.out, .anim-9.dir-21 .img2.out { animation: shockOut ${DUR}ms cubic-bezier(.18,.98,.12,1) forwards; }
-        .anim-9.dir-12 .img2.in,  .anim-9.dir-21 .img1.in  { animation: shockIn  ${DUR}ms cubic-bezier(.18,.98,.12,1) forwards; }
-        @keyframes shockWaveWrap { 0%{filter:none} 28%{filter:drop-shadow(0 8px 22px rgba(0,0,0,.35))} 100%{filter:none} }
-        @keyframes shockOut { 0%{opacity:1;transform:scale(1)} 26%{opacity:0} 100%{opacity:0;transform:scale(.66) translate3d(0,-24px,0)} }
-        @keyframes shockIn  { 0%{opacity:0;transform:scale(1.46) translate3d(0,24px,0)} 12%{opacity:1} 100%{opacity:1;transform:scale(1) translate3d(0,0,0)} }
+        @keyframes warpWrap { 0%%{transform:scaleY(1)} 40%%{transform:scaleY(1.14)} 100%%{transform:scaleY(1)} }
+        @keyframes warpExit { 0%%{opacity:1;transform:scaleX(1) skewX(0);filter:none} 50%%{opacity:.4;transform:scaleX(.58) skewX(-12deg);filter:blur(.4px)} 100%%{opacity:0;transform:scaleX(.32) skewX(-18deg);filter:blur(1.2px)} }
+        @keyframes warpEnter { 0%%{opacity:0;transform:scaleX(1.8) skewX(18deg);filter:blur(1.4px)} 30%%{opacity:1} 70%%{transform:scaleX(1.04) skewX(-2deg)} 100%%{transform:scaleX(1) skewX(0);filter:none} }
 
-        /* 10) SUPER-SHOCKWAVE */
-        .anim-10 .letter-wrap { animation: superWrap ${DUR}ms cubic-bezier(.16,1,.08,1) both; }
-        .anim-10.dir-12 .img1.out, .anim-10.dir-21 .img2.out { animation: superOut ${DUR}ms cubic-bezier(.16,1,.08,1) forwards; }
-        .anim-10.dir-12 .img2.in,  .anim-10.dir-21 .img1.in  { animation: superIn  ${DUR}ms cubic-bezier(.16,1,.08,1) forwards; }
-        @keyframes superWrap { 0%{filter:none} 40%{filter:drop-shadow(0 10px 28px rgba(0,0,0,.38))} 100%{filter:none} }
-        @keyframes superOut { 0%{opacity:1;transform:translate3d(0,0,0) rotateZ(0) scale(1)} 28%{opacity:0} 100%{opacity:0;transform:translate3d(0,-120px,0) rotateZ(-24deg) scale(.68);filter:blur(1px)} }
-        @keyframes superIn  { 0%{opacity:0;transform:translate3d(0,120px,0) rotateZ(18deg) scale(1.34);filter:blur(.8px)} 12%{opacity:1} 100%{opacity:1;transform:translate3d(0,0,0) rotateZ(0) scale(1);filter:none} }
+        @keyframes smearWrap { 0%%{transform:skewX(0)} 50%%{transform:skewX(-6deg)} 100%%{transform:skewX(0)} }
+        @keyframes smearExit { 0%%{opacity:1;transform:translateX(0);filter:none} 50%%{opacity:.35;transform:translateX(-120px);filter:blur(6px) saturate(1.2)} 100%%{opacity:0;transform:translateX(-260px);filter:blur(12px) saturate(1.35)} }
+        @keyframes smearEnter { 0%%{opacity:0;transform:translateX(260px);filter:blur(12px) saturate(1.35)} 35%%{opacity:1} 70%%{filter:blur(3px)} 100%%{transform:translateX(0);filter:none} }
 
+        @keyframes rippleWrap { 0%%{transform:translateY(0)} 25%%{transform:translateY(-6px) rotate(-1.2deg)} 50%%{transform:translateY(4px) rotate(1deg)} 75%%{transform:translateY(-2px) rotate(-.6deg)} 100%%{transform:translateY(0)} }
+        @keyframes rippleExit { 0%%{opacity:1;transform:translateY(0) scale(1);filter:none} 40%%{opacity:.55;transform:translateY(-8px) scale(.92);filter:blur(.6px)} 100%%{opacity:0;transform:translateY(22px) scale(.75);filter:blur(1.4px)} }
+        @keyframes rippleEnter { 0%%{opacity:0;transform:translateY(-22px) scale(1.2);filter:blur(1.2px)} 30%%{opacity:1} 65%%{transform:translateY(4px) scale(.98)} 100%%{transform:translateY(0) scale(1);filter:none} }
         /* Accessibilité */
         @media (prefers-reduced-motion: reduce) {
           .animated-word * { animation: none !important; transition: none !important; }
