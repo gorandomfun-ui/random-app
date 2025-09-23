@@ -50,12 +50,12 @@ export default function LikesPage() {
   const theme = useMemo(() => THEMES[themeIdx], [themeIdx])
   const mainStyle = useMemo(() => {
     const base: CSSProperties = {
-      background: theme.bg,
+      background: '#191916',
       color: theme.cream,
     }
     ;(base as any)['--theme-cream'] = theme.cream
     return base
-  }, [theme.bg, theme.cream])
+  }, [theme.cream])
   const adFormat = useMemo(() => {
     if (vw >= 768) return { width: 728, height: 90 }
     return { width: 320, height: 50 }
@@ -114,7 +114,7 @@ export default function LikesPage() {
       <div
         className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
         style={{
-          height: `calc(${adFormat.height}px + env(safe-area-inset-bottom, 0px))`,
+          minHeight: adFormat.height,
           backgroundColor: '#ffffff',
           color: '#111',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -123,7 +123,7 @@ export default function LikesPage() {
       >
         <div
           className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
-          style={{ width: adFormat.width, height: adFormat.height }}
+          style={{ width: adFormat.width, minHeight: adFormat.height }}
         >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
         </div>

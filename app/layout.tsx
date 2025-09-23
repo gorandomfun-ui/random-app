@@ -6,6 +6,7 @@ import I18nProvider from '@/providers/I18nProvider'; // <- ton provider i18n (no
 import { CookieConsentProvider } from '@/components/CookieConsent'; // <- export nommé
 import CookieBanner from '@/components/CookieBanner';
 import CookieSettingsModal from '@/components/CookieSettingsModal';
+import { interTight, tomorrow } from './fonts';
 
 export const metadata = {
   title: 'random',
@@ -23,9 +24,13 @@ export default function RootLayout({
     (cookieStore.get('lang')?.value as 'en' | 'fr' | 'de' | 'jp') ?? 'en';
 
   return (
-    <html lang={lang} suppressHydrationWarning>
+    <html
+      lang={lang}
+      suppressHydrationWarning
+      className={`${interTight.variable} ${tomorrow.variable}`}
+    >
       {/* ⚠️ Remets ici exactement les classes que tu avais sur <body> si besoin */}
-      <body>
+      <body className={interTight.className}>
         {/* i18n DOIT envelopper tout ce qui consomme useI18n */}
         <I18nProvider initialLocale={lang}>
           {/* Le provider de consentement doit envelopper la bannière + modal + app */}

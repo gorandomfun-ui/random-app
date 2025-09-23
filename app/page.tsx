@@ -14,6 +14,7 @@ import { playRandom, playAgain } from '../utils/sound'
 import EncouragementLayer from '../components/EncouragementLayer'
 import { registerRandomClick } from '../lib/encourage/register'
 import MonoIcon from '../components/MonoIcon'
+import AnimatedButtonLabel from '../components/AnimatedButtonLabel'
 
 type ItemType = 'image'|'video'|'quote'|'joke'|'fact'|'web'
 
@@ -136,6 +137,8 @@ export default function HomePage() {
 
   const [currentItem, setCurrentItem] = useState<any>(null)
   const lang = (locale || 'en') as 'en'|'fr'|'de'|'jp'
+  const [isButtonBursting, setIsButtonBursting] = useState(false)
+  const burstMountRef = useRef(true)
 
   useEffect(() => {
     const t = randIdx(THEMES.length)
@@ -195,6 +198,16 @@ export default function HomePage() {
       resizeObs?.disconnect()
     }
   }, [])
+
+  useEffect(() => {
+    if (burstMountRef.current) {
+      burstMountRef.current = false
+      return
+    }
+    setIsButtonBursting(true)
+    const timer = setTimeout(() => setIsButtonBursting(false), 520)
+    return () => clearTimeout(timer)
+  }, [trigger])
 
   // séquence filtrée (on conserve l'ordre)
   const filteredSequence = useMemo<ItemType[]>(() => {
@@ -330,21 +343,27 @@ export default function HomePage() {
           >
             <button
               onClick={startRandom}
-              className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase"
+              className={`w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase flex items-center justify-center ${isButtonBursting ? 'btn-energized' : ''}`}
               style={{
                 backgroundColor: theme.text,
                 color: theme.cream,
-                fontFamily: "'Tomorrow', sans-serif",
+                fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
                 fontWeight: 700,
               }}
             >
-              {dict?.hero?.startButton ?? 'GO RANDOM'}
+              <span className="sr-only">{dict?.hero?.startButton ?? 'GO RANDOM'}</span>
+              <AnimatedButtonLabel
+                text={dict?.hero?.startButton ?? 'GO RANDOM'}
+                color={theme.cream}
+                trigger={trigger}
+                toSecond={isSecond}
+              />
             </button>
           </div>
 
           <p
             className="mt-4 font-tomorrow font-bold text-lg md:text-xl leading-snug"
-            style={{ color: theme.text, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
+            style={{ color: theme.text, fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}
           >
             {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
             {(dict?.hero?.tagline2 ?? 'NO NEWS, NO REASON, NO SENSE.')}<br />
@@ -356,28 +375,28 @@ export default function HomePage() {
             className="mt-6 flex flex-col items-center font-inter font-semibold text-base md:text-lg tracking-tight"
             style={{ color: theme.cream, letterSpacing: '-0.01em' }}
           >
-            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 md:gap-x-3">
+            <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 md:gap-x-2">
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/image.svg" color={theme.cream} size={20} /> {dict?.nav?.images ?? 'images'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/Video.svg" color={theme.cream} size={20} /> {dict?.nav?.videos ?? 'videos'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/web.svg" color={theme.cream} size={20} /> {dict?.nav?.web ?? 'web'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/quote.svg" color={theme.cream} size={20} /> {dict?.nav?.quotes ?? 'quotes'}
               </span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 md:gap-x-3">
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 md:gap-x-2">
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/joke.svg" color={theme.cream} size={20} /> {dict?.nav?.jokes ?? 'funny jokes'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {dict?.nav?.facts ?? 'facts'}
               </span>

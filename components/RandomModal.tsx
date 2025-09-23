@@ -5,6 +5,7 @@ import { useI18n } from '../providers/I18nProvider'
 import MonoIcon from './MonoIcon'
 import LogoAnimated from './LogoAnimated'
 import { addLike, isLiked, removeLike } from '../utils/likes'
+import AnimatedButtonLabel from './AnimatedButtonLabel'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 type ItemType = 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'
@@ -322,6 +323,8 @@ export default function RandomModal({
   const [shareOpen, setShareOpen] = useState(false)
   const [shareAbove, setShareAbove] = useState(false)
   const shareBtnRef = useRef<HTMLButtonElement | null>(null)
+  const [buttonBurst, setButtonBurst] = useState(false)
+  const burstRef = useRef(true)
 
   const effectiveTypes = useMemo<ItemType[]>(
     () => (types && types.length ? types : ['image', 'quote', 'fact']),
@@ -371,6 +374,24 @@ export default function RandomModal({
     if (current) setLiked(isLiked(current))
     else setLiked(false)
   }, [forceItem, item, open])
+
+  useEffect(() => {
+    if (!open) {
+      burstRef.current = true
+      setButtonBurst(false)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    if (burstRef.current) {
+      burstRef.current = false
+      return
+    }
+    setButtonBurst(true)
+    const timer = setTimeout(() => setButtonBurst(false), 520)
+    return () => clearTimeout(timer)
+  }, [trigger, open])
 
   // Position dynamique du menu Share
   useEffect(() => {
@@ -516,16 +537,22 @@ export default function RandomModal({
 
             <div className="flex justify-center">
               <button
-                className="px-10 md:px-14 py-2 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase whitespace-nowrap"
+                className={`px-10 md:px-14 py-2 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase whitespace-nowrap flex items-center justify-center ${buttonBurst ? 'btn-energized' : ''}`}
                 style={{
                   backgroundColor: theme.text,
                   color: theme.cream,
-                  fontFamily: "'Tomorrow', sans-serif",
+                  fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
                   fontWeight: 700,
                 }}
                 onClick={handleRandomAgain}
               >
-                {dict?.modal?.randomAgain ?? 'RANDOM AGAIN'}
+                <span className="sr-only">{dict?.modal?.randomAgain ?? 'RANDOM AGAIN'}</span>
+                <AnimatedButtonLabel
+                  text={dict?.modal?.randomAgain ?? 'RANDOM AGAIN'}
+                  color={theme.cream}
+                  trigger={trigger}
+                  toSecond={isSecond}
+                />
               </button>
             </div>
 
