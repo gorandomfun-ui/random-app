@@ -52,9 +52,9 @@ function getExternalThemes(): Theme[] | null {
 const FALLBACK_THEMES: Theme[] = [
   { bg:'#65002d', text:'#00b176' },
   { bg:'#191916', text:'#d90845' },
-  { bg:'#08203d', text:'#0078a4' },
+  { bg:'#051d37', text:'#e5972b' },
   { bg:'#0c390d', text:'#ff978f' },
-  { bg:'#4ecc7f', text:'#007861' },
+  { bg:'#0fc55d', text:'#3d42cc' },
   { bg:'#ff978f', text:'#463b46' },
 ]
 const pickTheme = (): Theme => {

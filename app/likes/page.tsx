@@ -1,18 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import LikesGrid from '../../components/LikesGrid'
 import { LikeItem, getAll, clearExpired } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
+import MonoIcon from '../../components/MonoIcon'
 
 const THEMES = [
-  { bg:'#65002d', deep:'#8c0040', cream:'#FEFBE8', text:'#00b176' },
-  { bg:'#191916', deep:'#2d2d27', cream:'#fff7e2', text:'#d90845' },
-  { bg:'#08203d', deep:'#0f2f53', cream:'#fff6ee', text:'#0078a4' },
-  { bg:'#0c390d', deep:'#145b16', cream:'#eefdf3', text:'#ff978f' },
-  { bg:'#4ecc7f', deep:'#2c8a56', cream:'#f7efff', text:'#007861' },
+  { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
+  { bg:'#191916', deep:'#2e2e28', cream:'#fff7e2', text:'#d90845' },
+  { bg:'#051d37', deep:'#082f4b', cream:'#fff6ee', text:'#e5972b' },
+  { bg:'#0c390d', deep:'#155a1a', cream:'#eefdf3', text:'#ff978f' },
+  { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
   { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
@@ -48,6 +48,14 @@ export default function LikesPage() {
   }, [])
 
   const theme = useMemo(() => THEMES[themeIdx], [themeIdx])
+  const mainStyle = useMemo(() => {
+    const base: CSSProperties = {
+      background: theme.bg,
+      color: theme.cream,
+    }
+    ;(base as any)['--theme-cream'] = theme.cream
+    return base
+  }, [theme.bg, theme.cream])
   const adFormat = useMemo(() => {
     if (vw >= 768) return { width: 728, height: 90 }
     return { width: 320, height: 50 }
@@ -64,7 +72,7 @@ export default function LikesPage() {
   return (
     <main
       className="min-h-screen pb-[calc(var(--ad-bar-height,0px)+24px)]"
-      style={{ background: theme.bg, color: theme.cream }}
+      style={mainStyle}
     >
       {/* Header */}
       <header className="relative px-4 pt-4 pb-2">
@@ -75,7 +83,7 @@ export default function LikesPage() {
           className="absolute left-4 top-7 inline-flex items-center gap-2 rounded-xl px-3 py-2 hover:opacity-90 transition"
           style={{ fontFamily: 'var(--font-inter-tight)', fontWeight: 700 }} // Inter Tight Bold
         >
-          <Image src="/icons/return.svg" alt="" width={32} height={32} priority />
+          <MonoIcon src="/icons/return.svg" color={theme.cream} size={32} />
           {/*<span>Home</span>*/}
         </Link>
 
@@ -105,11 +113,17 @@ export default function LikesPage() {
 
       <div
         className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
-        style={{ minHeight: adFormat.height, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 60 }}
+        style={{
+          height: `calc(${adFormat.height}px + env(safe-area-inset-bottom, 0px))`,
+          backgroundColor: '#ffffff',
+          color: '#111',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          zIndex: 60,
+        }}
       >
         <div
           className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
-          style={{ width: adFormat.width, minHeight: adFormat.height }}
+          style={{ width: adFormat.width, height: adFormat.height }}
         >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
         </div>

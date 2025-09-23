@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, type RefObject, type CSSProperties } from 'react'
 import LogoAnimated from '../components/LogoAnimated'
 import RandomModal from '../components/RandomModal'
 import LanguageSwitcher from '../components/LanguageSwitcher'
@@ -13,15 +13,16 @@ import { fetchRandom } from '../lib/api'
 import { playRandom, playAgain } from '../utils/sound'
 import EncouragementLayer from '../components/EncouragementLayer'
 import { registerRandomClick } from '../lib/encourage/register'
+import MonoIcon from '../components/MonoIcon'
 
 type ItemType = 'image'|'video'|'quote'|'joke'|'fact'|'web'
 
 const THEMES = [
-  { bg:'#65002d', deep:'#8c0040', cream:'#FEFBE8', text:'#00b176' },
-  { bg:'#191916', deep:'#2d2d27', cream:'#fff7e2', text:'#d90845' },
-  { bg:'#08203d', deep:'#0f2f53', cream:'#fff6ee', text:'#0078a4' },
-  { bg:'#0c390d', deep:'#145b16', cream:'#eefdf3', text:'#ff978f' },
-  { bg:'#4ecc7f', deep:'#2c8a56', cream:'#f7efff', text:'#007861' },
+  { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
+  { bg:'#191916', deep:'#2e2e28', cream:'#fff7e2', text:'#d90845' },
+  { bg:'#051d37', deep:'#082f4b', cream:'#fff6ee', text:'#e5972b' },
+  { bg:'#0c390d', deep:'#155a1a', cream:'#eefdf3', text:'#ff978f' },
+  { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
   { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
@@ -37,26 +38,69 @@ const randDiffIdx = (max: number, not: number) => {
 }
 
 /* ---------------------- hook: largeur “idéale” du bouton ---------------------- */
-function useButtonWidth(heroRef: React.RefObject<HTMLElement | null>) {
+function useButtonWidth(
+  heroRef: RefObject<HTMLElement | null>,
+  logoRef: RefObject<HTMLDivElement | null>
+) {
   const [w, setW] = useState<number | null>(null)
 
   useLayoutEffect(() => {
-    const calc = () => {
-      const el = heroRef.current
-      if (!el) return
-      const rect = el.getBoundingClientRect()
+    if (typeof window === 'undefined') return
 
-      // Heuristique “2 lignes” : ~66% de la largeur visuelle du titre,
-      // plafonnée pour éviter le bouton géant au 1er paint.
-      const ideal = Math.min(rect.width * 0.66, 880)
-      const clamped = Math.max(280, Math.round(ideal))
-      setW(clamped)
+    let frame: number | null = null
+
+    const measure = () => {
+      frame = null
+      const heroEl = heroRef.current
+      const logoEl = logoRef.current
+      const viewportW = window.innerWidth
+
+      let next: number | null = null
+
+      if (logoEl && viewportW < 768) {
+        const { width } = logoEl.getBoundingClientRect()
+        if (width > 0) next = Math.round(width + 6)
+      }
+
+      if (next == null) {
+        if (heroEl) {
+          const rect = heroEl.getBoundingClientRect()
+
+          // Heuristique “2 lignes” : ~66% de la largeur visuelle du titre,
+          // plafonnée pour éviter le bouton géant au 1er paint.
+          const ideal = Math.min(rect.width * 0.66, 880)
+          next = Math.max(280, Math.round(ideal))
+        } else {
+          next = 280
+        }
+      }
+
+      setW(next)
     }
 
-    calc()
-    window.addEventListener('resize', calc)
-    return () => window.removeEventListener('resize', calc)
-  }, [heroRef])
+    const schedule = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    }
+
+    schedule()
+    window.addEventListener('resize', schedule)
+    window.addEventListener('orientationchange', schedule)
+    window.visualViewport?.addEventListener('resize', schedule)
+    const logoNode = logoRef.current
+    const ro = logoNode && 'ResizeObserver' in window
+      ? new ResizeObserver(() => schedule())
+      : null
+    if (ro && logoNode) ro.observe(logoNode)
+
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('orientationchange', schedule)
+      window.visualViewport?.removeEventListener('resize', schedule)
+      ro?.disconnect()
+    }
+  }, [heroRef, logoRef])
 
   return w
 }
@@ -70,6 +114,7 @@ export default function HomePage() {
 
   const headerRef = useRef<HTMLElement | null>(null)
   const heroRef = useRef<HTMLElement | null>(null)
+  const logoRef = useRef<HTMLDivElement | null>(null)
   const footerRef = useRef<HTMLElement | null>(null)
   const adRef = useRef<HTMLDivElement | null>(null)
 
@@ -100,6 +145,15 @@ export default function HomePage() {
 
   const theme = THEMES[themeIdx]
   const modalTheme = THEMES[modalThemeIdx]
+
+  const mainStyle = useMemo(() => {
+    const base: CSSProperties = {
+      backgroundColor: theme.bg,
+      color: theme.cream,
+    }
+    ;(base as any)['--theme-cream'] = theme.cream
+    return base
+  }, [theme.bg, theme.cream])
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') return
@@ -217,7 +271,7 @@ export default function HomePage() {
   }
 
   /* ---------- largeur bouton : mesure du conteneur du logo ---------- */
-  const targetBtnW = useButtonWidth(heroRef)
+  const targetBtnW = useButtonWidth(heroRef, logoRef)
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -229,18 +283,18 @@ export default function HomePage() {
 
   return (
      <>
-    <main className="min-h-screen flex flex-col" style={{ backgroundColor: theme.bg, color: theme.cream }}>
+    <main className="min-h-screen flex flex-col" style={mainStyle}>
       {/* Header */}
       <header ref={headerRef} className="relative flex items-center justify-between px-4 pt-4 pb-2" style={{ height: HEADER_H }}>
         <LikesMenu theme={theme} />
 
         <button className="absolute left-1/2 -translate-x-1/2" onClick={() => setIsShuffleOpen(true)} aria-label={dict?.shuffle?.title ?? 'Shuffle'}>
-          <img src="/icons/Shuffle.svg" alt="shuffle" className="h-7 w-7" />
+          <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
         </button>
 
         <span className="text-xs font-bold flex items-center" style={{ color: theme.text }}>
-  V 0.1.<LanguageSwitcher />
-</span>
+          V 0.1.<LanguageSwitcher />
+        </span>
       </header>
 
       {/* Centre */}
@@ -257,16 +311,17 @@ export default function HomePage() {
           className="flex flex-col items-center w-full"
           style={{ transform: 'translateY(calc(-1 * clamp(36px, 10vh, 160px)))' }}
         >
-          <LogoAnimated
-            className="mx-auto"
-            trigger={trigger}
-            toSecond={isSecond}
-            twoLineOnMobile
-            vhMobile={18}
-            vhDesktop={40}
-            gapMobile={5}
-            gapDesktop={5}
-          />
+          <div ref={logoRef} className="mx-auto">
+            <LogoAnimated
+              trigger={trigger}
+              toSecond={isSecond}
+              twoLineOnMobile
+              vhMobile={18}
+              vhDesktop={40}
+              gapMobile={5}
+              gapDesktop={5}
+            />
+          </div>
 
           {/* bouton calé “2 lignes” — fallback CSS pour le premier paint */}
           <div
@@ -278,7 +333,7 @@ export default function HomePage() {
               className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase"
               style={{
                 backgroundColor: theme.text,
-                color: theme.bg,
+                color: theme.cream,
                 fontFamily: "'Tomorrow', sans-serif",
                 fontWeight: 700,
               }}
@@ -298,22 +353,34 @@ export default function HomePage() {
 
           {/* Descriptif 4 + 2 */}
           <div
-            className="mt-6 flex flex-col items-center font-inter font-semibold text-sm md:text-base"
-            style={{ color: '#ffffff' }}
+            className="mt-6 flex flex-col items-center font-inter font-semibold text-base md:text-lg tracking-tight"
+            style={{ color: theme.cream, letterSpacing: '-0.01em' }}
           >
-            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 md:gap-x-4">
-              <span className="flex items-center gap-1.5"><img src="/icons/image.svg" className="h-5 w-5" alt="" /> {dict?.nav?.images ?? 'images'}</span>
-              <span className="opacity-50 select-none">/</span>
-              <span className="flex items-center gap-1.5"><img src="/icons/Video.svg" className="h-5 w-5" alt="" /> {dict?.nav?.videos ?? 'videos'}</span>
-              <span className="opacity-50 select-none">/</span>
-              <span className="flex items-center gap-1.5"><img src="/icons/web.svg" className="h-5 w-5" alt="" /> {dict?.nav?.web ?? 'web'}</span>
-              <span className="opacity-50 select-none">/</span>
-              <span className="flex items-center gap-1.5"><img src="/icons/quote.svg" className="h-5 w-5" alt="" /> {dict?.nav?.quotes ?? 'quotes'}</span>
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 md:gap-x-3">
+              <span className="flex items-center gap-1 leading-tight">
+                <MonoIcon src="/icons/image.svg" color={theme.cream} size={20} /> {dict?.nav?.images ?? 'images'}
+              </span>
+              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="flex items-center gap-1 leading-tight">
+                <MonoIcon src="/icons/Video.svg" color={theme.cream} size={20} /> {dict?.nav?.videos ?? 'videos'}
+              </span>
+              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="flex items-center gap-1 leading-tight">
+                <MonoIcon src="/icons/web.svg" color={theme.cream} size={20} /> {dict?.nav?.web ?? 'web'}
+              </span>
+              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="flex items-center gap-1 leading-tight">
+                <MonoIcon src="/icons/quote.svg" color={theme.cream} size={20} /> {dict?.nav?.quotes ?? 'quotes'}
+              </span>
             </div>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 md:gap-x-4">
-              <span className="flex items-center gap-1.5"><img src="/icons/joke.svg" className="h-5 w-5" alt="" /> {dict?.nav?.jokes ?? 'funny jokes'}</span>
-              <span className="opacity-50 select-none">/</span>
-              <span className="flex items-center gap-1.5"><img src="/icons/fact.svg" className="h-5 w-5" alt="" /> {dict?.nav?.facts ?? 'facts'}</span>
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 md:gap-x-3">
+              <span className="flex items-center gap-1 leading-tight">
+                <MonoIcon src="/icons/joke.svg" color={theme.cream} size={20} /> {dict?.nav?.jokes ?? 'funny jokes'}
+              </span>
+              <span className="opacity-70 select-none text-base md:text-lg mx-0.5 leading-none">/</span>
+              <span className="flex items-center gap-1 leading-tight">
+                <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {dict?.nav?.facts ?? 'facts'}
+              </span>
             </div>
           </div>
         </div>
@@ -324,11 +391,11 @@ export default function HomePage() {
         <div className="w-full px-4 h-full flex items-center justify-between">
           <SocialPopover theme={theme} />
           <button className="flex items-center gap-2" onClick={() => setIsLegalOpen(true)}>
-            <img src="/icons/info.svg" className="h-5 w-5" alt="" />
+            <MonoIcon src="/icons/info.svg" color={theme.cream} size={20} />
             <span className="font-inter font-semibold">{dict?.footer?.legal ?? 'Legal notice.'}</span>
           </button>
           <button className="flex items-center gap-2" onClick={shareFromFooter}>
-            <img src="/icons/share.svg" className="h-5 w-5" alt="" />
+            <MonoIcon src="/icons/share.svg" color={theme.cream} size={20} />
             <span className="font-inter font-semibold">{dict?.footer?.share ?? 'share'}</span>
           </button>
         </div>

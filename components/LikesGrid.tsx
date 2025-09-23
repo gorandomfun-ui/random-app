@@ -10,11 +10,11 @@ type Props = {
 
 /** Palette fallback si l'item n'a pas de theme sauvegardé */
 const PALETTE = [
-  { bg:'#65002d', deep:'#8c0040', cream:'#FEFBE8', text:'#00b176' },
-  { bg:'#191916', deep:'#2d2d27', cream:'#fff7e2', text:'#d90845' },
-  { bg:'#08203d', deep:'#0f2f53', cream:'#fff6ee', text:'#0078a4' },
-  { bg:'#0c390d', deep:'#145b16', cream:'#eefdf3', text:'#ff978f' },
-  { bg:'#4ecc7f', deep:'#2c8a56', cream:'#f7efff', text:'#007861' },
+  { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
+  { bg:'#191916', deep:'#2e2e28', cream:'#fff7e2', text:'#d90845' },
+  { bg:'#051d37', deep:'#082f4b', cream:'#fff6ee', text:'#e5972b' },
+  { bg:'#0c390d', deep:'#155a1a', cream:'#eefdf3', text:'#ff978f' },
+  { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
   { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
