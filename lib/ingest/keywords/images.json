@@ -1,10 +1,49 @@
 {
   "photo": [
     "weird", "vintage", "retro", "odd", "obscure", "toy", "street", "festival",
-    "garage", "museum", "zine", "brutalist", "y2k", "analog", "lofi"
+    "garage", "museum", "zine", "brutalist", "y2k", "analog", "lofi",
+    "saturated", "expired film", "lomography", "polaroid", "pinhole",
+    "cyanotype", "wet plate", "infrared", "x-ray", "microscope",
+    "telescope", "aurora", "storm chase", "rain puddle", "neon night",
+    "arcade neon", "bowling alley", "roller rink", "library stacks",
+    "basement lab", "attic treasure", "flea market", "thrift store",
+    "odd museum", "taxidermy", "curiosity cabinet", "antique shop",
+    "village festival", "carnival ride", "parade float", "mascot suit",
+    "street food cart", "night market", "bodega cat", "laundromat",
+    "phone booth", "payphone", "subway musician", "busker portrait",
+    "tattoo flash", "sketchbook", "blueprint", "prototype",
+    "miniature world", "dollhouse", "model train", "action figure",
+    "retro computer", "crt monitor", "workshop bench", "maker space",
+    "kitchen experiment", "old cookbook", "vintage appliance",
+    "space age", "atomic age", "midcentury", "motels",
+    "roadside diner", "ghost town", "desert highway", "lighthouse",
+    "forest shrine", "mountain cabin", "treehouse", "urban farm",
+    "aquarium", "terrarium", "specimen jar", "meteorite",
+    "botanical illustration", "seed packet", "herbarium",
+    "science classroom", "planetarium", "observatory",
+    "abandoned theater", "faded billboard", "graffiti", "paste-up",
+    "street collage", "poster wall", "flyer", "ticket stub"
   ],
   "gif": [
     "reaction", "fail", "dance", "facepalm", "meme", "weirdcore", "glitch",
-    "vaporwave", "awkward", "party", "blink", "spin", "retro gif", "vhs glitch"
+    "vaporwave", "awkward", "party", "blink", "spin", "retro gif", "vhs glitch",
+    "ascii animation", "pixel art loop", "sprite animation", "webring banner",
+    "under construction", "cursor trail", "sparkle", "kawaii wobble",
+    "desktop pet", "tamagochi", "clippy", "screen saver",
+    "acid trip", "psychedelic", "optical illusion", "noise loop",
+    "datamosh", "scanline", "crt flicker", "teletext",
+    "weather radar", "storm swirl", "satellite", "lava lamp",
+    "kitchen mishap", "science experiment", "slow zoom",
+    "comic panel", "manga reaction", "anime blink",
+    "puppet wink", "mascot dance", "roller rink", "rollercoaster POV",
+    "pinball lights", "arcade attract", "flipbook",
+    "stop motion", "lego loop", "toy theatre",
+    "cat zoomies", "bird head tilt", "otter spin",
+    "capybara chill", "frog vibe", "hedgehog", "raccoon meme",
+    "bubble machine", "confetti", "sparkler", "fire mountain",
+    "neon sign flicker", "synthwave grid", "lofi rain",
+    "pixel sunset", "wingdings", "emoji rain", "owo text",
+    "petrochemical flame", "plasma ball", "tesla coil",
+    "oscilloscope", "waveform", "vinyl spin", "cassette wobble"
   ]
 }

@@ -7,6 +7,35 @@ import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
 
+const UA = { 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
+
+async function fetchJson(url: string, timeoutMs = 10000) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { cache: 'no-store', headers: UA, signal: ctrl.signal })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function sampleArray<T>(arr: T[], max: number): T[] {
+  if (arr.length <= max) return arr.slice()
+  const out: T[] = []
+  const used = new Set<number>()
+  while (out.length < max && used.size < arr.length) {
+    const idx = Math.floor(Math.random() * arr.length)
+    if (used.has(idx)) continue
+    used.add(idx)
+    out.push(arr[idx]!)
+  }
+  return out
+}
+
 /* ============== DB ============== */
 let _db: Db | null = null
 async function getDbSafe(): Promise<Db | null> {
@@ -49,8 +78,6 @@ async function upsertManyQuotes(rows: Omit<QuoteDoc,'createdAt'|'updatedAt'>[]) 
 }
 
 /* ============= Providers ============= */
-const UA = { 'User-Agent': 'RandomAppBot/1.0 (+https://example.com)' }
-
 async function scrapeTypeFit() {
   const url = 'https://type.fit/api/quotes'
   const out: Omit<QuoteDoc,'createdAt'|'updatedAt'>[] = []
@@ -65,6 +92,72 @@ async function scrapeTypeFit() {
     }
   } catch {}
   return out
+}
+
+async function fetchGithubQuotesDatabase(limit: number) {
+  const url = 'https://raw.githubusercontent.com/JamesFT/Database-Quotes-JSON/master/quotes.json'
+  const arr: any[] | null = await fetchJson(url, 15000)
+  if (!Array.isArray(arr)) return []
+  const mapped = arr
+    .map((entry) => {
+      const text = norm(entry?.quote || entry?.text || entry?.quoteText || entry?.en || '')
+      if (!text) return null
+      const author = norm(entry?.author || entry?.quoteAuthor || entry?.quoteAuthorName || '')
+      return {
+        type: 'quote' as const,
+        text,
+        author: author || undefined,
+        source: { name: 'github:quotes-database', url },
+        provider: 'github-quotes-database',
+        hash: quoteHash(text, author),
+      }
+    })
+    .filter(Boolean) as Omit<QuoteDoc, 'createdAt' | 'updatedAt'>[]
+  return sampleArray(mapped, Math.min(limit, 400))
+}
+
+async function fetchGithubProgrammingQuotes(limit: number) {
+  const url = 'https://raw.githubusercontent.com/skolakoda/programming-quotes-api/master/quotes.json'
+  const arr: any[] | null = await fetchJson(url, 15000)
+  if (!Array.isArray(arr)) return []
+  const mapped = arr
+    .map((entry) => {
+      const text = norm(entry?.en || entry?.quote || entry?.text || '')
+      if (!text) return null
+      const author = norm(entry?.author || '')
+      return {
+        type: 'quote' as const,
+        text,
+        author: author || undefined,
+        source: { name: 'github:programming-quotes', url },
+        provider: 'github-programming-quotes',
+        hash: quoteHash(text, author),
+      }
+    })
+    .filter(Boolean) as Omit<QuoteDoc, 'createdAt' | 'updatedAt'>[]
+  return sampleArray(mapped, Math.min(limit, 200))
+}
+
+async function fetchGithubFamousQuotes(limit: number) {
+  const url = 'https://raw.githubusercontent.com/prairieworks/Famous-Quotes/master/famous-quotes.json'
+  const arr: any[] | null = await fetchJson(url, 15000)
+  if (!Array.isArray(arr)) return []
+  const mapped = arr
+    .map((entry) => {
+      const text = norm(entry?.quote || entry?.text || '')
+      if (!text) return null
+      const author = norm(entry?.author || entry?.by || '')
+      return {
+        type: 'quote' as const,
+        text,
+        author: author || undefined,
+        source: { name: 'github:famous-quotes', url },
+        provider: 'github-famous-quotes',
+        hash: quoteHash(text, author),
+      }
+    })
+    .filter(Boolean) as Omit<QuoteDoc, 'createdAt' | 'updatedAt'>[]
+  return sampleArray(mapped, Math.min(limit, 200))
 }
 
 async function scrapeToScrape(pages = 3) {
@@ -113,13 +206,17 @@ export async function GET(req: NextRequest) {
   }
 
   const pages = Math.max(1, Math.min(20, Number(req.nextUrl.searchParams.get('pages') || 3)))
-  const sites = (req.nextUrl.searchParams.get('sites') || 'toscrape,typefit,passiton')
+  const sites = (req.nextUrl.searchParams.get('sites') || 'toscrape,typefit,passiton,github-db,github-programming,github-famous')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 
   let collected: Omit<QuoteDoc,'createdAt'|'updatedAt'>[] = []
   try { if (sites.includes('typefit'))  collected = collected.concat(await scrapeTypeFit()) } catch {}
   try { if (sites.includes('toscrape')) collected = collected.concat(await scrapeToScrape(pages)) } catch {}
   try { if (sites.includes('passiton')) collected = collected.concat(await scrapePassItOn(Math.min(5,pages))) } catch {}
+  const githubTarget = Math.max(20, Math.ceil(180 / Math.max(1, sites.length)))
+  try { if (sites.includes('github-db')) collected = collected.concat(await fetchGithubQuotesDatabase(githubTarget)) } catch {}
+  try { if (sites.includes('github-programming')) collected = collected.concat(await fetchGithubProgrammingQuotes(githubTarget)) } catch {}
+  try { if (sites.includes('github-famous')) collected = collected.concat(await fetchGithubFamousQuotes(githubTarget)) } catch {}
 
   // de-dup
   const map = new Map<string, Omit<QuoteDoc,'createdAt'|'updatedAt'>>()

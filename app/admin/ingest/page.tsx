@@ -43,6 +43,12 @@ const VIDEO_PRESETS: Record<string, string[]> = {
   Nightlife_style: ['fashion runway archive','club dance freestyle','voguing ballroom battle','retro burlesque performance','sensual perfume commercial'],
   Curious_docs: ['mini documentary odd subject','abandoned place tour','bizarre invention demo','strange sport highlight','vintage travel diary'],
   Craft_relax: ['satisfying restoration','miniature build timelapse','pottery wheel closeup','soap carving asmr','handmade jewelry making'],
+  Archive_oddities: ['public access tv segment','lost infomercial','1980s mall commercial','vhs travelogue','safety training film'],
+  Weird_sports: ['extreme ironing competition','soapbox derby cam','underwater hockey match','broom ball practice','roller disco competition'],
+  Tech_core: ['retro computer tutorial','dialup modem demo','lan party timelapse','demo disk showcase','operating system tour'],
+  Creature_feature: ['animal enrichment diy','zoo keeper vlog','backyard wildlife cam','urban nature walk','strange pet talent show'],
+  Archive_musicless: ['vintage cooking show','retro craft lesson','household science experiment','1950s etiquette film','1960s classroom experiment'],
+  Travel_timewarp: ['ghost town walkthrough','neon motel sign tour','roadside attraction archive','lighthouse log film','nostalgic train journey']
 }
 const WEB_PRESETS: Record<string, string[]> = {
   Oddities: ['weird interactive site','surreal net art experiment','retro flash toy','bizarre web generator','strange online museum'],
@@ -51,6 +57,10 @@ const WEB_PRESETS: Record<string, string[]> = {
   After_dark: ['retro dating advice column','boudoir magazine article','sensual storytelling blog','late night relationship tips','vintage glamour archive'],
   Playful_toys: ['quirky quiz website','nostalgic web game','creative puzzle toy','ascii art playground','odd meme generator'],
   Hidden_travel: ['underground city guide','odd museum list','subculture event calendar','retro travel diary','secret bar blog'],
+  Nostalgia_tech: ['walkman repair log','minidisc appreciation','dialup memory lane','bbs archive','screensaver gallery'],
+  Collectors_den: ['flashlight enthusiast site','pen nib collection','typewriter repair diary','vintage eyewear boutique','lantern restoration'],
+  DIY_workshop: ['small engine repair tips','sewing machine manual','woodcarving pattern vault','home lapidary guide','ceramic glaze lab'],
+  Rural_life: ['village cheese cooperative','mountain beekeeping diary','lighthouse keeper log','farmers market directory','folk craft tutorial']
 }
 const QUOTE_PRESETS: Record<string, string[]> = {
   Generiques: ['typefit','toscrape','passiton'],

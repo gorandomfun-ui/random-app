@@ -32,6 +32,136 @@ const isLimitedAuthor = (author?: string | null) => {
   return LIMITED_AUTHORS.some(name => normalized.includes(name))
 }
 
+const trimText = (value?: string | null) => (value || '').trim()
+
+const recentJokes: string[] = []
+function markRecentJoke(text?: string | null) {
+  const t = trimText(text)
+  if (!t) return
+  const idx = recentJokes.indexOf(t)
+  if (idx >= 0) recentJokes.splice(idx, 1)
+  recentJokes.push(t)
+  if (recentJokes.length > 60) recentJokes.shift()
+}
+
+async function sampleJokeFromCache(): Promise<any | null> {
+  const db = await getDbSafe()
+  if (!db) return null
+  try {
+    const arr = await db.collection('items').aggregate([
+      { $match: { type: 'joke', text: { $exists: true, $nin: recentJokes, $ne: '' } } },
+      { $sort: { lastShownAt: 1, updatedAt: -1 } },
+      { $limit: 150 },
+      { $sample: { size: 1 } },
+    ]).toArray()
+    return arr[0] || null
+  } catch {
+    return null
+  }
+}
+
+function mapJokeDoc(doc: any): { item: any; key: Record<string, any> } | null {
+  const text = trimText(doc?.text)
+  if (!text) return null
+  const source = doc?.source || { name: doc?.provider || 'cache', url: doc?.url || '' }
+  return {
+    item: { type: 'joke' as const, text, source },
+    key: { text },
+  }
+}
+
+const recentFacts: string[] = []
+function markRecentFact(text?: string | null) {
+  const t = trimText(text)
+  if (!t) return
+  const idx = recentFacts.indexOf(t)
+  if (idx >= 0) recentFacts.splice(idx, 1)
+  recentFacts.push(t)
+  if (recentFacts.length > 80) recentFacts.shift()
+}
+
+async function sampleFactFromCache(): Promise<any | null> {
+  const db = await getDbSafe()
+  if (!db) return null
+  try {
+    const arr = await db.collection('items').aggregate([
+      { $match: { type: 'fact', text: { $exists: true, $nin: recentFacts, $ne: '' } } },
+      { $sort: { lastShownAt: 1, updatedAt: -1 } },
+      { $limit: 150 },
+      { $sample: { size: 1 } },
+    ]).toArray()
+    return arr[0] || null
+  } catch {
+    return null
+  }
+}
+
+function mapFactDoc(doc: any): { item: any; key: Record<string, any> } | null {
+  const text = trimText(doc?.text)
+  if (!text) return null
+  const source = doc?.source || { name: doc?.provider || 'cache', url: doc?.url || '' }
+  return {
+    item: { type: 'fact' as const, text, source },
+    key: { text },
+  }
+}
+
+const recentVideoProviders: string[] = []
+function markRecentVideoProvider(provider?: string | null) {
+  const key = trimText(provider).toLowerCase()
+  if (!key) return
+  const idx = recentVideoProviders.indexOf(key)
+  if (idx >= 0) recentVideoProviders.splice(idx, 1)
+  recentVideoProviders.push(key)
+  if (recentVideoProviders.length > 12) recentVideoProviders.shift()
+}
+
+async function sampleVideoFromCache(options?: { preferArchive?: boolean }): Promise<any | null> {
+  const db = await getDbSafe()
+  if (!db) return null
+  try {
+    if (options?.preferArchive) {
+      const arr = await db.collection('items').aggregate([
+        { $match: { type: 'video', provider: 'archive.org' } },
+        { $sort: { lastShownAt: 1, updatedAt: -1 } },
+        { $limit: 150 },
+        { $sample: { size: 1 } },
+      ]).toArray()
+      return arr[0] || null
+    }
+
+    const arr = await db.collection('items').aggregate([
+      { $match: { type: 'video' } },
+      { $sort: { lastShownAt: 1, updatedAt: -1 } },
+      { $limit: 200 },
+      { $sample: { size: 5 } },
+    ]).toArray()
+    if (!arr.length) return null
+    const exclude = new Set(recentVideoProviders)
+    const choice = arr.find(doc => !exclude.has(trimText(doc?.provider).toLowerCase())) || arr[0]
+    return choice || null
+  } catch {
+    return null
+  }
+}
+
+function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider: string } | null {
+  if (!doc) return null
+  const provider = trimText(doc?.provider) || 'cache'
+  const videoId = trimText(doc?.videoId)
+  const url = trimText(doc?.url) || (videoId ? `https://youtu.be/${videoId}` : '')
+  if (!url) return null
+  const thumb = doc?.thumb || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined)
+  const text = trimText(doc?.title || doc?.text || '')
+  const source = doc?.source || { name: provider, url }
+  const key = videoId ? { videoId } : { url }
+  return {
+    item: { type: 'video' as const, url, thumbUrl: thumb || undefined, text, source, provider },
+    key,
+    provider,
+  }
+}
+
 async function fetchWithTimeout(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1], timeout = PROVIDER_TIMEOUT_MS): Promise<Response | null> {
   if (typeof AbortController === 'undefined') {
     return Promise.race([
@@ -475,44 +605,65 @@ async function fetchJson(url: string, timeoutMs = 6000) {
 async function factUselessfacts() {
   const base = process.env.USELESSFACTS_BASE || 'https://uselessfacts.jsph.pl'
   const d: any = await fetchJson(`${base}/random.json?language=en`)
-  const text = (d?.text || d?.data || '').toString().trim()
-  return text ? { text, source: { name: 'UselessFacts', url: 'https://uselessfacts.jsph.pl' } } : null
+  const text = trimText(d?.text || d?.data || '')
+  return text ? { text, source: { name: 'UselessFacts', url: 'https://uselessfacts.jsph.pl' }, provider: 'uselessfacts' } : null
 }
 async function factNumbers() {
   const d: any = await fetchJson('https://numbersapi.com/random/trivia?json')
-  const text = (d?.text || '').toString().trim()
-  return text ? { text, source: { name: 'Numbers API', url: 'https://numbersapi.com' } } : null
+  const text = trimText(d?.text || '')
+  return text ? { text, source: { name: 'Numbers API', url: 'https://numbersapi.com' }, provider: 'numbers' } : null
 }
 async function factCat() {
   const d: any = await fetchJson('https://catfact.ninja/fact')
-  const text = (d?.fact || '').toString().trim()
-  return text ? { text, source: { name: 'catfact.ninja', url: 'https://catfact.ninja' } } : null
+  const text = trimText(d?.fact || '')
+  return text ? { text, source: { name: 'catfact.ninja', url: 'https://catfact.ninja' }, provider: 'catfact' } : null
 }
 async function factMeow() {
   const d: any = await fetchJson('https://meowfacts.herokuapp.com/')
-  const text = (Array.isArray(d?.data) ? d.data[0] : '').toString().trim()
-  return text ? { text, source: { name: 'meowfacts', url: 'https://meowfacts.herokuapp.com' } } : null
+  const text = trimText(Array.isArray(d?.data) ? d.data[0] : '')
+  return text ? { text, source: { name: 'meowfacts', url: 'https://meowfacts.herokuapp.com' }, provider: 'meowfacts' } : null
 }
 async function factDog() {
   const d: any = await fetchJson('https://dogapi.dog/api/facts')
-  const text = (Array.isArray(d?.facts) ? d.facts[0] : '').toString().trim()
-  return text ? { text, source: { name: 'dogapi.dog', url: 'https://dogapi.dog' } } : null
+  const text = trimText(Array.isArray(d?.facts) ? d.facts[0] : '')
+  return text ? { text, source: { name: 'dogapi.dog', url: 'https://dogapi.dog' }, provider: 'dogapi' } : null
 }
 function shuffle<T>(arr: T[]) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]] } return arr }
 
 async function fetchLiveFact(): Promise<any | null> {
+  if (Math.random() < 0.55) {
+    const cachedDoc = await sampleFactFromCache()
+    const mapped = mapFactDoc(cachedDoc)
+    if (mapped) {
+      touchLastShown('fact', mapped.key)
+      markRecentFact(mapped.item.text)
+      return mapped.item
+    }
+  }
+
   const providers = shuffle([factUselessfacts, factNumbers, factCat, factMeow, factDog])
   for (const p of providers) {
     try {
       const f = await p()
-      if (f?.text) return { type: 'fact' as const, text: f.text, source: f.source }
+      if (f?.text) {
+        const text = trimText(f.text)
+        if (!text) continue
+        upsertCache('fact', { text }, { source: f.source, provider: f.provider })
+        touchLastShown('fact', { text })
+        markRecentFact(text)
+        return { type: 'fact' as const, text, source: f.source }
+      }
     } catch {}
   }
-  const cached = await sampleFromCache('fact')
-  if (cached?.text) {
-    touchLastShown('fact', { text: cached.text })
-    return { type: 'fact' as const, text: cached.text, source: cached.source || { name: cached.provider || 'cache', url: '' } }
+
+  const cached = await sampleFactFromCache()
+  const mapped = mapFactDoc(cached)
+  if (mapped) {
+    touchLastShown('fact', mapped.key)
+    markRecentFact(mapped.item.text)
+    return mapped.item
   }
+
   const local = [
     'Honey never spoils.',
     'Octopuses have three hearts.',
@@ -522,6 +673,7 @@ async function fetchLiveFact(): Promise<any | null> {
   const text = pick(local)
   upsertCache('fact', { text }, { source: { name: 'Local' }, provider: 'local' })
   touchLastShown('fact', { text })
+  markRecentFact(text)
   return { type: 'fact' as const, text, source: { name: 'Local', url: '' } }
 }
 
@@ -532,10 +684,11 @@ async function fetchChuckNorrisJoke(): Promise<any | null> {
     const res = await fetchWithTimeout(`${base}/jokes/random`, { cache: 'no-store' })
     if (!res?.ok) return null
     const d: any = await res.json()
-    if (!d?.value) return null
+    const text = trimText(d?.value)
+    if (!text) return null
     return {
       type: 'joke',
-      text: d.value,
+      text,
       url: d.url,
       source: { name: 'api.chucknorris.io', url: d.url },
       provider: 'chucknorris',
@@ -558,47 +711,88 @@ async function loadShortJokesCSV(): Promise<string[]> {
 async function getShortJokeFromCSV(): Promise<any | null> {
   const list = await loadShortJokesCSV()
   if (!list.length) return null
-  const text = pick(list)
+  const text = trimText(pick(list))
+  if (!text) return null
   return { type: 'joke', text, source: { name: 'local-csv' }, provider: 'shortjokes.csv' }
 }
 
 /** ✅ Jokes : répartition pondérée pour varier (JokeAPI / Chuck / CSV) */
 async function fetchLiveJoke(): Promise<any | null> {
+  if (Math.random() < 0.65) {
+    const cachedDoc = await sampleJokeFromCache()
+    const mapped = mapJokeDoc(cachedDoc)
+    if (mapped) {
+      touchLastShown('joke', mapped.key)
+      markRecentJoke(mapped.item.text)
+      return mapped.item
+    }
+  }
+
   const roll = Math.random()
-  if (roll < 0.50) {
+  let external: any | null = null
+
+  const fetchFromJokeApi = async () => {
     try {
       const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
       if (res?.ok) {
         const j: any = await res.json()
-        if (j?.joke) return { type: 'joke', text: j.joke, source: { name: 'JokeAPI', url: 'https://jokeapi.dev' } }
+        const text = trimText(j?.joke)
+        if (text) {
+          return {
+            type: 'joke' as const,
+            text,
+            source: { name: 'JokeAPI', url: 'https://jokeapi.dev' },
+            provider: 'jokeapi',
+          }
+        }
       }
     } catch {}
-    const chuck = await fetchChuckNorrisJoke(); if (chuck) return chuck
-    const csv = await getShortJokeFromCSV();    if (csv)   return csv
-    return null
-  } else if (roll < 0.80) {
-    const chuck = await fetchChuckNorrisJoke(); if (chuck) return chuck
-    try {
-      const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
-      if (res?.ok) {
-        const j: any = await res.json()
-        if (j?.joke) return { type: 'joke', text: j.joke, source: { name: 'JokeAPI', url: 'https://jokeapi.dev' } }
-      }
-    } catch {}
-    const csv = await getShortJokeFromCSV(); if (csv) return csv
-    return null
-  } else {
-    const csv = await getShortJokeFromCSV(); if (csv) return csv
-    try {
-      const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
-      if (res?.ok) {
-        const j: any = await res.json()
-        if (j?.joke) return { type: 'joke', text: j.joke, source: { name: 'JokeAPI', url: 'https://jokeapi.dev' } }
-      }
-    } catch {}
-    const chuck = await fetchChuckNorrisJoke(); if (chuck) return chuck
     return null
   }
+
+  if (roll < 0.5) {
+    external = await fetchFromJokeApi()
+    if (!external) external = await fetchChuckNorrisJoke()
+    if (!external) external = await getShortJokeFromCSV()
+  } else if (roll < 0.8) {
+    external = await fetchChuckNorrisJoke()
+    if (!external) external = await fetchFromJokeApi()
+    if (!external) external = await getShortJokeFromCSV()
+  } else {
+    external = await getShortJokeFromCSV()
+    if (!external) external = await fetchFromJokeApi()
+    if (!external) external = await fetchChuckNorrisJoke()
+  }
+
+  if (external?.text) {
+    const text = trimText(external.text)
+    if (text) {
+      upsertCache('joke', { text }, { source: external.source, provider: external.provider })
+      touchLastShown('joke', { text })
+      markRecentJoke(text)
+      return { type: 'joke' as const, text, source: external.source, provider: external.provider }
+    }
+  }
+
+  const fallbackDoc = await sampleJokeFromCache()
+  const mappedFallback = mapJokeDoc(fallbackDoc)
+  if (mappedFallback) {
+    touchLastShown('joke', mappedFallback.key)
+    markRecentJoke(mappedFallback.item.text)
+    return mappedFallback.item
+  }
+
+  const csv = await getShortJokeFromCSV()
+  if (csv?.text) {
+    const text = trimText(csv.text)
+    if (text) {
+      markRecentJoke(text)
+      touchLastShown('joke', { text })
+      return { type: 'joke' as const, text, source: csv.source, provider: csv.provider }
+    }
+  }
+
+  return null
 }
 
 // ------------------------------ LIVE: VIDEO -------------------------------
@@ -649,7 +843,7 @@ async function fetchFromRedditFunnyYouTube(): Promise<any | null> {
 
     const title = (p?.title || '').toString()
     const thumb = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
-    const item = { type: 'video' as const, url, thumbUrl: thumb, text: title, source: { name: 'Reddit', url: `https://www.reddit.com${p?.permalink || ''}` } }
+    const item = { type: 'video' as const, url, thumbUrl: thumb, text: title, source: { name: 'Reddit', url: `https://www.reddit.com${p?.permalink || ''}` }, provider: 'reddit-youtube' }
     await upsertCache('video', { videoId: id }, { title, thumb, provider: 'reddit-youtube' })
     await touchLastShown('video', { videoId: id })
     return item
@@ -675,7 +869,7 @@ async function fetchFromVimeo(query: string): Promise<any | null> {
     const og = (pictures[pictures.length - 1]?.link) || (pictures[0]?.link) || null
     const title = (v?.name || '').toString()
 
-    const item = { type: 'web' as const, url: link, text: title || link, ogImage: og, source: { name: 'Vimeo', url: link } }
+    const item = { type: 'web' as const, url: link, text: title || link, ogImage: og, source: { name: 'Vimeo', url: link }, provider: 'vimeo' }
     await upsertCache('web', { url: link }, { title: item.text, ogImage: og, provider: 'vimeo' })
     await touchLastShown('web', { url: link })
     return item
@@ -686,16 +880,34 @@ async function fetchLiveVideo(): Promise<any | null> {
   const KEY = process.env.YOUTUBE_API_KEY
   const roll = Math.random()
 
+  if (Math.random() < 0.35) {
+    const archiveDoc = await sampleVideoFromCache({ preferArchive: true })
+    const mapped = mapVideoDoc(archiveDoc)
+    if (mapped) {
+      touchLastShown('video', mapped.key)
+      markRecentVideoProvider(mapped.provider)
+      return mapped.item
+    }
+  }
+
+  if (Math.random() < 0.5) {
+    const cachedDoc = await sampleVideoFromCache()
+    const mapped = mapVideoDoc(cachedDoc)
+    if (mapped) {
+      touchLastShown('video', mapped.key)
+      markRecentVideoProvider(mapped.provider)
+      return mapped.item
+    }
+  }
+
   if (roll < 0.60) {
     if (!KEY) {
-      const cached = await sampleFromCache('video')
-      if (cached?.videoId || cached?.url) {
-        const id = cached.videoId || ''
-        const u  = cached.url || (id ? `https://youtu.be/${id}` : '')
-        if (u) {
-          if (id) touchLastShown('video', { videoId: id })
-          return { type:'video', url: u, thumbUrl: cached.thumb || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : undefined), text: cached.title || '', source: { name:'YouTube', url: u } }
-        }
+      const cachedDoc = await sampleVideoFromCache()
+      const mappedCached = mapVideoDoc(cachedDoc)
+      if (mappedCached) {
+        touchLastShown('video', mappedCached.key)
+        markRecentVideoProvider(mappedCached.provider)
+        return mappedCached.item
       }
     } else {
       const q = buildYouTubeQuery()
@@ -712,9 +924,11 @@ async function fetchLiveVideo(): Promise<any | null> {
           const sn: any = chosen?.snippet
           if (id) {
             markRecentVideo(id)
-            const item = { type:'video' as const, url:`https://youtu.be/${id}`, thumbUrl:`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, text:sn?.title || '', source:{ name:'YouTube', url:`https://youtu.be/${id}` } }
-            upsertCache('video', { videoId: id }, { title: item.text, thumb: item.thumbUrl, provider: 'youtube' })
+            const provider = 'youtube'
+            const item = { type:'video' as const, url:`https://youtu.be/${id}`, thumbUrl:`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, text:sn?.title || '', source:{ name:'YouTube', url:`https://youtu.be/${id}` }, provider }
+            upsertCache('video', { videoId: id }, { title: item.text, thumb: item.thumbUrl, provider })
             touchLastShown('video', { videoId: id })
+            markRecentVideoProvider(provider)
             return item
           }
         }
@@ -724,21 +938,25 @@ async function fetchLiveVideo(): Promise<any | null> {
 
   if (roll >= 0.60 && roll < 0.85) {
     const viaReddit = await fetchFromRedditFunnyYouTube()
-    if (viaReddit) return viaReddit
+    if (viaReddit) {
+      markRecentVideoProvider('reddit-youtube')
+      return viaReddit
+    }
   }
 
   const q2 = buildYouTubeQuery()
   const viaVimeo = await fetchFromVimeo(q2)
-  if (viaVimeo) return viaVimeo
+  if (viaVimeo) {
+    markRecentVideoProvider('vimeo')
+    return viaVimeo
+  }
 
-  const cached = await sampleFromCache('video')
-  if (cached?.videoId || cached?.url) {
-    const id = cached.videoId || ''
-    const u  = cached.url || (id ? `https://youtu.be/${id}` : '')
-    if (u) {
-      if (id) touchLastShown('video', { videoId: id })
-      return { type:'video', url: u, thumbUrl: cached.thumb || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : undefined), text: cached.title || '', source: { name:'YouTube', url: u } }
-    }
+  const cachedGeneral = await sampleVideoFromCache()
+  const mappedCached = mapVideoDoc(cachedGeneral)
+  if (mappedCached) {
+    touchLastShown('video', mappedCached.key)
+    markRecentVideoProvider(mappedCached.provider)
+    return mappedCached.item
   }
 
   const cachedWeb = await sampleFromCache('web', { provider: 'vimeo', ogImage: { $nin: [null, '', false] } })

@@ -38,6 +38,7 @@ export async function GET() {
     url.searchParams.set('reddit', '1');
     url.searchParams.set('sub', 'funnyvideos');
     url.searchParams.set('limit', '40');
+    url.searchParams.set('archive', '1');
 
     const res = await fetch(url.toString(), {
       method: 'GET',
