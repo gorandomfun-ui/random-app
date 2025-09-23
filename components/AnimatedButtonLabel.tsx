@@ -88,7 +88,7 @@ export default function AnimatedButtonLabel({ text, color, trigger, toSecond = f
           font-family: var(--font-tomorrow), 'Tomorrow', sans-serif;
           font-weight: 700;
           text-transform: uppercase;
-          letter-spacing: 0.12em;
+          letter-spacing: 0.08em;
         }
         .face {
           grid-area: 1 / 1;
