@@ -407,15 +407,15 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer ref={footerRef} className="fixed left-0 right-0 z-20" style={{ bottom: `calc(${adHeight}px + env(safe-area-inset-bottom, 0px))`, height: FOOTER_H }}>
-        <div className="w-full px-4 h-full flex items-center justify-between">
+        <div className="w-full px-4 h-full flex items-center justify-between" style={{ color: theme.text }}>
           <SocialPopover theme={theme} />
           <button className="flex items-center gap-2" onClick={() => setIsLegalOpen(true)}>
             <MonoIcon src="/icons/info.svg" color={theme.cream} size={20} />
-            <span className="font-inter font-semibold">{dict?.footer?.legal ?? 'Legal notice.'}</span>
+            <span className="font-inter font-semibold" style={{ color: theme.cream }}>{dict?.footer?.legal ?? 'Legal notice.'}</span>
           </button>
           <button className="flex items-center gap-2" onClick={shareFromFooter}>
-            <MonoIcon src="/icons/share.svg" color={theme.cream} size={20} />
-            <span className="font-inter font-semibold">{dict?.footer?.share ?? 'share'}</span>
+            <MonoIcon src="/icons/share.svg" color={theme.text} size={20} />
+            <span className="font-inter font-semibold" style={{ color: theme.text }}>{dict?.footer?.share ?? 'share'}</span>
           </button>
         </div>
       </footer>

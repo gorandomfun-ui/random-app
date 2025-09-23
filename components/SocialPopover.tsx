@@ -20,14 +20,15 @@ export default function SocialPopover({ theme }: { theme: Theme }) {
   }, [])
 
   return (
-    <span className="relative inline-flex items-center">
+    <span className="relative inline-flex items-center" style={{ color: theme.text }}>
       <button
         ref={btnRef}
         className="flex items-center gap-2"
         onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
+        style={{ color: theme.text }}
       >
-        <MonoIcon src="/icons/social.svg" color={theme.cream} size={20} />
-        <span className="font-inter font-semibold">social</span>
+        <MonoIcon src="/icons/social.svg" color={theme.text} size={20} />
+        <span className="font-inter font-semibold" style={{ color: theme.text }}>social</span>
       </button>
 
       {open && (
