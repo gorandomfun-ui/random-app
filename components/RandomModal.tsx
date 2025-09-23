@@ -276,7 +276,7 @@ function SourceLine({ item }: { item: Item }) {
   const s = item.source
 
   const snippet = item.type === 'video' && item.text
-    ? shortenText(item.text, 4)
+    ? shortenText(item.text, 5)
     : null
 
   const parts: ReactNode[] = []
@@ -324,8 +324,10 @@ function SourceLine({ item }: { item: Item }) {
 
 function shortenText(text: string, maxWords: number) {
   const words = text.trim().split(/\s+/)
-  if (words.length <= maxWords) return words.join(' ')
-  return `${words.slice(0, maxWords).join(' ')}…`
+  const slice = words.slice(0, maxWords)
+  const snippet = slice.join(' ')
+  const cleaned = snippet.replace(/[.,!?;:–-]+$/,'')
+  return words.length > maxWords ? `${cleaned}…` : cleaned
 }
 
 /* ---------------- MODALE principale ---------------- */

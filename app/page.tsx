@@ -362,7 +362,7 @@ export default function HomePage() {
           </div>
 
           <p
-            className="mt-4 font-tomorrow font-bold text-lg md:text-xl leading-snug"
+            className="mt-4 font-tomorrow font-bold text-base md:text-xl leading-snug"
             style={{ color: theme.text, fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}
           >
             {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
@@ -375,28 +375,28 @@ export default function HomePage() {
             className="mt-6 flex flex-col items-center font-inter font-semibold text-base md:text-lg tracking-tight"
             style={{ color: theme.cream, letterSpacing: '-0.01em' }}
           >
-            <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 md:gap-x-2">
+            <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5 md:gap-x-1.5">
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/image.svg" color={theme.cream} size={20} /> {dict?.nav?.images ?? 'images'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/Video.svg" color={theme.cream} size={20} /> {dict?.nav?.videos ?? 'videos'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/web.svg" color={theme.cream} size={20} /> {dict?.nav?.web ?? 'web'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/quote.svg" color={theme.cream} size={20} /> {dict?.nav?.quotes ?? 'quotes'}
               </span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 md:gap-x-2">
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5 md:gap-x-1.5">
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/joke.svg" color={theme.cream} size={20} /> {dict?.nav?.jokes ?? 'funny jokes'}
               </span>
-              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 3px' }}>/</span>
+              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
                 <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {dict?.nav?.facts ?? 'facts'}
               </span>
