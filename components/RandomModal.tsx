@@ -251,23 +251,18 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
     if (!id && item.url) id = item.url.split('/').pop() || ''
     const src = `https://www.youtube-nocookie.com/embed/${id}?rel=0`
     return (
-      <div className="w-full flex flex-col items-center">
-        {item.text ? (
-          <p
-            className="mb-4 text-lg md:text-xl font-tomorrow font-bold text-center"
-            style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
-          >
-            {item.text}
-          </p>
-        ) : null}
-        <div className="w-full" style={{ aspectRatio: '16 / 9' }}>
+      <div className="w-full">
+        <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9' }}>
+          <div className="w-full h-full overflow-hidden">
           <iframe
             src={src}
-            className="w-full h-full rounded-lg"
+            className="w-full h-full"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             title={item.text || 'YouTube'}
+            style={{ border: 'none' }}
           />
+        </div>
         </div>
       </div>
     )
@@ -279,25 +274,58 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
 function SourceLine({ item }: { item: Item }) {
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
   const s = item.source
-  if (!s) return null
-  if (typeof s === 'string') return <span>{s}</span>
-  if (s.url) {
-    try {
-      const host = new URL(s.url).host.replace(/^www\./, '')
-      return (
-        <span>
-          {s.name ? `${s.name} · ` : ''}
-          <a href={s.url} target="_blank" rel="noreferrer" className="underline">
-            {host}
-          </a>
-        </span>
-      )
-    } catch {
-      return <span>{s.name || s.url}</span>
+
+  const snippet = item.type === 'video' && item.text
+    ? shortenText(item.text, 4)
+    : null
+
+  const parts: ReactNode[] = []
+
+  if (s) {
+    if (typeof s === 'string') {
+      parts.push(<span>{s}</span>)
+    } else if (s.url) {
+      try {
+        const host = new URL(s.url).host.replace(/^www\./, '')
+        parts.push(
+          <span>
+            {s.name ? `${s.name} · ` : ''}
+            <a href={s.url} target="_blank" rel="noreferrer" className="underline">
+              {host}
+            </a>
+          </span>
+        )
+      } catch {
+        parts.push(<span>{s.name || s.url}</span>)
+      }
+    } else if (s.name) {
+      parts.push(<span>{s.name}</span>)
     }
   }
-  if (s.name) return <span>{s.name}</span>
-  return null
+
+  if (snippet) {
+    parts.push(<span>{snippet}</span>)
+  }
+
+  if (!parts.length) return null
+
+  const rendered: ReactNode[] = []
+  parts.forEach((part, idx) => {
+    if (idx > 0) rendered.push(<span key={`dot-${idx}`} className="opacity-60">·</span>)
+    rendered.push(<span key={`part-${idx}`}>{part}</span>)
+  })
+
+  return (
+    <span className="inline-flex flex-wrap items-center justify-center gap-[6px]">
+      {rendered}
+    </span>
+  )
+}
+
+function shortenText(text: string, maxWords: number) {
+  const words = text.trim().split(/\s+/)
+  if (words.length <= maxWords) return words.join(' ')
+  return `${words.slice(0, maxWords).join(' ')}…`
 }
 
 /* ---------------- MODALE principale ---------------- */
@@ -474,7 +502,7 @@ export default function RandomModal({
         )}
 
         {/* corps */}
-        <div className="px-6 py-5 flex items-center justify-center min-h-[320px] md:min-h-[360px] overflow-auto flex-1">
+        <div className="px-6 py-5 flex items-center justify-center min-h-[320px] md:min-h-[360px] overflow-y-auto overflow-x-hidden flex-1">
           {viewItem ? (
             <ContentRenderer item={viewItem} theme={theme} />
           ) : showChildren ? (
@@ -488,7 +516,7 @@ export default function RandomModal({
 
         {/* source */}
         {viewItem && (
-          <div className="px-6 pb-2 -mt-2 text-center font-inter italic opacity-90 shrink-0">
+          <div className="px-6 pb-3 text-center font-inter italic opacity-90 shrink-0 text-xs md:text-sm leading-relaxed">
             <SourceLine item={viewItem} />
           </div>
         )}
