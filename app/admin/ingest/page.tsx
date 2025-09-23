@@ -37,13 +37,20 @@ async function parseResponse(res: Response): Promise<IngestResult> {
 
 /* ---------- PRESETS ---------- */
 const VIDEO_PRESETS: Record<string, string[]> = {
-  Classiques_live: ['tiny desk cover','kexp live','sofar sounds','balcony tv','unplugged live'],
-  Street_perform: ['busking','street performance','subway musicians','street drummer solo','street violin'],
-  Obscur_vintage: ['vhs concert','old camcorder live','public access tv music','1998 festival'],
+  Fun_shorts: ['chaotic challenge clip','absurd game show moment','unexpected talent audition','retro prank tv','funny street encounter'],
+  Foodie_savory: ['street food recipe','comfort food home cook','quick savory dish tutorial','grandma kitchen hack','kitchen asmr cooking'],
+  Sweet_creations: ['dessert recipe quick','pastry chef plating','chocolate making satisfying','cake decorating timelapse','artisan candy process'],
+  Nightlife_style: ['fashion runway archive','club dance freestyle','voguing ballroom battle','retro burlesque performance','sensual perfume commercial'],
+  Curious_docs: ['mini documentary odd subject','abandoned place tour','bizarre invention demo','strange sport highlight','vintage travel diary'],
+  Craft_relax: ['satisfying restoration','miniature build timelapse','pottery wheel closeup','soap carving asmr','handmade jewelry making'],
 }
 const WEB_PRESETS: Record<string, string[]> = {
-  Old_web: ['geocities archive','blogspot personal site','webring directory','freewebs gallery'],
-  Toys: ['ascii art generator','pixel art toy','retro web toy','weird web game'],
+  Oddities: ['weird interactive site','surreal net art experiment','retro flash toy','bizarre web generator','strange online museum'],
+  Foodie_web: ['street food blog','indie recipe zine','home cooking diary','global snack review','cooking hack newsletter'],
+  Sweet_web: ['dessert recipe archive','pastry chef tips','chocolate dessert blog','candy making tutorial','baking secrets newsletter'],
+  After_dark: ['retro dating advice column','boudoir magazine article','sensual storytelling blog','late night relationship tips','vintage glamour archive'],
+  Playful_toys: ['quirky quiz website','nostalgic web game','creative puzzle toy','ascii art playground','odd meme generator'],
+  Hidden_travel: ['underground city guide','odd museum list','subculture event calendar','retro travel diary','secret bar blog'],
 }
 const QUOTE_PRESETS: Record<string, string[]> = {
   Generiques: ['typefit','toscrape','passiton'],
@@ -126,8 +133,8 @@ export default function AdminIngestPage() {
   // VIDEOS
   const [vState, setVState] = useState({
     per: 20, pages: 2, days: 180, reddit: false,
-    manualCSV: 'weird, retro, lofi, street performance, odd sport',
-    presets: Object.keys(VIDEO_PRESETS).slice(0,2),
+    manualCSV: '',
+    presets: Object.keys(VIDEO_PRESETS).slice(0,3),
   })
   const allVideoTerms = useMemo(() => {
     const p = vState.presets.flatMap(n => VIDEO_PRESETS[n]||[])
@@ -135,14 +142,14 @@ export default function AdminIngestPage() {
     const rr: string[] = []
     const L = Math.max(p.length,m.length)
     for (let i=0;i<L;i++){ if(p[i]) rr.push(p[i]); if(m[i]) rr.push(m[i]) }
-    return rr.length ? rr : ['weird','retro','lofi']
+    return rr.length ? rr : ['absurd short film','street food tour','playful diy project','retro dance clip']
   }, [vState.presets, vState.manualCSV])
 
   // WEB
   const [wState, setWState] = useState({
     per: 8, pages: 2,
-    manualCSV: 'weird museum, ascii toy, old web zine, radio obscure, blogspot archive',
-    presets: Object.keys(WEB_PRESETS).slice(0,2),
+    manualCSV: '',
+    presets: Object.keys(WEB_PRESETS).slice(0,3),
   })
   const allWebTerms = useMemo(() => {
     const p = wState.presets.flatMap(n => WEB_PRESETS[n]||[])
@@ -150,7 +157,7 @@ export default function AdminIngestPage() {
     const rr: string[] = []
     const L = Math.max(p.length,m.length)
     for (let i=0;i<L;i++){ if(p[i]) rr.push(p[i]); if(m[i]) rr.push(m[i]) }
-    return rr.length ? rr : ['weird museum','old web site']
+    return rr.length ? rr : ['weird interactive site','dessert recipe blog','late night advice column','hidden travel diary']
   }, [wState.presets, wState.manualCSV])
 
   // QUOTES
@@ -290,7 +297,7 @@ export default function AdminIngestPage() {
           Mots-clés (CSV)
           <input type="text" value={vState.manualCSV}
             onChange={e=>setVState({...vState, manualCSV:e.target.value})}
-            placeholder="weird, retro, lofi, street performance, odd sport"
+            placeholder="fun chaotic clip, street food recipe, absurd animation, daring dance"
             style={{ width:'100%', marginTop:6, padding:8 }}/>
         </label>
 
@@ -340,7 +347,7 @@ export default function AdminIngestPage() {
           Requêtes (CSV)
           <input type="text" value={wState.manualCSV}
             onChange={e=>setWState({...wState, manualCSV:e.target.value})}
-            placeholder="weird museum, ascii toy, old web zine, radio obscure, blogspot archive"
+            placeholder="dessert recipe blog, playful web toy, late night advice, hidden travel diary"
             style={{ width:'100%', marginTop:6, padding:8 }}/>
         </label>
 

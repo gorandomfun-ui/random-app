@@ -276,7 +276,7 @@ function SourceLine({ item }: { item: Item }) {
   const s = item.source
 
   const snippet = item.type === 'video' && item.text
-    ? shortenText(item.text, 5)
+    ? shortenText(item.text, 4)
     : null
 
   const parts: ReactNode[] = []

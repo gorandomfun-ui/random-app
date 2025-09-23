@@ -120,16 +120,21 @@ async function runGoogleCSE(queries: string[], per: number, pages: number) {
 
 /* -------------------------------- Handler -------------------------------- */
 export async function GET(req: NextRequest) {
-  // Auth (clé en query ou header — même logique que tes autres ingests)
+  // Auth (clé ou cron Vercel)
+  const isCron = Boolean(req.headers.get('x-vercel-cron'))
   const key = req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || ''
-  if (!process.env.ADMIN_INGEST_KEY || key !== process.env.ADMIN_INGEST_KEY) {
+  if (!isCron && (!process.env.ADMIN_INGEST_KEY || key !== process.env.ADMIN_INGEST_KEY)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const per   = Math.max(1, Math.min(10, Number(req.nextUrl.searchParams.get('per') || 10)))
   const pages = Math.max(1, Math.min(10, Number(req.nextUrl.searchParams.get('pages') || 3)))
-  const queries = (req.nextUrl.searchParams.get('q') || '')
+  const incoming = (req.nextUrl.searchParams.get('q') || '')
     .split(',').map(s => s.trim()).filter(Boolean)
+  const fallback = [
+    'weird interactive site','dessert recipe blog','late night advice column','hidden travel diary','odd fashion zine'
+  ]
+  const queries = incoming.length ? incoming : fallback
 
   try {
     const rows = await runGoogleCSE(queries, per, pages)

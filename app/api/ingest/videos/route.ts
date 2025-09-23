@@ -140,10 +140,11 @@ async function redditYouTube(sub = 'funnyvideos', limit = 40) {
 
 /* ============== Handler ============== */
 export async function GET(req: NextRequest) {
-  // AUTH durcie
+  // AUTH durcie — autorise les crons Vercel (header x-vercel-cron)
+  const isCron = Boolean(req.headers.get('x-vercel-cron'))
   const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
   const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  if (!expectedKey || providedKey !== expectedKey) {
+  if (!isCron && (!expectedKey || providedKey !== expectedKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -159,7 +160,9 @@ export async function GET(req: NextRequest) {
   if (ids.length) collected = collected.concat(ids.map(id => ({ type:'video', videoId:id, url:`https://youtu.be/${id}`, title:'', thumb: ytThumb(id), provider:'manual', source:{ name:'YouTube', url:`https://youtu.be/${id}` } })))
 
   if (mode === 'search') {
-    const def = ['weird vintage','obscure retro','lofi session','vhs concert','street performance choir']
+    const def = [
+      'absurd short film','street food recipe','playful diy project','retro dance performance','chaotic talent show'
+    ]
     const queries = (req.nextUrl.searchParams.get('q') || '').split(',').map(s=>s.trim()).filter(Boolean)
     const q = queries.length ? queries : def
     try { collected = collected.concat(await ytSearchQueries(q, per, pages, days)) } catch {}
