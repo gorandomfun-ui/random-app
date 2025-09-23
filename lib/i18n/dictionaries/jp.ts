@@ -27,7 +27,8 @@ export default {
   "likes": {
     "title": "あなたのいいね",
     "empty": "まだいいねはありません",
-    "maxReached": "最大6いいねに達しました！"
+    "maxReached": "最大6いいねに達しました！",
+    "keep24h": "ここでは24時間保存されます。"
   },
   "shuffle": {
     "title": "コンテンツをフィルター",

@@ -6,6 +6,7 @@ import LikesGrid from '../../components/LikesGrid'
 import { LikeItem, getAll, clearExpired } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
+import { useI18n } from '../../providers/I18nProvider'
 
 const THEMES = [
   { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
@@ -17,6 +18,7 @@ const THEMES = [
 ]
 
 export default function LikesPage() {
+  const { t } = useI18n()
   const [items, setItems] = useState<LikeItem[]>([])
   const [themeIdx, setThemeIdx] = useState(0)
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
@@ -75,17 +77,17 @@ export default function LikesPage() {
       style={mainStyle}
     >
       {/* Header */}
-      <header className="relative px-4 pt-4 pb-2">
-        {/* Bouton Home : Inter Tight Bold + icône return.svg */}
-        <Link
-          href="/"
-          aria-label="Back to home"
-          className="absolute left-4 top-7 inline-flex items-center gap-2 rounded-xl px-3 py-2 hover:opacity-90 transition"
-          style={{ fontFamily: 'var(--font-inter-tight)', fontWeight: 700 }} // Inter Tight Bold
-        >
-          <MonoIcon src="/icons/return.svg" color={theme.cream} size={32} />
-          {/*<span>Home</span>*/}
-        </Link>
+      <header className="px-4 pt-4 pb-2 grid grid-cols-[auto_1fr_auto] items-center gap-3">
+        <div className="justify-self-start">
+          <Link
+            href="/"
+            aria-label="Back to home"
+            className="inline-flex items-center gap-2 rounded-xl px-3 py-2 hover:opacity-90 transition"
+            style={{ fontFamily: 'var(--font-inter-tight)', fontWeight: 700 }}
+          >
+            <MonoIcon src="/icons/return.svg" color={theme.cream} size={32} />
+          </Link>
+        </div>
 
         <div className="flex items-center justify-center">
           <LogoAnimated
@@ -98,6 +100,13 @@ export default function LikesPage() {
             gapDesktop={1}
           />
         </div>
+
+        <span
+          className="justify-self-end max-w-[220px] text-[11px] sm:text-xs leading-snug font-inter text-right"
+          style={{ color: theme.cream, opacity: 0.8 }}
+        >
+          {t('likes.keep24h', 'Saved here for 24h.')}
+        </span>
       </header>
 
       {/* Contenu : mosaïque bord à bord */}
@@ -112,9 +121,10 @@ export default function LikesPage() {
       </section>
 
       <div
+        id="ad-bar"
         className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
         style={{
-          minHeight: adFormat.height,
+          height: adFormat.height,
           backgroundColor: '#ffffff',
           color: '#111',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -123,7 +133,7 @@ export default function LikesPage() {
       >
         <div
           className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
-          style={{ width: adFormat.width, minHeight: adFormat.height }}
+          style={{ width: adFormat.width, height: adFormat.height }}
         >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
         </div>

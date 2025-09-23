@@ -27,7 +27,8 @@ export default {
   "likes": {
     "title": "Your Likes",
     "empty": "No likes yet",
-    "maxReached": "Maximum 6 likes reached!"
+    "maxReached": "Maximum 6 likes reached!",
+    "keep24h": "Saved here for 24h."
   },
   "shuffle": {
     "title": "Filter content",

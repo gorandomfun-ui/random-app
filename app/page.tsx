@@ -425,11 +425,11 @@ export default function HomePage() {
         ref={adRef}
         id="ad-bar"
         className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
-        style={{ minHeight: adFormat.height, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 60 }}
+        style={{ height: adFormat.height, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 60 }}
       >
         <div
           className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
-          style={{ width: adFormat.width, minHeight: adFormat.height }}
+          style={{ width: adFormat.width, height: adFormat.height }}
         >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
         </div>

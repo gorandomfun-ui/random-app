@@ -33,8 +33,12 @@ export const useI18n = () => {
 }
 
 const normalize = (l: string): Locale => {
-  const s = (l || 'en').toLowerCase()
-  return (['en', 'fr', 'de', 'jp'] as const).includes(s as any) ? (s as Locale) : 'en'
+  const raw = (l || 'en').toLowerCase().trim()
+  const primary = raw.split(/[-_]/)[0]
+  if (primary === 'fr') return 'fr'
+  if (primary === 'de') return 'de'
+  if (primary === 'ja' || primary === 'jp') return 'jp'
+  return 'en'
 }
 
 export default function I18nProvider({

@@ -66,6 +66,8 @@ export default function LanguageSwitcher() {
     try {
       document.documentElement.setAttribute('lang', next)
       ;(window as any).__APP_LANG = next
+      const maxAge = 60 * 60 * 24 * 365
+      document.cookie = `lang=${next}; path=/; max-age=${maxAge}`
       // Notifie les listeners (EncouragementLayer l'écoute)
       window.dispatchEvent(new CustomEvent('i18n:changed', { detail: next }))
     } catch {}
