@@ -18,6 +18,15 @@ type CronRunDoc = {
   error?: string
 }
 
+function coerceDate(value: unknown, fallback: Date): Date {
+  if (value instanceof Date) return value
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value)
+    if (!Number.isNaN(parsed.getTime())) return parsed
+  }
+  return new Date(fallback.getTime())
+}
+
 function getTimeZoneOffset(date: Date, timeZone: string): number {
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -167,8 +176,8 @@ export async function buildDailyReport(reference: Date = new Date(), timeZone = 
     return {
       name: typeof run.name === 'string' ? run.name : 'unknown',
       status: run.status === 'success' ? 'success' : 'failure',
-      startedAt: startedAtRaw instanceof Date ? startedAtRaw : new Date(startedAtRaw ?? start),
-      finishedAt: finishedAtRaw instanceof Date ? finishedAtRaw : new Date(finishedAtRaw ?? start),
+      startedAt: coerceDate(startedAtRaw, start),
+      finishedAt: coerceDate(finishedAtRaw, start),
       durationMs: typeof run.durationMs === 'number' ? run.durationMs : undefined,
       details: typeof run.details === 'object' && run.details ? run.details as Record<string, unknown> : undefined,
       error: typeof run.error === 'string' ? run.error : undefined,
