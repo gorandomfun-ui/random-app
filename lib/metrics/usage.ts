@@ -15,6 +15,20 @@ type UsageEvent = {
   source?: string | null
 }
 
+export type UsageCounts = {
+  total?: number
+  byType?: Record<string, number>
+  byLang?: Record<string, number>
+  byProvider?: Record<string, number>
+}
+
+export type UsageDocument = {
+  date: string
+  createdAt?: Date
+  updatedAt?: Date
+  counts?: UsageCounts
+}
+
 export function formatDayKey(date: Date, timeZone: string): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone,
