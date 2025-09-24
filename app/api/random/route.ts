@@ -238,8 +238,10 @@ function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider:
 
 type VideoOrigin = 'db-fresh' | 'db-unseen' | 'db-backlog' | 'db-random' | 'network'
 
+type VideoMapped = NonNullable<ReturnType<typeof mapVideoDoc>>
+
 type VideoCandidate = {
-  mapped: ReturnType<typeof mapVideoDoc>
+  mapped: VideoMapped
   tags: string[]
   keywords: string[]
   origin: VideoOrigin
