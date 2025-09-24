@@ -36,6 +36,64 @@ const trimText = (value?: string | null) => (value || '').trim()
 
 const DAY_MS = 1000 * 60 * 60 * 24
 
+function pushRecent(list: string[], value: string, max: number) {
+  const key = value.trim().toLowerCase()
+  if (!key) return
+  const idx = list.indexOf(key)
+  if (idx >= 0) list.splice(idx, 1)
+  list.push(key)
+  while (list.length > max) list.shift()
+}
+
+function pushRecentMany(list: string[], values: string[], max: number) {
+  for (const value of values) pushRecent(list, value, max)
+  while (list.length > max) list.shift()
+}
+
+const BASE_STOP_WORDS = new Set([
+  'the','and','with','from','that','this','your','our','for','into','over','under','about','just','make','made','making','best','how','what','when','where','why','who','are','was','were','will','can','get','been','take','takes','took','first','second','third','day','night','amp','episode','official','new','video','full','hd','challenge','vs','vs.','edition','life','hack','hacks','trick','tricks','tip','tips','tutorial','amazing','awesome','incredible','really','very','here','there','have','without','inside','outside','their','them','they','you','yours','give','given','giving','see','seen','look','looking','want','wanted','watch','watching','every','always','never','still','into','out','once','again','another','ever','more','less','thing','things','stuff','maybe','some','someone','something','going','around','back','front','little','big'
+])
+
+function extractKeywordsFromText(text: string, stopWords = BASE_STOP_WORDS, limit = 6): string[] {
+  if (!text) return []
+  const lower = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+  const words = lower.split(/\s+/).filter(Boolean)
+  const unique: string[] = []
+  for (const word of words) {
+    if (word.length < 3 || word.length > 18) continue
+    if (stopWords.has(word)) continue
+    if (!unique.includes(word)) unique.push(word)
+    if (unique.length >= limit) break
+  }
+  return unique
+}
+
+function extractTagsFromSeeds(text: string, seedMap: Record<string, string[]>): string[] {
+  if (!text) return []
+  const lower = text.toLowerCase()
+  const tags: string[] = []
+  for (const [tag, seeds] of Object.entries(seedMap)) {
+    if (seeds.some((seed) => lower.includes(seed))) tags.push(tag)
+  }
+  return Array.from(new Set(tags))
+}
+
+function normalizeStringArray(value: unknown, limit = 20): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const entry of value) {
+    if (typeof entry === 'string') {
+      const trimmed = entry.trim()
+      if (trimmed) out.push(trimmed.toLowerCase())
+    } else if (entry && typeof entry === 'object' && 'toString' in entry) {
+      const str = String(entry).trim()
+      if (str) out.push(str.toLowerCase())
+    }
+    if (out.length >= limit) break
+  }
+  return Array.from(new Set(out))
+}
+
 const VIDEO_TOPIC_SEEDS: Record<string, string[]> = {
   cooking: ['cook','kitchen','recipe','chef','bake','cake','pastry','bbq','food','grandma','kitchen hack','dessert','candy','sushi','chocolate','street food'],
   challenge: ['challenge','vs','versus','battle','contest','competition','speed challenge','24h','one color','mukbang'],
@@ -86,97 +144,720 @@ function markRecentVideoKeywords(words: string[]) {
 }
 
 function extractVideoTags(text: string): string[] {
-  const lower = text.toLowerCase()
-  const tags: string[] = []
-  for (const [tag, seeds] of Object.entries(VIDEO_TOPIC_SEEDS)) {
-    if (seeds.some((seed) => lower.includes(seed))) tags.push(tag)
-  }
-  return Array.from(new Set(tags))
+  return extractTagsFromSeeds(text, VIDEO_TOPIC_SEEDS)
 }
 
 function extractVideoKeywords(text: string, limit = 6): string[] {
-  const lower = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
-  const words = lower.split(/\s+/).filter(Boolean)
-  const unique: string[] = []
-  for (const word of words) {
-    if (word.length < 3 || word.length > 18) continue
-    if (VIDEO_STOP_WORDS.has(word)) continue
-    if (!unique.includes(word)) unique.push(word)
-    if (unique.length >= limit) break
-  }
-  return unique
+  return extractKeywordsFromText(text, VIDEO_STOP_WORDS, limit)
+}
+
+const JOKE_TOPIC_SEEDS: Record<string, string[]> = {
+  tech: ['computer','programmer','developer','debug','software','coding','laptop','wifi'],
+  work: ['boss','office','meeting','coworker','deadline','hr','job','zoom'],
+  family: ['mom','dad','kids','baby','grandma','grandpa','sister','brother','family'],
+  relationships: ['dating','marriage','husband','wife','girlfriend','boyfriend','partner','romance'],
+  school: ['school','teacher','class','homework','exam','college','university'],
+  bar: ['bar','bartender','drink','beer','wine','pub'],
+  animals: ['dog','cat','cow','horse','chicken','duck','goat','pig','bird','fish'],
+  puns: ['pun','wordplay','knock knock','dad joke'],
+  dark: ['grave','ghost','zombie','vampire','death','haunted'],
+  daily: ['coffee','sleep','morning','kitchen','laundry','groceries','traffic'],
+  holiday: ['christmas','holiday','halloween','birthday','new year','valentine'],
+}
+
+const QUOTE_TOPIC_SEEDS: Record<string, string[]> = {
+  inspiration: ['dream','hope','inspire','courage','light','future','vision','grow','goal'],
+  love: ['love','heart','romance','affection','together','kindness','compassion'],
+  wisdom: ['wisdom','knowledge','truth','lesson','learn','understand','philosophy'],
+  ambition: ['success','goal','achievement','drive','focus','win','mission'],
+  creativity: ['create','art','artist','imagination','idea','design'],
+  resilience: ['strength','resilience','fight','battle','storm','survive','rise'],
+  humor: ['laugh','funny','smile','joy'],
+  mindfulness: ['mind','calm','peace','silence','meditation','breathe'],
+}
+
+const FACT_TOPIC_SEEDS: Record<string, string[]> = {
+  science: ['planet','star','space','physics','chemistry','biology','atom','quantum','experiment'],
+  history: ['history','ancient','empire','king','queen','war','dynasty','medieval'],
+  animal: ['animal','cat','dog','bird','fish','insect','mammal','reptile'],
+  space: ['galaxy','universe','mars','moon','nasa','astronaut','cosmos'],
+  culture: ['culture','festival','language','music','dance','tradition','myth'],
+  numbers: ['percent','ratio','number','statistics','probability','math'],
+  odd: ['weird','strange','bizarre','unusual','rare','unexpected'],
+}
+
+const IMAGE_TOPIC_FALLBACK: Record<string, string[]> = {
+  art: ['art','painting','illustration','gallery','design','poster','canvas'],
+  travel: ['city','street','landscape','mountain','beach','village','road','travel','temple','market'],
+  people: ['portrait','people','person','woman','man','child','family','friends'],
+  food: ['food','dish','meal','dessert','cake','coffee','tea','kitchen','restaurant'],
+  animal: ['animal','cat','dog','bird','horse','zoo','pet','wildlife'],
+  nature: ['forest','river','tree','flower','garden','sunset','lake','sky'],
+  retro: ['retro','vintage','analog','film','vhs','cassette','old','nostalgia'],
+}
+
+const WEB_TOPIC_SEEDS: Record<string, string[]> = {
+  archive: ['archive','retro','vintage','geocities','old web','guestbook','blinkies','y2k','frameset','marquee'],
+  food: ['recipe','food','cooking','kitchen','dessert','eat','restaurant','snack'],
+  diy: ['diy','craft','maker','build','tutorial','how to','hack','guide'],
+  music: ['music','band','playlist','dj','mix','sound','radio','tape','cassette'],
+  travel: ['travel','guide','map','city','tour','museum','attraction','itinerary'],
+  fandom: ['fan','shrine','tribute','club','community','fanpage','fan site'],
+  tech: ['software','download','program','code','script','terminal','retro computing'],
+  culture: ['zine','gallery','exhibition','art','design','fashion','style'],
+  odd: ['weird','strange','bizarre','curious','odd','mystery'],
 }
 
 const recentJokes: string[] = []
 function markRecentJoke(text?: string | null) {
   const t = trimText(text)
   if (!t) return
-  const idx = recentJokes.indexOf(t)
-  if (idx >= 0) recentJokes.splice(idx, 1)
-  recentJokes.push(t)
-  if (recentJokes.length > 60) recentJokes.shift()
+  pushRecent(recentJokes, t, 80)
 }
 
-async function sampleJokeFromCache(): Promise<any | null> {
-  const db = await getDbSafe()
-  if (!db) return null
-  try {
-    const arr = await db.collection('items').aggregate([
-      { $match: { type: 'joke', text: { $exists: true, $nin: recentJokes, $ne: '' } } },
-      { $sort: { lastShownAt: 1, updatedAt: -1 } },
-      { $limit: 150 },
-      { $sample: { size: 1 } },
-    ]).toArray()
-    return arr[0] || null
-  } catch {
-    return null
-  }
+const recentJokeTags: string[] = []
+const recentJokeKeywords: string[] = []
+const recentJokeProviders: string[] = []
+
+type JokeCandidate = {
+  text: string
+  item: { type: 'joke'; text: string; source: any; provider: string }
+  tags: string[]
+  keywords: string[]
+  provider: string
+  origin: CandidateOrigin
+  updatedAt?: Date | null
+  lastShownAt?: Date | null
 }
 
-function mapJokeDoc(doc: any): { item: any; key: Record<string, any> } | null {
+function extractJokeTags(text: string): string[] {
+  const tags = extractTagsFromSeeds(text, JOKE_TOPIC_SEEDS)
+  return tags.length ? tags : ['misc']
+}
+
+function buildJokeCandidate(doc: any, origin: CandidateOrigin): JokeCandidate | null {
   const text = trimText(doc?.text)
   if (!text) return null
-  const source = doc?.source || { name: doc?.provider || 'cache', url: doc?.url || '' }
+  const providerRaw = trimText(doc?.provider)
+  const source = doc?.source || { name: providerRaw || 'cache', url: doc?.url || '' }
+  const provider = providerRaw || (typeof source === 'object' ? trimText(source?.name) || 'cache' : 'cache')
+  const storedTags = normalizeStringArray(doc?.tags)
+  const storedKeywords = normalizeStringArray(doc?.keywords)
+  const tags = storedTags.length ? storedTags : extractJokeTags(text)
+  const keywords = storedKeywords.length ? storedKeywords : extractKeywordsFromText(text)
+  const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
+  const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
   return {
-    item: { type: 'joke' as const, text, source },
-    key: { text },
+    text,
+    item: { type: 'joke', text, source, provider },
+    tags,
+    keywords,
+    provider,
+    origin,
+    updatedAt,
+    lastShownAt,
   }
+}
+
+function jokeCandidateKey(candidate: JokeCandidate): string {
+  return candidate.text
+}
+
+function scoreJokeCandidate(candidate: JokeCandidate): number {
+  let score = 0
+  const text = candidate.text
+  const providerKey = candidate.provider.trim().toLowerCase()
+
+  if (!recentJokes.includes(text)) score += 12
+  else score -= 15
+
+  if (candidate.origin === 'network') score += 5
+  else if (candidate.origin === 'db-unseen') score += 4
+  else if (candidate.origin === 'db-backlog') score += 2
+
+  if (!recentJokeProviders.includes(providerKey)) score += 3
+  else score -= 4
+
+  const uniqueTags = new Set(candidate.tags)
+  for (const tag of uniqueTags) {
+    if (recentJokeTags.includes(tag)) score -= 3
+    else score += 4
+  }
+
+  const uniqueKeywords = candidate.keywords.filter((word) => !recentJokeKeywords.includes(word))
+  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
+  score += uniqueKeywords.length * 1.5
+  score -= repeatedKeywords * 2.5
+
+  if (!candidate.lastShownAt) score += 4
+  else {
+    const days = (Date.now() - candidate.lastShownAt.getTime()) / DAY_MS
+    if (days > 21) score += 5
+    else if (days > 7) score += 3
+    else if (days < 2) score -= 3
+  }
+
+  score += Math.random() * 1.5
+  return score
+}
+
+async function collectJokeCandidates(): Promise<JokeCandidate[]> {
+  const db = await getDbSafe()
+  if (!db) return []
+  const bucket = new Map<string, JokeCandidate>()
+
+  const add = (doc: any, origin: CandidateOrigin) => {
+    const candidate = buildJokeCandidate(doc, origin)
+    if (!candidate) return
+    const key = jokeCandidateKey(candidate)
+    const existing = bucket.get(key)
+    if (!existing || candidate.origin === 'network') {
+      bucket.set(key, candidate)
+    }
+  }
+
+  try {
+    const [freshDocs, unseenDocs, backlogDocs, randomDocs] = await Promise.all([
+      db.collection('items').find({ type: 'joke' }).sort({ updatedAt: -1 }).limit(120).toArray(),
+      db.collection('items').find({ type: 'joke', $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }).sort({ updatedAt: -1 }).limit(80).toArray(),
+      db.collection('items').find({ type: 'joke', lastShownAt: { $lt: new Date(Date.now() - 14 * DAY_MS) } }).sort({ lastShownAt: 1 }).limit(80).toArray(),
+      db.collection('items').aggregate([{ $match: { type: 'joke' } }, { $sample: { size: 60 } }]).toArray(),
+    ])
+
+    for (const doc of freshDocs) add(doc, 'db-fresh')
+    for (const doc of unseenDocs) add(doc, 'db-unseen')
+    for (const doc of backlogDocs) add(doc, 'db-backlog')
+    for (const doc of randomDocs) add(doc, 'db-random')
+  } catch {}
+
+  return Array.from(bucket.values())
+}
+
+async function fetchNetworkJokeCandidates(): Promise<JokeCandidate[]> {
+  const results = await Promise.allSettled([
+    fetchJokeApiSingle(),
+    fetchChuckNorrisJoke(),
+    getShortJokeFromCSV(),
+  ])
+
+  const out: JokeCandidate[] = []
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue
+    const doc = result.value
+    if (!doc) continue
+    const candidate = buildJokeCandidate(doc, 'network')
+    if (candidate) out.push(candidate)
+  }
+  return out
 }
 
 const recentFacts: string[] = []
 function markRecentFact(text?: string | null) {
   const t = trimText(text)
   if (!t) return
-  const idx = recentFacts.indexOf(t)
-  if (idx >= 0) recentFacts.splice(idx, 1)
-  recentFacts.push(t)
-  if (recentFacts.length > 80) recentFacts.shift()
+  pushRecent(recentFacts, t, 120)
 }
 
-async function sampleFactFromCache(): Promise<any | null> {
-  const db = await getDbSafe()
-  if (!db) return null
-  try {
-    const arr = await db.collection('items').aggregate([
-      { $match: { type: 'fact', text: { $exists: true, $nin: recentFacts, $ne: '' } } },
-      { $sort: { lastShownAt: 1, updatedAt: -1 } },
-      { $limit: 150 },
-      { $sample: { size: 1 } },
-    ]).toArray()
-    return arr[0] || null
-  } catch {
-    return null
-  }
+const recentFactTags: string[] = []
+const recentFactKeywords: string[] = []
+const recentFactProviders: string[] = []
+
+type FactCandidate = {
+  text: string
+  item: { type: 'fact'; text: string; source: any; provider: string }
+  tags: string[]
+  keywords: string[]
+  provider: string
+  origin: CandidateOrigin
+  updatedAt?: Date | null
+  lastShownAt?: Date | null
 }
 
-function mapFactDoc(doc: any): { item: any; key: Record<string, any> } | null {
+function extractFactTags(text: string): string[] {
+  const tags = extractTagsFromSeeds(text, FACT_TOPIC_SEEDS)
+  return tags.length ? tags : ['misc']
+}
+
+function buildFactCandidate(doc: any, origin: CandidateOrigin): FactCandidate | null {
   const text = trimText(doc?.text)
   if (!text) return null
-  const source = doc?.source || { name: doc?.provider || 'cache', url: doc?.url || '' }
+  const providerRaw = trimText(doc?.provider)
+  const source = doc?.source || { name: providerRaw || 'cache', url: doc?.url || '' }
+  const provider = providerRaw || (typeof source === 'object' ? trimText(source?.name) || 'cache' : 'cache')
+  const storedTags = normalizeStringArray(doc?.tags)
+  const storedKeywords = normalizeStringArray(doc?.keywords)
+  const tags = storedTags.length ? storedTags : extractFactTags(text)
+  const keywords = storedKeywords.length ? storedKeywords : extractKeywordsFromText(text)
+  const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
+  const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
   return {
-    item: { type: 'fact' as const, text, source },
-    key: { text },
+    text,
+    item: { type: 'fact', text, source, provider },
+    tags,
+    keywords,
+    provider,
+    origin,
+    updatedAt,
+    lastShownAt,
   }
+}
+
+function factCandidateKey(candidate: FactCandidate): string {
+  return candidate.text
+}
+
+function scoreFactCandidate(candidate: FactCandidate): number {
+  let score = 0
+  const text = candidate.text
+  const providerKey = candidate.provider.trim().toLowerCase()
+
+  if (!recentFacts.includes(text)) score += 11
+  else score -= 12
+
+  if (candidate.origin === 'network') score += 4
+  else if (candidate.origin === 'db-unseen') score += 3
+  else if (candidate.origin === 'db-backlog') score += 2
+
+  if (!recentFactProviders.includes(providerKey)) score += 2
+  else score -= 3
+
+  const uniqueTags = new Set(candidate.tags)
+  for (const tag of uniqueTags) {
+    if (recentFactTags.includes(tag)) score -= 3
+    else score += 4
+  }
+
+  const uniqueKeywords = candidate.keywords.filter((word) => !recentFactKeywords.includes(word))
+  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
+  score += uniqueKeywords.length * 1.3
+  score -= repeatedKeywords * 2.2
+
+  if (!candidate.lastShownAt) score += 3
+  else {
+    const days = (Date.now() - candidate.lastShownAt.getTime()) / DAY_MS
+    if (days > 21) score += 4
+    else if (days > 10) score += 2
+    else if (days < 2) score -= 2
+  }
+
+  score += Math.random()
+  return score
+}
+
+async function collectFactCandidates(): Promise<FactCandidate[]> {
+  const db = await getDbSafe()
+  if (!db) return []
+  const bucket = new Map<string, FactCandidate>()
+  const add = (doc: any, origin: CandidateOrigin) => {
+    const candidate = buildFactCandidate(doc, origin)
+    if (!candidate) return
+    const key = factCandidateKey(candidate)
+    const existing = bucket.get(key)
+    if (!existing || candidate.origin === 'network') bucket.set(key, candidate)
+  }
+
+  try {
+    const [fresh, unseen, backlog, randomDocs] = await Promise.all([
+      db.collection('items').find({ type: 'fact' }).sort({ updatedAt: -1 }).limit(120).toArray(),
+      db.collection('items').find({ type: 'fact', $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }).sort({ updatedAt: -1 }).limit(80).toArray(),
+      db.collection('items').find({ type: 'fact', lastShownAt: { $lt: new Date(Date.now() - 14 * DAY_MS) } }).sort({ lastShownAt: 1 }).limit(80).toArray(),
+      db.collection('items').aggregate([{ $match: { type: 'fact' } }, { $sample: { size: 60 } }]).toArray(),
+    ])
+    for (const doc of fresh) add(doc, 'db-fresh')
+    for (const doc of unseen) add(doc, 'db-unseen')
+    for (const doc of backlog) add(doc, 'db-backlog')
+    for (const doc of randomDocs) add(doc, 'db-random')
+  } catch {}
+
+  return Array.from(bucket.values())
+}
+
+async function fetchNetworkFactCandidates(): Promise<FactCandidate[]> {
+  const providers = [factUselessfacts, factNumbers, factCat, factMeow, factDog]
+  const out: FactCandidate[] = []
+  for (const provider of providers) {
+    try {
+      const doc = await provider()
+      if (!doc) continue
+      const candidate = buildFactCandidate(doc, 'network')
+      if (candidate) out.push(candidate)
+    } catch {}
+  }
+  return out
+}
+
+type QuoteCandidate = {
+  text: string
+  author: string
+  item: { type: 'quote'; text: string; author: string; source: any; provider: string }
+  tags: string[]
+  keywords: string[]
+  provider: string
+  origin: CandidateOrigin
+  updatedAt?: Date | null
+  lastShownAt?: Date | null
+}
+
+function extractQuoteTags(text: string): string[] {
+  const tags = extractTagsFromSeeds(text, QUOTE_TOPIC_SEEDS)
+  return tags.length ? tags : ['misc']
+}
+
+function buildQuoteCandidate(doc: any, origin: CandidateOrigin): QuoteCandidate | null {
+  const text = trimText(doc?.text || doc?.content)
+  if (!text) return null
+  const author = trimText(doc?.author || '')
+  const providerRaw = trimText(doc?.provider)
+  const source = doc?.source || { name: providerRaw || (author || 'quote'), url: doc?.url || '' }
+  const provider = providerRaw || (typeof source === 'object' ? trimText(source?.name) || 'quote' : 'quote')
+  const storedTags = normalizeStringArray(doc?.tags)
+  const storedKeywords = normalizeStringArray(doc?.keywords)
+  const combined = `${text} ${author}`.trim()
+  const tags = storedTags.length ? storedTags : extractQuoteTags(combined)
+  const keywords = storedKeywords.length ? storedKeywords : extractKeywordsFromText(combined)
+  const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
+  const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
+  return {
+    text,
+    author,
+    item: { type: 'quote', text, author, source, provider },
+    tags,
+    keywords,
+    provider,
+    origin,
+    updatedAt,
+    lastShownAt,
+  }
+}
+
+function quoteCandidateKey(candidate: QuoteCandidate): string {
+  return `${candidate.text}__${candidate.author}`
+}
+
+function scoreQuoteCandidate(candidate: QuoteCandidate): number {
+  let score = 0
+
+  if (!recentQuotes.includes(candidate.text)) score += 12
+  else score -= 13
+
+  const authorKey = candidate.author.trim().toLowerCase()
+  if (authorKey) {
+    if (!recentQuoteAuthors.includes(authorKey)) score += 4
+    else score -= 5
+  }
+
+  if (candidate.origin === 'network') score += 5
+  else if (candidate.origin === 'db-unseen') score += 3
+  else if (candidate.origin === 'db-backlog') score += 2
+
+  const uniqueTags = new Set(candidate.tags)
+  for (const tag of uniqueTags) {
+    if (recentQuoteTags.includes(tag)) score -= 3
+    else score += 4
+  }
+
+  const uniqueKeywords = candidate.keywords.filter((word) => !recentQuoteKeywords.includes(word))
+  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
+  score += uniqueKeywords.length * 1.4
+  score -= repeatedKeywords * 2.3
+
+  if (!candidate.lastShownAt) score += 4
+  else {
+    const days = (Date.now() - candidate.lastShownAt.getTime()) / DAY_MS
+    if (days > 30) score += 5
+    else if (days > 10) score += 3
+    else if (days < 2) score -= 4
+  }
+
+  score += Math.random()
+  return score
+}
+
+async function collectQuoteCandidates(): Promise<QuoteCandidate[]> {
+  const db = await getDbSafe()
+  if (!db) return []
+  const bucket = new Map<string, QuoteCandidate>()
+  const add = (doc: any, origin: CandidateOrigin) => {
+    const candidate = buildQuoteCandidate(doc, origin)
+    if (!candidate) return
+    const key = quoteCandidateKey(candidate)
+    const existing = bucket.get(key)
+    if (!existing || candidate.origin === 'network') bucket.set(key, candidate)
+  }
+
+  try {
+    const [fresh, unseen, backlog, randomDocs] = await Promise.all([
+      db.collection('items').find({ type: 'quote' }).sort({ updatedAt: -1 }).limit(150).toArray(),
+      db.collection('items').find({ type: 'quote', $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }).sort({ updatedAt: -1 }).limit(100).toArray(),
+      db.collection('items').find({ type: 'quote', lastShownAt: { $lt: new Date(Date.now() - 21 * DAY_MS) } }).sort({ lastShownAt: 1 }).limit(120).toArray(),
+      db.collection('items').aggregate([{ $match: { type: 'quote' } }, { $sample: { size: 80 } }]).toArray(),
+    ])
+    for (const doc of fresh) add(doc, 'db-fresh')
+    for (const doc of unseen) add(doc, 'db-unseen')
+    for (const doc of backlog) add(doc, 'db-backlog')
+    for (const doc of randomDocs) add(doc, 'db-random')
+  } catch {}
+
+  return Array.from(bucket.values())
+}
+
+async function fetchQuotableQuotes(limit = 6): Promise<any[]> {
+  const base = process.env.QUOTABLE_BASE || 'https://api.quotable.io'
+  try {
+    const res = await fetchWithTimeout(`${base}/quotes/random?limit=${Math.max(1, Math.min(limit, 10))}`, { cache: 'no-store' })
+    if (!res?.ok) return []
+    const data: any = await res.json()
+    return Array.isArray(data) ? data : [data]
+  } catch {
+    return []
+  }
+}
+
+async function fetchNetworkQuoteCandidates(): Promise<QuoteCandidate[]> {
+  const out: QuoteCandidate[] = []
+  const quotable = await fetchQuotableQuotes(6)
+  for (const entry of quotable) {
+    const text = trimText(entry?.content || entry?.text || '')
+    if (!text || isRecentQuote(text)) continue
+    const doc = {
+      text,
+      author: trimText(entry?.author || ''),
+      provider: 'quotable',
+      source: { name: 'Quotable', url: 'https://quotable.io' },
+    }
+    const candidate = buildQuoteCandidate(doc, 'network')
+    if (candidate) out.push(candidate)
+  }
+
+  const zen = await fetchZenQuoteDoc()
+  if (zen) {
+    const candidate = buildQuoteCandidate(zen, 'network')
+    if (candidate) out.push(candidate)
+  }
+
+  return out
+}
+
+const recentImageUrls: string[] = []
+const recentImageProviders: string[] = []
+const recentImageTags: string[] = []
+const recentImageKeywords: string[] = []
+
+type ImageCandidate = {
+  url: string
+  item: { type: 'image'; url: string; thumbUrl: string | null; source: any }
+  tags: string[]
+  keywords: string[]
+  provider: string
+  origin: CandidateOrigin
+  updatedAt?: Date | null
+  lastShownAt?: Date | null
+}
+
+function extractImageTags(text: string): string[] {
+  const tags = extractTagsFromSeeds(text, IMAGE_TOPIC_FALLBACK)
+  return tags.length ? tags : ['misc']
+}
+
+function buildImageCandidate(doc: any, origin: CandidateOrigin): ImageCandidate | null {
+  const url = trimText(doc?.url)
+  if (!url) return null
+  const thumb = doc?.thumb || doc?.thumbUrl || null
+  const provider = trimText(doc?.provider) || 'image'
+  const title = trimText(doc?.title || doc?.text || '')
+  const source = doc?.source || { name: provider, url: doc?.pageUrl || url }
+  const descriptor = `${title} ${(typeof source === 'object' ? source?.name : '') || ''} ${url}`
+  const storedTags = normalizeStringArray(doc?.tags)
+  const storedKeywords = normalizeStringArray(doc?.keywords)
+  const tags = storedTags.length ? storedTags : extractImageTags(descriptor)
+  const keywords = storedKeywords.length ? storedKeywords : extractKeywordsFromText(descriptor)
+  const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
+  const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
+  return {
+    url,
+    item: { type: 'image', url, thumbUrl: thumb, source },
+    tags,
+    keywords,
+    provider,
+    origin,
+    updatedAt,
+    lastShownAt,
+  }
+}
+
+function imageCandidateKey(candidate: ImageCandidate): string {
+  return candidate.url
+}
+
+function scoreImageCandidate(candidate: ImageCandidate): number {
+  let score = 0
+
+  if (!recentImageUrls.includes(candidate.url)) score += 10
+  else score -= 12
+
+  if (!recentImageProviders.includes(candidate.provider)) score += 4
+  else score -= 5
+
+  const uniqueTags = new Set(candidate.tags)
+  for (const tag of uniqueTags) {
+    if (recentImageTags.includes(tag)) score -= 3
+    else score += 4
+  }
+
+  const uniqueKeywords = candidate.keywords.filter((word) => !recentImageKeywords.includes(word))
+  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
+  score += uniqueKeywords.length * 1.2
+  score -= repeatedKeywords * 2
+
+  if (candidate.origin === 'network') score += 5
+  else if (candidate.origin === 'db-unseen') score += 3
+  else if (candidate.origin === 'db-backlog') score += 2
+
+  if (!candidate.lastShownAt) score += 3
+  else {
+    const days = (Date.now() - candidate.lastShownAt.getTime()) / DAY_MS
+    if (days > 21) score += 4
+    else if (days < 2) score -= 3
+  }
+
+  score += Math.random()
+  return score
+}
+
+async function collectImageCandidates(): Promise<ImageCandidate[]> {
+  const db = await getDbSafe()
+  if (!db) return []
+  const bucket = new Map<string, ImageCandidate>()
+  const add = (doc: any, origin: CandidateOrigin) => {
+    const candidate = buildImageCandidate(doc, origin)
+    if (!candidate) return
+    const key = imageCandidateKey(candidate)
+    const existing = bucket.get(key)
+    if (!existing || candidate.origin === 'network') bucket.set(key, candidate)
+  }
+
+  try {
+    const [fresh, unseen, backlog, randomDocs] = await Promise.all([
+      db.collection('items').find({ type: 'image' }).sort({ updatedAt: -1 }).limit(120).toArray(),
+      db.collection('items').find({ type: 'image', $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }).sort({ updatedAt: -1 }).limit(80).toArray(),
+      db.collection('items').find({ type: 'image', lastShownAt: { $lt: new Date(Date.now() - 14 * DAY_MS) } }).sort({ lastShownAt: 1 }).limit(80).toArray(),
+      db.collection('items').aggregate([{ $match: { type: 'image' } }, { $sample: { size: 60 } }]).toArray(),
+    ])
+    for (const doc of fresh) add(doc, 'db-fresh')
+    for (const doc of unseen) add(doc, 'db-unseen')
+    for (const doc of backlog) add(doc, 'db-backlog')
+    for (const doc of randomDocs) add(doc, 'db-random')
+  } catch {}
+
+  return Array.from(bucket.values())
+}
+
+async function fetchNetworkImageCandidates(): Promise<ImageCandidate[]> {
+  const out: ImageCandidate[] = []
+  const PEXELS_KEY = process.env.PEXELS_API_KEY
+  const UNSPLASH_KEY = process.env.UNSPLASH_ACCESS_KEY
+  const GIPHY_KEY = process.env.GIPHY_API_KEY
+  const TENOR_KEY = process.env.TENOR_API_KEY
+
+  const WORDS_PHOTO = ['weird','vintage','odd','retro','obscure','fun','tiny','toy','museum','street','festival','garage','zine','travel','market','temple','mountain','beach','archive','analog']
+  const WORDS_GIF = ['reaction','fail','dance','facepalm','meme','lol','weirdcore','glitch','vaporwave','awkward','party','vibes','surprised','blink','retro gif','vhs glitch','pixel art','loop']
+
+  const photoQuery = pick(WORDS_PHOTO)
+  const gifQuery = pick(WORDS_GIF)
+
+  async function addCandidateFromDoc(doc: any, origin: CandidateOrigin) {
+    const candidate = buildImageCandidate(doc, origin)
+    if (candidate) out.push(candidate)
+  }
+
+  if (GIPHY_KEY) {
+    try {
+      const url = `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(gifQuery)}&limit=50&rating=g`
+      const res = await fetchWithTimeout(url, { cache: 'no-store' })
+      if (res?.ok) {
+        const data: any = await res.json()
+        const items: any[] = data?.data || []
+        if (items.length) {
+          const g: any = pick(items)
+          const media = g?.images || {}
+          const urlGif: string | undefined = media?.original?.url || media?.downsized_large?.url || media?.downsized?.url
+          if (urlGif) {
+            await addCandidateFromDoc({
+              url: urlGif,
+              thumb: media?.fixed_width?.url || null,
+              provider: 'giphy',
+              source: { name: 'Giphy', url: g?.url || urlGif },
+              title: g?.title || '',
+            }, 'network')
+          }
+        }
+      }
+    } catch {}
+  }
+
+  if (TENOR_KEY) {
+    const doc = await fetchFromTenorDoc(gifQuery)
+    if (doc) await addCandidateFromDoc(doc, 'network')
+  }
+
+  if (PEXELS_KEY) {
+    try {
+      const url = `https://api.pexels.com/v1/search?per_page=50&query=${encodeURIComponent(photoQuery)}`
+      const res = await fetchWithTimeout(url, { headers: { Authorization: PEXELS_KEY }, cache: 'no-store' })
+      if (res?.ok) {
+        const data: any = await res.json()
+        const photos: any[] = data?.photos || []
+        if (photos.length) {
+          const p: any = pick(photos)
+          const src: any = p?.src || {}
+          const urlImg: string | undefined = src.large2x || src.large || src.original
+          if (urlImg) {
+            await addCandidateFromDoc({
+              url: urlImg,
+              thumb: src.medium || null,
+              provider: 'pexels',
+              source: { name: 'Pexels', url: p?.url || urlImg },
+              title: p?.alt || '',
+            }, 'network')
+          }
+        }
+      }
+    } catch {}
+  }
+
+  try {
+    const doc = await fetchFromPixabayDoc(photoQuery)
+    if (doc) await addCandidateFromDoc(doc, 'network')
+  } catch {}
+
+  if (UNSPLASH_KEY) {
+    try {
+      const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(photoQuery)}&count=1&client_id=${UNSPLASH_KEY}`
+      const res = await fetchWithTimeout(url, { cache: 'no-store' })
+      if (res?.ok) {
+        const data: any = await res.json()
+        const it: any = Array.isArray(data) ? data[0] : data
+        const urls: any = it?.urls || {}
+        const urlImg: string | undefined = urls.regular || urls.full
+        if (urlImg) {
+          await addCandidateFromDoc({
+            url: urlImg,
+            thumb: urls.small || null,
+            provider: 'unsplash',
+            source: { name: 'Unsplash', url: (it?.links && it.links.html) || urlImg },
+            title: it?.description || it?.alt_description || '',
+          }, 'network')
+        }
+      }
+    } catch {}
+  }
+
+  try {
+    const doc = await fetchFromImgflipDoc()
+    if (doc) await addCandidateFromDoc(doc, 'network')
+  } catch {}
+
+  return out
 }
 
 const recentVideoProviders: string[] = []
@@ -236,7 +917,7 @@ function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider:
   }
 }
 
-type VideoOrigin = 'db-fresh' | 'db-unseen' | 'db-backlog' | 'db-random' | 'network'
+type CandidateOrigin = 'db-fresh' | 'db-unseen' | 'db-backlog' | 'db-random' | 'network'
 
 type VideoMapped = NonNullable<ReturnType<typeof mapVideoDoc>>
 
@@ -244,18 +925,20 @@ type VideoCandidate = {
   mapped: VideoMapped
   tags: string[]
   keywords: string[]
-  origin: VideoOrigin
+  origin: CandidateOrigin
   updatedAt?: Date | null
   lastShownAt?: Date | null
 }
 
-function buildVideoCandidate(doc: any, origin: VideoOrigin): VideoCandidate | null {
+function buildVideoCandidate(doc: any, origin: CandidateOrigin): VideoCandidate | null {
   const mapped = mapVideoDoc(doc)
   if (!mapped) return null
   const description = trimText(doc?.description || '')
   const combined = `${mapped.item.text || ''} ${description}`.trim()
-  const tags = extractVideoTags(combined)
-  const keywords = extractVideoKeywords(combined)
+  const storedTags = normalizeStringArray(doc?.tags)
+  const storedKeywords = normalizeStringArray(doc?.keywords)
+  const tags = storedTags.length ? storedTags : extractVideoTags(combined)
+  const keywords = storedKeywords.length ? storedKeywords : extractVideoKeywords(combined)
   const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
   const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
   return { mapped, tags: tags.length ? tags : ['misc'], keywords, origin, updatedAt, lastShownAt }
@@ -331,7 +1014,7 @@ async function collectVideoCandidates(): Promise<VideoCandidate[]> {
   if (!db) return []
 
   const bucket = new Map<string, VideoCandidate>()
-  const add = (doc: any, origin: VideoOrigin) => {
+  const add = (doc: any, origin: CandidateOrigin) => {
     const candidate = buildVideoCandidate(doc, origin)
     if (!candidate) return
     const key = candidateKey(candidate)
@@ -486,23 +1169,6 @@ async function sampleFromCache(type: ItemType, extraMatch: Record<string, any> =
   } catch { return null }
 }
 
-/* --- NEW: quote sampler that avoids the recent buffer --- */
-async function sampleQuoteFromCache(options?: { avoidAuthors?: string[] }): Promise<any | null> {
-  const db = await getDbSafe()
-  if (!db) return null
-  try {
-    const match: Record<string, any> = { type: 'quote', text: { $nin: recentQuotes } }
-    if (options?.avoidAuthors?.length) {
-      match.author = { $nin: options.avoidAuthors }
-    }
-    const arr = await db.collection('items').aggregate([
-      { $match: match },
-      { $sample: { size: 1 } },
-    ]).toArray()
-    return arr[0] || null
-  } catch { return null }
-}
-
 /* -------------------------------- Fallbacks ------------------------------- */
 const FB_IMAGES = [
   'https://images.unsplash.com/photo-1519681393784-d120267933ba',
@@ -513,7 +1179,7 @@ const FB_IMAGES = [
 /* ------------------------------ LIVE: IMAGES ------------------------------ */
 
 /** Pixabay provider */
-async function fetchFromPixabay(query: string): Promise<any | null> {
+async function fetchFromPixabayDoc(query: string): Promise<any | null> {
   const key = process.env.PIXABAY_API_KEY
   if (!key) return null
   const url = new URL('https://pixabay.com/api/')
@@ -532,22 +1198,17 @@ async function fetchFromPixabay(query: string): Promise<any | null> {
 
   const urlImg: string | undefined = hit.largeImageURL || hit.webformatURL
   if (!urlImg) return null
-  const item = {
-    type: 'image' as const,
+  return {
     url: urlImg,
-    thumbUrl: hit.previewURL || hit.webformatURL || null,
-    source: { name: 'Pixabay', url: hit.pageURL || urlImg },
+    thumb: hit.previewURL || hit.webformatURL || null,
     provider: 'pixabay',
+    source: { name: 'Pixabay', url: hit.pageURL || urlImg },
+    title: hit.tags || '',
   }
-  try {
-    await upsertCache('image', { url: urlImg }, { thumb: item.thumbUrl, source: item.source, provider: 'pixabay' })
-    await touchLastShown('image', { url: urlImg })
-  } catch {}
-  return item
 }
 
 /** Tenor provider (GIFs) */
-async function fetchFromTenor(query: string): Promise<any | null> {
+async function fetchFromTenorDoc(query: string): Promise<any | null> {
   const key = process.env.TENOR_API_KEY
   if (!key) return null
   const u = new URL('https://tenor.googleapis.com/v2/search')
@@ -568,22 +1229,17 @@ async function fetchFromTenor(query: string): Promise<any | null> {
   const urlGif: string | undefined =
     m.gif?.url || m.tinygif?.url || m.mediumgif?.url || m.nanogif?.url
   if (!urlGif) return null
-
-  const item = {
-    type: 'image' as const,
+  return {
     url: urlGif,
-    thumbUrl: m.tinygif?.url || null,
+    thumb: m.tinygif?.url || null,
+    provider: 'tenor',
     source: { name: 'Tenor', url: it?.itemurl || urlGif },
+    title: it?.content_description || '',
   }
-  try {
-    await upsertCache('image', { url: urlGif }, { thumb: item.thumbUrl, source: item.source, provider: 'tenor' })
-    await touchLastShown('image', { url: urlGif })
-  } catch {}
-  return item
 }
 
 /** Imgflip (meme templates – pas de clé) */
-async function fetchFromImgflip(): Promise<any | null> {
+async function fetchFromImgflipDoc(): Promise<any | null> {
   try {
     const res = await fetchWithTimeout('https://api.imgflip.com/get_memes', { cache: 'no-store' })
     if (!res?.ok) return null
@@ -593,145 +1249,64 @@ async function fetchFromImgflip(): Promise<any | null> {
     const m = arr[Math.floor(Math.random() * arr.length)]
     const urlImg: string | undefined = m?.url
     if (!urlImg) return null
-    const item = {
-      type: 'image' as const,
+    return {
       url: urlImg,
-      thumbUrl: urlImg,
+      thumb: urlImg,
+      provider: 'imgflip',
       source: { name: 'Imgflip', url: 'https://imgflip.com' },
+      title: m?.name || '',
     }
-    await upsertCache('image', { url: urlImg }, { thumb: item.thumbUrl, source: item.source, provider: 'imgflip' })
-    await touchLastShown('image', { url: urlImg })
-    return item
   } catch { return null }
 }
 
 async function fetchLiveImage(): Promise<any | null> {
-  const PEXELS_KEY = process.env.PEXELS_API_KEY
-  const UNSPLASH_KEY = process.env.UNSPLASH_ACCESS_KEY
-  const GIPHY_KEY = process.env.GIPHY_API_KEY
-  const TENOR_KEY = process.env.TENOR_API_KEY
-
-  const WORDS_PHOTO = ['weird','vintage','odd','retro','obscure','fun','tiny','toy','museum','street','festival','garage','zine']
-  const WORDS_GIF = [
-    'reaction', 'fail', 'dance', 'facepalm', 'meme', 'lol', 'weirdcore', 'glitch', 'vaporwave',
-    'awkward', 'party', 'vibes', 'hype', 'surprised', 'blink', 'zoom', 'spin', 'confused',
-    'retro gif', 'vhs glitch', 'ascii art', 'pixel art'
-  ]
-
-  const roll = Math.random()
-  const providers: Array<'giphy'|'tenor'|'pexels'|'pixabay'|'unsplash'|'imgflip'> =
-    roll < 0.30 ? ['giphy','tenor','pexels','pixabay','imgflip','unsplash']
-  : roll < 0.60 ? ['tenor','giphy','pexels','pixabay','imgflip','unsplash']
-  : roll < 0.75 ? ['pexels','giphy','tenor','pixabay','imgflip','unsplash']
-  : roll < 0.90 ? ['pixabay','giphy','tenor','pexels','imgflip','unsplash']
-  : roll < 1.00 ? ['imgflip','giphy','tenor','pexels','pixabay','unsplash']
-               : ['unsplash','giphy','tenor','pexels','pixabay','imgflip']
-
-  const first = providers[0]
-  const isGifFirst = first === 'giphy' || first === 'tenor'
-  const queryGif = pick(WORDS_GIF)
-  const queryPhoto = pick(WORDS_PHOTO)
-
-  for (const prov of providers) {
-    try {
-      if (prov === 'giphy' && GIPHY_KEY) {
-        const q = isGifFirst ? queryGif : queryPhoto
-        const url = `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=50&rating=g`
-        const res = await fetchWithTimeout(url, { cache: 'no-store' })
-        if (res?.ok) {
-          const data: any = await res.json()
-          const items: any[] = data?.data || []
-          if (items.length) {
-            const g: any = pick(items)
-            const urlGif: string | undefined =
-              g?.images?.original?.url || g?.images?.downsized_large?.url || g?.images?.downsized?.url
-            if (urlGif) {
-              const item = {
-                type: 'image' as const,
-                url: urlGif,
-                thumbUrl: g?.images?.fixed_width?.url || null,
-                source: { name: 'Giphy', url: g?.url || urlGif },
-              }
-              await upsertCache('image', { url: urlGif }, { thumb: item.thumbUrl, source: item.source, provider: 'giphy' })
-              await touchLastShown('image', { url: urlGif })
-              return item
-            }
-          }
-        }
-      }
-
-      if (prov === 'tenor' && TENOR_KEY) {
-        const q = isGifFirst ? queryGif : queryPhoto
-        const viaTenor = await fetchFromTenor(q)
-        if (viaTenor) return viaTenor
-      }
-
-      if (prov === 'pexels' && PEXELS_KEY) {
-        const q = queryPhoto
-        const url = `https://api.pexels.com/v1/search?per_page=80&query=${encodeURIComponent(q)}`
-        const res = await fetchWithTimeout(url, { headers: { Authorization: PEXELS_KEY }, cache: 'no-store' })
-        if (res?.ok) {
-          const data: any = await res.json()
-          const photos: any[] = data?.photos || []
-          if (photos.length) {
-            const p: any = pick(photos)
-            const src: any = p?.src || {}
-            const urlImg: string | undefined = src.large2x || src.large || src.original
-            if (urlImg) {
-              const item = { type:'image' as const, url: urlImg, thumbUrl: src.medium || null, source: { name:'Pexels', url: p?.url || urlImg } }
-              await upsertCache('image', { url: urlImg }, { thumb: item.thumbUrl, source: item.source, provider: 'pexels' })
-              await touchLastShown('image', { url: urlImg })
-              return item
-            }
-          }
-        }
-      }
-
-      if (prov === 'pixabay') {
-        const q = queryPhoto
-        const viaPixabay = await fetchFromPixabay(q)
-        if (viaPixabay) return viaPixabay
-      }
-
-      if (prov === 'unsplash' && UNSPLASH_KEY) {
-        const q = queryPhoto
-        const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(q)}&count=1&client_id=${UNSPLASH_KEY}`
-        const res = await fetchWithTimeout(url, { cache: 'no-store' })
-        if (res?.ok) {
-          const data: any = await res.json()
-          const it: any = Array.isArray(data) ? data[0] : data
-          const urls: any = it?.urls || {}
-          const url2: string | undefined = urls.regular || urls.full
-          if (url2) {
-            const item = { type:'image' as const, url: url2, thumbUrl: urls.small || null, source: { name:'Unsplash', url:(it?.links && it.links.html) || url2 } }
-            await upsertCache('image', { url: url2 }, { thumb: item.thumbUrl, source: item.source, provider: 'unsplash' })
-            await touchLastShown('image', { url: url2 })
-            return item
-          }
-        }
-      }
-
-      if (prov === 'imgflip') {
-        const viaImgflip = await fetchFromImgflip()
-        if (viaImgflip) return viaImgflip
-      }
-    } catch {
-      /* try next provider */
-    }
+  const candidateMap = new Map<string, ImageCandidate>()
+  const add = (candidate: ImageCandidate | null) => {
+    if (!candidate) return
+    const key = imageCandidateKey(candidate)
+    const existing = candidateMap.get(key)
+    if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
   }
 
-  const cached = await sampleFromCache('image')
-  if (cached?.url) {
-    await touchLastShown('image', { url: cached.url })
-    return {
-      type: 'image' as const,
-      url: cached.url,
-      thumbUrl: cached.thumb || null,
-      source: cached.source || { name: cached.provider || 'cache', url: cached.url },
+  const dbCandidates = await collectImageCandidates()
+  dbCandidates.forEach(add)
+
+  const networkCandidates = await fetchNetworkImageCandidates()
+  networkCandidates.forEach(add)
+
+  const scored = Array.from(candidateMap.values())
+    .map((candidate) => ({ candidate, score: scoreImageCandidate(candidate) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => b.score - a.score)
+
+  for (const { candidate } of scored) {
+    const allTagsRecent = candidate.tags.every((tag) => recentImageTags.includes(tag))
+    const allKeywordsRecent = candidate.keywords.length
+      ? candidate.keywords.every((word) => recentImageKeywords.includes(word))
+      : false
+    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+
+    if (candidate.origin === 'network') {
+      await upsertCache('image', { url: candidate.url }, {
+        thumb: candidate.item.thumbUrl,
+        source: candidate.item.source,
+        provider: candidate.provider,
+        tags: candidate.tags,
+        keywords: candidate.keywords,
+      })
     }
+
+    await touchLastShown('image', { url: candidate.url })
+    pushRecent(recentImageUrls, candidate.url, 120)
+    pushRecent(recentImageProviders, candidate.provider, 40)
+    pushRecentMany(recentImageTags, candidate.tags, 100)
+    pushRecentMany(recentImageKeywords, candidate.keywords, 160)
+    return candidate.item
   }
 
-  return null
+  const fallback = FB_IMAGES[Math.floor(Math.random() * FB_IMAGES.length)]
+  pushRecent(recentImageUrls, fallback, 120)
+  return { type: 'image' as const, url: fallback, thumbUrl: null, source: { name: 'Unsplash', url: fallback } }
 }
 
 /* ------------------------------ LIVE: QUOTE/FACT/JOKE --------------------- */
@@ -741,15 +1316,15 @@ const recentQuotes: string[] = []
 function markRecentQuote(text: string) {
   const t = (text || '').trim()
   if (!t) return
-  const i = recentQuotes.indexOf(t)
-  if (i >= 0) recentQuotes.splice(i, 1)
-  recentQuotes.push(t)
-  if (recentQuotes.length > 30) recentQuotes.shift()
+  pushRecent(recentQuotes, t, 120)
 }
 const isRecentQuote = (t?: string) => !!t && recentQuotes.includes((t || '').trim())
+const recentQuoteTags: string[] = []
+const recentQuoteKeywords: string[] = []
+const recentQuoteAuthors: string[] = []
 
 /* --- REPLACED: fetchLiveQuote keeps providers + DB + local --- */
-async function fetchZenQuote(): Promise<any | null> {
+async function fetchZenQuoteDoc(): Promise<any | null> {
   try {
     const res = await fetchWithTimeout('https://zenquotes.io/api/random', { cache: 'no-store' })
     if (!res?.ok) return null
@@ -760,80 +1335,62 @@ async function fetchZenQuote(): Promise<any | null> {
     const author = typeof entry?.a === 'string' ? entry.a.trim() : ''
     if (isLimitedAuthor(author) && Math.random() < 0.8) return null
 
-    const item = {
-      type: 'quote' as const,
+    return {
       text,
       author,
       source: { name: 'ZenQuotes.io', url: 'https://zenquotes.io/' },
       provider: 'zenquotes',
     }
-    await upsertCache('quote', { text }, { author, source: item.source, provider: item.provider })
-    await touchLastShown('quote', { text })
-    markRecentQuote(text)
-    return item
   } catch {
     return null
   }
 }
 
 async function fetchLiveQuote(): Promise<any | null> {
-  const base = process.env.QUOTABLE_BASE || 'https://api.quotable.io'
-
-  // 1) Try batch from provider
-  try {
-    const res = await fetchWithTimeout(`${base}/quotes/random?limit=5`, { cache: 'no-store' })
-    if (res?.ok) {
-      const data: any[] = await res.json()
-      const candidates = (Array.isArray(data) ? data : [data])
-        .filter(q => q?.content && !isRecentQuote(q.content))
-      const preferred = candidates.filter(q => !isLimitedAuthor(q?.author))
-      const pool = preferred.length ? preferred : candidates
-      const q = pool.length
-        ? pool[Math.floor(Math.random() * pool.length)]
-        : null
-
-      if (q?.content) {
-        const item = {
-          type: 'quote' as const,
-          text: q.content,
-          author: q.author || '',
-          source: { name: 'Quotable', url: 'https://quotable.io' },
-          provider: 'quotable',
-        }
-        upsertCache('quote', { text: item.text }, {
-          author: item.author,
-          source: item.source,
-          provider: item.provider,
-        })
-        touchLastShown('quote', { text: item.text })
-        markRecentQuote(item.text)
-        return item
-      }
-    }
-  } catch {}
-
-  const zen = await fetchZenQuote()
-  if (zen) return zen
-
-  // 2) DB cache (exclude recent)
-  let cached = await sampleQuoteFromCache({ avoidAuthors: LIMITED_AUTHOR_EXACTS })
-  if (!cached) cached = await sampleQuoteFromCache()
-  if (cached?.text) {
-    if (isLimitedAuthor(cached.author) && Math.random() < 0.7) {
-      const alt = await sampleQuoteFromCache({ avoidAuthors: LIMITED_AUTHOR_EXACTS })
-      if (alt?.text) cached = alt
-    }
-    touchLastShown('quote', { text: cached.text })
-    markRecentQuote(cached.text)
-    return {
-      type: 'quote' as const,
-      text: cached.text,
-      author: cached.author || '',
-      source: cached.source || { name: cached.provider || 'cache', url: '' },
-    }
+  const candidateMap = new Map<string, QuoteCandidate>()
+  const add = (candidate: QuoteCandidate | null) => {
+    if (!candidate) return
+    const key = quoteCandidateKey(candidate)
+    const existing = candidateMap.get(key)
+    if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
   }
 
-  // 3) Local last-resort
+  const dbCandidates = await collectQuoteCandidates()
+  dbCandidates.forEach(add)
+
+  const networkCandidates = await fetchNetworkQuoteCandidates()
+  networkCandidates.forEach(add)
+
+  const scored = Array.from(candidateMap.values())
+    .map((candidate) => ({ candidate, score: scoreQuoteCandidate(candidate) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => b.score - a.score)
+
+  for (const { candidate } of scored) {
+    const allTagsRecent = candidate.tags.every((tag) => recentQuoteTags.includes(tag))
+    const allKeywordsRecent = candidate.keywords.length
+      ? candidate.keywords.every((word) => recentQuoteKeywords.includes(word))
+      : false
+    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+
+    if (candidate.origin === 'network') {
+      await upsertCache('quote', { text: candidate.text }, {
+        author: candidate.author,
+        source: candidate.item.source,
+        provider: candidate.provider,
+        tags: candidate.tags,
+        keywords: candidate.keywords,
+      })
+    }
+
+    await touchLastShown('quote', { text: candidate.text })
+    markRecentQuote(candidate.text)
+    if (candidate.author) pushRecent(recentQuoteAuthors, candidate.author, 60)
+    pushRecentMany(recentQuoteTags, candidate.tags, 90)
+    pushRecentMany(recentQuoteKeywords, candidate.keywords, 160)
+    return candidate.item
+  }
+
   const local = [
     'Simplicity is the soul of efficiency.',
     'Make it work, make it right, make it fast.',
@@ -843,9 +1400,24 @@ async function fetchLiveQuote(): Promise<any | null> {
     'Stay curious and keep exploring.',
     'Every great idea started as something weird.',
   ]
-  const text = local.find(t => !isRecentQuote(t)) || local[Math.floor(Math.random() * local.length)]
-  markRecentQuote(text)
-  return { type: 'quote' as const, text, author: '', source: { name: 'Local', url: '' } }
+  const text = local.find((t) => !isRecentQuote(t)) || pick(local)
+  const candidate = buildQuoteCandidate({ text, author: '', provider: 'local', source: { name: 'Local', url: '' } }, 'network')
+  if (candidate) {
+    await upsertCache('quote', { text: candidate.text }, {
+      author: candidate.author,
+      source: candidate.item.source,
+      provider: candidate.provider,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+    })
+    await touchLastShown('quote', { text: candidate.text })
+    markRecentQuote(candidate.text)
+    pushRecentMany(recentQuoteTags, candidate.tags, 90)
+    pushRecentMany(recentQuoteKeywords, candidate.keywords, 160)
+    return candidate.item
+  }
+
+  return null
 }
 
 /* ---------------- FACTS: multi-providers + timeouts (patch important) --------------- */
@@ -890,37 +1462,47 @@ async function factDog() {
 function shuffle<T>(arr: T[]) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]] } return arr }
 
 async function fetchLiveFact(): Promise<any | null> {
-  if (Math.random() < 0.55) {
-    const cachedDoc = await sampleFactFromCache()
-    const mapped = mapFactDoc(cachedDoc)
-    if (mapped) {
-      touchLastShown('fact', mapped.key)
-      markRecentFact(mapped.item.text)
-      return mapped.item
+  const candidateMap = new Map<string, FactCandidate>()
+  const add = (candidate: FactCandidate | null) => {
+    if (!candidate) return
+    const key = factCandidateKey(candidate)
+    const existing = candidateMap.get(key)
+    if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
+  }
+
+  const dbCandidates = await collectFactCandidates()
+  dbCandidates.forEach(add)
+
+  const networkCandidates = await fetchNetworkFactCandidates()
+  networkCandidates.forEach(add)
+
+  const scored = Array.from(candidateMap.values())
+    .map((candidate) => ({ candidate, score: scoreFactCandidate(candidate) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => b.score - a.score)
+
+  for (const { candidate } of scored) {
+    const allTagsRecent = candidate.tags.every((tag) => recentFactTags.includes(tag))
+    const allKeywordsRecent = candidate.keywords.length
+      ? candidate.keywords.every((word) => recentFactKeywords.includes(word))
+      : false
+    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+
+    if (candidate.origin === 'network') {
+      await upsertCache('fact', { text: candidate.text }, {
+        source: candidate.item.source,
+        provider: candidate.provider,
+        tags: candidate.tags,
+        keywords: candidate.keywords,
+      })
     }
-  }
 
-  const providers = shuffle([factUselessfacts, factNumbers, factCat, factMeow, factDog])
-  for (const p of providers) {
-    try {
-      const f = await p()
-      if (f?.text) {
-        const text = trimText(f.text)
-        if (!text) continue
-        upsertCache('fact', { text }, { source: f.source, provider: f.provider })
-        touchLastShown('fact', { text })
-        markRecentFact(text)
-        return { type: 'fact' as const, text, source: f.source }
-      }
-    } catch {}
-  }
-
-  const cached = await sampleFactFromCache()
-  const mapped = mapFactDoc(cached)
-  if (mapped) {
-    touchLastShown('fact', mapped.key)
-    markRecentFact(mapped.item.text)
-    return mapped.item
+    await touchLastShown('fact', { text: candidate.text })
+    markRecentFact(candidate.text)
+    pushRecentMany(recentFactTags, candidate.tags, 90)
+    pushRecentMany(recentFactKeywords, candidate.keywords, 160)
+    pushRecent(recentFactProviders, candidate.provider, 40)
+    return candidate.item
   }
 
   const local = [
@@ -929,11 +1511,24 @@ async function fetchLiveFact(): Promise<any | null> {
     'Bananas are berries.',
     'A group of flamingos is a flamboyance.',
   ]
-  const text = pick(local)
-  upsertCache('fact', { text }, { source: { name: 'Local' }, provider: 'local' })
-  touchLastShown('fact', { text })
-  markRecentFact(text)
-  return { type: 'fact' as const, text, source: { name: 'Local', url: '' } }
+  const text = local.find(t => !recentFacts.includes(t)) || pick(local)
+  const candidate = buildFactCandidate({ text, source: { name: 'Local', url: '' }, provider: 'local' }, 'network')
+  if (candidate) {
+    await upsertCache('fact', { text: candidate.text }, {
+      source: candidate.item.source,
+      provider: candidate.provider,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+    })
+    await touchLastShown('fact', { text: candidate.text })
+    markRecentFact(candidate.text)
+    pushRecentMany(recentFactTags, candidate.tags, 90)
+    pushRecentMany(recentFactKeywords, candidate.keywords, 160)
+    pushRecent(recentFactProviders, candidate.provider, 40)
+    return candidate.item
+  }
+
+  return null
 }
 
 /** Chuck Norris API */
@@ -952,6 +1547,22 @@ async function fetchChuckNorrisJoke(): Promise<any | null> {
       source: { name: 'api.chucknorris.io', url: d.url },
       provider: 'chucknorris',
       id: d.id,
+    }
+  } catch { return null }
+}
+
+async function fetchJokeApiSingle(): Promise<any | null> {
+  try {
+    const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
+    if (!res?.ok) return null
+    const j: any = await res.json()
+    const text = trimText(j?.joke)
+    if (!text) return null
+    return {
+      type: 'joke',
+      text,
+      source: { name: 'JokeAPI', url: 'https://jokeapi.dev' },
+      provider: 'jokeapi',
     }
   } catch { return null }
 }
@@ -975,79 +1586,66 @@ async function getShortJokeFromCSV(): Promise<any | null> {
   return { type: 'joke', text, source: { name: 'local-csv' }, provider: 'shortjokes.csv' }
 }
 
-/** ✅ Jokes : répartition pondérée pour varier (JokeAPI / Chuck / CSV) */
 async function fetchLiveJoke(): Promise<any | null> {
-  if (Math.random() < 0.65) {
-    const cachedDoc = await sampleJokeFromCache()
-    const mapped = mapJokeDoc(cachedDoc)
-    if (mapped) {
-      touchLastShown('joke', mapped.key)
-      markRecentJoke(mapped.item.text)
-      return mapped.item
+  const candidateMap = new Map<string, JokeCandidate>()
+  const add = (candidate: JokeCandidate | null) => {
+    if (!candidate) return
+    const key = jokeCandidateKey(candidate)
+    const existing = candidateMap.get(key)
+    if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
+  }
+
+  const dbCandidates = await collectJokeCandidates()
+  dbCandidates.forEach(add)
+
+  const networkCandidates = await fetchNetworkJokeCandidates()
+  networkCandidates.forEach(add)
+
+  const scored = Array.from(candidateMap.values())
+    .map((candidate) => ({ candidate, score: scoreJokeCandidate(candidate) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => b.score - a.score)
+
+  for (const { candidate } of scored) {
+    const allTagsRecent = candidate.tags.every((tag) => recentJokeTags.includes(tag))
+    const allKeywordsRecent = candidate.keywords.length
+      ? candidate.keywords.every((word) => recentJokeKeywords.includes(word))
+      : false
+    if ((allTagsRecent && allKeywordsRecent) && scored.length > 1) continue
+
+    if (candidate.origin === 'network') {
+      await upsertCache('joke', { text: candidate.text }, {
+        source: candidate.item.source,
+        provider: candidate.provider,
+        tags: candidate.tags,
+        keywords: candidate.keywords,
+      })
     }
-  }
 
-  const roll = Math.random()
-  let external: any | null = null
-
-  const fetchFromJokeApi = async () => {
-    try {
-      const res = await fetchWithTimeout('https://v2.jokeapi.dev/joke/Any?type=single', { cache: 'no-store' })
-      if (res?.ok) {
-        const j: any = await res.json()
-        const text = trimText(j?.joke)
-        if (text) {
-          return {
-            type: 'joke' as const,
-            text,
-            source: { name: 'JokeAPI', url: 'https://jokeapi.dev' },
-            provider: 'jokeapi',
-          }
-        }
-      }
-    } catch {}
-    return null
-  }
-
-  if (roll < 0.5) {
-    external = await fetchFromJokeApi()
-    if (!external) external = await fetchChuckNorrisJoke()
-    if (!external) external = await getShortJokeFromCSV()
-  } else if (roll < 0.8) {
-    external = await fetchChuckNorrisJoke()
-    if (!external) external = await fetchFromJokeApi()
-    if (!external) external = await getShortJokeFromCSV()
-  } else {
-    external = await getShortJokeFromCSV()
-    if (!external) external = await fetchFromJokeApi()
-    if (!external) external = await fetchChuckNorrisJoke()
-  }
-
-  if (external?.text) {
-    const text = trimText(external.text)
-    if (text) {
-      upsertCache('joke', { text }, { source: external.source, provider: external.provider })
-      touchLastShown('joke', { text })
-      markRecentJoke(text)
-      return { type: 'joke' as const, text, source: external.source, provider: external.provider }
-    }
-  }
-
-  const fallbackDoc = await sampleJokeFromCache()
-  const mappedFallback = mapJokeDoc(fallbackDoc)
-  if (mappedFallback) {
-    touchLastShown('joke', mappedFallback.key)
-    markRecentJoke(mappedFallback.item.text)
-    return mappedFallback.item
+    await touchLastShown('joke', { text: candidate.text })
+    markRecentJoke(candidate.text)
+    pushRecentMany(recentJokeTags, candidate.tags, 80)
+    pushRecentMany(recentJokeKeywords, candidate.keywords, 160)
+    pushRecent(recentJokeProviders, candidate.provider, 30)
+    return candidate.item
   }
 
   const csv = await getShortJokeFromCSV()
   if (csv?.text) {
-    const text = trimText(csv.text)
-    if (text) {
-      markRecentJoke(text)
-      touchLastShown('joke', { text })
-      return { type: 'joke' as const, text, source: csv.source, provider: csv.provider }
+    const candidate = buildJokeCandidate(csv, 'network')
+    if (candidate) {
+      await upsertCache('joke', { text: candidate.text }, {
+        source: candidate.item.source,
+        provider: candidate.provider,
+        tags: candidate.tags,
+        keywords: candidate.keywords,
+      })
+      await touchLastShown('joke', { text: candidate.text })
+      markRecentJoke(candidate.text)
+      pushRecentMany(recentJokeTags, candidate.tags, 80)
+      pushRecentMany(recentJokeKeywords, candidate.keywords, 160)
+      pushRecent(recentJokeProviders, candidate.provider, 30)
+      return candidate.item
     }
   }
 
@@ -1222,6 +1820,171 @@ async function fetchLiveVideo(): Promise<any | null> {
 const recentHosts: string[] = []
 function markRecentHost(h: string) { const i = recentHosts.indexOf(h); if (i >= 0) recentHosts.splice(i, 1); recentHosts.push(h); if (recentHosts.length > 30) recentHosts.shift() }
 const isRecentHost = (h?: string) => !!h && recentHosts.includes(h)
+type WebCandidate = {
+  url: string
+  host: string
+  item: { type: 'web'; url: string; text: string; ogImage: string | null; source: any }
+  tags: string[]
+  keywords: string[]
+  provider: string
+  origin: CandidateOrigin
+  updatedAt?: Date | null
+  lastShownAt?: Date | null
+}
+
+function extractWebTags(text: string): string[] {
+  const tags = extractTagsFromSeeds(text, WEB_TOPIC_SEEDS)
+  return tags.length ? tags : ['misc']
+}
+
+function buildWebCandidate(doc: any, origin: CandidateOrigin): WebCandidate | null {
+  const url = trimText(doc?.url)
+  if (!url) return null
+  let host = trimText(doc?.host || '')
+  if (!host) {
+    try { host = new URL(url).host.replace(/^www\./, '') } catch {}
+  }
+  const text = trimText(doc?.title || doc?.text || host || url)
+  const ogImage = doc?.ogImage || doc?.thumb || null
+  const provider = trimText(doc?.provider) || 'web'
+  const source = doc?.source || { name: provider, url }
+  const descriptor = `${text} ${host} ${provider}`
+  const storedTags = normalizeStringArray(doc?.tags)
+  const storedKeywords = normalizeStringArray(doc?.keywords)
+  const tags = storedTags.length ? storedTags : extractWebTags(descriptor)
+  const keywords = storedKeywords.length ? storedKeywords : extractKeywordsFromText(descriptor)
+  const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
+  const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
+  return {
+    url,
+    host,
+    item: { type: 'web', url, text, ogImage, source },
+    tags,
+    keywords,
+    provider,
+    origin,
+    updatedAt,
+    lastShownAt,
+  }
+}
+
+function webCandidateKey(candidate: WebCandidate): string {
+  return candidate.url
+}
+
+function scoreWebCandidate(candidate: WebCandidate): number {
+  let score = 0
+
+  if (!recentHosts.includes(candidate.host)) score += 8
+  else score -= 9
+
+  if (!recentWebProviders.includes(candidate.provider)) score += 3
+  else score -= 3
+
+  const uniqueTags = new Set(candidate.tags)
+  for (const tag of uniqueTags) {
+    if (recentWebTags.includes(tag)) score -= 2
+    else score += 3
+  }
+
+  const uniqueKeywords = candidate.keywords.filter((word) => !recentWebKeywords.includes(word))
+  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
+  score += uniqueKeywords.length * 1.4
+  score -= repeatedKeywords * 2.4
+
+  if (candidate.origin === 'network') score += 4
+  else if (candidate.origin === 'db-unseen') score += 2
+
+  if (!candidate.lastShownAt) score += 3
+  else {
+    const days = (Date.now() - candidate.lastShownAt.getTime()) / DAY_MS
+    if (days > 21) score += 4
+    else if (days < 3) score -= 3
+  }
+
+  score += Math.random()
+  return score
+}
+
+async function collectWebCandidates(): Promise<WebCandidate[]> {
+  const db = await getDbSafe()
+  if (!db) return []
+  const bucket = new Map<string, WebCandidate>()
+  const add = (doc: any, origin: CandidateOrigin) => {
+    const candidate = buildWebCandidate(doc, origin)
+    if (!candidate) return
+    const key = webCandidateKey(candidate)
+    const existing = bucket.get(key)
+    if (!existing || candidate.origin === 'network') bucket.set(key, candidate)
+  }
+
+  try {
+    const [fresh, unseen, backlog, randomDocs] = await Promise.all([
+      db.collection('items').find({ type: 'web' }).sort({ updatedAt: -1 }).limit(120).toArray(),
+      db.collection('items').find({ type: 'web', $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }).sort({ updatedAt: -1 }).limit(80).toArray(),
+      db.collection('items').find({ type: 'web', lastShownAt: { $lt: new Date(Date.now() - 14 * DAY_MS) } }).sort({ lastShownAt: 1 }).limit(80).toArray(),
+      db.collection('items').aggregate([{ $match: { type: 'web' } }, { $sample: { size: 60 } }]).toArray(),
+    ])
+    for (const doc of fresh) add(doc, 'db-fresh')
+    for (const doc of unseen) add(doc, 'db-unseen')
+    for (const doc of backlog) add(doc, 'db-backlog')
+    for (const doc of randomDocs) add(doc, 'db-random')
+  } catch {}
+
+  return Array.from(bucket.values())
+}
+
+async function fetchNetworkWebCandidates(): Promise<WebCandidate[]> {
+  const KEY = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_API_KEY
+  const CX = process.env.GOOGLE_CSE_CX  || process.env.GOOGLE_CSE_ID
+  if (!KEY || !CX) return []
+
+  const A = Array.from(new Set([...(WEB_KEYWORD_LISTS.A || []), 'weird','forgotten','retro','vintage','ascii','obscure','random','tiny','handmade','zine','folk','outsider','underground','amateur','old web','geocities','blogspot','tripod','myspace','lofi','pixel','crt','vhs','camcorder','guestbook','y2k','webcore','demoscene','net.art']))
+  const B = Array.from(new Set([...(WEB_KEYWORD_LISTS.B || []), 'blog','diary','gallery','generator','zine','festival','toy','museum','game','playlist','lyrics','fan page','tutorial','archive','personal site','homepage','forum','webring','guestbook','wiki','cookbook','guide','blogroll','directory','portal','topsites','newsletter','mirror','ftp','userscripts','bookmarklet','fanfic','scanlation','pet game','virtual pet','toybox','playground','lab','experiments']))
+  const C = Array.from(new Set([...(WEB_KEYWORD_LISTS.C || []), '1998','2003','romania','argentina','finland','iceland','japan','france','village','basement','attic','garage','mexico','brazil','colombia','morocco','turkey','greece','portugal','neon','cybercafe','library','dorm room','rooftop','market','pier','lighthouse','forest','river']))
+
+  const queries = new Set<string>()
+  while (queries.size < 4) {
+    queries.add(`${pick(A)} ${pick(B)} ${pick(C)}`)
+  }
+
+  const out: WebCandidate[] = []
+  for (const query of queries) {
+    try {
+      const start = String([1,1,1,11,21][Math.floor(Math.random() * 5)])
+      const num = String([10,9,8][Math.floor(Math.random() * 3)])
+      const res = await fetchWithTimeout(`https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(query)}&num=${num}&start=${start}&safe=off`, { cache: 'no-store' })
+      if (!res?.ok) continue
+      const data: any = await res.json()
+      const items: any[] = data?.items || []
+      for (const candidate of shuffle(items.slice())) {
+        const link: string | undefined = candidate?.link
+        if (!link) continue
+        let host = ''
+        try { host = new URL(link).host.replace(/^www\./,'') } catch {}
+        if (host && isRecentHost(host)) continue
+        const ogImage = await fetchOgImage(link)
+        if (!ogImage) continue
+        const doc = {
+          url: link,
+          host,
+          title: candidate?.title || host || link,
+          ogImage,
+          provider: 'google-cse',
+          source: { name: 'Google', url: link },
+        }
+        const built = buildWebCandidate(doc, 'network')
+        if (built) out.push(built)
+        if (out.length >= 6) break
+      }
+    } catch {}
+    if (out.length >= 6) break
+  }
+  return out
+}
+const recentWebTags: string[] = []
+const recentWebKeywords: string[] = []
+const recentWebProviders: string[] = []
 
 async function fetchOgImage(link: string): Promise<string | null> {
   try {
@@ -1241,78 +2004,65 @@ async function fetchOgImage(link: string): Promise<string | null> {
 }
 
 async function fetchLiveWeb(): Promise<any | null> {
-  const KEY = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_API_KEY
-  const CX  = process.env.GOOGLE_CSE_CX  || process.env.GOOGLE_CSE_ID
-
-  const imageMatch = { ogImage: { $nin: [null, '', false] } }
-
-  if (!KEY || !CX) {
-    const cached = await sampleFromCache('web', imageMatch)
-    if (cached?.url) {
-      touchLastShown('web', { url: cached.url })
-      return { type:'web', url: cached.url, text: cached.title || cached.host || cached.url, ogImage: cached.ogImage || null, source: { name:'cache', url: cached.url } }
-    }
-    return null
+  const candidateMap = new Map<string, WebCandidate>()
+  const add = (candidate: WebCandidate | null) => {
+    if (!candidate) return
+    const key = webCandidateKey(candidate)
+    const existing = candidateMap.get(key)
+    if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
   }
 
-  const A = Array.from(new Set([
-    ...(WEB_KEYWORD_LISTS.A || []),
-    'weird','forgotten','retro','vintage','ascii','obscure','random','tiny','handmade','zine','folk','outsider','underground','amateur','mini','old web','geocities','blogspot','freewebs','tripod','myspace','lofi','lo-fi','pixel','8bit','chiptune','crt','scanlines','vhs','camcorder','super 8','blinkies','glitter','marquee','under construction','guestbook-core','y2k','webcore','brutalist','demoscene','net.art','netlabel','homebrew','shareware','abandonware','warez','torrent-era','java applet','shockwave','flash','frameset','table layout','iframes','cursor trail','hit counter','animated gif','sprite','midi','soundfont','winamp skin','realplayer','quicktime','silverlight','bbs','gopher','telnet','irc','icq','msn','aim','neocities'
-  ]))
-  const B = Array.from(new Set([
-    ...(WEB_KEYWORD_LISTS.B || []),
-    'blog','diary','gallery','generator','zine','festival','toy','museum','game','playlist','lyrics','fan page','tutorial','archive','personal site','homepage','forum','webring','guestbook','shoutbox','tagboard','message board','bulletin board','imageboard','chan','wiki','knowledge base','faq','how-to','cookbook','cheatsheet','guide','blogroll','link list','directory','portal','start page','topsites','ring hub','rss feed','newsletter','mirror','ftp dump','pastebin','snippet vault','userscripts','bookmarklet','rom hack','mod','skin pack','cursor pack','icon set','avatar gallery','wallpaper pack','screensaver','soundfont pack','midi pack','sprite sheet','tileset','amv hub','fanfic archive','scanlation','pet game','virtual pet','clicker','quiz','personality test','shrine','guestmap','netlabel','tape archive','radio stream','dj set','mix series','field recordings','toolkit','toybox','sandbox','playground','lab','experiments'
-  ]))
-  const C = Array.from(new Set([
-    ...(WEB_KEYWORD_LISTS.C || []),
-    '1998','2003','2007','romania','argentina','finland','iceland','japan','france','village','basement','attic','garage','1996','1999','2000','2001','2002','2004','2005','2006','2008','2009','2010','2012','poland','serbia','georgia','brittany','sardinia','mexico','brazil','colombia','morocco','lebanon','turkey','greece','portugal','scotland','internet cafe','cybercafe','school computer lab','library','dorm room','bedroom','rooftop','cellar','shed','barn','market square','village hall','church hall','community center','subway','train platform','pier','lighthouse','forest','river bank'
-  ]))
-  const q = `${pick(A)} ${pick(B)} ${pick(C)}`
-  const start = String([1,1,1,11,21,31][Math.floor(Math.random()*6)])
-  const num = String([10,10,10,9,8][Math.floor(Math.random()*5)])
+  const dbCandidates = await collectWebCandidates()
+  dbCandidates.forEach(add)
 
-  try {
-    const res = await fetchWithTimeout(`https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(q)}&num=${num}&start=${start}&safe=off`, { cache: 'no-store' })
-    if (!res?.ok) throw new Error('cse-failed')
-    const data: any = await res.json()
-    const items: any[] = data?.items || []
-    const ranked = items.filter(it => {
-      const link: string | undefined = it?.link
-      if (!link) return false
-      try {
-        const host = new URL(link).host.replace(/^www\./, '')
-        return !isRecentHost(host)
-      } catch {
-        return true
-      }
-    })
-    const pool = ranked.length ? ranked : items
+  const networkCandidates = await fetchNetworkWebCandidates()
+  networkCandidates.forEach(add)
 
-    for (const candidate of shuffle(pool.slice())) {
-      const link: string | undefined = candidate?.link
-      if (!link) continue
-      let host = ''
-      try { host = new URL(link).host.replace(/^www\./,'') } catch {}
-      if (host && isRecentHost(host)) continue
+  const scored = Array.from(candidateMap.values())
+    .map((candidate) => ({ candidate, score: scoreWebCandidate(candidate) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => b.score - a.score)
 
-      const ogImage = await fetchOgImage(link)
-      if (!ogImage) continue
+  for (const { candidate } of scored) {
+    const allTagsRecent = candidate.tags.every((tag) => recentWebTags.includes(tag))
+    const allKeywordsRecent = candidate.keywords.length
+      ? candidate.keywords.every((word) => recentWebKeywords.includes(word))
+      : false
+    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
 
-      if (host) markRecentHost(host)
-      const item = { type:'web', url: link, text: candidate?.title || host || link, ogImage, source: { name:'Google', url: link } }
-      await upsertCache('web', { url: link }, { title: item.text, host, ogImage, provider: 'google-cse' })
-      await touchLastShown('web', { url: link })
-      return item
+    if (candidate.origin === 'network') {
+      await upsertCache('web', { url: candidate.url }, {
+        title: candidate.item.text,
+        host: candidate.host,
+        ogImage: candidate.item.ogImage,
+        provider: candidate.provider,
+        tags: candidate.tags,
+        keywords: candidate.keywords,
+      })
     }
-    throw new Error('no-og-image')
-  } catch {
-    const cached = await sampleFromCache('web', imageMatch)
-    if (cached?.url) {
-      touchLastShown('web', { url: cached.url })
-      return { type:'web', url: cached.url, text: cached.title || cached.host || cached.url, ogImage: cached.ogImage || null, source: { name:'cache', url: cached.url } }
-    }
-    return null
+
+    await touchLastShown('web', { url: candidate.url })
+    if (candidate.host) markRecentHost(candidate.host)
+    pushRecentMany(recentWebTags, candidate.tags, 120)
+    pushRecentMany(recentWebKeywords, candidate.keywords, 160)
+    pushRecent(recentWebProviders, candidate.provider, 40)
+    return candidate.item
   }
+
+  const cached = await sampleFromCache('web', { ogImage: { $nin: [null, '', false] } })
+  if (cached?.url) {
+    await touchLastShown('web', { url: cached.url })
+    const fallback = buildWebCandidate(cached, 'db-random')
+    if (fallback) {
+      pushRecentMany(recentWebTags, fallback.tags, 120)
+      pushRecentMany(recentWebKeywords, fallback.keywords, 160)
+      if (fallback.host) markRecentHost(fallback.host)
+      return fallback.item
+    }
+    return { type: 'web' as const, url: cached.url, text: cached.title || cached.host || cached.url, ogImage: cached.ogImage || null, source: cached.source || { name: cached.provider || 'cache', url: cached.url } }
+  }
+
+  return null
 }
 
 /* -------------------------------- Handler -------------------------------- */
