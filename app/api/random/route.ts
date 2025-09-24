@@ -1395,11 +1395,17 @@ async function fetchLiveImage(): Promise<any | null> {
     if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
   }
 
+  // Pull live providers first so they get priority in the candidate bucket.
+  let networkCandidates: ImageCandidate[] = []
+  try {
+    networkCandidates = await fetchNetworkImageCandidates()
+  } catch {
+    networkCandidates = []
+  }
+  networkCandidates.forEach(add)
+
   const dbCandidates = await collectImageCandidates()
   dbCandidates.forEach(add)
-
-  const networkCandidates = await fetchNetworkImageCandidates()
-  networkCandidates.forEach(add)
 
   const scored = Array.from(candidateMap.values())
     .map((candidate) => ({ candidate, score: scoreImageCandidate(candidate) }))
