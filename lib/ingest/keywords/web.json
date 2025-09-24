@@ -15,7 +15,9 @@
     "industrial heritage", "field recordings", "sound archive",
     "tape swap", "newsletter", "retro tech", "lonely page",
     "forgotten blog", "sleepy forum", "mystery cult", "odd job",
-    "taxidermy", "curious cabinet"
+    "taxidermy", "curious cabinet", "official", "award-winning", "digital",
+    "contemporary", "indie", "collective", "festival", "street", "mainstream",
+    "emerging", "community"
   ],
   "B": [
     "blog", "diary", "gallery", "generator", "toy", "museum", "game",
@@ -39,7 +41,9 @@
     "roadside diner", "lighthouse map", "odd museum list",
     "cemetery guide", "post rock chronicle", "indie label",
     "bedroom producer", "field recording log", "weather diary",
-    "astronomy notebook", "meteor spotting", "strange phenomenon archive"
+    "astronomy notebook", "meteor spotting", "strange phenomenon archive",
+    "magazine", "festival guide", "radio show", "studio", "record label",
+    "live stream", "digital exhibition", "online class", "resource hub"
   ],
   "C": [
     "1994", "1996", "1998", "1999", "2000", "2001", "2002", "2003",
@@ -65,6 +69,9 @@
     "hardware store", "camera repair shop", "eyewear atelier", "flashlight fan",
     "train depot", "tram museum", "trolley barn", "funicular",
     "funeral home", "cemetery", "botanical garden", "urban farm",
-    "city rooftop", "rainy alley", "underground passage"
+    "city rooftop", "rainy alley", "underground passage",
+    "new york", "berlin", "london", "lagos", "seoul", "bangkok", "nairobi",
+    "cairo", "tel aviv", "são paulo", "mexico city", "singapore", "dubai",
+    "helsinki", "melbourne", "cape town", "jaipur", "kinshasa", "istanbul"
   ]
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useLayoutEffect, type RefObject, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback, type RefObject, type CSSProperties } from 'react'
 import LogoAnimated from '../components/LogoAnimated'
 import RandomModal from '../components/RandomModal'
 import LanguageSwitcher from '../components/LanguageSwitcher'
@@ -11,12 +11,21 @@ import LikesMenu from '../components/LikesMenu'
 import { useI18n } from '../providers/I18nProvider'
 import { fetchRandom } from '../lib/api'
 import { playRandom, playAgain } from '../utils/sound'
-import EncouragementLayer from '../components/EncouragementLayer'
-import { registerRandomClick } from '../lib/encourage/register'
 import MonoIcon from '../components/MonoIcon'
 import AnimatedButtonLabel from '../components/AnimatedButtonLabel'
 
 type ItemType = 'image'|'video'|'quote'|'joke'|'fact'|'web'
+
+type EncourageItem = {
+  type: 'encourage'
+  text: string
+  icon: string
+  subtitle?: string
+}
+
+type SequenceSlot =
+  | { kind: 'content'; itemType: ItemType }
+  | { kind: 'encourage'; round: number; encourageIndex: number }
 
 const THEMES = [
   { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
@@ -27,8 +36,44 @@ const THEMES = [
   { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
-// séquence fixe (on applique ensuite le filtre de ShufflePicker)
-const FIXED_SEQUENCE: ItemType[] = ['image','video','quote','joke','video','fact','image','web']
+// Séquence fixe d'un tour complet
+const FIXED_SEQUENCE: ItemType[] = [
+  'image',
+  'video',
+  'joke',
+  'video',
+  'image',
+  'web',
+  'quote',
+  'image',
+  'video',
+  'fact',
+  'image',
+  'video',
+  'web',
+]
+
+const ENCOURAGE_GROUP_SIZE = 5
+const ENCOURAGE_ICON_TOTAL = 30
+
+const FALLBACK_ENCOURAGE_MESSAGES = [
+  'Keep exploring forward.',
+  'Push beyond the familiar.',
+  'The next layer awaits.',
+  'Dive further into the odd.',
+  'Unlock another surprise.',
+]
+
+const shuffleArray = <T,>(arr: T[]): T[] => {
+  const copy = [...arr]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = copy[i]
+    copy[i] = copy[j]
+    copy[j] = temp
+  }
+  return copy
+}
 
 const randIdx = (max: number) => Math.floor(Math.random() * max)
 const randDiffIdx = (max: number, not: number) => {
@@ -133,7 +178,8 @@ export default function HomePage() {
 
   // sélection utilisateur (par défaut : tout)
   const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(['image','video','quote','joke','fact','web'])
-  const [seqIndex, setSeqIndex] = useState(0)
+  const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0 })
+  const [sequenceVersion, setSequenceVersion] = useState(0)
 
   const [currentItem, setCurrentItem] = useState<any>(null)
   const lang = (locale || 'en') as 'en'|'fr'|'de'|'jp'
@@ -209,28 +255,92 @@ export default function HomePage() {
     return () => clearTimeout(timer)
   }, [trigger])
 
-  // séquence filtrée (on conserve l'ordre)
+  // Séquence filtrée (on conserve l'ordre défini dans FIXED_SEQUENCE)
   const filteredSequence = useMemo<ItemType[]>(() => {
     const allow = new Set(selectedTypes)
     const seq = FIXED_SEQUENCE.filter(t => allow.has(t))
     return seq.length ? seq : FIXED_SEQUENCE.slice()
   }, [selectedTypes])
 
-  function getNextTypeAndAdvance(): ItemType {
-    const nextType = filteredSequence[seqIndex % filteredSequence.length]
-    setSeqIndex(i => i + 1)
-    return nextType
-  }
+  const resetSequence = useCallback(() => {
+    sequenceStateRef.current = { step: 0, round: 0, encourage: 0 }
+    setSequenceVersion(v => v + 1)
+  }, [])
+
+  useEffect(() => {
+    resetSequence()
+  }, [resetSequence, filteredSequence.length])
+
+  const encourageMessages = useMemo(() => {
+    const list = dict?.encourage?.messages
+    if (Array.isArray(list) && list.length) {
+      return list.map((msg: string) => msg.trim()).filter(Boolean)
+    }
+    return FALLBACK_ENCOURAGE_MESSAGES
+  }, [dict])
+
+  const encourageRoundLabel = useMemo(() => dict?.encourage?.roundLabel || 'Round', [dict])
+
+  const encourageQueueRef = useRef<string[]>([])
+  useEffect(() => {
+    encourageQueueRef.current = shuffleArray(encourageMessages)
+  }, [encourageMessages])
+
+  const pickEncourageMessage = useCallback(() => {
+    if (!encourageQueueRef.current.length) {
+      encourageQueueRef.current = shuffleArray(encourageMessages)
+    }
+    return encourageQueueRef.current.shift() ?? FALLBACK_ENCOURAGE_MESSAGES[0]
+  }, [encourageMessages])
+
+  const pickEncourageIcon = useCallback((encourageIndex: number) => {
+    const groups = Math.max(1, Math.ceil(ENCOURAGE_ICON_TOTAL / ENCOURAGE_GROUP_SIZE))
+    const bucket = Math.min(encourageIndex - 1, groups - 1)
+    const start = bucket * ENCOURAGE_GROUP_SIZE + 1
+    const end = Math.min(start + ENCOURAGE_GROUP_SIZE - 1, ENCOURAGE_ICON_TOTAL)
+    const span = Math.max(1, end - start + 1)
+    return `/encourage/${start + Math.floor(Math.random() * span)}.png`
+  }, [])
+
+  const buildEncourageItem = useCallback((round: number, encourageIndex: number): EncourageItem => ({
+    type: 'encourage',
+    text: pickEncourageMessage(),
+    icon: pickEncourageIcon(encourageIndex),
+    subtitle: `${encourageRoundLabel} ${round}`,
+  }), [encourageRoundLabel, pickEncourageIcon, pickEncourageMessage])
+
+  const getNextSlot = useCallback((): SequenceSlot => {
+    const seq = filteredSequence
+    if (!seq.length) {
+      return { kind: 'content', itemType: 'image' }
+    }
+    const state = sequenceStateRef.current
+    if (state.step >= seq.length) {
+      const round = state.round + 1
+      const encourage = state.encourage + 1
+      sequenceStateRef.current = { step: 0, round, encourage }
+      return { kind: 'encourage', round, encourageIndex: encourage }
+    }
+    const itemType = seq[state.step]
+    sequenceStateRef.current = { ...state, step: state.step + 1 }
+    return { kind: 'content', itemType }
+  }, [filteredSequence])
 
   const startRandom = async () => {
-    registerRandomClick();
     const next = !isSecond
     setIsSecond(next)
     setTrigger(t => t + 1)
 
     try {
-      const t = getNextTypeAndAdvance()
-      const res = await fetchRandom({ types: [t] as any, lang })
+      const slot = getNextSlot()
+      if (slot.kind === 'encourage') {
+        const encourageItem = buildEncourageItem(slot.round, slot.encourageIndex)
+        setCurrentItem(encourageItem)
+        setIsModalOpen(true)
+        playRandom()
+        return
+      }
+      const res = await fetchRandom({ types: [slot.itemType] as any, lang })
       setCurrentItem(res?.item || null)
       const contrast = Math.random() < 0.7
       if (contrast) setModalThemeIdx(randDiffIdx(THEMES.length, themeIdx))
@@ -244,15 +354,19 @@ export default function HomePage() {
   }
 
   const randomAgain = async () => {
-    registerRandomClick();
     const next = !isSecond
     setIsSecond(next)
     setTrigger(t => t + 1)
 
     try {
-      const t = getNextTypeAndAdvance()
-      const res = await fetchRandom({ types: [t] as any, lang })
-      setCurrentItem(res?.item || null)
+      const slot = getNextSlot()
+      if (slot.kind === 'encourage') {
+        const encourageItem = buildEncourageItem(slot.round, slot.encourageIndex)
+        setCurrentItem(encourageItem)
+      } else {
+        const res = await fetchRandom({ types: [slot.itemType] as any, lang })
+        setCurrentItem(res?.item || null)
+      }
     } catch {}
 
     if (Math.random() < 0.5) {
@@ -442,12 +556,13 @@ export default function HomePage() {
         selected={selectedTypes}
         onChange={(next) => {
           setSelectedTypes(next)
-          setSeqIndex(0)
+          resetSequence()
         }}
         theme={theme}
       />
       <LegalModal open={isLegalOpen} onClose={() => setIsLegalOpen(false)} />
       <RandomModal
+        key={sequenceVersion}
         types={filteredSequence as any}
         lang={lang}
         open={isModalOpen}
@@ -459,7 +574,6 @@ export default function HomePage() {
         forceItem={currentItem}
       />
     </main>
-    <EncouragementLayer />
     </>
   )
 }

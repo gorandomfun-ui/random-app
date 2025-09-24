@@ -13,7 +13,45 @@ type ItemType = 'image'|'quote'|'fact'|'joke'|'video'|'web'
 type Lang = 'en'|'fr'|'de'|'jp'
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)]
-const orderAsGiven = <T,>(arr: T[]) => arr
+
+const ITEM_TYPE_SEQUENCE: ItemType[] = ['image','quote','fact','joke','video','web']
+
+const recentTypeHistory: ItemType[] = []
+
+function typeFatigueScore(type: ItemType): number {
+  let fatigue = 0
+  let weight = 1
+  for (let i = recentTypeHistory.length - 1; i >= 0 && weight <= 24; i--, weight++) {
+    if (recentTypeHistory[i] === type) fatigue += 1 / weight
+  }
+  return fatigue
+}
+
+function markRecentType(type: ItemType) {
+  recentTypeHistory.push(type)
+  if (recentTypeHistory.length > 64) recentTypeHistory.shift()
+}
+
+function orderAsGiven(arr: ItemType[]): ItemType[] {
+  if (!arr.length) return arr
+  const enriched = arr.map((value, index) => ({
+    value,
+    index,
+    fatigue: typeFatigueScore(value),
+    jitter: Math.random() * 0.001,
+  }))
+
+  enriched.sort((a, b) => {
+    const diff = a.fatigue - b.fatigue
+    if (Math.abs(diff) > 0.0001) return diff
+    if (a.jitter !== b.jitter) return a.jitter - b.jitter
+    const baselineDiff = ITEM_TYPE_SEQUENCE.indexOf(a.value) - ITEM_TYPE_SEQUENCE.indexOf(b.value)
+    if (baselineDiff !== 0) return baselineDiff
+    return a.index - b.index
+  })
+
+  return enriched.map(({ value }) => value)
+}
 
 const PROVIDER_TIMEOUT_MS = Number(process.env.RANDOM_PROVIDER_TIMEOUT_MS || 2500)
 const VIDEO_KEYWORD_LISTS = videoKeywordJson as { core: string[]; folk: string[]; fun: string[] }
@@ -920,6 +958,94 @@ function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider:
 
 type CandidateOrigin = 'db-fresh' | 'db-unseen' | 'db-backlog' | 'db-random' | 'network'
 
+const globalRecentItems: string[] = []
+const globalRecentTopics: string[] = []
+const globalRecentProviders: string[] = []
+const globalRecentKeywords: string[] = []
+const globalRecentOrigins: string[] = []
+
+type GlobalFootprint = {
+  type: ItemType
+  key?: string | null
+  tags?: string[]
+  keywords?: string[]
+  provider?: string
+  origin?: CandidateOrigin | 'fallback'
+}
+
+function buildGlobalItemKey(type: ItemType, key?: string | null): string | null {
+  if (!key) return null
+  const normalized = String(key).trim().toLowerCase()
+  if (!normalized) return null
+  return `${type}:${normalized}`
+}
+
+function markGlobalItem(type: ItemType, key?: string | null) {
+  const globalKey = buildGlobalItemKey(type, key)
+  if (!globalKey) return
+  pushRecent(globalRecentItems, globalKey, 260)
+}
+
+function isGlobalItemRecent(type: ItemType, key?: string | null): boolean {
+  const globalKey = buildGlobalItemKey(type, key)
+  if (!globalKey) return false
+  return globalRecentItems.includes(globalKey)
+}
+
+function markGlobalTopics(tags: string[]) {
+  if (!tags?.length) return
+  pushRecentMany(globalRecentTopics, tags, 220)
+}
+
+function areTopicsGloballyRecent(tags: string[]): boolean {
+  if (!tags?.length) return false
+  const normalized = tags.map(tag => tag.trim().toLowerCase()).filter(Boolean)
+  if (!normalized.length) return false
+  return normalized.every(tag => globalRecentTopics.includes(tag))
+}
+
+function markGlobalKeywords(words: string[]) {
+  if (!words?.length) return
+  pushRecentMany(globalRecentKeywords, words, 260)
+}
+
+function areKeywordsGloballyRecent(words: string[]): boolean {
+  if (!words?.length) return false
+  const normalized = words.map(word => word.trim().toLowerCase()).filter(Boolean)
+  if (!normalized.length) return false
+  return normalized.every(word => globalRecentKeywords.includes(word))
+}
+
+function markGlobalProvider(provider?: string) {
+  if (!provider) return
+  pushRecent(globalRecentProviders, provider, 140)
+}
+
+function isProviderGloballyRecent(provider?: string): boolean {
+  if (!provider) return false
+  return globalRecentProviders.includes(provider.trim().toLowerCase())
+}
+
+function markGlobalOrigin(origin: CandidateOrigin | 'fallback') {
+  pushRecent(globalRecentOrigins, origin, 160)
+}
+
+function shouldPreferFreshContent(): boolean {
+  const window = globalRecentOrigins.slice(-10)
+  if (window.length < 5) return false
+  const fresh = window.filter((v) => v === 'network' || v === 'db-fresh' || v === 'db-unseen').length
+  const backlog = window.filter((v) => v === 'db-backlog' || v === 'db-random').length
+  return fresh < 3 && backlog >= fresh + 2
+}
+
+function registerGlobalFootprint(meta: GlobalFootprint) {
+  if (meta.key) markGlobalItem(meta.type, meta.key)
+  if (meta.tags?.length) markGlobalTopics(meta.tags)
+  if (meta.keywords?.length) markGlobalKeywords(meta.keywords)
+  if (meta.provider) markGlobalProvider(meta.provider)
+  if (meta.origin) markGlobalOrigin(meta.origin)
+}
+
 type VideoMapped = NonNullable<ReturnType<typeof mapVideoDoc>>
 
 type VideoCandidate = {
@@ -1280,12 +1406,25 @@ async function fetchLiveImage(): Promise<any | null> {
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => b.score - a.score)
 
+  const preferFresh = shouldPreferFreshContent()
+  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
+
   for (const { candidate } of scored) {
+    const key = imageCandidateKey(candidate)
+    const globallyRecent = isGlobalItemRecent('image', key)
     const allTagsRecent = candidate.tags.every((tag) => recentImageTags.includes(tag))
     const allKeywordsRecent = candidate.keywords.length
       ? candidate.keywords.every((word) => recentImageKeywords.includes(word))
       : false
-    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+    const topicsGloballyTired = areTopicsGloballyRecent(candidate.tags)
+    const keywordsGloballyTired = candidate.keywords.length ? areKeywordsGloballyRecent(candidate.keywords) : false
+    const providerGloballyTired = isProviderGloballyRecent(candidate.provider)
+
+    if (globallyRecent && scored.length > 1) continue
+    if ((allTagsRecent && allKeywordsRecent) && scored.length > 1) continue
+    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 1) continue
+    if (providerGloballyTired && scored.length > 2 && (!preferFresh || candidate.origin !== 'network')) continue
+    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 1) continue
 
     if (candidate.origin === 'network') {
       await upsertCache('image', { url: candidate.url }, {
@@ -1302,11 +1441,20 @@ async function fetchLiveImage(): Promise<any | null> {
     pushRecent(recentImageProviders, candidate.provider, 40)
     pushRecentMany(recentImageTags, candidate.tags, 100)
     pushRecentMany(recentImageKeywords, candidate.keywords, 160)
+    registerGlobalFootprint({
+      type: 'image',
+      key,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
   const fallback = FB_IMAGES[Math.floor(Math.random() * FB_IMAGES.length)]
   pushRecent(recentImageUrls, fallback, 120)
+  registerGlobalFootprint({ type: 'image', key: fallback, provider: 'unsplash', origin: 'fallback' })
   return { type: 'image' as const, url: fallback, thumbUrl: null, source: { name: 'Unsplash', url: fallback } }
 }
 
@@ -1367,12 +1515,25 @@ async function fetchLiveQuote(): Promise<any | null> {
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => b.score - a.score)
 
+  const preferFresh = shouldPreferFreshContent()
+  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
+
   for (const { candidate } of scored) {
+    const key = quoteCandidateKey(candidate)
+    const globallyRecent = isGlobalItemRecent('quote', key)
     const allTagsRecent = candidate.tags.every((tag) => recentQuoteTags.includes(tag))
     const allKeywordsRecent = candidate.keywords.length
       ? candidate.keywords.every((word) => recentQuoteKeywords.includes(word))
       : false
-    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+    const topicsGloballyTired = areTopicsGloballyRecent(candidate.tags)
+    const keywordsGloballyTired = candidate.keywords.length ? areKeywordsGloballyRecent(candidate.keywords) : false
+    const providerGloballyTired = isProviderGloballyRecent(candidate.provider)
+
+    if (globallyRecent && scored.length > 1) continue
+    if ((allTagsRecent && allKeywordsRecent) && scored.length > 1) continue
+    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 1) continue
+    if (providerGloballyTired && scored.length > 2 && (!preferFresh || candidate.origin !== 'network')) continue
+    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 1) continue
 
     if (candidate.origin === 'network') {
       await upsertCache('quote', { text: candidate.text }, {
@@ -1389,6 +1550,14 @@ async function fetchLiveQuote(): Promise<any | null> {
     if (candidate.author) pushRecent(recentQuoteAuthors, candidate.author, 60)
     pushRecentMany(recentQuoteTags, candidate.tags, 90)
     pushRecentMany(recentQuoteKeywords, candidate.keywords, 160)
+    registerGlobalFootprint({
+      type: 'quote',
+      key,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
@@ -1415,6 +1584,14 @@ async function fetchLiveQuote(): Promise<any | null> {
     markRecentQuote(candidate.text)
     pushRecentMany(recentQuoteTags, candidate.tags, 90)
     pushRecentMany(recentQuoteKeywords, candidate.keywords, 160)
+    registerGlobalFootprint({
+      type: 'quote',
+      key: quoteCandidateKey(candidate),
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
@@ -1482,12 +1659,25 @@ async function fetchLiveFact(): Promise<any | null> {
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => b.score - a.score)
 
+  const preferFresh = shouldPreferFreshContent()
+  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
+
   for (const { candidate } of scored) {
+    const key = factCandidateKey(candidate)
+    const globallyRecent = isGlobalItemRecent('fact', key)
     const allTagsRecent = candidate.tags.every((tag) => recentFactTags.includes(tag))
     const allKeywordsRecent = candidate.keywords.length
       ? candidate.keywords.every((word) => recentFactKeywords.includes(word))
       : false
-    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+    const topicsGloballyTired = areTopicsGloballyRecent(candidate.tags)
+    const keywordsGloballyTired = candidate.keywords.length ? areKeywordsGloballyRecent(candidate.keywords) : false
+    const providerGloballyTired = isProviderGloballyRecent(candidate.provider)
+
+    if (globallyRecent && scored.length > 1) continue
+    if ((allTagsRecent && allKeywordsRecent) && scored.length > 1) continue
+    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 1) continue
+    if (providerGloballyTired && scored.length > 2 && (!preferFresh || candidate.origin !== 'network')) continue
+    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 1) continue
 
     if (candidate.origin === 'network') {
       await upsertCache('fact', { text: candidate.text }, {
@@ -1503,6 +1693,14 @@ async function fetchLiveFact(): Promise<any | null> {
     pushRecentMany(recentFactTags, candidate.tags, 90)
     pushRecentMany(recentFactKeywords, candidate.keywords, 160)
     pushRecent(recentFactProviders, candidate.provider, 40)
+    registerGlobalFootprint({
+      type: 'fact',
+      key,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
@@ -1526,6 +1724,14 @@ async function fetchLiveFact(): Promise<any | null> {
     pushRecentMany(recentFactTags, candidate.tags, 90)
     pushRecentMany(recentFactKeywords, candidate.keywords, 160)
     pushRecent(recentFactProviders, candidate.provider, 40)
+    registerGlobalFootprint({
+      type: 'fact',
+      key: factCandidateKey(candidate),
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
@@ -1607,12 +1813,25 @@ async function fetchLiveJoke(): Promise<any | null> {
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => b.score - a.score)
 
+  const preferFresh = shouldPreferFreshContent()
+  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
+
   for (const { candidate } of scored) {
+    const key = jokeCandidateKey(candidate)
+    const globallyRecent = isGlobalItemRecent('joke', key)
     const allTagsRecent = candidate.tags.every((tag) => recentJokeTags.includes(tag))
     const allKeywordsRecent = candidate.keywords.length
       ? candidate.keywords.every((word) => recentJokeKeywords.includes(word))
       : false
+    const topicsGloballyTired = areTopicsGloballyRecent(candidate.tags)
+    const keywordsGloballyTired = candidate.keywords.length ? areKeywordsGloballyRecent(candidate.keywords) : false
+    const providerGloballyTired = isProviderGloballyRecent(candidate.provider)
+
+    if (globallyRecent && scored.length > 1) continue
     if ((allTagsRecent && allKeywordsRecent) && scored.length > 1) continue
+    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 1) continue
+    if (providerGloballyTired && scored.length > 2 && (!preferFresh || candidate.origin !== 'network')) continue
+    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 1) continue
 
     if (candidate.origin === 'network') {
       await upsertCache('joke', { text: candidate.text }, {
@@ -1628,26 +1847,42 @@ async function fetchLiveJoke(): Promise<any | null> {
     pushRecentMany(recentJokeTags, candidate.tags, 80)
     pushRecentMany(recentJokeKeywords, candidate.keywords, 160)
     pushRecent(recentJokeProviders, candidate.provider, 30)
+    registerGlobalFootprint({
+      type: 'joke',
+      key,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
   const csv = await getShortJokeFromCSV()
   if (csv?.text) {
     const candidate = buildJokeCandidate(csv, 'network')
-    if (candidate) {
-      await upsertCache('joke', { text: candidate.text }, {
-        source: candidate.item.source,
-        provider: candidate.provider,
-        tags: candidate.tags,
-        keywords: candidate.keywords,
-      })
-      await touchLastShown('joke', { text: candidate.text })
-      markRecentJoke(candidate.text)
-      pushRecentMany(recentJokeTags, candidate.tags, 80)
-      pushRecentMany(recentJokeKeywords, candidate.keywords, 160)
-      pushRecent(recentJokeProviders, candidate.provider, 30)
-      return candidate.item
-    }
+  if (candidate) {
+    await upsertCache('joke', { text: candidate.text }, {
+      source: candidate.item.source,
+      provider: candidate.provider,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+    })
+    await touchLastShown('joke', { text: candidate.text })
+    markRecentJoke(candidate.text)
+    pushRecentMany(recentJokeTags, candidate.tags, 80)
+    pushRecentMany(recentJokeKeywords, candidate.keywords, 160)
+    pushRecent(recentJokeProviders, candidate.provider, 30)
+    registerGlobalFootprint({
+      type: 'joke',
+      key: jokeCandidateKey(candidate),
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
+    return candidate.item
+  }
   }
 
   return null
@@ -1662,7 +1897,7 @@ const BASE_VIDEO_KEYWORDS: string[] = [
   'radio archive','open reel','cassette rip','vinyl rip','shellac 78','archive footage',
   'home video','school recital','talent show','garage rehearsal','backyard session',
   'kitchen session','living room session','live session','studio live','acoustic set',
-  'tiny desk style','busking','street performance','subway performance','rooftop concert',
+ 'tiny desk style','busking','street performance','subway performance','rooftop concert',
   'basement show','barn session','porch session','campfire song','circle singing',
   'choir warmup','soundcheck','rehearsal take','improv jam','loop pedal','one man band',
   'homemade instrument','marble machine','toy orchestra','8bit music','chiptune','flash game',
@@ -1670,7 +1905,8 @@ const BASE_VIDEO_KEYWORDS: string[] = [
   'amateur animation','paper stop motion','claymation','flipbook','stickman fight',
   'funny sketch','micro budget short','student film','no dialogue short',
   'outsider art','performance art','site specific art','happening','kinetic sculpture','sex','love','chocolate','sexy',
-  'cake','cook','kitchen','sugar','recipe','vintage commercial','psa announcement','station ident','closing theme','end credits'
+  'cake','cook','kitchen','sugar','recipe','vintage commercial','psa announcement','station ident','closing theme','end credits',
+  'stadium tour live','chart topping live performance','global pop hit remix','international dance challenge','billboard awards live','modern art installation','contemporary dance troupe','orchestral film score recording','world cup fan cam','olympic opening ceremony flashback','viral short film award','immersive theater experience','indie music festival 2024','city street food documentary','tech conference keynote highlight','space agency live stream'
 ]
 const KEYWORDS: string[] = Array.from(new Set([...BASE_VIDEO_KEYWORDS, ...INGEST_VIDEO_KEYWORDS]))
 const COMBOS: [string, string][] = [ ['gospel','romania'], ['festival','village'], ['folk','iceland'], ['choir','argentina'], ['busking','japan'], ['retro game','speedrun'], ['home made','instrument'], ['toy','orchestra'], ['amateur','sport'], ['art','fun'], ['obscure','retro'], ['rare','game'], ['sea shanty','brittany'], ['sea shanty','cornwall'], ['polyphonic','georgia'], ['brass band','serbia'], ['klezmer','poland'], ['fado','lisbon'], ['flamenco','andalusia'], ['rebetiko','athens'], ['tarantella','naples'], ['cumbia','colombia'], ['forró','northeast brazil'], ['samba','bahia'], ['huapongo','mexico'], ['tango','buenos aires'], ['gnawa','essaouira'], ['rai','oran'], ['dabke','lebanon'], ['qawwali','lahore'], ['bhajan','varanasi'], ['enka','tokyo'], ['minyo','tohoku'], ['joik','sapmi'], ['yodel','tyrol'], ['bluegrass','kentucky'], ['old-time','appalachia'], ['zydeco','louisiana'], ['kora','mali'], ['mbira','zimbabwe'], ['hurdy-gurdy','drone'], ['nyckelharpa','folk'], ['charango','andean'], ['bandoneon','milonga'], ['oud','taqsim'], ['saz','anatolian'], ['kanun','takht'], ['duduk','lament'], ['kaval','shepherd'], ['bagpipes','procession'], ['steelpan','street'], ['handpan','improv'], ['theremin','noir'], ['washboard','skiffle'], ['lap steel','hawaiian'], ['hardanger','waltz'], ['tiny desk','cover'], ['tiny desk','choir'], ['living room','session'], ['kitchen','session'], ['porch','session'], ['barn','session'], ['backyard','concert'], ['rooftop','concert'], ['basement','show'], ['subway','performance'], ['market','busking'], ['train platform','choir'], ['church','reverb'], ['cave','echo'], ['lighthouse','stairwell'], ['factory','reverb'], ['courtyard','ensemble'], ['river bank','song'], ['forest','chorus'], ['tea house','duo'], ['izakaya','live'], ['yurt','jam'], ['vhs','concert'], ['camcorder','wedding'], ['super 8','parade'], ['black and white','choir'], ['sepia','waltz'], ['cassette','demo'], ['vinyl','rip'], ['reel to reel','transfer'], ['public access','variety'], ['local tv','showcase'], ['newsreel','march'], ['colorized','archive'], ['school','recital'], ['talent','show'], ['family','band'], ['birthday','serenade'], ['farewell','song'], ['lullaby','grandma'], ['flash','animation'], ['pixel','cutscene'], ['8bit','cover'], ['chip','remix'], ['crt','capture'], ['lan','party'], ['speedrun','glitch'], ['retro','longplay'], ['odd','sport'], ['rural','games'], ['stone','lifting'], ['log','toss'], ['banjo','spaghetti'], ['pingouin','synthwave'], ['moquette','symphonie'], ['baguette','laser'], ['chaussette','opera'], ['brume','karaoké'], ['pyramide','yodel'], ['pastèque','minuet'], ['escargot','free-jazz'], ['moustache','autotune'], ['chausson','dubstep'], ['fondue','breakbeat'], ['poney','maracas'], ['bibliothèque','techno'], ['chandelle','hip-hop'], ['parapluie','boléro'], ['cornichon','requiem'], ['béret','sitar'], ['météorite','berceuse'], ['citron','dissonance'], ['radis','madrigal'], ['cartouche','tamboo'], ['serpent','bal musette'], ['biscotte','koto'], ['zanzibar','trombone'], ['tortue','clapping'], ['larme','tambourin'], ['nuage','scat'], ['mouette','bossa'], ['glaçon','ragtime'], ['gruyère','chorale'], ['caméléon','vocoder'], ['chausson','kazoo'], ['tuba','grenadine'], ['haricot','fugue'], ['bretzel','ukulélé'], ['chou-fleur','clavecin'], ['pamplemousse','gamelan'], ['cornemuse','bubblegum'], ['pierre','beatbox'], ['sabayon','timbales'], ['yéti','harmonium'], ['cactus','bongos'], ['hamac','arpèges'], ['baleine','triangle'], ['girafe','sifflement'], ['lama','riff'], ['café','tremolo'], ['soufflé','chorus'], ['ampoule','bpm'], ['glacier','cassette'], ['patate','vibrato'], ['courgette','polyrythmie'], ['mangue','contrepoint'], ['poussière','refrain'], ['aquarium','dub'], ['navet','flanger'], ['fantôme','clave'], ['cerf-volant','toccata'], ['scaphandre','mazurka'], ['parpaing','salsa'], ['lutin','samba'], ['orage','menuet'], ['tornade','cadenza'], ['brouillard','beat'], ['valise','glissando'], ['tournesol','rave'], ['boussole','nocturne'], ['bouchon','aria'], ['gaufre','chorinho'], ['sardine','cantate'], ['chouette','grind'], ['mirabelle','groove'], ['crocodile','valse'], ['rose des vents','hocket'], ['bourdon','limbique'], ['cabane','syncopes'], ['fenouil','crescendo'], ['fourchette','counter-melody'], ['serrure','harmoniques'], ['ballon','distorsion'], ['soucoupe','reverb'], ['marmotte','fadeout'], ['moutarde','autopan'], ['pastel','sidechain'], ['puzzle','clave'], ['cathédrale','lo-fi'], ['cymbale','confettis'], ['pissenlit','drop'], ['brouette','riff'], ['tapir','chorale'], ['pluie','sample'], ['savonnette','drone'], ['poubelle','oratorio'], ['carton','808'], ['bretelle','arpège'], ['bourricot','syncopé'], ['clairière','harmonie'], ['kiwi','sustain'], ['grenouille','snare'] ]
@@ -1763,16 +1999,27 @@ async function fetchLiveVideo(): Promise<any | null> {
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => b.score - a.score)
 
+  const preferFresh = shouldPreferFreshContent()
+  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
+
   for (const { candidate, score } of scored) {
     if (score < -5) continue
     const key = candidateKey(candidate)
     if (!key) continue
-
+    const providerKey = candidate.mapped.provider
     const tags = candidate.tags
     const keywords = candidate.keywords
     const allTagsRecent = tags.length && tags.every((tag) => recentVideoTopics.includes(tag))
     const allKeywordsRecent = keywords.length && keywords.every((word) => recentVideoKeywords.includes(word))
+    const globallyRecent = isGlobalItemRecent('video', key)
+    const topicsGloballyTired = tags.length ? areTopicsGloballyRecent(tags) : false
+    const keywordsGloballyTired = keywords.length ? areKeywordsGloballyRecent(keywords) : false
+    const providerGloballyTired = isProviderGloballyRecent(providerKey)
+    if (globallyRecent && scored.length > 1) continue
     if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 1) continue
+    if (providerGloballyTired && scored.length > 2 && (!preferFresh || candidate.origin !== 'network')) continue
+    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 1) continue
 
     if (candidate.origin === 'network') {
       await upsertCache('video', candidate.mapped.key, {
@@ -1793,6 +2040,14 @@ async function fetchLiveVideo(): Promise<any | null> {
     markRecentVideoProvider(candidate.mapped.provider)
     markRecentVideoTopics(tags)
     if (keywords.length) markRecentVideoKeywords(keywords)
+    registerGlobalFootprint({
+      type: 'video',
+      key,
+      tags,
+      keywords,
+      provider: providerKey,
+      origin: candidate.origin,
+    })
     return candidate.mapped.item
   }
 
@@ -1805,12 +2060,26 @@ async function fetchLiveVideo(): Promise<any | null> {
     markRecentVideoProvider(fallbackCandidate.mapped.provider)
     markRecentVideoTopics(fallbackCandidate.tags)
     if (fallbackCandidate.keywords.length) markRecentVideoKeywords(fallbackCandidate.keywords)
+    registerGlobalFootprint({
+      type: 'video',
+      key: candidateKey(fallbackCandidate) || fallbackCandidate.mapped.key.videoId || fallbackCandidate.mapped.key.url,
+      tags: fallbackCandidate.tags,
+      keywords: fallbackCandidate.keywords,
+      provider: fallbackCandidate.mapped.provider,
+      origin: fallbackCandidate.origin,
+    })
     return fallbackCandidate.mapped.item
   }
 
   const cachedWeb = await sampleFromCache('web', { provider: 'vimeo', ogImage: { $nin: [null, '', false] } })
   if (cachedWeb?.url) {
     touchLastShown('web', { url: cachedWeb.url })
+    registerGlobalFootprint({
+      type: 'web',
+      key: cachedWeb.url,
+      provider: 'vimeo',
+      origin: 'fallback',
+    })
     return { type: 'web', url: cachedWeb.url, text: cachedWeb.title || cachedWeb.url, ogImage: cachedWeb.ogImage || null, source: { name: 'Vimeo', url: cachedWeb.url } }
   }
 
@@ -2024,12 +2293,24 @@ async function fetchLiveWeb(): Promise<any | null> {
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => b.score - a.score)
 
+  const preferFresh = shouldPreferFreshContent()
+  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
+
   for (const { candidate } of scored) {
     const allTagsRecent = candidate.tags.every((tag) => recentWebTags.includes(tag))
     const allKeywordsRecent = candidate.keywords.length
       ? candidate.keywords.every((word) => recentWebKeywords.includes(word))
       : false
+    const globallyRecent = isGlobalItemRecent('web', candidate.url)
+    const topicsGloballyTired = areTopicsGloballyRecent(candidate.tags)
+    const keywordsGloballyTired = candidate.keywords.length ? areKeywordsGloballyRecent(candidate.keywords) : false
+    const providerGloballyTired = isProviderGloballyRecent(candidate.provider)
+
+    if (globallyRecent && scored.length > 1) continue
     if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 1) continue
+    if (providerGloballyTired && scored.length > 2 && (!preferFresh || candidate.origin !== 'network')) continue
+    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 1) continue
 
     if (candidate.origin === 'network') {
       await upsertCache('web', { url: candidate.url }, {
@@ -2047,6 +2328,14 @@ async function fetchLiveWeb(): Promise<any | null> {
     pushRecentMany(recentWebTags, candidate.tags, 120)
     pushRecentMany(recentWebKeywords, candidate.keywords, 160)
     pushRecent(recentWebProviders, candidate.provider, 40)
+    registerGlobalFootprint({
+      type: 'web',
+      key: candidate.url,
+      tags: candidate.tags,
+      keywords: candidate.keywords,
+      provider: candidate.provider,
+      origin: candidate.origin,
+    })
     return candidate.item
   }
 
@@ -2058,8 +2347,22 @@ async function fetchLiveWeb(): Promise<any | null> {
       pushRecentMany(recentWebTags, fallback.tags, 120)
       pushRecentMany(recentWebKeywords, fallback.keywords, 160)
       if (fallback.host) markRecentHost(fallback.host)
+      registerGlobalFootprint({
+        type: 'web',
+        key: fallback.item.url,
+        tags: fallback.tags,
+        keywords: fallback.keywords,
+        provider: fallback.provider,
+        origin: fallback.origin,
+      })
       return fallback.item
     }
+    registerGlobalFootprint({
+      type: 'web',
+      key: cached.url,
+      provider: cached.provider || 'cache',
+      origin: 'db-random',
+    })
     return { type: 'web' as const, url: cached.url, text: cached.title || cached.host || cached.url, ogImage: cached.ogImage || null, source: cached.source || { name: cached.provider || 'cache', url: cached.url } }
   }
 
@@ -2090,6 +2393,8 @@ export async function GET(req: Request) {
       else if (t === 'fact')  it = await fetchLiveFact()
       else if (t === 'web')   it = await fetchLiveWeb()        // ⬅ garde ta version
       if (it) {
+        const itemType = (it as any)?.type as ItemType | undefined
+        if (itemType) markRecentType(itemType)
         await recordDailyUsage({
           type: (it as any)?.type,
           lang,
@@ -2109,12 +2414,16 @@ export async function GET(req: Request) {
       ]
       const text = local[Math.floor(Math.random() * local.length)]
       const fallbackQuote = { type: 'quote' as const, text, author: '', source: { name: 'Local', url: '' } }
+      markRecentType('quote')
+      registerGlobalFootprint({ type: 'quote', key: text, provider: fallbackQuote.source.name || 'local', origin: 'fallback' })
       await recordDailyUsage({ type: fallbackQuote.type, lang, provider: fallbackQuote.source.name })
       return NextResponse.json({ item: fallbackQuote })
     }
 
     const img = pick(FB_IMAGES)
     const fallbackImage = { type: 'image' as const, url: img, source: { name: 'Unsplash', url: img } }
+    markRecentType('image')
+    registerGlobalFootprint({ type: 'image', key: img, provider: fallbackImage.source.name || 'unsplash', origin: 'fallback' })
     await recordDailyUsage({ type: fallbackImage.type, lang, provider: fallbackImage.source.name })
     return NextResponse.json({ item: fallbackImage })
   } catch (e: any) {

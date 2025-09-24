@@ -8,7 +8,7 @@ import { addLike, isLiked, removeLike } from '../utils/likes'
 import AnimatedButtonLabel from './AnimatedButtonLabel'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
-type ItemType = 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'
+type ItemType = 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web' | 'encourage'
 type SourceInfo = { name?: string; url?: string } | null
 
 type Item = {
@@ -24,6 +24,8 @@ type Item = {
   source?: SourceInfo
   ogImage?: string | null
   title?: string
+  icon?: string
+  subtitle?: string
 }
 
 type Props = {
@@ -246,6 +248,35 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
     return <VideoEmbed url={item.url} title={item.text || 'YouTube'} />
   }
 
+  if (item.type === 'encourage') {
+    return (
+      <div className="flex flex-col items-center gap-4 text-center max-w-[70ch]">
+        {item.subtitle ? (
+          <span className="uppercase tracking-[0.4em] text-xs md:text-sm opacity-80">
+            {item.subtitle}
+          </span>
+        ) : null}
+        {item.icon ? (
+          <img
+            src={item.icon}
+            alt="Encouragement"
+            className="h-[120px] w-auto object-contain drop-shadow-xl"
+            loading="lazy"
+            decoding="async"
+          />
+        ) : null}
+        {item.text ? (
+          <p
+            className="font-tomorrow font-bold text-[24px] md:text-[32px] leading-tight"
+            style={{ color: theme.cream, letterSpacing: '.01em' }}
+          >
+            {item.text}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
   return null
 }
 
@@ -331,6 +362,7 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
 }
 
 function SourceLine({ item }: { item: Item }) {
+  if (item.type === 'encourage') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
   const s = item.source
 
@@ -460,7 +492,7 @@ export default function RandomModal({
 
   useEffect(() => {
     const current = (forceItem as Item | null) ?? item ?? null
-    if (current) setLiked(isLiked(current))
+    if (current && current.type !== 'encourage') setLiked(isLiked(current))
     else setLiked(false)
   }, [forceItem, item, open])
 
@@ -496,9 +528,15 @@ export default function RandomModal({
     setItem((prev) => (prev ? { ...prev } : prev))
   }
 
-  if (!open) return null
   const viewItem: Item | null = (forceItem as Item | null) ?? item ?? null
+  const isEncourage = viewItem?.type === 'encourage'
   const showChildren = !viewItem && !!children
+
+  useEffect(() => {
+    if (isEncourage && shareOpen) setShareOpen(false)
+  }, [isEncourage, shareOpen])
+
+  if (!open) return null
 
   const LOGO_GAP_MOBILE = 2
   const LOGO_GAP_DESKTOP = 2
@@ -586,41 +624,43 @@ export default function RandomModal({
         <div className="border-t border-white/20 px-4 py-4 shrink-0">
           <div className="grid grid-cols-3 items-center">
             <div className="flex items-center gap-4 justify-start">
-              <button
-                className={`like-button p-2 rounded-full ${liked ? 'liked' : ''}`}
-                aria-label="Like"
-                onClick={() => {
-                  if (!viewItem) return
-                  if (liked) {
-                    removeLike(viewItem)
-                    setLiked(false)
-                  } else {
-                    addLike(
-                      {
-                        type: viewItem.type,
-                        url: viewItem.url,
-                        text: viewItem.text || viewItem.author,
-                        title: viewItem.title,
-                        thumbUrl: viewItem.thumbUrl,
-                        ogImage: (viewItem as any).ogImage,
-                        provider: viewItem.source?.name,
-                      },
-                      theme
-                    )
-                    setLiked(true)
-                  }
-                  try {
-                    window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
-                  } catch {}
-                }}
-              >
-                <MonoIcon
-                  src="/icons/Heart.svg"
-                  color={liked ? '#ff4d78' : theme.cream}
-                  size={28}
-                  className="transition-[background-color] duration-300"
-                />
-              </button>
+              {!isEncourage && (
+                <button
+                  className={`like-button p-2 rounded-full ${liked ? 'liked' : ''}`}
+                  aria-label="Like"
+                  onClick={() => {
+                    if (!viewItem || viewItem.type === 'encourage') return
+                    if (liked) {
+                      removeLike(viewItem)
+                      setLiked(false)
+                    } else {
+                      addLike(
+                        {
+                          type: viewItem.type,
+                          url: viewItem.url,
+                          text: viewItem.text || viewItem.author,
+                          title: viewItem.title,
+                          thumbUrl: viewItem.thumbUrl,
+                          ogImage: (viewItem as any).ogImage,
+                          provider: viewItem.source?.name,
+                        },
+                        theme
+                      )
+                      setLiked(true)
+                    }
+                    try {
+                      window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
+                    } catch {}
+                  }}
+                >
+                  <MonoIcon
+                    src="/icons/Heart.svg"
+                    color={liked ? '#ff4d78' : theme.cream}
+                    size={28}
+                    className="transition-[background-color] duration-300"
+                  />
+                </button>
+              )}
 
             </div>
 
@@ -646,23 +686,27 @@ export default function RandomModal({
             </div>
 
             <div className="relative flex justify-end">
-              <button
-                ref={shareBtnRef}
-                className="p-2 rounded-full hover:opacity-90"
-                aria-label="Share"
-                onClick={() => setShareOpen((s) => !s)}
-              >
-                <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
-              </button>
+              {!isEncourage && (
+                <>
+                  <button
+                    ref={shareBtnRef}
+                    className="p-2 rounded-full hover:opacity-90"
+                    aria-label="Share"
+                    onClick={() => setShareOpen((s) => !s)}
+                  >
+                    <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
+                  </button>
 
-              {shareOpen && (
-                <SharePopover
-                  theme={theme}
-                  item={viewItem}
-                  anchorRef={shareBtnRef}
-                  placeAbove={shareAbove}
-                  onClose={() => setShareOpen(false)}
-                />
+                  {shareOpen && (
+                    <SharePopover
+                      theme={theme}
+                      item={viewItem}
+                      anchorRef={shareBtnRef}
+                      placeAbove={shareAbove}
+                      onClose={() => setShareOpen(false)}
+                    />
+                  )}
+                </>
               )}
             </div>
           </div>
