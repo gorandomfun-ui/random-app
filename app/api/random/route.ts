@@ -5,6 +5,7 @@ import type { Db } from 'mongodb'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getDb } from '@/lib/db'
+import { recordDailyUsage } from '@/lib/metrics/usage'
 import videoKeywordJson from '@/lib/ingest/keywords/video.json'
 import webKeywordJson from '@/lib/ingest/keywords/web.json'
 
@@ -2088,7 +2089,14 @@ export async function GET(req: Request) {
       else if (t === 'joke')  it = await fetchLiveJoke()
       else if (t === 'fact')  it = await fetchLiveFact()
       else if (t === 'web')   it = await fetchLiveWeb()        // ⬅ garde ta version
-      if (it) return NextResponse.json({ item: it })
+      if (it) {
+        await recordDailyUsage({
+          type: (it as any)?.type,
+          lang,
+          provider: (it as any)?.provider || (typeof (it as any)?.source === 'object' ? (it as any)?.source?.name : undefined) || null,
+        })
+        return NextResponse.json({ item: it })
+      }
     }
 
     // ---- Fallback final (pour ne jamais retourner null) ----
@@ -2100,15 +2108,15 @@ export async function GET(req: Request) {
         'The best way to predict the future is to invent it.'
       ]
       const text = local[Math.floor(Math.random() * local.length)]
-      return NextResponse.json({
-        item: { type: 'quote' as const, text, author: '', source: { name: 'Local', url: '' } }
-      })
+      const fallbackQuote = { type: 'quote' as const, text, author: '', source: { name: 'Local', url: '' } }
+      await recordDailyUsage({ type: fallbackQuote.type, lang, provider: fallbackQuote.source.name })
+      return NextResponse.json({ item: fallbackQuote })
     }
 
     const img = pick(FB_IMAGES)
-    return NextResponse.json({
-      item: { type: 'image' as const, url: img, source: { name: 'Unsplash', url: img } }
-    })
+    const fallbackImage = { type: 'image' as const, url: img, source: { name: 'Unsplash', url: img } }
+    await recordDailyUsage({ type: fallbackImage.type, lang, provider: fallbackImage.source.name })
+    return NextResponse.json({ item: fallbackImage })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'error' }, { status: 500 })
   }
