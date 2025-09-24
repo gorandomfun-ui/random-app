@@ -1,7 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/videos", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/web",    "schedule": "20 4 * * *" },
+    { "path": "/api/cron/nightly", "schedule": "0 4 * * *" },
     { "path": "/api/cron/daily-report", "schedule": "0 7 * * *" }
   ]
 }
