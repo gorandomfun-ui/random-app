@@ -281,8 +281,8 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
       mute: '1',
       playsinline: '1',
       modestbranding: '1',
-      controls: '0',
       enablejsapi: '1',
+      controls: '1',
     })
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
@@ -320,7 +320,7 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
           <button
             type="button"
             onClick={unmuteVideo}
-            className="absolute bottom-4 right-4 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+            className="absolute top-4 right-4 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           >
             Tap to unmute
           </button>
