@@ -243,32 +243,91 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
   }
 
   if (item.type === 'video' && item.url) {
-    let id = ''
-    try {
-      const u = new URL(item.url)
-      if (u.hostname.includes('youtu')) id = u.searchParams.get('v') || u.pathname.split('/').pop() || ''
-    } catch {}
-    if (!id && item.url) id = item.url.split('/').pop() || ''
-    const src = `https://www.youtube-nocookie.com/embed/${id}?rel=0`
-    return (
-      <div className="w-full">
-        <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9' }}>
-          <div className="w-full h-full overflow-hidden">
-          <iframe
-            src={src}
-            className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            title={item.text || 'YouTube'}
-            style={{ border: 'none' }}
-          />
-        </div>
-        </div>
-      </div>
-    )
+    return <VideoEmbed url={item.url} title={item.text || 'YouTube'} />
   }
 
   return null
+}
+
+function VideoEmbed({ url, title }: { url: string; title?: string }) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const [originParam, setOriginParam] = useState('')
+  const [isMuted, setIsMuted] = useState(true)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOriginParam(window.location.origin)
+    }
+  }, [])
+
+  useEffect(() => {
+    setIsMuted(true)
+  }, [url])
+
+  const videoId = useMemo(() => {
+    try {
+      const u = new URL(url)
+      if (u.hostname.includes('youtu')) {
+        return u.searchParams.get('v') || u.pathname.split('/').pop() || ''
+      }
+    } catch {}
+    return url.split('/').pop() || ''
+  }, [url])
+
+  const src = useMemo(() => {
+    const params = new URLSearchParams({
+      rel: '0',
+      autoplay: '1',
+      mute: '1',
+      playsinline: '1',
+      modestbranding: '1',
+      controls: '0',
+      enablejsapi: '1',
+    })
+    if (originParam) params.set('origin', originParam)
+    return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
+  }, [videoId, originParam])
+
+  const unmuteVideo = () => {
+    const iframe = iframeRef.current
+    if (!iframe?.contentWindow) return
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
+        '*'
+      )
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+        '*'
+      )
+      setIsMuted(false)
+    } catch {}
+  }
+
+  return (
+    <div className="w-full">
+      <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
+        <iframe
+          ref={iframeRef}
+          src={src}
+          className="w-full h-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          title={title || 'YouTube'}
+          style={{ border: 'none' }}
+        />
+        {isMuted && (
+          <button
+            type="button"
+            onClick={unmuteVideo}
+            className="absolute bottom-4 right-4 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+          >
+            Tap to unmute
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function SourceLine({ item }: { item: Item }) {
