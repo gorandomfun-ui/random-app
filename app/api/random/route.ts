@@ -34,6 +34,79 @@ const isLimitedAuthor = (author?: string | null) => {
 
 const trimText = (value?: string | null) => (value || '').trim()
 
+const DAY_MS = 1000 * 60 * 60 * 24
+
+const VIDEO_TOPIC_SEEDS: Record<string, string[]> = {
+  cooking: ['cook','kitchen','recipe','chef','bake','cake','pastry','bbq','food','grandma','kitchen hack','dessert','candy','sushi','chocolate','street food'],
+  challenge: ['challenge','vs','versus','battle','contest','competition','speed challenge','24h','one color','mukbang'],
+  satisfying: ['asmr','satisfying','oddly satisfying','slime','soap','kinetic sand','crunch','unboxing','soap cutting'],
+  toy: ['toy','playset','kid','diy toy','doll','rainbow','surprise egg','lego','barbie','play doh','squishy'],
+  craft: ['craft','diy','handmade','build','maker','knit','sew','crochet','woodworking','print','paper','origami','restoration','repair','fix'],
+  music: ['music','song','band','choir','sing','cover','guitar','piano','drum','jam','orchestra','instrument','busking','concert','performance'],
+  sport: ['sport','match','game','tournament','trickshot','freestyle','parkour','skate','bmx','derby','race','workout','stunt'],
+  archive: ['archive','retro','vhs','vintage','198','199','old footage','public access','home video','nostalgia','classic','historic'],
+  travel: ['travel','tour','city','village','walk','explore','journey','trip','abroad','roadtrip','street','hidden'],
+  animal: ['animal','cat','dog','pet','wildlife','zoo','bird','horse','goat','ferret','hedgehog','fish'],
+  comedy: ['funny','joke','sketch','prank','comedy','lol','fails','bloopers'],
+  art: ['art','painting','draw','illustration','animation','stop motion','sculpt','clay','tattoo','calligraphy'],
+  fashion: ['fashion','makeup','style','beauty','runway','outfit','nail','hair'],
+  science: ['science','experiment','physics','chemistry','laboratory','invention','technology','hacking','tesla','robot'],
+  spooky: ['ghost','spooky','creepy','haunted','horror','mystery','paranormal'],
+  archive_music: ['cassette','vinyl','reel','demo tape','tiny desk','folk song','choir'],
+}
+
+const VIDEO_STOP_WORDS = new Set([
+  'the','and','with','from','that','this','your','our','for','into','over','under','about','just','make','made','making','best','how','what','when','where','why','who','are','was','were','will','can','get','been','take','first','second','third','day','night','amp','episode','official','new','video','full','hd','challenge','vs','vs.','edition','life','hack','hacks','trick','tricks','tips','tutorial','amazing','awesome','incredible'
+])
+
+const VIDEO_RARE_TAGS = new Set(['archive','archive_music','spooky','travel','craft','sport','science','art','animal','fashion','challenge','satisfying'])
+
+const recentVideoTopics: string[] = []
+function markRecentVideoTopics(tags: string[]) {
+  for (const tag of tags) {
+    const key = tag.trim().toLowerCase()
+    if (!key) continue
+    const idx = recentVideoTopics.indexOf(key)
+    if (idx >= 0) recentVideoTopics.splice(idx, 1)
+    recentVideoTopics.push(key)
+  }
+  while (recentVideoTopics.length > 32) recentVideoTopics.shift()
+}
+
+const recentVideoKeywords: string[] = []
+function markRecentVideoKeywords(words: string[]) {
+  for (const word of words) {
+    const key = word.trim().toLowerCase()
+    if (!key) continue
+    const idx = recentVideoKeywords.indexOf(key)
+    if (idx >= 0) recentVideoKeywords.splice(idx, 1)
+    recentVideoKeywords.push(key)
+  }
+  while (recentVideoKeywords.length > 120) recentVideoKeywords.shift()
+}
+
+function extractVideoTags(text: string): string[] {
+  const lower = text.toLowerCase()
+  const tags: string[] = []
+  for (const [tag, seeds] of Object.entries(VIDEO_TOPIC_SEEDS)) {
+    if (seeds.some((seed) => lower.includes(seed))) tags.push(tag)
+  }
+  return Array.from(new Set(tags))
+}
+
+function extractVideoKeywords(text: string, limit = 6): string[] {
+  const lower = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+  const words = lower.split(/\s+/).filter(Boolean)
+  const unique: string[] = []
+  for (const word of words) {
+    if (word.length < 3 || word.length > 18) continue
+    if (VIDEO_STOP_WORDS.has(word)) continue
+    if (!unique.includes(word)) unique.push(word)
+    if (unique.length >= limit) break
+  }
+  return unique
+}
+
 const recentJokes: string[] = []
 function markRecentJoke(text?: string | null) {
   const t = trimText(text)
@@ -145,7 +218,7 @@ async function sampleVideoFromCache(options?: { preferArchive?: boolean }): Prom
   }
 }
 
-function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider: string } | null {
+function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider: string; raw: any } | null {
   if (!doc) return null
   const provider = trimText(doc?.provider) || 'cache'
   const videoId = trimText(doc?.videoId)
@@ -159,7 +232,191 @@ function mapVideoDoc(doc: any): { item: any; key: Record<string, any>; provider:
     item: { type: 'video' as const, url, thumbUrl: thumb || undefined, text, source, provider },
     key,
     provider,
+    raw: doc,
   }
+}
+
+type VideoOrigin = 'db-fresh' | 'db-unseen' | 'db-backlog' | 'db-random' | 'network'
+
+type VideoCandidate = {
+  mapped: ReturnType<typeof mapVideoDoc>
+  tags: string[]
+  keywords: string[]
+  origin: VideoOrigin
+  updatedAt?: Date | null
+  lastShownAt?: Date | null
+}
+
+function buildVideoCandidate(doc: any, origin: VideoOrigin): VideoCandidate | null {
+  const mapped = mapVideoDoc(doc)
+  if (!mapped) return null
+  const description = trimText(doc?.description || '')
+  const combined = `${mapped.item.text || ''} ${description}`.trim()
+  const tags = extractVideoTags(combined)
+  const keywords = extractVideoKeywords(combined)
+  const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null
+  const lastShownAt = doc?.lastShownAt ? new Date(doc.lastShownAt) : null
+  return { mapped, tags: tags.length ? tags : ['misc'], keywords, origin, updatedAt, lastShownAt }
+}
+
+function candidateKey(candidate: VideoCandidate): string | null {
+  const key = candidate.mapped.key.videoId || candidate.mapped.key.url
+  return key || null
+}
+
+function scoreVideoCandidate(candidate: VideoCandidate): number {
+  const key = candidateKey(candidate)
+  if (!key) return -Infinity
+
+  const providerKey = trimText(candidate.mapped.provider).toLowerCase()
+  const now = Date.now()
+  const updatedAt = candidate.updatedAt?.getTime() ?? 0
+  const lastShownAt = candidate.lastShownAt?.getTime() ?? 0
+
+  let score = 0
+
+  if (!lastShownAt) score += 14
+  else {
+    const daysSinceShown = (now - lastShownAt) / DAY_MS
+    if (daysSinceShown > 21) score += 9
+    else if (daysSinceShown > 14) score += 7
+    else if (daysSinceShown > 7) score += 5
+    else if (daysSinceShown > 3) score += 2
+    else score -= 5
+  }
+
+  if (updatedAt) {
+    const daysSinceUpdate = (now - updatedAt) / DAY_MS
+    if (daysSinceUpdate < 2) score += 8
+    else if (daysSinceUpdate < 7) score += 5
+    else if (daysSinceUpdate < 21) score += 2
+    else score -= 1
+  } else {
+    score -= 1
+  }
+
+  if (candidate.origin === 'network') score += 6
+  else if (candidate.origin === 'db-unseen') score += 4
+  else if (candidate.origin === 'db-backlog') score += 2
+
+  if (!recentVideoProviders.includes(providerKey)) score += 5
+  else score -= 7
+
+  const tagSet = new Set(candidate.tags)
+  let freshTagBoost = 0
+  let repeatTagPenalty = 0
+  for (const tag of tagSet) {
+    if (recentVideoTopics.includes(tag)) repeatTagPenalty += 5
+    else freshTagBoost += 6
+  }
+  score += freshTagBoost - repeatTagPenalty
+
+  if (candidate.tags.some((tag) => VIDEO_RARE_TAGS.has(tag))) score += 4
+
+  const uniqueKeywords = candidate.keywords.filter((word) => !recentVideoKeywords.includes(word))
+  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
+  score += uniqueKeywords.length * 1.8
+  score -= repeatedKeywords * 2.8
+
+  if (key && recentVideoIds.includes(key)) score -= 10
+
+  score += Math.random() * 2
+  return score
+}
+
+async function collectVideoCandidates(): Promise<VideoCandidate[]> {
+  const db = await getDbSafe()
+  if (!db) return []
+
+  const bucket = new Map<string, VideoCandidate>()
+  const add = (doc: any, origin: VideoOrigin) => {
+    const candidate = buildVideoCandidate(doc, origin)
+    if (!candidate) return
+    const key = candidateKey(candidate)
+    if (!key) return
+    const existing = bucket.get(key)
+    if (!existing || (candidate.origin === 'network' && existing.origin !== 'network')) {
+      bucket.set(key, candidate)
+    }
+  }
+
+  try {
+    const [freshDocs, unseenDocs, backlogDocs, randomDocs] = await Promise.all([
+      db.collection('items').find({ type: 'video' }).sort({ updatedAt: -1 }).limit(120).toArray(),
+      db.collection('items').find({ type: 'video', $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }).sort({ updatedAt: -1 }).limit(80).toArray(),
+      db.collection('items').find({ type: 'video', lastShownAt: { $lt: new Date(Date.now() - 14 * DAY_MS) } }).sort({ lastShownAt: 1 }).limit(80).toArray(),
+      db.collection('items').aggregate([{ $match: { type: 'video' } }, { $sample: { size: 60 } }]).toArray(),
+    ])
+
+    for (const doc of freshDocs) add(doc, 'db-fresh')
+    for (const doc of unseenDocs) add(doc, 'db-unseen')
+    for (const doc of backlogDocs) add(doc, 'db-backlog')
+    for (const doc of randomDocs) add(doc, 'db-random')
+  } catch {}
+
+  return Array.from(bucket.values())
+}
+
+async function fetchYouTubeCandidates(): Promise<VideoCandidate[]> {
+  const KEY = process.env.YOUTUBE_API_KEY
+  if (!KEY) return []
+  const query = buildYouTubeQuery()
+  const publishedAfter = new Date(Date.now() - 120 * DAY_MS).toISOString()
+  const params = new URLSearchParams({
+    key: KEY,
+    part: 'snippet',
+    type: 'video',
+    maxResults: '20',
+    q: query,
+    order: Math.random() < 0.5 ? 'date' : 'relevance',
+    publishedAfter,
+    videoEmbeddable: 'true',
+  })
+  try {
+    const res = await fetchWithTimeout(`${YT_ENDPOINT}/search?${params.toString()}`, { cache: 'no-store' })
+    if (!res?.ok) return []
+    const data: any = await res.json()
+    const items: any[] = data?.items || []
+    const out: VideoCandidate[] = []
+    for (const entry of items) {
+      const id = entry?.id?.videoId
+      const sn = entry?.snippet
+      if (!id || !sn) continue
+      const doc = {
+        videoId: id,
+        url: `https://youtu.be/${id}`,
+        title: sn?.title || '',
+        description: sn?.description || '',
+        thumb: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+        provider: 'youtube',
+        source: { name: sn?.channelTitle || 'YouTube', url: `https://youtu.be/${id}` },
+      }
+      const candidate = buildVideoCandidate(doc, 'network')
+      if (candidate) out.push(candidate)
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+async function fetchRedditVideoCandidates(): Promise<VideoCandidate[]> {
+  const doc = await fetchFromRedditFunnyYouTube()
+  if (!doc) return []
+  const candidate = buildVideoCandidate(doc, 'network')
+  return candidate ? [candidate] : []
+}
+
+async function fetchNetworkVideoCandidates(): Promise<VideoCandidate[]> {
+  const results = await Promise.allSettled([
+    fetchYouTubeCandidates(),
+    fetchRedditVideoCandidates(),
+  ])
+  const out: VideoCandidate[] = []
+  for (const res of results) {
+    if (res.status === 'fulfilled' && Array.isArray(res.value)) out.push(...res.value)
+  }
+  return out
 }
 
 async function fetchWithTimeout(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1], timeout = PROVIDER_TIMEOUT_MS): Promise<Response | null> {
@@ -843,10 +1100,15 @@ async function fetchFromRedditFunnyYouTube(): Promise<any | null> {
 
     const title = (p?.title || '').toString()
     const thumb = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
-    const item = { type: 'video' as const, url, thumbUrl: thumb, text: title, source: { name: 'Reddit', url: `https://www.reddit.com${p?.permalink || ''}` }, provider: 'reddit-youtube' }
-    await upsertCache('video', { videoId: id }, { title, thumb, provider: 'reddit-youtube' })
-    await touchLastShown('video', { videoId: id })
-    return item
+    return {
+      videoId: id,
+      url,
+      title,
+      description: '',
+      thumb,
+      provider: 'reddit-youtube',
+      source: { name: 'Reddit', url: `https://www.reddit.com${p?.permalink || ''}` },
+    }
   } catch { return null }
 }
 
@@ -877,86 +1139,72 @@ async function fetchFromVimeo(query: string): Promise<any | null> {
 }
 
 async function fetchLiveVideo(): Promise<any | null> {
-  const KEY = process.env.YOUTUBE_API_KEY
-  const roll = Math.random()
+  const candidateMap = new Map<string, VideoCandidate>()
 
-  if (Math.random() < 0.35) {
-    const archiveDoc = await sampleVideoFromCache({ preferArchive: true })
-    const mapped = mapVideoDoc(archiveDoc)
-    if (mapped) {
-      touchLastShown('video', mapped.key)
-      markRecentVideoProvider(mapped.provider)
-      return mapped.item
+  const add = (candidate: VideoCandidate | null) => {
+    if (!candidate) return
+    const key = candidateKey(candidate)
+    if (!key) return
+    const existing = candidateMap.get(key)
+    if (!existing || (candidate.origin === 'network' && existing.origin !== 'network')) {
+      candidateMap.set(key, candidate)
     }
   }
 
-  if (Math.random() < 0.5) {
-    const cachedDoc = await sampleVideoFromCache()
-    const mapped = mapVideoDoc(cachedDoc)
-    if (mapped) {
-      touchLastShown('video', mapped.key)
-      markRecentVideoProvider(mapped.provider)
-      return mapped.item
+  const dbCandidates = await collectVideoCandidates()
+  dbCandidates.forEach(add)
+
+  const networkCandidates = await fetchNetworkVideoCandidates()
+  networkCandidates.forEach(add)
+
+  const scored = Array.from(candidateMap.values())
+    .map((candidate) => ({ candidate, score: scoreVideoCandidate(candidate) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => b.score - a.score)
+
+  for (const { candidate, score } of scored) {
+    if (score < -5) continue
+    const key = candidateKey(candidate)
+    if (!key) continue
+
+    const tags = candidate.tags
+    const keywords = candidate.keywords
+    const allTagsRecent = tags.length && tags.every((tag) => recentVideoTopics.includes(tag))
+    const allKeywordsRecent = keywords.length && keywords.every((word) => recentVideoKeywords.includes(word))
+    if (allTagsRecent && allKeywordsRecent && scored.length > 1) continue
+
+    if (candidate.origin === 'network') {
+      await upsertCache('video', candidate.mapped.key, {
+        title: candidate.mapped.item.text,
+        url: candidate.mapped.item.url,
+        description: trimText(candidate.mapped.raw?.description || ''),
+        provider: candidate.mapped.provider,
+        thumb: candidate.mapped.item.thumbUrl || null,
+        source: candidate.mapped.item.source,
+        tags,
+        keywords,
+      })
     }
+
+    await touchLastShown('video', candidate.mapped.key)
+    if (candidate.mapped.key.videoId) markRecentVideo(candidate.mapped.key.videoId)
+    else if (candidate.mapped.key.url) markRecentVideo(candidate.mapped.key.url)
+    markRecentVideoProvider(candidate.mapped.provider)
+    markRecentVideoTopics(tags)
+    if (keywords.length) markRecentVideoKeywords(keywords)
+    return candidate.mapped.item
   }
 
-  if (roll < 0.60) {
-    if (!KEY) {
-      const cachedDoc = await sampleVideoFromCache()
-      const mappedCached = mapVideoDoc(cachedDoc)
-      if (mappedCached) {
-        touchLastShown('video', mappedCached.key)
-        markRecentVideoProvider(mappedCached.provider)
-        return mappedCached.item
-      }
-    } else {
-      const q = buildYouTubeQuery()
-      const publishedAfter = new Date(Date.now() - 1000 * 60 * 60 * 24 * 120).toISOString()
-      const params = new URLSearchParams({ key: KEY, part: 'snippet', type: 'video', maxResults: '25', q, order: Math.random() < 0.5 ? 'date' : 'relevance', publishedAfter, videoEmbeddable: 'true' })
-      try {
-        const res = await fetchWithTimeout(`${YT_ENDPOINT}/search?${params.toString()}`, { cache: 'no-store' })
-        if (res?.ok) {
-          const data: any = await res.json()
-          const items: any[] = data?.items || []
-          const pool = items.filter((it: any) => !isRecentVideo(it?.id?.videoId))
-          const chosen: any = (pool.length ? pool : items)[Math.floor(Math.random() * (pool.length ? pool.length : items.length))] || null
-          const id: string | undefined = chosen?.id?.videoId
-          const sn: any = chosen?.snippet
-          if (id) {
-            markRecentVideo(id)
-            const provider = 'youtube'
-            const item = { type:'video' as const, url:`https://youtu.be/${id}`, thumbUrl:`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, text:sn?.title || '', source:{ name:'YouTube', url:`https://youtu.be/${id}` }, provider }
-            upsertCache('video', { videoId: id }, { title: item.text, thumb: item.thumbUrl, provider })
-            touchLastShown('video', { videoId: id })
-            markRecentVideoProvider(provider)
-            return item
-          }
-        }
-      } catch {}
-    }
-  }
-
-  if (roll >= 0.60 && roll < 0.85) {
-    const viaReddit = await fetchFromRedditFunnyYouTube()
-    if (viaReddit) {
-      markRecentVideoProvider('reddit-youtube')
-      return viaReddit
-    }
-  }
-
-  const q2 = buildYouTubeQuery()
-  const viaVimeo = await fetchFromVimeo(q2)
-  if (viaVimeo) {
-    markRecentVideoProvider('vimeo')
-    return viaVimeo
-  }
-
-  const cachedGeneral = await sampleVideoFromCache()
-  const mappedCached = mapVideoDoc(cachedGeneral)
-  if (mappedCached) {
-    touchLastShown('video', mappedCached.key)
-    markRecentVideoProvider(mappedCached.provider)
-    return mappedCached.item
+  const fallbackDoc = await sampleVideoFromCache()
+  const fallbackCandidate = fallbackDoc ? buildVideoCandidate(fallbackDoc, 'db-random') : null
+  if (fallbackCandidate) {
+    await touchLastShown('video', fallbackCandidate.mapped.key)
+    if (fallbackCandidate.mapped.key.videoId) markRecentVideo(fallbackCandidate.mapped.key.videoId)
+    else if (fallbackCandidate.mapped.key.url) markRecentVideo(fallbackCandidate.mapped.key.url)
+    markRecentVideoProvider(fallbackCandidate.mapped.provider)
+    markRecentVideoTopics(fallbackCandidate.tags)
+    if (fallbackCandidate.keywords.length) markRecentVideoKeywords(fallbackCandidate.keywords)
+    return fallbackCandidate.mapped.item
   }
 
   const cachedWeb = await sampleFromCache('web', { provider: 'vimeo', ogImage: { $nin: [null, '', false] } })
