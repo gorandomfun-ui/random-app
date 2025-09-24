@@ -11,6 +11,15 @@ type Theme = { bg: string; deep: string; cream: string; text: string }
 type ItemType = 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web' | 'encourage'
 type SourceInfo = { name?: string; url?: string } | null
 
+const TYPE_ICONS: Record<Exclude<ItemType, 'encourage'>, string> = {
+  image: '/icons/image.svg',
+  video: '/icons/Video.svg',
+  web: '/icons/web.svg',
+  quote: '/icons/quote.svg',
+  joke: '/icons/joke.svg',
+  fact: '/icons/fact.svg',
+}
+
 type Item = {
   _id?: string
   type: ItemType
@@ -582,20 +591,9 @@ export default function RandomModal({
         {/* type / titre */}
         {viewItem && (
           <div className="px-6 pt-2 text-[28px] md:text-[30px] font-inter font-semibold flex items-center justify-center gap-2 shrink-0">
-            <MonoIcon
-              src={
-                {
-                  image: '/icons/image.svg',
-                  video: '/icons/Video.svg',
-                  web: '/icons/web.svg',
-                  quote: '/icons/quote.svg',
-                  joke: '/icons/joke.svg',
-                  fact: '/icons/fact.svg',
-                }[viewItem.type]
-              }
-              color={theme.cream}
-              size={30}
-            />
+            {viewItem.type !== 'encourage' && (
+              <MonoIcon src={TYPE_ICONS[viewItem.type]} color={theme.cream} size={30} />
+            )}
             <span style={{ letterSpacing: '.02em' }}>{viewItem.type}</span>
           </div>
         )}
