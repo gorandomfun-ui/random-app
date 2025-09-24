@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer'
+import nodemailer, { type Transporter } from 'nodemailer'
 
 export type MailPayload = {
   subject: string
@@ -9,7 +9,7 @@ export type MailPayload = {
 }
 
 type TransportConfig = {
-  transport: nodemailer.Transporter
+  transport: Transporter
   from: string
   to: string
 }
