@@ -6,6 +6,8 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
+import { createJokeDocument, type JokeDocument } from '@/lib/random/jokes'
+import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
 
 /* =========================== DB =========================== */
 let _db: Db | null = null
@@ -26,11 +28,7 @@ async function getDbSafe(): Promise<Db | null> {
   }
 }
 
-type JokeDoc = {
-  type: 'joke'
-  text: string
-  source?: { name: string; url?: string }
-  provider?: string
+type JokeDoc = JokeDocument & {
   hash: string
   createdAt?: Date
   updatedAt?: Date
@@ -38,6 +36,11 @@ type JokeDoc = {
 
 const norm = (v?: string | null) => (v || '').replace(/\s+/g, ' ').trim()
 const jokeHash = (text: string) => createHash('sha1').update(norm(text)).digest('hex')
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object') return value as Record<string, unknown>
+  return {}
+}
 
 async function upsertManyJokes(rows: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[]) {
   const db = await getDbSafe()
@@ -57,21 +60,7 @@ async function upsertManyJokes(rows: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[])
 }
 
 /* ======================== Helpers HTTP ===================== */
-const HTTP_HEADERS = { 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
-
-async function fetchJson(url: string, timeoutMs = 10000) {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { cache: 'no-store', headers: HTTP_HEADERS, signal: ctrl.signal })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timer)
-  }
-}
+const ROUTE_HEADERS = { ...DEFAULT_INGEST_HEADERS, 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
 
 function sampleArray<T>(arr: T[], max: number): T[] {
   if (arr.length <= max) return arr.slice()
@@ -89,66 +78,73 @@ function sampleArray<T>(arr: T[], max: number): T[] {
 /* ======================== Providers ======================== */
 async function pullJokesDataset(limit: number) {
   const url = 'https://raw.githubusercontent.com/taivop/joke-dataset/master/jokes.json'
-  const json: any[] | null = await fetchJson(url)
+  const json = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 12000 })
   if (!Array.isArray(json)) return []
   const mapped = json
     .map((entry) => {
-      const text = norm(entry?.body || entry?.joke || '')
+      const row = asRecord(entry)
+      const body = typeof row.body === 'string' ? row.body : ''
+      const jokeText = typeof row.joke === 'string' ? row.joke : ''
+      const text = norm(body || jokeText)
       if (!text) return null
-      const link = typeof entry?.link === 'string' ? entry.link : undefined
-      return {
-        type: 'joke' as const,
+      const link = typeof row.link === 'string' ? row.link : undefined
+      const base = createJokeDocument({
         text,
-        source: { name: 'github:jokes-dataset', url: link || url },
         provider: 'github-jokes-dataset',
-        hash: jokeHash(text),
-      }
+        source: { name: 'github:jokes-dataset', url: link || url },
+      })
+      if (!base) return null
+      return { ...base, hash: jokeHash(base.text) }
     })
-    .filter(Boolean) as Omit<JokeDoc, 'createdAt' | 'updatedAt'>[]
+    .filter((entry): entry is JokeDoc => Boolean(entry))
   return sampleArray(mapped, Math.min(limit * 3, 300))
 }
 
 async function pullFunnyQuotes(limit: number) {
   const url = 'https://raw.githubusercontent.com/akhilRana/funny-quotes/master/funny-quotes.json'
-  const json: any[] | null = await fetchJson(url)
+  const json = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 12000 })
   if (!Array.isArray(json)) return []
   const mapped = json
     .map((entry) => {
-      const text = norm(entry?.quote || entry?.joke || '')
+      const row = asRecord(entry)
+      const quote = typeof row.quote === 'string' ? row.quote : ''
+      const joke = typeof row.joke === 'string' ? row.joke : ''
+      const text = norm(quote || joke)
       if (!text) return null
-      const author = norm(entry?.author)
+      const author = norm(typeof row.author === 'string' ? row.author : '')
       const fullText = author ? `${text} — ${author}` : text
-      return {
-        type: 'joke' as const,
+      const base = createJokeDocument({
         text: fullText,
-        source: { name: 'github:funny-quotes', url },
         provider: 'github-funny-quotes',
-        hash: jokeHash(fullText),
-      }
+        source: { name: 'github:funny-quotes', url },
+      })
+      if (!base) return null
+      return { ...base, hash: jokeHash(base.text) }
     })
-    .filter(Boolean) as Omit<JokeDoc, 'createdAt' | 'updatedAt'>[]
+    .filter((entry): entry is JokeDoc => Boolean(entry))
   return sampleArray(mapped, Math.min(limit * 2, 200))
 }
 
 async function pullOfficialJokeApi(limit: number) {
   const url = 'https://official-joke-api.appspot.com/random_ten'
-  const out: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[] = []
+  const out: JokeDoc[] = []
   const batches = Math.ceil(limit / 10)
   for (let i = 0; i < batches; i++) {
-    const arr: any[] | null = await fetchJson(url)
+    const arr = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 12000 })
     if (!Array.isArray(arr)) continue
     for (const joke of arr) {
-      const setup = norm(joke?.setup)
-      const punchline = norm(joke?.punchline)
+      const entry = (joke ?? {}) as Record<string, unknown>
+      const setup = norm(typeof entry.setup === 'string' ? entry.setup : '')
+      const punchline = norm(typeof entry.punchline === 'string' ? entry.punchline : '')
       const text = punchline ? `${setup} ${setup ? '— ' : ''}${punchline}`.trim() : setup
       if (!text) continue
-      out.push({
-        type: 'joke' as const,
+      const base = createJokeDocument({
         text,
-        source: { name: 'Official Joke API', url: 'https://official-joke-api.appspot.com' },
         provider: 'official-joke-api',
-        hash: jokeHash(text),
+        source: { name: 'Official Joke API', url: 'https://official-joke-api.appspot.com' },
       })
+      if (!base) continue
+      out.push({ ...base, hash: jokeHash(base.text) })
       if (out.length >= limit * 2) break
     }
     if (out.length >= limit * 2) break
@@ -175,7 +171,7 @@ export async function GET(request: Request) {
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean)
 
-    let collected: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[] = []
+    let collected: JokeDoc[] = []
     const targetPerSource = Math.max(10, Math.ceil(limit / Math.max(1, sources.length)))
 
     try {
@@ -201,7 +197,7 @@ export async function GET(request: Request) {
     }
 
     // de-dup & sample
-    const map = new Map<string, Omit<JokeDoc, 'createdAt' | 'updatedAt'>>()
+    const map = new Map<string, JokeDoc>()
     for (const joke of collected) {
       if (!joke?.hash) continue
       if (!map.has(joke.hash)) map.set(joke.hash, joke)
@@ -215,8 +211,8 @@ export async function GET(request: Request) {
 
     const result = await upsertManyJokes(finalBatch)
     return NextResponse.json({ ok: true, requested: limit, unique: unique.length, inserted: result.inserted, updated: result.updated })
-  } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || 'ingest jokes failed' }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'ingest jokes failed'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
-

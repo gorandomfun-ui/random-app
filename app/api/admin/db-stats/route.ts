@@ -23,7 +23,8 @@ export async function GET() {
       collections: out,
       hint: 'Vérifie que images/facts/jokes/videos/websites > 0. Si 0 → lance les routes d’ingest correspondantes.',
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'error' }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

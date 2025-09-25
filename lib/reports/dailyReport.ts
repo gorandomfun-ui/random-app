@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db'
 import { getCronRunsBetween } from '@/lib/metrics/cron'
 import { DEFAULT_USAGE_TZ, formatDayKey, getUsageForDay } from '@/lib/metrics/usage'
+import type { UsageDocument } from '@/lib/metrics/usage'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -154,7 +155,7 @@ export type DailyReportData = {
     runs: CronRunDoc[]
     summary: CronSummary
   }
-  usage: any
+  usage: UsageDocument | null
   inventory: { total: number; map: Record<string, number>; list: CountEntry[] }
 }
 

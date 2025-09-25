@@ -4,6 +4,20 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 
+type ItemSummary = {
+  _id?: unknown
+  type?: string
+  provider?: string
+  url?: string
+  videoId?: string
+  title?: string
+  thumb?: string
+  host?: string
+  createdAt?: Date
+  updatedAt?: Date
+  lastShownAt?: Date
+}
+
 async function getDb(): Promise<Db | null> {
   try {
     const { MongoClient } = await import('mongodb')
@@ -16,8 +30,8 @@ async function getDb(): Promise<Db | null> {
   } catch { return null }
 }
 
-function strip(x: any) {
-  const { _id, type, provider, url, videoId, title, thumb, host, createdAt, updatedAt, lastShownAt } = x || {}
+function strip(doc: ItemSummary): ItemSummary {
+  const { _id, type, provider, url, videoId, title, thumb, host, createdAt, updatedAt, lastShownAt } = doc || {}
   return { _id, type, provider, url, videoId, title, thumb, host, createdAt, updatedAt, lastShownAt }
 }
 
@@ -52,7 +66,7 @@ export async function GET(req: Request) {
   const distinctIds = await items.distinct('videoId', { type: 'video' })
   const videos = { totalDocs: videosTotal, distinctVideoIds: distinctIds.filter(Boolean).length }
 
-  const match: any = {}
+  const match: Record<string, unknown> = {}
   if (type) match.type = type
   if (provider) match.provider = provider
 

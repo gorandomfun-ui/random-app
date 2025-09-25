@@ -14,10 +14,26 @@ function pickMany<T>(arr: T[], n: number): T[] {
   return out;
 }
 
-async function loadKeywords(): Promise<{ core: string[]; folk: string[]; fun: string[] }> {
-  const p = path.resolve(process.cwd(), 'lib/ingest/keywords/video.json');
-  const raw = await fs.readFile(p, 'utf8');
-  return JSON.parse(raw);
+type VideoKeywords = { core: string[]; folk: string[]; fun: string[] }
+
+async function loadKeywords(): Promise<VideoKeywords> {
+  const keywordsPath = path.resolve(process.cwd(), 'lib/ingest/keywords/video.json');
+  const raw = await fs.readFile(keywordsPath, 'utf8');
+  const parsed = JSON.parse(raw) as Partial<VideoKeywords> | null;
+  return {
+    core: Array.isArray(parsed?.core) ? (parsed?.core as string[]) : [],
+    folk: Array.isArray(parsed?.folk) ? (parsed?.folk as string[]) : [],
+    fun: Array.isArray(parsed?.fun) ? (parsed?.fun as string[]) : [],
+  };
+}
+
+type IngestVideosResponse = {
+  ok?: boolean;
+  error?: string;
+  scanned?: number;
+  unique?: number;
+  inserted?: number;
+  updated?: number;
 }
 
 export async function GET(req: Request) {
@@ -61,9 +77,9 @@ export async function GET(req: Request) {
       cache: 'no-store',
     });
 
-    let json: any = null;
+    let json: IngestVideosResponse | null = null;
     try {
-      json = await res.json();
+      json = (await res.json()) as IngestVideosResponse;
     } catch {
       json = null;
     }
@@ -101,7 +117,7 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ ok: true, queries, upstream: json, triggeredAt: finishedAt.toISOString() });
-  } catch (e: any) {
+  } catch (error: unknown) {
     const finishedAt = new Date();
     await logCronRun({
       name: 'cron:videos',
@@ -109,9 +125,10 @@ export async function GET(req: Request) {
       startedAt,
       finishedAt,
       triggeredBy,
-      error: e?.message || 'cron failed',
+      error: error instanceof Error ? error.message : 'cron failed',
       details: { queries },
     });
-    return NextResponse.json({ error: e?.message || 'cron failed' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'cron failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

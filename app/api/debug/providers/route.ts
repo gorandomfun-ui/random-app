@@ -13,6 +13,13 @@ type CheckResult = {
 
 const DEFAULT_TIMEOUT = Number(process.env.RANDOM_PROVIDER_TIMEOUT_MS || 4000)
 
+type GiphyResponse = { data?: unknown[] }
+type TenorResponse = { results?: unknown[] }
+type PexelsResponse = { photos?: unknown[] }
+type PixabayResponse = { hits?: unknown[] }
+type UnsplashResponse = { results?: unknown[] }
+type YouTubeResponse = { items?: unknown[] }
+
 async function fetchWithTiming(url: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -33,11 +40,12 @@ async function checkGiphy(timeout: number): Promise<CheckResult> {
     const url = `https://api.giphy.com/v1/gifs/search?api_key=${key}&q=weird&limit=3&rating=g`
     const { res, durationMs } = await fetchWithTiming(url, { cache: 'no-store' }, timeout)
     if (!res.ok) return { name: 'giphy', status: 'error', durationMs, detail: `HTTP ${res.status}` }
-    const json: any = await res.json()
-    const items = Array.isArray(json?.data) ? json.data.length : 0
+    const json = (await res.json()) as GiphyResponse
+    const items = Array.isArray(json.data) ? json.data.length : 0
     return { name: 'giphy', status: 'ok', durationMs, items }
-  } catch (error: any) {
-    return { name: 'giphy', status: 'error', detail: error?.message || 'request failed' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'request failed'
+    return { name: 'giphy', status: 'error', detail }
   }
 }
 
@@ -48,11 +56,12 @@ async function checkTenor(timeout: number): Promise<CheckResult> {
     const url = `https://tenor.googleapis.com/v2/search?key=${key}&q=weird&limit=3&media_filter=gif`
     const { res, durationMs } = await fetchWithTiming(url, { cache: 'no-store' }, timeout)
     if (!res.ok) return { name: 'tenor', status: 'error', durationMs, detail: `HTTP ${res.status}` }
-    const json: any = await res.json()
-    const items = Array.isArray(json?.results) ? json.results.length : 0
+    const json = (await res.json()) as TenorResponse
+    const items = Array.isArray(json.results) ? json.results.length : 0
     return { name: 'tenor', status: 'ok', durationMs, items }
-  } catch (error: any) {
-    return { name: 'tenor', status: 'error', detail: error?.message || 'request failed' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'request failed'
+    return { name: 'tenor', status: 'error', detail }
   }
 }
 
@@ -63,11 +72,12 @@ async function checkPexels(timeout: number): Promise<CheckResult> {
     const url = `https://api.pexels.com/v1/search?query=weird&per_page=3`
     const { res, durationMs } = await fetchWithTiming(url, { cache: 'no-store', headers: { Authorization: key } }, timeout)
     if (!res.ok) return { name: 'pexels', status: 'error', durationMs, detail: `HTTP ${res.status}` }
-    const json: any = await res.json()
-    const items = Array.isArray(json?.photos) ? json.photos.length : 0
+    const json = (await res.json()) as PexelsResponse
+    const items = Array.isArray(json.photos) ? json.photos.length : 0
     return { name: 'pexels', status: 'ok', durationMs, items }
-  } catch (error: any) {
-    return { name: 'pexels', status: 'error', detail: error?.message || 'request failed' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'request failed'
+    return { name: 'pexels', status: 'error', detail }
   }
 }
 
@@ -78,11 +88,12 @@ async function checkPixabay(timeout: number): Promise<CheckResult> {
     const url = `https://pixabay.com/api/?key=${key}&q=weird&per_page=3&safesearch=true`
     const { res, durationMs } = await fetchWithTiming(url, { cache: 'no-store' }, timeout)
     if (!res.ok) return { name: 'pixabay', status: 'error', durationMs, detail: `HTTP ${res.status}` }
-    const json: any = await res.json()
-    const items = Array.isArray(json?.hits) ? json.hits.length : 0
+    const json = (await res.json()) as PixabayResponse
+    const items = Array.isArray(json.hits) ? json.hits.length : 0
     return { name: 'pixabay', status: 'ok', durationMs, items }
-  } catch (error: any) {
-    return { name: 'pixabay', status: 'error', detail: error?.message || 'request failed' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'request failed'
+    return { name: 'pixabay', status: 'error', detail }
   }
 }
 
@@ -93,11 +104,12 @@ async function checkUnsplash(timeout: number): Promise<CheckResult> {
     const url = `https://api.unsplash.com/search/photos?client_id=${key}&query=weird&per_page=3`
     const { res, durationMs } = await fetchWithTiming(url, { cache: 'no-store' }, timeout)
     if (!res.ok) return { name: 'unsplash', status: 'error', durationMs, detail: `HTTP ${res.status}` }
-    const json: any = await res.json()
-    const items = Array.isArray(json?.results) ? json.results.length : 0
+    const json = (await res.json()) as UnsplashResponse
+    const items = Array.isArray(json.results) ? json.results.length : 0
     return { name: 'unsplash', status: 'ok', durationMs, items }
-  } catch (error: any) {
-    return { name: 'unsplash', status: 'error', detail: error?.message || 'request failed' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'request failed'
+    return { name: 'unsplash', status: 'error', detail }
   }
 }
 
@@ -116,11 +128,12 @@ async function checkYouTube(timeout: number): Promise<CheckResult> {
     const url = `https://www.googleapis.com/youtube/v3/search?${params.toString()}`
     const { res, durationMs } = await fetchWithTiming(url, { cache: 'no-store' }, timeout)
     if (!res.ok) return { name: 'youtube', status: 'error', durationMs, detail: `HTTP ${res.status}` }
-    const json: any = await res.json()
-    const items = Array.isArray(json?.items) ? json.items.length : 0
+    const json = (await res.json()) as YouTubeResponse
+    const items = Array.isArray(json.items) ? json.items.length : 0
     return { name: 'youtube', status: 'ok', durationMs, items }
-  } catch (error: any) {
-    return { name: 'youtube', status: 'error', detail: error?.message || 'request failed' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'request failed'
+    return { name: 'youtube', status: 'error', detail }
   }
 }
 
@@ -131,8 +144,9 @@ async function checkMongo(): Promise<{ status: 'ok' | 'error'; detail?: string }
     const db = await getDb(process.env.MONGODB_DB || process.env.MONGO_DB || 'randomapp')
     const count = await db.collection('items').countDocuments({})
     return { status: 'ok', detail: `items: ${count}` }
-  } catch (error: any) {
-    return { status: 'error', detail: error?.message || 'db error' }
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : 'db error'
+    return { status: 'error', detail }
   }
 }
 

@@ -74,17 +74,31 @@ const UA = { 'User-Agent': 'RandomAppBot/1.0 (+https://example.com)' }
 
 function norm(s?: string | null) { return (s || '').toString().replace(/\s+/g, ' ').trim() }
 
-async function fetchJson(url: string, timeoutMs = 8000) {
+async function fetchJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const res = await fetch(url, { cache: 'no-store', headers: UA, signal: ctrl.signal })
     if (!res.ok) return null
-    return await res.json()
-  } catch { return null } finally { clearTimeout(t) }
+    return (await res.json()) as T
+  } catch {
+    return null
+  } finally {
+    clearTimeout(t)
+  }
 }
 
 function ytThumb(id: string) { return `https://i.ytimg.com/vi/${id}/hqdefault.jpg` }
+
+type YoutubeSearchItem = {
+  id?: { videoId?: string }
+  snippet?: { title?: string }
+}
+
+type YoutubeSearchResponse = {
+  items?: YoutubeSearchItem[]
+  nextPageToken?: string
+}
 
 // ---------------------------- YouTube: Search ------------------------------
 async function ytSearchQueries(queries: string[], per: number, pages: number, days: number) {
@@ -111,10 +125,11 @@ async function ytSearchQueries(queries: string[], per: number, pages: number, da
       })
       if (pageToken) params.set('pageToken', pageToken)
       const url = `${YT_BASE}/search?${params.toString()}`
-      const d: any = await fetchJson(url, 10000)
-      const items: any[] = d?.items || []
+      const data = await fetchJson<YoutubeSearchResponse>(url, 10000)
+      const items = data?.items ?? []
       for (const it of items) {
-        const id = it?.id?.videoId; if (!id) continue
+        const id = it?.id?.videoId
+        if (!id) continue
         const sn = it?.snippet || {}
         out.push({
           type: 'video',
@@ -126,12 +141,22 @@ async function ytSearchQueries(queries: string[], per: number, pages: number, da
           source: { name: 'YouTube', url: `https://youtu.be/${id}` },
         })
       }
-      pageToken = d?.nextPageToken || ''
+      pageToken = data?.nextPageToken || ''
       if (!pageToken) break
       await new Promise(r => setTimeout(r, 250))
     }
   }
   return out
+}
+
+type YoutubePlaylistItem = {
+  contentDetails?: { videoId?: string }
+  snippet?: { resourceId?: { videoId?: string }; title?: string }
+}
+
+type YoutubePlaylistResponse = {
+  items?: YoutubePlaylistItem[]
+  nextPageToken?: string
 }
 
 // ---------------------------- YouTube: Playlist ---------------------------
@@ -150,8 +175,8 @@ async function ytPlaylist(playlistId: string, per: number) {
     })
     if (pageToken) params.set('pageToken', pageToken)
     const url = `${YT_BASE}/playlistItems?${params.toString()}`
-    const d: any = await fetchJson(url, 10000)
-    const items: any[] = d?.items || []
+    const data = await fetchJson<YoutubePlaylistResponse>(url, 10000)
+    const items = data?.items ?? []
     for (const it of items) {
       const id = it?.contentDetails?.videoId || it?.snippet?.resourceId?.videoId
       if (!id) continue
@@ -166,11 +191,15 @@ async function ytPlaylist(playlistId: string, per: number) {
         source: { name: 'YouTube', url: `https://youtu.be/${id}` },
       })
     }
-    pageToken = d?.nextPageToken || ''
+    pageToken = data?.nextPageToken || ''
     if (!pageToken) break
     await new Promise(r => setTimeout(r, 250))
   }
   return out
+}
+
+type YoutubeChannelResponse = {
+  items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }>
 }
 
 // ---------------------------- YouTube: Channel uploads --------------------
@@ -180,18 +209,32 @@ async function ytChannelUploads(channelId: string, per: number) {
   if (!KEY || !channelId) return out
 
   const detailUrl = `${YT_BASE}/channels?${new URLSearchParams({ key: KEY, part: 'contentDetails', id: channelId })}`
-  const d1: any = await fetchJson(detailUrl, 8000)
-  const uploads = d1?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
+  const details = await fetchJson<YoutubeChannelResponse>(detailUrl, 8000)
+  const uploads = details?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
   if (!uploads) return out
   return ytPlaylist(uploads, per)
 }
 
 // ---------------------------- Reddit (YouTube links) ----------------------
+type RedditPost = {
+  data?: {
+    url?: string
+    title?: string
+    permalink?: string
+  }
+}
+
+type RedditListing = {
+  data?: {
+    children?: RedditPost[]
+  }
+}
+
 async function redditYouTube(sub = 'funnyvideos', limit = 40) {
   const out: Omit<VideoDoc, 'createdAt'|'updatedAt'>[] = []
   const url = `https://www.reddit.com/r/${encodeURIComponent(sub)}/.json?limit=${Math.min(100, Math.max(5, limit))}`
-  const j: any = await fetchJson(url, 8000)
-  const posts: any[] = j?.data?.children?.map((c: any) => c?.data).filter(Boolean) || []
+  const listing = await fetchJson<RedditListing>(url, 8000)
+  const posts = listing?.data?.children?.map((child) => child?.data).filter((entry): entry is { url?: string; title?: string; permalink?: string } => Boolean(entry)) || []
   for (const p of posts) {
     const u = String(p?.url || '')
     if (!/youtu\.be\//i.test(u) && !/youtube\.com\/watch\?/i.test(u)) continue
@@ -273,8 +316,11 @@ export async function GET(req: NextRequest) {
 
   // Upsert to DB
   let result = { inserted: 0, updated: 0 }
-  try { result = await upsertManyVideos(unique) } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'bulkWrite failed' }, { status: 500 })
+  try {
+    result = await upsertManyVideos(unique)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'bulkWrite failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, mode, scanned: collected.length, unique: unique.length, ...result })

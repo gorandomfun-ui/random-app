@@ -1,7 +1,9 @@
 // lib/api.ts
-export type RandomTypes = Array<'image'|'quote'|'fact'|'joke'|'video'|'web'>
+import type { RandomApiResponse } from './random/clientTypes'
 
-export async function fetchRandom({ types, lang }: { types: RandomTypes, lang: 'en'|'fr'|'de'|'jp' }) {
+export type RandomTypes = Array<'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'>
+
+export async function fetchRandom({ types, lang }: { types: RandomTypes; lang: 'en' | 'fr' | 'de' | 'jp' }): Promise<RandomApiResponse> {
   const qs = new URLSearchParams({
     types: types.join(','),
     lang,
@@ -13,5 +15,5 @@ export async function fetchRandom({ types, lang }: { types: RandomTypes, lang: '
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   // l’API renvoie { item: {...} } — on renvoie tel quel pour que page.tsx fasse res.item
-  return await res.json()
+  return (await res.json()) as RandomApiResponse
 }

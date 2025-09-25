@@ -34,10 +34,13 @@ export default function AdminStats() {
       if (provider) q.set('provider', provider)
       if (sample) q.set('sample', 'true')
       const res = await fetch(`/api/admin/cache-stats?${q}`, { cache: 'no-store' })
-      const j: Stats = await res.json()
-      if (!res.ok || j.ok === false) throw new Error(j.error || `HTTP ${res.status}`)
-      setData(j)
-    } catch (e: any) { setErr(e?.message || 'Failed') }
+      const json = (await res.json()) as unknown
+      const stats = (json && typeof json === 'object') ? (json as Stats) : { ok: false, error: 'invalid response' }
+      if (!res.ok || stats.ok === false) throw new Error(stats.error || `HTTP ${res.status}`)
+      setData(stats)
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : 'Failed')
+    }
     finally { setLoading(false) }
   }
 

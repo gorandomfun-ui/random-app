@@ -9,18 +9,15 @@ import LegalModal from '../components/LegalModal'
 import SocialPopover from '../components/SocialPopover'
 import LikesMenu from '../components/LikesMenu'
 import { useI18n } from '../providers/I18nProvider'
-import { fetchRandom } from '../lib/api'
+import { fetchRandom, type RandomTypes } from '../lib/api'
 import { playRandom, playAgain } from '../utils/sound'
 import MonoIcon from '../components/MonoIcon'
 import AnimatedButtonLabel from '../components/AnimatedButtonLabel'
+import type { ItemType } from '../lib/random/types'
+import type { DisplayItem, EncourageItem as EncourageContentItem } from '../lib/random/clientTypes'
 
-type ItemType = 'image'|'video'|'quote'|'joke'|'fact'|'web'
-
-type EncourageItem = {
-  type: 'encourage'
-  text: string
-  icon: string
-}
+type EncourageItem = EncourageContentItem
+type SequenceItemType = ItemType | 'encourage'
 
 type SequenceSlot =
   | { kind: 'content'; itemType: ItemType }
@@ -152,7 +149,7 @@ function useButtonWidth(
 }
 
 export default function HomePage() {
-  const { dict, locale } = useI18n() as any
+  const { dict, locale, t } = useI18n()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -181,7 +178,7 @@ export default function HomePage() {
   const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0, draws: 0 })
   const [sequenceVersion, setSequenceVersion] = useState(0)
 
-  const [currentItem, setCurrentItem] = useState<any>(null)
+  const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
   const lang = (locale || 'en') as 'en'|'fr'|'de'|'jp'
   const [isButtonBursting, setIsButtonBursting] = useState(false)
   const burstMountRef = useRef(true)
@@ -194,6 +191,29 @@ export default function HomePage() {
 
   const theme = THEMES[themeIdx]
   const modalTheme = THEMES[modalThemeIdx]
+
+  const heroCopy = useMemo(() => ({
+    startButton: t('hero.startButton', 'GO RANDOM'),
+    tagline1: t('hero.tagline1', 'EXPLORE RANDOM CONTENTS.'),
+    tagline2: t('hero.tagline2', 'NO NEWS, NO REASON, NO SENSE.'),
+    tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
+  }), [t])
+
+  const navLabels = useMemo(() => ({
+    images: t('nav.images', 'images'),
+    videos: t('nav.videos', 'videos'),
+    web: t('nav.web', 'web'),
+    quotes: t('nav.quotes', 'quotes'),
+    jokes: t('nav.jokes', 'funny jokes'),
+    facts: t('nav.facts', 'facts'),
+  }), [t])
+
+  const footerCopy = useMemo(() => ({
+    legal: t('footer.legal', 'Legal notice.'),
+    share: t('footer.share', 'share'),
+  }), [t])
+
+  const shuffleLabel = useMemo(() => t('shuffle.title', 'Shuffle'), [t])
 
   const mainStyle = useMemo(() => {
     const base: CSSProperties = {
@@ -272,9 +292,16 @@ export default function HomePage() {
   }, [resetSequence, filteredSequence.length])
 
   const encourageMessages = useMemo(() => {
-    const list = dict?.encourage?.messages
-    if (Array.isArray(list) && list.length) {
-      return list.map((msg: string) => msg.trim()).filter(Boolean)
+    const encourageSection = (dict as Record<string, unknown>)['encourage']
+    const rawMessages =
+      encourageSection && typeof encourageSection === 'object'
+        ? (encourageSection as { messages?: unknown }).messages
+        : undefined
+    if (Array.isArray(rawMessages)) {
+      const cleaned = rawMessages.filter((entry): entry is string => typeof entry === 'string')
+      if (cleaned.length) {
+        return cleaned.map((msg) => msg.trim()).filter(Boolean)
+      }
     }
     return FALLBACK_ENCOURAGE_MESSAGES
   }, [dict])
@@ -355,7 +382,7 @@ export default function HomePage() {
         playRandom()
         return
       }
-      const res = await fetchRandom({ types: [slot.itemType] as any, lang })
+      const res = await fetchRandom({ types: [slot.itemType] as RandomTypes, lang })
       setCurrentItem(res?.item || null)
       const contrast = Math.random() < 0.7
       if (contrast) setModalThemeIdx(randDiffIdx(THEMES.length, themeIdx))
@@ -379,7 +406,7 @@ export default function HomePage() {
         const encourageItem = buildEncourageItem(slot.round, slot.encourageIndex)
         setCurrentItem(encourageItem)
       } else {
-        const res = await fetchRandom({ types: [slot.itemType] as any, lang })
+        const res = await fetchRandom({ types: [slot.itemType] as RandomTypes, lang })
         setCurrentItem(res?.item || null)
       }
     } catch {}
@@ -430,7 +457,7 @@ export default function HomePage() {
       <header ref={headerRef} className="relative flex items-center justify-between px-4 pt-4 pb-2" style={{ height: HEADER_H }}>
         <LikesMenu theme={theme} />
 
-        <button className="absolute left-1/2 -translate-x-1/2" onClick={() => setIsShuffleOpen(true)} aria-label={dict?.shuffle?.title ?? 'Shuffle'}>
+        <button className="absolute left-1/2 -translate-x-1/2" onClick={() => setIsShuffleOpen(true)} aria-label={shuffleLabel}>
           <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
         </button>
 
@@ -480,9 +507,9 @@ export default function HomePage() {
                 fontWeight: 700,
               }}
             >
-              <span className="sr-only">{dict?.hero?.startButton ?? 'GO RANDOM'}</span>
+              <span className="sr-only">{heroCopy.startButton}</span>
               <AnimatedButtonLabel
-                text={dict?.hero?.startButton ?? 'GO RANDOM'}
+                text={heroCopy.startButton}
                 color={theme.cream}
                 trigger={trigger}
                 toSecond={isSecond}
@@ -494,9 +521,9 @@ export default function HomePage() {
             className="mt-4 font-tomorrow font-bold text-base md:text-xl leading-snug"
             style={{ color: theme.text, fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}
           >
-            {(dict?.hero?.tagline1 ?? 'EXPLORE RANDOM CONTENTS.')}<br />
-            {(dict?.hero?.tagline2 ?? 'NO NEWS, NO REASON, NO SENSE.')}<br />
-            {(dict?.hero?.tagline3 ?? 'ONLY USELESS SURPRISE.')}
+            {heroCopy.tagline1}<br />
+            {heroCopy.tagline2}<br />
+            {heroCopy.tagline3}
           </p>
 
           {/* Descriptif 4 + 2 */}
@@ -506,28 +533,28 @@ export default function HomePage() {
           >
             <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5 md:gap-x-1.5">
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/image.svg" color={theme.cream} size={20} /> {dict?.nav?.images ?? 'images'}
+                <MonoIcon src="/icons/image.svg" color={theme.cream} size={20} /> {navLabels.images}
               </span>
               <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/Video.svg" color={theme.cream} size={20} /> {dict?.nav?.videos ?? 'videos'}
+                <MonoIcon src="/icons/Video.svg" color={theme.cream} size={20} /> {navLabels.videos}
               </span>
               <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/web.svg" color={theme.cream} size={20} /> {dict?.nav?.web ?? 'web'}
+                <MonoIcon src="/icons/web.svg" color={theme.cream} size={20} /> {navLabels.web}
               </span>
               <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/quote.svg" color={theme.cream} size={20} /> {dict?.nav?.quotes ?? 'quotes'}
+                <MonoIcon src="/icons/quote.svg" color={theme.cream} size={20} /> {navLabels.quotes}
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5 md:gap-x-1.5">
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/joke.svg" color={theme.cream} size={20} /> {dict?.nav?.jokes ?? 'funny jokes'}
+                <MonoIcon src="/icons/joke.svg" color={theme.cream} size={20} /> {navLabels.jokes}
               </span>
               <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {dict?.nav?.facts ?? 'facts'}
+                <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {navLabels.facts}
               </span>
             </div>
           </div>
@@ -540,11 +567,11 @@ export default function HomePage() {
           <SocialPopover theme={theme} />
           <button className="flex items-center gap-2" onClick={() => setIsLegalOpen(true)}>
             <MonoIcon src="/icons/info.svg" color={theme.cream} size={20} />
-            <span className="font-inter font-semibold" style={{ color: theme.cream }}>{dict?.footer?.legal ?? 'Legal notice.'}</span>
+            <span className="font-inter font-semibold" style={{ color: theme.cream }}>{footerCopy.legal}</span>
           </button>
           <button className="flex items-center gap-2" onClick={shareFromFooter}>
             <MonoIcon src="/icons/share.svg" color={theme.text} size={20} />
-            <span className="font-inter font-semibold" style={{ color: theme.text }}>{dict?.footer?.share ?? 'share'}</span>
+            <span className="font-inter font-semibold" style={{ color: theme.text }}>{footerCopy.share}</span>
           </button>
         </div>
       </footer>
@@ -578,7 +605,7 @@ export default function HomePage() {
       <LegalModal open={isLegalOpen} onClose={() => setIsLegalOpen(false)} />
       <RandomModal
         key={sequenceVersion}
-        types={filteredSequence as any}
+        types={filteredSequence}
         lang={lang}
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}

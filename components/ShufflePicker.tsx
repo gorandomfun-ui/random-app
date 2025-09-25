@@ -1,6 +1,6 @@
 'use client'
 
-type ItemType = 'image' | 'video' | 'quote' | 'joke' | 'fact' | 'web'
+import type { ItemType } from '../lib/random/types'
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
 type Props = {
@@ -33,7 +33,11 @@ export default function ShufflePicker({
 
   function toggle(t: ItemType) {
     const next = new Set(selSet)
-    next.has(t) ? next.delete(t) : next.add(t)
+    if (next.has(t)) {
+      next.delete(t)
+    } else {
+      next.add(t)
+    }
     commit(next)
   }
 
@@ -60,7 +64,7 @@ export default function ShufflePicker({
         </div>
 
         <div className="p-4 grid grid-cols-2 gap-3">
-          {(['image', 'video', 'quote', 'joke', 'fact', 'web'] as ItemType[]).map(t => {
+          {ALL.map(t => {
             const active = selSet.has(t)
             return (
               <button
@@ -84,7 +88,7 @@ export default function ShufflePicker({
           >
             All
           </button>
-          {(['image', 'video', 'quote', 'joke', 'fact', 'web'] as ItemType[]).map(t => (
+          {ALL.map(t => (
             <button
               key={'only-' + t}
               onClick={() => selectOnly(t)}

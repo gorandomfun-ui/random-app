@@ -9,8 +9,8 @@ type IngestResult = {
   unique?: number
   inserted?: number
   updated?: number
-  params?: any
-  sample?: any[]
+  params?: Record<string, unknown>
+  sample?: Array<Record<string, unknown>>
   _rawStatus?: number
   _rawText?: string
 }
@@ -28,8 +28,11 @@ function qs(params: Record<string, string | number | boolean | undefined>) {
 async function parseResponse(res: Response): Promise<IngestResult> {
   const txt = await res.text()
   try {
-    const j = JSON.parse(txt)
-    return j
+    const parsed = JSON.parse(txt) as unknown
+    if (parsed && typeof parsed === 'object') {
+      return parsed as IngestResult
+    }
+    return { _rawStatus: res.status, _rawText: txt }
   } catch {
     return { _rawStatus: res.status, _rawText: txt }
   }
@@ -208,7 +211,7 @@ export default function AdminIngestPage() {
     if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('▶️ VIDEOS: start (GET only)')
     const groups = chunk(allVideoTerms, 3)
-    let total = { scanned:0, unique:0, inserted:0, updated:0 }
+    const total = { scanned:0, unique:0, inserted:0, updated:0 }
     for (const g of groups) {
       const label = g.join(', ')
       const res = await callVideosGET(key, label, vState.per, vState.pages, vState.days, vState.reddit)
@@ -229,7 +232,7 @@ export default function AdminIngestPage() {
     if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('▶️ WEB: start (GET only)')
     const groups = chunk(allWebTerms, 2)
-    let total = { scanned:0, unique:0, inserted:0, updated:0 }
+    const total = { scanned:0, unique:0, inserted:0, updated:0 }
     for (const g of groups) {
       const label = g.join(', ')
       const res = await callWebGET(key, label, wState.per, wState.pages)

@@ -3,18 +3,30 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 
 // ⬅️ chemins corrigés depuis /providers → /lib/i18n/dictionaries
-import en from '../lib/i18n/dictionaries/en'
-import fr from '../lib/i18n/dictionaries/fr'
-import de from '../lib/i18n/dictionaries/de'
-import jp from '../lib/i18n/dictionaries/jp'
+import enDictionary from '../lib/i18n/dictionaries/en'
+import frDictionary from '../lib/i18n/dictionaries/fr'
+import deDictionary from '../lib/i18n/dictionaries/de'
+import jpDictionary from '../lib/i18n/dictionaries/jp'
 
-const DICTS = { en, fr, de, jp } as const
+type Dictionary = Record<string, unknown>
+
+const DICTS = {
+  en: enDictionary,
+  fr: frDictionary,
+  de: deDictionary,
+  jp: jpDictionary,
+} satisfies Record<string, Dictionary>
+
 type Locale = keyof typeof DICTS
-type Dict = (typeof DICTS)[Locale]
+type Dict = Dictionary
 
-// helper "a.b.c" → dict.a?.b?.c ?? fallback
-function getFromDict(dict: any, path: string, fallback?: string) {
-  return path.split('.').reduce((acc, key) => (acc && acc[key] != null ? acc[key] : undefined), dict) ?? fallback
+function getFromDict(dict: Dict, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, key) => {
+    if (acc && typeof acc === 'object' && key in (acc as Record<string, unknown>)) {
+      return (acc as Record<string, unknown>)[key]
+    }
+    return undefined
+  }, dict)
 }
 
 type Ctx = {
@@ -50,7 +62,11 @@ export default function I18nProvider({
 }) {
   const [locale, setLocale] = useState<Locale>(normalize(initialLocale))
   const dict = useMemo<Dict>(() => DICTS[locale], [locale])
-  const t = (path: string, fallback?: string) => String(getFromDict(dict as any, path, fallback))
+  const t = (path: string, fallback?: string) => {
+    const value = getFromDict(dict, path)
+    if (value === undefined || value === null) return fallback ?? path
+    return typeof value === 'string' ? value : String(value)
+  }
 
   const value: Ctx = {
     locale,

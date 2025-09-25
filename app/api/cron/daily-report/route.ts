@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { logCronRun } from '@/lib/metrics/cron'
 import { buildDailyReport } from '@/lib/reports/dailyReport'
+import type { UsageDocument } from '@/lib/metrics/usage'
 import { sendMail } from '@/lib/email/mailer'
 
 function formatDate(date: Date, timeZone: string, opts: Intl.DateTimeFormatOptions = {}) {
@@ -29,7 +30,7 @@ function renderCountMap(map: Record<string, number> | undefined): string {
   return `<ul>${items.join('')}</ul>`
 }
 
-function renderUsageSection(usage: any): { html: string; text: string } {
+function renderUsageSection(usage: UsageDocument | null): { html: string; text: string } {
   if (!usage) {
     return {
       html: '<p>Aucune donnée de fréquentation pour cette journée (instrumentation encore en cours de collecte).</p>',
@@ -54,9 +55,12 @@ function renderUsageSection(usage: any): { html: string; text: string } {
   return { html: htmlParts.join(''), text: textParts.join('\n') }
 }
 
-function extractCronDetails(details: Record<string, any> | undefined): string {
+function extractCronDetails(details: Record<string, unknown> | undefined): string {
   if (!details) return ''
-  const stats = details.stats as Record<string, number> | undefined
+  const rawStats = details.stats
+  const stats = typeof rawStats === 'object' && rawStats !== null
+    ? (rawStats as Record<string, unknown>)
+    : undefined
   if (!stats) return ''
   const summary = Object.entries(stats)
     .filter(([, value]) => typeof value === 'number')
@@ -79,7 +83,7 @@ function renderCronSummary(cron: DailyReport['cron'], timeZone: string) {
 
   for (const entry of cron.summary) {
     const lastRun = entry.lastRun
-    const stats = lastRun ? extractCronDetails(lastRun.details as Record<string, any> | undefined) : ''
+    const stats = lastRun ? extractCronDetails(lastRun.details) : ''
     const finishedAt = lastRun ? formatDate(new Date(lastRun.finishedAt), timeZone) : '—'
     const duration = lastRun?.durationMs != null ? `${Math.round(lastRun.durationMs / 1000)}s` : '—'
     const ratio = `${entry.success}/${entry.total}`
@@ -176,7 +180,7 @@ export async function GET(req: Request) {
     })
 
     return NextResponse.json({ ok: true, dayKey: report.dayKey, subject: mail.subject, triggeredAt: finishedAt.toISOString() })
-  } catch (error: any) {
+  } catch (error: unknown) {
     const finishedAt = new Date()
     await logCronRun({
       name: 'cron:daily-report',
@@ -184,8 +188,9 @@ export async function GET(req: Request) {
       startedAt,
       finishedAt,
       triggeredBy,
-      error: error?.message || 'daily report failed',
+      error: error instanceof Error ? error.message : 'daily report failed',
     })
-    return NextResponse.json({ error: error?.message || 'daily report failed' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'daily report failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

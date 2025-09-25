@@ -45,16 +45,17 @@ async function invokeChild(path: string): Promise<ChildCronResult> {
       body = await res.text()
     }
 
-    const ok = res.ok && !(body && typeof body === 'object' && 'ok' in (body as any) && (body as any).ok === false)
+    const bodyIndicatesFailure = typeof body === 'object' && body !== null && 'ok' in body && (body as { ok?: unknown }).ok === false
+    const ok = res.ok && !bodyIndicatesFailure
     return { name: path, path: url.pathname, ok, status: res.status, body }
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       name: path,
       path: new URL(path, 'http://localhost').pathname,
       ok: false,
       status: 0,
       body: null,
-      error: error?.message || 'fetch failed',
+      error: error instanceof Error ? error.message : 'fetch failed',
     }
   }
 }
@@ -96,7 +97,7 @@ export async function GET(req: Request) {
       triggeredAt: finishedAt.toISOString(),
       results,
     }, { status: success ? 200 : 500 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     const finishedAt = new Date()
     await logCronRun({
       name: 'cron:nightly',
@@ -104,8 +105,9 @@ export async function GET(req: Request) {
       startedAt,
       finishedAt,
       triggeredBy,
-      error: error?.message || 'nightly cron failed',
+      error: error instanceof Error ? error.message : 'nightly cron failed',
     })
-    return NextResponse.json({ error: error?.message || 'nightly cron failed' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'nightly cron failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

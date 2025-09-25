@@ -4,27 +4,52 @@ import { NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+type InsertResult = { insertedId: unknown }
+
+type CollectionLike = {
+  insertOne: (doc: Record<string, unknown>) => Promise<InsertResult> | InsertResult
+}
+
+type DbLike = {
+  collection: (name: string) => Promise<CollectionLike> | CollectionLike
+  command?: (payload: Record<string, unknown>) => Promise<unknown> | unknown
+  databaseName?: string
+}
+
+type DbModule = {
+  getDb?: () => Promise<DbLike>
+  default?: () => Promise<DbLike>
+  connectToDatabase?: () => Promise<DbLike | { db?: DbLike }>
+}
+
+function isPromise<T>(value: Promise<T> | T): value is Promise<T> {
+  return typeof (value as Promise<T>)?.then === 'function'
+}
+
+async function resolveCollection(db: DbLike, name: string): Promise<CollectionLike> {
+  if (typeof db.collection !== 'function') {
+    throw new Error('Database instance does not expose a collection() method')
+  }
+  const maybeCollection = db.collection(name)
+  return isPromise(maybeCollection) ? await maybeCollection : maybeCollection
+}
+
 /** Charge le module db de façon robuste et renvoie une instance de DB. */
-async function loadDb() {
-  // ⬇️ adapte ce chemin si ton db.ts n'est pas dans /lib
-  const mod: any = await import('@/lib/db').catch(() => ({}))
+async function loadDb(): Promise<DbLike> {
+  const mod = (await import('@/lib/db').catch(() => ({}))) as DbModule
 
   if (typeof mod.getDb === 'function') {
     return await mod.getDb()
   }
   if (typeof mod.default === 'function') {
-    // default export = fonction qui renvoie la DB
     return await mod.default()
   }
   if (typeof mod.connectToDatabase === 'function') {
     const res = await mod.connectToDatabase()
-    // support both { db } or a db directly
-    return res?.db ?? res
+    return ('db' in (res ?? {})) && res && typeof res === 'object' ? (res as { db?: DbLike }).db ?? (res as DbLike) : (res as DbLike)
   }
 
-  throw new Error(
-    "lib/db must export one of: `getDb()`, `default()`, or `connectToDatabase()`"
-  )
+  throw new Error('lib/db must export one of: `getDb()`, `default()`, or `connectToDatabase()`')
 }
 
 function isAuthorized(req: Request) {
@@ -36,9 +61,9 @@ function isAuthorized(req: Request) {
   return expected ? key === expected : true
 }
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
-    let db
+    let db: DbLike
     try {
       db = await loadDb()
     } catch {
@@ -47,10 +72,12 @@ export async function GET(req: Request) {
         { status: 500 }
       )
     }
-    await db.command?.({ ping: 1 }) // no-op si pas supporté
+    const pingResult = db.command?.({ ping: 1 })
+    if (isPromise(pingResult)) await pingResult
     return NextResponse.json({ ok: true, db: db.databaseName ?? 'unknown' })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }
 
@@ -60,7 +87,7 @@ export async function POST(req: Request) {
       return new NextResponse('Unauthorized', { status: 401 })
     }
 
-    let db
+    let db: DbLike
     try {
       db = await loadDb()
     } catch {
@@ -70,7 +97,8 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = (await req.json().catch(() => ({}))) as Record<string, any>
+    const rawBody = await req.json().catch(() => ({} as unknown))
+    const body = typeof rawBody === 'object' && rawBody !== null ? (rawBody as Record<string, unknown>) : {}
 
     const doc = {
       ...body,
@@ -78,12 +106,13 @@ export async function POST(req: Request) {
       _source: 'api/ingest',
     }
 
-    const coll = db.collection?.('ingest') ?? (await db.collection('ingest')) // compat légère
-    const res = await coll.insertOne(doc)
+    const coll = await resolveCollection(db, 'ingest')
+    const inserted = await coll.insertOne(doc)
 
-    return NextResponse.json({ ok: true, id: res.insertedId })
-  } catch (e: any) {
-    console.error('INGEST error:', e)
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
+    return NextResponse.json({ ok: true, id: inserted.insertedId })
+  } catch (error: unknown) {
+    console.error('INGEST error:', error)
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

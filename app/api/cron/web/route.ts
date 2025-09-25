@@ -7,10 +7,26 @@ import { logCronRun } from '@/lib/metrics/cron';
 
 function rand<T>(a: T[]) { return a[Math.floor(Math.random() * a.length)]; }
 
-async function loadABCs(): Promise<{ A: string[]; B: string[]; C: string[] }> {
-  const p = path.resolve(process.cwd(), 'lib/ingest/keywords/web.json');
-  const raw = await fs.readFile(p, 'utf8');
-  return JSON.parse(raw);
+type WebKeywords = { A: string[]; B: string[]; C: string[] }
+
+async function loadABCs(): Promise<WebKeywords> {
+  const keywordsPath = path.resolve(process.cwd(), 'lib/ingest/keywords/web.json');
+  const raw = await fs.readFile(keywordsPath, 'utf8');
+  const parsed = JSON.parse(raw) as Partial<WebKeywords> | null;
+  return {
+    A: Array.isArray(parsed?.A) ? (parsed?.A as string[]) : [],
+    B: Array.isArray(parsed?.B) ? (parsed?.B as string[]) : [],
+    C: Array.isArray(parsed?.C) ? (parsed?.C as string[]) : [],
+  };
+}
+
+type IngestWebResponse = {
+  ok?: boolean;
+  error?: string;
+  scanned?: number;
+  unique?: number;
+  inserted?: number;
+  updated?: number;
 }
 
 export async function GET(req: Request) {
@@ -50,9 +66,9 @@ export async function GET(req: Request) {
       cache: 'no-store',
     });
 
-    let json: any = null;
+    let json: IngestWebResponse | null = null;
     try {
-      json = await res.json();
+      json = (await res.json()) as IngestWebResponse;
     } catch {
       json = null;
     }
@@ -90,7 +106,7 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ ok: true, queries, upstream: json, triggeredAt: finishedAt.toISOString() });
-  } catch (e: any) {
+  } catch (error: unknown) {
     const finishedAt = new Date();
     await logCronRun({
       name: 'cron:web',
@@ -98,9 +114,10 @@ export async function GET(req: Request) {
       startedAt,
       finishedAt,
       triggeredBy,
-      error: e?.message || 'cron failed',
+      error: error instanceof Error ? error.message : 'cron failed',
       details: { queries },
     });
-    return NextResponse.json({ error: e?.message || 'cron failed' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'cron failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

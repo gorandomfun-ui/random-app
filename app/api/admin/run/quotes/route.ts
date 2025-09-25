@@ -1,8 +1,11 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 
+type QuotesRunRequest = { pages?: number; sites?: string }
+
 export async function POST(req: Request) {
-  const body = await req.json().catch(()=> ({})) as { pages?: number; sites?: string }
+  const rawBody = await req.json().catch(() => ({} as unknown))
+  const body: QuotesRunRequest = typeof rawBody === 'object' && rawBody !== null ? (rawBody as QuotesRunRequest) : {}
   const key = (process.env.ADMIN_INGEST_KEY || '').trim()
   if (!key) return NextResponse.json({ error: 'missing ADMIN_INGEST_KEY' }, { status: 500 })
 
@@ -15,9 +18,16 @@ export async function POST(req: Request) {
   try {
     const res = await fetch(url, { cache:'no-store', headers: { 'x-admin-ingest-key': key } })
     const text = await res.text()
-    let data: any; try { data = JSON.parse(text) } catch { data = { error: text || 'unknown error' } }
-    return NextResponse.json(data, { status: res.status })
-  } catch (e:any) {
-    return NextResponse.json({ error: e?.message || 'proxy fetch failed' }, { status: 500 })
+    let payload: unknown
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      payload = { error: text || 'unknown error' }
+    }
+    const responseBody = typeof payload === 'object' && payload !== null ? payload : { data: payload }
+    return NextResponse.json(responseBody, { status: res.status })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'proxy fetch failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -6,22 +6,10 @@ import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
+import { createQuoteDocument, type QuoteDocument } from '@/lib/random/quotes'
+import { DEFAULT_INGEST_HEADERS, fetchJson, fetchText } from '@/lib/ingest/http'
 
-const UA = { 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
-
-async function fetchJson(url: string, timeoutMs = 10000) {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { cache: 'no-store', headers: UA, signal: ctrl.signal })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timer)
-  }
-}
+const ROUTE_HEADERS = { ...DEFAULT_INGEST_HEADERS, 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
 
 function sampleArray<T>(arr: T[], max: number): T[] {
   if (arr.length <= max) return arr.slice()
@@ -49,12 +37,7 @@ async function getDbSafe(): Promise<Db | null> {
   } catch { return null }
 }
 
-type QuoteDoc = {
-  type: 'quote'
-  text: string
-  author?: string
-  source?: { name: string; url?: string }
-  provider?: string
+type QuoteDoc = QuoteDocument & {
   hash: string
   createdAt?: Date
   updatedAt?: Date
@@ -80,98 +63,149 @@ async function upsertManyQuotes(rows: Omit<QuoteDoc,'createdAt'|'updatedAt'>[]) 
 /* ============= Providers ============= */
 async function scrapeTypeFit() {
   const url = 'https://type.fit/api/quotes'
-  const out: Omit<QuoteDoc,'createdAt'|'updatedAt'>[] = []
-  try {
-    const res = await fetch(url, { cache:'no-store', headers: UA })
-    if (!res.ok) return out
-    const arr: any[] = await res.json()
-    for (const q of arr) {
-      const text = norm(q?.text); if (!text) continue
-      const author = norm(q?.author)
-      out.push({ type:'quote', text, author, source:{ name:'type.fit', url }, provider:'typefit', hash: quoteHash(text, author) })
-    }
-  } catch {}
+  const out: QuoteDoc[] = []
+  const arr = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 10000 })
+  if (!Array.isArray(arr)) return out
+  for (const entry of arr) {
+    const record = (entry ?? {}) as Record<string, unknown>
+    const text = norm(typeof record.text === 'string' ? record.text : '')
+    if (!text) continue
+    const author = norm(typeof record.author === 'string' ? record.author : '')
+    const base = createQuoteDocument({
+      text,
+      author,
+      provider: 'typefit',
+      source: { name: 'type.fit', url },
+    })
+    if (base) out.push({ ...base, hash: quoteHash(base.text, base.author) })
+  }
   return out
 }
 
 async function fetchGithubQuotesDatabase(limit: number) {
   const url = 'https://raw.githubusercontent.com/JamesFT/Database-Quotes-JSON/master/quotes.json'
-  const arr: any[] | null = await fetchJson(url, 15000)
+  const arr = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 15000 })
   if (!Array.isArray(arr)) return []
   const mapped = arr
     .map((entry) => {
-      const text = norm(entry?.quote || entry?.text || entry?.quoteText || entry?.en || '')
+      const record = (entry ?? {}) as Record<string, unknown>
+      const text = norm(
+        typeof record.quote === 'string'
+          ? record.quote
+          : typeof record.text === 'string'
+            ? record.text
+            : typeof record.quoteText === 'string'
+              ? record.quoteText
+              : typeof record.en === 'string'
+                ? record.en
+                : '',
+      )
       if (!text) return null
-      const author = norm(entry?.author || entry?.quoteAuthor || entry?.quoteAuthorName || '')
-      return {
-        type: 'quote' as const,
+      const author = norm(
+        typeof record.author === 'string'
+          ? record.author
+          : typeof record.quoteAuthor === 'string'
+            ? record.quoteAuthor
+            : typeof record.quoteAuthorName === 'string'
+              ? record.quoteAuthorName
+              : '',
+      )
+      const base = createQuoteDocument({
         text,
-        author: author || undefined,
-        source: { name: 'github:quotes-database', url },
+        author,
         provider: 'github-quotes-database',
-        hash: quoteHash(text, author),
+        source: { name: 'github:quotes-database', url },
+      })
+      if (!base) return null
+      return {
+        ...base,
+        hash: quoteHash(base.text, base.author),
       }
     })
-    .filter(Boolean) as Omit<QuoteDoc, 'createdAt' | 'updatedAt'>[]
+    .filter((entry): entry is QuoteDoc => Boolean(entry))
   return sampleArray(mapped, Math.min(limit, 400))
 }
 
 async function fetchGithubProgrammingQuotes(limit: number) {
   const url = 'https://raw.githubusercontent.com/skolakoda/programming-quotes-api/master/quotes.json'
-  const arr: any[] | null = await fetchJson(url, 15000)
+  const arr = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 15000 })
   if (!Array.isArray(arr)) return []
   const mapped = arr
     .map((entry) => {
-      const text = norm(entry?.en || entry?.quote || entry?.text || '')
+      const record = (entry ?? {}) as Record<string, unknown>
+      const text = norm(
+        typeof record.en === 'string'
+          ? record.en
+          : typeof record.quote === 'string'
+            ? record.quote
+            : typeof record.text === 'string'
+              ? record.text
+              : '',
+      )
       if (!text) return null
-      const author = norm(entry?.author || '')
-      return {
-        type: 'quote' as const,
+      const author = norm(typeof record.author === 'string' ? record.author : '')
+      const base = createQuoteDocument({
         text,
-        author: author || undefined,
-        source: { name: 'github:programming-quotes', url },
+        author,
         provider: 'github-programming-quotes',
-        hash: quoteHash(text, author),
+        source: { name: 'github:programming-quotes', url },
+      })
+      if (!base) return null
+      return {
+        ...base,
+        hash: quoteHash(base.text, base.author),
       }
     })
-    .filter(Boolean) as Omit<QuoteDoc, 'createdAt' | 'updatedAt'>[]
+    .filter((entry): entry is QuoteDoc => Boolean(entry))
   return sampleArray(mapped, Math.min(limit, 200))
 }
 
 async function fetchGithubFamousQuotes(limit: number) {
   const url = 'https://raw.githubusercontent.com/prairieworks/Famous-Quotes/master/famous-quotes.json'
-  const arr: any[] | null = await fetchJson(url, 15000)
+  const arr = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 15000 })
   if (!Array.isArray(arr)) return []
   const mapped = arr
     .map((entry) => {
-      const text = norm(entry?.quote || entry?.text || '')
+      const record = (entry ?? {}) as Record<string, unknown>
+      const text = norm(typeof record.quote === 'string' ? record.quote : typeof record.text === 'string' ? record.text : '')
       if (!text) return null
-      const author = norm(entry?.author || entry?.by || '')
-      return {
-        type: 'quote' as const,
+      const author = norm(typeof record.author === 'string' ? record.author : typeof record.by === 'string' ? record.by : '')
+      const base = createQuoteDocument({
         text,
-        author: author || undefined,
-        source: { name: 'github:famous-quotes', url },
+        author,
         provider: 'github-famous-quotes',
-        hash: quoteHash(text, author),
+        source: { name: 'github:famous-quotes', url },
+      })
+      if (!base) return null
+      return {
+        ...base,
+        hash: quoteHash(base.text, base.author),
       }
     })
-    .filter(Boolean) as Omit<QuoteDoc, 'createdAt' | 'updatedAt'>[]
+    .filter((entry): entry is QuoteDoc => Boolean(entry))
   return sampleArray(mapped, Math.min(limit, 200))
 }
 
 async function scrapeToScrape(pages = 3) {
-  const out: Omit<QuoteDoc,'createdAt'|'updatedAt'>[] = []
+  const out: QuoteDoc[] = []
   for (let p=1; p<=pages; p++) {
     const url = p===1 ? 'https://quotes.toscrape.com/' : `https://quotes.toscrape.com/page/${p}/`
     try {
-      const res = await fetch(url, { cache:'no-store', headers: UA }); if (!res.ok) break
-      const html = await res.text(); const $ = cheerio.load(html)
+      const html = await fetchText(url, { headers: ROUTE_HEADERS, timeoutMs: 15000 })
+      if (!html) break
+      const $ = cheerio.load(html)
       $('.quote').each((_, el) => {
         const text = norm($(el).find('.text').text())
         const author = norm($(el).find('.author').text())
         if (!text) return
-        out.push({ type:'quote', text, author, source:{ name:'quotes.toscrape', url }, provider:'toscrape', hash: quoteHash(text, author) })
+        const base = createQuoteDocument({
+          text,
+          author,
+          provider: 'toscrape',
+          source: { name: 'quotes.toscrape', url },
+        })
+        if (!base) return
+        out.push({ ...base, hash: quoteHash(base.text, base.author) })
       })
     } catch { break }
   }
@@ -179,17 +213,25 @@ async function scrapeToScrape(pages = 3) {
 }
 
 async function scrapePassItOn(pages = 2) {
-  const out: Omit<QuoteDoc,'createdAt'|'updatedAt'>[] = []
+  const out: QuoteDoc[] = []
   for (let p=1; p<=pages; p++) {
     const url = p===1 ? 'https://www.passiton.com/inspirational-quotes' : `https://www.passiton.com/inspirational-quotes?page=${p}`
     try {
-      const res = await fetch(url, { cache:'no-store', headers: UA }); if (!res.ok) break
-      const html = await res.text(); const $ = cheerio.load(html)
+      const html = await fetchText(url, { headers: ROUTE_HEADERS, timeoutMs: 15000 })
+      if (!html) break
+      const $ = cheerio.load(html)
       $('.col-6.col-lg-4.text-center').each((_, el) => {
         const text = norm($(el).find('.d-none.d-lg-block .mb-0').text()) || norm($(el).find('blockquote').text())
         const author = norm($(el).find('.author').text()) || norm($(el).find('h5, h6').text())
         if (!text) return
-        out.push({ type:'quote', text, author, source:{ name:'passiton.com', url }, provider:'passiton', hash: quoteHash(text, author) })
+        const base = createQuoteDocument({
+          text,
+          author,
+          provider: 'passiton',
+          source: { name: 'passiton.com', url },
+        })
+        if (!base) return
+        out.push({ ...base, hash: quoteHash(base.text, base.author) })
       })
     } catch { break }
   }
@@ -209,7 +251,7 @@ export async function GET(req: NextRequest) {
   const sites = (req.nextUrl.searchParams.get('sites') || 'toscrape,typefit,passiton,github-db,github-programming,github-famous')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 
-  let collected: Omit<QuoteDoc,'createdAt'|'updatedAt'>[] = []
+  let collected: QuoteDoc[] = []
   try { if (sites.includes('typefit'))  collected = collected.concat(await scrapeTypeFit()) } catch {}
   try { if (sites.includes('toscrape')) collected = collected.concat(await scrapeToScrape(pages)) } catch {}
   try { if (sites.includes('passiton')) collected = collected.concat(await scrapePassItOn(Math.min(5,pages))) } catch {}
@@ -219,13 +261,16 @@ export async function GET(req: NextRequest) {
   try { if (sites.includes('github-famous')) collected = collected.concat(await fetchGithubFamousQuotes(githubTarget)) } catch {}
 
   // de-dup
-  const map = new Map<string, Omit<QuoteDoc,'createdAt'|'updatedAt'>>()
+  const map = new Map<string, QuoteDoc>()
   for (const q of collected) if (q?.hash && !map.has(q.hash)) map.set(q.hash, q)
   const unique = Array.from(map.values())
 
   let result = { inserted: 0, updated: 0 }
-  try { result = await upsertManyQuotes(unique) } catch (e:any) {
-    return NextResponse.json({ error: e?.message || 'bulkWrite failed' }, { status: 500 })
+  try {
+    result = await upsertManyQuotes(unique)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'bulkWrite failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, requestedSites: sites, pages, scanned: collected.length, unique: unique.length, ...result })

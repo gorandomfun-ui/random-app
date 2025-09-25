@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const collection = db.collection('items')
     
     // Incrémenter dislikeCount et réduire showWeight
-    const result = await collection.updateOne(
+    await collection.updateOne(
       { _id: itemId },
       { 
         $inc: { dislikeCount: 1 },

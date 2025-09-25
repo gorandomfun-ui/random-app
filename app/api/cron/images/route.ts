@@ -14,10 +14,24 @@ function pickMany<T>(arr: T[], n: number): T[] {
   return out;
 }
 
-async function loadWords(): Promise<{ photo: string[]; gif: string[] }> {
-  const p = path.resolve(process.cwd(), 'lib/ingest/keywords/images.json');
-  const raw = await fs.readFile(p, 'utf8');
-  return JSON.parse(raw);
+type ImageKeywords = { photo: string[]; gif: string[] }
+
+async function loadWords(): Promise<ImageKeywords> {
+  const keywordsPath = path.resolve(process.cwd(), 'lib/ingest/keywords/images.json');
+  const raw = await fs.readFile(keywordsPath, 'utf8');
+  const parsed = JSON.parse(raw) as Partial<ImageKeywords> | null;
+  const photo = Array.isArray(parsed?.photo) ? (parsed?.photo as string[]) : [];
+  const gif = Array.isArray(parsed?.gif) ? (parsed?.gif as string[]) : [];
+  return { photo, gif };
+}
+
+type IngestImagesResponse = {
+  ok?: boolean;
+  error?: string;
+  scanned?: number;
+  unique?: number;
+  inserted?: number;
+  updated?: number;
 }
 
 export async function GET(req: Request) {
@@ -54,9 +68,9 @@ export async function GET(req: Request) {
       cache: 'no-store',
     });
 
-    let json: any = null;
+    let json: IngestImagesResponse | null = null;
     try {
-      json = await res.json();
+      json = (await res.json()) as IngestImagesResponse;
     } catch {
       json = null;
     }
@@ -94,7 +108,7 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ ok: true, queries: queries.flatMap((q) => q.split(',')), upstream: json, triggeredAt: finishedAt.toISOString() });
-  } catch (e: any) {
+  } catch (error: unknown) {
     const finishedAt = new Date();
     await logCronRun({
       name: 'cron:images',
@@ -102,9 +116,10 @@ export async function GET(req: Request) {
       startedAt,
       finishedAt,
       triggeredBy,
-      error: e?.message || 'cron failed',
+      error: error instanceof Error ? error.message : 'cron failed',
       details: { queries },
     });
-    return NextResponse.json({ error: e?.message || 'cron failed' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'cron failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

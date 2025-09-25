@@ -60,11 +60,25 @@ export async function GET(req: Request) {
       const t = await res.text()
       return NextResponse.json({ ok: false, error: `CSE ${res.status}`, body: t }, { status: 500 })
     }
-    const data = await res.json()
-    const items = (data?.items || [])
-      .map((it: any) => {
-        if (!it?.link) return null
-        const normalized = normalizeUrl(it.link)
+    type GoogleItem = { link?: string; title?: string }
+    type GoogleResponse = { items?: GoogleItem[] }
+    const data = (await res.json()) as GoogleResponse
+
+    type WebDoc = {
+      type: 'web'
+      url: string
+      title: string
+      host: string
+      lang: 'en'
+      tags: string[]
+      addedAt: Date
+      source: { name: string; url: string }
+    }
+
+    const items: WebDoc[] = (data?.items || [])
+      .map((item) => {
+        if (!item.link) return null
+        const normalized = normalizeUrl(item.link)
         let host = ''
         try {
           host = new URL(normalized).host.replace(/^www\./, '')
@@ -72,7 +86,7 @@ export async function GET(req: Request) {
         return {
           type: 'web' as const,
           url: normalized,
-          title: it.title || host || normalized,
+          title: item.title || host || normalized,
           host,
           lang: 'en',
           tags: [q],
@@ -80,7 +94,7 @@ export async function GET(req: Request) {
           source: { name: 'Google', url: normalized },
         }
       })
-      .filter(Boolean)
+      .filter((entry): entry is WebDoc => Boolean(entry))
 
     const db = await getDb()
     const col = db.collection('websites')
@@ -89,13 +103,14 @@ export async function GET(req: Request) {
     let inserted = 0
     for (const doc of items) {
       try {
-        await col.updateOne({ url: (doc as any).url }, { $setOnInsert: doc }, { upsert: true })
-        inserted++
+        const result = await col.updateOne({ url: doc.url }, { $setOnInsert: doc }, { upsert: true })
+        if (result.upsertedCount) inserted += 1
       } catch {}
     }
 
     return NextResponse.json({ ok: true, query: q, inserted, total: items.length })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'error' }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'error'
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

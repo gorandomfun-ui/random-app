@@ -6,34 +6,22 @@ import MonoIcon from './MonoIcon'
 import LogoAnimated from './LogoAnimated'
 import { addLike, isLiked, removeLike } from '../utils/likes'
 import AnimatedButtonLabel from './AnimatedButtonLabel'
+import type { ItemType } from '../lib/random/types'
+import type {
+  DisplayItem,
+  SourceInfo,
+} from '../lib/random/clientTypes'
+import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
-type ItemType = 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web' | 'encourage'
-type SourceInfo = { name?: string; url?: string } | null
 
-const TYPE_ICONS: Record<Exclude<ItemType, 'encourage'>, string> = {
+const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',
   video: '/icons/Video.svg',
   web: '/icons/web.svg',
   quote: '/icons/quote.svg',
   joke: '/icons/joke.svg',
   fact: '/icons/fact.svg',
-}
-
-type Item = {
-  _id?: string
-  type: ItemType
-  lang?: 'en' | 'fr' | 'de' | 'jp'
-  text?: string
-  author?: string
-  url?: string
-  thumbUrl?: string
-  width?: number
-  height?: number
-  source?: SourceInfo
-  ogImage?: string | null
-  title?: string
-  icon?: string
 }
 
 type Props = {
@@ -43,10 +31,10 @@ type Props = {
   trigger?: number
   isSecond?: boolean
   types?: ItemType[]
-  lang?: Item['lang']
+  lang?: 'en' | 'fr' | 'de' | 'jp'
   theme: Theme
   children?: ReactNode
-  forceItem?: Item | null
+  forceItem?: DisplayItem | null
 }
 
 /* ============ IMAGE plein largeur SANS coins arrondis ============ */
@@ -94,26 +82,52 @@ function ImageBlock({
 function SharePopover({
   item,
   theme,
-  anchorRef,
   placeAbove,
   onClose,
 }: {
-  item: Item | null
+  item: DisplayItem | null
   theme: Theme
-  anchorRef: React.RefObject<HTMLButtonElement | null>
   placeAbove: boolean
   onClose: () => void
 }) {
-  const shareUrl = item?.url || (typeof window !== 'undefined' ? window.location.href : '')
-  const text =
-    item?.text || item?.title || 'Random — explore random contents. Only useless surprise.'
+  const defaultUrl = typeof window !== 'undefined' ? window.location.href : ''
+  let shareUrl = defaultUrl
+  let shareText = 'Random — explore random contents. Only useless surprise.'
+
+  if (item) {
+    switch (item.type) {
+      case 'image':
+        shareUrl = item.url || defaultUrl
+        shareText = item.title || shareText
+        break
+      case 'video':
+        shareUrl = item.url || defaultUrl
+        shareText = item.text || shareText
+        break
+      case 'web':
+        shareUrl = item.url || defaultUrl
+        shareText = item.text || item.source?.name || shareText
+        break
+      case 'quote':
+        shareText = item.author ? `“${item.text}” — ${item.author}` : `“${item.text}”`
+        break
+      case 'joke':
+      case 'fact':
+        shareText = item.text
+        break
+      case 'encourage':
+        shareText = item.text
+        break
+    }
+  }
+
   const u = encodeURIComponent(shareUrl)
-  const t = encodeURIComponent(text)
+  const t = encodeURIComponent(shareText)
 
   async function nativeShare() {
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Random', text, url: shareUrl })
+        await navigator.share({ title: 'Random', text: shareText, url: shareUrl })
         onClose()
       }
     } catch {}
@@ -181,81 +195,7 @@ function SharePopover({
 }
 
 /* ---------------- RENDERER (image/quote/fact/joke/web/video) ---------------- */
-function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
-  if (item.type === 'image') {
-    const src = (item as any)?.url || (item as any)?.src
-    const alt = (item as any)?.title || (item as any)?.alt || 'image'
-    const sourceLabel =
-      (item as any)?.sourceName || (item as any)?.provider || (item as any)?.attribution
-    const sourceHref =
-      (item as any)?.sourceUrl ||
-      (item as any)?.pageUrl ||
-      (item as any)?.link ||
-      (item as any)?.url
-
-    if (src) {
-      return (
-        <div className="w-full">
-          <ImageBlock src={src} alt={alt} sourceLabel={sourceLabel} sourceHref={sourceHref} />
-        </div>
-      )
-    }
-  }
-
-  if (item.type === 'quote' && item.text) {
-    return (
-      <blockquote
-        className="max-w-[80ch] text-center font-tomorrow font-bold text-[22px] md:text-[32px] leading-snug"
-        style={{ color: theme.cream, letterSpacing: '.01em' }}
-      >
-        “{item.text}”
-      </blockquote>
-    )
-  }
-
-  if ((item.type === 'fact' || item.type === 'joke') && item.text) {
-    return (
-      <p
-        className="max-w-[85ch] text-center font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
-        style={{ color: theme.cream, letterSpacing: '.01em' }}
-      >
-        {item.text}
-      </p>
-    )
-  }
-
-  if (item.type === 'web' && item.url) {
-    let host = ''
-    try {
-      host = new URL(item.url).hostname.replace(/^www\./, '')
-    } catch {}
-    return (
-      <div className="flex flex-col items-center gap-4">
-        {item.ogImage && (
-          <img
-            src={item.ogImage}
-            alt=""
-            className="max-h-[30vh] w-auto object-contain rounded-lg"
-            style={{ boxShadow: '0 8px 22px rgba(0,0,0,.15)' }}
-          />
-        )}
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noreferrer"
-          className="underline font-inter text-lg md:text-xl text-center break-words"
-          style={{ color: theme.cream }}
-        >
-          {item.text || host || item.url}
-        </a>
-      </div>
-    )
-  }
-
-  if (item.type === 'video' && item.url) {
-    return <VideoEmbed url={item.url} title={item.text || 'YouTube'} />
-  }
-
+function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
   if (item.type === 'encourage') {
     return (
       <div className="flex flex-col items-center gap-6 text-center max-w-[70ch]">
@@ -280,6 +220,86 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
         ) : null}
       </div>
     )
+  }
+
+  if (item.type === 'image') {
+    const src = item.url || item.thumbUrl || ''
+    if (!src) return null
+    const alt = item.title || 'image'
+    const sourceLabel = getSourceLabel(item.source, item.attribution || item.provider || null)
+    const sourceHref = getSourceHref(item)
+
+    return (
+      <div className="w-full">
+        <ImageBlock src={src} alt={alt} sourceLabel={sourceLabel} sourceHref={sourceHref} />
+      </div>
+    )
+  }
+
+  if (item.type === 'quote') {
+    return (
+      <blockquote
+        className="max-w-[80ch] text-center font-tomorrow font-bold text-[22px] md:text-[32px] leading-snug"
+        style={{ color: theme.cream, letterSpacing: '.01em' }}
+      >
+        “{item.text}”
+      </blockquote>
+    )
+  }
+
+  if (item.type === 'fact' || item.type === 'joke') {
+    return (
+      <p
+        className="max-w-[85ch] text-center font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
+        style={{ color: theme.cream, letterSpacing: '.01em' }}
+      >
+        {item.text}
+      </p>
+    )
+  }
+
+  if (item.type === 'web') {
+    const href = item.url
+    let host = item.host || ''
+    if (!host && href) {
+      try {
+        host = new URL(href).hostname.replace(/^www\./, '')
+      } catch {}
+    }
+    return (
+      <div className="flex flex-col items-center gap-4">
+        {item.ogImage ? (
+          <img
+            src={item.ogImage}
+            alt=""
+            className="max-h-[30vh] w-auto object-contain rounded-lg"
+            style={{ boxShadow: '0 8px 22px rgba(0,0,0,.15)' }}
+          />
+        ) : null}
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="underline font-inter text-lg md:text-xl text-center break-words"
+            style={{ color: theme.cream }}
+          >
+            {item.text || host || href}
+          </a>
+        ) : (
+          <p
+            className="font-inter text-lg md:text-xl text-center"
+            style={{ color: theme.cream }}
+          >
+            {item.text}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (item.type === 'video') {
+    return <VideoEmbed url={item.url} title={item.text || 'YouTube'} />
   }
 
   return null
@@ -366,41 +386,39 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
   )
 }
 
-function SourceLine({ item }: { item: Item }) {
+function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
-  const s = item.source
 
-  const snippet = item.type === 'video' && item.text
-    ? shortenText(item.text, 4)
-    : null
+  const baseSource: SourceInfo = item.source ?? null
+  const fallbackSource: SourceInfo = baseSource ?? (item.provider ? { name: item.provider } : null)
+
+  const snippet = item.type === 'video' && item.text ? shortenText(item.text, 4) : null
 
   const parts: ReactNode[] = []
 
-  if (s) {
-    if (typeof s === 'string') {
-      parts.push(<span>{s}</span>)
-    } else if (s.url) {
-      try {
-        const host = new URL(s.url).host.replace(/^www\./, '')
-        parts.push(
-          <span>
-            {s.name ? `${s.name} · ` : ''}
-            <a href={s.url} target="_blank" rel="noreferrer" className="underline">
-              {host}
-            </a>
-          </span>
-        )
-      } catch {
-        parts.push(<span>{s.name || s.url}</span>)
-      }
-    } else if (s.name) {
-      parts.push(<span>{s.name}</span>)
+  if (fallbackSource?.url) {
+    try {
+      const host = new URL(fallbackSource.url).host.replace(/^www\./, '')
+      parts.push(
+        <span key="source-link">
+          {fallbackSource.name ? `${fallbackSource.name} · ` : ''}
+          <a href={fallbackSource.url} target="_blank" rel="noreferrer" className="underline">
+            {host}
+          </a>
+        </span>
+      )
+    } catch {
+      parts.push(
+        <span key="source-fallback">{fallbackSource.name || fallbackSource.url}</span>
+      )
     }
+  } else if (fallbackSource?.name) {
+    parts.push(<span key="source-name">{fallbackSource.name}</span>)
   }
 
   if (snippet) {
-    parts.push(<span>{snippet}</span>)
+    parts.push(<span key="snippet">{snippet}</span>)
   }
 
   if (!parts.length) return null
@@ -408,7 +426,7 @@ function SourceLine({ item }: { item: Item }) {
   const rendered: ReactNode[] = []
   parts.forEach((part, idx) => {
     if (idx > 0) rendered.push(<span key={`dot-${idx}`} className="opacity-60">·</span>)
-    rendered.push(<span key={`part-${idx}`}>{part}</span>)
+    rendered.push(part)
   })
 
   return (
@@ -439,8 +457,8 @@ export default function RandomModal({
   children,
   forceItem = null,
 }: Props) {
-  const { dict } = useI18n()
-  const [item, setItem] = useState<Item | null>(null)
+  const { t } = useI18n()
+  const [item, setItem] = useState<DisplayItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [liked, setLiked] = useState(false)
@@ -483,8 +501,11 @@ export default function RandomModal({
         const data = await res.json()
         if (aborted) return
         setItem(data?.item || null)
-      } catch (e: any) {
-        if (!aborted) setError(e?.message || 'error')
+      } catch (err: unknown) {
+        if (!aborted) {
+          const message = err instanceof Error ? err.message : 'error'
+          setError(message)
+        }
       } finally {
         if (!aborted) setLoading(false)
       }
@@ -496,7 +517,7 @@ export default function RandomModal({
   }, [open, trigger, children, lang, forceItem, effectiveTypes])
 
   useEffect(() => {
-    const current = (forceItem as Item | null) ?? item ?? null
+    const current = forceItem ?? item ?? null
     if (current && current.type !== 'encourage') setLiked(isLiked(current))
     else setLiked(false)
   }, [forceItem, item, open])
@@ -533,9 +554,10 @@ export default function RandomModal({
     setItem((prev) => (prev ? { ...prev } : prev))
   }
 
-  const viewItem: Item | null = (forceItem as Item | null) ?? item ?? null
+  const viewItem: DisplayItem | null = forceItem ?? item ?? null
   const isEncourage = viewItem?.type === 'encourage'
   const showChildren = !viewItem && !!children
+  const randomAgainLabel = t('modal.randomAgain', 'RANDOM AGAIN')
 
   useEffect(() => {
     if (isEncourage && shareOpen) setShareOpen(false)
@@ -585,10 +607,10 @@ export default function RandomModal({
         </div>
 
         {/* type / titre */}
-        {viewItem && !isEncourage && (
+        {viewItem && viewItem.type !== 'encourage' && (
           <div className="px-6 pt-2 text-[28px] md:text-[30px] font-inter font-semibold flex items-center justify-center gap-2 shrink-0">
             <MonoIcon
-              src={TYPE_ICONS[viewItem.type as Exclude<ItemType, 'encourage'>]}
+              src={TYPE_ICONS[viewItem.type]}
               color={theme.cream}
               size={30}
             />
@@ -625,23 +647,12 @@ export default function RandomModal({
                   className={`like-button p-2 rounded-full ${liked ? 'liked' : ''}`}
                   aria-label="Like"
                   onClick={() => {
-                    if (!viewItem || viewItem.type === 'encourage') return
+                    if (!viewItem) return
                     if (liked) {
                       removeLike(viewItem)
                       setLiked(false)
                     } else {
-                      addLike(
-                        {
-                          type: viewItem.type,
-                          url: viewItem.url,
-                          text: viewItem.text || viewItem.author,
-                          title: viewItem.title,
-                          thumbUrl: viewItem.thumbUrl,
-                          ogImage: (viewItem as any).ogImage,
-                          provider: viewItem.source?.name,
-                        },
-                        theme
-                      )
+                      addLike(viewItem, theme)
                       setLiked(true)
                     }
                     try {
@@ -671,9 +682,9 @@ export default function RandomModal({
                 }}
                 onClick={handleRandomAgain}
               >
-                <span className="sr-only">{dict?.modal?.randomAgain ?? 'RANDOM AGAIN'}</span>
+                <span className="sr-only">{randomAgainLabel}</span>
                 <AnimatedButtonLabel
-                  text={dict?.modal?.randomAgain ?? 'RANDOM AGAIN'}
+                  text={randomAgainLabel}
                   color={theme.cream}
                   trigger={trigger}
                   toSecond={isSecond}
@@ -697,7 +708,6 @@ export default function RandomModal({
                     <SharePopover
                       theme={theme}
                       item={viewItem}
-                      anchorRef={shareBtnRef}
                       placeAbove={shareAbove}
                       onClose={() => setShareOpen(false)}
                     />

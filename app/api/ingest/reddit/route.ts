@@ -26,7 +26,9 @@ async function getDbSafe(): Promise<Db | null> {
   } catch { return null }
 }
 
-async function upsertCache(type: ItemType, key: Record<string, any>, doc: Record<string, any>) {
+type CacheDoc = Record<string, unknown>
+
+async function upsertCache(type: ItemType, key: CacheDoc, doc: CacheDoc) {
   const db = await getDbSafe()
   if (!db) return
   try {
@@ -67,8 +69,10 @@ export async function GET(req: Request) {
   try {
     const res = await fetch('https://www.reddit.com/r/funnyvideos/.json?limit=100', { cache: 'no-store' })
     if (!res.ok) throw new Error('reddit-failed')
-    const j: any = await res.json()
-    const posts: any[] = j?.data?.children?.map((c: any) => c?.data).filter(Boolean) || []
+    type RedditChild = { data?: { url?: string; title?: string } }
+    type RedditListing = { data?: { children?: RedditChild[] } }
+    const listing = (await res.json()) as RedditListing
+    const posts = listing.data?.children?.map((child) => child?.data).filter((entry): entry is { url?: string; title?: string } => Boolean(entry)) || []
 
     let inserted = 0
     for (const p of posts) {
@@ -88,7 +92,8 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({ ok: true, inserted })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'error' }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
