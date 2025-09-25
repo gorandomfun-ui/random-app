@@ -20,7 +20,6 @@ type EncourageItem = {
   type: 'encourage'
   text: string
   icon: string
-  subtitle?: string
 }
 
 type SequenceSlot =
@@ -55,6 +54,7 @@ const FIXED_SEQUENCE: ItemType[] = [
 
 const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
+const ENCOURAGE_TRIGGER_COUNT = 13
 
 const FALLBACK_ENCOURAGE_MESSAGES = [
   'Keep exploring forward.',
@@ -178,7 +178,7 @@ export default function HomePage() {
 
   // sélection utilisateur (par défaut : tout)
   const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(['image','video','quote','joke','fact','web'])
-  const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0 })
+  const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0, draws: 0 })
   const [sequenceVersion, setSequenceVersion] = useState(0)
 
   const [currentItem, setCurrentItem] = useState<any>(null)
@@ -263,7 +263,7 @@ export default function HomePage() {
   }, [selectedTypes])
 
   const resetSequence = useCallback(() => {
-    sequenceStateRef.current = { step: 0, round: 0, encourage: 0 }
+    sequenceStateRef.current = { step: 0, round: 0, encourage: 0, draws: 0 }
     setSequenceVersion(v => v + 1)
   }, [])
 
@@ -278,8 +278,6 @@ export default function HomePage() {
     }
     return FALLBACK_ENCOURAGE_MESSAGES
   }, [dict])
-
-  const encourageRoundLabel = useMemo(() => dict?.encourage?.roundLabel || 'Round', [dict])
 
   const encourageQueueRef = useRef<string[]>([])
   useEffect(() => {
@@ -302,27 +300,44 @@ export default function HomePage() {
     return `/encourage/${start + Math.floor(Math.random() * span)}.png`
   }, [])
 
-  const buildEncourageItem = useCallback((round: number, encourageIndex: number): EncourageItem => ({
+  const buildEncourageItem = useCallback((_round: number, encourageIndex: number): EncourageItem => ({
     type: 'encourage',
     text: pickEncourageMessage(),
     icon: pickEncourageIcon(encourageIndex),
-    subtitle: `${encourageRoundLabel} ${round}`,
-  }), [encourageRoundLabel, pickEncourageIcon, pickEncourageMessage])
+  }), [pickEncourageIcon, pickEncourageMessage])
 
   const getNextSlot = useCallback((): SequenceSlot => {
     const seq = filteredSequence
     if (!seq.length) {
       return { kind: 'content', itemType: 'image' }
     }
+
     const state = sequenceStateRef.current
-    if (state.step >= seq.length) {
+    const draws = state.draws ?? 0
+    const shouldEncourage = draws >= ENCOURAGE_TRIGGER_COUNT - 1
+
+    if (shouldEncourage) {
       const round = state.round + 1
       const encourage = state.encourage + 1
-      sequenceStateRef.current = { step: 0, round, encourage }
+      const normalizedStep = state.step % seq.length
+      sequenceStateRef.current = {
+        step: normalizedStep,
+        round,
+        encourage,
+        draws: 0,
+      }
       return { kind: 'encourage', round, encourageIndex: encourage }
     }
-    const itemType = seq[state.step]
-    sequenceStateRef.current = { ...state, step: state.step + 1 }
+
+    const normalizedStep = state.step % seq.length
+    const itemType = seq[normalizedStep]
+    const nextStep = (normalizedStep + 1) % seq.length
+    sequenceStateRef.current = {
+      step: nextStep,
+      round: state.round,
+      encourage: state.encourage,
+      draws: draws + 1,
+    }
     return { kind: 'content', itemType }
   }, [filteredSequence])
 

@@ -34,7 +34,6 @@ type Item = {
   ogImage?: string | null
   title?: string
   icon?: string
-  subtitle?: string
 }
 
 type Props = {
@@ -259,20 +258,17 @@ function ContentRenderer({ item, theme }: { item: Item; theme: Theme }) {
 
   if (item.type === 'encourage') {
     return (
-      <div className="flex flex-col items-center gap-4 text-center max-w-[70ch]">
-        {item.subtitle ? (
-          <span className="uppercase tracking-[0.4em] text-xs md:text-sm opacity-80">
-            {item.subtitle}
-          </span>
-        ) : null}
+      <div className="flex flex-col items-center gap-6 text-center max-w-[70ch]">
         {item.icon ? (
-          <img
-            src={item.icon}
-            alt="Encouragement"
-            className="h-[120px] w-auto object-contain drop-shadow-xl"
-            loading="lazy"
-            decoding="async"
-          />
+          <div className="encourage-icon-wrapper">
+            <img
+              src={item.icon}
+              alt="Encouragement"
+              className="encourage-icon"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
         ) : null}
         {item.text ? (
           <p
@@ -589,7 +585,7 @@ export default function RandomModal({
         </div>
 
         {/* type / titre */}
-        {viewItem && (
+        {viewItem && viewItem.type !== 'encourage' && (
           <div className="px-6 pt-2 text-[28px] md:text-[30px] font-inter font-semibold flex items-center justify-center gap-2 shrink-0">
             {viewItem.type !== 'encourage' && (
               <MonoIcon src={TYPE_ICONS[viewItem.type]} color={theme.cream} size={30} />
@@ -722,11 +718,39 @@ export default function RandomModal({
         transform: scale(1.1);
         animation: heartPulse 0.45s ease;
       }
+      .encourage-icon-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 180px;
+      }
+      .encourage-icon {
+        width: min(320px, 65vw);
+        max-width: 360px;
+        object-fit: contain;
+        filter: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.32));
+        animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        transform-origin: center;
+      }
       @keyframes heartPulse {
         0% { transform: scale(1); }
         30% { transform: scale(1.25); }
         60% { transform: scale(0.95); }
         100% { transform: scale(1.1); }
+      }
+      @keyframes encourage-pop {
+        0% {
+          opacity: 0;
+          transform: scale(0.6) rotate(-6deg);
+        }
+        60% {
+          opacity: 1;
+          transform: scale(1.08) rotate(2deg);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1) rotate(0deg);
+        }
       }
     `}</style>
     </>
