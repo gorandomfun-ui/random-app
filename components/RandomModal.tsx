@@ -585,11 +585,13 @@ export default function RandomModal({
         </div>
 
         {/* type / titre */}
-        {viewItem && viewItem.type !== 'encourage' && (
+        {viewItem && !isEncourage && (
           <div className="px-6 pt-2 text-[28px] md:text-[30px] font-inter font-semibold flex items-center justify-center gap-2 shrink-0">
-            {viewItem.type !== 'encourage' && (
-              <MonoIcon src={TYPE_ICONS[viewItem.type]} color={theme.cream} size={30} />
-            )}
+            <MonoIcon
+              src={TYPE_ICONS[viewItem.type as Exclude<ItemType, 'encourage'>]}
+              color={theme.cream}
+              size={30}
+            />
             <span style={{ letterSpacing: '.02em' }}>{viewItem.type}</span>
           </div>
         )}
