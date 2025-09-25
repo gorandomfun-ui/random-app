@@ -145,6 +145,15 @@ function score(candidate: ImageCandidate): number {
   return score
 }
 
+function shuffleCandidates<T>(items: T[]): T[] {
+  const arr = items.slice()
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
 async function collectDbCandidates(): Promise<ImageCandidate[]> {
   const db = await getDb()
   const bucket = new Map<string, ImageCandidate>()
@@ -212,10 +221,9 @@ export async function selectImage(debugEnabled: boolean, queryHints?: string[]):
   const dbCandidates = await collectDbCandidates()
   dbCandidates.forEach(add)
 
-  const scored = Array.from(candidateMap.values())
+  const scored = shuffleCandidates(Array.from(candidateMap.values()))
     .map((candidate) => ({ candidate, score: score(candidate) }))
     .filter(({ score }) => Number.isFinite(score))
-    .sort((a, b) => b.score - a.score)
 
   const debug = createDebugContext(debugEnabled, scored.length)
   const preferFresh = shouldPreferFreshContent(getRecentOriginsWindow(10))
@@ -223,13 +231,7 @@ export async function selectImage(debugEnabled: boolean, queryHints?: string[]):
 
   let relaxedCandidate: ImageCandidate | null = null
 
-  for (const { candidate, score } of scored) {
-    if (score < -2) {
-      trackReason(debug, 'lowScore')
-      if (!relaxedCandidate) relaxedCandidate = candidate
-      continue
-    }
-
+  for (const { candidate } of scored) {
     if (!relaxedCandidate) relaxedCandidate = candidate
 
     const key = candidateKey(candidate)

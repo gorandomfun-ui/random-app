@@ -6,20 +6,28 @@ import path from 'node:path';
 import { ingestImages, IMAGE_PROVIDERS } from '@/lib/ingest/images';
 import type { ImageProvider } from '@/lib/ingest/images';
 
-function pickMany<T>(array: T[], size: number): T[] {
-  const pool = array.slice();
-  const result: T[] = [];
-  while (result.length < size && pool.length) {
-    const index = Math.floor(Math.random() * pool.length);
-    result.push(pool.splice(index, 1)[0]!);
-  }
-  return result;
-}
+type PhotoKeywordDictionary = {
+  adjectives: string[];
+  subjects: string[];
+  contexts: string[];
+};
 
-async function loadKeywordDictionary() {
+type GifKeywordDictionary = {
+  actions: string[];
+  styles: string[];
+  themes: string[];
+  feelings: string[];
+};
+
+type KeywordDictionary = {
+  photo: PhotoKeywordDictionary;
+  gif: GifKeywordDictionary;
+};
+
+async function loadKeywordDictionary(): Promise<KeywordDictionary> {
   const file = path.resolve(process.cwd(), 'lib/ingest/keywords/images.json');
   const raw = await fs.readFile(file, 'utf8');
-  return JSON.parse(raw) as { photo: string[]; gif: string[] };
+  return JSON.parse(raw) as KeywordDictionary;
 }
 
 function parseList(value: string | null): string[] {
@@ -66,8 +74,8 @@ export async function GET(req: Request) {
     let finalQueries = queries;
     if (!finalQueries.length) {
       const dict = await loadKeywordDictionary();
-      const photos = pickMany(dict.photo || [], 4);
-      const gifs = pickMany(dict.gif || [], 2);
+      const photos = buildPhotoQueries(dict.photo, 6);
+      const gifs = buildGifQueries(dict.gif, 3);
       finalQueries = [...photos, ...gifs];
     }
 
@@ -84,4 +92,78 @@ export async function GET(req: Request) {
     const message = error instanceof Error ? error.message : 'ingest failed';
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+function pickOne<T>(array: T[]): T | undefined {
+  if (!array.length) return undefined;
+  const index = Math.floor(Math.random() * array.length);
+  return array[index];
+}
+
+function uniquePush(target: Set<string>, value: string | undefined) {
+  if (!value) return;
+  const trimmed = value.trim();
+  if (trimmed) target.add(trimmed);
+}
+
+function buildPhotoQueries(dict: PhotoKeywordDictionary, count: number): string[] {
+  const results = new Set<string>();
+  const adjectives = dict?.adjectives ?? [];
+  const subjects = dict?.subjects ?? [];
+  const contexts = dict?.contexts ?? [];
+
+  const maxAttempts = count * 6;
+  let attempts = 0;
+  while (results.size < count && attempts < maxAttempts) {
+    attempts += 1;
+    const adj = pickOne(adjectives);
+    const subject = pickOne(subjects);
+    if (!subject || !adj) continue;
+    const parts = [adj, subject];
+    if (Math.random() < 0.6) {
+      const context = pickOne(contexts);
+      if (context) parts.push(context);
+    }
+    uniquePush(results, parts.join(' '));
+  }
+
+  // fallback if not enough
+  if (results.size < count) {
+    subjects.slice(0, count).forEach((subject) => uniquePush(results, subject));
+  }
+
+  return Array.from(results).slice(0, count);
+}
+
+function buildGifQueries(dict: GifKeywordDictionary, count: number): string[] {
+  const results = new Set<string>();
+  const actions = dict?.actions ?? [];
+  const styles = dict?.styles ?? [];
+  const themes = dict?.themes ?? [];
+  const feelings = dict?.feelings ?? [];
+
+  const maxAttempts = count * 8;
+  let attempts = 0;
+  while (results.size < count && attempts < maxAttempts) {
+    attempts += 1;
+    const action = pickOne(actions);
+    const theme = pickOne(themes);
+    if (!action || !theme) continue;
+    const parts = [action, theme];
+    if (Math.random() < 0.7) {
+      const style = pickOne(styles);
+      if (style) parts.push(style);
+    }
+    if (Math.random() < 0.4) {
+      const feeling = pickOne(feelings);
+      if (feeling) parts.push(feeling);
+    }
+    uniquePush(results, parts.join(' '));
+  }
+
+  if (results.size < count) {
+    themes.slice(0, count).forEach((theme) => uniquePush(results, theme));
+  }
+
+  return Array.from(results).slice(0, count);
 }

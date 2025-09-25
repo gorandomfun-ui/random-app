@@ -1,49 +1,27 @@
 {
-  "photo": [
-    "weird", "vintage", "retro", "odd", "obscure", "toy", "street", "festival",
-    "garage", "museum", "zine", "brutalist", "y2k", "analog", "lofi",
-    "saturated", "expired film", "lomography", "polaroid", "pinhole",
-    "cyanotype", "wet plate", "infrared", "x-ray", "microscope",
-    "telescope", "aurora", "storm chase", "rain puddle", "neon night",
-    "arcade neon", "bowling alley", "roller rink", "library stacks",
-    "basement lab", "attic treasure", "flea market", "thrift store",
-    "odd museum", "taxidermy", "curiosity cabinet", "antique shop",
-    "village festival", "carnival ride", "parade float", "mascot suit",
-    "street food cart", "night market", "bodega cat", "laundromat",
-    "phone booth", "payphone", "subway musician", "busker portrait",
-    "tattoo flash", "sketchbook", "blueprint", "prototype",
-    "miniature world", "dollhouse", "model train", "action figure",
-    "retro computer", "crt monitor", "workshop bench", "maker space",
-    "kitchen experiment", "old cookbook", "vintage appliance",
-    "space age", "atomic age", "midcentury", "motels",
-    "roadside diner", "ghost town", "desert highway", "lighthouse",
-    "forest shrine", "mountain cabin", "treehouse", "urban farm",
-    "aquarium", "terrarium", "specimen jar", "meteorite",
-    "botanical illustration", "seed packet", "herbarium",
-    "science classroom", "planetarium", "observatory",
-    "abandoned theater", "faded billboard", "graffiti", "paste-up",
-    "street collage", "poster wall", "flyer", "ticket stub"
-  ],
-  "gif": [
-    "reaction", "fail", "dance", "facepalm", "meme", "weirdcore", "glitch",
-    "vaporwave", "awkward", "party", "blink", "spin", "retro gif", "vhs glitch",
-    "ascii animation", "pixel art loop", "sprite animation", "webring banner",
-    "under construction", "cursor trail", "sparkle", "kawaii wobble",
-    "desktop pet", "tamagochi", "clippy", "screen saver",
-    "acid trip", "psychedelic", "optical illusion", "noise loop",
-    "datamosh", "scanline", "crt flicker", "teletext",
-    "weather radar", "storm swirl", "satellite", "lava lamp",
-    "kitchen mishap", "science experiment", "slow zoom",
-    "comic panel", "manga reaction", "anime blink",
-    "puppet wink", "mascot dance", "roller rink", "rollercoaster POV",
-    "pinball lights", "arcade attract", "flipbook",
-    "stop motion", "lego loop", "toy theatre",
-    "cat zoomies", "bird head tilt", "otter spin",
-    "capybara chill", "frog vibe", "hedgehog", "raccoon meme",
-    "bubble machine", "confetti", "sparkler", "fire mountain",
-    "neon sign flicker", "synthwave grid", "lofi rain",
-    "pixel sunset", "wingdings", "emoji rain", "owo text",
-    "petrochemical flame", "plasma ball", "tesla coil",
-    "oscilloscope", "waveform", "vinyl spin", "cassette wobble"
-  ]
+  "photo": {
+    "adjectives": [
+      "surreal","dreamlike","neon","nocturnal","cosmic","ghostly","glitchy","psychedelic","vaporwave","rusty","lofi","muted","saturated","iridescent","grainy","textured","abstract","eccentric","brutalist","retro","analog","anodized","chalky","sunbleached","holographic","infrared","polarized","overgrown","forgotten","dusty","twisted","kinetic","mechanical","modular","translucent","bioluminescent","crystalline","labyrinthine","ceramic","skeletal","petrified","ciphered","encoded","diagrammatic","weathered","haunted","melting","fractal","diorama","miniature","collaged","papercut","hand-painted","embroidered","loomed","stitched","wired","soldered","shadowy","chromatic","arctic","solar","radioactive","aquatic","magnetic","cobwebbed","speckled"
+    ],
+    "subjects": [
+      "botanical specimen","space station","underground club","roller disco","abandoned arcade","desert motel","lighthouse stairs","forest altar","science lab","observatory dome","planetarium ceiling","model train town","ceramic studio","sound mixing desk","synth rack","typewriter desk","zine table","kintsugi bowl","origami swarm","neon diner","retro office","analog computer","server room","glacier cave","volcanic coast","tidal pool","astronaut portrait","vintage robot","retro kitchen","street mural","graffiti wall","poster archive","film reel stack","projection booth","microchip macro","microscope slide","petri dish","seed library","cabinet of curiosities","taxidermy hall","antique radio","shortwave radio","satellite dish","lantern festival","train platform","metro tunnel","skybridge","spiral staircase","shadow puppet stage","marionette workshop","balloon factory","calligraphy studio","astral map","clocktower interior","rain-soaked alley","noir city street","acid jungle","mirror maze","time capsule","floating market","watchmaker bench","magazine collage","junkyard sculpture","retro living room","planetarium projector"
+    ],
+    "contexts": [
+      "night fog","blue hour","monsoon rain","midnight glow","sunrise haze","thunderstorm","aurora sky","fog bank","strobe lights","laser grid","crt glow","radio waves","film grain","dust motes","golden hour","twilight boulevard","industrial loft","shipping yard","canal reflections","winter market","midway carnival","roadtrip vista","mountain overlook","desert caravan","tropical greenhouse","tidal marsh","tidy workshop","messy desk","upcycled sculpture","found-object altar","cave lanterns","train carriage","jukebox corner","pinboard inspiration","studio still life","science fair","expedition camp","field notes","cosmic void","underwater ruins","ancient temple","fluorescent hallway","vintage library","city rooftop","backstage dressing room","glowstick parade","paper lantern night","shadow theatre","vintage boardwalk","retro laundromat","vinyl shop","arcade basement","attic collection","botanical greenhouse","desert monolith","futurist highway","foggy pier","museum storage","shipwreck beach","tidal cave","carnival mirror","vespa rally","lantern procession"
+    ]
+  },
+  "gif": {
+    "actions": [
+      "loop","spin","blink","glitch","bounce","vibrate","dance","nod","shimmy","pulse","scroll","swipe","flash","twirl","zoom","shake","burst","hover","float","warp","shatter","explode","boing","wave","idle","peek","swirl","stretch","wiggle","zoom-out","zoom-in"
+    ],
+    "styles": [
+      "retro","vhs","pixel","sprite","ascii","wireframe","claymation","stop-motion","lineart","chalk","marker","neon","sticker","emoji","collage","paper cut","photo mashup","scanline","datamosh","halftone","comic","ink","airbrush","scribble","vector","crayon","spraypaint","pastel","synthwave","grid","dither","plasma","rainbow","monochrome","toon","graffiti","kawaii"
+    ],
+    "themes": [
+      "cat","otter","sloth","capybara","frog","raccoon","pigeon","robot","astronaut","ghost","witch","wizard","alchemist","scientist","chef","barista","skater","dj","arcade","pinball","jukebox","rollercoaster","balloon","confetti","firework","volcano","thunderstorm","aurora","nebula","black hole","galaxy","aurora borealis","sea creature","jellyfish","coral","wave","storm cloud","rain puddle","tea ceremony","bonsai","origami","calligraphy","synth jam","guitar solo","drum loop","vinyl spin","keyboard cat","meme", "facepalm","party","celebration","glitch portal","magic portal","time loop","mirror world"
+    ],
+    "feelings": [
+      "awkward","chaotic","sleepy","hyper","zen","melancholic","cheerful","confused","mischievous","grumpy","cozy","nostalgic","trippy","euphoric","sarcastic","dramatic","hypnotic","sardonic","curious","bewildered","thrilled","playful","dazed","enchanted","sparkly","moody","glam","noisy","glitchy","vibey"
+    ]
+  }
 }

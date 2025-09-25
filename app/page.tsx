@@ -197,6 +197,26 @@ export default function HomePage() {
     tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
   }), [t])
 
+  const warmupRef = useRef(false)
+  useEffect(() => {
+    if (warmupRef.current) return
+    warmupRef.current = true
+    let cancelled = false
+    const warmup = async () => {
+      try {
+        await Promise.all([
+          fetchRandom({ types: ['image'] as RandomTypes, lang }),
+          fetchRandom({ types: ['image'] as RandomTypes, lang }),
+        ])
+      } catch {}
+      if (cancelled) return
+    }
+    warmup()
+    return () => {
+      cancelled = true
+    }
+  }, [lang])
+
   const navLabels = useMemo(() => ({
     images: t('nav.images', 'images'),
     videos: t('nav.videos', 'videos'),
