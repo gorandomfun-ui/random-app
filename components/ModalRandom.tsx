@@ -1,5 +1,8 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import { useState, useEffect } from 'react'
 import { X, Heart, Share2 } from 'lucide-react'
 import { Item, Dictionary, Theme } from '@/types'

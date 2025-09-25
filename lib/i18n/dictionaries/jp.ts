@@ -1,4 +1,4 @@
-export default {
+const jpDictionary = {
   "hero": {
     "tagline1": "ランダムコンテンツを探索。",
     "tagline2": "ニュースなし、理由なし、意味なし。",
@@ -111,3 +111,5 @@ export default {
   }
 
 }
+
+export default jpDictionary

@@ -50,14 +50,12 @@ export default function LikesPage() {
   }, [])
 
   const theme = useMemo(() => THEMES[themeIdx], [themeIdx])
-  const mainStyle = useMemo(() => {
-    const base: CSSProperties = {
-      background: '#191916',
-      color: theme.cream,
-    }
-    ;(base as any)['--theme-cream'] = theme.cream
-    return base
-  }, [theme.cream])
+  type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
+  const mainStyle = useMemo<ThemeStyle>(() => ({
+    background: '#191916',
+    color: theme.cream,
+    '--theme-cream': theme.cream,
+  }), [theme.cream])
   const adFormat = useMemo(() => {
     if (vw >= 768) return { width: 728, height: 90 }
     return { width: 320, height: 50 }

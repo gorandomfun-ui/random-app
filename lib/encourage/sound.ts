@@ -2,6 +2,17 @@
 
 const SOUND_FILES = ['pop1.mp3', 'pop2.mp3', 'pop3.mp3', 'pop4.mp3']
 
+type AudioWindow = typeof window & {
+  webkitAudioContext?: typeof AudioContext
+}
+
+function createAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  const win = window as AudioWindow
+  const Ctx = win.AudioContext || win.webkitAudioContext
+  return Ctx ? new Ctx() : null
+}
+
 export async function playAppear() {
   // 1) mp3 aléatoire, volume élevé
   try {
@@ -14,8 +25,8 @@ export async function playAppear() {
   } catch {
     // 2) fallback WebAudio plus punchy
     try {
-      const Ctx = (window.AudioContext || (window as any).webkitAudioContext)
-      const ctx = new Ctx()
+      const ctx = createAudioContext()
+      if (!ctx) return
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       const comp = ctx.createDynamicsCompressor()

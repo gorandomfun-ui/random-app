@@ -1,4 +1,4 @@
-export default {
+const frDictionary = {
   "hero": {
     "tagline1": "EXPLORE DES CONTENUS ALÉATOIRES.",
     "tagline2": "PAS D'ACTUS, PAS DE RAISON, PAS DE SENS.",
@@ -110,3 +110,5 @@ export default {
     ]
   }
 }
+
+export default frDictionary

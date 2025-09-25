@@ -28,6 +28,7 @@ onClick={() => setOpen((o) => !o)}
 className="rounded-full p-3 shadow-md bg-white/90 backdrop-blur"
 aria-label="Likes"
 >
+{/* eslint-disable-next-line @next/next/no-img-element */}
 <img src="/icons/Heart.svg" alt="likes" className="w-6 h-6" />
 </button>
 {open && (

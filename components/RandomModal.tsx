@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '../providers/I18nProvider'
 import MonoIcon from './MonoIcon'

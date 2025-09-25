@@ -1,4 +1,4 @@
-export default {
+const enDictionary = {
   "hero": {
     "tagline1": "EXPLORE RANDOM CONTENTS.",
     "tagline2": "NO NEWS, NO REASON, NO SENSE.",
@@ -111,3 +111,5 @@ export default {
   }
 
 }
+
+export default enDictionary

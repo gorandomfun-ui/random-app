@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useEffect, useMemo, useState } from 'react'
 
 type Layout = 'one' | 'two' | 'auto'
@@ -7,24 +9,20 @@ const LETTERS = ['R','A','N','D','O','M'] as const
 
 type Props = {
   className?: string
-  trigger?: number
   layout?: Layout
   heightMobile?: number   // vw
   heightDesktop?: number  // vw
   gapMobile?: number      // px (espace positif entre lettres)
   gapDesktop?: number     // px
-  color?: string
 }
 
 export default function ResponsiveRandomLogo({
   className = '',
-  trigger = 0,
   layout = 'auto',
   heightMobile = 22,
   heightDesktop = 14,
   gapMobile = 12,
   gapDesktop = 16,
-  color = '#FEFBE8',
 }: Props) {
   const [isPortrait, setIsPortrait] = useState(false)
 
@@ -62,7 +60,7 @@ export default function ResponsiveRandomLogo({
           {row.map((L, i) => (
             <div className="letter" data-letter={L} key={`${idx}-${L}-${i}`}>
               <img
-                src={`/logo/${L}1.svg`}  // <-- fichiers dans /public/logo
+                src={`/logo/${L}1.svg`}
                 alt={L}
                 style={{ display:'block', height:'100%', width:'auto' }}
               />

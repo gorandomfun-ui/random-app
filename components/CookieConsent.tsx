@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 
 type Categories = 'necessary' | 'analytics' | 'ads' | 'personalization';
 
@@ -16,13 +16,6 @@ type Ctx = {
   save: (next: Consent) => void;        // sauvegarder réglages
   openSettings: () => void;
   closeSettings: () => void;
-};
-
-const DEFAULT: Consent = {
-  necessary: true,
-  analytics: false,
-  ads: false,
-  personalization: false,
 };
 
 const KEY = 'random.consent.v1';
@@ -50,23 +43,23 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
     }
   }, []);
 
-  const save = (next: Consent) => {
+  const save = useCallback((next: Consent) => {
     const fixed = { ...next, necessary: true };
     setConsent(fixed);
     localStorage.setItem(KEY, JSON.stringify(fixed));
     setSettingsOpen(false);
-  };
+  }, []);
 
-  const acceptAll = () => {
+  const acceptAll = useCallback(() => {
     save({ necessary: true, analytics: true, ads: true, personalization: true });
-  };
+  }, [save]);
 
-  const rejectAll = () => {
+  const rejectAll = useCallback(() => {
     save({ necessary: true, analytics: false, ads: false, personalization: false });
-  };
+  }, [save]);
 
-  const openSettings = () => setSettingsOpen(true);
-  const closeSettings = () => setSettingsOpen(false);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const decided = consent !== null;
   const isBannerOpen = !decided && !isSettingsOpen;
@@ -83,7 +76,7 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
       openSettings,
       closeSettings,
     }),
-    [consent, decided, isBannerOpen, isSettingsOpen]
+    [consent, decided, isBannerOpen, isSettingsOpen, acceptAll, rejectAll, save, openSettings, closeSettings]
   );
 
   return <ConsentCtx.Provider value={value}>{children}</ConsentCtx.Provider>;

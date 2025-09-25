@@ -1,6 +1,8 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+/* eslint-disable @next/next/no-img-element */
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type Props = {
   trigger: number
@@ -46,30 +48,31 @@ export default function LogoAnimated({
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
-  const recalcScale = () => {
+  const recalcScale = useCallback(() => {
     if (!fitToWidth || !outerRef.current || !innerRef.current) return
     const ow = outerRef.current.clientWidth
     const iw = innerRef.current.scrollWidth
     if (iw) setScale(Math.min(1, ow / iw))
-  }
+  }, [fitToWidth])
+
   useEffect(() => {
     recalcScale()
-    if (!fitToWidth || !outerRef.current) return
-    const g: any = typeof globalThis !== 'undefined' ? globalThis : undefined
-    const outer = outerRef.current
-    let clean: (() => void) | undefined
-    if (g?.ResizeObserver) {
-      const ro = new g.ResizeObserver(() => recalcScale())
-      ro.observe(outer!)
-      clean = () => ro.disconnect()
-    } else if (g?.addEventListener) {
-      const onR = () => recalcScale()
-      g.addEventListener('resize', onR)
-      clean = () => g.removeEventListener('resize', onR)
+    if (!fitToWidth || typeof window === 'undefined') return
+
+    const node = outerRef.current
+    const resizeObserver = typeof ResizeObserver !== 'undefined' && node
+      ? new ResizeObserver(() => recalcScale())
+      : null
+    if (resizeObserver && node) resizeObserver.observe(node)
+
+    const onResize = () => recalcScale()
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', onResize)
     }
-    return () => clean?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitToWidth])
+  }, [fitToWidth, recalcScale])
 
   // alterne 1 ⇄ 2 avec animation tirée au hasard
   const mounted = useRef(false)

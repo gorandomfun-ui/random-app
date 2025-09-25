@@ -30,7 +30,7 @@ function getCols(w: number) {
 function makeColorIndices(n: number, cols: number, paletteLen: number) {
   const out: number[] = []
   // point de départ pseudo-aléatoire pour éviter des motifs trop réguliers
-  let seed = Math.floor(Math.random() * paletteLen)
+  const seed = Math.floor(Math.random() * paletteLen)
 
   for (let i = 0; i < n; i++) {
     // proposition initiale

@@ -1,10 +1,13 @@
-export type Locale = "en" | "fr" | "de" | "ja"
+export type Locale = 'en' | 'fr' | 'de' | 'ja'
 
-export const LOCALES: Locale[] = ["en", "fr", "de", "ja"]
-export const DEFAULT_LOCALE: Locale = "en"
+export const LOCALES: Locale[] = ['en', 'fr', 'de', 'ja']
+export const DEFAULT_LOCALE: Locale = 'en'
 
-export async function getDictionary(locale: Locale): Promise<Record<string, any>> {
-  const file = locale === "ja" ? "jp" : locale
+type Dictionary = Record<string, unknown>
+
+export async function getDictionary(locale: Locale): Promise<Dictionary> {
+  const file = locale === 'ja' ? 'jp' : locale
   const mod = await import(`./dictionaries/${file}.json`)
-  return mod.default
+  const dict = mod.default as unknown
+  return typeof dict === 'object' && dict !== null ? (dict as Dictionary) : {}
 }

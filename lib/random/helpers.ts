@@ -1,5 +1,5 @@
-import { buildTagList, expandQueryToTags, mergeKeywordSources } from '@/lib/ingest/extract'
-import { CandidateOrigin, ItemType, SelectionDebugContext, SelectionSkipReason } from './types'
+import { buildTagList, mergeKeywordSources } from '@/lib/ingest/extract'
+import { CandidateOrigin, SelectionDebugContext, SelectionSkipReason } from './types'
 
 export function shouldPreferFreshContent(window: CandidateOrigin[]): boolean {
   if (window.length < 5) return false

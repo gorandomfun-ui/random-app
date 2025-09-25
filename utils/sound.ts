@@ -1,6 +1,18 @@
 let ctx: AudioContext | null = null
 let muted = false
-const ac = () => (ctx ||= new (window.AudioContext || (window as any).webkitAudioContext)())
+
+type AudioWindow = typeof window & {
+  webkitAudioContext?: typeof AudioContext
+}
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  const win = window as AudioWindow
+  const Ctor = win.AudioContext || win.webkitAudioContext
+  if (!Ctor) return null
+  if (!ctx) ctx = new Ctor()
+  return ctx
+}
 
 export const setMuted = (v: boolean) => { muted = v }
 export const getMuted = () => muted
@@ -8,7 +20,11 @@ export const getMuted = () => muted
 type BeepOpts = { freq?: number; attack?: number; decay?: number; sustain?: number; release?: number; type?: OscillatorType; gain?: number }
 function env({ freq=440, attack=0.005, decay=0.06, sustain=0.04, release=0.08, type='square', gain=0.2 }: BeepOpts) {
   if (muted) return
-  const c = ac(), t = c.currentTime, o = c.createOscillator(), g = c.createGain()
+  const c = getAudioContext()
+  if (!c) return
+  const t = c.currentTime
+  const o = c.createOscillator()
+  const g = c.createGain()
   o.type = type; o.frequency.value = freq
   g.gain.setValueAtTime(0,t)
   g.gain.linearRampToValueAtTime(gain,t+attack)

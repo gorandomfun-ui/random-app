@@ -17,8 +17,6 @@ import type { ItemType } from '../lib/random/types'
 import type { DisplayItem, EncourageItem as EncourageContentItem } from '../lib/random/clientTypes'
 
 type EncourageItem = EncourageContentItem
-type SequenceItemType = ItemType | 'encourage'
-
 type SequenceSlot =
   | { kind: 'content'; itemType: ItemType }
   | { kind: 'encourage'; round: number; encourageIndex: number }
@@ -215,13 +213,13 @@ export default function HomePage() {
 
   const shuffleLabel = useMemo(() => t('shuffle.title', 'Shuffle'), [t])
 
-  const mainStyle = useMemo(() => {
-    const base: CSSProperties = {
+  type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
+  const mainStyle = useMemo<ThemeStyle>(() => {
+    return {
       backgroundColor: theme.bg,
       color: theme.cream,
+      '--theme-cream': theme.cream,
     }
-    ;(base as any)['--theme-cream'] = theme.cream
-    return base
   }, [theme.bg, theme.cream])
 
   useLayoutEffect(() => {

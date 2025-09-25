@@ -1,4 +1,4 @@
-export default {
+const deDictionary = {
   "hero": {
     "tagline1": "ENTDECKE ZUFÄLLIGE INHALTE.",
     "tagline2": "KEINE NEWS, KEIN GRUND, KEIN SINN.",
@@ -112,3 +112,5 @@ export default {
 
 
 }
+
+export default deDictionary

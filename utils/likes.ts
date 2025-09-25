@@ -26,16 +26,66 @@ function setStore(arr: LikeItem[]) {
 }
 function hash(t: string) { let h=0; for (let i=0;i<t.length;i++) h=((h<<5)-h)+t.charCodeAt(i)|0; return String(h) }
 
-export function buildId(p: any): string {
-  if (!p) return String(Date.now())
-  if (p._id) return String(p._id)
-  if (p.type === 'video') {
-    try { const u = new URL(p.url || ''); const v = u.searchParams.get('v') || u.pathname.split('/').pop() || ''; return `video:${v}` }
-    catch { return `video:${p.url || Date.now()}` }
+type SourceLike = {
+  name?: string | null
+  url?: string | null
+} | null | undefined
+
+export type LikeablePayload = {
+  _id?: string | number | null
+  type: LikeType
+  url?: string | null
+  text?: string | null
+  author?: string | null
+  title?: string | null
+  thumbUrl?: string | null
+  ogImage?: string | null
+  provider?: string | null
+  source?: SourceLike
+}
+
+function normaliseIdCandidate(value?: string | number | null): string | null {
+  if (value == null) return null
+  return String(value)
+}
+
+function cleanUrl(value?: string | null): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function getSourceName(source: SourceLike, fallback?: string | null): string {
+  if (source && typeof source === 'object' && source.name && source.name.trim()) {
+    return source.name.trim()
   }
-  if (p.type === 'image' || p.type === 'web') return `${p.type}:${p.url || Date.now()}`
-  if (p.text) return `${p.type}:${hash(p.text)}`
-  return `${p.type}:${Date.now()}`
+  return typeof fallback === 'string' && fallback.trim() ? fallback.trim() : ''
+}
+
+export function buildId(payload: LikeablePayload | null | undefined): string {
+  if (!payload) return String(Date.now())
+  const explicitId = normaliseIdCandidate(payload._id)
+  if (explicitId) return explicitId
+
+  const type = payload.type || 'web'
+  if (type === 'video') {
+    try {
+      const rawUrl = cleanUrl(payload.url)
+      const u = rawUrl ? new URL(rawUrl) : new URL('https://example.com')
+      const videoId = u.searchParams.get('v') || u.pathname.split('/').pop() || ''
+      return `video:${videoId || rawUrl || Date.now()}`
+    } catch {
+      return `video:${payload.url || Date.now()}`
+    }
+  }
+
+  const url = cleanUrl(payload.url)
+  if (type === 'image' || type === 'web') {
+    return `${type}:${url || Date.now()}`
+  }
+
+  const text = payload.text || payload.author
+  if (text) return `${type}:${hash(text)}`
+
+  return `${type}:${Date.now()}`
 }
 
 export function getAll(): LikeItem[] {
@@ -50,7 +100,7 @@ export function getAll(): LikeItem[] {
 
 export const getLikes = getAll
 
-export function saveLike(payload: any, theme?: LikeItem['theme']) {
+export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
   try {
     const arr = getAll()
     const id = buildId(payload)
@@ -58,12 +108,12 @@ export function saveLike(payload: any, theme?: LikeItem['theme']) {
     const item: LikeItem = {
       id,
       type: payload.type,
-      url: payload.url,
+      url: cleanUrl(payload.url) || undefined,
       text: payload.text || payload.author || '',
       thumbUrl: payload.thumbUrl ?? null,
       title: payload.title || '',
       ogImage: payload.ogImage ?? null,
-      provider: payload.source?.name || payload.provider || '',
+      provider: getSourceName(payload.source, payload.provider) || undefined,
       theme,
       likedAt: Date.now(),
     }
@@ -75,12 +125,12 @@ export function saveLike(payload: any, theme?: LikeItem['theme']) {
 
 export const addLike = saveLike
 
-export function removeLike(idOrItem: string | any) {
+export function removeLike(idOrItem: string | LikeablePayload) {
   const id = typeof idOrItem === 'string' ? idOrItem : buildId(idOrItem)
   try { setStore(getAll().filter(x => x.id !== id)) } catch {}
 }
 
-export function isLiked(payload: any): boolean {
+export function isLiked(payload: LikeablePayload): boolean {
   const id = buildId(payload)
   return getAll().some(x => x.id === id)
 }

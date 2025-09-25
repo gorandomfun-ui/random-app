@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getDictionary, normalizeLocale, type Language } from '@/lib/i18n/config'
 import { playAppear } from '@/lib/encourage/sound'
@@ -63,16 +65,48 @@ const pickTheme = (): Theme => {
 }
 
 /* ---------- DICTS: encourage.messages ---------- */
-function extractEncourageMessages(dict: any): string[] {
-  if (!dict) return []
-  if (Array.isArray(dict?.encourage?.messages)) return dict.encourage.messages
-  if (Array.isArray(dict?.encouragement?.messages)) return dict.encouragement.messages
-  if (Array.isArray(dict?.encourageMessages)) return dict.encourageMessages
-  if (Array.isArray(dict?.encourage)) return dict.encourage
-  return []
+type DictRecord = Record<string, unknown>
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
 }
-function* makeMessageGen(list: string[]) {
-  while (true) { const bag = shuffle(list); for (const m of bag) yield m }
+
+function extractEncourageMessages(dict: unknown): string[] {
+  if (!dict || typeof dict !== 'object') return []
+  const data = dict as DictRecord
+
+  const candidates: unknown[] = []
+
+  const encourage = data.encourage
+  if (encourage && typeof encourage === 'object') {
+    const sub = encourage as DictRecord
+    candidates.push(sub.messages, encourage)
+  }
+
+  const encouragement = data.encouragement
+  if (encouragement && typeof encouragement === 'object') {
+    const sub = encouragement as DictRecord
+    candidates.push(sub.messages)
+  }
+
+  candidates.push(data.encourageMessages)
+
+  const flattened: string[] = []
+  for (const candidate of candidates) {
+    flattened.push(...toStringArray(candidate))
+  }
+
+  return flattened
+}
+function* makeMessageGen(list: string[]): Generator<string> {
+  while (true) {
+    const bag = shuffle(list)
+    for (const message of bag) yield message
+  }
 }
 
 /* ---------- ICON TIERS (1–10 / 11–20 / 21–30) ---------- */
@@ -122,17 +156,18 @@ export default function EncouragementLayer({ lang }: { lang?: Language }) {
     const el = document.documentElement
     const obs = new MutationObserver(() => setLocale(normalizeLocale(el.getAttribute('lang') || '')))
     obs.observe(el, { attributes: true, attributeFilter: ['lang'] })
-    const onCustom = (e: Event) => {
-      const d = (e as CustomEvent).detail as string | undefined
-      if (d) setLocale(normalizeLocale(d))
+    const onCustom = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === 'string') {
+        setLocale(normalizeLocale(event.detail))
+      }
     }
     if (typeof window !== 'undefined') {
-      window.addEventListener('i18n:changed', onCustom as any)
+      window.addEventListener('i18n:changed', onCustom)
     }
     return () => {
       obs.disconnect()
       if (typeof window !== 'undefined') {
-        window.removeEventListener('i18n:changed', onCustom as any)
+        window.removeEventListener('i18n:changed', onCustom)
       }
     }
   }, [])
@@ -202,7 +237,7 @@ export default function EncouragementLayer({ lang }: { lang?: Language }) {
         const x = Math.max(12, Math.min(vw - (w + 20), ri(12, vw - (w + 20))))
         const y = Math.max(12, Math.min(vh - 200, ri(12, vh - 200)))
 
-        const msg = genRef.current.next().value as string
+        const { value: msg } = genRef.current.next()
         const icon = nextIcon()
         const id = idRef.current++
         const z = ++zRef.current

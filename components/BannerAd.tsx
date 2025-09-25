@@ -12,14 +12,15 @@ export default function BannerAd() {
     const script = document.createElement('script')
     script.src = `//cdn.propellerads.com/${process.env.NEXT_PUBLIC_PROPELLER_ADS_ID}/invoke.js`
     script.async = true
-    
-    if (bannerRef.current) {
-      bannerRef.current.appendChild(script)
+    const bannerEl = bannerRef.current
+
+    if (bannerEl) {
+      bannerEl.appendChild(script)
       scriptLoaded.current = true
     }
 
     return () => {
-      if (bannerRef.current && script.parentNode) {
+      if (bannerEl && script.parentNode) {
         script.parentNode.removeChild(script)
       }
     }

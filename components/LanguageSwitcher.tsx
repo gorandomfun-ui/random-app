@@ -5,8 +5,14 @@ import { useI18n } from '../providers/I18nProvider'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
+declare global {
+  interface Window {
+    __APP_LANG?: Lang
+  }
+}
+
 export default function LanguageSwitcher() {
-  const { locale, setLocale } = useI18n() as any
+  const { locale, setLocale, locales } = useI18n()
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -59,13 +65,15 @@ export default function LanguageSwitcher() {
     }
   }, [open])
 
-  const langs: Lang[] = ['en', 'fr', 'de', 'jp']
+  const langs = (Array.isArray(locales) && locales.length
+    ? locales
+    : ['en', 'fr', 'de', 'jp']) as Lang[]
 
   // -- helper: applique la langue "vers l'extérieur" pour les composants qui écoutent
   const applyLangOut = (next: Lang) => {
     try {
       document.documentElement.setAttribute('lang', next)
-      ;(window as any).__APP_LANG = next
+      window.__APP_LANG = next
       const maxAge = 60 * 60 * 24 * 365
       document.cookie = `lang=${next}; path=/; max-age=${maxAge}`
       // Notifie les listeners (EncouragementLayer l'écoute)

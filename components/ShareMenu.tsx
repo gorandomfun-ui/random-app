@@ -1,17 +1,30 @@
 'use client'
 
 import React, { useMemo, useState } from 'react'
+import type { DisplayItem } from '../lib/random/clientTypes'
+import { getSourceLabel } from '../lib/random/clientTypes'
 
 type Theme = { deep: string; cream: string; text: string }
+type ShareableItem = DisplayItem | null | undefined
+
 type Props = {
   open: boolean
   onClose: () => void
   title?: string
   url?: string
   theme?: Theme
+  item?: ShareableItem
 }
 
-function buildShareUrls(url: string, text: string) {
+type ShareUrls = {
+  twitter: string
+  facebook: string
+  reddit: string
+  whatsapp: string
+  telegram: string
+}
+
+function buildShareUrls(url: string, text: string): ShareUrls {
   const u = encodeURIComponent(url)
   const t = encodeURIComponent(text)
   return {
@@ -26,12 +39,27 @@ function buildShareUrls(url: string, text: string) {
 export default function ShareMenu({
   open,
   onClose,
-  title = 'Random',
-  url = '',
+  title,
+  url,
   theme,
+  item,
 }: Props) {
   const [copied, setCopied] = useState(false)
-  const urls = useMemo(() => buildShareUrls(url, title), [url, title])
+  const shareUrl = url || (item && 'url' in item ? item.url || '' : '')
+  const shareTitle = useMemo(() => {
+    if (title && title.trim()) return title
+    if (!item) return 'Random'
+    if (item.type === 'image') return item.title || getSourceLabel(item.source, item.provider) || 'Random image'
+    if (item.type === 'video') return item.text || getSourceLabel(item.source, item.provider) || 'Random video'
+    if (item.type === 'web') return item.text || getSourceLabel(item.source, item.provider) || 'Random link'
+    if (item.type === 'quote') return item.author ? `${item.author} — quote` : 'Random quote'
+    if (item.type === 'fact') return 'Random fact'
+    if (item.type === 'joke') return 'Random joke'
+    if (item.type === 'encourage') return item.text
+    return 'Random'
+  }, [item, title])
+
+  const urls = useMemo(() => buildShareUrls(shareUrl || '', shareTitle || 'Random'), [shareUrl, shareTitle])
 
   if (!open) return null
 
@@ -42,11 +70,11 @@ export default function ShareMenu({
   const softer = 'rgba(255,255,255,0.08)'
 
   const canNativeShare =
-    typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function'
+    typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
   async function nativeShare() {
     try {
-      await (navigator as any).share({ title, url })
+      await navigator.share({ title: shareTitle, url: shareUrl })
       onClose()
     } catch {
       /* ignore */
@@ -55,7 +83,7 @@ export default function ShareMenu({
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(url)
+      await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 900)
     } catch {
@@ -114,7 +142,7 @@ export default function ShareMenu({
             </a>
             <a
               className="rounded-xl py-2 text-center font-medium"
-              href={`/api/share/og?title=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`}
+              href={`/api/share/og?title=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}`}
               target="_blank"
               rel="noreferrer"
               style={{ background: soft, color: text }}
@@ -126,7 +154,7 @@ export default function ShareMenu({
           <div className="flex gap-2">
             <input
               className="flex-1 rounded-xl px-3 py-2 text-sm"
-              value={url}
+              value={shareUrl}
               readOnly
               style={{ background: softer, color: fg, outline: 'none' }}
             />

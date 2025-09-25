@@ -6,7 +6,6 @@ export const runtime = 'edge'
 // On garde tes valeurs, mais en variables locales (pas exportées)
 const ALT = 'Random share'
 const SIZE = { width: 1200, height: 630 }
-const CONTENT_TYPE = 'image/png'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

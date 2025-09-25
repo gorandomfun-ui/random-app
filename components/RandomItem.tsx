@@ -1,4 +1,5 @@
 'use client'
+/* eslint-disable @next/next/no-img-element */
 import React from 'react'
 import { useI18n } from '../providers/I18nProvider'
 
@@ -18,9 +19,7 @@ type Item = {
 }
 
 export default function RandomItem({ item, theme }: { item: Item; theme: Theme }) {
-  // On reste tolérant côté TS : certains projets exposent useI18n différemment
-  const i18n = useI18n() as any
-  const t: (k: string) => string = i18n?.t ?? ((k: string) => k)
+  const { t } = useI18n()
 
   const key = (() => {
     switch (item.type) {

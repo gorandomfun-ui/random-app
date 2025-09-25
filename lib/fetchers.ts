@@ -89,10 +89,14 @@ export async function fetchQuote(): Promise<ContentItem | null> {
 }
 
 // ————— FACTS (Useless Facts) —————
+type FactLang = 'en' | 'fr' | 'de'
+const FACT_LANGS: FactLang[] = ['en', 'fr', 'de']
+const isFactLang = (value: string): value is FactLang => FACT_LANGS.includes(value as FactLang)
+
 export async function fetchFact(lang: 'en' | 'fr' | 'de' | 'jp' = 'en'): Promise<ContentItem | null> {
   // API supporte surtout EN; pour d'autres langues on retombe sur EN
-  const l = ['en', 'fr', 'de'].includes(lang) ? lang : 'en'
-  const url = `https://uselessfacts.jsph.pl/api/v2/facts/random?language=${l}`
+  const factLang: FactLang = isFactLang(lang) ? lang : 'en'
+  const url = `https://uselessfacts.jsph.pl/api/v2/facts/random?language=${factLang}`
   const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) return null
   const data = await res.json()
@@ -100,7 +104,7 @@ export async function fetchFact(lang: 'en' | 'fr' | 'de' | 'jp' = 'en'): Promise
   if (!text) return null
   return {
     type: 'fact',
-    lang: l as any,
+    lang: factLang,
     text,
     source: { name: 'Useless Facts', url: 'https://uselessfacts.jsph.pl' },
   }
