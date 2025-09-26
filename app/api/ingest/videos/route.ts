@@ -23,6 +23,14 @@ export async function GET(req: NextRequest) {
   const isCron = Boolean(req.headers.get('x-vercel-cron'));
   const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim();
   const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim();
+  console.log('[ingest:videos] auth', {
+    url: req.url,
+    isCron,
+    providedLength: providedKey.length,
+    expectedLength: expectedKey.length,
+    providedPreview: providedKey.slice(0, 4),
+    expectedPreview: expectedKey.slice(0, 4),
+  });
   if (!expectedKey) {
     return NextResponse.json({ error: 'Unauthorized', reason: 'missing-expected-key' }, { status: 401 });
   }
