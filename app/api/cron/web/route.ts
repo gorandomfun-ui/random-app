@@ -5,26 +5,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { logCronRun } from '@/lib/metrics/cron';
 
-function resolveBaseUrl(req: Request): string {
-  const candidates = [
-    process.env.CRON_SELF_BASE_URL,
-    process.env.INGEST_BASE_URL,
-    process.env.NEXT_PUBLIC_BASE_URL,
-    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
-  ];
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim().replace(/\/$/, '');
-    }
-  }
-  try {
-    const current = new URL(req.url);
-    return `${current.protocol}//${current.host}`;
-  } catch {
-    return 'http://localhost:3000';
-  }
-}
-
 function rand<T>(a: T[]) { return a[Math.floor(Math.random() * a.length)]; }
 
 type WebKeywords = { A: string[]; B: string[]; C: string[] }
@@ -76,9 +56,12 @@ export async function GET(req: Request) {
       queries.push(`${rand(dict.A)} ${rand(dict.B)} ${rand(dict.C)}`);
     }
 
-    const baseUrl = resolveBaseUrl(req);
-    const url = new URL('/api/ingest/web', `${baseUrl}/`);
+    const url = new URL(req.url);
+    url.pathname = '/api/ingest/web';
+    url.search = '';
     url.searchParams.set('q', queries.join(','));
+    const incomingDry = new URL(req.url).searchParams.get('dry');
+    if (incomingDry) url.searchParams.set('dry', incomingDry);
     url.searchParams.set('per', '10');
     url.searchParams.set('pages', '3');
 

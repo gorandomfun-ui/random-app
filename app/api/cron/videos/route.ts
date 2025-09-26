@@ -4,26 +4,6 @@ import { NextResponse } from 'next/server';
 import { logCronRun } from '@/lib/metrics/cron';
 import { buildVideoQueries, loadVideoKeywordDictionary } from '@/lib/ingest/videoKeywords';
 
-function resolveBaseUrl(req: Request): string {
-  const candidates = [
-    process.env.CRON_SELF_BASE_URL,
-    process.env.INGEST_BASE_URL,
-    process.env.NEXT_PUBLIC_BASE_URL,
-    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
-  ];
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim().replace(/\/$/, '');
-    }
-  }
-  try {
-    const current = new URL(req.url);
-    return `${current.protocol}//${current.host}`;
-  } catch {
-    return 'http://localhost:3000';
-  }
-}
-
 type IngestVideosResponse = {
   ok?: boolean;
   error?: string;
@@ -56,9 +36,10 @@ export async function GET(req: Request) {
     const dictionary = await loadVideoKeywordDictionary();
     queries = buildVideoQueries(dictionary, 12);
 
-    const baseUrl = resolveBaseUrl(req);
-    const url = new URL('/api/ingest/videos', `${baseUrl}/`);
-    url.searchParams.set('mode', 'search'); // ton ingest sait déjà faire 'search'
+    const url = new URL(req.url);
+    url.pathname = '/api/ingest/videos';
+    url.search = '';
+    url.searchParams.set('mode', 'search');
     url.searchParams.set('q', queries.join(','));
     url.searchParams.set('count', String(Math.max(queries.length, 12)));
     url.searchParams.set('per', '25');
@@ -68,6 +49,8 @@ export async function GET(req: Request) {
     url.searchParams.set('sub', 'funnyvideos');
     url.searchParams.set('limit', '40');
     url.searchParams.set('archive', '1');
+    const incomingDry = new URL(req.url).searchParams.get('dry');
+    if (incomingDry) url.searchParams.set('dry', incomingDry);
 
     const res = await fetch(url.toString(), {
       method: 'GET',

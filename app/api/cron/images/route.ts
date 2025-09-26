@@ -5,26 +5,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { logCronRun } from '@/lib/metrics/cron';
 
-function resolveBaseUrl(req: Request): string {
-  const candidates = [
-    process.env.CRON_SELF_BASE_URL,
-    process.env.INGEST_BASE_URL,
-    process.env.NEXT_PUBLIC_BASE_URL,
-    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
-  ];
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim().replace(/\/$/, '');
-    }
-  }
-  try {
-    const current = new URL(req.url);
-    return `${current.protocol}//${current.host}`;
-  } catch {
-    return 'http://localhost:3000';
-  }
-}
-
 function pickMany<T>(arr: T[], n: number): T[] {
   const pool = arr.slice();
   const out: T[] = [];
@@ -79,10 +59,13 @@ export async function GET(req: Request) {
     const qGif = pickMany(dict.gif, 2).join(',');
     queries = [qPhoto, qGif];
 
-    const baseUrl = resolveBaseUrl(req);
-    const url = new URL('/api/ingest/images', `${baseUrl}/`);
+    const url = new URL(req.url);
+    url.pathname = '/api/ingest/images';
+    url.search = '';
     url.searchParams.set('q', queries.join(','));
     url.searchParams.set('per', '40');
+    const incomingDry = new URL(req.url).searchParams.get('dry');
+    if (incomingDry) url.searchParams.set('dry', incomingDry);
 
     const res = await fetch(url.toString(), {
       headers: { 'x-admin-ingest-key': KEY },
