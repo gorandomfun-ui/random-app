@@ -62,6 +62,7 @@ type IngestResult = {
   dryRun?: boolean;
   sample?: VideoDocument[];
   providerCounts?: Record<string, number>;
+  warnings?: FetchWarning[];
 };
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
@@ -148,11 +149,24 @@ type RedditListing = {
   };
 };
 
+type FetchWarning = {
+  label: string;
+  status?: number;
+  statusText?: string;
+  body?: string;
+  message?: string;
+};
+
 function youtubeThumb(id: string): string {
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 }
 
-async function fetchJson<T = unknown>(url: string, timeoutMs = 10000, label?: string): Promise<T | null> {
+async function fetchJson<T = unknown>(
+  url: string,
+  timeoutMs = 10000,
+  label?: string,
+  warnings?: FetchWarning[],
+): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -170,11 +184,21 @@ async function fetchJson<T = unknown>(url: string, timeoutMs = 10000, label?: st
         statusText: response.statusText,
         body: body?.slice(0, 500),
       });
+      warnings?.push({
+        label: label || url,
+        status: response.status,
+        statusText: response.statusText,
+        body: body?.slice(0, 500),
+      });
       return null;
     }
     return (await response.json()) as T;
   } catch (error) {
     console.error('[ingest:fetch] request failed', {
+      label: label || url,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    warnings?.push({
       label: label || url,
       message: error instanceof Error ? error.message : String(error),
     });
@@ -184,7 +208,13 @@ async function fetchJson<T = unknown>(url: string, timeoutMs = 10000, label?: st
   }
 }
 
-async function searchYouTube(queries: string[], per: number, pages: number, days: number): Promise<RawVideo[]> {
+async function searchYouTube(
+  queries: string[],
+  per: number,
+  pages: number,
+  days: number,
+  warnings?: FetchWarning[],
+): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) {
     console.warn('[ingest:youtube] missing YOUTUBE_API_KEY');
@@ -213,6 +243,7 @@ async function searchYouTube(queries: string[], per: number, pages: number, days
         `${YT_ENDPOINT}/search?${params.toString()}`,
         10000,
         'youtube:search',
+        warnings,
       );
       const items = data?.items ?? [];
       for (const item of items) {
@@ -238,7 +269,7 @@ async function searchYouTube(queries: string[], per: number, pages: number, days
   return collected;
 }
 
-async function playlistYouTube(playlistId: string, per: number): Promise<RawVideo[]> {
+async function playlistYouTube(playlistId: string, per: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || !playlistId) return [];
   const collected: RawVideo[] = [];
@@ -250,6 +281,7 @@ async function playlistYouTube(playlistId: string, per: number): Promise<RawVide
       `${YT_ENDPOINT}/playlistItems?${params.toString()}`,
       10000,
       'youtube:playlistItems',
+      warnings,
     );
     const items = data?.items ?? [];
     for (const item of items) {
@@ -273,7 +305,7 @@ async function playlistYouTube(playlistId: string, per: number): Promise<RawVide
   return collected;
 }
 
-async function channelUploadsYouTube(channelId: string, per: number): Promise<RawVideo[]> {
+async function channelUploadsYouTube(channelId: string, per: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || !channelId) return [];
   const params = new URLSearchParams({ key, part: 'contentDetails', id: channelId });
@@ -281,13 +313,14 @@ async function channelUploadsYouTube(channelId: string, per: number): Promise<Ra
     `${YT_ENDPOINT}/channels?${params.toString()}`,
     8000,
     'youtube:channels',
+    warnings,
   );
   const playlist = data?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!playlist) return [];
-  return playlistYouTube(playlist, per);
+  return playlistYouTube(playlist, per, warnings);
 }
 
-async function enrichYouTubeDetails(videos: RawVideo[]): Promise<void> {
+async function enrichYouTubeDetails(videos: RawVideo[], warnings?: FetchWarning[]): Promise<void> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return;
   const youtubeVideos = videos.filter((video) => video.provider === 'youtube');
@@ -301,6 +334,7 @@ async function enrichYouTubeDetails(videos: RawVideo[]): Promise<void> {
       `${YT_ENDPOINT}/videos?${params.toString()}`,
       10000,
       'youtube:videos',
+      warnings,
     );
     const items = data?.items ?? [];
     const map = new Map<string, YoutubeVideoDetailsItem>();
@@ -326,11 +360,12 @@ async function enrichYouTubeDetails(videos: RawVideo[]): Promise<void> {
   }
 }
 
-async function redditYouTube(sub: string, limit: number): Promise<RawVideo[]> {
+async function redditYouTube(sub: string, limit: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
   const json = await fetchJson<RedditListing>(
     `https://www.reddit.com/r/${encodeURIComponent(sub)}/.json?limit=${Math.min(100, Math.max(5, limit))}`,
     8000,
     `reddit:${sub}`,
+    warnings,
   );
   const posts = json?.data?.children?.map((child) => child?.data).filter((entry): entry is RedditPost => Boolean(entry)) || [];
   const out: RawVideo[] = [];
@@ -358,7 +393,12 @@ async function redditYouTube(sub: string, limit: number): Promise<RawVideo[]> {
   return out;
 }
 
-async function archiveAdvancedSearch(query: string, rows: number, page: number): Promise<ArchiveDoc[]> {
+async function archiveAdvancedSearch(
+  query: string,
+  rows: number,
+  page: number,
+  warnings?: FetchWarning[],
+): Promise<ArchiveDoc[]> {
   const params = new URLSearchParams();
   params.set('q', query);
   params.set('output', 'json');
@@ -367,13 +407,13 @@ async function archiveAdvancedSearch(query: string, rows: number, page: number):
   for (const field of ARCHIVE_FIELDS) params.append('fl[]', field);
   params.append('sort[]', 'downloads desc');
   const url = `${ARCHIVE_BASE}/advancedsearch.php?${params.toString()}`;
-  const data = await fetchJson<ArchiveSearchResponse>(url, 12000, 'archive:search');
+  const data = await fetchJson<ArchiveSearchResponse>(url, 12000, 'archive:search', warnings);
   return Array.isArray(data?.response?.docs) ? data.response.docs : [];
 }
 
-async function archiveMetadata(identifier: string): Promise<ArchiveMetadata | null> {
+async function archiveMetadata(identifier: string, warnings?: FetchWarning[]): Promise<ArchiveMetadata | null> {
   const url = `${ARCHIVE_BASE}/metadata/${encodeURIComponent(identifier)}`;
-  return fetchJson<ArchiveMetadata>(url, 12000, 'archive:metadata');
+  return fetchJson<ArchiveMetadata>(url, 12000, 'archive:metadata', warnings);
 }
 
 function pickArchiveFile(files: ArchiveFile[] | undefined): { name: string; format?: string } | null {
@@ -398,18 +438,23 @@ function pickArchiveThumbnail(identifier: string, files: ArchiveFile[] | undefin
   return `${ARCHIVE_BASE}/download/${identifier}/${thumb.name}`;
 }
 
-async function pullArchiveVideos(queries: string[], limit: number): Promise<RawVideo[]> {
+async function pullArchiveVideos(queries: string[], limit: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
   const results: RawVideo[] = [];
   const perQuery = Math.max(1, Math.ceil(limit / Math.max(1, queries.length)));
 
   for (const query of queries) {
     const compiled = `(${query}) AND mediatype:(movies) AND format:(MP4)`;
-    const docs = await archiveAdvancedSearch(compiled, Math.min(30, perQuery * 6), Math.floor(Math.random() * 3) + 1);
+    const docs = await archiveAdvancedSearch(
+      compiled,
+      Math.min(30, perQuery * 6),
+      Math.floor(Math.random() * 3) + 1,
+      warnings,
+    );
     for (const doc of docs) {
       if (results.length >= limit) break;
       const identifier = String(doc?.identifier || '');
       if (!identifier) continue;
-      const metadata = await archiveMetadata(identifier);
+      const metadata = await archiveMetadata(identifier, warnings);
       const file = pickArchiveFile(metadata?.files);
       if (!file?.name) continue;
       const downloadUrl = `${ARCHIVE_BASE}/download/${identifier}/${encodeURIComponent(file.name)}`;
@@ -487,6 +532,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   } = options;
 
   const collected: RawVideo[] = [];
+  const fetchWarnings: FetchWarning[] = [];
 
   if (manualIds.length) {
     for (const id of manualIds) {
@@ -506,21 +552,21 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
 
   if (mode === 'search') {
     const effectiveQueries = queries.length ? queries : ['weird archive footage', 'retro craft tutorial'];
-    collected.push(...await searchYouTube(effectiveQueries, per, pages, days));
+    collected.push(...await searchYouTube(effectiveQueries, per, pages, days, fetchWarnings));
     if (includeArchive) {
-      collected.push(...await pullArchiveVideos(effectiveQueries, Math.max(6, Math.ceil(per / 2))));
+      collected.push(...await pullArchiveVideos(effectiveQueries, Math.max(6, Math.ceil(per / 2)), fetchWarnings));
     }
   } else if (mode === 'playlist' && playlistId) {
-    collected.push(...await playlistYouTube(playlistId, per));
+    collected.push(...await playlistYouTube(playlistId, per, fetchWarnings));
   } else if (mode === 'channel' && channelId) {
-    collected.push(...await channelUploadsYouTube(channelId, per));
+    collected.push(...await channelUploadsYouTube(channelId, per, fetchWarnings));
   }
 
   if (reddit) {
-    collected.push(...await redditYouTube(reddit.sub, reddit.limit));
+    collected.push(...await redditYouTube(reddit.sub, reddit.limit, fetchWarnings));
   }
 
-  await enrichYouTubeDetails(collected);
+  await enrichYouTubeDetails(collected, fetchWarnings);
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -547,6 +593,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     dryRun,
     providerCounts,
     sample: sampleDocuments,
+    warnings: fetchWarnings,
   };
 
   console.log('[ingest:videos] processed', {
@@ -556,6 +603,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     unique: summary.unique,
     providerCounts,
     sampleVideoIds,
+    warnings: fetchWarnings,
   });
 
   if (dryRun || !documents.length) {
