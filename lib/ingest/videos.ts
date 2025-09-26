@@ -152,14 +152,25 @@ function youtubeThumb(id: string): string {
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 }
 
-async function fetchJson<T = unknown>(url: string, timeoutMs = 10000): Promise<T | null> {
+async function fetchJson<T = unknown>(url: string, timeoutMs = 10000, label?: string): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { cache: 'no-store', headers: USER_AGENT, signal: controller.signal });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn('[ingest:fetch] non-ok response', {
+        label: label || url,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return null;
+    }
     return (await response.json()) as T;
-  } catch {
+  } catch (error) {
+    console.error('[ingest:fetch] request failed', {
+      label: label || url,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   } finally {
     clearTimeout(timer);
@@ -168,7 +179,10 @@ async function fetchJson<T = unknown>(url: string, timeoutMs = 10000): Promise<T
 
 async function searchYouTube(queries: string[], per: number, pages: number, days: number): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key) return [];
+  if (!key) {
+    console.warn('[ingest:youtube] missing YOUTUBE_API_KEY');
+    return [];
+  }
   const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const collected: RawVideo[] = [];
 
@@ -188,7 +202,11 @@ async function searchYouTube(queries: string[], per: number, pages: number, days
         videoEmbeddable: 'true',
       });
       if (pageToken) params.set('pageToken', pageToken);
-      const data = await fetchJson<YoutubeSearchResponse>(`${YT_ENDPOINT}/search?${params.toString()}`, 10000);
+      const data = await fetchJson<YoutubeSearchResponse>(
+        `${YT_ENDPOINT}/search?${params.toString()}`,
+        10000,
+        'youtube:search',
+      );
       const items = data?.items ?? [];
       for (const item of items) {
         const id = item?.id?.videoId;
@@ -221,7 +239,11 @@ async function playlistYouTube(playlistId: string, per: number): Promise<RawVide
   for (let guard = 0; guard < 10; guard++) {
     const params = new URLSearchParams({ key, part: 'snippet,contentDetails', maxResults: String(Math.min(50, Math.max(1, per))), playlistId });
     if (pageToken) params.set('pageToken', pageToken);
-    const data = await fetchJson<YoutubePlaylistResponse>(`${YT_ENDPOINT}/playlistItems?${params.toString()}`, 10000);
+    const data = await fetchJson<YoutubePlaylistResponse>(
+      `${YT_ENDPOINT}/playlistItems?${params.toString()}`,
+      10000,
+      'youtube:playlistItems',
+    );
     const items = data?.items ?? [];
     for (const item of items) {
       const videoId = item?.contentDetails?.videoId || item?.snippet?.resourceId?.videoId;
@@ -248,7 +270,11 @@ async function channelUploadsYouTube(channelId: string, per: number): Promise<Ra
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || !channelId) return [];
   const params = new URLSearchParams({ key, part: 'contentDetails', id: channelId });
-  const data = await fetchJson<YoutubeChannelResponse>(`${YT_ENDPOINT}/channels?${params.toString()}`, 8000);
+  const data = await fetchJson<YoutubeChannelResponse>(
+    `${YT_ENDPOINT}/channels?${params.toString()}`,
+    8000,
+    'youtube:channels',
+  );
   const playlist = data?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!playlist) return [];
   return playlistYouTube(playlist, per);
@@ -264,7 +290,11 @@ async function enrichYouTubeDetails(videos: RawVideo[]): Promise<void> {
   for (let i = 0; i < ids.length; i += 50) {
     const chunk = ids.slice(i, i + 50);
     const params = new URLSearchParams({ key, part: 'snippet,contentDetails', id: chunk.join(',') });
-    const data = await fetchJson<YoutubeVideoDetailsResponse>(`${YT_ENDPOINT}/videos?${params.toString()}`, 10000);
+    const data = await fetchJson<YoutubeVideoDetailsResponse>(
+      `${YT_ENDPOINT}/videos?${params.toString()}`,
+      10000,
+      'youtube:videos',
+    );
     const items = data?.items ?? [];
     const map = new Map<string, YoutubeVideoDetailsItem>();
     for (const item of items) {
@@ -290,7 +320,11 @@ async function enrichYouTubeDetails(videos: RawVideo[]): Promise<void> {
 }
 
 async function redditYouTube(sub: string, limit: number): Promise<RawVideo[]> {
-  const json = await fetchJson<RedditListing>(`https://www.reddit.com/r/${encodeURIComponent(sub)}/.json?limit=${Math.min(100, Math.max(5, limit))}`, 8000);
+  const json = await fetchJson<RedditListing>(
+    `https://www.reddit.com/r/${encodeURIComponent(sub)}/.json?limit=${Math.min(100, Math.max(5, limit))}`,
+    8000,
+    `reddit:${sub}`,
+  );
   const posts = json?.data?.children?.map((child) => child?.data).filter((entry): entry is RedditPost => Boolean(entry)) || [];
   const out: RawVideo[] = [];
   for (const post of posts) {
@@ -326,13 +360,13 @@ async function archiveAdvancedSearch(query: string, rows: number, page: number):
   for (const field of ARCHIVE_FIELDS) params.append('fl[]', field);
   params.append('sort[]', 'downloads desc');
   const url = `${ARCHIVE_BASE}/advancedsearch.php?${params.toString()}`;
-  const data = await fetchJson<ArchiveSearchResponse>(url, 12000);
+  const data = await fetchJson<ArchiveSearchResponse>(url, 12000, 'archive:search');
   return Array.isArray(data?.response?.docs) ? data.response.docs : [];
 }
 
 async function archiveMetadata(identifier: string): Promise<ArchiveMetadata | null> {
   const url = `${ARCHIVE_BASE}/metadata/${encodeURIComponent(identifier)}`;
-  return fetchJson<ArchiveMetadata>(url, 12000);
+  return fetchJson<ArchiveMetadata>(url, 12000, 'archive:metadata');
 }
 
 function pickArchiveFile(files: ArchiveFile[] | undefined): { name: string; format?: string } | null {
@@ -495,6 +529,9 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     providerCounts[doc.provider] = (providerCounts[doc.provider] || 0) + 1;
   }
 
+  const sampleDocuments = documents.slice(0, Math.max(0, sampleSize));
+  const sampleVideoIds = sampleDocuments.map((doc) => doc.videoId);
+
   const summary: IngestResult = {
     scanned: collected.length,
     unique: documents.length,
@@ -502,8 +539,17 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     updated: 0,
     dryRun,
     providerCounts,
-    sample: documents.slice(0, Math.max(0, sampleSize)),
+    sample: sampleDocuments,
   };
+
+  console.log('[ingest:videos] processed', {
+    mode,
+    dryRun,
+    scanned: summary.scanned,
+    unique: summary.unique,
+    providerCounts,
+    sampleVideoIds,
+  });
 
   if (dryRun || !documents.length) {
     return summary;
