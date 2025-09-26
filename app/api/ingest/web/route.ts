@@ -360,6 +360,11 @@ export async function GET(req: NextRequest) {
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
   const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'archive']
 
+  const dryParam = req.nextUrl.searchParams.get('dry') || req.nextUrl.searchParams.get('preview')
+  const dryRun = dryParam === '1' || dryParam === 'true'
+  const sampleSizeRaw = Number(req.nextUrl.searchParams.get('sample') || 6)
+  const sampleSize = Number.isFinite(sampleSizeRaw) ? Math.max(1, Math.min(20, sampleSizeRaw)) : 6
+
   const limitParam = Number(req.nextUrl.searchParams.get('limit') || 0)
   const baseTarget = Math.max(12, per * pages * queries.length)
   const totalTarget = Number.isFinite(limitParam) && limitParam > 0
@@ -399,6 +404,7 @@ export async function GET(req: NextRequest) {
   }
 
   const deduped = dedupeRowsWithOg(aggregated)
+  const sample = deduped.slice(0, Math.max(0, sampleSize))
   const providerCounts: Record<string, number> = {}
   for (const row of deduped) {
     const name = row.provider || 'web'
@@ -406,6 +412,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    if (!deduped.length || dryRun) {
+      return NextResponse.json({
+        ok: true,
+        providers,
+        providerCounts,
+        queries,
+        per,
+        pages,
+        limit: totalTarget,
+        scanned,
+        checked,
+        unique: deduped.length,
+        dryRun,
+        sample,
+        inserted: 0,
+        updated: 0,
+      })
+    }
+
     const { inserted, updated } = await upsertManyWeb(deduped)
     return NextResponse.json({
       ok: true,
@@ -418,6 +443,8 @@ export async function GET(req: NextRequest) {
       scanned,
       checked,
       unique: deduped.length,
+      dryRun,
+      sample,
       inserted,
       updated,
     })

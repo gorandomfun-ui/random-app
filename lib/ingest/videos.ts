@@ -50,6 +50,8 @@ type IngestVideosOptions = {
   includeArchive?: boolean;
   reddit?: { sub: string; limit: number } | null;
   manualIds?: string[];
+  dryRun?: boolean;
+  sampleSize?: number;
 };
 
 type IngestResult = {
@@ -57,6 +59,9 @@ type IngestResult = {
   unique: number;
   inserted: number;
   updated: number;
+  dryRun?: boolean;
+  sample?: VideoDocument[];
+  providerCounts?: Record<string, number>;
 };
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
@@ -436,6 +441,8 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     includeArchive = true,
     reddit,
     manualIds = [],
+    dryRun = false,
+    sampleSize = 6,
   } = options;
 
   const collected: RawVideo[] = [];
@@ -481,11 +488,27 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   }
 
   const unique = Array.from(map.values());
-  if (!unique.length) {
-    return { scanned: collected.length, unique: 0, inserted: 0, updated: 0 };
+  const documents = unique.map((raw) => buildVideoDocument(raw));
+
+  const providerCounts: Record<string, number> = {};
+  for (const doc of documents) {
+    providerCounts[doc.provider] = (providerCounts[doc.provider] || 0) + 1;
   }
 
-  const documents = unique.map((raw) => buildVideoDocument(raw));
+  const summary: IngestResult = {
+    scanned: collected.length,
+    unique: documents.length,
+    inserted: 0,
+    updated: 0,
+    dryRun,
+    providerCounts,
+    sample: documents.slice(0, Math.max(0, sampleSize)),
+  };
+
+  if (dryRun || !documents.length) {
+    return summary;
+  }
+
   const collection = await getCollection();
   const operations = documents.map((doc) => {
     const filter: Filter<VideoDocument> = { type: 'video', videoId: doc.videoId };
@@ -502,10 +525,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   });
 
   const bulk = await collection.bulkWrite(operations, { ordered: false });
-  return {
-    scanned: collected.length,
-    unique: documents.length,
-    inserted: bulk.upsertedCount || 0,
-    updated: bulk.modifiedCount || 0,
-  };
+  summary.inserted = bulk.upsertedCount || 0;
+  summary.updated = bulk.modifiedCount || 0;
+  return summary;
 }

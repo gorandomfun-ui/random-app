@@ -1,31 +1,8 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { logCronRun } from '@/lib/metrics/cron';
-
-function pickMany<T>(arr: T[], n: number): T[] {
-  const pool = arr.slice();
-  const out: T[] = [];
-  while (out.length < n && pool.length) {
-    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]!);
-  }
-  return out;
-}
-
-type VideoKeywords = { core: string[]; folk: string[]; fun: string[] }
-
-async function loadKeywords(): Promise<VideoKeywords> {
-  const keywordsPath = path.resolve(process.cwd(), 'lib/ingest/keywords/video.json');
-  const raw = await fs.readFile(keywordsPath, 'utf8');
-  const parsed = JSON.parse(raw) as Partial<VideoKeywords> | null;
-  return {
-    core: Array.isArray(parsed?.core) ? (parsed?.core as string[]) : [],
-    folk: Array.isArray(parsed?.folk) ? (parsed?.folk as string[]) : [],
-    fun: Array.isArray(parsed?.fun) ? (parsed?.fun as string[]) : [],
-  };
-}
+import { buildVideoQueries, loadVideoKeywordDictionary } from '@/lib/ingest/videoKeywords';
 
 type IngestVideosResponse = {
   ok?: boolean;
@@ -56,13 +33,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'missing ADMIN_INGEST_KEY' }, { status: 500 });
     }
 
-    const lists = await loadKeywords();
-    const bag = ([] as string[]).concat(lists.core, lists.folk, lists.fun);
-    queries = pickMany(bag, 5); // 5 requêtes uniques / run
+    const dictionary = await loadVideoKeywordDictionary();
+    queries = buildVideoQueries(dictionary, 12);
 
     const url = new URL(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/ingest/videos`);
     url.searchParams.set('mode', 'search'); // ton ingest sait déjà faire 'search'
     url.searchParams.set('q', queries.join(','));
+    url.searchParams.set('count', String(Math.max(queries.length, 12)));
     url.searchParams.set('per', '25');
     url.searchParams.set('pages', '2');
     url.searchParams.set('days', String([120, 180, 240, 365][Math.floor(Math.random() * 4)]));

@@ -70,6 +70,8 @@ export async function GET(req: Request) {
     const per = Math.max(5, Math.min(80, Number(url.searchParams.get('per') || 40)));
     const providersRaw = parseList(url.searchParams.get('providers'));
     const providers = normalizeProviders(providersRaw);
+    const dry = url.searchParams.get('dry') || url.searchParams.get('preview');
+    const dryRun = dry === '1' || dry === 'true';
 
     let finalQueries = queries;
     if (!finalQueries.length) {
@@ -79,12 +81,19 @@ export async function GET(req: Request) {
       finalQueries = [...photos, ...gifs];
     }
 
-    const result = await ingestImages({ queries: finalQueries, perQuery: per, providers });
+    const result = await ingestImages({
+      queries: finalQueries,
+      perQuery: per,
+      providers,
+      dryRun,
+      sampleSize: 6,
+    });
 
     return NextResponse.json({
       ok: true,
       queries: finalQueries,
       providers: providers ?? [...IMAGE_PROVIDERS],
+      dryRun,
       ...result,
     });
   } catch (error: unknown) {

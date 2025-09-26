@@ -106,13 +106,20 @@ type IngestImagesOptions = {
   queries: string[];
   perQuery?: number;
   providers?: ImageProvider[];
+  dryRun?: boolean;
+  sampleSize?: number;
 };
+
+type ProviderCounts = Record<string, number>;
 
 type IngestResult = {
   scanned: number;
   unique: number;
   inserted: number;
   updated: number;
+  dryRun?: boolean;
+  sample?: ImageDocument[];
+  providerCounts?: ProviderCounts;
 };
 
 type Fetcher = (query: string, per: number) => Promise<ImageSource[]>;
@@ -300,7 +307,13 @@ async function getCollection(): Promise<Collection<ImageDocument>> {
   return db.collection<ImageDocument>('items');
 }
 
-export async function ingestImages({ queries, perQuery = 40, providers }: IngestImagesOptions): Promise<IngestResult> {
+export async function ingestImages({
+  queries,
+  perQuery = 40,
+  providers,
+  dryRun = false,
+  sampleSize = 6,
+}: IngestImagesOptions): Promise<IngestResult> {
   if (!queries.length) {
     return { scanned: 0, unique: 0, inserted: 0, updated: 0 };
   }
@@ -336,8 +349,22 @@ export async function ingestImages({ queries, perQuery = 40, providers }: Ingest
   }
 
   const uniqueDocs = Array.from(map.values());
-  if (!uniqueDocs.length) {
-    return { scanned: collected.length, unique: 0, inserted: 0, updated: 0 };
+  const providerCounts: ProviderCounts = {};
+  uniqueDocs.forEach((doc) => {
+    providerCounts[doc.provider] = (providerCounts[doc.provider] || 0) + 1;
+  });
+  const summary: IngestResult = {
+    scanned: collected.length,
+    unique: uniqueDocs.length,
+    inserted: 0,
+    updated: 0,
+    dryRun,
+    providerCounts,
+    sample: uniqueDocs.slice(0, Math.max(0, sampleSize)),
+  };
+
+  if (dryRun || !uniqueDocs.length) {
+    return summary;
   }
 
   const coll = await getCollection();
@@ -356,10 +383,7 @@ export async function ingestImages({ queries, perQuery = 40, providers }: Ingest
   });
 
   const result = await coll.bulkWrite(operations, { ordered: false });
-  return {
-    scanned: collected.length,
-    unique: uniqueDocs.length,
-    inserted: result.upsertedCount || 0,
-    updated: result.modifiedCount || 0,
-  };
+  summary.inserted = result.upsertedCount || 0;
+  summary.updated = result.modifiedCount || 0;
+  return summary;
 }
