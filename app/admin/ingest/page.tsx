@@ -108,13 +108,22 @@ function qs(params: Record<string, string | number | boolean | undefined>) {
   return u.toString()
 }
 
+function buildAuthHeaders(key: string): HeadersInit | undefined {
+  const trimmed = key.trim()
+  return trimmed ? { 'x-admin-ingest-key': trimmed } : undefined
+}
+
 /** Parser sûr: lit le body UNE seule fois (texte), tente un JSON.parse derrière */
 async function parseResponse(res: Response): Promise<IngestResult> {
   const txt = await res.text()
   try {
     const parsed = JSON.parse(txt) as unknown
     if (parsed && typeof parsed === 'object') {
-      return parsed as IngestResult
+      return {
+        ...(parsed as Record<string, unknown>),
+        _rawStatus: res.status,
+        _rawText: txt,
+      } as IngestResult
     }
     return { _rawStatus: res.status, _rawText: txt }
   } catch {
@@ -150,9 +159,10 @@ async function callVideosGET(
   dryRun = false,
   count?: number,
 ): Promise<IngestResult> {
+  const trimmedKey = key.trim()
   // moderne
   const modern: Record<string, string | number | boolean | undefined> = {
-    key,
+    key: trimmedKey,
     mode: 'search',
     q: termsCSV,
     per: Math.min(Math.max(per,1),50),
@@ -162,13 +172,14 @@ async function callVideosGET(
     dry: dryRun ? '1' : undefined,
     count: count && count > 0 ? Math.max(3, Math.min(60, count)) : undefined,
   }
-  let res = await fetch(`/api/ingest/videos?${qs(modern)}`)
+  const headers = buildAuthHeaders(trimmedKey)
+  let res = await fetch(`/api/ingest/videos?${qs(modern)}`, headers ? { headers } : undefined)
   let parsed = await parseResponse(res)
   if (parsed.ok || (parsed.scanned ?? 0) > 0 || (parsed.unique ?? 0) > 0) return parsed
 
   // legacy (query/max/n/freshDays/fallbackReddit)
   const legacy: Record<string, string | number | boolean | undefined> = {
-    key,
+    key: trimmedKey,
     mode: 'search',
     query: termsCSV,
     max: Math.min(Math.max(per,1),50),
@@ -178,7 +189,7 @@ async function callVideosGET(
     dry: dryRun ? '1' : undefined,
     count: count && count > 0 ? Math.max(3, Math.min(60, count)) : undefined,
   }
-  res = await fetch(`/api/ingest/videos?${qs(legacy)}`)
+  res = await fetch(`/api/ingest/videos?${qs(legacy)}`, headers ? { headers } : undefined)
   parsed = await parseResponse(res)
   return parsed
 }
@@ -190,14 +201,16 @@ async function callImagesGET(
   providers: string[] | undefined,
   dryRun: boolean,
 ): Promise<IngestResult> {
+  const trimmedKey = key.trim()
   const params: Record<string, string | number | boolean | undefined> = {
-    key,
+    key: trimmedKey,
     per,
     q: queriesCSV,
     providers: providers?.join(','),
     dry: dryRun ? '1' : undefined,
   }
-  const res = await fetch(`/api/ingest/images?${qs(params)}`)
+  const headers = buildAuthHeaders(trimmedKey)
+  const res = await fetch(`/api/ingest/images?${qs(params)}`, headers ? { headers } : undefined)
   return parseResponse(res)
 }
 
@@ -208,19 +221,21 @@ async function callWebGET(
   pages: number,
   dryRun = false,
 ): Promise<IngestResult> {
+  const trimmedKey = key.trim()
   // moderne
   const modern: Record<string, string | number | boolean | undefined> = {
-    key, q: termsCSV, per: Math.min(Math.max(per,1),10), pages: Math.max(pages,1), dry: dryRun ? '1' : undefined
+    key: trimmedKey, q: termsCSV, per: Math.min(Math.max(per,1),10), pages: Math.max(pages,1), dry: dryRun ? '1' : undefined
   }
-  let res = await fetch(`/api/ingest/web?${qs(modern)}`)
+  const headers = buildAuthHeaders(trimmedKey)
+  let res = await fetch(`/api/ingest/web?${qs(modern)}`, headers ? { headers } : undefined)
   let parsed = await parseResponse(res)
   if (parsed.ok || (parsed.scanned ?? 0) > 0 || (parsed.unique ?? 0) > 0) return parsed
 
   // legacy (query/max/n)
   const legacy: Record<string, string | number | boolean | undefined> = {
-    key, query: termsCSV, max: Math.min(Math.max(per,1),10), n: Math.max(pages,1), dry: dryRun ? '1' : undefined
+    key: trimmedKey, query: termsCSV, max: Math.min(Math.max(per,1),10), n: Math.max(pages,1), dry: dryRun ? '1' : undefined
   }
-  res = await fetch(`/api/ingest/web?${qs(legacy)}`)
+  res = await fetch(`/api/ingest/web?${qs(legacy)}`, headers ? { headers } : undefined)
   parsed = await parseResponse(res)
   return parsed
 }
@@ -228,19 +243,21 @@ async function callWebGET(
 async function callQuotesGET(
   key: string, sitesCSV: string, pages: number
 ): Promise<IngestResult> {
+  const trimmedKey = key.trim()
   // moderne
   const modern: Record<string, string | number | boolean | undefined> = {
-    key, sites: sitesCSV, pages: Math.max(pages,1)
+    key: trimmedKey, sites: sitesCSV, pages: Math.max(pages,1)
   }
-  let res = await fetch(`/api/ingest/quotes?${qs(modern)}`)
+  const headers = buildAuthHeaders(trimmedKey)
+  let res = await fetch(`/api/ingest/quotes?${qs(modern)}`, headers ? { headers } : undefined)
   let parsed = await parseResponse(res)
   if (parsed.ok || (parsed.scanned ?? 0) > 0 || (parsed.unique ?? 0) > 0) return parsed
 
   // legacy (sources/n)
   const legacy: Record<string, string | number | boolean | undefined> = {
-    key, sources: sitesCSV, n: Math.max(pages,1)
+    key: trimmedKey, sources: sitesCSV, n: Math.max(pages,1)
   }
-  res = await fetch(`/api/ingest/quotes?${qs(legacy)}`)
+  res = await fetch(`/api/ingest/quotes?${qs(legacy)}`, headers ? { headers } : undefined)
   parsed = await parseResponse(res)
   return parsed
 }
@@ -385,11 +402,12 @@ export default function AdminIngestPage() {
   }
 
   async function previewVideos() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('🔍 VIDEOS preview…')
     const manual = manualVideoQueries
     const csv = manual.length ? manual.join(',') : undefined
-    const res = await callVideosGET(key, csv, vState.per, vState.pages, vState.days, vState.reddit, true, vState.count)
+    const res = await callVideosGET(authKey, csv, vState.per, vState.pages, vState.days, vState.reddit, true, vState.count)
     if (res.ok) {
       setVideoSummary(res)
       if (Array.isArray(res.queries) && res.queries.length) {
@@ -408,12 +426,13 @@ export default function AdminIngestPage() {
   }
 
   async function ingestVideos() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('▶️ VIDEOS: start (GET only)')
     setVideoSummary(null)
     const manual = manualVideoQueries
     const csv = manual.length ? manual.join(',') : undefined
-    const res = await callVideosGET(key, csv, vState.per, vState.pages, vState.days, vState.reddit, false, vState.count)
+    const res = await callVideosGET(authKey, csv, vState.per, vState.pages, vState.days, vState.reddit, false, vState.count)
     if (res.ok) {
       setVideoSummary(res)
       pushLog(`✅ VIDEOS — scanned:${res.scanned??0} unique:${res.unique??0} inserted:${res.inserted??0} updated:${res.updated??0}`)
@@ -431,12 +450,13 @@ export default function AdminIngestPage() {
   }
 
   async function previewWeb() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('🔍 WEB preview…')
     const groups = chunk(allWebTerms, 2)
     const previewGroup = groups.length ? groups[0] : allWebTerms.slice(0, 2)
     const label = (previewGroup && previewGroup.length ? previewGroup : allWebTerms.slice(0, 2)).join(', ')
-    const res = await callWebGET(key, label, wState.per, wState.pages, true)
+    const res = await callWebGET(authKey, label, wState.per, wState.pages, true)
     if (res.ok) {
       setWebSummary(res)
       if (Array.isArray(res.queries) && res.queries.length) {
@@ -452,14 +472,15 @@ export default function AdminIngestPage() {
   }
 
   async function ingestWeb() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('▶️ WEB: start (GET only)')
     setWebSummary(null)
     const groups = chunk(allWebTerms, 2)
     const total = { scanned:0, unique:0, inserted:0, updated:0 }
     for (const g of groups) {
       const label = g.join(', ')
-      const res = await callWebGET(key, label, wState.per, wState.pages)
+      const res = await callWebGET(authKey, label, wState.per, wState.pages)
       if (res.ok) {
         setWebSummary(res)
         pushLog(`✅ WEB ${label} — scanned:${res.scanned??0} unique:${res.unique??0} inserted:${res.inserted??0} updated:${res.updated??0}`)
@@ -475,10 +496,11 @@ export default function AdminIngestPage() {
   }
 
   async function ingestQuotes() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('▶️ QUOTES: start (GET only)')
     const sitesCSV = quoteSites.join(',')
-    const res = await callQuotesGET(key, sitesCSV, qState.pages)
+    const res = await callQuotesGET(authKey, sitesCSV, qState.pages)
     if (res.ok) {
       pushLog(`✅ QUOTES — scanned:${res.scanned??0} unique:${res.unique??0} inserted:${res.inserted??0} updated:${res.updated??0}`)
     } else if (res._rawStatus || res._rawText) {
@@ -491,11 +513,12 @@ export default function AdminIngestPage() {
   const selectedProviders = useMemo(() => iState.providers.filter((p) => p.enabled).map((p) => p.id), [iState.providers])
 
   async function previewImages() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('🔍 IMAGES preview…')
     const manual = iState.manualCSV.split(',').map((s) => s.trim()).filter(Boolean)
     const providerList = selectedProviders.length ? selectedProviders : undefined
-    const res = await callImagesGET(key, manual.length ? manual.join(',') : undefined, iState.per, providerList, true)
+    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, true)
     if (res.ok) {
       setImageSummary(res)
       if (Array.isArray(res.queries)) {
@@ -511,11 +534,12 @@ export default function AdminIngestPage() {
   }
 
   async function ingestImages() {
-    if (!key) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
     pushLog('▶️ IMAGES: start')
     const manual = iState.manualCSV.split(',').map((s) => s.trim()).filter(Boolean)
     const providerList = selectedProviders.length ? selectedProviders : undefined
-    const res = await callImagesGET(key, manual.length ? manual.join(',') : undefined, iState.per, providerList, false)
+    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, false)
     if (res.ok) {
       setImageSummary(res)
       pushLog(`✅ IMAGES — scanned:${res.scanned ?? 0} unique:${res.unique ?? 0} inserted:${res.inserted ?? 0} updated:${res.updated ?? 0}`)
