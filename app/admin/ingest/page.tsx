@@ -1,6 +1,55 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
+import videoKeywordSource from '@/lib/ingest/keywords/videos.json'
+
+type VideoKeywordSource = {
+  energies?: string[]
+  subjects?: string[]
+  formats?: string[]
+  locales?: string[]
+  eras?: string[]
+  extras?: string[]
+}
+
+type VideoKeywordField = 'energy' | 'subject' | 'format' | 'locale' | 'era' | 'extra'
+
+type VideoBuilderState = Record<VideoKeywordField, string> & { custom: string }
+
+function normalizeKeywordList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue
+    const trimmed = entry.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+  return out
+}
+
+const RAW_VIDEO_KEYWORDS = videoKeywordSource as VideoKeywordSource
+
+const VIDEO_KEYWORD_FIELDS: Array<{ key: VideoKeywordField; label: string; options: string[] }> = [
+  { key: 'energy', label: 'Énergie', options: normalizeKeywordList(RAW_VIDEO_KEYWORDS.energies) },
+  { key: 'era', label: 'Époque', options: normalizeKeywordList(RAW_VIDEO_KEYWORDS.eras) },
+  { key: 'subject', label: 'Sujet', options: normalizeKeywordList(RAW_VIDEO_KEYWORDS.subjects) },
+  { key: 'format', label: 'Format', options: normalizeKeywordList(RAW_VIDEO_KEYWORDS.formats) },
+  { key: 'locale', label: 'Lieu', options: normalizeKeywordList(RAW_VIDEO_KEYWORDS.locales) },
+  { key: 'extra', label: 'Extra', options: normalizeKeywordList(RAW_VIDEO_KEYWORDS.extras) },
+]
+
+const INITIAL_VIDEO_BUILDER: VideoBuilderState = {
+  energy: '',
+  era: '',
+  subject: '',
+  format: '',
+  locale: '',
+  extra: '',
+  custom: '',
+}
 
 type IngestResult = {
   ok?: boolean
@@ -17,6 +66,13 @@ type IngestResult = {
   providerCounts?: Record<string, number>
   _rawStatus?: number
   _rawText?: string
+  warnings?: Array<{
+    label?: string
+    status?: number
+    statusText?: string
+    body?: string
+    message?: string
+  }>
 }
 
 const IMAGE_PROVIDERS = ['giphy', 'pixabay', 'tenor', 'pexels'] as const
@@ -197,6 +253,11 @@ export default function AdminIngestPage() {
   const [imageSummary, setImageSummary] = useState<IngestResult | null>(null)
   const [videoSummary, setVideoSummary] = useState<IngestResult | null>(null)
   const [webSummary, setWebSummary] = useState<IngestResult | null>(null)
+  const videoWarnings = videoSummary?.warnings ?? []
+  const videoHasQuotaWarning = videoWarnings.some((warning) => {
+    const body = (warning.body || warning.message || '').toLowerCase()
+    return body.includes('quota')
+  })
 
   // VIDEOS
   const [vState, setVState] = useState({
@@ -207,12 +268,54 @@ export default function AdminIngestPage() {
     manualCSV: '',
     count: 12,
   })
+  const [videoBuilder, setVideoBuilder] = useState<VideoBuilderState>({ ...INITIAL_VIDEO_BUILDER })
   const manualVideoQueries = useMemo(() => (
     vState.manualCSV
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
   ), [vState.manualCSV])
+  const builderTokens = useMemo(() => {
+    const tokens: string[] = []
+    if (videoBuilder.energy) tokens.push(videoBuilder.energy)
+    if (videoBuilder.era) tokens.push(videoBuilder.era)
+    if (videoBuilder.subject) tokens.push(videoBuilder.subject)
+    if (videoBuilder.format) tokens.push(videoBuilder.format)
+    if (videoBuilder.locale) tokens.push(`${videoBuilder.locale} scene`)
+    if (videoBuilder.extra) tokens.push(videoBuilder.extra)
+    const custom = videoBuilder.custom.trim()
+    if (custom) tokens.push(custom)
+    return tokens
+  }, [videoBuilder])
+  const builderQuery = useMemo(() => builderTokens.join(' ').replace(/\s+/g, ' ').trim(), [builderTokens])
+
+  const updateManualVideoQueries = (next: string[]) => {
+    setVState((prev) => ({ ...prev, manualCSV: next.join(', ') }))
+  }
+
+  const handleAddBuilderQuery = () => {
+    if (!builderQuery) {
+      pushLog('⚠️ Sélectionne ou saisis des mots-clés avant d’ajouter')
+      return
+    }
+    const next = Array.from(new Set([...manualVideoQueries, builderQuery]))
+    updateManualVideoQueries(next)
+    pushLog(`➕ Ajouté à la liste vidéos: ${builderQuery}`)
+    setVideoBuilder((prev) => ({ ...prev, custom: '' }))
+  }
+
+  const handleClearBuilder = () => {
+    setVideoBuilder({ ...INITIAL_VIDEO_BUILDER })
+  }
+
+  const handleRemoveManualQuery = (target: string) => {
+    const next = manualVideoQueries.filter((query) => query !== target)
+    updateManualVideoQueries(next)
+  }
+
+  const handleClearManualQueries = () => {
+    updateManualVideoQueries([])
+  }
 
   // WEB
   const [wState, setWState] = useState({
@@ -241,6 +344,15 @@ export default function AdminIngestPage() {
   const [log, setLog] = useState<string[]>([])
   const pushLog = (line: string) =>
     setLog(prev => [`${new Date().toLocaleTimeString()}  ${line}`, ...prev].slice(0, 400))
+
+  const logWarnings = (warnings?: IngestResult['warnings']) => {
+    if (!warnings || !warnings.length) return
+    warnings.forEach((warning) => {
+      const statusPart = warning.status ? ` (${warning.status}${warning.statusText ? ` ${warning.statusText}` : ''})` : ''
+      const message = warning.body || warning.message || ''
+      pushLog(`⚠️ ${warning.label || 'fetch'}${statusPart} — ${message.slice(0, 200)}`)
+    })
+  }
 
   // Persist confort
   useEffect(() => {
@@ -285,10 +397,13 @@ export default function AdminIngestPage() {
       } else {
         pushLog('✅ VIDEOS preview')
       }
+      logWarnings(res.warnings)
     } else if (res._rawStatus || res._rawText) {
       pushLog(`❌ VIDEOS preview — raw(${res._rawStatus}): ${String(res._rawText).slice(0,240)}`)
+      logWarnings(res.warnings)
     } else {
       pushLog(`❌ VIDEOS preview — ${res.error || 'Erreur inconnue'}`)
+      logWarnings(res.warnings)
     }
   }
 
@@ -305,10 +420,13 @@ export default function AdminIngestPage() {
       if (res.queries?.length) {
         pushLog(`🔁 VIDEOS requêtes — ${res.queries.join(' | ')}`)
       }
+      logWarnings(res.warnings)
     } else if (res._rawStatus || res._rawText) {
       pushLog(`❌ VIDEOS — raw(${res._rawStatus}): ${String(res._rawText).slice(0,240)}`)
+      logWarnings(res.warnings)
     } else {
       pushLog(`❌ VIDEOS — ${res.error || 'Erreur inconnue'}`)
+      logWarnings(res.warnings)
     }
   }
 
@@ -557,6 +675,70 @@ export default function AdminIngestPage() {
           </label>
         </div>
 
+        <div style={{ marginTop:12, padding:12, border:'1px solid #f0f0f0', borderRadius:10, background:'#fbfbfb' }}>
+          <div style={{ fontWeight:600, marginBottom:8 }}>Composer une requête vidéo</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(0,1fr))', gap:10 }}>
+            {VIDEO_KEYWORD_FIELDS.map((field) => (
+              <label key={field.key} style={{ display:'block' }}>
+                {field.label}
+                <select
+                  value={videoBuilder[field.key]}
+                  onChange={(e) => setVideoBuilder((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  style={{ width:'100%', marginTop:6, padding:8 }}
+                >
+                  <option value="">—</option>
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <label style={{ display:'block' }}>
+              Texte libre (ajout)
+              <input
+                type="text"
+                value={videoBuilder.custom}
+                onChange={(e) => setVideoBuilder((prev) => ({ ...prev, custom: e.target.value }))}
+                placeholder="tiny desk concert"
+                style={{ width:'100%', marginTop:6, padding:8 }}
+              />
+            </label>
+          </div>
+          <div style={{ marginTop:10, fontSize:13, fontFamily:'monospace', background:'#fff', padding:'8px 10px', borderRadius:8, border:'1px dashed #ddd' }}>
+            {builderQuery ? builderQuery : 'Sélectionne des éléments pour prévisualiser la requête'}
+          </div>
+          <div style={{ marginTop:10, display:'flex', gap:10, flexWrap:'wrap' }}>
+            <button
+              onClick={handleAddBuilderQuery}
+              disabled={!builderQuery}
+              style={{ padding:'8px 14px', borderRadius:10, border:'1px solid #d0d0d0', background: builderQuery ? '#fff' : '#f5f5f5', cursor: builderQuery ? 'pointer' : 'not-allowed' }}
+            >
+              Ajouter à la liste
+            </button>
+            <button
+              onClick={handleClearBuilder}
+              style={{ padding:'8px 14px', borderRadius:10, border:'1px solid #d0d0d0' }}
+            >
+              Réinitialiser le compositeur
+            </button>
+          </div>
+          <details style={{ marginTop:12 }}>
+            <summary style={{ cursor:'pointer' }}>Voir les mots-clés disponibles</summary>
+            <div style={{ marginTop:10, display:'grid', gridTemplateColumns:'repeat(3, minmax(0,1fr))', gap:12 }}>
+              {VIDEO_KEYWORD_FIELDS.map((field) => (
+                <div key={field.key} style={{ padding:8, border:'1px solid #f2f2f2', borderRadius:8, background:'#fff' }}>
+                  <div style={{ fontWeight:600, marginBottom:6 }}>{field.label}</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {field.options.map((option) => (
+                      <span key={option} style={{ fontSize:12, padding:'4px 6px', background:'#f6f6f6', borderRadius:6 }}>{option}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+
         <label style={{ display:'block', marginTop:12 }}>
           Mots-clés (CSV)
           <input type="text" value={vState.manualCSV}
@@ -564,6 +746,35 @@ export default function AdminIngestPage() {
             placeholder="fun chaotic clip, street food recipe, absurd animation, daring dance"
             style={{ width:'100%', marginTop:6, padding:8 }}/>
         </label>
+        <div style={{ marginTop:12, display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
+          <div style={{ fontWeight:600 }}>Requêtes manuelles ({manualVideoQueries.length})</div>
+          {manualVideoQueries.length ? (
+            <button onClick={handleClearManualQueries} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #ddd' }}>
+              Vider la liste
+            </button>
+          ) : null}
+        </div>
+        {manualVideoQueries.length ? (
+          <div style={{ marginTop:8, display:'flex', flexWrap:'wrap', gap:8 }}>
+            {manualVideoQueries.map((query) => (
+              <span key={query} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 10px', background:'#f3f3f3', borderRadius:999, fontSize:13 }}>
+                {query}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveManualQuery(query)}
+                  style={{ border:'none', background:'transparent', cursor:'pointer', fontSize:14, padding:0, lineHeight:1 }}
+                  aria-label={`Retirer ${query}`}
+                >
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop:6, fontSize:12, color:'#666' }}>
+            Utilise le compositeur ci-dessus ou saisis ton propre CSV pour forcer certaines requêtes.
+          </div>
+        )}
         <div style={{ marginTop:12, display:'flex', gap:10, flexWrap:'wrap' }}>
           <button onClick={previewVideos} style={{ padding:'10px 16px', borderRadius:10, border:'1px solid #ddd' }}>
             Prévisualiser les vidéos
@@ -573,20 +784,53 @@ export default function AdminIngestPage() {
           </button>
         </div>
 
-        {videoSummary?.providerCounts || videoSummary?.sample?.length ? (
+        {videoSummary ? (
           <div style={{ marginTop:12, background:'#fafafa', padding:12, borderRadius:10 }}>
-            {videoSummary?.queries?.length ? (
-              <>
+            <div style={{ fontWeight:600, marginBottom:6 }}>Statistiques</div>
+            <ul style={{ margin:0, paddingLeft:16 }}>
+              <li>Scannés: {videoSummary.scanned ?? 0}</li>
+              <li>Uniq.: {videoSummary.unique ?? 0}</li>
+              <li>Insérés: {videoSummary.inserted ?? 0}</li>
+              <li>Mis à jour: {videoSummary.updated ?? 0}</li>
+              <li>Mode dry-run: {videoSummary.dryRun ? 'oui' : 'non'}</li>
+            </ul>
+
+            {videoWarnings.length ? (
+              <div style={{ marginTop:12, padding:12, border:'1px solid #f5c6cb', background:'#fff5f5', borderRadius:8 }}>
+                <div style={{ fontWeight:600, color:'#8a1f1f', marginBottom:4 }}>Alertes</div>
+                <ul style={{ margin:0, paddingLeft:16 }}>
+                  {videoWarnings.map((warning, idx) => {
+                    const warnTextRaw = warning.body || warning.message || ''
+                    const warnText = warnTextRaw.replace(/\s+/g, ' ').trim()
+                    return (
+                      <li key={`${warning.label || 'warn'}-${idx}`}>
+                        <strong>{warning.label || 'fetch'}</strong>
+                        {warning.status ? ` (${warning.status}${warning.statusText ? ` ${warning.statusText}` : ''})` : ''}
+                        {warnText ? ` — ${warnText.slice(0, 220)}` : null}
+                      </li>
+                    )
+                  })}
+                </ul>
+                {videoHasQuotaWarning ? (
+                  <div style={{ marginTop:8, fontSize:12 }}>
+                    Tu as atteint le quota YouTube Data API pour la journée. Les crons échoueront aussi jusqu’au reset (minuit heure Pacifique) ou jusqu’à augmentation de quota.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {videoSummary.queries?.length ? (
+              <div style={{ marginTop:12 }}>
                 <div style={{ fontWeight:600, marginBottom:6 }}>Requêtes utilisées</div>
                 <ul style={{ margin:0, paddingLeft:16 }}>
                   {videoSummary.queries.map((query) => (
                     <li key={query}>{query}</li>
                   ))}
                 </ul>
-              </>
+              </div>
             ) : null}
 
-            {videoSummary?.providerCounts ? (
+            {videoSummary.providerCounts && Object.keys(videoSummary.providerCounts).length ? (
               <div style={{ marginTop:12 }}>
                 <div style={{ fontWeight:600, marginBottom:6 }}>Répartition fournisseurs</div>
                 <ul style={{ margin:0, paddingLeft:16 }}>
@@ -597,7 +841,7 @@ export default function AdminIngestPage() {
               </div>
             ) : null}
 
-            {videoSummary?.sample?.length ? (
+            {videoSummary.sample?.length ? (
               <div style={{ marginTop:12 }}>
                 <div style={{ fontWeight:600, marginBottom:6 }}>Extraits (max {videoSummary.sample.length})</div>
                 <div style={{ display:'grid', gap:8 }}>
