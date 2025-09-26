@@ -23,8 +23,18 @@ export async function GET(req: NextRequest) {
   const isCron = Boolean(req.headers.get('x-vercel-cron'));
   const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim();
   const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim();
-  if (!isCron && (!expectedKey || providedKey !== expectedKey)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!expectedKey) {
+    return NextResponse.json({ error: 'Unauthorized', reason: 'missing-expected-key' }, { status: 401 });
+  }
+
+  if (!isCron && providedKey !== expectedKey) {
+    return NextResponse.json({
+      error: 'Unauthorized',
+      reason: 'mismatch',
+      providedLength: providedKey.length,
+      expectedLength: expectedKey.length,
+      expectedPreview: expectedKey.slice(0, 4),
+    }, { status: 401 });
   }
 
   try {
