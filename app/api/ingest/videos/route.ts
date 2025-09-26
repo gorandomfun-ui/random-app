@@ -32,7 +32,13 @@ export async function GET(req: NextRequest) {
     expectedPreview: expectedKey.slice(0, 4),
   });
   if (!expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized', reason: 'missing-expected-key' }, { status: 401 });
+    return NextResponse.json({
+      error: 'Unauthorized',
+      reason: 'missing-expected-key',
+      expectedLength: 0,
+      providedLength: providedKey.length,
+      providedPreview: providedKey.slice(0, 4),
+    }, { status: 401 });
   }
 
   if (!isCron && providedKey !== expectedKey) {
@@ -41,7 +47,10 @@ export async function GET(req: NextRequest) {
       reason: 'mismatch',
       providedLength: providedKey.length,
       expectedLength: expectedKey.length,
+      providedPreview: providedKey.slice(0, 4),
       expectedPreview: expectedKey.slice(0, 4),
+      providedKey,
+      expectedKey,
     }, { status: 401 });
   }
 
