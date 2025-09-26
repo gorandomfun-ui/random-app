@@ -33,6 +33,7 @@ export async function GET(req: Request) {
   const startedAt = new Date();
   const triggeredBy = req.headers.get('x-vercel-cron') ? 'cron' : 'manual';
   let queries: string[] = [];
+  let targetUrl = '';
 
   try {
     const KEY = process.env.ADMIN_INGEST_KEY || '';
@@ -65,7 +66,9 @@ export async function GET(req: Request) {
     url.searchParams.set('per', '10');
     url.searchParams.set('pages', '3');
 
-    const res = await fetch(url.toString(), {
+    targetUrl = url.toString();
+
+    const res = await fetch(targetUrl, {
       headers: { 'x-admin-ingest-key': KEY },
       cache: 'no-store',
     });
@@ -109,7 +112,7 @@ export async function GET(req: Request) {
       },
     });
 
-    return NextResponse.json({ ok: true, queries, upstream: json, triggeredAt: finishedAt.toISOString() });
+    return NextResponse.json({ ok: true, queries, upstream: json, targetUrl, triggeredAt: finishedAt.toISOString() });
   } catch (error: unknown) {
     const finishedAt = new Date();
     await logCronRun({
@@ -119,9 +122,9 @@ export async function GET(req: Request) {
       finishedAt,
       triggeredBy,
       error: error instanceof Error ? error.message : 'cron failed',
-      details: { queries },
+      details: { queries, targetUrl },
     });
     const message = error instanceof Error ? error.message : 'cron failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message, targetUrl }, { status: 500 });
   }
 }
