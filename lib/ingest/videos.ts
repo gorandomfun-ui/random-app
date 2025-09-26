@@ -158,10 +158,17 @@ async function fetchJson<T = unknown>(url: string, timeoutMs = 10000, label?: st
   try {
     const response = await fetch(url, { cache: 'no-store', headers: USER_AGENT, signal: controller.signal });
     if (!response.ok) {
+      let body: string | undefined;
+      try {
+        body = await response.text();
+      } catch (readError) {
+        body = `(failed to read body: ${readError instanceof Error ? readError.message : String(readError)})`;
+      }
       console.warn('[ingest:fetch] non-ok response', {
         label: label || url,
         status: response.status,
         statusText: response.statusText,
+        body: body?.slice(0, 500),
       });
       return null;
     }
