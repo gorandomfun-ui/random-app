@@ -15,13 +15,13 @@ if (!/^https?:\/\//i.test(host)) {
 
 async function call(endpoint) {
   const urlObject = new URL(endpoint, host)
-  if (vercelBypassToken) {
-    urlObject.searchParams.set('x-vercel-set-bypass-cookie', 'true')
-    urlObject.searchParams.set('x-vercel-protection-bypass', vercelBypassToken)
-  }
   const url = urlObject.toString()
   console.log(`→ ${url}`)
-  const res = await fetch(url, { headers: { 'x-admin-ingest-key': key } })
+  const headers = { 'x-admin-ingest-key': key }
+  if (vercelBypassToken) {
+    headers.Cookie = `__vercel_protection_bypass=${vercelBypassToken}; x-vercel-set-bypass-cookie=true`
+  }
+  const res = await fetch(url, { headers })
   const text = await res.text()
   let body
   try {
