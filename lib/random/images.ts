@@ -1,313 +1,150 @@
-import { getDb } from '@/lib/db'
+import { sampleFromCache, touchLastShown } from '@/lib/random/data'
 import {
   markGlobalItem,
   markGlobalKeywords,
   markGlobalProvider,
   markGlobalTopics,
-  getRecentOriginsWindow,
   markGlobalOrigin,
-  areKeywordsGloballyRecent,
-  areTopicsGloballyRecent,
-  isGlobalItemRecent,
-  isProviderGloballyRecent,
 } from './globalState'
-import { createDebugContext, finalizeDebugSelection, markFallback, shouldPreferFreshContent, trackReason } from './helpers'
-import type { CandidateOrigin, SelectionDebugContext } from './types'
-import { ingestImages } from '@/lib/ingest/images'
+import type { CandidateOrigin } from './types'
 import type { ImageDocument } from '@/lib/ingest/images'
 
-const DAY_MS = 1000 * 60 * 60 * 24
-
-const FB_IMAGES = [
+export const FALLBACK_IMAGES = [
   'https://images.unsplash.com/photo-1519681393784-d120267933ba',
   'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee',
   'https://images.unsplash.com/photo-1495567720989-cebdbdd97913',
-]
+] as const
 
-export const FALLBACK_IMAGES = [...FB_IMAGES] as const
-
-const recentImageUrls: string[] = []
-const recentImageProviders: string[] = []
-const recentImageTags: string[] = []
-const recentImageKeywords: string[] = []
-
-type SourceInfo = { name: string; url?: string | null }
+const RECENT_LIMIT = 36
+const recentUrls: string[] = []
 
 export type ImageItem = {
   type: 'image'
   url: string
   thumbUrl: string | null
-  source: SourceInfo
+  source: { name: string; url?: string | null }
 }
 
-type ImageRecord = Partial<ImageDocument> & {
+type ImageRecord = ImageDocument & {
+  thumb?: string | null
   thumbUrl?: string | null
   pageUrl?: string | null
-  text?: string | null
   lastShownAt?: Date | string | null
 }
 
-export type ImageCandidate = {
-  url: string
-  item: ImageItem
-  tags: string[]
-  keywords: string[]
-  provider: string
-  origin: CandidateOrigin
-  updatedAt?: Date | null
-  lastShownAt?: Date | null
+function normalizeSource(doc: ImageRecord): { name: string; url?: string | null } {
+  const provider = typeof doc.provider === 'string' && doc.provider.trim() ? doc.provider.trim() : 'image'
+  const raw = doc.source && typeof doc.source === 'object' ? doc.source : null
+  const name = raw && typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : provider
+  const url = raw && typeof raw.url === 'string' && raw.url ? raw.url : doc.pageUrl || doc.url
+  return { name, url }
 }
 
-function candidateKey(candidate: ImageCandidate): string {
-  return candidate.url
-}
-
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  const output: string[] = []
-  for (const entry of value) {
-    if (typeof entry !== 'string') continue
-    const trimmed = entry.trim()
-    if (!trimmed) continue
-    output.push(trimmed)
-  }
-  return output
-}
-
-function toDate(value: unknown): Date | null {
-  if (!value) return null
-  if (value instanceof Date) return value
-  if (typeof value === 'string' || typeof value === 'number') {
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed
+async function pickFromDb(exclude: string[], excludeIds: unknown[]): Promise<ImageRecord | null> {
+  const match: Record<string, unknown> = {}
+  if (exclude.length) match.url = { $nin: exclude }
+  if (excludeIds.length) match._id = { $nin: excludeIds }
+  const doc = await sampleFromCache<ImageRecord>('image', match)
+  if (doc) return doc
+  if (exclude.length || excludeIds.length) {
+    return sampleFromCache<ImageRecord>('image')
   }
   return null
 }
 
-function buildImageCandidate(doc: ImageRecord | null | undefined, origin: CandidateOrigin): ImageCandidate | null {
-  const url = (doc?.url || '').trim()
-  if (!url) return null
-  const thumb = doc?.thumb ?? doc?.thumbUrl ?? null
-  const provider = (doc?.provider || '').trim() || 'image'
-  const rawSource = doc?.source
-  const source: SourceInfo = {
-    name: typeof rawSource?.name === 'string' && rawSource.name.trim() ? rawSource.name.trim() : provider,
-    url: typeof rawSource?.url === 'string' && rawSource.url ? rawSource.url : doc?.pageUrl || url,
+function registerRecent(url: string) {
+  if (!url) return
+  const idx = recentUrls.indexOf(url)
+  if (idx >= 0) recentUrls.splice(idx, 1)
+  recentUrls.push(url)
+  while (recentUrls.length > RECENT_LIMIT) recentUrls.shift()
+}
+
+function looksLikeImageUrl(url?: string | null): boolean {
+  if (!url) return false
+  if (url.startsWith('data:image/')) return true
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.replace(/^www\./, '')
+    if (host.endsWith('giphy.com') || host.endsWith('tenor.com')) return true
+    if (parsed.pathname.endsWith('.gif') || parsed.pathname.endsWith('.jpg') || parsed.pathname.endsWith('.jpeg') || parsed.pathname.endsWith('.png') || parsed.pathname.endsWith('.webp') || parsed.pathname.endsWith('.avif') || parsed.pathname.endsWith('.bmp')) {
+      return true
+    }
+  } catch {
+    return false
   }
-  const storedTags = toStringArray(doc?.tags)
-  const storedKeywords = toStringArray(doc?.keywords)
-  const updatedAt = toDate(doc?.updatedAt)
-  const lastShownAt = toDate(doc?.lastShownAt)
+  return false
+}
+
+function resolveImageUrl(doc: ImageRecord): { url: string; thumb: string | null } | null {
+  const candidates: Array<string | null | undefined> = [doc.url, doc.thumb, doc.thumbUrl]
+  if (doc.source && typeof doc.source === 'object' && doc.source) {
+    candidates.push((doc.source as { url?: string | null }).url)
+  }
+  candidates.push(doc.pageUrl)
+  for (const raw of candidates) {
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (!value) continue
+    if (looksLikeImageUrl(value)) {
+      const thumbRaw = doc.thumb ?? doc.thumbUrl ?? null
+      const thumb = looksLikeImageUrl(thumbRaw || undefined) ? (thumbRaw ?? null) : null
+      return { url: value, thumb }
+    }
+  }
+  return null
+}
+
+function buildCandidate(doc: ImageRecord, origin: CandidateOrigin) {
+  const resolved = resolveImageUrl(doc)
+  if (!resolved) return null
+  const source = normalizeSource(doc)
   return {
-    url,
-    item: { type: 'image', url, thumbUrl: thumb, source },
-    tags: storedTags,
-    keywords: storedKeywords,
-    provider,
+    url: resolved.url,
+    item: { type: 'image' as const, url: resolved.url, thumbUrl: resolved.thumb ?? null, source },
+    tags: Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+    keywords: Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [],
+    provider: source.name || 'image',
     origin,
-    updatedAt,
-    lastShownAt,
   }
 }
 
-function score(candidate: ImageCandidate): number {
-  let score = 0
+export async function selectImage(_debugEnabled = false, _queryHints?: string[]): Promise<ImageItem> {
+  void _debugEnabled
+  void _queryHints
+  const recent = recentUrls.slice(-RECENT_LIMIT)
+  const exclude = new Set<string>(recent)
+  const excludeIds: unknown[] = []
 
-  if (!recentImageUrls.includes(candidate.url)) score += 10
-  else score -= 6
-
-  if (!recentImageProviders.includes(candidate.provider)) score += 4
-  else score -= 3
-
-  const uniqueTags = new Set(candidate.tags)
-  for (const tag of uniqueTags) {
-    if (recentImageTags.includes(tag)) score -= 1
-    else score += 3
-  }
-
-  const uniqueKeywords = candidate.keywords.filter((word) => !recentImageKeywords.includes(word))
-  const repeatedKeywords = candidate.keywords.length - uniqueKeywords.length
-  score += uniqueKeywords.length
-  score -= repeatedKeywords
-
-  if (candidate.origin === 'network') score += 5
-  else if (candidate.origin === 'db-unseen') score += 3
-  else if (candidate.origin === 'db-backlog') score += 2
-
-  if (!candidate.lastShownAt) score += 3
-  else {
-    const days = (Date.now() - candidate.lastShownAt.getTime()) / DAY_MS
-    if (days > 21) score += 4
-    else if (days < 2) score -= 1
-  }
-
-  score += Math.random()
-  return score
-}
-
-function shuffleCandidates<T>(items: T[]): T[] {
-  const arr = items.slice()
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[arr[i], arr[j]] = [arr[j], arr[i]]
-  }
-  return arr
-}
-
-async function collectDbCandidates(): Promise<ImageCandidate[]> {
-  const db = await getDb()
-  const bucket = new Map<string, ImageCandidate>()
-  const add = (doc: ImageRecord, origin: CandidateOrigin) => {
-    const candidate = buildImageCandidate(doc, origin)
-    if (!candidate) return
-    const key = candidateKey(candidate)
-    const existing = bucket.get(key)
-    if (!existing || candidate.origin === 'network') bucket.set(key, candidate)
-  }
-
-  const now = Date.now()
-  const DAY = 24 * 60 * 60 * 1000
-  const unseenFilter = { $or: [{ lastShownAt: { $exists: false } }, { lastShownAt: null }] }
-  const backlogFilter = { lastShownAt: { $lt: new Date(now - 14 * DAY) } }
-
-  const collection = db.collection<ImageRecord>('items')
-  const [fresh, unseen, backlog, randomDocs] = await Promise.all([
-    collection.find({ type: 'image' }).sort({ updatedAt: -1 }).limit(120).toArray(),
-    collection.find({ type: 'image', ...unseenFilter }).sort({ updatedAt: -1 }).limit(80).toArray(),
-    collection.find({ type: 'image', ...backlogFilter }).sort({ lastShownAt: 1 }).limit(80).toArray(),
-    collection.aggregate([{ $match: { type: 'image' } }, { $sample: { size: 60 } }]).toArray(),
-  ])
-
-  fresh.forEach((doc) => add(doc, 'db-fresh'))
-  unseen.forEach((doc) => add(doc, 'db-unseen'))
-  backlog.forEach((doc) => add(doc, 'db-backlog'))
-  randomDocs.forEach((doc) => add(doc, 'db-random'))
-
-  return Array.from(bucket.values())
-}
-
-async function loadNetworkCandidates(queries?: string[]): Promise<ImageCandidate[]> {
-  // Reuse ingestImages helper to keep metadata consistent
-  const q = Array.isArray(queries) && queries.length ? queries : []
-  const result = await ingestImages({ queries: q.length ? q : ['weird collage'], perQuery: 20 })
-  if (!result.scanned) return []
-
-  const db = await getDb()
-  const urls = await db
-    .collection<ImageRecord>('items')
-    .find({ type: 'image' })
-    .sort({ createdAt: -1 })
-    .limit(result.unique)
-    .project({ url: 1, tags: 1, keywords: 1, provider: 1, source: 1, updatedAt: 1, thumb: 1, thumbUrl: 1, lastShownAt: 1, pageUrl: 1 })
-    .toArray()
-
-  return urls
-    .map((doc) => buildImageCandidate(doc, 'network'))
-    .filter((cand): cand is ImageCandidate => Boolean(cand))
-}
-
-export async function selectImage(debugEnabled: boolean, queryHints?: string[]): Promise<ImageItem> {
-  const candidateMap = new Map<string, ImageCandidate>()
-  const add = (candidate: ImageCandidate | null) => {
-    if (!candidate) return
-    const key = candidateKey(candidate)
-    const existing = candidateMap.get(key)
-    if (!existing || candidate.origin === 'network') candidateMap.set(key, candidate)
-  }
-
-  const networkCandidates = await loadNetworkCandidates(queryHints).catch(() => [])
-  networkCandidates.forEach(add)
-
-  const dbCandidates = await collectDbCandidates()
-  dbCandidates.forEach(add)
-
-  const scored = shuffleCandidates(Array.from(candidateMap.values()))
-    .map((candidate) => ({ candidate, score: score(candidate) }))
-    .filter(({ score }) => Number.isFinite(score))
-
-  const debug = createDebugContext(debugEnabled, scored.length)
-  const preferFresh = shouldPreferFreshContent(getRecentOriginsWindow(10))
-  const hasNetworkCandidate = scored.some(({ candidate }) => candidate.origin === 'network')
-
-  let relaxedCandidate: ImageCandidate | null = null
-
-  for (const { candidate } of scored) {
-    if (!relaxedCandidate) relaxedCandidate = candidate
-
-    const key = candidateKey(candidate)
-    const globallyRecent = isGlobalItemRecent('image', key)
-    const allTagsRecent = candidate.tags.every((tag) => recentImageTags.includes(tag))
-    const allKeywordsRecent = candidate.keywords.length
-      ? candidate.keywords.every((word) => recentImageKeywords.includes(word))
-      : false
-    const topicsGloballyTired = areTopicsGloballyRecent(candidate.tags)
-    const keywordsGloballyTired = candidate.keywords.length ? areKeywordsGloballyRecent(candidate.keywords) : false
-    const providerGloballyTired = isProviderGloballyRecent(candidate.provider)
-
-    if (globallyRecent && scored.length > 2) {
-      trackReason(debug, 'globallyRecent')
-      continue
-    }
-    if ((allTagsRecent && allKeywordsRecent) && scored.length > 2) {
-      trackReason(debug, 'allRecent')
-      continue
-    }
-    if ((topicsGloballyTired || keywordsGloballyTired) && scored.length > 2) {
-      trackReason(debug, 'globalTopics')
-      continue
-    }
-    if (providerGloballyTired && scored.length > 3 && (!preferFresh || candidate.origin !== 'network')) {
-      trackReason(debug, 'providerFatigue')
-      continue
-    }
-    if (preferFresh && hasNetworkCandidate && candidate.origin !== 'network' && scored.length > 2) {
-      trackReason(debug, 'preferFresh')
+  for (let attempt = 0; attempt < 18; attempt++) {
+    const doc = await pickFromDb(Array.from(exclude), excludeIds)
+    if (!doc) break
+    const maybeId = (doc as { _id?: unknown })._id
+    if (maybeId !== null && maybeId !== undefined) excludeIds.push(maybeId)
+    const candidate = buildCandidate(doc, 'db-random')
+    if (!candidate) {
+      if (typeof doc.url === 'string' && doc.url) exclude.add(doc.url)
       continue
     }
 
-    const item = await finalizeSelection(candidate, debug, false)
-    if (item) return item
+    exclude.add(candidate.url)
+    registerRecent(candidate.url)
+    await touchLastShown('image', { url: candidate.url })
+    markGlobalItem('image', candidate.url)
+    markGlobalTopics(candidate.tags)
+    markGlobalKeywords(candidate.keywords)
+    markGlobalProvider(candidate.provider)
+    markGlobalOrigin(candidate.origin)
+    return candidate.item
   }
 
-  if (relaxedCandidate) {
-    const item = await finalizeSelection(relaxedCandidate, debug, true)
-    if (item) return item
-  }
-
-  markFallback(debug)
+  const fallback = FALLBACK_IMAGES[Math.floor(Math.random() * FALLBACK_IMAGES.length)]
   return {
     type: 'image',
-    url: FB_IMAGES[Math.floor(Math.random() * FB_IMAGES.length)],
+    url: fallback,
     thumbUrl: null,
-    source: { name: 'Unsplash', url: FB_IMAGES[0] },
+    source: { name: 'Unsplash', url: fallback },
   }
 }
 
-async function finalizeSelection(candidate: ImageCandidate, debug: SelectionDebugContext | null, relaxed: boolean): Promise<ImageItem | null> {
-  const key = candidateKey(candidate)
-  if (!key) return null
-
-  await touch(candidate)
-  finalizeDebugSelection(debug, key, relaxed)
-  markGlobalItem('image', key)
-  markGlobalTopics(candidate.tags)
-  markGlobalKeywords(candidate.keywords)
-  markGlobalProvider(candidate.provider)
-  markGlobalOrigin(candidate.origin)
-
-  recentImageUrls.push(candidate.url)
-  while (recentImageUrls.length > 80) recentImageUrls.shift()
-  recentImageProviders.push(candidate.provider)
-  while (recentImageProviders.length > 24) recentImageProviders.shift()
-  recentImageTags.push(...candidate.tags)
-  while (recentImageTags.length > 80) recentImageTags.shift()
-  recentImageKeywords.push(...candidate.keywords)
-  while (recentImageKeywords.length > 120) recentImageKeywords.shift()
-
-  return candidate.item
-}
-
-async function touch(candidate: ImageCandidate) {
-  const db = await getDb()
-  await db.collection('items').updateOne({ type: 'image', url: candidate.url }, { $set: { lastShownAt: new Date() } })
-}
+// legacy export expected by ingestion helper
+export { FALLBACK_IMAGES as FB_IMAGES }
