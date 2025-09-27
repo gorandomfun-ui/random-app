@@ -47,7 +47,6 @@ type IngestVideosOptions = {
   days?: number;
   playlistId?: string;
   channelId?: string;
-  includeArchive?: boolean;
   reddit?: { sub: string; limit: number } | null;
   manualIds?: string[];
   dryRun?: boolean;
@@ -66,9 +65,6 @@ type IngestResult = {
 };
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
-const ARCHIVE_BASE = 'https://archive.org';
-const ARCHIVE_FIELDS = ['identifier', 'title', 'creator', 'mediatype', 'description'];
-const ARCHIVE_VIDEO_FORMATS = ['mp4', 'mpeg4', 'h.264', 'h264', 'mpg4'];
 const USER_AGENT = { 'User-Agent': 'RandomAppBot/1.0 (+https://random.app)' };
 
 type YoutubeThumbnails = {
@@ -122,19 +118,6 @@ type YoutubeVideoDetailsItem = {
 
 type YoutubeVideoDetailsResponse = {
   items?: YoutubeVideoDetailsItem[];
-};
-
-type ArchiveDoc = { identifier?: string; title?: string };
-
-type ArchiveSearchResponse = {
-  response?: { docs?: ArchiveDoc[] };
-};
-
-type ArchiveFile = { name?: string; format?: string };
-
-type ArchiveMetadata = {
-  files?: ArchiveFile[];
-  metadata?: { title?: string; description?: string };
 };
 
 type RedditPost = {
@@ -393,90 +376,6 @@ async function redditYouTube(sub: string, limit: number, warnings?: FetchWarning
   return out;
 }
 
-async function archiveAdvancedSearch(
-  query: string,
-  rows: number,
-  page: number,
-  warnings?: FetchWarning[],
-): Promise<ArchiveDoc[]> {
-  const params = new URLSearchParams();
-  params.set('q', query);
-  params.set('output', 'json');
-  params.set('rows', String(rows));
-  params.set('page', String(Math.max(1, page)));
-  for (const field of ARCHIVE_FIELDS) params.append('fl[]', field);
-  params.append('sort[]', 'downloads desc');
-  const url = `${ARCHIVE_BASE}/advancedsearch.php?${params.toString()}`;
-  const data = await fetchJson<ArchiveSearchResponse>(url, 12000, 'archive:search', warnings);
-  return Array.isArray(data?.response?.docs) ? data.response.docs : [];
-}
-
-async function archiveMetadata(identifier: string, warnings?: FetchWarning[]): Promise<ArchiveMetadata | null> {
-  const url = `${ARCHIVE_BASE}/metadata/${encodeURIComponent(identifier)}`;
-  return fetchJson<ArchiveMetadata>(url, 12000, 'archive:metadata', warnings);
-}
-
-function pickArchiveFile(files: ArchiveFile[] | undefined): { name: string; format?: string } | null {
-  if (!Array.isArray(files)) return null;
-  for (const file of files) {
-    const format = String(file?.format || '').toLowerCase();
-    const name = String(file?.name || '');
-    if (!name) continue;
-    const matchesFormat = ARCHIVE_VIDEO_FORMATS.some((token) => format.includes(token) || name.toLowerCase().endsWith(`.${token.replace(/[^a-z0-9]/g, '')}`));
-    if (matchesFormat) return { name, format: file?.format };
-  }
-  return null;
-}
-
-function pickArchiveThumbnail(identifier: string, files: ArchiveFile[] | undefined): string | undefined {
-  if (!Array.isArray(files)) return undefined;
-  const thumb = files.find((file) => {
-    const fmt = String(file?.format || '').toLowerCase();
-    return fmt.includes('thumbnail') || fmt.includes('jpeg') || fmt.includes('jpg') || fmt.includes('png');
-  });
-  if (!thumb?.name) return undefined;
-  return `${ARCHIVE_BASE}/download/${identifier}/${thumb.name}`;
-}
-
-async function pullArchiveVideos(queries: string[], limit: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
-  const results: RawVideo[] = [];
-  const perQuery = Math.max(1, Math.ceil(limit / Math.max(1, queries.length)));
-
-  for (const query of queries) {
-    const compiled = `(${query}) AND mediatype:(movies) AND format:(MP4)`;
-    const docs = await archiveAdvancedSearch(
-      compiled,
-      Math.min(30, perQuery * 6),
-      Math.floor(Math.random() * 3) + 1,
-      warnings,
-    );
-    for (const doc of docs) {
-      if (results.length >= limit) break;
-      const identifier = String(doc?.identifier || '');
-      if (!identifier) continue;
-      const metadata = await archiveMetadata(identifier, warnings);
-      const file = pickArchiveFile(metadata?.files);
-      if (!file?.name) continue;
-      const downloadUrl = `${ARCHIVE_BASE}/download/${identifier}/${encodeURIComponent(file.name)}`;
-      const videoId = `archive:${identifier}:${file.name}`;
-      results.push({
-        videoId,
-        url: downloadUrl,
-        provider: 'archive.org',
-        title: doc?.title || metadata?.metadata?.title || identifier,
-        thumb: pickArchiveThumbnail(identifier, metadata?.files) || undefined,
-        source: { name: 'Internet Archive', url: `${ARCHIVE_BASE}/details/${identifier}` },
-        contextQueries: [query],
-        description: metadata?.metadata?.description || '',
-      });
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
-    if (results.length >= limit) break;
-  }
-
-  return results;
-}
-
 function buildVideoDocument(raw: RawVideo): VideoDocument {
   const contextTags = expandQueryToTags(raw.contextQueries || []);
   const candidates = [
@@ -524,7 +423,6 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     days = 120,
     playlistId,
     channelId,
-    includeArchive = true,
     reddit,
     manualIds = [],
     dryRun = false,
@@ -551,11 +449,8 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   }
 
   if (mode === 'search') {
-    const effectiveQueries = queries.length ? queries : ['weird archive footage', 'retro craft tutorial'];
+    const effectiveQueries = queries.length ? queries : ['weird public access show', 'retro craft tutorial'];
     collected.push(...await searchYouTube(effectiveQueries, per, pages, days, fetchWarnings));
-    if (includeArchive) {
-      collected.push(...await pullArchiveVideos(effectiveQueries, Math.max(6, Math.ceil(per / 2)), fetchWarnings));
-    }
   } else if (mode === 'playlist' && playlistId) {
     collected.push(...await playlistYouTube(playlistId, per, fetchWarnings));
   } else if (mode === 'channel' && channelId) {

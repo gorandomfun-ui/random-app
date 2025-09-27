@@ -63,7 +63,6 @@ export async function GET(req: NextRequest) {
     const per = parseInteger(url.searchParams.get('per'), 20, 1, 50);
     const pages = parseInteger(url.searchParams.get('pages'), 1, 1, 5);
     const days = parseInteger(url.searchParams.get('days'), 120, 1, 365);
-    const includeArchive = (url.searchParams.get('archive') || '1') !== '0';
     const dryParam = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dryParam === '1' || dryParam === 'true';
     const sampleSize = parseInteger(url.searchParams.get('sample'), 6, 1, 20);
@@ -90,7 +89,6 @@ export async function GET(req: NextRequest) {
       days,
       playlistId,
       channelId,
-      includeArchive,
       reddit,
       manualIds,
       dryRun,
@@ -104,7 +102,6 @@ export async function GET(req: NextRequest) {
       playlistId,
       channelId,
       reddit,
-      includeArchive,
       dryRun,
       sampleSize,
       count,

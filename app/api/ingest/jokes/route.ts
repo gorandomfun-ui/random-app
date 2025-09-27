@@ -62,19 +62,6 @@ async function upsertManyJokes(rows: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[])
 /* ======================== Helpers HTTP ===================== */
 const ROUTE_HEADERS = { ...DEFAULT_INGEST_HEADERS, 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
 
-function sampleArray<T>(arr: T[], max: number): T[] {
-  if (arr.length <= max) return arr.slice()
-  const out: T[] = []
-  const taken = new Set<number>()
-  while (out.length < max && taken.size < arr.length) {
-    const idx = Math.floor(Math.random() * arr.length)
-    if (taken.has(idx)) continue
-    taken.add(idx)
-    out.push(arr[idx]!)
-  }
-  return out
-}
-
 /* ======================== Providers ======================== */
 async function pullJokesDataset(limit: number) {
   const url = 'https://raw.githubusercontent.com/taivop/joke-dataset/master/jokes.json'
@@ -97,7 +84,7 @@ async function pullJokesDataset(limit: number) {
       return { ...base, hash: jokeHash(base.text) }
     })
     .filter((entry): entry is JokeDoc => Boolean(entry))
-  return sampleArray(mapped, Math.min(limit * 3, 300))
+  return mapped.slice(0, Math.min(limit * 3, mapped.length))
 }
 
 async function pullFunnyQuotes(limit: number) {
@@ -122,7 +109,7 @@ async function pullFunnyQuotes(limit: number) {
       return { ...base, hash: jokeHash(base.text) }
     })
     .filter((entry): entry is JokeDoc => Boolean(entry))
-  return sampleArray(mapped, Math.min(limit * 2, 200))
+  return mapped.slice(0, Math.min(limit * 2, mapped.length))
 }
 
 async function pullOfficialJokeApi(limit: number) {
@@ -152,6 +139,73 @@ async function pullOfficialJokeApi(limit: number) {
   return out
 }
 
+async function pullIcanHazDadJoke(limit: number): Promise<JokeDoc[]> {
+  const perPage = 30
+  const out: JokeDoc[] = []
+  let page = 1
+  while (out.length < limit * 2) {
+    const data = await fetchJson<{ current_page?: number; total_pages?: number; results?: Array<{ id?: string; joke?: string }> }>(
+      `https://icanhazdadjoke.com/search?limit=${perPage}&page=${page}`,
+      {
+        headers: { ...ROUTE_HEADERS, Accept: 'application/json' },
+        timeoutMs: 10000,
+      },
+    )
+    const results = Array.isArray(data?.results) ? data?.results ?? [] : []
+    if (!results.length) break
+    for (const entry of results) {
+      const text = norm(entry?.joke || '')
+      if (!text) continue
+      const base = createJokeDocument({
+        text,
+        provider: 'icanhazdadjoke',
+        source: { name: 'icanhazdadjoke.com', url: entry?.id ? `https://icanhazdadjoke.com/j/${entry.id}` : 'https://icanhazdadjoke.com' },
+      })
+      if (!base) continue
+      out.push({ ...base, hash: jokeHash(base.text) })
+      if (out.length >= limit * 2) break
+    }
+    if (out.length >= limit * 2) break
+    const totalPages = Number(data?.total_pages || 0)
+    if (!totalPages || page >= totalPages) break
+    page += 1
+  }
+  return out
+}
+
+async function pullJokeApi(limit: number): Promise<JokeDoc[]> {
+  const out: JokeDoc[] = []
+  while (out.length < limit * 2) {
+    const data = await fetchJson<
+      | { jokes?: Array<{ type?: string; setup?: string; delivery?: string; joke?: string }> }
+      | { type?: string; setup?: string; delivery?: string; joke?: string }
+    >('https://v2.jokeapi.dev/joke/Any?amount=10', { headers: ROUTE_HEADERS, timeoutMs: 10000 })
+    if (!data) break
+    const list = Array.isArray((data as { jokes?: unknown }).jokes)
+      ? ((data as { jokes?: Array<{ type?: string; setup?: string; delivery?: string; joke?: string }> }).jokes ?? [])
+      : [data as { type?: string; setup?: string; delivery?: string; joke?: string }]
+    if (!list.length) break
+    for (const entry of list) {
+      if (!entry) continue
+      const setup = norm(entry.setup || '')
+      const delivery = norm(entry.delivery || '')
+      const single = norm(entry.joke || '')
+      const text = single || (delivery ? `${setup}${setup ? ' — ' : ''}${delivery}` : setup)
+      if (!text) continue
+      const base = createJokeDocument({
+        text,
+        provider: 'jokeapi',
+        source: { name: 'JokeAPI', url: 'https://v2.jokeapi.dev' },
+      })
+      if (!base) continue
+      out.push({ ...base, hash: jokeHash(base.text) })
+      if (out.length >= limit * 2) break
+    }
+    if (out.length >= limit * 2) break
+  }
+  return out
+}
+
 /* ========================= Handler ========================= */
 export async function GET(request: Request) {
   try {
@@ -163,9 +217,9 @@ export async function GET(request: Request) {
     }
 
     const limitParam = url.searchParams.get('limit')
-    const limit = Math.max(1, Math.min(500, Number(limitParam || 80)))
+    const limit = Math.max(1, Math.min(1000, Number(limitParam || 200)))
     const dryRun = url.searchParams.get('dryRun') === '1'
-    const sourcesParam = url.searchParams.get('sources') || 'dataset,funnyquotes,official'
+    const sourcesParam = url.searchParams.get('sources') || 'dataset,funnyquotes,official,icanhaz,jokeapi'
     const sources = sourcesParam
       .split(',')
       .map((s) => s.trim().toLowerCase())
@@ -174,23 +228,11 @@ export async function GET(request: Request) {
     let collected: JokeDoc[] = []
     const targetPerSource = Math.max(10, Math.ceil(limit / Math.max(1, sources.length)))
 
-    try {
-      if (sources.includes('dataset')) {
-        collected = collected.concat(await pullJokesDataset(targetPerSource))
-      }
-    } catch {}
-
-    try {
-      if (sources.includes('funnyquotes')) {
-        collected = collected.concat(await pullFunnyQuotes(targetPerSource))
-      }
-    } catch {}
-
-    try {
-      if (sources.includes('official')) {
-        collected = collected.concat(await pullOfficialJokeApi(targetPerSource))
-      }
-    } catch {}
+    try { if (sources.includes('dataset')) collected = collected.concat(await pullJokesDataset(targetPerSource)) } catch {}
+    try { if (sources.includes('funnyquotes')) collected = collected.concat(await pullFunnyQuotes(targetPerSource)) } catch {}
+    try { if (sources.includes('official')) collected = collected.concat(await pullOfficialJokeApi(targetPerSource)) } catch {}
+    try { if (sources.includes('icanhaz')) collected = collected.concat(await pullIcanHazDadJoke(targetPerSource)) } catch {}
+    try { if (sources.includes('jokeapi')) collected = collected.concat(await pullJokeApi(targetPerSource)) } catch {}
 
     if (!collected.length) {
       return NextResponse.json({ ok: false, error: 'No jokes collected' }, { status: 500 })
@@ -203,7 +245,7 @@ export async function GET(request: Request) {
       if (!map.has(joke.hash)) map.set(joke.hash, joke)
     }
     const unique = Array.from(map.values())
-    const finalBatch = sampleArray(unique, limit)
+    const finalBatch = unique.slice(0, Math.min(limit, unique.length))
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, unique: unique.length, wouldInsert: finalBatch.length })

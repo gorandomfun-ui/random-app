@@ -386,7 +386,6 @@ function buildNetworkQueries(size = 3): string[] {
 
 async function fetchNetworkVideoCandidates(): Promise<VideoCandidate[]> {
   const queries = buildNetworkQueries(3)
-  const includeArchive = Math.random() < 0.5
   const reddit = Math.random() < 0.35 ? { sub: pick(REDDIT_VIDEO_SOURCES), limit: 36 } : null
 
   const result = await ingestVideos({
@@ -395,7 +394,6 @@ async function fetchNetworkVideoCandidates(): Promise<VideoCandidate[]> {
     per: 24,
     pages: 1,
     days: 180,
-    includeArchive,
     reddit,
   }).catch(() => null)
 

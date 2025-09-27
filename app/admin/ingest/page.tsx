@@ -377,7 +377,10 @@ export default function AdminIngestPage() {
       const saved = JSON.parse(localStorage.getItem('ingest_admin_state_v3')||'{}')
       if (saved.key) setKey(saved.key)
       if (saved.images) setIState(normalizeImageState(saved.images))
-      if (saved.videos) setVState((prev)=>({ ...prev, ...saved.videos }))
+      if (saved.videos) {
+        const { includeArchive: _deprecated, ...restVideos } = saved.videos
+        setVState((prev)=>({ ...prev, ...restVideos }))
+      }
       if (saved.web) setWState((prev)=>({ ...prev, ...saved.web }))
       if (saved.quotes) setQState((prev)=>({ ...prev, ...saved.quotes }))
     } catch {}

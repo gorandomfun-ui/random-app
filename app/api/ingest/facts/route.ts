@@ -219,6 +219,25 @@ async function pullDogFacts(n: number): Promise<FactDoc[]> {
   return out
 }
 
+async function pullAwesomeFacts(): Promise<FactDoc[]> {
+  const url = 'https://raw.githubusercontent.com/sapher/awesome-facts/master/facts.json'
+  const arr = await fetchJson<unknown[]>(url, { headers: ROUTE_HEADERS, timeoutMs: 12000 })
+  if (!Array.isArray(arr)) return []
+  return arr
+    .map((entry) => {
+      const text = norm(typeof entry === 'string' ? entry : '')
+      if (!text) return null
+      const baseDoc = createFactDocument({
+        text,
+        provider: 'github-awesome-facts',
+        source: { name: 'github:awesome-facts', url },
+      })
+      if (!baseDoc) return null
+      return { ...baseDoc, hash: factHash(baseDoc.text) }
+    })
+    .filter((entry): entry is FactDoc => Boolean(entry))
+}
+
 /* ========================= Handler ========================= */
 export async function GET(req: NextRequest) {
   // AUTH durcie (clé en query OU header) + trim
@@ -228,23 +247,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const n = Math.max(1, Math.min(500, Number(req.nextUrl.searchParams.get('n') || 60)))
-  const sites = (req.nextUrl.searchParams.get('sites') || 'useless,numbers,cat,meow,dog,urban')
+  const n = Math.max(1, Math.min(1200, Number(req.nextUrl.searchParams.get('n') || 120)))
+  const sites = (req.nextUrl.searchParams.get('sites') || 'awesomefacts,useless,numbers,cat,meow,dog,urban')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 
   let collected: FactDoc[] = []
   const add = (a?: FactDoc[]) => { if (Array.isArray(a) && a.length) collected = collected.concat(a) }
 
-  try { if (sites.includes('useless')) add(await pullUselessFacts(Math.ceil(n/sites.length))) } catch {}
-  try { if (sites.includes('numbers')) add(await pullNumbers(Math.ceil(n/sites.length))) } catch {}
-  try { if (sites.includes('cat'))     add(await pullCatFacts(Math.ceil(n/sites.length))) } catch {}
-  try { if (sites.includes('meow'))    add(await pullMeowFacts(Math.ceil(n/sites.length))) } catch {}
-  try { if (sites.includes('dog'))     add(await pullDogFacts(Math.ceil(n/sites.length))) } catch {}
-  try { if (sites.includes('urban'))   add(await pullUrbanDictionary(Math.ceil(n/sites.length))) } catch {}
+  const basePerProvider = Math.max(20, Math.ceil(n / Math.max(1, sites.length)))
+
+  try { if (sites.includes('awesomefacts')) add(await pullAwesomeFacts()) } catch {}
+  try { if (sites.includes('useless')) add(await pullUselessFacts(basePerProvider)) } catch {}
+  try { if (sites.includes('numbers')) add(await pullNumbers(basePerProvider)) } catch {}
+  try { if (sites.includes('cat'))     add(await pullCatFacts(basePerProvider)) } catch {}
+  try { if (sites.includes('meow'))    add(await pullMeowFacts(basePerProvider)) } catch {}
+  try { if (sites.includes('dog'))     add(await pullDogFacts(basePerProvider)) } catch {}
+  try { if (sites.includes('urban'))   add(await pullUrbanDictionary(basePerProvider)) } catch {}
 
   while (collected.length < n) {
     try {
-      const pick = ['numbers','useless','meow','cat','dog','urban'].filter(s=>sites.includes(s))
+      const pick = ['numbers','useless','meow','cat','dog','urban','awesomefacts'].filter(s=>sites.includes(s))
       if (!pick.length) break
       const which = pick[Math.floor(Math.random()*pick.length)]
       const more = which==='numbers' ? await pullNumbers(1)
@@ -252,6 +274,7 @@ export async function GET(req: NextRequest) {
                 : which==='meow'    ? await pullMeowFacts(1)
                 : which==='cat'     ? await pullCatFacts(1)
                 : which==='dog'     ? await pullDogFacts(1)
+                : which==='awesomefacts' ? (await pullAwesomeFacts()).slice(0, 1)
                 : await pullUrbanDictionary(1)
       collected = collected.concat(more)
     } catch { break }

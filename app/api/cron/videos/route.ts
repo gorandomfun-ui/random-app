@@ -49,7 +49,6 @@ export async function GET(req: Request) {
     url.searchParams.set('reddit', '1');
     url.searchParams.set('sub', 'funnyvideos');
     url.searchParams.set('limit', '40');
-    url.searchParams.set('archive', '1');
     const incomingDry = new URL(req.url).searchParams.get('dry');
     if (incomingDry) url.searchParams.set('dry', incomingDry);
 
