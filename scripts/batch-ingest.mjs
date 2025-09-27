@@ -4,6 +4,7 @@ let host = process.env.HOST || ''
 const key = process.env.ADMIN_INGEST_KEY || process.env.KEY || ''
 const vercelBypassToken = process.env.VERCEL_BYPASS_TOKEN || ''
 const vercelBypassCookie = process.env.VERCEL_BYPASS_COOKIE || ''
+const cookieJar = []
 
 if (!host || !key) {
   console.error('❌ HOST et ADMIN_INGEST_KEY doivent être définis (ex: HOST="https://…" ADMIN_INGEST_KEY="…")')
@@ -14,16 +15,42 @@ if (!/^https?:\/\//i.test(host)) {
   host = `https://${host}`
 }
 
+async function ensureBypassCookie() {
+  if (!vercelBypassToken) return
+  if (cookieJar.length) return
+
+  if (vercelBypassCookie) {
+    cookieJar.push(vercelBypassCookie.split(';')[0])
+  }
+  cookieJar.push(`__vercel_protection_bypass=${vercelBypassToken}`)
+
+  if (!vercelBypassCookie) {
+    try {
+      const probeUrl = new URL(host)
+      probeUrl.searchParams.set('x-vercel-set-bypass-cookie', 'true')
+      probeUrl.searchParams.set('x-vercel-protection-bypass', vercelBypassToken)
+      const probeRes = await fetch(probeUrl.toString(), { redirect: 'manual' })
+      const setCookies = probeRes.headers.getSetCookie?.() || probeRes.headers.raw?.()['set-cookie'] || []
+      for (const entry of setCookies) {
+        const cookie = entry.split(';')[0]
+        if (cookie.toLowerCase().startsWith('vercel-bypass=')) {
+          cookieJar.push(cookie)
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Unable to auto-fetch bypass cookie:', error instanceof Error ? error.message : error)
+    }
+  }
+}
+
 async function call(endpoint) {
+  await ensureBypassCookie()
   const urlObject = new URL(endpoint, host)
   const url = urlObject.toString()
   console.log(`→ ${url}`)
   const headers = { 'x-admin-ingest-key': key }
-  const cookieParts = []
-  if (vercelBypassToken) cookieParts.push(`__vercel_protection_bypass=${vercelBypassToken}`)
-  if (vercelBypassCookie) cookieParts.push(vercelBypassCookie)
-  if (cookieParts.length) {
-    headers.Cookie = cookieParts.join('; ')
+  if (cookieJar.length) {
+    headers.Cookie = cookieJar.join('; ')
   }
   const res = await fetch(url, { headers })
   const text = await res.text()
