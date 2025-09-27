@@ -379,6 +379,7 @@ export default function AdminIngestPage() {
       if (saved.images) setIState(normalizeImageState(saved.images))
       if (saved.videos) {
         const { includeArchive: _deprecated, ...restVideos } = saved.videos
+        if (typeof _deprecated !== 'undefined') void _deprecated
         setVState((prev)=>({ ...prev, ...restVideos }))
       }
       if (saved.web) setWState((prev)=>({ ...prev, ...saved.web }))

@@ -14,7 +14,11 @@ import { playRandom, playAgain } from '../utils/sound'
 import MonoIcon from '../components/MonoIcon'
 import AnimatedButtonLabel from '../components/AnimatedButtonLabel'
 import type { ItemType } from '../lib/random/types'
-import type { DisplayItem, EncourageItem as EncourageContentItem } from '../lib/random/clientTypes'
+import type {
+  DisplayItem,
+  EncourageItem as EncourageContentItem,
+  RandomContentItem,
+} from '../lib/random/clientTypes'
 
 type EncourageItem = EncourageContentItem
 type SequenceSlot =
@@ -50,6 +54,10 @@ const FIXED_SEQUENCE: ItemType[] = [
 const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
 const ENCOURAGE_TRIGGER_COUNT = 13
+
+const PRELOAD_TARGET_PER_TYPE = 4
+const RECENT_SESSION_LIMIT = 10
+const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'joke', 'fact', 'quote', 'web']
 
 const FALLBACK_ENCOURAGE_MESSAGES = [
   'Keep exploring forward.',
@@ -197,26 +205,6 @@ export default function HomePage() {
     tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
   }), [t])
 
-  const warmupRef = useRef(false)
-  useEffect(() => {
-    if (warmupRef.current) return
-    warmupRef.current = true
-    let cancelled = false
-    const warmup = async () => {
-      try {
-        await Promise.all([
-          fetchRandom({ types: ['image'] as RandomTypes, lang }),
-          fetchRandom({ types: ['image'] as RandomTypes, lang }),
-        ])
-      } catch {}
-      if (cancelled) return
-    }
-    warmup()
-    return () => {
-      cancelled = true
-    }
-  }, [lang])
-
   const navLabels = useMemo(() => ({
     images: t('nav.images', 'images'),
     videos: t('nav.videos', 'videos'),
@@ -351,6 +339,199 @@ export default function HomePage() {
     icon: pickEncourageIcon(encourageIndex),
   }), [pickEncourageIcon, pickEncourageMessage])
 
+  const langVersionRef = useRef(0)
+
+  const preloadQueuesRef = useRef<Record<ItemType, RandomContentItem[]>>({
+    image: [],
+    video: [],
+    joke: [],
+    fact: [],
+    quote: [],
+    web: [],
+  })
+  const preloadPromisesRef = useRef<Record<ItemType, Promise<void> | null>>({
+    image: null,
+    video: null,
+    joke: null,
+    fact: null,
+    quote: null,
+    web: null,
+  })
+  const recentKeysRef = useRef<string[]>([])
+  const recentKeySetRef = useRef<Set<string>>(new Set())
+
+  const clearPreloadedCaches = useCallback(() => {
+    for (const type of ALL_ITEM_TYPES) {
+      preloadQueuesRef.current[type] = []
+      preloadPromisesRef.current[type] = null
+    }
+    recentKeysRef.current = []
+    recentKeySetRef.current = new Set()
+  }, [])
+
+  const getContentKey = useCallback((item: RandomContentItem): string => {
+    if (item.type === 'image') {
+      return ['image', item.url, item.pageUrl, item.link, item.thumbUrl].filter(Boolean).join('|')
+    }
+    if (item.type === 'video') {
+      return ['video', item.url, item.provider, item.source?.url].filter(Boolean).join('|')
+    }
+    if (item.type === 'quote') {
+      return ['quote', item.text, item.author, item.provider].filter(Boolean).join('|')
+    }
+    if (item.type === 'joke') {
+      return ['joke', item.text, item.provider].filter(Boolean).join('|')
+    }
+    if (item.type === 'fact') {
+      return ['fact', item.text, item.provider].filter(Boolean).join('|')
+    }
+    if (item.type === 'web') {
+      return ['web', item.url, item.text, item.host].filter(Boolean).join('|')
+    }
+    return `other:${JSON.stringify(item)}`
+  }, [])
+
+  const registerRecentKey = useCallback((key: string) => {
+    if (!key) return
+    const list = recentKeysRef.current
+    const set = recentKeySetRef.current
+    if (set.has(key)) {
+      const idx = list.indexOf(key)
+      if (idx >= 0) list.splice(idx, 1)
+    }
+    list.push(key)
+    set.add(key)
+    while (list.length > RECENT_SESSION_LIMIT) {
+      const removed = list.shift()
+      if (removed) set.delete(removed)
+    }
+  }, [])
+
+  const isRecentKey = useCallback((key: string) => {
+    if (!key) return false
+    return recentKeySetRef.current.has(key)
+  }, [])
+
+  const purgeKeyFromQueue = useCallback((type: ItemType, key: string) => {
+    if (!key) return
+    const queue = preloadQueuesRef.current[type]
+    if (!queue.length) return
+    preloadQueuesRef.current[type] = queue.filter((entry) => getContentKey(entry) !== key)
+  }, [getContentKey])
+
+  const ensureQueue = useCallback(async (type: ItemType) => {
+    const queue = preloadQueuesRef.current[type]
+    if (queue.length >= PRELOAD_TARGET_PER_TYPE) return
+
+    const existing = preloadPromisesRef.current[type]
+    if (existing) {
+      try {
+        await existing
+      } catch {/* ignore */}
+      return
+    }
+
+    const version = langVersionRef.current
+
+    const runner = (async () => {
+      const maxAttempts = PRELOAD_TARGET_PER_TYPE * 6
+      let attempts = 0
+      while (preloadQueuesRef.current[type].length < PRELOAD_TARGET_PER_TYPE && attempts < maxAttempts) {
+        if (version !== langVersionRef.current) break
+        attempts += 1
+        try {
+          const res = await fetchRandom({ types: [type] as RandomTypes, lang })
+          const item = res?.item
+          if (!item || item.type !== type) continue
+          const key = getContentKey(item)
+          if (!key) continue
+          if (isRecentKey(key)) continue
+          const duplicate = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === key)
+          if (duplicate) continue
+          preloadQueuesRef.current[type].push(item)
+        } catch {
+          // swallow and continue
+        }
+      }
+    })()
+
+    preloadPromisesRef.current[type] = runner
+    try {
+      await runner
+    } finally {
+      if (preloadPromisesRef.current[type] === runner) {
+        preloadPromisesRef.current[type] = null
+      }
+    }
+  }, [getContentKey, isRecentKey, lang])
+
+  const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
+    await ensureQueue(type)
+
+    let candidate: RandomContentItem | undefined
+    let attempts = 0
+
+    while (preloadQueuesRef.current[type].length) {
+      const next = preloadQueuesRef.current[type].shift()
+      if (!next) break
+      const key = getContentKey(next)
+      if (key && isRecentKey(key)) {
+        attempts += 1
+        if (attempts >= PRELOAD_TARGET_PER_TYPE * 2) break
+        continue
+      }
+      candidate = next
+      break
+    }
+
+    let fallbackAttempts = 0
+    while (!candidate && fallbackAttempts < PRELOAD_TARGET_PER_TYPE * 3) {
+      fallbackAttempts += 1
+      try {
+        const res = await fetchRandom({ types: [type] as RandomTypes, lang })
+        const item = res?.item
+        if (!item || item.type !== type) continue
+        const key = getContentKey(item)
+        if (key && isRecentKey(key)) continue
+        candidate = item
+        break
+      } catch {
+        // retry
+      }
+    }
+
+    if (!candidate) return null
+
+    const key = getContentKey(candidate)
+    registerRecentKey(key)
+    purgeKeyFromQueue(type, key)
+    ensureQueue(type).catch(() => {})
+    return candidate
+  }, [ensureQueue, getContentKey, isRecentKey, lang, purgeKeyFromQueue, registerRecentKey])
+
+  useEffect(() => {
+    langVersionRef.current += 1
+    clearPreloadedCaches()
+  }, [clearPreloadedCaches, lang])
+
+  useEffect(() => {
+    let cancelled = false
+    const prime = async () => {
+      for (const type of selectedTypes) {
+        if (cancelled) return
+        try {
+          await ensureQueue(type)
+        } catch {
+          // ignore warmup errors
+        }
+      }
+    }
+    prime()
+    return () => {
+      cancelled = true
+    }
+  }, [ensureQueue, selectedTypes])
+
   const getNextSlot = useCallback((): SequenceSlot => {
     const seq = filteredSequence
     if (!seq.length) {
@@ -400,8 +581,8 @@ export default function HomePage() {
         playRandom()
         return
       }
-      const res = await fetchRandom({ types: [slot.itemType] as RandomTypes, lang })
-      setCurrentItem(res?.item || null)
+      const item = await acquireItem(slot.itemType)
+      setCurrentItem(item)
       const contrast = Math.random() < 0.7
       if (contrast) setModalThemeIdx(randDiffIdx(THEMES.length, themeIdx))
       setIsModalOpen(true)
@@ -424,8 +605,8 @@ export default function HomePage() {
         const encourageItem = buildEncourageItem(slot.round, slot.encourageIndex)
         setCurrentItem(encourageItem)
       } else {
-        const res = await fetchRandom({ types: [slot.itemType] as RandomTypes, lang })
-        setCurrentItem(res?.item || null)
+        const item = await acquireItem(slot.itemType)
+        setCurrentItem(item)
       }
     } catch {}
 

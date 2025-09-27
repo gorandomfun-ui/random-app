@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
+import * as cheerio from 'cheerio'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
 import { createFactDocument, type FactDocument } from '@/lib/random/facts'
 
@@ -46,6 +47,19 @@ async function upsertManyFacts(rows: Omit<FactDoc, 'createdAt' | 'updatedAt'>[])
 
 /* ======================== Helpers HTTP ===================== */
 const ROUTE_HEADERS = { ...DEFAULT_INGEST_HEADERS, 'User-Agent': 'RandomAppBot/1.0 (+https://example.com)' }
+
+async function fetchText(url: string, timeoutMs = 12000): Promise<string> {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const res = await fetch(url, { cache: 'no-store', headers: ROUTE_HEADERS, signal: controller.signal })
+    clearTimeout(timer)
+    if (!res.ok) return ''
+    return await res.text()
+  } catch {
+    return ''
+  }
+}
 
 /* ======================== Providers ======================== */
 type UselessFact = { text?: string; data?: string }
@@ -238,6 +252,133 @@ async function pullAwesomeFacts(): Promise<FactDoc[]> {
     .filter((entry): entry is FactDoc => Boolean(entry))
 }
 
+type CheerioRoot = ReturnType<typeof cheerio.load>
+
+function collectFactCandidates($: CheerioRoot, selectors: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const selector of selectors) {
+    $(selector).each((_, element) => {
+      const text = norm($(element).text())
+      if (!text) return
+      if (text.length < 24 || text.length > 360) return
+      if (seen.has(text)) return
+      seen.add(text)
+      out.push(text)
+    })
+  }
+  return out
+}
+
+async function scrapeFactSlides(limit: number): Promise<FactDoc[]> {
+  const roots = [
+    'https://www.factslides.com/en',
+    'https://www.factslides.com/en/explore',
+    'https://www.factslides.com/en/facts-about-science',
+    'https://www.factslides.com/en/facts-about-technology',
+    'https://www.factslides.com/en/facts-about-history',
+  ]
+  const sliceCount = Math.min(roots.length, Math.max(1, Math.ceil(limit / 40)))
+  const selected = roots.slice(0, sliceCount)
+  const out: FactDoc[] = []
+  const seen = new Set<string>()
+
+  for (const url of selected) {
+    const html = await fetchText(url)
+    if (!html) continue
+    const $ = cheerio.load(html)
+    const candidates = collectFactCandidates($, ['.factslide', '.factText', '.factTxt', '.fact', '.fact-entry', 'li', 'p'])
+    for (const text of candidates) {
+      if (seen.has(text)) continue
+      const base = createFactDocument({
+        text,
+        provider: 'factslides',
+        source: { name: 'FactSlides', url },
+      })
+      if (!base) continue
+      const doc = { ...base, hash: factHash(base.text) }
+      out.push(doc)
+      seen.add(text)
+      if (out.length >= limit) break
+    }
+    if (out.length >= limit) break
+  }
+
+  return out
+}
+
+async function scrapeInterestingFacts(limit: number): Promise<FactDoc[]> {
+  const roots = [
+    'https://www.interestingfacts.com/',
+    'https://www.interestingfacts.com/history',
+    'https://www.interestingfacts.com/science',
+    'https://www.interestingfacts.com/culture',
+  ]
+  const sliceCount = Math.min(roots.length, Math.max(1, Math.ceil(limit / 40)))
+  const selected = roots.slice(0, sliceCount)
+  const out: FactDoc[] = []
+  const seen = new Set<string>()
+
+  for (const url of selected) {
+    const html = await fetchText(url)
+    if (!html) continue
+    const $ = cheerio.load(html)
+    const candidates = collectFactCandidates($, ['article', '.article-card', '.card', 'li', 'p'])
+    for (const text of candidates) {
+      if (seen.has(text)) continue
+      const base = createFactDocument({
+        text,
+        provider: 'interestingfacts',
+        source: { name: 'InterestingFacts.com', url },
+      })
+      if (!base) continue
+      const doc = { ...base, hash: factHash(base.text) }
+      out.push(doc)
+      seen.add(text)
+      if (out.length >= limit) break
+    }
+    if (out.length >= limit) break
+  }
+
+  return out
+}
+
+async function scrapeTheFactSite(limit: number): Promise<FactDoc[]> {
+  const roots = [
+    'https://www.thefactsite.com/facts/',
+    'https://www.thefactsite.com/category/people/',
+    'https://www.thefactsite.com/category/animals/',
+    'https://www.thefactsite.com/category/science/',
+  ]
+  const sliceCount = Math.min(roots.length, Math.max(1, Math.ceil(limit / 40)))
+  const selected = roots.slice(0, sliceCount)
+  const out: FactDoc[] = []
+  const seen = new Set<string>()
+
+  for (const url of selected) {
+    const html = await fetchText(url)
+    if (!html) continue
+    const $ = cheerio.load(html)
+    const candidates = collectFactCandidates($, ['.entry-content li', '.entry-content p', '.facts-list li', 'article', 'li', 'p'])
+    for (const text of candidates) {
+      if (seen.has(text)) continue
+      const base = createFactDocument({
+        text,
+        provider: 'thefactsite',
+        source: { name: 'The Fact Site', url },
+      })
+      if (!base) continue
+      const doc = { ...base, hash: factHash(base.text) }
+      out.push(doc)
+      seen.add(text)
+      if (out.length >= limit) break
+    }
+    if (out.length >= limit) break
+  }
+
+  return out
+}
+
 /* ========================= Handler ========================= */
 export async function GET(req: NextRequest) {
   // AUTH durcie (clé en query OU header) + trim
@@ -248,7 +389,7 @@ export async function GET(req: NextRequest) {
   }
 
   const n = Math.max(1, Math.min(1200, Number(req.nextUrl.searchParams.get('n') || 120)))
-  const sites = (req.nextUrl.searchParams.get('sites') || 'awesomefacts,useless,numbers,cat,meow,dog,urban')
+  const sites = (req.nextUrl.searchParams.get('sites') || 'awesomefacts,useless,numbers,cat,meow,dog,urban,factslides,interestingfacts,thefactsite')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 
   let collected: FactDoc[] = []
@@ -263,10 +404,24 @@ export async function GET(req: NextRequest) {
   try { if (sites.includes('meow'))    add(await pullMeowFacts(basePerProvider)) } catch {}
   try { if (sites.includes('dog'))     add(await pullDogFacts(basePerProvider)) } catch {}
   try { if (sites.includes('urban'))   add(await pullUrbanDictionary(basePerProvider)) } catch {}
+  try { if (sites.includes('factslides')) add(await scrapeFactSlides(basePerProvider)) } catch {}
+  try { if (sites.includes('interestingfacts')) add(await scrapeInterestingFacts(basePerProvider)) } catch {}
+  try { if (sites.includes('thefactsite')) add(await scrapeTheFactSite(basePerProvider)) } catch {}
 
   while (collected.length < n) {
     try {
-      const pick = ['numbers','useless','meow','cat','dog','urban','awesomefacts'].filter(s=>sites.includes(s))
+      const pick = [
+        'numbers',
+        'useless',
+        'meow',
+        'cat',
+        'dog',
+        'urban',
+        'awesomefacts',
+        'factslides',
+        'interestingfacts',
+        'thefactsite',
+      ].filter(s=>sites.includes(s))
       if (!pick.length) break
       const which = pick[Math.floor(Math.random()*pick.length)]
       const more = which==='numbers' ? await pullNumbers(1)
@@ -275,6 +430,9 @@ export async function GET(req: NextRequest) {
                 : which==='cat'     ? await pullCatFacts(1)
                 : which==='dog'     ? await pullDogFacts(1)
                 : which==='awesomefacts' ? (await pullAwesomeFacts()).slice(0, 1)
+                : which==='factslides' ? await scrapeFactSlides(1)
+                : which==='interestingfacts' ? await scrapeInterestingFacts(1)
+                : which==='thefactsite' ? await scrapeTheFactSite(1)
                 : await pullUrbanDictionary(1)
       collected = collected.concat(more)
     } catch { break }

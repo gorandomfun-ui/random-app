@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "../.local-ingest-build",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "target": "ES2020",
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "isolatedModules": false
+  },
+  "include": [
+    "./local-ingest.ts",
+    "./local-ingest-server.ts"
+  ]
+}

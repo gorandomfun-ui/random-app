@@ -51,6 +51,7 @@ type IngestVideosOptions = {
   manualIds?: string[];
   dryRun?: boolean;
   sampleSize?: number;
+  durations?: Array<'any' | 'short' | 'medium' | 'long'>;
 };
 
 type IngestResult = {
@@ -196,6 +197,7 @@ async function searchYouTube(
   per: number,
   pages: number,
   days: number,
+  durations: Array<'any' | 'short' | 'medium' | 'long'>,
   warnings?: FetchWarning[],
 ): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
@@ -209,43 +211,51 @@ async function searchYouTube(
   for (const query of queries) {
     const trimmed = query.trim();
     if (!trimmed) continue;
-    let pageToken = '';
-    for (let page = 0; page < pages; page++) {
-      const params = new URLSearchParams({
-        key,
-        part: 'snippet',
-        type: 'video',
-        maxResults: String(Math.min(50, Math.max(1, per))),
-        q: trimmed,
-        order: Math.random() < 0.5 ? 'date' : 'relevance',
-        publishedAfter,
-        videoEmbeddable: 'true',
-      });
-      if (pageToken) params.set('pageToken', pageToken);
-      const data = await fetchJson<YoutubeSearchResponse>(
-        `${YT_ENDPOINT}/search?${params.toString()}`,
-        10000,
-        'youtube:search',
-        warnings,
-      );
-      const items = data?.items ?? [];
-      for (const item of items) {
-        const id = item?.id?.videoId;
-        if (!id) continue;
-        const snippet = item?.snippet;
-        collected.push({
-          videoId: id,
-          url: `https://youtu.be/${id}`,
-          provider: 'youtube',
-          title: snippet?.title || '',
-          thumb: youtubeThumb(id),
-          source: { name: 'YouTube', url: `https://youtu.be/${id}` },
-          contextQueries: [trimmed],
+    const durationList = durations.length ? durations : ['any'];
+    for (const duration of durationList) {
+      let pageToken = '';
+      for (let page = 0; page < pages; page++) {
+        const params = new URLSearchParams({
+          key,
+          part: 'snippet',
+          type: 'video',
+          maxResults: String(Math.min(50, Math.max(1, per))),
+          q: trimmed,
+          order: Math.random() < 0.5 ? 'date' : 'relevance',
+          publishedAfter,
+          videoEmbeddable: 'true',
         });
+        if (duration && duration !== 'any') {
+          params.set('videoDuration', duration);
+        }
+        if (pageToken) params.set('pageToken', pageToken);
+        const label = duration && duration !== 'any' ? `youtube:search:${duration}` : 'youtube:search';
+        const data = await fetchJson<YoutubeSearchResponse>(
+          `${YT_ENDPOINT}/search?${params.toString()}`,
+          10000,
+          label,
+          warnings,
+        );
+        const items = data?.items ?? [];
+        for (const item of items) {
+          const id = item?.id?.videoId;
+          if (!id) continue;
+          const snippet = item?.snippet;
+          const context = duration && duration !== 'any' ? `${trimmed} [${duration}]` : trimmed;
+          collected.push({
+            videoId: id,
+            url: `https://youtu.be/${id}`,
+            provider: 'youtube',
+            title: snippet?.title || '',
+            thumb: youtubeThumb(id),
+            source: { name: 'YouTube', url: `https://youtu.be/${id}` },
+            contextQueries: [context],
+          });
+        }
+        pageToken = data?.nextPageToken || '';
+        if (!pageToken) break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      pageToken = data?.nextPageToken || '';
-      if (!pageToken) break;
-      await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
 
@@ -423,10 +433,11 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     days = 120,
     playlistId,
     channelId,
-    reddit,
-    manualIds = [],
-    dryRun = false,
-    sampleSize = 6,
+  reddit,
+  manualIds = [],
+  dryRun = false,
+  sampleSize = 6,
+  durations = ['any'],
   } = options;
 
   const collected: RawVideo[] = [];
@@ -450,7 +461,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
 
   if (mode === 'search') {
     const effectiveQueries = queries.length ? queries : ['weird public access show', 'retro craft tutorial'];
-    collected.push(...await searchYouTube(effectiveQueries, per, pages, days, fetchWarnings));
+    collected.push(...await searchYouTube(effectiveQueries, per, pages, days, durations, fetchWarnings));
   } else if (mode === 'playlist' && playlistId) {
     collected.push(...await playlistYouTube(playlistId, per, fetchWarnings));
   } else if (mode === 'channel' && channelId) {

@@ -15,8 +15,9 @@ async function main() {
   process.env.GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'dummy'
 
   const originalFetch = global.fetch
-  global.fetch = async (...args: Parameters<typeof fetch>): Promise<Response> => {
+  global.fetch = async (...fetchArgs: Parameters<typeof fetch>): Promise<Response> => {
     try {
+      void fetchArgs
       return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
     } catch (error) {
       console.error('Mock fetch failed', error)
@@ -34,7 +35,7 @@ async function main() {
     url.searchParams.set('dry', '1')
     url.searchParams.set('count', '3')
     const req = new NextRequest(url.toString(), { headers })
-    const res = await videosGET(req as any)
+    const res = await videosGET(req)
     const body = await res.json()
     return { name: 'videos', status: res.status, body }
   }
@@ -55,7 +56,7 @@ async function main() {
     url.searchParams.set('per', '2')
     url.searchParams.set('pages', '1')
     const req = new NextRequest(url.toString(), { headers })
-    const res = await webGET(req as any)
+    const res = await webGET(req)
     const body = await res.json()
     return { name: 'web', status: res.status, body }
   }
@@ -64,7 +65,7 @@ async function main() {
     const url = new URL('http://localhost/api/ingest/quotes')
     url.searchParams.set('pages', '1')
     const req = new NextRequest(url.toString(), { headers })
-    const res = await quotesGET(req as any)
+    const res = await quotesGET(req)
     const body = await res.json()
     return { name: 'quotes', status: res.status, body }
   }

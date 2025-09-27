@@ -19,6 +19,30 @@ function parseInteger(value: string | null, fallback: number, min: number, max: 
   return Math.max(min, Math.min(max, parsed));
 }
 
+function normalizeDurations(tokens: string[]): Array<'any' | 'short' | 'medium' | 'long'> {
+  if (!tokens.length) return ['any'];
+  const result = new Set<'any' | 'short' | 'medium' | 'long'>();
+  for (const token of tokens) {
+    const value = token.toLowerCase();
+    if (value === 'any' || value === 'all') {
+      return ['any'];
+    }
+    if (value === 'standard') {
+      result.add('medium');
+      result.add('long');
+      continue;
+    }
+    if (value === 'short' || value === 'medium' || value === 'long') {
+      result.add(value);
+    }
+  }
+  if (!result.size) return ['any'];
+  if (result.has('short') && result.has('medium') && result.has('long')) {
+    return ['any'];
+  }
+  return Array.from(result);
+}
+
 export async function GET(req: NextRequest) {
   const isCron = Boolean(req.headers.get('x-vercel-cron'));
   const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim();
@@ -63,6 +87,7 @@ export async function GET(req: NextRequest) {
     const per = parseInteger(url.searchParams.get('per'), 20, 1, 50);
     const pages = parseInteger(url.searchParams.get('pages'), 1, 1, 5);
     const days = parseInteger(url.searchParams.get('days'), 120, 1, 365);
+    const durationsRaw = parseList(url.searchParams.get('durations') || url.searchParams.get('duration'));
     const dryParam = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dryParam === '1' || dryParam === 'true';
     const sampleSize = parseInteger(url.searchParams.get('sample'), 6, 1, 20);
@@ -75,6 +100,7 @@ export async function GET(req: NextRequest) {
     const redditSub = url.searchParams.get('sub') || 'funnyvideos';
     const redditLimit = parseInteger(url.searchParams.get('limit'), 40, 5, 100);
     const reddit = redditEnabled ? { sub: redditSub, limit: redditLimit } : null;
+    const durations = normalizeDurations(durationsRaw);
 
     if (!queries.length) {
       const dictionary = await loadVideoKeywordDictionary();
@@ -93,6 +119,7 @@ export async function GET(req: NextRequest) {
       manualIds,
       dryRun,
       sampleSize,
+      durations,
     });
 
     return NextResponse.json({
@@ -105,6 +132,7 @@ export async function GET(req: NextRequest) {
       dryRun,
       sampleSize,
       count,
+      durations,
       ...result,
     });
   } catch (error: unknown) {
