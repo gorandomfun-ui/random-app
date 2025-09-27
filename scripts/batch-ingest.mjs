@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
-const host = process.env.HOST
+let host = process.env.HOST || ''
 const key = process.env.ADMIN_INGEST_KEY || process.env.KEY || ''
 const vercelBypassToken = process.env.VERCEL_BYPASS_TOKEN || ''
 
 if (!host || !key) {
   console.error('❌ HOST et ADMIN_INGEST_KEY doivent être définis (ex: HOST="https://…" ADMIN_INGEST_KEY="…")')
   process.exit(1)
+}
+
+if (!/^https?:\/\//i.test(host)) {
+  host = `https://${host}`
 }
 
 async function call(endpoint) {
