@@ -6,6 +6,31 @@ const vercelBypassToken = process.env.VERCEL_BYPASS_TOKEN || ''
 const vercelBypassCookie = process.env.VERCEL_BYPASS_COOKIE || ''
 const cookieJar = []
 
+const rawArgs = process.argv.slice(2)
+const argSet = new Set(rawArgs)
+const explicitFlags = ['--quotes', '--facts', '--jokes', '--only-jokes', '--only-facts', '--only-quotes']
+let runQuotes = true
+let runFacts = true
+let runJokes = true
+
+const onlyArg = rawArgs.find((arg) => arg.startsWith('--only'))
+if (onlyArg) {
+  const value = onlyArg.includes('=') ? onlyArg.split('=')[1] : rawArgs[rawArgs.indexOf(onlyArg) + 1]
+  const selection = (value || '').split(',').map((token) => token.trim()).filter(Boolean)
+  if (selection.length) {
+    runQuotes = selection.includes('quotes')
+    runFacts = selection.includes('facts')
+    runJokes = selection.includes('jokes')
+  }
+}
+
+const hasSpecificSelection = explicitFlags.some((flag) => argSet.has(flag))
+if (hasSpecificSelection) {
+  runQuotes = argSet.has('--quotes') || argSet.has('--only-quotes')
+  runFacts = argSet.has('--facts') || argSet.has('--only-facts')
+  runJokes = argSet.has('--jokes') || argSet.has('--only-jokes')
+}
+
 if (!host || !key) {
   console.error('❌ HOST et ADMIN_INGEST_KEY doivent être définis (ex: HOST="https://…" ADMIN_INGEST_KEY="…")')
   process.exit(1)
@@ -67,13 +92,21 @@ async function call(endpoint) {
 }
 
 async function main() {
-  const quoteParams = '/api/ingest/quotes?sites=toscrape,typefit,passiton,zenquotes,github-db,github-programming,github-famous&pages=30'
-  const factParams = '/api/ingest/facts?n=800&sites=awesomefacts,useless,numbers,cat,meow,dog,urban'
-  const jokeParams = '/api/ingest/jokes?limit=800&sources=dataset,funnyquotes,official,icanhaz,jokeapi'
+  if (runQuotes) {
+    await call('/api/ingest/quotes?sites=toscrape,typefit,passiton,zenquotes,github-db,github-programming,github-famous&pages=30')
+  }
 
-  await call(quoteParams)
-  await call(factParams)
-  await call(jokeParams)
+  if (runFacts) {
+    const factSites = 'awesomefacts,useless,numbers,cat,meow,dog,urban'
+    const chunks = [200, 200, 200, 200]
+    for (const amount of chunks) {
+      await call(`/api/ingest/facts?n=${amount}&sites=${factSites}`)
+    }
+  }
+
+  if (runJokes) {
+    await call('/api/ingest/jokes?limit=800&sources=dataset,funnyquotes,official,icanhaz,jokeapi')
+  }
 }
 
 main().catch((error) => {
