@@ -2,6 +2,7 @@
 
 const host = process.env.HOST
 const key = process.env.ADMIN_INGEST_KEY || process.env.KEY || ''
+const vercelBypassToken = process.env.VERCEL_BYPASS_TOKEN || ''
 
 if (!host || !key) {
   console.error('❌ HOST et ADMIN_INGEST_KEY doivent être définis (ex: HOST="https://…" ADMIN_INGEST_KEY="…")')
@@ -9,7 +10,12 @@ if (!host || !key) {
 }
 
 async function call(endpoint) {
-  const url = `${host}${endpoint}`
+  const urlObject = new URL(endpoint, host)
+  if (vercelBypassToken) {
+    urlObject.searchParams.set('x-vercel-set-bypass-cookie', 'true')
+    urlObject.searchParams.set('x-vercel-protection-bypass', vercelBypassToken)
+  }
+  const url = urlObject.toString()
   console.log(`→ ${url}`)
   const res = await fetch(url, { headers: { 'x-admin-ingest-key': key } })
   const text = await res.text()
