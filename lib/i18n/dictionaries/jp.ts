@@ -46,6 +46,11 @@ const jpDictionary = {
   legal: {
     title: "特定商取引法に基づく表記",
     close: "閉じる",
+    disclaimer: {
+      title: "コンテンツに関する注意",
+      body:
+        "Random は外部プロバイダーや API からコンテンツを取得しており、すべてを事前に確認することはできません。不適切・人種差別的・有害な内容を見つけた場合は、スクリーンショットを添えて gorandomfun@gmail.com までご連絡ください。迅速に対応します。",
+    },
 
     editor: {
       title: "運営者",

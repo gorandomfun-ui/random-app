@@ -46,6 +46,11 @@ const frDictionary = {
   legal: {
     title: "Mentions légales",
     close: "Fermer",
+    disclaimer: {
+      title: "Avertissement contenu",
+      body:
+        "Random réunit des contenus provenant de fournisseurs et d'API externes. Nous ne pouvons pas vérifier chaque élément à l'avance. Si vous voyez un contenu inapproprié, raciste ou nuisible, merci d'en faire une capture et de l'envoyer à gorandomfun@gmail.com afin que nous le retirions rapidement.",
+    },
 
     editor: {
       title: "Éditeur",

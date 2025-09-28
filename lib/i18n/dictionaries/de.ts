@@ -43,9 +43,14 @@ const deDictionary = {
     "imagesVideos": "Bilder & Videos",
     "imagesOnly": "Nur Bilder"
   },
-   legal: {
+  legal: {
     title: "Impressum",
     close: "Schließen",
+    disclaimer: {
+      title: "Hinweis zu Inhalten",
+      body:
+        "Random bezieht Inhalte von externen Anbietern und APIs. Wir können nicht jeden Beitrag vorab prüfen. Wenn dir unangemessene, rassistische oder anderweitig schädliche Inhalte auffallen, mache bitte einen Screenshot und sende ihn an gorandomfun@gmail.com, damit wir ihn schnell entfernen können.",
+    },
 
     editor: {
       title: "Herausgeber",

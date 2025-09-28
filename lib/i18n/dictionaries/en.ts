@@ -43,9 +43,14 @@ const enDictionary = {
     "imagesVideos": "Images & Videos",
     "imagesOnly": "Images only"
   },
-   legal: {
+  legal: {
     title: "Legal notice",
     close: "Close",
+    disclaimer: {
+      title: "Content advisory",
+      body:
+        "Random aggregates content from external providers and APIs. We do not pre-screen every piece. If you encounter inappropriate, racist, or otherwise harmful material, please capture it and email gorandomfun@gmail.com so we can remove it quickly.",
+    },
 
     editor: {
       title: "Publisher",

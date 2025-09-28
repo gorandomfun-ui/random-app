@@ -78,4 +78,24 @@ export interface Dictionary {
     imagesVideos: string;
     imagesOnly: string;
   };
+  legal: {
+    title: string;
+    close: string;
+    disclaimer: {
+      title: string;
+      body: string;
+    };
+    editor: { title: string; body: string };
+    hosting: { title: string; body: string };
+    purpose: { title: string; body: string };
+    privacy: {
+      title: string;
+      bodyPrefix: string;
+      manageCookies: string;
+      privacyPolicy: string;
+    };
+    usa: { title: string; bodyPrefix: string; doNotSell: string };
+    dmca: { title: string; body: string };
+    law: { title: string; body: string };
+  };
 }

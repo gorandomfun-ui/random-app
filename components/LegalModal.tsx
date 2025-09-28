@@ -47,7 +47,16 @@ export default function LegalModal({ open, onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-6">
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-6 space-y-6">
+          <div className="rounded-xl border-2 border-red-500 bg-red-600 px-5 py-4 text-white shadow">
+            <h3 className="text-sm font-semibold uppercase tracking-wide">
+              {t('legal.disclaimer.title')}
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed whitespace-pre-line">
+              {t('legal.disclaimer.body')}
+            </p>
+          </div>
+
           <section className="space-y-6 leading-relaxed text-[15px]">
             {/* Editor */}
             <div>

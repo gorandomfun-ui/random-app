@@ -1,4 +1,5 @@
-import { sampleFromCache, touchLastShown } from '@/lib/random/data'
+import { sampleFromCache, touchLastShown, getDbSafe } from '@/lib/random/data'
+import { ObjectId } from 'mongodb'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -9,6 +10,11 @@ import {
 
 const RECENT_LIMIT = 10
 const recentJokes: string[] = []
+const MAX_ATTEMPTS = 10
+
+const BLOCKED_PATTERNS: RegExp[] = [
+  /difference\s+between\s+a\s+pizza\s+and\s+a\s+black\s+man/i,
+]
 
 const JOKE_TOPIC_SEEDS: Record<string, string[]> = {
   knock: ['knock', 'door'],
@@ -69,6 +75,7 @@ function computeKeywords(text: string, limit = 8): string[] {
 export function createJokeDocument(doc: Record<string, unknown>): JokeDocument | null {
   const text = trim(typeof doc.text === 'string' ? doc.text : '')
   if (!text) return null
+  if (isBlockedJoke(text)) return null
   const provider = trim(typeof doc.provider === 'string' ? doc.provider : '') || 'joke'
   const rawSource = doc.source && typeof doc.source === 'object' ? (doc.source as { name?: string; url?: string }) : null
   const sourceName = trim(rawSource?.name) || provider
@@ -97,11 +104,13 @@ function registerRecent(text: string) {
   while (recentJokes.length > RECENT_LIMIT) recentJokes.shift()
 }
 
-async function pickFromDb(exclude: string[]): Promise<JokeRecord | null> {
+type JokeDbRecord = JokeRecord & { _id?: unknown }
+
+async function pickFromDb(exclude: string[]): Promise<JokeDbRecord | null> {
   const filter = exclude.length ? { text: { $nin: exclude } } : {}
-  const doc = await sampleFromCache<JokeRecord>('joke', filter)
+  const doc = await sampleFromCache<JokeDbRecord>('joke', filter)
   if (doc) return doc
-  if (exclude.length) return sampleFromCache<JokeRecord>('joke')
+  if (exclude.length) return sampleFromCache<JokeDbRecord>('joke')
   return null
 }
 
@@ -113,11 +122,32 @@ const LOCAL_JOKES = [
 
 export async function selectJoke(): Promise<JokeItem | null> {
   const exclude = recentJokes.slice(-RECENT_LIMIT)
-  const doc = await pickFromDb(exclude)
-  const record = doc ?? { text: LOCAL_JOKES.find((j) => !exclude.includes(j.toLowerCase())) || LOCAL_JOKES[0], provider: 'local' }
+  let attempts = 0
+  let doc: JokeDbRecord | null = null
+  let record: JokeDbRecord | { text: string; provider: string } | null = null
+  let text = ''
 
-  const text = typeof record.text === 'string' ? record.text.trim() : ''
-  if (!text) return null
+  while (attempts < MAX_ATTEMPTS) {
+    doc = await pickFromDb(exclude)
+    record = doc ?? { text: LOCAL_JOKES.find((j) => !exclude.includes(j.toLowerCase())) || LOCAL_JOKES[0], provider: 'local' }
+
+    text = typeof record?.text === 'string' ? record.text.trim() : ''
+    if (!text) {
+      attempts += 1
+      continue
+    }
+
+    if (isBlockedJoke(text)) {
+      exclude.push(text.toLowerCase())
+      if (doc) await purgeBlockedJoke(doc, text)
+      attempts += 1
+      continue
+    }
+
+    break
+  }
+
+  if (!record || !text || isBlockedJoke(text)) return null
 
   const provider = typeof record.provider === 'string' && record.provider.trim() ? record.provider.trim() : 'joke'
   const rawSource = record.source && typeof record.source === 'object' ? record.source : null
@@ -139,5 +169,30 @@ export async function selectJoke(): Promise<JokeItem | null> {
     text,
     provider,
     source: { name: sourceName, url: sourceUrl },
+  }
+}
+
+function isBlockedJoke(text: string): boolean {
+  if (!text) return false
+  return BLOCKED_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+async function purgeBlockedJoke(record: JokeDbRecord, text: string) {
+  try {
+    const db = await getDbSafe()
+    if (!db) return
+    const collection = db.collection('items')
+    const id = record._id
+    if (id instanceof ObjectId) {
+      await collection.deleteOne({ _id: id })
+      return
+    }
+    if (typeof id === 'string' && ObjectId.isValid(id)) {
+      await collection.deleteOne({ _id: new ObjectId(id) })
+      return
+    }
+    await collection.deleteMany({ type: 'joke', text })
+  } catch (error) {
+    console.warn('[jokes] failed to purge blocked entry', error)
   }
 }
