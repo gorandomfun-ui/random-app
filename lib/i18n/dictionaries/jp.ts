@@ -28,7 +28,14 @@ const jpDictionary = {
     "title": "あなたのいいね",
     "empty": "まだいいねはありません",
     "maxReached": "最大6いいねに達しました！",
-    "keep24h": "ここでは24時間保存されます。"
+    "keep24h": "ここでは24時間保存されます。",
+    "youTab": "YOU",
+    "weTab": "WE",
+    "youDescription": "あなたの",
+    "youSuffix": "いいねは24時間ここに保存されます。",
+    "weDescription": "みんながたくさん",
+    "weSuffix": "いいねしたコンテンツ。",
+    "weEmpty": "まだグローバルなお気に入りはありません。最初のいいねを押してみて！"
   },
   "shuffle": {
     "title": "コンテンツをフィルター",

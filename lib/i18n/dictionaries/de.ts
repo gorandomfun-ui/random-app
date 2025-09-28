@@ -28,7 +28,14 @@ const deDictionary = {
     "title": "Deine Likes",
     "empty": "Noch keine Likes",
     "maxReached": "Maximum 6 Likes erreicht!",
-    "keep24h": "24 Stunden hier gespeichert."
+    "keep24h": "24 Stunden hier gespeichert.",
+    "youTab": "YOU",
+    "weTab": "WE",
+    "youDescription": "Deine",
+    "youSuffix": "Likes bleiben hier 24 Stunden gespeichert.",
+    "weDescription": "Die beliebtesten",
+    "weSuffix": "Inhalte der Community.",
+    "weEmpty": "Noch keine globalen Favoriten. Sei der Erste, der etwas liked!"
   },
   "shuffle": {
     "title": "Inhalt filtern",

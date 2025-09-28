@@ -63,6 +63,14 @@ export interface Dictionary {
     title: string;
     empty: string;
     maxReached: string;
+    keep24h: string;
+    youTab: string;
+    weTab: string;
+    youDescription: string;
+    youSuffix: string;
+    weDescription: string;
+    weSuffix: string;
+    weEmpty: string;
   };
   shuffle: {
     title: string;

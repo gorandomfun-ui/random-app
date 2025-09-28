@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 type Props = {
   items: LikeItem[]
   onDelete?: () => void
+  readOnly?: boolean
 }
 
 /** Palette fallback si l'item n'a pas de theme sauvegardé */
@@ -51,7 +52,7 @@ function makeColorIndices(n: number, cols: number, paletteLen: number) {
   return out
 }
 
-export default function LikesGrid({ items, onDelete }: Props) {
+export default function LikesGrid({ items, onDelete, readOnly = false }: Props) {
   // assez de tuiles pour "remplir" la page (ajuste si tu veux)
   const MIN_TILES_MOBILE = 12   // ~6 lignes * 2 colonnes
   const MIN_TILES_DESKTOP = 24  // ajoute un peu sur grand écran
@@ -88,6 +89,7 @@ export default function LikesGrid({ items, onDelete }: Props) {
           it={it}
           paletteIdx={colorIdx[idx] ?? (idx % PALETTE.length)}
           onDelete={onDelete}
+          readOnly={readOnly}
         />
       ))}
 
@@ -106,7 +108,7 @@ export default function LikesGrid({ items, onDelete }: Props) {
   )
 }
 
-function Tile({ it, paletteIdx, onDelete }: { it: LikeItem; paletteIdx: number; onDelete?: () => void }) {
+function Tile({ it, paletteIdx, onDelete, readOnly }: { it: LikeItem; paletteIdx: number; onDelete?: () => void; readOnly?: boolean }) {
   const t = it.theme || PALETTE[paletteIdx]
   const isText = it.type === 'quote' || it.type === 'joke' || it.type === 'fact'
   const displayImg = it.ogImage || it.thumbUrl
@@ -141,18 +143,20 @@ function Tile({ it, paletteIdx, onDelete }: { it: LikeItem; paletteIdx: number; 
       </button>
 
       {/* petite croix pour retirer sans casser la grille */}
-      <button
-        aria-label="Remove like"
-        className="absolute right-1 top-1 w-6 h-6 rounded-md text-[14px] leading-[22px] text-center"
-        style={{ background: 'rgba(0,0,0,.35)', color: t.cream }}
-        onClick={(e) => {
-          e.stopPropagation()
-          removeLike(it.id)
-          onDelete?.()
-        }}
-      >
-        ×
-      </button>
+      {!readOnly ? (
+        <button
+          aria-label="Remove like"
+          className="absolute right-1 top-1 w-6 h-6 rounded-md text-[14px] leading-[22px] text-center"
+          style={{ background: 'rgba(0,0,0,.35)', color: t.cream }}
+          onClick={(e) => {
+            e.stopPropagation()
+            removeLike(it.id)
+            onDelete?.()
+          }}
+        >
+          ×
+        </button>
+      ) : null}
     </div>
   )
 }

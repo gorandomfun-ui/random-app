@@ -28,7 +28,14 @@ const enDictionary = {
     "title": "Your Likes",
     "empty": "No likes yet",
     "maxReached": "Maximum 6 likes reached!",
-    "keep24h": "Saved here for 24h."
+    "keep24h": "Saved here for 24h.",
+    "youTab": "YOU",
+    "weTab": "WE",
+    "youDescription": "Your",
+    "youSuffix": "are stored here for 24 hours.",
+    "weDescription": "Here is the most",
+    "weSuffix": "content.",
+    "weEmpty": "No global favourites yet. Be the first to like something!"
   },
   "shuffle": {
     "title": "Filter content",

@@ -14,6 +14,10 @@ export type LikeItem = {
   likedAt: number
 }
 
+export type GlobalLikeItem = LikeItem & {
+  count: number
+}
+
 const KEY = 'likes'               // <- important: aligne avec l’existant
 const TTL = 24 * 60 * 60 * 1000   // 24h
 
@@ -120,6 +124,8 @@ export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
     if (idx >= 0) arr.splice(idx, 1)
     arr.unshift(item)
     setStore(arr.slice(0, 200))
+
+    void recordGlobalLike({ id, type: payload.type, item, theme })
   } catch {}
 }
 
@@ -137,3 +143,57 @@ export function isLiked(payload: LikeablePayload): boolean {
 
 export function clearExpired() { getAll() }
 export function clearAll() { try { localStorage.setItem(KEY, '[]') } catch {} }
+
+async function recordGlobalLike(params: { id: string; type: LikeType; item: LikeItem; theme?: LikeItem['theme'] }) {
+  try {
+    if (typeof fetch !== 'function') return
+    const { id, type, item, theme } = params
+    await fetch('/api/likes/global', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        type,
+        item: {
+          url: item.url,
+          text: item.text,
+          title: item.title,
+          thumbUrl: item.thumbUrl,
+          ogImage: item.ogImage,
+          provider: item.provider,
+        },
+        theme,
+      }),
+    }).catch(() => undefined)
+  } catch {}
+}
+
+export async function fetchGlobalTop(limit = 100): Promise<GlobalLikeItem[]> {
+  try {
+    const res = await fetch(`/api/likes/top?limit=${encodeURIComponent(String(limit))}`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = await res.json().catch(() => null)
+    if (!data || !Array.isArray(data.items)) return []
+    const list = data.items as Array<Record<string, unknown>>
+    return list.map((entry) => ({
+      id: typeof entry.id === 'string' ? entry.id : String(entry.id || ''),
+      type: entry.type as LikeType,
+      url: typeof entry.url === 'string' ? entry.url : undefined,
+      text: typeof entry.text === 'string' ? entry.text : undefined,
+      title: typeof entry.title === 'string' ? entry.title : undefined,
+      thumbUrl: typeof entry.thumbUrl === 'string' ? entry.thumbUrl : null,
+      ogImage: typeof entry.ogImage === 'string' ? entry.ogImage : null,
+      provider: typeof entry.provider === 'string' ? entry.provider : undefined,
+      theme: typeof entry.theme === 'object' && entry.theme ? {
+        bg: typeof entry.theme.bg === 'string' ? entry.theme.bg : undefined,
+        deep: typeof entry.theme.deep === 'string' ? entry.theme.deep : undefined,
+        cream: typeof entry.theme.cream === 'string' ? entry.theme.cream : undefined,
+        text: typeof entry.theme.text === 'string' ? entry.theme.text : undefined,
+      } : undefined,
+      likedAt: typeof entry.likedAt === 'number' ? entry.likedAt : Date.now(),
+      count: typeof entry.count === 'number' ? entry.count : 0,
+    })) as GlobalLikeItem[]
+  } catch {
+    return []
+  }
+}

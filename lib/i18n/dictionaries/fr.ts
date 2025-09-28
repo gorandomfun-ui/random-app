@@ -28,7 +28,14 @@ const frDictionary = {
     "title": "Vos Likes",
     "empty": "Aucun like",
     "maxReached": "Maximum 6 likes atteint!",
-    "keep24h": "Conservé ici pendant 24 h."
+    "keep24h": "Conservé ici pendant 24 h.",
+    "youTab": "YOU",
+    "weTab": "WE",
+    "youDescription": "Vos",
+    "youSuffix": "likes sont conservés ici pendant 24 heures.",
+    "weDescription": "Voici les contenus les plus",
+    "weSuffix": "aimés.",
+    "weEmpty": "Pas encore de favoris globaux. Soyez le premier à aimer un contenu !"
   },
   "shuffle": {
     "title": "Filtrer le contenu",
