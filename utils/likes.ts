@@ -175,24 +175,34 @@ export async function fetchGlobalTop(limit = 100): Promise<GlobalLikeItem[]> {
     const data = await res.json().catch(() => null)
     if (!data || !Array.isArray(data.items)) return []
     const list = data.items as Array<Record<string, unknown>>
-    return list.map((entry) => ({
-      id: typeof entry.id === 'string' ? entry.id : String(entry.id || ''),
-      type: entry.type as LikeType,
-      url: typeof entry.url === 'string' ? entry.url : undefined,
-      text: typeof entry.text === 'string' ? entry.text : undefined,
-      title: typeof entry.title === 'string' ? entry.title : undefined,
-      thumbUrl: typeof entry.thumbUrl === 'string' ? entry.thumbUrl : null,
-      ogImage: typeof entry.ogImage === 'string' ? entry.ogImage : null,
-      provider: typeof entry.provider === 'string' ? entry.provider : undefined,
-      theme: typeof entry.theme === 'object' && entry.theme ? {
-        bg: typeof entry.theme.bg === 'string' ? entry.theme.bg : undefined,
-        deep: typeof entry.theme.deep === 'string' ? entry.theme.deep : undefined,
-        cream: typeof entry.theme.cream === 'string' ? entry.theme.cream : undefined,
-        text: typeof entry.theme.text === 'string' ? entry.theme.text : undefined,
-      } : undefined,
-      likedAt: typeof entry.likedAt === 'number' ? entry.likedAt : Date.now(),
-      count: typeof entry.count === 'number' ? entry.count : 0,
-    })) as GlobalLikeItem[]
+    return list.map((entry) => {
+      const themeRecord = entry.theme && typeof entry.theme === 'object'
+        ? entry.theme as Record<string, unknown>
+        : null
+
+      const theme = themeRecord
+        ? {
+            bg: typeof themeRecord.bg === 'string' ? themeRecord.bg : undefined,
+            deep: typeof themeRecord.deep === 'string' ? themeRecord.deep : undefined,
+            cream: typeof themeRecord.cream === 'string' ? themeRecord.cream : undefined,
+            text: typeof themeRecord.text === 'string' ? themeRecord.text : undefined,
+          }
+        : undefined
+
+      return {
+        id: typeof entry.id === 'string' ? entry.id : String(entry.id || ''),
+        type: entry.type as LikeType,
+        url: typeof entry.url === 'string' ? entry.url : undefined,
+        text: typeof entry.text === 'string' ? entry.text : undefined,
+        title: typeof entry.title === 'string' ? entry.title : undefined,
+        thumbUrl: typeof entry.thumbUrl === 'string' ? entry.thumbUrl : null,
+        ogImage: typeof entry.ogImage === 'string' ? entry.ogImage : null,
+        provider: typeof entry.provider === 'string' ? entry.provider : undefined,
+        theme,
+        likedAt: typeof entry.likedAt === 'number' ? entry.likedAt : Date.now(),
+        count: typeof entry.count === 'number' ? entry.count : 0,
+      }
+    }) as GlobalLikeItem[]
   } catch {
     return []
   }
