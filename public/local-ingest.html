@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Local Ingest Runner</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 32px; background: #f7f7f7; color: #222; }
+      h1 { margin-bottom: 8px; }
+      button { margin-right: 12px; padding: 10px 18px; font-size: 15px; border-radius: 6px; border: none; cursor: pointer; }
+      button.primary { background: #1f7aec; color: white; }
+      button.secondary { background: #444; color: white; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      label { display: inline-flex; align-items: center; margin-right: 16px; }
+      input[type="number"] { width: 80px; margin-left: 6px; padding: 4px 6px; }
+      #log { margin-top: 24px; padding: 16px; background: white; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.08); max-height: 60vh; overflow-y: auto; font-family: Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; }
+      .combo { margin-top: 12px; padding: 10px; border-left: 3px solid #ccc; background: #fbfbfb; border-radius: 4px; }
+      .combo h3 { margin: 0 0 6px; font-size: 14px; }
+      .combo small { display: block; color: #555; }
+      .summary { margin-top: 16px; font-weight: 600; }
+      .error { color: #d33; font-weight: 600; }
+      .success { color: #0a8; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>Local Ingest Runner</h1>
+    <p>Ce panneau appelle directement les routes d’ingestion locales (<code>http://localhost:3000/api/ingest/*</code>) en utilisant les mots-clés de <code>lib/ingest/keywords/combo.json</code>. Les quotas appliqués sont ceux de <code>.env.local</code> (80&nbsp;% seulement sont consommés).</p>
+
+    <div style="margin-bottom: 24px;">
+      <h2>Remplissage Quotes / Facts / Jokes</h2>
+      <p style="margin: 6px 0 12px; font-size: 14px;">Ces actions scrappent les sources publiques (sans mots-clés) et insèrent les éléments manquants.</p>
+      <button type="button" class="secondary" id="scrapeQuotes">Scrape Quotes</button>
+      <button type="button" class="secondary" id="scrapeFacts">Scrape Facts</button>
+      <button type="button" class="secondary" id="scrapeJokes">Scrape Jokes</button>
+      <button type="button" class="secondary" id="scrapeAllText">Scrape Tout</button>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <h2>Combinaisons personnalisées (prioritaires)</h2>
+      <p style="margin: 6px 0 12px; font-size: 14px;">Remplis une ou plusieurs lignes (mot 1 / mot 2 / pays / année). Ces combos seront exécutés avant les combos aléatoires. Jusqu’à 10 lignes.</p>
+      <div id="manualCombos" style="display: grid; gap: 8px; max-width: 720px;"></div>
+      <button id="addManual" type="button" style="margin-top: 8px; padding: 6px 10px; font-size: 13px;">+ Ajouter une ligne</button>
+    </div>
+
+    <div style="margin-bottom: 18px;">
+      <label>
+        Combos max
+        <input id="maxCombos" type="number" min="1" value="12" />
+      </label>
+      <label>
+        Pause (ms)
+        <input id="sleepMs" type="number" min="0" value="200" />
+      </label>
+      <label>
+        <input id="dryRun" type="checkbox" />
+        Dry run (preview)
+      </label>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <button id="runImages" class="primary">Ingest Images</button>
+      <button id="runVideos" class="secondary">Ingest Vidéos</button>
+      <button id="stopBtn">Stop</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script type="module">
+      const logEl = document.getElementById('log')
+      const maxCombosEl = document.getElementById('maxCombos')
+      const sleepEl = document.getElementById('sleepMs')
+      const dryRunEl = document.getElementById('dryRun')
+      const stopBtn = document.getElementById('stopBtn')
+      const buttons = {
+        images: document.getElementById('runImages'),
+        videos: document.getElementById('runVideos'),
+      }
+      const scrapeButtons = {
+        quotes: document.getElementById('scrapeQuotes'),
+        facts: document.getElementById('scrapeFacts'),
+        jokes: document.getElementById('scrapeJokes'),
+        all: document.getElementById('scrapeAllText'),
+      }
+
+      let stopRequested = false
+
+      function appendLog(html) {
+        const wrapper = document.createElement('div')
+        wrapper.innerHTML = html
+        logEl.prepend(wrapper)
+      }
+
+      function setRunning(running) {
+        buttons.images.disabled = running
+        buttons.videos.disabled = running
+        stopBtn.disabled = !running
+      }
+
+      async function sleep(ms) {
+        if (!ms || ms <= 0) return
+        await new Promise((resolve) => setTimeout(resolve, ms))
+      }
+
+      function formatCombo(parts) {
+        const out = []
+        if (parts.primary) out.push(parts.primary)
+        if (parts.secondary) out.push(parts.secondary)
+        if (parts.country) out.push(parts.country)
+        if (parts.year) out.push(String(parts.year))
+        return out.join(' • ')
+      }
+
+      const manualContainer = document.getElementById('manualCombos')
+      const addManualBtn = document.getElementById('addManual')
+
+      const MAX_MANUAL_ROWS = 10
+
+      function createManualRow(values = {}) {
+        const row = document.createElement('div')
+        row.style.display = 'grid'
+        row.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr)) 60px'
+        row.style.gap = '6px'
+
+        const input = (placeholder, key, type = 'text') => {
+          const el = document.createElement('input')
+          el.type = type
+          el.placeholder = placeholder
+          el.dataset.key = key
+          el.value = values[key] || ''
+          el.style.padding = '6px 8px'
+          el.style.border = '1px solid #d0d0d0'
+          el.style.borderRadius = '4px'
+          return el
+        }
+
+        const primary = input('Mot 1', 'primary')
+        const secondary = input('Mot 2', 'secondary')
+        const country = input('Pays', 'country')
+        const year = input('Année', 'year', 'number')
+
+        const removeBtn = document.createElement('button')
+        removeBtn.type = 'button'
+        removeBtn.textContent = '✕'
+        removeBtn.style.border = 'none'
+        removeBtn.style.background = '#eee'
+        removeBtn.style.borderRadius = '4px'
+        removeBtn.style.cursor = 'pointer'
+        removeBtn.addEventListener('click', () => {
+          manualContainer.removeChild(row)
+          updateManualAddState()
+        })
+
+        row.append(primary, secondary, country, year, removeBtn)
+        manualContainer.appendChild(row)
+        updateManualAddState()
+      }
+
+      function updateManualAddState() {
+        const count = manualContainer.querySelectorAll('div').length
+        addManualBtn.disabled = count >= MAX_MANUAL_ROWS
+      }
+
+      function collectManualCombos() {
+        const rows = Array.from(manualContainer.children)
+        return rows
+          .map((row) => {
+            const inputs = row.querySelectorAll('input')
+            const parts = {}
+            inputs.forEach((input) => {
+              const value = input.value.trim()
+              if (!value) return
+              if (input.dataset.key === 'year') {
+                parts.year = Number(value)
+              } else {
+                parts[input.dataset.key] = value
+              }
+            })
+            const { primary, secondary, country, year } = parts
+            if (!primary && !secondary && !country && !year) return null
+            const queryParts = [primary, secondary, country, year && String(year)].filter(Boolean)
+            if (!queryParts.length) return null
+            return {
+              components: { primary, secondary, country, year },
+              query: queryParts.join(' '),
+            }
+          })
+          .filter(Boolean)
+      }
+
+      addManualBtn.addEventListener('click', () => createManualRow())
+      createManualRow()
+
+      async function fetchCombo() {
+        const res = await fetch('/api/ingest/keywords/combo', {
+          cache: 'no-store',
+          headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
+        })
+        if (!res.ok) throw new Error('combo fetch failed')
+        return res.json()
+      }
+
+      async function run(category) {
+        stopRequested = false
+        setRunning(true)
+        logEl.innerHTML = ''
+
+        appendLog(`<p><strong>Démarrage ${category}</strong> — ${new Date().toLocaleTimeString()}</p>`)
+
+        const dryRun = dryRunEl.checked
+        const maxCombos = Math.max(1, Number(maxCombosEl.value) || 1)
+        const sleepMs = Math.max(0, Number(sleepEl.value) || 0)
+        let executed = 0
+        let totals = { scanned: 0, unique: 0, inserted: 0, updated: 0, skipped: 0 }
+        const providerCounts = {}
+        const manualCombos = collectManualCombos()
+
+        try {
+          const runOne = async (combo) => {
+            const label = formatCombo(combo.components || {}) || '(empty)'
+            const params = new URLSearchParams({ max: '1' })
+            if (dryRun) params.set('dry', '1')
+
+            let endpoint = ''
+            if (category === 'images') {
+              endpoint = '/api/ingest/images'
+              params.set('sample', '6')
+            } else {
+              endpoint = '/api/ingest/videos'
+              params.set('mode', 'search')
+              params.set('durations', 'short,standard')
+              params.set('pages', '1')
+              params.set('per', '10')
+            }
+            params.set('q', combo.query)
+
+            const url = `${endpoint}?${params.toString()}`
+            const res = await fetch(url, {
+              method: 'GET',
+              headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data?.error || 'Ingest failed')
+
+            const providers = data?.providerCounts || {}
+            for (const key of Object.keys(providers)) {
+              providerCounts[key] = (providerCounts[key] || 0) + (providers[key] || 0)
+            }
+
+            totals.scanned += data?.scanned || 0
+            totals.unique += data?.unique || 0
+            totals.inserted += data?.inserted || 0
+            totals.updated += data?.updated || 0
+            totals.skipped += data?.skippedInvalid || 0
+
+            appendLog(`
+              <div class="combo">
+                <h3>${label}</h3>
+                <small>${combo.query}</small>
+                <div>scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${data?.skippedInvalid ? ` skipped:${data.skippedInvalid}` : ''}</div>
+              </div>
+            `)
+          }
+
+          for (const manual of manualCombos) {
+            if (stopRequested || executed >= maxCombos) break
+            await runOne(manual)
+            executed += 1
+            if (sleepMs > 0 && executed < maxCombos && !stopRequested) await sleep(sleepMs)
+          }
+
+          while (!stopRequested && executed < maxCombos) {
+            const combo = await fetchCombo()
+            await runOne(combo)
+            executed += 1
+            if (sleepMs > 0 && executed < maxCombos && !stopRequested) await sleep(sleepMs)
+          }
+
+          const providerSummary = Object.keys(providerCounts).length
+            ? `<br/>Providers → ${Object.entries(providerCounts).map(([name, value]) => `${name}:${value}`).join(' • ')}`
+            : ''
+
+          appendLog(`
+            <p class="summary">Terminé → combos:${executed} scanned:${totals.scanned} unique:${totals.unique} inserted:${totals.inserted} updated:${totals.updated}${totals.skipped ? ` skipped:${totals.skipped}` : ''}${providerSummary}</p>
+          `)
+        } catch (error) {
+          appendLog(`<p class="error">Erreur → ${(error instanceof Error ? error.message : String(error))}</p>`)
+        } finally {
+          setRunning(false)
+        }
+      }
+
+      const storedKey = localStorage.getItem('local-ingest-key') || ''
+      const key = storedKey || window.prompt('Admin ingest key', '') || ''
+      document.body.dataset.key = key
+      if (key) localStorage.setItem('local-ingest-key', key)
+
+      async function triggerScrape(type) {
+        const key = document.body.dataset.key || ''
+        const endpointMap = {
+          quotes: '/api/ingest/quotes?pages=20&sites=toscrape,typefit,passiton,zenquotes,github-db,github-programming,github-famous',
+          facts: '/api/ingest/facts?sites=numbers,useless,awesomefacts,factslides,interestingfacts,thefactsite',
+          jokes: '/api/ingest/jokes?limit=400&sources=dataset,funnyquotes,official,icanhaz,jokeapi,beano,goodhousekeeping,pioneerwoman,jokesoftheday',
+        }
+        const endpoints = type === 'all'
+          ? ['quotes', 'facts', 'jokes']
+          : [type]
+
+        appendLog(`<p>Scrape ${type} → start ${new Date().toLocaleTimeString()}</p>`)
+        for (const entry of endpoints) {
+          const button = scrapeButtons[entry]
+          if (button) button.disabled = true
+          try {
+            const res = await fetch(endpointMap[entry], { headers: { 'x-admin-ingest-key': key } })
+            const data = await res.json()
+            if (!res.ok) {
+              appendLog(`<p class="error">${entry} → ${data?.error || res.statusText}</p>`)
+              continue
+            }
+            appendLog(`<p class="success">${entry} → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}</p>`)
+          } catch (error) {
+            appendLog(`<p class="error">${entry} → ${(error instanceof Error ? error.message : String(error))}</p>`)
+          } finally {
+            if (button) button.disabled = false
+          }
+        }
+        appendLog(`<p class="summary">Scrape ${type} terminé</p>`)
+      }
+
+      scrapeButtons.quotes.addEventListener('click', () => triggerScrape('quotes'))
+      scrapeButtons.facts.addEventListener('click', () => triggerScrape('facts'))
+      scrapeButtons.jokes.addEventListener('click', () => triggerScrape('jokes'))
+      scrapeButtons.all.addEventListener('click', () => triggerScrape('all'))
+
+      buttons.images.addEventListener('click', () => run('images'))
+      buttons.videos.addEventListener('click', () => run('videos'))
+      stopBtn.addEventListener('click', () => {
+        stopRequested = true
+      })
+
+      setRunning(false)
+      appendLog('<p>Prêt. Choisis une catégorie pour lancer l’ingestion.</p>')
+    </script>
+  </body>
+</html>

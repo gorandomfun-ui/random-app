@@ -23,6 +23,7 @@ export default function ShufflePicker({
   if (!open) return null
 
   const selSet = new Set(selected)
+  const allSelected = selSet.size === ALL.length
 
   function commit(nextSet: Set<ItemType>) {
     if (typeof onChange === 'function') {
@@ -31,22 +32,33 @@ export default function ShufflePicker({
     }
   }
 
-  function toggle(t: ItemType) {
+  function handleToggle(value: ItemType | 'all', checked: boolean) {
+    if (value === 'all') {
+      if (!checked) return
+      commit(new Set(ALL))
+      return
+    }
+
+    if (allSelected) {
+      commit(new Set([value]))
+      return
+    }
+
     const next = new Set(selSet)
-    if (next.has(t)) {
-      next.delete(t)
+    if (checked) {
+      next.add(value)
     } else {
-      next.add(t)
+      next.delete(value)
+    }
+    if (!next.size) {
+      next.add(value)
     }
     commit(next)
   }
 
-  function selectOnly(t: ItemType) {
-    commit(new Set([t]))
-  }
-
-  function selectAll() {
-    commit(new Set(ALL))
+  function isChecked(value: ItemType | 'all') {
+    if (value === 'all') return allSelected
+    return selSet.has(value)
   }
 
   return (
@@ -63,41 +75,27 @@ export default function ShufflePicker({
           <button onClick={onClose} className="text-2xl leading-none" aria-label="Close">×</button>
         </div>
 
-        <div className="p-4 grid grid-cols-2 gap-3">
-          {ALL.map(t => {
-            const active = selSet.has(t)
+        <div className="p-5 flex flex-col gap-3">
+          {['all', ...ALL].map((option) => {
+            const label = option === 'all' ? 'All' : option
+            const capitalized = label.charAt(0).toUpperCase() + label.slice(1)
+            const checked = isChecked(option as ItemType | 'all')
             return (
-              <button
-                key={t}
-                onClick={() => toggle(t)}
-                className={`px-3 py-2 rounded-xl border transition ${active ? 'opacity-100' : 'opacity-50'}`}
-                style={{ borderColor: theme.cream, color: theme.cream, textTransform: 'capitalize' }}
-                aria-pressed={active}
+              <label
+                key={option}
+                className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 border"
+                style={{ borderColor: checked ? theme.cream : 'rgba(255,255,255,0.35)', background: 'transparent' }}
               >
-                {t}
-              </button>
+                <span style={{ textTransform: 'capitalize', color: theme.cream }}>{capitalized}</span>
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-white"
+                  checked={checked}
+                  onChange={(event) => handleToggle(option as ItemType | 'all', event.target.checked)}
+                />
+              </label>
             )
           })}
-        </div>
-
-        <div className="px-4 pb-4 flex flex-wrap items-center gap-3">
-          <button
-            onClick={selectAll}
-            className="px-3 py-2 rounded-xl border"
-            style={{ borderColor: theme.cream, color: theme.cream }}
-          >
-            All
-          </button>
-          {ALL.map(t => (
-            <button
-              key={'only-' + t}
-              onClick={() => selectOnly(t)}
-              className="px-3 py-2 rounded-xl border text-sm"
-              style={{ borderColor: theme.cream, color: theme.cream, textTransform: 'capitalize' }}
-            >
-              Only {t}
-            </button>
-          ))}
         </div>
       </div>
     </div>

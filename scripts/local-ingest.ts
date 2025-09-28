@@ -1,6 +1,11 @@
 // Run with: npx tsx scripts/local-ingest.ts
 
-import { generateKeywordCombo, buildKeywordLabel } from '../lib/ingest/keywords/combo'
+import {
+  generateKeywordCombo,
+  buildKeywordLabel,
+  formatComboDebug,
+} from '../lib/ingest/keywords/combo'
+import type { KeywordCombo, KeywordComponents } from '../lib/ingest/keywords/combo'
 import { QuotaManager, type QuotaUsage } from '../lib/ingest/local/quota'
 
 type IngestResult = {
@@ -12,6 +17,7 @@ type IngestResult = {
   requested?: number
   providerCounts?: Record<string, number>
   warnings?: unknown
+  skippedInvalid?: number
 }
 
 export type Category = 'videos' | 'images' | 'web' | 'facts' | 'jokes' | 'quotes'
@@ -30,6 +36,7 @@ export type Logger = (event: LogEvent) => void
 export type ComboRecord = {
   label: string
   query: string
+  components?: KeywordComponents
   inserted: number
   updated: number
   unique: number
@@ -65,6 +72,7 @@ export type CategorySummary = {
     unique: number
     inserted: number
     updated: number
+    skipped?: number
   }
   history?: ComboRecord[]
   records?: StaticRecord[]
@@ -188,7 +196,7 @@ type VideoIngestOptions = {
   env: NodeJS.ProcessEnv
 }
 
-type Totals = { inserted: number; updated: number; unique: number; scanned: number }
+type Totals = { inserted: number; updated: number; unique: number; scanned: number; skipped: number }
 
 class VideoIngestor {
   private readonly category: Category = 'videos'
@@ -223,7 +231,7 @@ class VideoIngestor {
 
   async run(): Promise<CategorySummary> {
     const startedAt = Date.now()
-    const totals: Totals = { inserted: 0, updated: 0, unique: 0, scanned: 0 }
+    const totals: Totals = { inserted: 0, updated: 0, unique: 0, scanned: 0, skipped: 0 }
     let combosRun = 0
     const durationTokens = this.durationsArray()
     const durationCount = durationTokens.length || DEFAULT_YT_DURATIONS.length
@@ -267,14 +275,17 @@ class VideoIngestor {
           const updated = result?.updated ?? 0
           const unique = result?.unique ?? 0
           const scanned = result?.scanned ?? 0
+          const skippedInvalid = result?.skippedInvalid ?? 0
 
           totals.inserted += inserted
           totals.updated += updated
           totals.unique += unique
           totals.scanned += scanned
+          totals.skipped += skippedInvalid
 
-          this.comboHistory.push({ label, query, inserted, updated, unique, scanned })
-          this.emit('info', `   → scanned:${scanned} unique:${unique} inserted:${inserted} updated:${updated}`)
+          this.comboHistory.push({ label, query, components: combo.components, inserted, updated, unique, scanned })
+          const skipped = skippedInvalid ? ` skipped:${skippedInvalid}` : ''
+          this.emit('info', `   → scanned:${scanned} unique:${unique} inserted:${inserted} updated:${updated}${skipped}`)
         } catch (error) {
           this.emit('error', `❌  Videos → ingest failed for ${label}`, error instanceof Error ? error.message : error)
           throw error
@@ -370,7 +381,7 @@ class ComboIngestor {
     }
 
     let combosRun = 0
-    const totals: Totals = { inserted: 0, updated: 0, unique: 0, scanned: 0 }
+    const totals: Totals = { inserted: 0, updated: 0, unique: 0, scanned: 0, skipped: 0 }
 
     try {
       while ((!this.options.cli.maxCombos || combosRun < (this.options.cli.maxCombos ?? 0)) && this.options.quota.canConsume(this.options.quotaKey, this.options.costPerCall)) {
@@ -397,14 +408,17 @@ class ComboIngestor {
           const updated = result?.updated ?? 0
           const unique = result?.unique ?? 0
           const scanned = result?.scanned ?? 0
+          const skippedInvalid = result?.skippedInvalid ?? 0
 
           totals.inserted += inserted
           totals.updated += updated
           totals.unique += unique
           totals.scanned += scanned
+          totals.skipped += skippedInvalid
 
-          this.history.push({ label, query, inserted, updated, unique, scanned })
-          this.emit('info', `   → scanned:${scanned} unique:${unique} inserted:${inserted} updated:${updated}`)
+          this.history.push({ label, query, components: combo.components, inserted, updated, unique, scanned })
+          const skipped = skippedInvalid ? ` skipped:${skippedInvalid}` : ''
+          this.emit('info', `   → scanned:${scanned} unique:${unique} inserted:${inserted} updated:${updated}${skipped}`)
         } catch (error) {
           this.emit('error', `❌  ${this.options.label} → ingest failed for ${label}`, error instanceof Error ? error.message : error)
           throw error
@@ -551,7 +565,7 @@ class StaticIngestor {
           acc.scanned += entry.scanned
           return acc
         },
-        { inserted: 0, updated: 0, unique: 0, scanned: 0 },
+        { inserted: 0, updated: 0, unique: 0, scanned: 0, skipped: 0 },
       )
 
       const finishedAt = Date.now()
@@ -575,7 +589,7 @@ class StaticIngestor {
           acc.scanned += entry.scanned
           return acc
         },
-        { inserted: 0, updated: 0, unique: 0, scanned: 0 },
+        { inserted: 0, updated: 0, unique: 0, scanned: 0, skipped: 0 },
       )
       const finishedAt = Date.now()
       const message = error instanceof Error ? error.message : String(error)
@@ -923,8 +937,53 @@ export async function runIngest(options: RunIngestOptions = {}): Promise<RunSumm
   }
 }
 
+function printHelp() {
+  console.log(`Usage: npx tsx scripts/local-ingest.ts [options]\n`)
+  console.log('Options:')
+  console.log('  --help, -h            Show this help')
+  console.log('  --dry                 Dry-run (no writes)')
+  console.log('  --videos|--images     Run a single category (comma lists via --only=videos,images)')
+  console.log('  --max=<n>             Limit keyword combos per category')
+  console.log('  --sleep=<ms>          Delay between combos (default from env)')
+  console.log('\nEnvironment: set HOST + ADMIN_INGEST_KEY (and provider API keys) in .env.local.')
+  console.log('Keyword combos are defined in lib/ingest/keywords/combo.json (primary/secondary/country/year).')
+  console.log('\nExamples:')
+  console.log('  npx tsx scripts/local-ingest.ts --dry --images --max=12')
+  console.log('  npx tsx scripts/local-ingest.ts --videos --max=24 --sleep=200')
+}
+
+function formatComboEntry(record: ComboRecord): string {
+  if (record.components) {
+    const combo: KeywordCombo = { query: record.query, components: record.components }
+    const debug = formatComboDebug(combo)
+    if (debug) return debug
+  }
+  return record.label || record.query
+}
+
+function printComboHistory(history: ComboRecord[], limit = 6) {
+  if (!history?.length) return
+  const sample = history.slice(0, Math.min(limit, history.length))
+  console.log('  Combo sample:')
+  sample.forEach((record) => {
+    const descriptor = formatComboEntry(record)
+    const metrics = `unique:${record.unique} inserted:${record.inserted}`
+    console.log(`    • ${descriptor} → ${record.query} (${metrics})`)
+  })
+  if (history.length > sample.length) {
+    console.log(`    • … ${history.length - sample.length} more combos`)
+  }
+}
+
 async function runCli(): Promise<void> {
-  const cliOptions = parseCliArgs(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  if (argv.some((arg) => arg === '--help' || arg === '-h')) {
+    printHelp()
+    process.exitCode = 0
+    return
+  }
+
+  const cliOptions = parseCliArgs(argv)
   const summary = await runIngest({ cliOptions })
 
   let hasFailure = false
@@ -941,10 +1000,14 @@ async function runCli(): Promise<void> {
       console.log('  Reason:', cat.reason)
     }
     if (cat.totals) {
-      console.log(`  Totals → scanned:${cat.totals.scanned} unique:${cat.totals.unique} inserted:${cat.totals.inserted} updated:${cat.totals.updated}`)
+      const skipped = cat.totals.skipped && cat.totals.skipped > 0 ? ` skipped:${cat.totals.skipped}` : ''
+      console.log(`  Totals → scanned:${cat.totals.scanned} unique:${cat.totals.unique} inserted:${cat.totals.inserted} updated:${cat.totals.updated}${skipped}`)
     }
     if (cat.combosExecuted != null) {
       console.log(`  Combos executed: ${cat.combosExecuted}`)
+    }
+    if (cat.history?.length) {
+      printComboHistory(cat.history)
     }
     if (cat.requestsExecuted != null) {
       console.log(`  Requests executed: ${cat.requestsExecuted}`)

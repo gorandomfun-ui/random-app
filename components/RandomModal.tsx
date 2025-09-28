@@ -45,11 +45,13 @@ function ImageBlock({
   alt,
   sourceLabel,
   sourceHref,
+  maxHeight,
 }: {
   src: string
   alt?: string
   sourceLabel?: string
   sourceHref?: string
+  maxHeight?: string
 }) {
   return (
     <figure className="-mx-6 w-[calc(100%+3rem)]"> {/* supprime le padding horizontal du corps */}
@@ -57,7 +59,8 @@ function ImageBlock({
         <img
           src={src}
           alt={alt || 'image'}
-          className="block w-full h-[min(60vh,640px)] object-cover select-none"
+          className="block w-full object-cover select-none"
+          style={{ height: maxHeight ?? 'min(60vh, 640px)' }}
           loading="lazy"
           decoding="async"
         />
@@ -68,7 +71,7 @@ function ImageBlock({
           {sourceLabel ? <span>{sourceLabel}</span> : null}
           {sourceHref ? (
             <>
-              <span> · </span>
+              {sourceLabel ? <span> · </span> : null}
               <a href={sourceHref} target="_blank" rel="noreferrer" className="underline">
                 {new URL(sourceHref).hostname.replace(/^www\./, '')}
               </a>
@@ -92,7 +95,8 @@ function SharePopover({
   placeAbove: boolean
   onClose: () => void
 }) {
-  const defaultUrl = typeof window !== 'undefined' ? window.location.href : ''
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://gorandom.fun'
+  const defaultUrl = typeof window !== 'undefined' ? window.location.href : origin
   let shareUrl = defaultUrl
   let shareText = 'Random — explore random contents. Only useless surprise.'
 
@@ -123,23 +127,53 @@ function SharePopover({
     }
   }
 
-  const u = encodeURIComponent(shareUrl)
-  const t = encodeURIComponent(shareText)
+  const brandHost = origin.replace(/^https?:\/\//, '')
+  const shareMessage = `${shareText} — via Random (${brandHost})`
+  const shareMessageWithUrl = shareUrl ? `${shareMessage} ${shareUrl}` : shareMessage
+  const u = encodeURIComponent(shareUrl || origin)
+  const t = encodeURIComponent(shareMessage)
 
   async function nativeShare() {
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Random', text: shareText, url: shareUrl })
+        await navigator.share({ title: 'Random', text: shareMessageWithUrl, url: shareUrl })
         onClose()
       }
     } catch {}
   }
   async function copyLink() {
     try {
-      await navigator.clipboard?.writeText(shareUrl)
+      await navigator.clipboard?.writeText(shareMessageWithUrl)
       onClose()
       alert('Link copied!')
     } catch {}
+  }
+  async function shareInstagram() {
+    try {
+      const nav = typeof navigator !== 'undefined'
+        ? (navigator as Navigator & { canShare?: (data: ShareData) => boolean })
+        : null
+      if (nav?.share) {
+        const response = await fetch('/elements/logo_black.png')
+        if (response.ok) {
+          const blob = await response.blob()
+          const logoFile = new File([blob], 'random-logo.png', { type: blob.type || 'image/png' })
+          const data: ShareData = {
+            title: 'Random',
+            text: shareMessageWithUrl,
+            files: [logoFile],
+          }
+          if (nav.canShare?.({ files: data.files }) ?? false) {
+            await nav.share({ ...data, url: shareUrl })
+            onClose()
+            return
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('instagram-share-fallback', error)
+    }
+    openWindow(`https://www.instagram.com/?url=${u}`)
   }
   function openWindow(url: string) {
     window.open(url, '_blank', 'noopener,noreferrer')
@@ -166,6 +200,9 @@ function SharePopover({
         </button>
         <button className="text-left px-3 py-2 rounded hover:opacity-90" onClick={copyLink}>
           • Copy link
+        </button>
+        <button className="text-left px-3 py-2 rounded hover:opacity-90" onClick={shareInstagram}>
+          • Instagram
         </button>
         <button
           className="text-left px-3 py-2 rounded hover:opacity-90"
@@ -200,7 +237,7 @@ function SharePopover({
 function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
   if (item.type === 'encourage') {
     return (
-      <div className="flex flex-col items-center gap-6 text-center max-w-[70ch]">
+      <div className="flex flex-col items-center gap-3 text-center max-w-[58ch]">
         {item.icon ? (
           <div className="encourage-icon-wrapper">
             <img
@@ -214,7 +251,7 @@ function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
         ) : null}
         {item.text ? (
           <p
-            className="font-tomorrow font-bold text-[24px] md:text-[32px] leading-tight"
+            className="font-tomorrow font-bold text-[17px] md:text-[24px] leading-snug"
             style={{ color: theme.cream, letterSpacing: '.01em' }}
           >
             {item.text}
@@ -268,14 +305,15 @@ function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
         host = new URL(href).hostname.replace(/^www\./, '')
       } catch {}
     }
+    const sourceHref = getSourceHref(item)
     return (
-      <div className="flex flex-col items-center gap-4">
+      <div className="flex flex-col items-center gap-4 w-full">
         {item.ogImage ? (
-          <img
+          <ImageBlock
             src={item.ogImage}
-            alt=""
-            className="max-h-[30vh] w-auto object-contain rounded-lg"
-            style={{ boxShadow: '0 8px 22px rgba(0,0,0,.15)' }}
+            alt={item.text || host || 'web'}
+            sourceHref={sourceHref}
+            maxHeight="min(34vh, 320px)"
           />
         ) : null}
         {href ? (
@@ -283,7 +321,7 @@ function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="underline font-inter text-lg md:text-xl text-center break-words"
+            className="underline font-inter text-xl md:text-2xl text-center break-words"
             style={{ color: theme.cream }}
           >
             {item.text || host || href}
@@ -337,13 +375,15 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
       rel: '0',
       autoplay: '1',
       mute: '1',
-      playsinline: '1',
-      modestbranding: '1',
-      enablejsapi: '1',
       controls: '1',
+      fs: '1',
+      enablejsapi: '1',
+      modestbranding: '1',
+      iv_load_policy: '3',
+      playsinline: '1',
     })
     if (originParam) params.set('origin', originParam)
-    return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
+    return `https://www.youtube.com/embed/${videoId}?${params.toString()}`
   }, [videoId, originParam])
 
   const unmuteVideo = () => {
@@ -369,7 +409,7 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
           ref={iframeRef}
           src={src}
           className="w-full h-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowFullScreen
           title={title || 'YouTube'}
           style={{ border: 'none' }}
@@ -378,7 +418,8 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
           <button
             type="button"
             onClick={unmuteVideo}
-            className="absolute top-4 right-4 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+            style={{ position: 'absolute', top: '50%', right: '16px', transform: 'translateY(-50%)', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
           >
             Tap to unmute
           </button>
@@ -736,15 +777,27 @@ export default function RandomModal({
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 180px;
+        min-height: clamp(70px, 16vh, 140px);
+        padding-block: clamp(2px, 1.2vh, 12px);
       }
       .encourage-icon {
-        width: min(320px, 65vw);
-        max-width: 360px;
+        width: clamp(70px, 12vw, 140px);
+        max-height: clamp(70px, 16vh, 150px);
+        max-width: 150px;
         object-fit: contain;
         filter: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.32));
         animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
         transform-origin: center;
+      }
+      @media (min-width: 768px) {
+        .encourage-icon-wrapper {
+          min-height: clamp(90px, 14vh, 170px);
+        }
+        .encourage-icon {
+          width: clamp(100px, 10vw, 160px);
+          max-height: clamp(90px, 14vh, 170px);
+          max-width: 170px;
+        }
       }
       @keyframes heartPulse {
         0% { transform: scale(1); }

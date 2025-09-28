@@ -120,6 +120,7 @@ type IngestResult = {
   dryRun?: boolean;
   sample?: ImageDocument[];
   providerCounts?: ProviderCounts;
+  skippedInvalid?: number;
 };
 
 type Fetcher = (query: string, per: number) => Promise<ImageSource[]>;
@@ -127,6 +128,7 @@ type Fetcher = (query: string, per: number) => Promise<ImageSource[]>;
 const DEFAULT_PROVIDERS: ImageProvider[] = [...IMAGE_PROVIDERS];
 
 const STOP_TAGS = new Set(['pixabay', 'pexels', 'giphy', 'tenor', 'image', 'photo', 'gif']);
+const PIXABAY_CDN_HOST = 'cdn.pixabay.com';
 
 function parsePixabayTags(value: unknown): string[] {
   if (typeof value !== 'string') return [];
@@ -272,7 +274,47 @@ async function fetchPexels(query: string, per: number): Promise<ImageSource[]> {
   });
 }
 
-function buildImageDocument(source: ImageSource): ImageDocument {
+function looksLikeImageUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('data:image/')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    const ext = parsed.pathname.split('.').pop()?.toLowerCase();
+    if (!ext) return false;
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'svg'].includes(ext);
+  } catch {
+    return false;
+  }
+}
+
+function normalizePixabayUrl(originalUrl: string, thumb?: string | null): string {
+  if (!originalUrl) return originalUrl;
+  try {
+    const parsed = new URL(originalUrl);
+    const isPixabayGet = parsed.hostname.endsWith('pixabay.com') && parsed.pathname.startsWith('/get/');
+    if (!isPixabayGet) return originalUrl;
+  } catch {
+    return originalUrl;
+  }
+
+  if (thumb) {
+    try {
+      const thumbUrl = new URL(thumb);
+      if (!thumbUrl.hostname.endsWith('pixabay.com')) return originalUrl;
+      const upgradedPath = thumbUrl.pathname.replace(/_(\d+)(\.[a-z]+)$/i, '_1280$2');
+      const candidate = `https://${PIXABAY_CDN_HOST}${upgradedPath}`;
+      if (looksLikeImageUrl(candidate)) return candidate;
+    } catch {
+      return originalUrl;
+    }
+  }
+
+  return originalUrl;
+}
+
+function buildImageDocument(source: ImageSource): ImageDocument | null {
   const contextTags = expandQueryToTags(source.contextQueries || []);
   const candidates = [
     source.provider,
@@ -290,9 +332,16 @@ function buildImageDocument(source: ImageSource): ImageDocument {
     source.description,
   ], 14);
 
+  const url = source.provider === 'pixabay'
+    ? normalizePixabayUrl(source.url, source.thumb)
+    : source.url;
+
+  if (!looksLikeImageUrl(url)) return null;
+  if (!tags.length || !keywords.length) return null;
+
   return {
     type: 'image',
-    url: source.url,
+    url,
     thumb: source.thumb ?? undefined,
     provider: source.provider,
     source: source.source,
@@ -302,9 +351,21 @@ function buildImageDocument(source: ImageSource): ImageDocument {
   };
 }
 
+let cachedCollection: Collection<ImageDocument> | null = null;
+let indexesEnsured = false;
+
 async function getCollection(): Promise<Collection<ImageDocument>> {
-  const db: Db = await getDb();
-  return db.collection<ImageDocument>('items');
+  if (!cachedCollection) {
+    const db: Db = await getDb();
+    cachedCollection = db.collection<ImageDocument>('items');
+  }
+  if (!indexesEnsured && cachedCollection) {
+    indexesEnsured = true;
+    cachedCollection.createIndex({ type: 1, url: 1 }, { unique: true, name: 'uniq_image_url' }).catch((error) => {
+      console.warn('[ingest:images] failed to ensure index', error);
+    });
+  }
+  return cachedCollection;
 }
 
 export async function ingestImages({
@@ -343,8 +404,13 @@ export async function ingestImages({
   }
 
   const map = new Map<string, ImageDocument>();
+  let skippedInvalid = 0;
   for (const entry of collected) {
     const doc = buildImageDocument(entry);
+    if (!doc) {
+      skippedInvalid += 1;
+      continue;
+    }
     if (!map.has(doc.url)) map.set(doc.url, doc);
   }
 
@@ -361,6 +427,7 @@ export async function ingestImages({
     dryRun,
     providerCounts,
     sample: uniqueDocs.slice(0, Math.max(0, sampleSize)),
+    skippedInvalid,
   };
 
   if (dryRun || !uniqueDocs.length) {

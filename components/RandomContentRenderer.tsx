@@ -84,7 +84,7 @@ export default function RandomContentRenderer({
           <img
             src={web.ogImage}
             alt=""
-            className="max-h-[30vh] w-auto object-contain rounded-xl"
+            className="w-full max-h-[40vh] object-cover rounded-xl"
             style={{ boxShadow: '0 8px 22px rgba(0,0,0,.15)' }}
           />
         ) : null}

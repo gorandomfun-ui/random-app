@@ -334,6 +334,52 @@ async function pullArchiveOrg(limit: number): Promise<ProviderResult> {
   return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked }
 }
 
+type WikipediaExternalLinksResponse = {
+  parse?: {
+    externallinks?: unknown
+  }
+}
+
+async function pullWikipediaList(limit: number): Promise<ProviderResult> {
+  const data = await fetchJson<WikipediaExternalLinksResponse>(
+    'https://en.wikipedia.org/w/api.php?action=parse&page=List_of_websites&prop=externallinks&format=json',
+    { headers: ROUTE_HEADERS, timeoutMs: 10000 },
+  )
+  const rawLinks = Array.isArray(data?.parse?.externallinks) ? data?.parse?.externallinks ?? [] : []
+  if (!rawLinks.length) return { rows: [], scanned: 0, checked: 0 }
+
+  const links = rawLinks
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter((entry) => entry.startsWith('http'))
+
+  const raw: WebRow[] = []
+  for (const link of shuffle(links)) {
+    if (!link) continue
+    const host = hostFromUrl(link)
+    if (!host) continue
+    if (host.includes('wikipedia.org')) continue
+    const title = host
+    const tags = Array.from(new Set(['wikipedia', host])).filter(Boolean)
+    const keywords = deriveKeywords(`${host} ${title}`, 8)
+    raw.push({
+      type: 'web',
+      url: link,
+      title,
+      text: title,
+      host,
+      ogImage: null,
+      provider: 'wikipedia-list',
+      source: { name: 'Wikipedia — List of websites', url: 'https://en.wikipedia.org/wiki/List_of_websites' },
+      tags,
+      keywords,
+    })
+  }
+
+  const deduped = dedupeByUrl(raw)
+  const ensured = await ensureOgImages(deduped, limit)
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked }
+}
+
 /* -------------------------------- Handler -------------------------------- */
 export async function GET(req: NextRequest) {
   // Auth (clé ou cron Vercel)
@@ -352,13 +398,13 @@ export async function GET(req: NextRequest) {
   ]
   const queries = incoming.length ? incoming : fallback
 
-  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,neocities,archive')
+  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,neocities,archive,wikipedia')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
-  const allowedProviders = new Set(['cse', 'neocities', 'archive'])
+  const allowedProviders = new Set(['cse', 'neocities', 'archive', 'wikipedia'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
-  const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'archive']
+  const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'archive', 'wikipedia']
 
   const dryParam = req.nextUrl.searchParams.get('dry') || req.nextUrl.searchParams.get('preview')
   const dryRun = dryParam === '1' || dryParam === 'true'
@@ -397,6 +443,15 @@ export async function GET(req: NextRequest) {
   if (providers.includes('archive')) {
     try {
       const result = await pullArchiveOrg(perProviderTarget)
+      aggregated.push(...result.rows)
+      scanned += result.scanned
+      checked += result.checked
+    } catch {}
+  }
+
+  if (providers.includes('wikipedia')) {
+    try {
+      const result = await pullWikipediaList(perProviderTarget)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked

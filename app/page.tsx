@@ -102,27 +102,25 @@ function useButtonWidth(
       frame = null
       const heroEl = heroRef.current
       const logoEl = logoRef.current
-      const viewportW = window.innerWidth
+      const viewportW = window.innerWidth || 320
 
-      let next: number | null = null
+      const heroWidth = heroEl?.getBoundingClientRect().width ?? viewportW - 48
+      const logoWidth = logoEl?.getBoundingClientRect().width ?? 0
 
-      if (logoEl && viewportW < 768) {
-        const { width } = logoEl.getBoundingClientRect()
-        if (width > 0) next = Math.round(width + 6)
+      const maxWidth = Math.min(880, heroWidth, viewportW - 32)
+      const minWidth = Math.min(maxWidth, 260)
+
+      let next = 280
+
+      if (logoWidth > 0) {
+        const padded = logoWidth + 24
+        next = Math.max(minWidth, Math.min(padded, maxWidth))
+      } else if (heroWidth > 0) {
+        const ideal = Math.min(heroWidth * 0.66, maxWidth)
+        next = Math.max(minWidth, Math.round(ideal))
       }
 
-      if (next == null) {
-        if (heroEl) {
-          const rect = heroEl.getBoundingClientRect()
-
-          // Heuristique “2 lignes” : ~66% de la largeur visuelle du titre,
-          // plafonnée pour éviter le bouton géant au 1er paint.
-          const ideal = Math.min(rect.width * 0.66, 880)
-          next = Math.max(280, Math.round(ideal))
-        } else {
-          next = 280
-        }
-      }
+      next = Math.max(minWidth, Math.min(next, maxWidth))
 
       setW(next)
     }
