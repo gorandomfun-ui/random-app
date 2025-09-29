@@ -14,8 +14,8 @@ const THEMES = [
   { bg:'#191916', deep:'#2e2e28', cream:'#fff7e2', text:'#d90845' },
   { bg:'#051d37', deep:'#082f4b', cream:'#fff6ee', text:'#e5972b' },
   { bg:'#0c390d', deep:'#155a1a', cream:'#eefdf3', text:'#ff978f' },
-  { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
-  { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
+  // { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
+  // { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
 ]
 
 export default function LikesPage() {
