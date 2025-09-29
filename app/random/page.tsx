@@ -362,7 +362,7 @@ function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHe
             height: '100%',
             transform: 'translate(-50%, -50%)',
           }}
-          poster={item.thumbUrl || item.ogImage || undefined}
+          poster={item.thumbUrl ?? undefined}
         >
           <source src={item.url} />
         </video>
