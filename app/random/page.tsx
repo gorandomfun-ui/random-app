@@ -592,7 +592,7 @@ export default function RandomExperiencePage({
     const encourageBlock = dictionary.encourage as { messages?: unknown }
     const candidate = encourageBlock?.messages
     if (!Array.isArray(candidate)) return fallback
-    const cleaned = candidate.filter((entry): entry is string => typeof entry === 'string' && entry.trim())
+    const cleaned = candidate.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
     return cleaned.length ? cleaned : fallback
   }, [dict])
 
