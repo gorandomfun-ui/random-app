@@ -8,15 +8,7 @@ import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
 import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
-
-const THEMES = [
-  { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
-  { bg:'#191916', deep:'#2e2e28', cream:'#fff7e2', text:'#d90845' },
-  { bg:'#051d37', deep:'#082f4b', cream:'#fff6ee', text:'#e5972b' },
-  { bg:'#0c390d', deep:'#155a1a', cream:'#eefdf3', text:'#ff978f' },
-  // { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
-  // { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
-]
+import { THEMES } from '@/lib/theme'
 
 export default function LikesPage() {
   const { t } = useI18n()
@@ -209,8 +201,8 @@ export default function LikesPage() {
       </div>
 
       <p
-        className="mt-4 text-center text-xl sm:text-2xl font-[var(--font-inter-tight)] font-semibold"
-        style={{ color: cream, letterSpacing: 'normal' }}
+        className="mt-4 text-center text-xl sm:text-2xl font-semibold"
+        style={{ color: cream, letterSpacing: 'normal', fontFamily: 'var(--font-inter-tight), sans-serif' }}
       >
         <span>{description}</span>
         {heartInline}

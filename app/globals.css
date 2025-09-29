@@ -4,7 +4,7 @@
 
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow-x:hidden}
-body{font-family:var(--font-inter-tight),system-ui,sans-serif}
+body{font-family:var(--font-inter-tight),system-ui,sans-serif;background-color:#191916;color:#F8F5E6}
 
 /* Les éléments fixes gèrent eux-mêmes la marge en bas. */
 

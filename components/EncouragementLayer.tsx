@@ -5,6 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getDictionary, normalizeLocale, type Language } from '@/lib/i18n/config'
 import { playAppear } from '@/lib/encourage/sound'
+import { BASE_BACKGROUND, TEXT_COLORS } from '@/lib/theme'
 
 /** Early milestones, then we expand spacing */
 const BASE_MILESTONES = [6, 12, 24, 36, 60, 84, 120] as const
@@ -51,14 +52,7 @@ function getExternalThemes(): Theme[] | null {
   } catch {}
   return null
 }
-const FALLBACK_THEMES: Theme[] = [
-  { bg:'#65002d', text:'#00b176' },
-  { bg:'#191916', text:'#d90845' },
-  { bg:'#051d37', text:'#e5972b' },
-  { bg:'#0c390d', text:'#ff978f' },
-  // { bg:'#0fc55d', text:'#3d42cc' },
-  // { bg:'#ff978f', text:'#463b46' },
-]
+const FALLBACK_THEMES: Theme[] = TEXT_COLORS.map((text) => ({ bg: BASE_BACKGROUND, text }))
 const pickTheme = (): Theme => {
   const themes = getExternalThemes() || FALLBACK_THEMES
   return themes[Math.floor(Math.random() * themes.length)]

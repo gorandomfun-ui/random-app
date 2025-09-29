@@ -1,82 +1,30 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback, type RefObject, type CSSProperties } from 'react'
-import LogoAnimated from '../components/LogoAnimated'
-import RandomModal from '../components/RandomModal'
-import LanguageSwitcher from '../components/LanguageSwitcher'
-import ShufflePicker from '../components/ShufflePicker'
-import LegalModal from '../components/LegalModal'
-import SocialPopover from '../components/SocialPopover'
-import LikesMenu from '../components/LikesMenu'
-import { useI18n } from '../providers/I18nProvider'
-import { fetchRandom, type RandomTypes } from '../lib/api'
-import { playRandom, playAgain } from '../utils/sound'
-import MonoIcon from '../components/MonoIcon'
-import AnimatedButtonLabel from '../components/AnimatedButtonLabel'
-import type { ItemType } from '../lib/random/types'
-import type {
-  DisplayItem,
-  EncourageItem as EncourageContentItem,
-  RandomContentItem,
-} from '../lib/random/clientTypes'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useLayoutEffect,
+  type RefObject,
+  type CSSProperties,
+} from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
-type EncourageItem = EncourageContentItem
-type SequenceSlot =
-  | { kind: 'content'; itemType: ItemType }
-  | { kind: 'encourage'; round: number; encourageIndex: number }
+import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
+import LikesMenu from '@/components/LikesMenu'
+import LogoAnimated from '@/components/LogoAnimated'
+import MonoIcon from '@/components/MonoIcon'
+import ShufflePicker from '@/components/ShufflePicker'
+import SocialPopover from '@/components/SocialPopover'
+import { useI18n } from '@/providers/I18nProvider'
+import { THEMES } from '@/lib/theme'
+import type { ItemType } from '@/lib/random/types'
 
-const THEMES = [
-  { bg:'#65002d', deep:'#43001f', cream:'#FEFBE8', text:'#00b176' },
-  { bg:'#191916', deep:'#2e2e28', cream:'#fff7e2', text:'#d90845' },
-  { bg:'#051d37', deep:'#082f4b', cream:'#fff6ee', text:'#e5972b' },
-  { bg:'#0c390d', deep:'#155a1a', cream:'#eefdf3', text:'#ff978f' },
-  // { bg:'#0fc55d', deep:'#0a8f43', cream:'#f7efff', text:'#3d42cc' },
-  // { bg:'#ff978f', deep:'#d46c65', cream:'#f6fbff', text:'#463b46' },
-]
-
-// Séquence fixe d'un tour complet
-const FIXED_SEQUENCE: ItemType[] = [
-  'image',
-  'video',
-  'joke',
-  'video',
-  'image',
-  'web',
-  'quote',
-  'image',
-  'video',
-  'fact',
-  'image',
-  'video',
-  'web',
-]
-
-const ENCOURAGE_GROUP_SIZE = 5
-const ENCOURAGE_ICON_TOTAL = 30
-const ENCOURAGE_TRIGGER_COUNT = 13
-
-const PRELOAD_TARGET_PER_TYPE = 4
-const RECENT_SESSION_LIMIT = 10
-const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'joke', 'fact', 'quote', 'web']
-
-const FALLBACK_ENCOURAGE_MESSAGES = [
-  'Keep exploring forward.',
-  'Push beyond the familiar.',
-  'The next layer awaits.',
-  'Dive further into the odd.',
-  'Unlock another surprise.',
-]
-
-const shuffleArray = <T,>(arr: T[]): T[] => {
-  const copy = [...arr]
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const temp = copy[i]
-    copy[i] = copy[j]
-    copy[j] = temp
-  }
-  return copy
-}
+const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 
 const randIdx = (max: number) => Math.floor(Math.random() * max)
 const randDiffIdx = (max: number, not: number) => {
@@ -86,7 +34,6 @@ const randDiffIdx = (max: number, not: number) => {
   return i
 }
 
-/* ---------------------- hook: largeur “idéale” du bouton ---------------------- */
 function useButtonWidth(
   heroRef: RefObject<HTMLElement | null>,
   logoRef: RefObject<HTMLDivElement | null>
@@ -135,9 +82,7 @@ function useButtonWidth(
     window.addEventListener('orientationchange', schedule)
     window.visualViewport?.addEventListener('resize', schedule)
     const logoNode = logoRef.current
-    const ro = logoNode && 'ResizeObserver' in window
-      ? new ResizeObserver(() => schedule())
-      : null
+    const ro = logoNode && 'ResizeObserver' in window ? new ResizeObserver(() => schedule()) : null
     if (ro && logoNode) ro.observe(logoNode)
 
     return () => {
@@ -153,7 +98,8 @@ function useButtonWidth(
 }
 
 export default function HomePage() {
-  const { dict, locale, t } = useI18n()
+  const router = useRouter()
+  const { t } = useI18n()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -165,36 +111,31 @@ export default function HomePage() {
   const footerRef = useRef<HTMLElement | null>(null)
   const adRef = useRef<HTMLDivElement | null>(null)
 
-  const [isModalOpen, setIsModalOpen] = useState(false)
   const [isShuffleOpen, setIsShuffleOpen] = useState(false)
-  const [isLegalOpen, setIsLegalOpen] = useState(false)
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
-  const [themeIdx, setThemeIdx] = useState(0)
-  const [modalThemeIdx, setModalThemeIdx] = useState(1)
+  const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
+  const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H + AD_H)
   const [adHeight, setAdHeight] = useState(AD_H)
-
-  // sélection utilisateur (par défaut : tout)
-  const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(['image','video','quote','joke','fact','web'])
-  const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0, draws: 0 })
-  const [sequenceVersion, setSequenceVersion] = useState(0)
-
-  const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
-  const lang = (locale || 'en') as 'en'|'fr'|'de'|'jp'
   const [isButtonBursting, setIsButtonBursting] = useState(false)
-  const burstMountRef = useRef(true)
-
-  useEffect(() => {
-    const t = randIdx(THEMES.length)
-    setThemeIdx(t)
-    setModalThemeIdx(randDiffIdx(THEMES.length, t))
-  }, [])
 
   const theme = THEMES[themeIdx]
-  const modalTheme = THEMES[modalThemeIdx]
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('random:selectedTypes')
+      if (!stored) return
+      const parsed = JSON.parse(stored)
+      if (!Array.isArray(parsed)) return
+      const filtered = parsed.filter((entry): entry is ItemType => ALL_ITEM_TYPES.includes(entry as ItemType))
+      if (filtered.length) setSelectedTypes(filtered)
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const heroCopy = useMemo(() => ({
     startButton: t('hero.startButton', 'GO RANDOM'),
@@ -220,405 +161,51 @@ export default function HomePage() {
   const shuffleLabel = useMemo(() => t('shuffle.title', 'Shuffle'), [t])
 
   type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
-  const mainStyle = useMemo<ThemeStyle>(() => {
-    return {
-      backgroundColor: theme.bg,
-      color: theme.cream,
-      '--theme-cream': theme.cream,
-    }
-  }, [theme.bg, theme.cream])
+  const mainStyle = useMemo<ThemeStyle>(() => ({
+    backgroundColor: theme.bg,
+    color: theme.cream,
+    '--theme-cream': theme.cream,
+  }), [theme.bg, theme.cream])
 
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return
-
-    let frame: number | null = null
-
-    const measure = () => {
-      frame = null
+  useEffect(() => {
+    const onResize = () => {
+      if (typeof window === 'undefined') return
       setViewportHeight(window.innerHeight)
       setViewportWidth(window.innerWidth)
-      const headerH = headerRef.current?.getBoundingClientRect().height ?? HEADER_H
-      const footerH = footerRef.current?.getBoundingClientRect().height ?? FOOTER_H
-      const adH = adRef.current?.getBoundingClientRect().height ?? AD_H
+    }
+    onResize()
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
+  }, [])
+
+  useEffect(() => {
+    const observers: Array<{ el: HTMLElement | null; handler: () => void }> = []
+    const handle = () => {
+      const headerH = headerRef.current?.offsetHeight ?? HEADER_H
+      const footerH = footerRef.current?.offsetHeight ?? FOOTER_H
+      const adH = adRef.current?.offsetHeight ?? AD_H
       setReservedHeight(headerH + footerH + adH)
       setAdHeight(adH)
     }
+    observers.push({ el: headerRef.current, handler: handle })
+    observers.push({ el: footerRef.current, handler: handle })
+    observers.push({ el: adRef.current, handler: handle })
 
-    const schedule = () => {
-      if (frame !== null) cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(measure)
-    }
-
-    schedule()
-    window.addEventListener('resize', schedule)
-    window.addEventListener('orientationchange', schedule)
-    window.visualViewport?.addEventListener('resize', schedule)
-
-    const node = adRef.current
-    const resizeObs = node && 'ResizeObserver' in window
-      ? new ResizeObserver(schedule)
+    const ro = typeof window !== 'undefined' && 'ResizeObserver' in window
+      ? new ResizeObserver(() => handle())
       : null
-    if (resizeObs && node) resizeObs.observe(node)
 
-    return () => {
-      if (frame !== null) cancelAnimationFrame(frame)
-      window.removeEventListener('resize', schedule)
-      window.removeEventListener('orientationchange', schedule)
-      window.visualViewport?.removeEventListener('resize', schedule)
-      resizeObs?.disconnect()
-    }
+    handle()
+    observers.forEach(({ el }) => {
+      if (el) ro?.observe(el)
+    })
+
+    return () => ro?.disconnect()
   }, [])
-
-  useEffect(() => {
-    if (burstMountRef.current) {
-      burstMountRef.current = false
-      return
-    }
-    setIsButtonBursting(true)
-    const timer = setTimeout(() => setIsButtonBursting(false), 520)
-    return () => clearTimeout(timer)
-  }, [trigger])
-
-  // Séquence filtrée (on conserve l'ordre défini dans FIXED_SEQUENCE)
-  const filteredSequence = useMemo<ItemType[]>(() => {
-    const allow = new Set(selectedTypes)
-    const seq = FIXED_SEQUENCE.filter(t => allow.has(t))
-    return seq.length ? seq : FIXED_SEQUENCE.slice()
-  }, [selectedTypes])
-
-  const resetSequence = useCallback(() => {
-    sequenceStateRef.current = { step: 0, round: 0, encourage: 0, draws: 0 }
-    setSequenceVersion(v => v + 1)
-  }, [])
-
-  useEffect(() => {
-    resetSequence()
-  }, [resetSequence, filteredSequence.length])
-
-  const encourageMessages = useMemo(() => {
-    const encourageSection = (dict as Record<string, unknown>)['encourage']
-    const rawMessages =
-      encourageSection && typeof encourageSection === 'object'
-        ? (encourageSection as { messages?: unknown }).messages
-        : undefined
-    if (Array.isArray(rawMessages)) {
-      const cleaned = rawMessages.filter((entry): entry is string => typeof entry === 'string')
-      if (cleaned.length) {
-        return cleaned.map((msg) => msg.trim()).filter(Boolean)
-      }
-    }
-    return FALLBACK_ENCOURAGE_MESSAGES
-  }, [dict])
-
-  const encourageQueueRef = useRef<string[]>([])
-  useEffect(() => {
-    encourageQueueRef.current = shuffleArray(encourageMessages)
-  }, [encourageMessages])
-
-  const pickEncourageMessage = useCallback(() => {
-    if (!encourageQueueRef.current.length) {
-      encourageQueueRef.current = shuffleArray(encourageMessages)
-    }
-    return encourageQueueRef.current.shift() ?? FALLBACK_ENCOURAGE_MESSAGES[0]
-  }, [encourageMessages])
-
-  const pickEncourageIcon = useCallback((encourageIndex: number) => {
-    const groups = Math.max(1, Math.ceil(ENCOURAGE_ICON_TOTAL / ENCOURAGE_GROUP_SIZE))
-    const bucket = Math.min(encourageIndex - 1, groups - 1)
-    const start = bucket * ENCOURAGE_GROUP_SIZE + 1
-    const end = Math.min(start + ENCOURAGE_GROUP_SIZE - 1, ENCOURAGE_ICON_TOTAL)
-    const span = Math.max(1, end - start + 1)
-    return `/encourage/${start + Math.floor(Math.random() * span)}.png`
-  }, [])
-
-  const buildEncourageItem = useCallback((_round: number, encourageIndex: number): EncourageItem => ({
-    type: 'encourage',
-    text: pickEncourageMessage(),
-    icon: pickEncourageIcon(encourageIndex),
-  }), [pickEncourageIcon, pickEncourageMessage])
-
-  const langVersionRef = useRef(0)
-
-  const preloadQueuesRef = useRef<Record<ItemType, RandomContentItem[]>>({
-    image: [],
-    video: [],
-    joke: [],
-    fact: [],
-    quote: [],
-    web: [],
-  })
-  const preloadPromisesRef = useRef<Record<ItemType, Promise<void> | null>>({
-    image: null,
-    video: null,
-    joke: null,
-    fact: null,
-    quote: null,
-    web: null,
-  })
-  const recentKeysRef = useRef<string[]>([])
-  const recentKeySetRef = useRef<Set<string>>(new Set())
-
-  const clearPreloadedCaches = useCallback(() => {
-    for (const type of ALL_ITEM_TYPES) {
-      preloadQueuesRef.current[type] = []
-      preloadPromisesRef.current[type] = null
-    }
-    recentKeysRef.current = []
-    recentKeySetRef.current = new Set()
-  }, [])
-
-  const getContentKey = useCallback((item: RandomContentItem): string => {
-    if (item.type === 'image') {
-      return ['image', item.url, item.pageUrl, item.link, item.thumbUrl].filter(Boolean).join('|')
-    }
-    if (item.type === 'video') {
-      return ['video', item.url, item.provider, item.source?.url].filter(Boolean).join('|')
-    }
-    if (item.type === 'quote') {
-      return ['quote', item.text, item.author, item.provider].filter(Boolean).join('|')
-    }
-    if (item.type === 'joke') {
-      return ['joke', item.text, item.provider].filter(Boolean).join('|')
-    }
-    if (item.type === 'fact') {
-      return ['fact', item.text, item.provider].filter(Boolean).join('|')
-    }
-    if (item.type === 'web') {
-      return ['web', item.url, item.text, item.host].filter(Boolean).join('|')
-    }
-    return `other:${JSON.stringify(item)}`
-  }, [])
-
-  const registerRecentKey = useCallback((key: string) => {
-    if (!key) return
-    const list = recentKeysRef.current
-    const set = recentKeySetRef.current
-    if (set.has(key)) {
-      const idx = list.indexOf(key)
-      if (idx >= 0) list.splice(idx, 1)
-    }
-    list.push(key)
-    set.add(key)
-    while (list.length > RECENT_SESSION_LIMIT) {
-      const removed = list.shift()
-      if (removed) set.delete(removed)
-    }
-  }, [])
-
-  const isRecentKey = useCallback((key: string) => {
-    if (!key) return false
-    return recentKeySetRef.current.has(key)
-  }, [])
-
-  const purgeKeyFromQueue = useCallback((type: ItemType, key: string) => {
-    if (!key) return
-    const queue = preloadQueuesRef.current[type]
-    if (!queue.length) return
-    preloadQueuesRef.current[type] = queue.filter((entry) => getContentKey(entry) !== key)
-  }, [getContentKey])
-
-  const ensureQueue = useCallback(async (type: ItemType) => {
-    const queue = preloadQueuesRef.current[type]
-    if (queue.length >= PRELOAD_TARGET_PER_TYPE) return
-
-    const existing = preloadPromisesRef.current[type]
-    if (existing) {
-      try {
-        await existing
-      } catch {/* ignore */}
-      return
-    }
-
-    const version = langVersionRef.current
-
-    const runner = (async () => {
-      const maxAttempts = PRELOAD_TARGET_PER_TYPE * 6
-      let attempts = 0
-      while (preloadQueuesRef.current[type].length < PRELOAD_TARGET_PER_TYPE && attempts < maxAttempts) {
-        if (version !== langVersionRef.current) break
-        attempts += 1
-        try {
-          const res = await fetchRandom({ types: [type] as RandomTypes, lang })
-          const item = res?.item
-          if (!item || item.type !== type) continue
-          const key = getContentKey(item)
-          if (!key) continue
-          if (isRecentKey(key)) continue
-          const duplicate = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === key)
-          if (duplicate) continue
-          preloadQueuesRef.current[type].push(item)
-        } catch {
-          // swallow and continue
-        }
-      }
-    })()
-
-    preloadPromisesRef.current[type] = runner
-    try {
-      await runner
-    } finally {
-      if (preloadPromisesRef.current[type] === runner) {
-        preloadPromisesRef.current[type] = null
-      }
-    }
-  }, [getContentKey, isRecentKey, lang])
-
-  const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
-    await ensureQueue(type)
-
-    let candidate: RandomContentItem | undefined
-    let attempts = 0
-
-    while (preloadQueuesRef.current[type].length) {
-      const next = preloadQueuesRef.current[type].shift()
-      if (!next) break
-      const key = getContentKey(next)
-      if (key && isRecentKey(key)) {
-        attempts += 1
-        if (attempts >= PRELOAD_TARGET_PER_TYPE * 2) break
-        continue
-      }
-      candidate = next
-      break
-    }
-
-    let fallbackAttempts = 0
-    while (!candidate && fallbackAttempts < PRELOAD_TARGET_PER_TYPE * 3) {
-      fallbackAttempts += 1
-      try {
-        const res = await fetchRandom({ types: [type] as RandomTypes, lang })
-        const item = res?.item
-        if (!item || item.type !== type) continue
-        const key = getContentKey(item)
-        if (key && isRecentKey(key)) continue
-        candidate = item
-        break
-      } catch {
-        // retry
-      }
-    }
-
-    if (!candidate) return null
-
-    const key = getContentKey(candidate)
-    registerRecentKey(key)
-    purgeKeyFromQueue(type, key)
-    ensureQueue(type).catch(() => {})
-    return candidate
-  }, [ensureQueue, getContentKey, isRecentKey, lang, purgeKeyFromQueue, registerRecentKey])
-
-  useEffect(() => {
-    langVersionRef.current += 1
-    clearPreloadedCaches()
-  }, [clearPreloadedCaches, lang])
-
-  useEffect(() => {
-    let cancelled = false
-    const prime = async () => {
-      for (const type of selectedTypes) {
-        if (cancelled) return
-        try {
-          await ensureQueue(type)
-        } catch {
-          // ignore warmup errors
-        }
-      }
-    }
-    prime()
-    return () => {
-      cancelled = true
-    }
-  }, [ensureQueue, selectedTypes])
-
-  const getNextSlot = useCallback((): SequenceSlot => {
-    const seq = filteredSequence
-    if (!seq.length) {
-      return { kind: 'content', itemType: 'image' }
-    }
-
-    const state = sequenceStateRef.current
-    const draws = state.draws ?? 0
-    const shouldEncourage = draws >= ENCOURAGE_TRIGGER_COUNT - 1
-
-    if (shouldEncourage) {
-      const round = state.round + 1
-      const encourage = state.encourage + 1
-      const normalizedStep = state.step % seq.length
-      sequenceStateRef.current = {
-        step: normalizedStep,
-        round,
-        encourage,
-        draws: 0,
-      }
-      return { kind: 'encourage', round, encourageIndex: encourage }
-    }
-
-    const normalizedStep = state.step % seq.length
-    const itemType = seq[normalizedStep]
-    const nextStep = (normalizedStep + 1) % seq.length
-    sequenceStateRef.current = {
-      step: nextStep,
-      round: state.round,
-      encourage: state.encourage,
-      draws: draws + 1,
-    }
-    return { kind: 'content', itemType }
-  }, [filteredSequence])
-
-  const startRandom = async () => {
-    const next = !isSecond
-    setIsSecond(next)
-    setTrigger(t => t + 1)
-
-    try {
-      const slot = getNextSlot()
-      if (slot.kind === 'encourage') {
-        const encourageItem = buildEncourageItem(slot.round, slot.encourageIndex)
-        setCurrentItem(encourageItem)
-        setIsModalOpen(true)
-        playRandom()
-        return
-      }
-      const item = await acquireItem(slot.itemType)
-      setCurrentItem(item)
-      const contrast = Math.random() < 0.7
-      if (contrast) setModalThemeIdx(randDiffIdx(THEMES.length, themeIdx))
-      setIsModalOpen(true)
-      playRandom()
-    } catch {
-      setCurrentItem(null)
-      setIsModalOpen(true)
-      playRandom()
-    }
-  }
-
-  const randomAgain = async () => {
-    const next = !isSecond
-    setIsSecond(next)
-    setTrigger(t => t + 1)
-
-    try {
-      const slot = getNextSlot()
-      if (slot.kind === 'encourage') {
-        const encourageItem = buildEncourageItem(slot.round, slot.encourageIndex)
-        setCurrentItem(encourageItem)
-      } else {
-        const item = await acquireItem(slot.itemType)
-        setCurrentItem(item)
-      }
-    } catch {}
-
-    if (Math.random() < 0.5) {
-      setModalThemeIdx(i => randDiffIdx(THEMES.length, i))
-    } else {
-      setThemeIdx(i => {
-        const ni = randDiffIdx(THEMES.length, i)
-        if (ni === modalThemeIdx) setModalThemeIdx(randDiffIdx(THEMES.length, ni))
-        return ni
-      })
-    }
-    playAgain()
-  }
 
   const heroAvailable = viewportHeight != null ? viewportHeight - reservedHeight : null
   const heroMinHeight: number | string = heroAvailable != null
@@ -631,14 +218,6 @@ export default function HomePage() {
     return { width: 320, height: 50 }
   }, [viewportWidth])
 
-  const shareFromFooter = () => {
-    if (navigator.share) navigator.share({ title: 'Random', text: 'Random app', url: location.href }).catch(() => {})
-    else { navigator.clipboard?.writeText(location.href); alert('Link copied!') }
-  }
-
-  /* ---------- largeur bouton : mesure du conteneur du logo ---------- */
-  const targetBtnW = useButtonWidth(heroRef, logoRef)
-
   useEffect(() => {
     if (typeof document === 'undefined') return
     document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
@@ -647,23 +226,65 @@ export default function HomePage() {
     }
   }, [adFormat.height])
 
+  const targetBtnW = useButtonWidth(heroRef, logoRef)
+
+  const shareFromFooter = useCallback(() => {
+    const shareData = {
+      title: 'Random',
+      text: 'Random app',
+      url: typeof window !== 'undefined' ? window.location.origin : 'https://gorandom.fun',
+    }
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {})
+    } else {
+      navigator.clipboard?.writeText(shareData.url).then(() => alert('Link copied!')).catch(() => {})
+    }
+  }, [])
+
+  const handleStart = useCallback(() => {
+    const next = !isSecond
+    setIsSecond(next)
+    setTrigger((t) => t + 1)
+    setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))
+    setIsButtonBursting(true)
+    setTimeout(() => setIsButtonBursting(false), 520)
+
+    try {
+      localStorage.setItem('random:selectedTypes', JSON.stringify(selectedTypes))
+    } catch {
+      /* ignore */
+    }
+
+    const typesParam = selectedTypes.join(',')
+    if (typesParam.length) {
+      router.push(`/random?types=${encodeURIComponent(typesParam)}`)
+    } else {
+      router.push('/random')
+    }
+  }, [isSecond, router, selectedTypes])
+
   return (
-     <>
     <main className="min-h-screen flex flex-col" style={mainStyle}>
-      {/* Header */}
-      <header ref={headerRef} className="relative flex items-center justify-between px-4 pt-4 pb-2" style={{ height: HEADER_H }}>
+      <header
+        ref={headerRef}
+        className="relative flex items-center justify-between px-4 pt-4 pb-2"
+        style={{ height: HEADER_H }}
+      >
         <LikesMenu theme={theme} />
 
-        <button className="absolute left-1/2 -translate-x-1/2" onClick={() => setIsShuffleOpen(true)} aria-label={shuffleLabel}>
+        <button
+          className="absolute left-1/2 -translate-x-1/2"
+          onClick={() => setIsShuffleOpen(true)}
+          aria-label={shuffleLabel}
+        >
           <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
         </button>
 
-        <span className="text-xs font-bold flex items-center" style={{ color: theme.text }}>
-          V 0.1.<LanguageSwitcher />
+        <span className="text-xs font-bold flex items-center gap-1" style={{ color: theme.text }}>
+          V 0.1. <LanguageSwitcher />
         </span>
       </header>
 
-      {/* Centre */}
       <section
         ref={heroRef}
         className="flex flex-col items-center px-4 flex-1 justify-center text-center"
@@ -685,17 +306,16 @@ export default function HomePage() {
               vhMobile={18}
               vhDesktop={40}
               gapMobile={5}
-              gapDesktop={5}
+              gapDesktop={8}
             />
           </div>
 
-          {/* bouton calé “2 lignes” — fallback CSS pour le premier paint */}
           <div
             className="mt-6 mx-auto w-full max-w-[880px]"
             style={{ width: targetBtnW ? `${targetBtnW}px` : undefined }}
           >
             <button
-              onClick={startRandom}
+              onClick={handleStart}
               className={`w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase flex items-center justify-center ${isButtonBursting ? 'btn-energized' : ''}`}
               style={{
                 backgroundColor: theme.text,
@@ -723,7 +343,6 @@ export default function HomePage() {
             {heroCopy.tagline3}
           </p>
 
-          {/* Descriptif 4 + 2 */}
           <div
             className="mt-6 flex flex-col items-center font-inter font-semibold text-base md:text-lg tracking-tight"
             style={{ color: theme.cream, letterSpacing: '-0.01em' }}
@@ -758,14 +377,17 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer ref={footerRef} className="fixed left-0 right-0 z-20" style={{ bottom: `calc(${adHeight}px + env(safe-area-inset-bottom, 0px))`, height: FOOTER_H }}>
+      <footer
+        ref={footerRef}
+        className="fixed left-0 right-0 z-20"
+        style={{ bottom: `calc(${adHeight}px + env(safe-area-inset-bottom, 0px))`, height: FOOTER_H }}
+      >
         <div className="w-full px-4 h-full flex items-center justify-between" style={{ color: theme.text }}>
           <SocialPopover theme={theme} />
-          <button className="flex items-center gap-2" onClick={() => setIsLegalOpen(true)}>
+          <Link href="/legal" className="flex items-center gap-2">
             <MonoIcon src="/icons/info.svg" color={theme.cream} size={20} />
             <span className="font-inter font-semibold" style={{ color: theme.cream }}>{footerCopy.legal}</span>
-          </button>
+          </Link>
           <button className="flex items-center gap-2" onClick={shareFromFooter}>
             <MonoIcon src="/icons/share.svg" color={theme.text} size={20} />
             <span className="font-inter font-semibold" style={{ color: theme.text }}>{footerCopy.share}</span>
@@ -773,12 +395,17 @@ export default function HomePage() {
         </div>
       </footer>
 
-      {/* Ad bar */}
       <div
         ref={adRef}
         id="ad-bar"
         className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
-        style={{ height: adFormat.height, backgroundColor: '#ffffff', color: '#111', paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 60 }}
+        style={{
+          height: adFormat.height,
+          backgroundColor: '#ffffff',
+          color: '#111',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          zIndex: 60,
+        }}
       >
         <div
           className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
@@ -788,31 +415,13 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Popups */}
       <ShufflePicker
         open={isShuffleOpen}
         onClose={() => setIsShuffleOpen(false)}
         selected={selectedTypes}
-        onChange={(next) => {
-          setSelectedTypes(next)
-          resetSequence()
-        }}
+        onChange={(next) => setSelectedTypes(next)}
         theme={theme}
       />
-      <LegalModal open={isLegalOpen} onClose={() => setIsLegalOpen(false)} />
-      <RandomModal
-        key={sequenceVersion}
-        types={filteredSequence}
-        lang={lang}
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onRandomAgain={randomAgain}
-        trigger={trigger}
-        isSecond={isSecond}
-        theme={modalTheme}
-        forceItem={currentItem}
-      />
     </main>
-    </>
   )
 }
