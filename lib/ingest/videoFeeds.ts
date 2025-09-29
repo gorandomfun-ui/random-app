@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-import type { IngestResult, RawVideo } from '@/lib/ingest/videos'
+import type { RawVideo } from '@/lib/ingest/videos'
+import type { IngestResult } from '@/lib/ingest/videoFeedsTypes'
 import {
   finalizeVideoIngest,
   redditYouTube,
