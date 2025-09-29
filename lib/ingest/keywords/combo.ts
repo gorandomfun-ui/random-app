@@ -154,6 +154,30 @@ function pickYearValue(config: YearKeywordConfig, rng: () => number): number | u
   return last ? last.to : undefined
 }
 
+function resolveTargetTokenCount(total: number, rng: () => number): number {
+  if (total <= 1) return total
+  const roll = rng()
+  if (roll < 0.8) return Math.min(2, total)
+  if (roll < 0.95) return Math.min(3, total)
+  return total
+}
+
+type ComponentToken = {
+  key: keyof KeywordComponents
+  value: string
+  priority: number
+  tieBreaker: number
+}
+
+function prioritizeTokens(tokens: ComponentToken[]): ComponentToken[] {
+  return tokens
+    .slice()
+    .sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority
+      return a.tieBreaker - b.tieBreaker
+    })
+}
+
 export async function generateKeywordCombo(rng: () => number = Math.random): Promise<KeywordCombo> {
   const config = await loadKeywordComboConfig()
 
@@ -162,19 +186,57 @@ export async function generateKeywordCombo(rng: () => number = Math.random): Pro
   const country = maybePickFromList(config.countries, rng)
   const year = pickYearValue(config.years, rng)
 
-  const tokens = [primary, secondary, country, year ? String(year) : undefined]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  const candidateTokens: ComponentToken[] = []
+  if (primary) {
+    candidateTokens.push({ key: 'primary', value: primary, priority: 4, tieBreaker: rng() })
+  }
+  if (secondary) {
+    candidateTokens.push({ key: 'secondary', value: secondary, priority: 3, tieBreaker: rng() })
+  }
+  if (country) {
+    candidateTokens.push({ key: 'country', value: country, priority: 2, tieBreaker: rng() })
+  }
+  if (year) {
+    candidateTokens.push({ key: 'year', value: String(year), priority: 1, tieBreaker: rng() })
+  }
 
-  const query = tokens.join(' ').trim()
+  if (!candidateTokens.length) {
+    const fallbackPrimary = pickOne(config.wordPrimary.values, rng)
+    if (fallbackPrimary) {
+      candidateTokens.push({ key: 'primary', value: fallbackPrimary, priority: 4, tieBreaker: rng() })
+    } else {
+      const fallbackSecondary = pickOne(config.wordSecondary.values, rng)
+      if (fallbackSecondary) {
+        candidateTokens.push({ key: 'secondary', value: fallbackSecondary, priority: 3, tieBreaker: rng() })
+      }
+    }
+  }
+
+  const totalTokens = candidateTokens.length
+  const desiredCount = resolveTargetTokenCount(totalTokens, rng)
+  const prioritized = prioritizeTokens(candidateTokens)
+  const selected = prioritized.slice(0, Math.max(1, desiredCount))
+  const selectedMap = new Map<keyof KeywordComponents, string>()
+  selected.forEach((token) => {
+    selectedMap.set(token.key, token.value)
+  })
+
+  const query = selected
+    .map((token) => token.value)
+    .filter((value) => typeof value === 'string' && value.trim().length > 0)
+    .join(' ')
+    .trim()
+
+  const components: KeywordComponents = {
+    primary: selectedMap.get('primary'),
+    secondary: selectedMap.get('secondary'),
+    country: selectedMap.get('country'),
+    year: selectedMap.has('year') ? Number(selectedMap.get('year')) : undefined,
+  }
 
   return {
     query,
-    components: {
-      primary,
-      secondary,
-      country,
-      year,
-    },
+    components,
   }
 }
 

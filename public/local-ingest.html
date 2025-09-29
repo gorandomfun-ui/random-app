@@ -41,6 +41,12 @@
       <button id="addManual" type="button" style="margin-top: 8px; padding: 6px 10px; font-size: 13px;">+ Ajouter une ligne</button>
     </div>
 
+    <div style="margin-bottom: 24px;">
+      <h2>Sources curées (GitHub & Reddit)</h2>
+      <p style="margin: 6px 0 12px; font-size: 14px;">Ajoute une sélection de listes “awesome” et une vingtaine de subreddits sans passer par les combos ci-dessus.</p>
+      <button id="runFeeds" type="button" class="secondary">Ingest Sources Curées</button>
+    </div>
+
     <div style="margin-bottom: 18px;">
       <label>
         Combos max
@@ -73,6 +79,7 @@
       const buttons = {
         images: document.getElementById('runImages'),
         videos: document.getElementById('runVideos'),
+        feeds: document.getElementById('runFeeds'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -92,6 +99,7 @@
       function setRunning(running) {
         buttons.images.disabled = running
         buttons.videos.disabled = running
+        if (buttons.feeds) buttons.feeds.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -226,9 +234,10 @@
             } else {
               endpoint = '/api/ingest/videos'
               params.set('mode', 'search')
-              params.set('durations', 'short,standard')
-              params.set('pages', '1')
-              params.set('per', '10')
+              params.set('durations', 'short,medium,long')
+              params.set('pages', '2')
+              params.set('per', '32')
+              params.set('providers', 'youtube,dailymotion,pixabay,pexels')
             }
             params.set('q', combo.query)
 
@@ -288,6 +297,36 @@
         }
       }
 
+      async function runFeeds() {
+        stopRequested = false
+        setRunning(true)
+        appendLog(`<p><strong>Sources curées</strong> — ${new Date().toLocaleTimeString()}</p>`)
+
+        try {
+          const key = document.body.dataset.key || ''
+          const params = new URLSearchParams()
+          if (dryRunEl.checked) params.set('dry', '1')
+
+          const res = await fetch(`/api/ingest/video-feeds?${params.toString()}`, {
+            method: 'GET',
+            headers: { 'x-admin-ingest-key': key },
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data?.error || 'Ingest failed')
+
+          const providerCounts = data?.providerCounts || {}
+          const providerSummary = Object.keys(providerCounts).length
+            ? `<br/>Providers → ${Object.entries(providerCounts).map(([name, value]) => `${name}:${value}`).join(' • ')}`
+            : ''
+
+          appendLog(`<p class="success">Sources curées → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${providerSummary}</p>`)
+        } catch (error) {
+          appendLog(`<p class="error">Sources curées → ${(error instanceof Error ? error.message : String(error))}</p>`)
+        } finally {
+          setRunning(false)
+        }
+      }
+
       const storedKey = localStorage.getItem('local-ingest-key') || ''
       const key = storedKey || window.prompt('Admin ingest key', '') || ''
       document.body.dataset.key = key
@@ -332,6 +371,7 @@
 
       buttons.images.addEventListener('click', () => run('images'))
       buttons.videos.addEventListener('click', () => run('videos'))
+      if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       stopBtn.addEventListener('click', () => {
         stopRequested = true
       })

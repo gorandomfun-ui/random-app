@@ -2,7 +2,14 @@ import { getDb } from '@/lib/db';
 import type { Collection, Db, Filter } from 'mongodb';
 import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
 
-export type VideoProvider = 'youtube' | 'reddit-youtube' | 'archive.org' | 'manual';
+export type VideoProvider =
+  | 'youtube'
+  | 'reddit-youtube'
+  | 'archive.org'
+  | 'manual'
+  | 'dailymotion'
+  | 'pixabay'
+  | 'pexels';
 
 type SourceRef = { name: string; url?: string };
 
@@ -52,6 +59,7 @@ type IngestVideosOptions = {
   dryRun?: boolean;
   sampleSize?: number;
   durations?: Array<'any' | 'short' | 'medium' | 'long'>;
+  providers?: Array<'youtube' | 'dailymotion' | 'pixabay' | 'pexels'>;
 };
 
 type IngestResult = {
@@ -64,6 +72,7 @@ type IngestResult = {
   providerCounts?: Record<string, number>;
   warnings?: FetchWarning[];
   skippedInvalid?: number;
+  providers?: string[];
 };
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
@@ -126,6 +135,7 @@ type RedditPost = {
   url?: string;
   title?: string;
   permalink?: string;
+  name?: string;
 };
 
 type RedditListing = {
@@ -134,7 +144,14 @@ type RedditListing = {
   };
 };
 
-type FetchWarning = {
+export type RedditListingOptions = {
+  listing?: 'hot' | 'new' | 'top';
+  time?: 'hour' | 'day' | 'week' | 'month' | 'year' | 'all';
+  after?: string | null;
+  onCursor?: (cursor: string | null) => void;
+};
+
+export type FetchWarning = {
   label: string;
   status?: number;
   statusText?: string;
@@ -142,8 +159,86 @@ type FetchWarning = {
   message?: string;
 };
 
-function youtubeThumb(id: string): string {
+type DailymotionItem = {
+  id?: string;
+  title?: string;
+  description?: string;
+  thumbnail_url?: string;
+  thumbnail_480_url?: string;
+  thumbnail_720_url?: string;
+  url?: string;
+  duration?: number;
+  ['channel.name']?: string;
+  ['channel.id']?: string;
+  ['owner.screenname']?: string;
+};
+
+type DailymotionResponse = {
+  list?: DailymotionItem[];
+  has_more?: boolean;
+};
+
+type PixabayVideoVariant = {
+  url?: string;
+  width?: number;
+  height?: number;
+  size?: number;
+};
+
+type PixabayVideoHit = {
+  id?: number;
+  pageURL?: string;
+  duration?: number;
+  tags?: string;
+  picture_id?: string;
+  user?: string;
+  videos?: {
+    large?: PixabayVideoVariant;
+    medium?: PixabayVideoVariant;
+    small?: PixabayVideoVariant;
+    tiny?: PixabayVideoVariant;
+  };
+};
+
+type PixabayVideoResponse = {
+  hits?: PixabayVideoHit[];
+};
+
+type PexelsVideoFile = {
+  id?: number;
+  link?: string;
+  quality?: string;
+  file_type?: string;
+  width?: number;
+  height?: number;
+};
+
+type PexelsVideoPicture = {
+  picture?: string;
+};
+
+type PexelsVideo = {
+  id?: number;
+  url?: string;
+  image?: string;
+  duration?: number;
+  user?: { name?: string };
+  video_files?: PexelsVideoFile[];
+  video_pictures?: PexelsVideoPicture[];
+};
+
+type PexelsVideoResponse = {
+  videos?: PexelsVideo[];
+};
+
+export function youtubeThumb(id: string): string {
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+}
+
+function secondsToIsoDuration(seconds?: number | null): string | undefined {
+  if (!Number.isFinite(seconds) || seconds == null) return undefined;
+  const safe = Math.max(0, Math.round(seconds));
+  return `PT${safe}S`;
 }
 
 async function fetchJson<T = unknown>(
@@ -151,11 +246,22 @@ async function fetchJson<T = unknown>(
   timeoutMs = 10000,
   label?: string,
   warnings?: FetchWarning[],
+  init?: RequestInit,
 ): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { cache: 'no-store', headers: USER_AGENT, signal: controller.signal });
+    const headers = new Headers(USER_AGENT as HeadersInit);
+    if (init?.headers) {
+      const extra = new Headers(init.headers as HeadersInit);
+      extra.forEach((value, key) => headers.set(key, value));
+    }
+    const response = await fetch(url, {
+      cache: 'no-store',
+      ...(init || {}),
+      headers,
+      signal: init?.signal || controller.signal,
+    });
     if (!response.ok) {
       let body: string | undefined;
       try {
@@ -269,6 +375,205 @@ async function searchYouTube(
   return collected;
 }
 
+async function searchDailymotion(
+  queries: string[],
+  per: number,
+  pages: number,
+  warnings?: FetchWarning[],
+): Promise<RawVideo[]> {
+  const collected: RawVideo[] = [];
+  const limit = Math.min(100, Math.max(5, per));
+
+  for (const query of queries) {
+    const trimmed = query.trim();
+    if (!trimmed) continue;
+
+    for (let page = 0; page < pages; page++) {
+      const params = new URLSearchParams({
+        search: trimmed,
+        limit: String(limit),
+        page: String(page + 1),
+        sort: Math.random() < 0.5 ? 'recent' : 'relevance',
+        fields: 'id,title,description,thumbnail_url,thumbnail_480_url,thumbnail_720_url,url,duration,channel.name,channel.id,owner.screenname',
+      });
+
+      const data = await fetchJson<DailymotionResponse>(
+        `https://api.dailymotion.com/videos?${params.toString()}`,
+        9000,
+        'dailymotion:search',
+        warnings,
+      );
+
+      const items = data?.list ?? [];
+      for (const item of items) {
+        const id = item?.id?.trim();
+        if (!id) continue;
+        const url = item?.url?.trim() || `https://www.dailymotion.com/video/${id}`;
+        const thumb = item?.thumbnail_720_url || item?.thumbnail_url || item?.thumbnail_480_url;
+        const channelTitle = item?.['channel.name'] || item?.['owner.screenname'] || undefined;
+        const channelId = item?.['channel.id'] || undefined;
+        const title = item?.title?.trim() || trimmed;
+        collected.push({
+          videoId: `dailymotion:${id}`,
+          url,
+          provider: 'dailymotion',
+          title,
+          description: item?.description || undefined,
+          thumb: thumb || undefined,
+          channelTitle,
+          channelId,
+          duration: secondsToIsoDuration(item?.duration),
+          source: { name: 'Dailymotion', url },
+          contextQueries: [`dailymotion:${trimmed}`],
+        });
+      }
+
+      if (!data?.has_more) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+
+  return collected;
+}
+
+async function searchPixabayVideos(
+  queries: string[],
+  per: number,
+  pages: number,
+  warnings?: FetchWarning[],
+): Promise<RawVideo[]> {
+  const key = process.env.PIXABAY_API_KEY;
+  if (!key) {
+    warnings?.push({ label: 'pixabay:videos', message: 'PIXABAY_API_KEY missing' });
+    return [];
+  }
+
+  const collected: RawVideo[] = [];
+  const limit = Math.min(20, Math.max(5, per));
+
+  for (const query of queries) {
+    const trimmed = query.trim();
+    if (!trimmed) continue;
+
+    for (let page = 0; page < pages; page++) {
+      const params = new URLSearchParams({
+        key,
+        q: trimmed,
+        per_page: String(limit),
+        page: String(page + 1),
+        safesearch: 'true',
+        video_type: 'all',
+      });
+
+      const data = await fetchJson<PixabayVideoResponse>(
+        `https://pixabay.com/api/videos/?${params.toString()}`,
+        9000,
+        'pixabay:videos',
+        warnings,
+      );
+
+      const hits = data?.hits ?? [];
+      for (const hit of hits) {
+        const id = typeof hit?.id === 'number' ? hit.id : Number(hit?.id);
+        if (!Number.isFinite(id)) continue;
+        const videos = hit?.videos || {};
+        const best = videos.medium || videos.large || videos.small || videos.tiny;
+        const url = best?.url || hit?.pageURL;
+        if (!url) continue;
+        const thumb = hit?.picture_id ? `https://i.vimeocdn.com/video/${hit.picture_id}_640x360.jpg` : undefined;
+        const title = (hit?.tags || '').split(',').map((token) => token.trim()).filter(Boolean).join(' • ') || `Pixabay clip ${id}`;
+        const apiTags = (hit?.tags || '').split(',').map((token) => token.trim()).filter(Boolean);
+        collected.push({
+          videoId: `pixabay:${id}`,
+          url,
+          provider: 'pixabay',
+          title,
+          thumb,
+          description: hit?.tags || undefined,
+          duration: secondsToIsoDuration(hit?.duration),
+          source: { name: 'Pixabay', url: hit?.pageURL || url },
+          channelTitle: hit?.user || undefined,
+          contextQueries: [`pixabay:${trimmed}`],
+          apiTags: apiTags.length ? apiTags : undefined,
+        });
+      }
+
+      if (!hits.length) break;
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+  }
+
+  return collected;
+}
+
+async function searchPexelsVideos(
+  queries: string[],
+  per: number,
+  pages: number,
+  warnings?: FetchWarning[],
+): Promise<RawVideo[]> {
+  const apiKey = process.env.PEXELS_API_KEY;
+  if (!apiKey) {
+    warnings?.push({ label: 'pexels:videos', message: 'PEXELS_API_KEY missing' });
+    return [];
+  }
+
+  const collected: RawVideo[] = [];
+  const limit = Math.min(20, Math.max(5, per));
+
+  for (const query of queries) {
+    const trimmed = query.trim();
+    if (!trimmed) continue;
+
+    for (let page = 0; page < pages; page++) {
+      const params = new URLSearchParams({
+        query: trimmed,
+        per_page: String(limit),
+        page: String(page + 1),
+      });
+
+      const data = await fetchJson<PexelsVideoResponse>(
+        `https://api.pexels.com/videos/search?${params.toString()}`,
+        9000,
+        'pexels:videos',
+        warnings,
+        { headers: { Authorization: apiKey } },
+      );
+
+      const videos = data?.videos ?? [];
+      for (const video of videos) {
+        const id = typeof video?.id === 'number' ? video.id : Number(video?.id);
+        if (!Number.isFinite(id)) continue;
+        const files = Array.isArray(video?.video_files) ? video.video_files : [];
+        const picture = Array.isArray(video?.video_pictures) && video.video_pictures.length
+          ? video.video_pictures[0]?.picture
+          : video?.image;
+        const file = files.find((entry) => (entry?.file_type || '').includes('mp4') && entry?.quality === 'sd')
+          || files.find((entry) => (entry?.file_type || '').includes('mp4'));
+        const url = file?.link || video?.url;
+        if (!url) continue;
+        const title = video?.user?.name ? `${video.user.name} • ${trimmed}` : trimmed;
+        collected.push({
+          videoId: `pexels:${id}`,
+          url,
+          provider: 'pexels',
+          title,
+          thumb: picture || undefined,
+          duration: secondsToIsoDuration(video?.duration),
+          source: { name: 'Pexels', url: video?.url || url },
+          channelTitle: video?.user?.name || undefined,
+          contextQueries: [`pexels:${trimmed}`],
+        });
+      }
+
+      if (!videos.length) break;
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+  }
+
+  return collected;
+}
+
 async function playlistYouTube(playlistId: string, per: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || !playlistId) return [];
@@ -320,7 +625,7 @@ async function channelUploadsYouTube(channelId: string, per: number, warnings?: 
   return playlistYouTube(playlist, per, warnings);
 }
 
-async function enrichYouTubeDetails(videos: RawVideo[], warnings?: FetchWarning[]): Promise<void> {
+export async function enrichYouTubeDetails(videos: RawVideo[], warnings?: FetchWarning[]): Promise<void> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return;
   const youtubeVideos = videos.filter((video) => video.provider === 'youtube');
@@ -360,16 +665,35 @@ async function enrichYouTubeDetails(videos: RawVideo[], warnings?: FetchWarning[
   }
 }
 
-async function redditYouTube(sub: string, limit: number, warnings?: FetchWarning[]): Promise<RawVideo[]> {
+export async function redditYouTube(
+  sub: string,
+  limit: number,
+  warnings?: FetchWarning[],
+  options?: RedditListingOptions,
+): Promise<RawVideo[]> {
+  const listing = options?.listing || 'hot';
+  const time = options?.time;
+  const safeLimit = Math.min(100, Math.max(5, limit));
+  const params = new URLSearchParams({ limit: String(safeLimit) });
+  if (listing === 'top' && time) params.set('t', time);
+  if (options?.after) params.set('after', options.after);
+
+  const path = listing === 'hot' ? '' : `/${listing}`;
+  const label = time ? `reddit:${sub}:${listing}:${time}` : `reddit:${sub}:${listing}`;
+
   const json = await fetchJson<RedditListing>(
-    `https://www.reddit.com/r/${encodeURIComponent(sub)}/.json?limit=${Math.min(100, Math.max(5, limit))}`,
+    `https://www.reddit.com/r/${encodeURIComponent(sub)}${path}.json?${params.toString()}`,
     8000,
-    `reddit:${sub}`,
+    label,
     warnings,
   );
   const posts = json?.data?.children?.map((child) => child?.data).filter((entry): entry is RedditPost => Boolean(entry)) || [];
   const out: RawVideo[] = [];
+  let cursor: string | null = null;
   for (const post of posts) {
+    if (post?.name) {
+      cursor = post.name;
+    }
     const url = String(post?.url || '');
     if (!/youtu\.be\//i.test(url) && !/youtube\.com\/watch\?/i.test(url)) continue;
     let videoId = '';
@@ -380,6 +704,8 @@ async function redditYouTube(sub: string, limit: number, warnings?: FetchWarning
       videoId = '';
     }
     if (!videoId) continue;
+    const context: string[] = [`reddit:${sub}`];
+    if (listing) context.push(`reddit:${sub}:${listing}${time ? `:${time}` : ''}`);
     out.push({
       videoId,
       url: `https://youtu.be/${videoId}`,
@@ -387,8 +713,11 @@ async function redditYouTube(sub: string, limit: number, warnings?: FetchWarning
       title: post?.title || '',
       thumb: youtubeThumb(videoId),
       source: { name: 'Reddit', url: `https://www.reddit.com${post?.permalink || ''}` },
-      contextQueries: [`reddit:${sub}`],
+      contextQueries: context,
     });
+  }
+  if (options?.onCursor) {
+    options.onCursor(cursor);
   }
   return out;
 }
@@ -458,63 +787,16 @@ async function getCollection(): Promise<Collection<VideoDocument>> {
   return cachedCollection;
 }
 
-export async function ingestVideos(options: IngestVideosOptions): Promise<IngestResult> {
-  const {
-    mode,
-    queries = [],
-    per = 20,
-    pages = 1,
-    days = 120,
-    playlistId,
-    channelId,
-  reddit,
-  manualIds = [],
-  dryRun = false,
-  sampleSize = 6,
-  durations = ['any'],
-  } = options;
-
-  const collected: RawVideo[] = [];
-  const fetchWarnings: FetchWarning[] = [];
-
-  if (manualIds.length) {
-    for (const id of manualIds) {
-      const trimmed = id.trim();
-      if (!trimmed) continue;
-      collected.push({
-        videoId: trimmed,
-        url: `https://youtu.be/${trimmed}`,
-        provider: 'manual',
-        title: '',
-        thumb: youtubeThumb(trimmed),
-        source: { name: 'YouTube', url: `https://youtu.be/${trimmed}` },
-        contextQueries: ['manual'],
-      });
-    }
-  }
-
-  if (mode === 'search') {
-    const effectiveQueries = queries.length ? queries : ['weird public access show', 'retro craft tutorial'];
-    const primaryResults = await searchYouTube(effectiveQueries, per, pages, days, durations, fetchWarnings);
-    collected.push(...primaryResults);
-
-    if (!primaryResults.length && effectiveQueries.some((q) => /\d{4}/.test(q))) {
-      const relaxedQueries = effectiveQueries.map((q) => q.replace(/\b(19|20)\d{2}\b/g, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
-      if (relaxedQueries.length) {
-        collected.push(...await searchYouTube(relaxedQueries, per, pages, 0, durations, fetchWarnings));
-      }
-    }
-  } else if (mode === 'playlist' && playlistId) {
-    collected.push(...await playlistYouTube(playlistId, per, fetchWarnings));
-  } else if (mode === 'channel' && channelId) {
-    collected.push(...await channelUploadsYouTube(channelId, per, fetchWarnings));
-  }
-
-  if (reddit) {
-    collected.push(...await redditYouTube(reddit.sub, reddit.limit, fetchWarnings));
-  }
-
-  await enrichYouTubeDetails(collected, fetchWarnings);
+export async function finalizeVideoIngest(
+  collected: RawVideo[],
+  options: {
+    dryRun: boolean;
+    sampleSize: number;
+    warnings: FetchWarning[];
+    providers?: string[];
+  },
+): Promise<IngestResult> {
+  const { dryRun, sampleSize, warnings, providers } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -540,7 +822,9 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   }
 
   const sampleDocuments = documents.slice(0, Math.max(0, sampleSize));
-  const sampleVideoIds = sampleDocuments.map((doc) => doc.videoId);
+  const summaryProviders = providers && providers.length
+    ? providers
+    : Array.from(new Set(documents.map((doc) => doc.provider)));
 
   const summary: IngestResult = {
     scanned: collected.length,
@@ -550,19 +834,10 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     dryRun,
     providerCounts,
     sample: sampleDocuments,
-    warnings: fetchWarnings,
+    warnings,
     skippedInvalid,
+    providers: summaryProviders,
   };
-
-  console.log('[ingest:videos] processed', {
-    mode,
-    dryRun,
-    scanned: summary.scanned,
-    unique: summary.unique,
-    providerCounts,
-    sampleVideoIds,
-    warnings: fetchWarnings,
-  });
 
   if (dryRun || !documents.length) {
     return summary;
@@ -586,5 +861,105 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   const bulk = await collection.bulkWrite(operations, { ordered: false });
   summary.inserted = bulk.upsertedCount || 0;
   summary.updated = bulk.modifiedCount || 0;
+  return summary;
+}
+
+export async function ingestVideos(options: IngestVideosOptions): Promise<IngestResult> {
+  const {
+    mode,
+    queries = [],
+    per = 20,
+    pages = 1,
+    days = 120,
+    playlistId,
+    channelId,
+  reddit,
+  manualIds = [],
+  dryRun = false,
+  sampleSize = 6,
+  durations = ['any'],
+  providers = ['youtube', 'dailymotion', 'pixabay', 'pexels'],
+  } = options;
+
+  const collected: RawVideo[] = [];
+  const fetchWarnings: FetchWarning[] = [];
+  const providerSet = new Set(providers && providers.length ? providers : ['youtube']);
+
+  if (manualIds.length) {
+    for (const id of manualIds) {
+      const trimmed = id.trim();
+      if (!trimmed) continue;
+      collected.push({
+        videoId: trimmed,
+        url: `https://youtu.be/${trimmed}`,
+        provider: 'manual',
+        title: '',
+        thumb: youtubeThumb(trimmed),
+        source: { name: 'YouTube', url: `https://youtu.be/${trimmed}` },
+        contextQueries: ['manual'],
+      });
+    }
+  }
+
+  if (mode === 'search') {
+    const effectiveQueries = queries.length ? queries : ['weird public access show', 'retro craft tutorial'];
+    let youtubeResults: RawVideo[] = [];
+    if (providerSet.has('youtube')) {
+      youtubeResults = await searchYouTube(effectiveQueries, per, pages, days, durations, fetchWarnings);
+      collected.push(...youtubeResults);
+    }
+
+    if (providerSet.has('dailymotion')) {
+      collected.push(...await searchDailymotion(effectiveQueries, per, pages, fetchWarnings));
+    }
+
+    if (providerSet.has('pixabay')) {
+      collected.push(...await searchPixabayVideos(effectiveQueries, per, pages, fetchWarnings));
+    }
+
+    if (providerSet.has('pexels')) {
+      collected.push(...await searchPexelsVideos(effectiveQueries, per, pages, fetchWarnings));
+    }
+
+    if (!youtubeResults.length && providerSet.has('youtube') && effectiveQueries.some((q) => /\d{4}/.test(q))) {
+      const relaxedQueries = effectiveQueries
+        .map((q) => q.replace(/\b(19|20)\d{2}\b/g, '').replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      if (relaxedQueries.length) {
+        collected.push(...await searchYouTube(relaxedQueries, per, pages, 0, durations, fetchWarnings));
+      }
+    }
+  } else if (mode === 'playlist' && playlistId) {
+    collected.push(...await playlistYouTube(playlistId, per, fetchWarnings));
+  } else if (mode === 'channel' && channelId) {
+    collected.push(...await channelUploadsYouTube(channelId, per, fetchWarnings));
+  }
+
+  if (reddit) {
+    collected.push(...await redditYouTube(reddit.sub, reddit.limit, fetchWarnings));
+  }
+
+  await enrichYouTubeDetails(collected, fetchWarnings);
+
+  const summary = await finalizeVideoIngest(collected, {
+    dryRun,
+    sampleSize,
+    warnings: fetchWarnings,
+    providers: Array.from(providerSet),
+  });
+
+  const sampleVideoIds = (summary.sample || []).map((doc) => doc.videoId);
+
+  console.log('[ingest:videos] processed', {
+    mode,
+    providers: Array.from(providerSet),
+    dryRun: summary.dryRun,
+    scanned: summary.scanned,
+    unique: summary.unique,
+    providerCounts: summary.providerCounts,
+    sampleVideoIds,
+    warnings: fetchWarnings,
+  });
+
   return summary;
 }

@@ -20,7 +20,7 @@ type IngestResult = {
   skippedInvalid?: number
 }
 
-export type Category = 'videos' | 'images' | 'web' | 'facts' | 'jokes' | 'quotes'
+export type Category = 'videos' | 'video-feeds' | 'images' | 'web' | 'facts' | 'jokes' | 'quotes'
 export type LogLevel = 'info' | 'warn' | 'error'
 
 export type LogEvent = {
@@ -107,7 +107,7 @@ export type CliOptions = {
   sleepMs: number
 }
 
-export const ALL_CATEGORIES: Category[] = ['videos', 'images', 'web', 'facts', 'jokes', 'quotes']
+export const ALL_CATEGORIES: Category[] = ['videos', 'video-feeds', 'images', 'web', 'facts', 'jokes', 'quotes']
 const DEFAULT_YT_DURATIONS = ['short', 'standard'] as const
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -229,19 +229,79 @@ class VideoIngestor {
     return this.durations.split(',').map((part) => part.trim()).filter(Boolean)
   }
 
+  private providerList(): string[] {
+    const raw = this.options.env.LOCAL_VIDEOS_PROVIDERS || 'youtube,dailymotion,pixabay,pexels'
+    const tokens = raw
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+    if (!tokens.length) return ['youtube']
+    return Array.from(new Set(tokens))
+  }
+
+  private computeProviderCost(provider: string, per: number, pages: number, durationCount: number): number {
+    const safePer = Math.max(1, per)
+    const safePages = Math.max(1, pages)
+    if (provider === 'youtube') {
+      return this.computeCost(durationCount)
+    }
+    if (provider === 'dailymotion') {
+      return safePer * safePages
+    }
+    if (provider === 'pixabay' || provider === 'pexels') {
+      return Math.min(20, safePer) * safePages
+    }
+    return safePer * safePages
+  }
+
+  private prepareProviderExecution(per: number, pages: number, durationCount: number) {
+    const available: string[] = []
+    const consumptions: Array<{ key: string; cost: number }> = []
+    const skipped: string[] = []
+    const providers = this.providerList()
+
+    for (const provider of providers) {
+      const cost = this.computeProviderCost(provider, per, pages, durationCount)
+      const quotaKey = provider === 'youtube'
+        ? 'youtube'
+        : provider === 'dailymotion'
+        ? 'dailymotion'
+        : provider === 'pixabay'
+        ? 'pixabay-video'
+        : provider === 'pexels'
+        ? 'pexels-video'
+        : null
+
+      if (quotaKey) {
+        const usage = this.options.quota.getUsage(quotaKey)
+        if (usage && !this.options.quota.canConsume(quotaKey, cost)) {
+          skipped.push(provider)
+          continue
+        }
+        if (usage) {
+          consumptions.push({ key: quotaKey, cost })
+        }
+      }
+
+      available.push(provider)
+    }
+
+    return { providers: available, consumptions, skipped }
+  }
+
   async run(): Promise<CategorySummary> {
     const startedAt = Date.now()
     const totals: Totals = { inserted: 0, updated: 0, unique: 0, scanned: 0, skipped: 0 }
     let combosRun = 0
     const durationTokens = this.durationsArray()
     const durationCount = durationTokens.length || DEFAULT_YT_DURATIONS.length
-    const costPerCombo = this.computeCost(durationCount)
-    const per = getEnvNumber('LOCAL_VIDEOS_PER_PAGE', 10, this.options.env)
+    const per = Math.max(5, Math.min(100, getEnvNumber('LOCAL_VIDEOS_PER_PAGE', 32, this.options.env)))
+    const pages = Math.max(1, Math.min(5, getEnvNumber('LOCAL_VIDEOS_PAGES', 2, this.options.env)))
     const days = getEnvNumber('LOCAL_VIDEOS_DAYS', 365, this.options.env)
     const sampleSize = getEnvNumber('LOCAL_VIDEOS_SAMPLE', 6, this.options.env)
 
     try {
-      while ((!this.options.cli.maxCombos || combosRun < (this.options.cli.maxCombos ?? 0)) && this.options.quota.canConsume('youtube', costPerCombo)) {
+      while (!this.options.cli.maxCombos || combosRun < (this.options.cli.maxCombos ?? 0)) {
         const combo = await generateKeywordCombo()
         const query = combo.query
         const label = buildKeywordLabel(combo) || '(empty)'
@@ -251,8 +311,25 @@ class VideoIngestor {
           continue
         }
 
-        if (!this.options.quota.consume('youtube', costPerCombo)) {
-          this.emit('info', `⏹️  Videos → quota threshold reached before executing combo ${label}`)
+        const providerContext = this.prepareProviderExecution(per, pages, durationCount)
+        if (!providerContext.providers.length) {
+          this.emit('info', '⏹️  Videos → no providers available within quota limits')
+          break
+        }
+
+        if (providerContext.skipped.length) {
+          this.emit('info', `ℹ️  Videos → providers skipped (quota): ${providerContext.skipped.join(', ')}`)
+        }
+
+        let quotaFailed = false
+        for (const entry of providerContext.consumptions) {
+          if (!this.options.quota.consume(entry.key, entry.cost)) {
+            quotaFailed = true
+            break
+          }
+        }
+        if (quotaFailed) {
+          this.emit('info', `⏹️  Videos → quota threshold reached while preparing combo ${label}`)
           break
         }
 
@@ -261,13 +338,16 @@ class VideoIngestor {
         const params = new URLSearchParams({
           mode: 'search',
           per: String(per),
-          pages: '1',
+          pages: String(pages),
           days: String(days),
           durations: this.durations,
           sample: String(sampleSize),
           dry: this.options.cli.dryRun ? '1' : '0',
           q: query,
         })
+        if (providerContext.providers.length) {
+          params.set('providers', providerContext.providers.join(','))
+        }
 
         try {
           const result = await this.options.client.call(`/api/ingest/videos?${params.toString()}`)
@@ -466,7 +546,7 @@ type StaticIngestOptions = {
   client: IngestClient
   quota: QuotaManager
   cli: CliOptions
-  quotaKey: 'facts' | 'jokes' | 'quotes'
+  quotaKey: 'facts' | 'jokes' | 'quotes' | 'youtube'
   category: Category
   label: string
   requests: Array<() => { path: string; description: string; cost: number }>
@@ -646,8 +726,18 @@ export function parseCliArgs(args: string[], env: NodeJS.ProcessEnv = process.en
     } else if (token.startsWith('--categories=')) {
       const values = token.split('=')[1]
       values.split(',').map((v) => v.trim().toLowerCase()).forEach(addCategory)
-    } else if (token === '--videos' || token === '--images' || token === '--web' || token === '--facts' || token === '--jokes' || token === '--quotes') {
-      addCategory(token.replace('--', ''))
+    } else if (
+      token === '--videos' ||
+      token === '--video-feeds' ||
+      token === '--feeds' ||
+      token === '--images' ||
+      token === '--web' ||
+      token === '--facts' ||
+      token === '--jokes' ||
+      token === '--quotes'
+    ) {
+      const normalized = token === '--feeds' ? 'video-feeds' : token.replace('--', '')
+      addCategory(normalized)
     } else if (token === '--all') {
       ALL_CATEGORIES.forEach((cat) => categories.add(cat))
       categoriesSpecified = true
@@ -739,6 +829,9 @@ export async function runIngest(options: RunIngestOptions = {}): Promise<RunSumm
 
   if (cli.categories.has('videos')) {
     selectBudget('youtube', 'YouTube Data API', 'YOUTUBE_DAILY_QUOTA', 10000)
+    selectBudget('dailymotion', 'Dailymotion API', 'DAILYMOTION_DAILY_CALLS', 400)
+    selectBudget('pixabay-video', 'Pixabay Videos', 'PIXABAY_VIDEO_DAILY_CALLS', 100, 0)
+    selectBudget('pexels-video', 'Pexels Videos', 'PEXELS_VIDEO_DAILY_CALLS', 100, 0)
   }
   if (cli.categories.has('images')) {
     selectBudget('images', 'Images providers', 'IMAGES_DAILY_CALLS', 400)
@@ -779,6 +872,54 @@ export async function runIngest(options: RunIngestOptions = {}): Promise<RunSumm
 
   await runCategory('videos', async () => {
     const ingestor = new VideoIngestor({ client, quota, cli, logger: emit, env })
+    return ingestor.run()
+  })
+
+  await runCategory('video-feeds', async () => {
+    const youtubeUsage = quota.getUsage('youtube')
+    if (!youtubeUsage) {
+      const now = new Date().toISOString()
+      return {
+        name: 'video-feeds',
+        status: 'skipped',
+        reason: 'YouTube quota not configured',
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 0,
+        logs: [],
+      }
+    }
+
+    const cost = getEnvNumber('VIDEO_FEEDS_YOUTUBE_COST', 500, env)
+    const lists = (env.VIDEO_FEEDS_LISTS || '').trim()
+    const subs = (env.VIDEO_FEEDS_SUBREDDITS || '').trim()
+    const limit = getEnvNumber('VIDEO_FEEDS_SUBREDDIT_LIMIT', 40, env)
+
+    const requests = [() => {
+      const params = new URLSearchParams()
+      if (cli.dryRun) params.set('dry', '1')
+      if (lists) params.set('lists', lists)
+      if (subs) params.set('subs', subs)
+      if (limit) params.set('limit', String(limit))
+      return {
+        path: `/api/ingest/video-feeds?${params.toString()}`,
+        description: 'curated sources',
+        cost,
+      }
+    }]
+
+    const ingestor = new StaticIngestor({
+      client,
+      quota,
+      cli,
+      quotaKey: 'youtube',
+      category: 'video-feeds',
+      label: 'Video feeds',
+      requests,
+      supportsDryRun: true,
+      logger: emit,
+    })
+
     return ingestor.run()
   })
 
@@ -942,7 +1083,8 @@ function printHelp() {
   console.log('Options:')
   console.log('  --help, -h            Show this help')
   console.log('  --dry                 Dry-run (no writes)')
-  console.log('  --videos|--images     Run a single category (comma lists via --only=videos,images)')
+  console.log('  --videos|--video-feeds|--images|--web|--facts|--jokes|--quotes')
+  console.log('                        Run selected categories (comma lists via --only=videos,images)')
   console.log('  --max=<n>             Limit keyword combos per category')
   console.log('  --sleep=<ms>          Delay between combos (default from env)')
   console.log('\nEnvironment: set HOST + ADMIN_INGEST_KEY (and provider API keys) in .env.local.')
@@ -950,6 +1092,7 @@ function printHelp() {
   console.log('\nExamples:')
   console.log('  npx tsx scripts/local-ingest.ts --dry --images --max=12')
   console.log('  npx tsx scripts/local-ingest.ts --videos --max=24 --sleep=200')
+  console.log('  npx tsx scripts/local-ingest.ts --video-feeds')
 }
 
 function formatComboEntry(record: ComboRecord): string {

@@ -13,6 +13,9 @@ function parseList(value: string | null): string[] {
     .filter(Boolean);
 }
 
+const SEARCH_PROVIDERS = ['youtube', 'dailymotion', 'pixabay', 'pexels'] as const;
+type SearchProvider = (typeof SEARCH_PROVIDERS)[number];
+
 function parseInteger(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
   if (Number.isNaN(parsed)) return fallback;
@@ -84,8 +87,8 @@ export async function GET(req: NextRequest) {
     const mode = modeParam === 'playlist' ? 'playlist' : modeParam === 'channel' ? 'channel' : 'search';
     const count = parseInteger(url.searchParams.get('count'), 12, 3, 60);
     let queries = parseList(url.searchParams.get('q'));
-    const per = parseInteger(url.searchParams.get('per'), 20, 1, 50);
-    const pages = parseInteger(url.searchParams.get('pages'), 1, 1, 5);
+    const per = parseInteger(url.searchParams.get('per'), 32, 5, 100);
+    const pages = parseInteger(url.searchParams.get('pages'), 2, 1, 5);
     const days = parseInteger(url.searchParams.get('days'), 120, 1, 365);
     const durationsRaw = parseList(url.searchParams.get('durations') || url.searchParams.get('duration'));
     const dryParam = url.searchParams.get('dry') || url.searchParams.get('preview');
@@ -101,6 +104,13 @@ export async function GET(req: NextRequest) {
     const redditLimit = parseInteger(url.searchParams.get('limit'), 40, 5, 100);
     const reddit = redditEnabled ? { sub: redditSub, limit: redditLimit } : null;
     const durations = normalizeDurations(durationsRaw);
+    const providerTokens = parseList(url.searchParams.get('providers'));
+    const providers = (providerTokens.length
+      ? providerTokens
+      : SEARCH_PROVIDERS
+    )
+      .map((token) => token.toLowerCase())
+      .filter((token): token is SearchProvider => (SEARCH_PROVIDERS as readonly string[]).includes(token));
 
     if (!queries.length) {
       const dictionary = await loadVideoKeywordDictionary();
@@ -120,6 +130,7 @@ export async function GET(req: NextRequest) {
       dryRun,
       sampleSize,
       durations,
+      providers,
     });
 
     return NextResponse.json({
@@ -133,6 +144,7 @@ export async function GET(req: NextRequest) {
       sampleSize,
       count,
       durations,
+      providers,
       ...result,
     });
   } catch (error: unknown) {

@@ -41,3 +41,7 @@
 - Export document builders from `lib/random/{quotes,facts,jokes}.ts` and update text ingestion routes to use them (removes ~70% of `any` usage in those files).
 - Create `lib/ingest/http.ts` with the shared fetch-with-timeout used by ingestion endpoints.
 - Backfill existing Mongo records (one-off script) to populate `tags`/`keywords` for older entries (will schedule after refactor stabilizes).
+
+## Recent updates
+- Video ingestion now aggregates YouTube, Dailymotion, Pixabay Video, and Pexels Video with per-provider quotas controlled via `.env` (`LOCAL_VIDEOS_PROVIDERS`, `PIXABAY_VIDEO_DAILY_CALLS`, `PEXELS_VIDEO_DAILY_CALLS`, etc.).
+- Added `/api/ingest/video-feeds` to pull curated GitHub markdown lists and a rotating set of subreddits; accessible from the local ingest UI via the new “Sources curées” button.

@@ -12,6 +12,7 @@ import type { ItemType } from '../lib/random/types'
 import type {
   DisplayItem,
   SourceInfo,
+  VideoItem as VideoContentItem,
 } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 
@@ -339,13 +340,33 @@ function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
   }
 
   if (item.type === 'video') {
-    return <VideoEmbed url={item.url} title={item.text || 'YouTube'} />
+    return <VideoEmbed item={item} />
   }
 
   return null
 }
 
-function VideoEmbed({ url, title }: { url: string; title?: string }) {
+function VideoEmbed({ item }: { item: VideoContentItem }) {
+  const provider = (item.provider || '').toLowerCase()
+  const url = item.url
+  if (!url) return null
+
+  const looksYouTube = provider.includes('youtube') || /youtu\.?be/.test(url)
+  const looksDailymotion = !looksYouTube && (provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(url))
+
+  if (looksYouTube) {
+    return <YouTubeEmbed item={item} />
+  }
+
+  if (looksDailymotion) {
+    return <DailymotionEmbed item={item} />
+  }
+
+  return <HtmlVideoEmbed item={item} />
+}
+
+function YouTubeEmbed({ item }: { item: VideoContentItem }) {
+  const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [originParam, setOriginParam] = useState('')
   const [isMuted, setIsMuted] = useState(true)
@@ -411,7 +432,7 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
           className="w-full h-full"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowFullScreen
-          title={title || 'YouTube'}
+          title={text || 'YouTube'}
           style={{ border: 'none' }}
         />
         {isMuted && (
@@ -423,6 +444,125 @@ function VideoEmbed({ url, title }: { url: string; title?: string }) {
           >
             Tap to unmute
           </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function extractDailymotionId(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.includes('dailymotion.com')) {
+      const segments = parsed.pathname.split('/').filter(Boolean)
+      const idx = segments.indexOf('video')
+      if (idx >= 0 && segments[idx + 1]) return segments[idx + 1].split('_')[0]
+    }
+    if (parsed.hostname === 'dai.ly') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0]
+      if (id) return id
+    }
+  } catch {}
+  return null
+}
+
+function DailymotionEmbed({ item }: { item: VideoContentItem }) {
+  const { url, text } = item
+  const videoId = useMemo(() => extractDailymotionId(url), [url])
+  const src = useMemo(() => {
+    if (!videoId) return ''
+    const params = new URLSearchParams()
+    params.set('autoplay', '1')
+    params.set('mute', '1')
+    params.set('controls', '1')
+    params.set('queue-enable', '0')
+    params.set('sharing-enable', '0')
+    params.set('ui-logo', '0')
+    params.set('quality', '480')
+    params.set('playsinline', '1')
+    return videoId ? `https://www.dailymotion.com/embed/video/${videoId}?${params.toString()}` : ''
+  }, [videoId])
+
+  if (!videoId || !src) {
+    return <HtmlVideoEmbed item={item} />
+  }
+
+  return (
+    <div className="w-full">
+      <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
+        <iframe
+          src={src}
+          className="w-full h-full"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowFullScreen
+          title={text || 'Dailymotion'}
+          style={{ border: 'none' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function HtmlVideoEmbed({ item }: { item: VideoContentItem }) {
+  const { url, thumbUrl, provider } = item
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [isMuted, setIsMuted] = useState(true)
+  const [hasError, setHasError] = useState(false)
+
+  useEffect(() => {
+    setIsMuted(true)
+    setHasError(false)
+  }, [url])
+
+  const unmute = () => {
+    const video = videoRef.current
+    if (!video) return
+    try {
+      video.muted = false
+      const playPromise = video.play()
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise.catch(() => {})
+      }
+      setIsMuted(false)
+    } catch {}
+  }
+
+  return (
+    <div className="w-full">
+      <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9', position: 'relative', backgroundColor: '#000' }}>
+        <video
+          key={url}
+          ref={videoRef}
+          className="w-full h-full"
+          src={url}
+          poster={thumbUrl || undefined}
+          playsInline
+          controls
+          autoPlay
+          loop
+          muted={isMuted}
+          preload="metadata"
+          onError={() => setHasError(true)}
+        />
+
+        {isMuted && !hasError && (
+          <button
+            type="button"
+            onClick={unmute}
+            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+            style={{ position: 'absolute', top: '50%', right: '16px', transform: 'translateY(-50%)', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+          >
+            Tap to unmute
+          </button>
+        )}
+
+        {hasError && (
+          <div
+            className="absolute inset-0 flex items-center justify-center text-center px-6 text-sm sm:text-base font-semibold"
+            style={{ color: '#fff', backgroundColor: 'rgba(0,0,0,0.6)' }}
+          >
+            Impossible de lire cette vidéo ({provider || 'video'}).
+          </div>
         )}
       </div>
     </div>
