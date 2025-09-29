@@ -279,61 +279,6 @@ async function pullNeocities(limit: number): Promise<ProviderResult> {
   return { rows, scanned: raw.length, checked }
 }
 
-type ArchiveSearchDoc = {
-  identifier?: string
-  title?: string
-  description?: string
-  originalurl?: string
-  original?: string
-  subject?: unknown
-  creator?: unknown
-}
-
-type ArchiveSearchResponse = {
-  response?: { docs?: ArchiveSearchDoc[] }
-}
-
-async function pullArchiveOrg(limit: number): Promise<ProviderResult> {
-  const query = 'collection:(geocities OR webring OR archiveteam_geocities) AND mediatype:web'
-  const fetchRows = Math.min(200, Math.max(limit * 4, 40))
-  const url = `https://archive.org/advancedsearch.php?output=json&q=${encodeURIComponent(query)}&rows=${fetchRows}&fl[]=identifier&fl[]=title&fl[]=description&fl[]=originalurl&fl[]=subject&sort[]=downloads+desc`
-
-  const data = await fetchJson<ArchiveSearchResponse>(url, { headers: ROUTE_HEADERS, timeoutMs: 12000 })
-  const docs = Array.isArray(data?.response?.docs) ? data?.response?.docs ?? [] : []
-  if (!docs.length) return { rows: [], scanned: 0, checked: 0 }
-
-  const raw: WebRow[] = []
-  for (const doc of shuffle(docs)) {
-    if (!doc) continue
-    const identifier = typeof doc.identifier === 'string' ? doc.identifier.trim() : ''
-    const itemUrl = identifier ? `https://archive.org/details/${identifier}` : ''
-    const target = itemUrl || (typeof doc.originalurl === 'string' ? doc.originalurl.trim() : '') || (typeof doc.original === 'string' ? doc.original.trim() : '')
-    if (!target) continue
-    const host = hostFromUrl(target)
-    const title = (doc.title || '').trim() || (host ? `Internet Archive — ${host}` : target)
-    const description = (doc.description || '').trim()
-    const subjectTags = normalizeStrings(doc.subject)
-    const tags = Array.from(new Set([...subjectTags, 'archive', 'webring', host].filter(Boolean)))
-    const keywords = deriveKeywords(`${title} ${description}`, 10)
-    raw.push({
-      type: 'web',
-      url: target,
-      title,
-      text: description || title,
-      host,
-      ogImage: null,
-      provider: 'archive-webring',
-      source: { name: 'Internet Archive', url: itemUrl || target },
-      tags,
-      keywords,
-    })
-  }
-
-  const deduped = dedupeByUrl(raw)
-  const ensured = await ensureOgImages(deduped, limit)
-  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked }
-}
-
 type WikipediaExternalLinksResponse = {
   parse?: {
     externallinks?: unknown
@@ -398,13 +343,13 @@ export async function GET(req: NextRequest) {
   ]
   const queries = incoming.length ? incoming : fallback
 
-  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,neocities,archive,wikipedia')
+  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,neocities,wikipedia')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
-  const allowedProviders = new Set(['cse', 'neocities', 'archive', 'wikipedia'])
+  const allowedProviders = new Set(['cse', 'neocities', 'wikipedia'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
-  const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'archive', 'wikipedia']
+  const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'wikipedia']
 
   const dryParam = req.nextUrl.searchParams.get('dry') || req.nextUrl.searchParams.get('preview')
   const dryRun = dryParam === '1' || dryParam === 'true'
@@ -434,15 +379,6 @@ export async function GET(req: NextRequest) {
   if (providers.includes('neocities')) {
     try {
       const result = await pullNeocities(perProviderTarget)
-      aggregated.push(...result.rows)
-      scanned += result.scanned
-      checked += result.checked
-    } catch {}
-  }
-
-  if (providers.includes('archive')) {
-    try {
-      const result = await pullArchiveOrg(perProviderTarget)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
