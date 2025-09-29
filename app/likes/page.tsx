@@ -6,6 +6,7 @@ import LikesGrid from '../../components/LikesGrid'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
+import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
 
 const THEMES = [
@@ -97,8 +98,7 @@ export default function LikesPage() {
     : t('likes.weDescription', 'Here is the most')
 
   const heartInline = (
-    <MonoIcon
-      src="/icons/heart.svg"
+    <HeartIcon
       color={accentColor}
       size={28}
       className="inline-block align-middle mx-2"
@@ -249,7 +249,7 @@ function LikeTab({ label, active, onClick, accent, cream }: LikeTabProps) {
       }}
     >
       <span>{label}</span>
-      <MonoIcon src="/icons/heart.svg" color={heartColor} size={56} />
+      <HeartIcon color={heartColor} size={56} className="inline-block" />
     </button>
   )
 }
