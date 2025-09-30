@@ -525,6 +525,7 @@ export default function RandomExperiencePage({
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null)
 
   const theme = THEMES[themeIdx]
   const contentFrameStyle = useMemo(() => ({
@@ -536,6 +537,18 @@ export default function RandomExperiencePage({
     alignItems: 'center',
     justifyContent: 'center',
   }), [theme.bg])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const update = () => setViewportWidth(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('orientationchange', update)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
 
   useEffect(() => {
     if (typesFromParams.length) return
@@ -938,6 +951,8 @@ export default function RandomExperiencePage({
   }, [categoryType, navLabels])
 
   const categoryIcon = categoryType ? TYPE_ICONS[categoryType] : null
+  const adHeight = viewportWidth && viewportWidth >= 768 ? 90 : 50
+  const adWidth = viewportWidth && viewportWidth >= 768 ? 728 : 320
 
   useEffect(() => {
     if (!menuOpen) return
@@ -998,8 +1013,8 @@ export default function RandomExperiencePage({
         </div>
       ) : null}
 
-      <section className="flex-1 flex flex-col items-center px-4 sm:px-6">
-        <div className="w-full" style={{ ...contentFrameStyle, marginBottom: '10px' }}>
+      <section className="flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
+        <div className="w-full" style={contentFrameStyle}>
           {loading ? (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
@@ -1014,14 +1029,14 @@ export default function RandomExperiencePage({
         </div>
 
         {viewItem && viewItem.type !== 'encourage' ? (
-          <div className="text-center text-sm md:text-base font-inter opacity-80" style={{ marginBottom: '10px' }}>
+          <div className="text-center text-sm md:text-base font-inter opacity-80">
             <SourceLine item={viewItem} />
           </div>
         ) : null}
       </section>
 
-      <section className="px-4 sm:px-6" style={{ marginBottom: '20px' }}>
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 w-full">
+      <section className="px-4 sm:px-6" style={{ margin: '10px 0' }}>
+        <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap', marginBottom: '10px' }}>
           <button
             type="button"
             aria-label={likeLabel}
@@ -1046,7 +1061,7 @@ export default function RandomExperiencePage({
             <MonoIcon src="/icons/Heart.svg" color={liked ? '#FF4D78' : theme.cream} size={30} />
           </button>
 
-          <div className="flex-1 flex justify-center min-w-[160px] max-w-[260px]">
+          <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
             <button
               type="button"
               onClick={handleRandomAgain}
@@ -1076,13 +1091,16 @@ export default function RandomExperiencePage({
       <div
         className="mt-auto w-full flex items-center justify-center"
         style={{
-          height: 100,
+          height: adHeight + 4,
           backgroundColor: '#ffffff',
           color: '#111',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        <div className="flex items-center justify-center border border-dashed border-neutral-400 rounded" style={{ width: 320, height: 50 }}>
+        <div
+          className="flex items-center justify-center border border-dashed border-neutral-400 rounded"
+          style={{ width: adWidth, height: adHeight }}
+        >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
         </div>
       </div>
