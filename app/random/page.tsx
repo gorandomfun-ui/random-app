@@ -63,7 +63,7 @@ const FALLBACK_ENCOURAGE_MESSAGES = [
   'Unlock another surprise.',
 ]
 
-const CONTENT_HEIGHT = 'clamp(320px, 52vh, 680px)'
+const CONTENT_HEIGHT = 'clamp(260px, 45vh, 560px)'
 
 function parseTypesParam(value: string | string[] | undefined): ItemType[] {
   if (!value) return []
@@ -998,7 +998,10 @@ export default function RandomExperiencePage({
         </div>
       ) : null}
 
-      <section className="flex-1 flex flex-col items-center px-4 sm:px-6 py-8">
+      <section
+        className="flex-1 flex flex-col items-center px-4 sm:px-6"
+        style={{ rowGap: '10px', marginTop: '4px', paddingBottom: '32px' }}
+      >
         <div className="w-full" style={contentFrameStyle}>
           {loading ? (
             <div className="flex items-center justify-center w-full h-full">
@@ -1014,14 +1017,14 @@ export default function RandomExperiencePage({
         </div>
 
         {viewItem && viewItem.type !== 'encourage' ? (
-          <div className="mt-6 text-center text-sm md:text-base font-inter opacity-80">
+          <div className="mt-3 text-center text-sm md:text-base font-inter opacity-80">
             <SourceLine item={viewItem} />
           </div>
         ) : null}
       </section>
 
-      <section className="px-4 sm:px-6 pb-[160px]">
-        <div className="flex items-center justify-between gap-6 w-full" style={{ maxWidth: '100%' }}>
+      <section className="px-4 sm:px-6 pb-[120px]">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 w-full">
           <button
             type="button"
             aria-label={likeLabel}
@@ -1046,16 +1049,15 @@ export default function RandomExperiencePage({
             <MonoIcon src="/icons/Heart.svg" color={liked ? '#FF4D78' : theme.cream} size={30} />
           </button>
 
-          <div className="flex-1 flex justify-center">
+          <div className="flex-1 flex justify-center min-w-[160px] max-w-[260px]">
             <button
               type="button"
               onClick={handleRandomAgain}
-              className="px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold"
+              className="w-full px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold"
               style={{
                 backgroundColor: theme.text,
                 color: theme.cream,
                 fontWeight: 700,
-                minWidth: 'min(280px, 80vw)',
               }}
             >
               <AnimatedButtonLabel text={randomAgainLabel} color={theme.cream} trigger={trigger} toSecond={isSecond} />
@@ -1077,7 +1079,7 @@ export default function RandomExperiencePage({
       <div
         className="mt-auto w-full flex items-center justify-center"
         style={{
-          height: 108,
+          height: 100,
           backgroundColor: '#ffffff',
           color: '#111',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
