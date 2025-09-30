@@ -917,26 +917,25 @@ export default function RandomModal({
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: clamp(70px, 16vh, 140px);
-        padding-block: clamp(2px, 1.2vh, 12px);
+        padding-block: clamp(4px, 1vh, 12px);
+        min-height: clamp(110px, 26vh, 230px);
       }
       .encourage-icon {
-        width: clamp(70px, 12vw, 140px);
-        max-height: clamp(70px, 16vh, 150px);
-        max-width: 150px;
+        width: auto;
+        max-width: clamp(190px, 60vw, 320px);
+        height: clamp(160px, 38vh, 280px);
         object-fit: contain;
-        filter: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.32));
+        filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.28));
         animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
         transform-origin: center;
       }
       @media (min-width: 768px) {
         .encourage-icon-wrapper {
-          min-height: clamp(90px, 14vh, 170px);
+          min-height: clamp(180px, 24vh, 320px);
         }
         .encourage-icon {
-          width: clamp(100px, 10vw, 160px);
-          max-height: clamp(90px, 14vh, 170px);
-          max-width: 170px;
+          max-width: clamp(300px, 46vw, 420px);
+          height: clamp(260px, 36vh, 380px);
         }
       }
       @keyframes heartPulse {

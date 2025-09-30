@@ -22,9 +22,11 @@ import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
+import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
+type Lang = 'en' | 'fr' | 'de' | 'jp'
 
 const randIdx = (max: number) => Math.floor(Math.random() * max)
 const randDiffIdx = (max: number, not: number) => {
@@ -99,7 +101,7 @@ function useButtonWidth(
 
 export default function HomePage() {
   const router = useRouter()
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -123,6 +125,31 @@ export default function HomePage() {
   const [isButtonBursting, setIsButtonBursting] = useState(false)
 
   const theme = THEMES[themeIdx]
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const lang = (locale || 'en') as Lang
+    const typesToPrefetch: ItemType[] = ['image', 'video', 'joke']
+    typesToPrefetch.forEach((type) => {
+      const key = `random-prefetch-${type}`
+      try {
+        if (sessionStorage.getItem(key)) return
+      } catch {
+        return
+      }
+      fetchRandom({ types: [type] as RandomTypes, lang })
+        .then((result) => {
+          const item = result?.item
+          if (!item || item.type !== type) return
+          try {
+            sessionStorage.setItem(key, JSON.stringify(item))
+          } catch {
+            /* ignore */
+          }
+        })
+        .catch(() => undefined)
+    })
+  }, [locale])
 
   useEffect(() => {
     try {

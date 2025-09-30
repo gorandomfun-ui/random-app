@@ -65,7 +65,7 @@ export default function ShufflePicker({
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,.55)' }}>
       <div
         className="w-[min(92vw,560px)] rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: theme.bg, color: theme.cream }}
+        style={{ background: theme.text, color: theme.cream }}
         role="dialog"
         aria-modal="true"
         aria-label="Shuffle picker"

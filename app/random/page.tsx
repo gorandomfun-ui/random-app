@@ -63,7 +63,6 @@ const FALLBACK_ENCOURAGE_MESSAGES = [
   'Unlock another surprise.',
 ]
 
-const CONTENT_HEIGHT = 'clamp(260px, 45vh, 560px)'
 
 function parseTypesParam(value: string | string[] | undefined): ItemType[] {
   if (!value) return []
@@ -81,6 +80,7 @@ type SequenceSlot =
   | { kind: 'encourage'; round: number; encourageIndex: number }
 
 type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
+type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
@@ -375,37 +375,64 @@ function ContentRenderer({
   item,
   theme,
   frameHeight,
+  viewportWidth,
 }: {
   item: DisplayItem
   theme: { cream: string }
   frameHeight: string
+  viewportWidth: number | null
 }) {
   if (item.type === 'encourage') {
+    const encourageStyle: EncourageStyle = {
+      height: '100%',
+      '--encourage-height': frameHeight,
+    }
+    const desktop = viewportWidth != null && viewportWidth >= 1024
+    const tablet = viewportWidth != null && viewportWidth >= 768 && viewportWidth < 1024
+    const iconMaxHeight = desktop ? '60vh' : tablet ? '32vh' : '33vh'
+    const iconMaxWidth = desktop
+      ? 'min(780px, 60vw)'
+      : tablet
+        ? 'min(320px, 50vw)'
+        : 'min(280px, 70vw)'
     return (
-      <div
-        className="h-full w-full flex flex-col items-center justify-center gap-3 text-center px-6"
-        style={{ height: '100%' }}
-      >
-        {item.icon ? (
-          <div className="encourage-icon-wrapper">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={item.icon}
-              alt="Encouragement"
-              className="encourage-icon"
-              loading="lazy"
-              decoding="async"
-            />
-          </div>
-        ) : null}
-        {item.text ? (
-          <p
-            className="font-tomorrow font-bold text-[17px] md:text-[24px] leading-snug"
-            style={{ color: theme.cream, letterSpacing: '.01em' }}
-          >
-            {item.text}
-          </p>
-        ) : null}
+      <div className="h-full w-full px-5 sm:px-8" style={encourageStyle}>
+        <div className="encourage-layout flex h-full w-full flex-col items-center justify-center gap-4 text-center md:flex-row md:items-center md:justify-center">
+          {item.icon ? (
+            <div
+              className="encourage-icon-wrapper"
+              style={{
+                maxWidth: iconMaxWidth,
+                width: iconMaxWidth,
+                height: iconMaxHeight,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={item.icon}
+                alt="Encouragement"
+                className="encourage-icon"
+                loading="lazy"
+                decoding="async"
+                style={{
+                  height: '100%',
+                  width: '100%',
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
+          ) : null}
+          {item.text ? (
+            <div className="encourage-copy-wrapper">
+              <p
+                className="encourage-copy font-tomorrow font-bold leading-snug"
+                style={{ color: theme.cream, letterSpacing: '.01em' }}
+              >
+                {item.text}
+              </p>
+            </div>
+          ) : null}
+        </div>
       </div>
     )
   }
@@ -493,12 +520,15 @@ function ContentRenderer({
   return null
 }
 
-function BurgerIcon({ color }: { color: string }) {
+function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
   return (
-    <span className="inline-flex flex-col justify-between h-5 w-7" aria-hidden>
-      <span className="block h-[3px]" style={{ backgroundColor: color }} />
-      <span className="block h-[3px]" style={{ backgroundColor: color }} />
-      <span className="block h-[3px]" style={{ backgroundColor: color }} />
+    <span
+      className={`inline-flex flex-col justify-between h-5 w-7 burger-icon${glitch ? ' burger-icon--glitch' : ''}`}
+      aria-hidden
+    >
+      <span className="burger-line block h-[3px]" style={{ backgroundColor: color, color }} />
+      <span className="burger-line block h-[3px]" style={{ backgroundColor: color, color }} />
+      <span className="burger-line block h-[3px]" style={{ backgroundColor: color, color }} />
     </span>
   )
 }
@@ -526,17 +556,29 @@ export default function RandomExperiencePage({
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
+  const [burgerGlitch, setBurgerGlitch] = useState(false)
+  const [heartGlitch, setHeartGlitch] = useState(false)
 
   const theme = THEMES[themeIdx]
+  const contentHeight = useMemo(() => {
+    const base = 'clamp(260px, 45vh, 560px)'
+    if (viewportWidth == null) return base
+    if (viewportWidth >= 1400) return 'clamp(357px, 61vh, 697px)'
+    if (viewportWidth >= 1200) return 'clamp(323px, 57.8vh, 646px)'
+    if (viewportWidth >= 992) return 'clamp(289px, 53vh, 595px)'
+    if (viewportWidth >= 768) return 'clamp(300px, 55vh, 640px)'
+    return base
+  }, [viewportWidth])
+
   const contentFrameStyle = useMemo(() => ({
-    height: CONTENT_HEIGHT,
+    height: contentHeight,
     borderRadius: 0,
     overflow: 'hidden',
     backgroundColor: theme.bg,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-  }), [theme.bg])
+  }), [contentHeight, theme.bg])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -592,10 +634,31 @@ export default function RandomExperiencePage({
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
   const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0, draws: 0 })
+  const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const triggerBurgerGlitch = useCallback(() => {
+    setBurgerGlitch(true)
+    if (burgerGlitchTimeoutRef.current) clearTimeout(burgerGlitchTimeoutRef.current)
+    burgerGlitchTimeoutRef.current = setTimeout(() => setBurgerGlitch(false), 380)
+  }, [])
+
+  const triggerHeartGlitch = useCallback(() => {
+    setHeartGlitch(true)
+    if (heartGlitchTimeoutRef.current) clearTimeout(heartGlitchTimeoutRef.current)
+    heartGlitchTimeoutRef.current = setTimeout(() => setHeartGlitch(false), 420)
+  }, [])
 
   useEffect(() => {
     const initial = randIdx(THEMES.length)
     setThemeIdx(initial)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (burgerGlitchTimeoutRef.current) clearTimeout(burgerGlitchTimeoutRef.current)
+      if (heartGlitchTimeoutRef.current) clearTimeout(heartGlitchTimeoutRef.current)
+    }
   }, [])
 
   const encourageMessages = useMemo(() => {
@@ -693,6 +756,7 @@ export default function RandomExperiencePage({
     quote: null,
     web: null,
   })
+  const prefetchLoadedRef = useRef(new Set<ItemType>())
   const recentKeysRef = useRef<string[]>([])
   const recentKeySetRef = useRef<Set<string>>(new Set())
 
@@ -703,6 +767,7 @@ export default function RandomExperiencePage({
     }
     recentKeysRef.current = []
     recentKeySetRef.current = new Set()
+    prefetchLoadedRef.current = new Set()
   }, [])
 
   const getContentKey = useCallback((item: RandomContentItem): string => {
@@ -745,6 +810,26 @@ export default function RandomExperiencePage({
 
   const ensureQueue = useCallback(async (type: ItemType) => {
     const queue = preloadQueuesRef.current[type]
+    if (!prefetchLoadedRef.current.has(type) && typeof window !== 'undefined') {
+      prefetchLoadedRef.current.add(type)
+      try {
+        const key = `random-prefetch-${type}`
+        const raw = sessionStorage.getItem(key)
+        if (raw) {
+          const parsed = JSON.parse(raw) as RandomContentItem
+          if (parsed && parsed.type === type) {
+            const keyValue = getContentKey(parsed)
+            const exists = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === keyValue)
+            if (!exists) {
+              preloadQueuesRef.current[type].push(parsed)
+            }
+          }
+          sessionStorage.removeItem(key)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     if (queue.length >= PRELOAD_TARGET_PER_TYPE) return
 
     const existing = preloadPromisesRef.current[type]
@@ -969,10 +1054,13 @@ export default function RandomExperiencePage({
         <button
           type="button"
           aria-label="Menu"
-          onClick={() => setMenuOpen(true)}
+          onClick={() => {
+            triggerBurgerGlitch()
+            setMenuOpen(true)
+          }}
           className="flex items-center"
         >
-          <BurgerIcon color={theme.text} />
+          <BurgerIcon color={theme.text} glitch={burgerGlitch} />
         </button>
 
         <div className="flex-1 flex justify-center">
@@ -1020,7 +1108,7 @@ export default function RandomExperiencePage({
               <span className="font-inter opacity-70">Loading…</span>
             </div>
           ) : viewItem ? (
-            <ContentRenderer item={viewItem} theme={theme} frameHeight={CONTENT_HEIGHT} />
+            <ContentRenderer item={viewItem} theme={theme} frameHeight={contentHeight} viewportWidth={viewportWidth} />
           ) : (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">No content</span>
@@ -1029,7 +1117,7 @@ export default function RandomExperiencePage({
         </div>
 
         {viewItem && viewItem.type !== 'encourage' ? (
-          <div className="text-center text-sm md:text-base font-inter opacity-80">
+          <div className="text-center text-sm md:text-base font-inter opacity-80" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
         ) : null}
@@ -1048,6 +1136,7 @@ export default function RandomExperiencePage({
               } else {
                 addLike(viewItem, theme)
                 setLiked(true)
+                triggerHeartGlitch()
               }
               try {
                 window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
@@ -1058,7 +1147,12 @@ export default function RandomExperiencePage({
             className="p-3"
             disabled={!viewItem || viewItem.type === 'encourage'}
           >
-            <MonoIcon src="/icons/Heart.svg" color={liked ? '#FF4D78' : theme.cream} size={30} />
+            <MonoIcon
+              src="/icons/Heart.svg"
+              color={liked ? '#FF4D78' : theme.cream}
+              size={30}
+              className={`heart-icon${liked ? ' heart-icon--liked' : ''}${heartGlitch ? ' heart-icon--glitch' : ''}`}
+            />
           </button>
 
           <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
@@ -1100,7 +1194,7 @@ export default function RandomExperiencePage({
             }}
           >
             <div className="flex items-center justify-between uppercase tracking-wide">
-              <span className="text-lg font-semibold">Menu</span>
+              <span className="text-lg font-bold">Menu</span>
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -1110,21 +1204,20 @@ export default function RandomExperiencePage({
               <Link
                 href="/"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-3"
+                className="flex items-center"
                 style={{ color: theme.cream }}
               >
-                <MonoIcon src="/icons/return.svg" color={theme.cream} size={20} />
                 <span>Home</span>
               </Link>
 
               <Link
                 href="/likes"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-3"
+                className="flex items-center gap-2"
                 style={{ color: theme.cream }}
               >
-                <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={24} />
                 <span>{likesLabel}</span>
+                <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={24} />
               </Link>
 
               <div className="flex flex-col gap-3">
@@ -1217,36 +1310,177 @@ export default function RandomExperiencePage({
       </div>
 
       <style jsx>{`
+        .encourage-layout {
+          height: 100%;
+          width: 100%;
+          gap: clamp(12px, 4vw, 18px);
+        }
         .encourage-icon-wrapper {
           display: flex;
           align-items: center;
           justify-content: center;
-          min-height: clamp(70px, 16vh, 140px);
-          padding-block: clamp(2px, 1.2vh, 12px);
+          flex: 0 0 auto;
+          padding-block: clamp(4px, 1.2vh, 12px);
+          width: clamp(140px, 60vw, 280px);
+          height: clamp(170px, 35vh, 320px);
         }
         .encourage-icon {
-          width: clamp(70px, 12vw, 140px);
-          max-height: clamp(70px, 16vh, 150px);
-          max-width: 150px;
+          width: 100%;
+          height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.32));
+          filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.26));
           animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
           transform-origin: center;
         }
+        .encourage-copy-wrapper {
+          flex: 1 1 auto;
+          width: 100%;
+          max-width: min(320px, 82vw);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding-inline: clamp(6px, 2vw, 14px);
+        }
+        .encourage-copy {
+          max-width: 56ch;
+          text-align: center;
+          font-size: clamp(19px, 4.6vw, 24px);
+          line-height: 1.34;
+        }
         @media (min-width: 768px) {
+          .encourage-layout {
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(18px, 3.6vw, 26px);
+          }
           .encourage-icon-wrapper {
-            min-height: clamp(90px, 14vh, 170px);
+            width: clamp(360px, 52vw, 540px);
+            height: clamp(320px, 48vh, 520px);
+          }
+          .encourage-copy-wrapper {
+            flex: 1 1 clamp(320px, 44vw, 500px);
+            max-width: clamp(320px, 44vw, 500px);
+          }
+          .encourage-copy {
+            font-size: clamp(26px, 2.5vw, 34px);
+          }
+        }
+        @media (min-width: 1024px) {
+          .encourage-layout {
+            justify-content: center;
+            gap: clamp(22px, 3vw, 32px);
+          }
+          .encourage-icon-wrapper {
+            width: clamp(630px, 64vw, 900px);
+            height: clamp(570px, 60vh, 840px);
+          }
+          .encourage-copy-wrapper {
+            flex: 1 1 clamp(420px, 46vw, 620px);
+            max-width: clamp(420px, 46vw, 620px);
+            justify-content: center;
+            padding-inline: clamp(12px, 2vw, 18px);
+          }
+          .encourage-copy {
+            font-size: clamp(36px, 3vw, 48px);
+            line-height: 1.35;
           }
           .encourage-icon {
-            width: clamp(100px, 10vw, 160px);
-            max-height: clamp(90px, 14vh, 170px);
-            max-width: 170px;
+            height: auto;
           }
         }
         @keyframes encourage-pop {
           0% { transform: scale(0.82) rotate(-4deg); }
           54% { transform: scale(1.06) rotate(1.5deg); }
           100% { transform: scale(1) rotate(0deg); }
+        }
+      `}</style>
+
+      <style jsx global>{`
+        .burger-icon {
+          position: relative;
+        }
+        .burger-icon .burger-line {
+          width: 100%;
+          border-radius: 9999px;
+          transition: transform 140ms ease, opacity 140ms ease;
+        }
+        .burger-icon--glitch .burger-line {
+          animation: burger-glitch 360ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        .burger-icon--glitch .burger-line:nth-child(2) {
+          animation-delay: 40ms;
+        }
+        .burger-icon--glitch .burger-line:nth-child(3) {
+          animation-delay: 80ms;
+        }
+        @keyframes burger-glitch {
+          0% {
+            transform: translateX(0) skewX(0deg) scaleX(1);
+            opacity: 1;
+            box-shadow: none;
+            filter: none;
+          }
+          20% {
+            transform: translateX(-6px) skewX(-8deg) scaleX(1.06);
+            opacity: 0.7;
+            box-shadow: 4px 0 currentColor, -4px 0 rgba(255, 255, 255, 0.75);
+            filter: hue-rotate(-10deg) saturate(1.45);
+          }
+          48% {
+            transform: translateX(6px) skewX(7deg) scaleX(0.94);
+            opacity: 0.6;
+            box-shadow: -4px 0 currentColor, 4px 0 rgba(255, 255, 255, 0.55);
+            filter: hue-rotate(9deg) saturate(1.35);
+          }
+          72% {
+            transform: translateX(-3px) skewX(-5deg) scaleX(1.08);
+            opacity: 0.85;
+            box-shadow: 2px 0 currentColor, -2px 0 rgba(255, 255, 255, 0.4);
+            filter: hue-rotate(-6deg) saturate(1.25);
+          }
+          100% {
+            transform: translateX(0) skewX(0deg) scaleX(1);
+            opacity: 1;
+            box-shadow: none;
+            filter: none;
+          }
+        }
+
+        .heart-icon {
+          transition: transform 200ms ease, filter 200ms ease;
+        }
+        .heart-icon--liked {
+          transform: scale(1.05);
+        }
+        .heart-icon--glitch {
+          animation: heart-glitch 420ms steps(4, jump-start) forwards;
+        }
+        @keyframes heart-glitch {
+          0% {
+            transform: scale(1) translate(0, 0);
+            filter: none;
+          }
+          18% {
+            transform: scale(1.2) translate(-4px, 2px);
+            filter: hue-rotate(-18deg) saturate(1.55) drop-shadow(0 0 10px rgba(255, 255, 255, 0.35));
+          }
+          38% {
+            transform: scale(0.9) translate(4px, -3px);
+            filter: hue-rotate(14deg) saturate(1.6) drop-shadow(0 0 12px rgba(255, 77, 120, 0.45));
+          }
+          58% {
+            transform: scale(1.24) translate(-3px, 3px);
+            filter: hue-rotate(-12deg) saturate(1.7) drop-shadow(0 0 16px rgba(255, 255, 255, 0.4));
+          }
+          82% {
+            transform: scale(0.92) translate(3px, -2px);
+            filter: hue-rotate(10deg) saturate(1.45) drop-shadow(0 0 10px rgba(255, 77, 120, 0.35));
+          }
+          100% {
+            transform: scale(1) translate(0, 0);
+            filter: none;
+          }
         }
       `}</style>
     </main>
