@@ -76,13 +76,7 @@ export default function LikesGrid({ items, onDelete, readOnly = false }: Props) 
   }, [items.length, placeholders, cols])
 
   return (
-    <div
-      className="
-        grid gap-0
-        grid-cols-2
-        md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6
-      "
-    >
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" style={{ gap: 0 }}>
       {items.map((it, idx) => (
         <Tile
           key={it.id}
@@ -117,7 +111,7 @@ function Tile({ it, paletteIdx, onDelete, readOnly }: { it: LikeItem; paletteIdx
 
   return (
     <div className="relative" style={{ background: t.bg, color: t.cream, aspectRatio: '1 / 1' }}>
-      <button className="w-full h-full flex items-center justify-center p-3" onClick={open}>
+      <button className="w-full h-full flex items-center justify-center" style={{ background: t.bg }} onClick={open}>
         {isText ? (
           <div className="text-center px-2">
             <div className="text-[10px] uppercase tracking-wide opacity-80 mb-1">{it.type}</div>
@@ -146,8 +140,8 @@ function Tile({ it, paletteIdx, onDelete, readOnly }: { it: LikeItem; paletteIdx
       {!readOnly ? (
         <button
           aria-label="Remove like"
-          className="absolute right-1 top-1 w-6 h-6 rounded-md text-[14px] leading-[22px] text-center"
-          style={{ background: 'rgba(0,0,0,.35)', color: t.cream }}
+          className="absolute right-2 top-2 text-xl leading-none font-semibold text-white drop-shadow-sm"
+          style={{ background: 'transparent' }}
           onClick={(e) => {
             e.stopPropagation()
             removeLike(it.id)

@@ -144,21 +144,15 @@ export default function LikesPage() {
   const accentColor = theme.text
   const cream = theme.cream
 
-  const description = activeTab === 'you'
-    ? t('likes.youDescription', 'Your')
-    : t('likes.weDescription', 'Here is the most')
-
-  const heartInline = (
-    <HeartIcon
-      color={accentColor}
-      size={28}
-      className="inline-block align-middle mx-2"
-    />
-  )
-
-  const baseText = activeTab === 'you'
-    ? t('likes.youSuffix', 'are stored here for 24 hours.')
-    : t('likes.weSuffix', 'content.')
+  const infoText = activeTab === 'you'
+    ? {
+        prefix: t('likes.banner.youPrefix', 'Your'),
+        suffix: t('likes.banner.youSuffix', 'are stored here for 24 Hours.'),
+      }
+    : {
+        prefix: t('likes.banner.wePrefix', 'Here are the most'),
+        suffix: t('likes.banner.weSuffix', 'contents.'),
+      }
 
   const adBar = (
     <div
@@ -190,11 +184,11 @@ export default function LikesPage() {
           </div>
         )
       }
-      return <LikesGrid items={items} onDelete={load} />
-    }
+    return <LikesGrid items={items} onDelete={load} />
+  }
 
-    if (globalLoading && !globalLoaded) {
-      return (
+  if (globalLoading && !globalLoaded) {
+    return (
         <div className="opacity-85 text-center mt-10 px-4 font-inter">
           Loading…
         </div>
@@ -242,36 +236,49 @@ export default function LikesPage() {
           gapDesktop={1}
         />
 
-        <div className="w-10" aria-hidden="true" />
+        <Link
+          href="/random"
+          aria-label="Go to random"
+          className="flex items-center"
+        >
+          <span className="inline-flex rotate-180">
+            <MonoIcon src="/icons/return.svg" color={cream} size={30} />
+          </span>
+        </Link>
       </header>
 
-      <div className="border-y border-[var(--theme-cream)] mt-2">
-        <div className="grid grid-cols-2 divide-x divide-[var(--theme-cream)]">
-          <LikeTab
-            label={t('likes.youTab', 'YOU')}
-            active={activeTab === 'you'}
-            onClick={() => setActiveTab('you')}
-            accent={accentColor}
-            cream={cream}
-          />
-          <LikeTab
-            label={t('likes.weTab', 'WE')}
-            active={activeTab === 'we'}
-            onClick={() => setActiveTab('we')}
-            accent={accentColor}
-            cream={cream}
-          />
-        </div>
+      <div className="mt-4 mx-4 flex items-center justify-center gap-2">
+        <LikeTab
+          label={t('likes.youTab', 'YOU')}
+          active={activeTab === 'you'}
+          onClick={() => setActiveTab('you')}
+          accent={accentColor}
+          cream={cream}
+          position="left"
+        />
+        <LikeTab
+          label={t('likes.weTab', 'WE')}
+          active={activeTab === 'we'}
+          onClick={() => setActiveTab('we')}
+          accent={accentColor}
+          cream={cream}
+          position="right"
+        />
       </div>
 
-      <p
-        className="mt-4 text-center text-xl sm:text-2xl font-semibold"
-        style={{ color: cream, letterSpacing: 'normal', fontFamily: 'var(--font-inter-tight), sans-serif' }}
+      <div
+        className="mt-4 mx-4 px-4 py-3 text-center flex items-center justify-center gap-2 rounded-none text-xl sm:text-3xl"
+        style={{
+          backgroundColor: '#f1ead5',
+          color: '#191916',
+          fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+          fontWeight: 500,
+        }}
       >
-        <span>{description}</span>
-        {heartInline}
-        <span>{baseText}</span>
-      </p>
+        <span>{infoText.prefix}</span>
+        <HeartIcon color={accentColor} size={28} />
+        <span>{infoText.suffix}</span>
+      </div>
 
       <section className="mt-4 pb-12">
         {renderGrid()}
@@ -419,6 +426,39 @@ export default function LikesPage() {
             filter: none;
           }
         }
+
+        .like-tab {
+          position: relative;
+          overflow: hidden;
+        }
+        .like-tab::after,
+        .like-tab::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          opacity: 0;
+        }
+        .like-tab--glitch::before {
+          animation: like-tab-glitch 280ms steps(2, jump-end) forwards;
+        }
+        @keyframes like-tab-glitch {
+          0% {
+            opacity: 0.6;
+            transform: translate(2px, -1px) skewX(-6deg);
+            box-shadow: -3px 0 rgba(42,219,113,0.45), 3px 0 rgba(255,255,255,0.2);
+          }
+          40% {
+            opacity: 0.4;
+            transform: translate(-3px, 2px) skewX(5deg);
+            box-shadow: 3px 0 rgba(42,219,113,0.3), -3px 0 rgba(255,255,255,0.24);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(0,0) skewX(0deg);
+            box-shadow: none;
+          }
+        }
       `}</style>
     </main>
   )
@@ -430,24 +470,40 @@ type LikeTabProps = {
   onClick: () => void
   accent: string
   cream: string
+  position: 'left' | 'right'
 }
 
-function LikeTab({ label, active, onClick, accent, cream }: LikeTabProps) {
-  const heartColor = active ? cream : accent
+function LikeTab({ label, active, onClick, accent, cream, position }: LikeTabProps) {
+  const activeBg = '#2adb71'
+  const inactiveBorder = cream
+
+  const radiusClasses = position === 'left'
+    ? 'rounded-l-full'
+    : position === 'right'
+      ? 'rounded-r-full'
+      : 'rounded-full'
 
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="flex items-center justify-center gap-1 md:gap-2 py-[2px] md:py-[4px] uppercase font-tomorrow font-bold text-[64px] md:text-[84px]"
+      onClick={(event) => {
+        event.currentTarget.classList.add('like-tab--glitch')
+        window.setTimeout(() => event.currentTarget.classList.remove('like-tab--glitch'), 320)
+        onClick()
+      }}
+      className={`flex items-center justify-center gap-1 sm:gap-2 px-12 sm:px-16 py-2 border-2 uppercase tracking-wide text-4xl sm:text-6xl transition focus:outline-none like-tab${active ? ' like-tab--active' : ''}`}
       style={{
-        background: active ? accent : 'transparent',
-        color: cream,
-        transition: 'background 120ms ease, color 120ms ease',
+        background: active ? activeBg : 'transparent',
+        color: active ? '#051609' : cream,
+        borderColor: active ? activeBg : inactiveBorder,
+        fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
+        fontWeight: 700,
+        flex: '1 1 0',
+        borderRadius: '9999px',
       }}
     >
       <span>{label}</span>
-      <HeartIcon color={heartColor} size={56} className="inline-block" />
+      <HeartIcon color={active ? '#fff' : accent} size={32} className="inline-block" />
     </button>
   )
 }
