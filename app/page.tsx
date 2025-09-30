@@ -15,7 +15,6 @@ import Link from 'next/link'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
-import LikesMenu from '@/components/LikesMenu'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ShufflePicker from '@/components/ShufflePicker'
@@ -34,6 +33,19 @@ const randDiffIdx = (max: number, not: number) => {
   let i = randIdx(max)
   if (i === not) i = (i + 1 + randIdx(max - 1)) % max
   return i
+}
+
+function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
+  return (
+    <span
+      className={`inline-flex flex-col justify-between h-5 w-7 burger-icon${glitch ? ' burger-icon--glitch' : ''}`}
+      aria-hidden
+    >
+      <span className="burger-line block h-[3px]" style={{ backgroundColor: color, color }} />
+      <span className="burger-line block h-[3px]" style={{ backgroundColor: color, color }} />
+      <span className="burger-line block h-[3px]" style={{ backgroundColor: color, color }} />
+    </span>
+  )
 }
 
 function useButtonWidth(
@@ -101,7 +113,7 @@ function useButtonWidth(
 
 export default function HomePage() {
   const router = useRouter()
-  const { t, locale } = useI18n()
+  const { t, locale, locales, setLocale } = useI18n()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -123,8 +135,22 @@ export default function HomePage() {
   const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H + AD_H)
   const [adHeight, setAdHeight] = useState(AD_H)
   const [isButtonBursting, setIsButtonBursting] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [languagesOpen, setLanguagesOpen] = useState(false)
+  const [burgerGlitch, setBurgerGlitch] = useState(false)
+  const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const theme = THEMES[themeIdx]
+
+  const triggerBurgerGlitch = useCallback(() => {
+    setBurgerGlitch(true)
+    if (burgerTimeoutRef.current) clearTimeout(burgerTimeoutRef.current)
+    burgerTimeoutRef.current = setTimeout(() => setBurgerGlitch(false), 360)
+  }, [])
+
+  useEffect(() => () => {
+    if (burgerTimeoutRef.current) clearTimeout(burgerTimeoutRef.current)
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -150,6 +176,19 @@ export default function HomePage() {
         .catch(() => undefined)
     })
   }, [locale])
+
+  const applyLangOut = useCallback((next: Lang) => {
+    try {
+      document.documentElement.setAttribute('lang', next)
+      const globalWindow = window as Window & { __APP_LANG?: Lang }
+      globalWindow.__APP_LANG = next
+      const maxAge = 60 * 60 * 24 * 365
+      document.cookie = `lang=${next}; path=/; max-age=${maxAge}`
+      globalWindow.dispatchEvent(new CustomEvent('i18n:changed', { detail: next }))
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -180,6 +219,11 @@ export default function HomePage() {
     facts: t('nav.facts', 'facts'),
   }), [t])
 
+  const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
+  const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
+  const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
+  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
+
   const footerCopy = useMemo(() => ({
     legal: t('footer.legal', 'Legal notice.'),
     share: t('footer.share', 'share'),
@@ -208,6 +252,19 @@ export default function HomePage() {
       window.removeEventListener('orientationchange', onResize)
     }
   }, [])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
+
+  useEffect(() => {
+    if (!menuOpen) setLanguagesOpen(false)
+  }, [menuOpen])
 
   useEffect(() => {
     const observers: Array<{ el: HTMLElement | null; handler: () => void }> = []
@@ -297,7 +354,27 @@ export default function HomePage() {
         className="relative flex items-center justify-between px-4 pt-4 pb-2"
         style={{ height: HEADER_H }}
       >
-        <LikesMenu theme={theme} />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="Menu"
+            onClick={() => {
+              triggerBurgerGlitch()
+              setMenuOpen(true)
+            }}
+            className="flex items-center"
+          >
+            <BurgerIcon color={theme.text} glitch={burgerGlitch} />
+          </button>
+
+          <Link
+            href="/likes"
+            aria-label={likesLabel}
+            className="flex items-center"
+          >
+            <MonoIcon src="/icons/Heart.svg" color={theme.text} size={28} />
+          </Link>
+        </div>
 
         <button
           className="absolute left-1/2 -translate-x-1/2"
@@ -449,6 +526,148 @@ export default function HomePage() {
         onChange={(next) => setSelectedTypes(next)}
         theme={theme}
       />
+
+      {menuOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
+          <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
+          <div
+            className="relative w-[min(360px,92vw)] rounded-3xl px-6 py-7 flex flex-col gap-6 shadow-2xl"
+            style={{
+              backgroundColor: theme.text,
+              color: theme.cream,
+              fontFamily: 'var(--font-inter-tight), sans-serif',
+            }}
+          >
+            <div className="flex items-center justify-between uppercase tracking-wide">
+              <span className="text-lg font-bold">Menu</span>
+              <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
+                ×
+              </button>
+            </div>
+
+            <nav className="flex flex-col gap-5 text-lg font-semibold uppercase">
+              <Link
+                href="/"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center"
+                style={{ color: theme.cream }}
+              >
+                <span>Home</span>
+              </Link>
+
+              <Link
+                href="/likes"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2"
+                style={{ color: theme.cream }}
+              >
+                <span>{likesLabel}</span>
+                <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={24} />
+              </Link>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => setLanguagesOpen((o) => !o)}
+                  className="w-full flex items-center justify-between"
+                  style={{ color: theme.cream }}
+                >
+                  <span>{languageLabel}</span>
+                  <span>{(locale || 'en').toUpperCase()}</span>
+                </button>
+                {languagesOpen ? (
+                  <ul className="space-y-2 text-base font-semibold">
+                    {langs.map((lang) => {
+                      const active = (locale || 'en') === lang
+                      return (
+                        <li key={lang}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLocale(lang)
+                              applyLangOut(lang)
+                              setLanguagesOpen(false)
+                              setMenuOpen(false)
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-xl"
+                            style={{
+                              backgroundColor: active ? 'rgba(25,25,22,0.25)' : 'rgba(25,25,22,0.12)',
+                              color: theme.cream,
+                            }}
+                          >
+                            {lang.toUpperCase()}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+
+              <Link
+                href="/legal"
+                onClick={() => setMenuOpen(false)}
+                className="text-lg font-semibold"
+                style={{ color: theme.cream }}
+              >
+                {legalLabel}
+              </Link>
+            </nav>
+          </div>
+        </div>
+      ) : null}
+
+      <style jsx global>{`
+        .burger-icon {
+          position: relative;
+        }
+        .burger-icon .burger-line {
+          width: 100%;
+          border-radius: 9999px;
+          transition: transform 140ms ease, opacity 140ms ease;
+        }
+        .burger-icon--glitch .burger-line {
+          animation: burger-glitch 360ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        .burger-icon--glitch .burger-line:nth-child(2) {
+          animation-delay: 40ms;
+        }
+        .burger-icon--glitch .burger-line:nth-child(3) {
+          animation-delay: 80ms;
+        }
+        @keyframes burger-glitch {
+          0% {
+            transform: translateX(0) skewX(0deg) scaleX(1);
+            opacity: 1;
+            box-shadow: none;
+            filter: none;
+          }
+          20% {
+            transform: translateX(-6px) skewX(-8deg) scaleX(1.06);
+            opacity: 0.7;
+            box-shadow: 4px 0 currentColor, -4px 0 rgba(255, 255, 255, 0.75);
+            filter: hue-rotate(-10deg) saturate(1.45);
+          }
+          48% {
+            transform: translateX(6px) skewX(7deg) scaleX(0.94);
+            opacity: 0.6;
+            box-shadow: -4px 0 currentColor, 4px 0 rgba(255, 255, 255, 0.55);
+            filter: hue-rotate(9deg) saturate(1.35);
+          }
+          72% {
+            transform: translateX(-3px) skewX(-5deg) scaleX(1.08);
+            opacity: 0.85;
+            box-shadow: 2px 0 currentColor, -2px 0 rgba(255, 255, 255, 0.4);
+            filter: hue-rotate(-6deg) saturate(1.25);
+          }
+          100% {
+            transform: translateX(0) skewX(0deg) scaleX(1);
+            opacity: 1;
+            box-shadow: none;
+            filter: none;
+          }
+        }
+      `}</style>
     </main>
   )
 }
