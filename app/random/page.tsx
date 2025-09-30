@@ -1035,8 +1035,8 @@ export default function RandomExperiencePage({
         ) : null}
       </section>
 
-      <section className="px-4 sm:px-6" style={{ margin: '10px 0' }}>
-        <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap', marginBottom: '10px' }}>
+      <section className="px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: adHeight + 16 }}>
+        <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
           <button
             type="button"
             aria-label={likeLabel}
@@ -1087,23 +1087,6 @@ export default function RandomExperiencePage({
           </button>
         </div>
       </section>
-
-      <div
-        className="mt-auto w-full flex items-center justify-center"
-        style={{
-          height: adHeight + 4,
-          backgroundColor: '#ffffff',
-          color: '#111',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        }}
-      >
-        <div
-          className="flex items-center justify-center border border-dashed border-neutral-400 rounded"
-          style={{ width: adWidth, height: adHeight }}
-        >
-          <span className="font-inter font-semibold opacity-70">Ad space</span>
-        </div>
-      </div>
 
       {menuOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
@@ -1218,7 +1201,7 @@ export default function RandomExperiencePage({
       <div
         className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
         style={{
-          height: 108,
+          height: adHeight,
           backgroundColor: '#ffffff',
           color: '#111',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -1227,7 +1210,7 @@ export default function RandomExperiencePage({
       >
         <div
           className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
-          style={{ width: 320, height: 50 }}
+          style={{ width: adWidth, height: adHeight }}
         >
           <span className="font-inter font-semibold opacity-70">Ad space</span>
         </div>
