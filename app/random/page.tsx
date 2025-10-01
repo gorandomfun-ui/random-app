@@ -808,7 +808,7 @@ export default function RandomExperiencePage({
     preloadQueuesRef.current[type] = queue.filter((entry) => getContentKey(entry) !== key)
   }, [getContentKey])
 
-  const ensureQueue = useCallback(async (type: ItemType) => {
+  const ensureQueue = useCallback(async (type: ItemType, target = PRELOAD_TARGET_PER_TYPE) => {
     const queue = preloadQueuesRef.current[type]
     if (!prefetchLoadedRef.current.has(type) && typeof window !== 'undefined') {
       prefetchLoadedRef.current.add(type)
@@ -830,7 +830,49 @@ export default function RandomExperiencePage({
         /* ignore */
       }
     }
-    if (queue.length >= PRELOAD_TARGET_PER_TYPE) return
+    if (queue.length >= target) return
+
+    if (target === 1) {
+      const existingPromise = preloadPromisesRef.current[type]
+      if (existingPromise) {
+        let timeoutId: ReturnType<typeof setTimeout> | null = null
+        try {
+          await Promise.race([
+            existingPromise,
+            new Promise<void>((resolve) => {
+              timeoutId = setTimeout(() => {
+                timeoutId = null
+                resolve()
+              }, 350)
+            }),
+          ])
+        } catch {
+          /* ignore */
+        } finally {
+          if (timeoutId != null) clearTimeout(timeoutId)
+        }
+        if (queue.length >= 1) return
+      }
+
+      let tries = 0
+      const maxTries = 6
+      while (queue.length < 1 && tries < maxTries) {
+        tries += 1
+        try {
+          const res = await fetchRandom({ types: [type] as RandomTypes, lang: (locale || 'en') as Lang })
+          const item = res?.item
+          if (!item || item.type !== type) continue
+          const key = getContentKey(item)
+          if (!key || isRecentKey(key)) continue
+          const duplicate = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === key)
+          if (duplicate) continue
+          preloadQueuesRef.current[type].push(item)
+        } catch {
+          /* try again */
+        }
+      }
+      return
+    }
 
     const existing = preloadPromisesRef.current[type]
     if (existing) {
@@ -839,15 +881,15 @@ export default function RandomExperiencePage({
       } catch {
         /* ignore */
       }
-      return
+      if (preloadQueuesRef.current[type].length >= target) return
     }
 
     const version = langVersionRef.current
 
     const runner = (async () => {
-      const maxAttempts = PRELOAD_TARGET_PER_TYPE * 6
+      const maxAttempts = Math.max(target, 1) * 6
       let attempts = 0
-      while (preloadQueuesRef.current[type].length < PRELOAD_TARGET_PER_TYPE && attempts < maxAttempts) {
+      while (preloadQueuesRef.current[type].length < target && attempts < maxAttempts) {
         if (version !== langVersionRef.current) break
         attempts += 1
         try {
@@ -860,6 +902,7 @@ export default function RandomExperiencePage({
           const duplicate = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === key)
           if (duplicate) continue
           preloadQueuesRef.current[type].push(item)
+          if (preloadQueuesRef.current[type].length >= target) break
         } catch {
           /* continue */
         }
@@ -877,7 +920,7 @@ export default function RandomExperiencePage({
   }, [getContentKey, isRecentKey, locale])
 
   const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
-    await ensureQueue(type)
+    await ensureQueue(type, 1)
 
     let candidate: RandomContentItem | undefined
     let attempts = 0
@@ -931,7 +974,8 @@ export default function RandomExperiencePage({
       for (const type of selectedTypes) {
         if (cancelled) return
         try {
-          await ensureQueue(type)
+          await ensureQueue(type, 1)
+          ensureQueue(type).catch(() => undefined)
         } catch {
           /* ignore */
         }

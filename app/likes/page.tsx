@@ -535,7 +535,17 @@ function LikeTab({ label, active, onClick, accent, cream }: LikeTabProps) {
       }}
     >
       <span>{label}</span>
-      <HeartIcon color={active ? '#fff' : accent} size="0.9em" className="inline-block" />
+      <span
+        className="inline-flex items-center justify-center shrink-0"
+        style={{
+          width: 'min(1.1em, 32px)',
+          height: 'min(1.1em, 32px)',
+          minWidth: 'min(1.1em, 32px)',
+          minHeight: 'min(1.1em, 32px)',
+        }}
+      >
+        <HeartIcon color={active ? '#fff' : accent} size="100%" className="block" />
+      </span>
     </button>
   )
 }

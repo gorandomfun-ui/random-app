@@ -80,19 +80,58 @@ export default function ShufflePicker({
             const label = option === 'all' ? 'All' : option
             const capitalized = label.charAt(0).toUpperCase() + label.slice(1)
             const checked = isChecked(option as ItemType | 'all')
+            const controlBorder = checked ? theme.cream : 'rgba(255,255,255,0.55)'
             return (
               <label
                 key={option}
-                className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 border"
-                style={{ borderColor: checked ? theme.cream : 'rgba(255,255,255,0.35)', background: 'transparent' }}
+                className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 border focus-within:ring-2 focus-within:ring-white/60 focus-within:ring-offset-2 focus-within:ring-offset-transparent"
+                style={{
+                  borderColor: checked ? theme.cream : 'rgba(255,255,255,0.35)',
+                  background: 'transparent',
+                }}
               >
-                <span style={{ textTransform: 'capitalize', color: theme.cream }}>{capitalized}</span>
                 <input
                   type="checkbox"
-                  className="h-5 w-5 accent-white"
+                  className="sr-only"
                   checked={checked}
                   onChange={(event) => handleToggle(option as ItemType | 'all', event.target.checked)}
                 />
+
+                <span style={{ textTransform: 'capitalize', color: theme.cream }}>{capitalized}</span>
+
+                <span
+                  aria-hidden
+                  className="flex items-center justify-center rounded-full"
+                  style={{
+                    width: '26px',
+                    height: '26px',
+                    border: `2px solid ${controlBorder}`,
+                    backgroundColor: checked ? theme.cream : 'transparent',
+                    color: checked ? theme.text : theme.cream,
+                    transition: 'transform 160ms ease, background-color 160ms ease, border-color 160ms ease',
+                    transform: checked ? 'scale(1)' : 'scale(0.88)',
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    style={{
+                      opacity: checked ? 1 : 0,
+                      transition: 'opacity 120ms ease',
+                    }}
+                  >
+                    <path
+                      d="M2 6l2.5 2.5L10 3"
+                      stroke={checked ? theme.text : theme.cream}
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
               </label>
             )
           })}
