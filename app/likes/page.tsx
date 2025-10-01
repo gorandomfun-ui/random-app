@@ -3,14 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import LikesGrid from '../../components/LikesGrid'
+import ShufflePicker from '@/components/ShufflePicker'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
 import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
+import type { ItemType } from '@/lib/random/types'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
+
+const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
   return (
@@ -38,6 +42,8 @@ export default function LikesPage() {
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filterTypes, setFilterTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
 
   const triggerBurgerGlitch = useCallback(() => {
     setBurgerGlitch(true)
@@ -154,6 +160,8 @@ export default function LikesPage() {
         suffix: t('likes.banner.weSuffix', 'contents.'),
       }
 
+  const filterSet = useMemo(() => new Set(filterTypes), [filterTypes])
+
   const adBar = (
     <div
       id="ad-bar"
@@ -184,11 +192,22 @@ export default function LikesPage() {
           </div>
         )
       }
-    return <LikesGrid items={items} onDelete={load} />
-  }
 
-  if (globalLoading && !globalLoaded) {
-    return (
+      const filtered = items.filter((entry) => filterSet.has(entry.type as ItemType))
+
+      if (!filtered.length) {
+        return (
+          <div className="opacity-85 text-center mt-10 px-4 font-inter">
+            {t('likes.filteredEmpty', 'Nothing matches the current filter yet.')}
+          </div>
+        )
+      }
+
+      return <LikesGrid items={filtered} onDelete={load} />
+    }
+
+    if (globalLoading && !globalLoaded) {
+      return (
         <div className="opacity-85 text-center mt-10 px-4 font-inter">
           Loading…
         </div>
@@ -203,7 +222,17 @@ export default function LikesPage() {
       )
     }
 
-    return <LikesGrid items={globalItems} readOnly />
+    const filtered = globalItems.filter((entry) => filterSet.has(entry.type as ItemType))
+
+    if (!filtered.length) {
+      return (
+        <div className="opacity-85 text-center mt-10 px-4 font-inter">
+          {t('likes.filteredEmpty', 'Nothing matches the current filter yet.')}
+        </div>
+      )
+    }
+
+    return <LikesGrid items={filtered} readOnly />
   }
 
   return (
@@ -236,15 +265,14 @@ export default function LikesPage() {
           gapDesktop={1}
         />
 
-        <Link
-          href="/random"
-          aria-label="Go to random"
-          className="flex items-center"
+        <button
+          type="button"
+          aria-label="Filter likes"
+          onClick={() => setFilterOpen(true)}
+          className="flex items-center p-2"
         >
-          <span className="inline-flex rotate-180">
-            <MonoIcon src="/icons/return.svg" color={cream} size={30} />
-          </span>
-        </Link>
+          <MonoIcon src="/icons/Shuffle.svg" color={cream} size={28} />
+        </button>
       </header>
 
       <div className="mt-4 mx-4 flex items-center justify-center gap-2">
@@ -264,22 +292,24 @@ export default function LikesPage() {
         />
       </div>
 
-      <div
-        className="mt-4 mx-4 px-4 py-3 text-center flex items-center justify-center gap-2 rounded-none text-xl sm:text-3xl"
-        style={{
-          backgroundColor: '#f1ead5',
-          color: '#191916',
-          fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
-          fontWeight: 500,
-        }}
-      >
-        <span>{infoText.prefix}</span>
-        <HeartIcon color={accentColor} size={28} />
-        <span>{infoText.suffix}</span>
+      <div className="mt-4 px-4 sm:px-6">
+        <div
+          className="px-4 py-2 text-center flex items-center justify-center gap-2 rounded-none text-xl sm:text-3xl"
+          style={{
+            backgroundColor: '#f1ead5',
+            color: '#191916',
+            fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+            fontWeight: 500,
+          }}
+        >
+          <span>{infoText.prefix}</span>
+          <HeartIcon color={accentColor} size={28} />
+          <span>{infoText.suffix}</span>
+        </div>
       </div>
 
       <section className="mt-4 pb-12">
-        <div className="mx-4">
+        <div className="px-4 sm:px-6">
           {renderGrid()}
         </div>
       </section>
@@ -375,6 +405,14 @@ export default function LikesPage() {
           </div>
         </div>
       ) : null}
+
+      <ShufflePicker
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        selected={filterTypes}
+        onChange={(next) => setFilterTypes(next.length ? next : ALL_ITEM_TYPES)}
+        theme={theme}
+      />
 
       <style jsx global>{`
         .burger-icon {
