@@ -63,9 +63,27 @@
     </div>
 
     <div style="margin-bottom: 24px;">
+      <h2>Vidéos</h2>
+      <div id="videoProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 16px; font-size:14px;">
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="youtube" checked /> YouTube</label>
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="dailymotion" checked /> Dailymotion</label>
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pixabay" /> Pixabay</label>
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pexels" /> Pexels</label>
+      </div>
       <button id="runImages" class="primary">Ingest Images</button>
       <button id="runVideos" class="secondary">Ingest Vidéos</button>
       <button id="stopBtn">Stop</button>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <h2>Web</h2>
+      <p style="margin: 6px 0 12px; font-size: 14px;">Utilise le générateur de mots-clés (A/B/C) pour découvrir des sites via Google CSE, Neocities et Wikipédia.</p>
+      <div id="webProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; font-size:14px;">
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="cse" checked /> Google CSE</label>
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="neocities" checked /> Neocities</label>
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="wikipedia" checked /> Wikipédia</label>
+      </div>
+      <button id="runWeb" class="secondary">Ingest Web</button>
     </div>
 
     <div id="log"></div>
@@ -80,6 +98,7 @@
         images: document.getElementById('runImages'),
         videos: document.getElementById('runVideos'),
         feeds: document.getElementById('runFeeds'),
+        web: document.getElementById('runWeb'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -87,6 +106,8 @@
         jokes: document.getElementById('scrapeJokes'),
         all: document.getElementById('scrapeAllText'),
       }
+      const videoProvidersEl = document.getElementById('videoProviders')
+      const webProvidersEl = document.getElementById('webProviders')
 
       let stopRequested = false
 
@@ -100,6 +121,7 @@
         buttons.images.disabled = running
         buttons.videos.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
+        if (buttons.web) buttons.web.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -116,6 +138,16 @@
         if (parts.year) out.push(String(parts.year))
         return out.join(' • ')
       }
+
+      function getSelectedValues(container, fallback) {
+        if (!container) return fallback
+        const inputs = container.querySelectorAll('input[type="checkbox"]')
+        const selected = Array.from(inputs).filter((input) => input.checked).map((input) => input.value)
+        return selected.length ? selected : fallback
+      }
+
+      const getSelectedVideoProviders = () => getSelectedValues(videoProvidersEl, ['youtube'])
+      const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'neocities', 'wikipedia'])
 
       const manualContainer = document.getElementById('manualCombos')
       const addManualBtn = document.getElementById('addManual')
@@ -231,13 +263,20 @@
             if (category === 'images') {
               endpoint = '/api/ingest/images'
               params.set('sample', '6')
-            } else {
+            } else if (category === 'videos') {
               endpoint = '/api/ingest/videos'
               params.set('mode', 'search')
               params.set('durations', 'short,medium,long')
               params.set('pages', '2')
               params.set('per', '32')
-              params.set('providers', 'youtube,dailymotion,pixabay,pexels')
+              params.set('providers', getSelectedVideoProviders().join(','))
+            } else if (category === 'web') {
+              endpoint = '/api/ingest/web'
+              params.set('per', '10')
+              params.set('pages', '2')
+              params.set('sample', '6')
+              params.set('limit', String(Math.max(12, maxCombos * 12)))
+              params.set('providers', getSelectedWebProviders().join(','))
             }
             params.set('q', combo.query)
 
@@ -371,6 +410,7 @@
 
       buttons.images.addEventListener('click', () => run('images'))
       buttons.videos.addEventListener('click', () => run('videos'))
+      if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       stopBtn.addEventListener('click', () => {
         stopRequested = true

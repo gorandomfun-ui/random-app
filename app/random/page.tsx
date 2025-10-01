@@ -242,6 +242,7 @@ function YouTubeEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeig
       fs: '1',
       playsinline: '1',
       modestbranding: '1',
+      enablejsapi: '1',
     })
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
@@ -636,6 +637,8 @@ export default function RandomExperiencePage({
   const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0, draws: 0 })
   const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skippedVideosRef = useRef<Set<string>>(new Set())
+  const externalVideoCacheRef = useRef<Map<string, { provider: string; url: string }>>(new Map())
 
   const triggerBurgerGlitch = useCallback(() => {
     setBurgerGlitch(true)
