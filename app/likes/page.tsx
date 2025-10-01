@@ -254,7 +254,6 @@ export default function LikesPage() {
           onClick={() => setActiveTab('you')}
           accent={accentColor}
           cream={cream}
-          position="left"
         />
         <LikeTab
           label={t('likes.weTab', 'WE')}
@@ -262,7 +261,6 @@ export default function LikesPage() {
           onClick={() => setActiveTab('we')}
           accent={accentColor}
           cream={cream}
-          position="right"
         />
       </div>
 
@@ -281,7 +279,9 @@ export default function LikesPage() {
       </div>
 
       <section className="mt-4 pb-12">
-        {renderGrid()}
+        <div className="mx-4">
+          {renderGrid()}
+        </div>
       </section>
 
       {adBar}
@@ -470,25 +470,19 @@ type LikeTabProps = {
   onClick: () => void
   accent: string
   cream: string
-  position: 'left' | 'right'
 }
 
-function LikeTab({ label, active, onClick, accent, cream, position }: LikeTabProps) {
-  const activeBg = '#2adb71'
+function LikeTab({ label, active, onClick, accent, cream }: LikeTabProps) {
+  const activeBg = accent
   const inactiveBorder = cream
-
-  const radiusClasses = position === 'left'
-    ? 'rounded-l-full'
-    : position === 'right'
-      ? 'rounded-r-full'
-      : 'rounded-full'
 
   return (
     <button
       type="button"
       onClick={(event) => {
-        event.currentTarget.classList.add('like-tab--glitch')
-        window.setTimeout(() => event.currentTarget.classList.remove('like-tab--glitch'), 320)
+        const target = event.currentTarget
+        target.classList.add('like-tab--glitch')
+        window.setTimeout(() => target.classList.remove('like-tab--glitch'), 320)
         onClick()
       }}
       className={`flex items-center justify-center gap-1 sm:gap-2 px-12 sm:px-16 py-2 border-2 uppercase tracking-wide text-4xl sm:text-6xl transition focus:outline-none like-tab${active ? ' like-tab--active' : ''}`}
@@ -503,7 +497,7 @@ function LikeTab({ label, active, onClick, accent, cream, position }: LikeTabPro
       }}
     >
       <span>{label}</span>
-      <HeartIcon color={active ? '#fff' : accent} size={32} className="inline-block" />
+      <HeartIcon color={active ? '#fff' : accent} size="0.9em" className="inline-block" />
     </button>
   )
 }

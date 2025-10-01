@@ -1,12 +1,14 @@
 'use client'
 
+type HeartSize = number | string
+
 export default function HeartIcon({
   color,
   size,
   className = '',
 }: {
   color: string
-  size: number
+  size: HeartSize
   className?: string
 }) {
   return (
