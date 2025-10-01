@@ -1230,21 +1230,23 @@ export default function RandomExperiencePage({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
           <div
-            className="relative w-[min(360px,92vw)] rounded-3xl px-6 py-7 flex flex-col gap-6 shadow-2xl"
+            className="relative w-[min(360px,92vw)] rounded-3xl px-6 pt-4 pb-6 flex flex-col gap-3 shadow-2xl"
             style={{
               backgroundColor: theme.text,
               color: theme.cream,
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between uppercase tracking-wide">
-              <span className="text-lg font-bold">Menu</span>
+            <div className="flex items-center justify-end">
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
             </div>
 
-            <nav className="flex flex-col gap-5 text-lg font-semibold uppercase">
+            <nav
+              className="flex flex-col text-lg font-semibold uppercase"
+              style={{ gap: '10px' }}
+            >
               <Link
                 href="/"
                 onClick={() => setMenuOpen(false)}
@@ -1255,13 +1257,23 @@ export default function RandomExperiencePage({
               </Link>
 
               <Link
+                href="/random"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2"
+                style={{ color: theme.cream }}
+              >
+                <span>Random</span>
+                <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={22} />
+              </Link>
+
+              <Link
                 href="/likes"
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center gap-2"
                 style={{ color: theme.cream }}
               >
                 <span>{likesLabel}</span>
-                <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={24} />
+                <MonoIcon src="/icons/Heart.svg" color={theme.cream} size={18} />
               </Link>
 
               <div className="flex flex-col gap-3">
@@ -1271,7 +1283,7 @@ export default function RandomExperiencePage({
                   className="w-full flex items-center justify-between"
                   style={{ color: theme.cream }}
                 >
-                  <span>{languageLabel}</span>
+                  <span className="uppercase">{languageLabel}</span>
                   <span>{(locale || 'en').toUpperCase()}</span>
                 </button>
                 {languagesOpen ? (
