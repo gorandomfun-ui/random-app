@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react'
 import type { DisplayItem } from '../lib/random/clientTypes'
 import { getSourceLabel } from '../lib/random/clientTypes'
+import { useI18n } from '@/providers/I18nProvider'
 
 type Theme = { deep: string; cream: string; text: string }
 type ShareableItem = DisplayItem | null | undefined
@@ -44,9 +45,24 @@ export default function ShareMenu({
   theme,
   item,
 }: Props) {
+  const { t } = useI18n()
   const [copied, setCopied] = useState(false)
-  const shareUrl = url || (item && 'url' in item ? item.url || '' : '')
-  const shareTitle = useMemo(() => {
+  const siteOrigin = useMemo(() => {
+    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
+    return process.env.NEXT_PUBLIC_BASE_URL || 'https://random.app'
+  }, [])
+
+  const shareUrl = useMemo(() => {
+    const base = (siteOrigin || '').replace(/\/$/, '')
+    if (!url) return `${base || 'https://random.app'}/random`
+    if (/^https?:\/\//i.test(url)) return url
+    const trimmed = url.startsWith('/') ? url.slice(1) : url
+    return base ? `${base}/${trimmed}` : url
+  }, [siteOrigin, url])
+
+  const siteName = useMemo(() => t('shareMenu.siteName', 'Random'), [t])
+
+  const contentTitle = useMemo(() => {
     if (title && title.trim()) return title
     if (!item) return 'Random'
     if (item.type === 'image') return item.title || getSourceLabel(item.source, item.provider) || 'Random image'
@@ -59,7 +75,12 @@ export default function ShareMenu({
     return 'Random'
   }, [item, title])
 
-  const urls = useMemo(() => buildShareUrls(shareUrl || '', shareTitle || 'Random'), [shareUrl, shareTitle])
+  const shareMessage = useMemo(() => {
+    const label = contentTitle || 'Random'
+    return `${label} — ${siteName}`
+  }, [contentTitle, siteName])
+
+  const urls = useMemo(() => buildShareUrls(shareUrl || '', shareMessage || siteName), [shareUrl, shareMessage, siteName])
 
   if (!open) return null
 
@@ -74,7 +95,7 @@ export default function ShareMenu({
 
   async function nativeShare() {
     try {
-      await navigator.share({ title: shareTitle, url: shareUrl })
+      await navigator.share({ title: siteName, text: shareMessage, url: shareUrl })
       onClose()
     } catch {
       /* ignore */
@@ -102,12 +123,12 @@ export default function ShareMenu({
         style={{ background: bg, color: fg }}
       >
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold tracking-wide">Share</h3>
+          <h3 className="text-lg font-bold tracking-wide">{t('shareMenu.title', 'Share')}</h3>
           <button
             className="rounded-full px-3 py-1 text-sm"
             onClick={onClose}
             style={{ background: softer }}
-            aria-label="Close"
+            aria-label={t('shareMenu.close', 'Close')}
           >
             ✕
           </button>
@@ -120,7 +141,7 @@ export default function ShareMenu({
               className="w-full rounded-xl py-3 font-semibold"
               style={{ background: soft }}
             >
-              Share with device…
+              {t('shareMenu.native', 'Share by message')}
             </button>
           )}
 
@@ -142,7 +163,7 @@ export default function ShareMenu({
             </a>
             <a
               className="rounded-xl py-2 text-center font-medium"
-              href={`/api/share/og?title=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}`}
+              href={`/api/share/og?title=${encodeURIComponent(contentTitle)}&url=${encodeURIComponent(shareUrl)}`}
               target="_blank"
               rel="noreferrer"
               style={{ background: soft, color: text }}
@@ -163,7 +184,7 @@ export default function ShareMenu({
               className="rounded-xl px-4 text-sm font-semibold"
               style={{ background: soft }}
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('shareMenu.copied', 'Copied!') : t('shareMenu.copy', 'Copy')}
             </button>
           </div>
         </div>

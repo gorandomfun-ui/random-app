@@ -84,6 +84,7 @@
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="wikipedia" checked /> Wikipédia</label>
       </div>
       <button id="runWeb" class="secondary">Ingest Web</button>
+      <button id="runWebDirect" class="secondary">Ingest Neocities + Wikipédia</button>
     </div>
 
     <div id="log"></div>
@@ -99,6 +100,7 @@
         videos: document.getElementById('runVideos'),
         feeds: document.getElementById('runFeeds'),
         web: document.getElementById('runWeb'),
+        webDirect: document.getElementById('runWebDirect'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -122,6 +124,7 @@
         buttons.videos.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
         if (buttons.web) buttons.web.disabled = running
+        if (buttons.webDirect) buttons.webDirect.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -366,6 +369,43 @@
         }
       }
 
+      async function runWebDirect() {
+        stopRequested = false
+        setRunning(true)
+        appendLog(`<p><strong>Web direct (Neocities/Wikipédia)</strong> — ${new Date().toLocaleTimeString()}</p>`)
+
+        try {
+          const key = document.body.dataset.key || ''
+          const params = new URLSearchParams({
+            providers: 'neocities,wikipedia',
+            per: '12',
+            pages: '3',
+            sample: '8',
+            limit: '48',
+            requireOg: '0',
+          })
+          if (dryRunEl.checked) params.set('dry', '1')
+
+          const res = await fetch(`/api/ingest/web?${params.toString()}`, {
+            method: 'GET',
+            headers: { 'x-admin-ingest-key': key },
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data?.error || 'Ingest failed')
+
+          const providerCounts = data?.providerCounts || {}
+          const providerSummary = Object.keys(providerCounts).length
+            ? ` → ${Object.entries(providerCounts).map(([name, value]) => `${name}:${value}`).join(' • ')}`
+            : ''
+
+          appendLog(`<p class="success">Neocities/Wikipédia → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${providerSummary}</p>`)
+        } catch (error) {
+          appendLog(`<p class="error">Neocities/Wikipédia → ${(error instanceof Error ? error.message : String(error))}</p>`)
+        } finally {
+          setRunning(false)
+        }
+      }
+
       const storedKey = localStorage.getItem('local-ingest-key') || ''
       const key = storedKey || window.prompt('Admin ingest key', '') || ''
       document.body.dataset.key = key
@@ -411,6 +451,7 @@
       buttons.images.addEventListener('click', () => run('images'))
       buttons.videos.addEventListener('click', () => run('videos'))
       if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
+      if (buttons.webDirect) buttons.webDirect.addEventListener('click', runWebDirect)
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       stopBtn.addEventListener('click', () => {
         stopRequested = true

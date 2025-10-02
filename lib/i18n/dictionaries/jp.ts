@@ -35,7 +35,24 @@ const jpDictionary = {
     "youSuffix": "いいねは24時間ここに保存されます。",
     "weDescription": "みんながたくさん",
     "weSuffix": "いいねしたコンテンツ。",
+    "banner": {
+      "youPrefix": "あなたの",
+      "youSuffix": "いいねは24時間ここに保存されます。",
+      "wePrefix": "みんながたくさん",
+      "weSuffix": "いいねしたコンテンツ。"
+    },
     "weEmpty": "まだグローバルなお気に入りはありません。最初のいいねを押してみて！"
+  },
+  "shareMenu": {
+    "siteName": "Random",
+    "title": "共有",
+    "close": "閉じる",
+    "native": "メッセージで共有",
+    "copy": "コピー",
+    "copied": "コピーしました！"
+  },
+  "video": {
+    "fullscreen": "全画面"
   },
   "shuffle": {
     "title": "コンテンツをフィルター",

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Erase Obsolete Videos</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 32px;
+        background: #f6f6f6;
+        color: #111;
+      }
+      h1 {
+        margin-bottom: 8px;
+        font-size: 28px;
+      }
+      p.description {
+        max-width: 720px;
+        line-height: 1.5;
+        margin-bottom: 24px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        padding: 24px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      label.input {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+      }
+      label.input input {
+        width: 80px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      button.primary {
+        background: #1f7aec;
+        color: #fff;
+      }
+      button.danger {
+        background: #e04646;
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .status {
+        font-size: 14px;
+        margin-bottom: 12px;
+        min-height: 20px;
+      }
+      .summary {
+        background: #fafafa;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid #ececec;
+      }
+      .summary strong {
+        font-size: 15px;
+      }
+      .summary-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        margin-top: 12px;
+        padding-left: 0;
+        list-style: none;
+        font-size: 14px;
+      }
+      .video-list {
+        display: grid;
+        gap: 10px;
+        max-height: 55vh;
+        overflow-y: auto;
+      }
+      details.video-item {
+        background: #fff;
+        border-radius: 10px;
+        border: 1px solid #e3e3e3;
+        padding: 12px 14px;
+      }
+      details.video-item summary {
+        cursor: pointer;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      details.video-item summary span.meta {
+        display: inline-flex;
+        gap: 12px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #5a5a5a;
+      }
+      details.video-item .body {
+        margin-top: 10px;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      details.video-item a {
+        color: #1f7aec;
+        word-break: break-all;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0f1215;
+          color: #f1f1f1;
+        }
+        .card {
+          background: #171a1f;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        }
+        label.input input {
+          background: #0f1215;
+          color: #f1f1f1;
+          border-color: #2a2d33;
+        }
+        .summary {
+          background: #161a1f;
+          border-color: #22272f;
+        }
+        details.video-item {
+          background: #161a1f;
+          border-color: #232831;
+        }
+        details.video-item summary span.meta {
+          color: #b7bcc5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Erase Obsolete Videos</h1>
+      <p class="description">
+        Scan the <code>items</code> collection for videos that look unavailable (404, removed, dead links).
+        The scan inspects a limited batch ordered by <code>updatedAt</code> so you can clean out old entries first.
+      </p>
+
+      <div class="controls">
+        <label class="input">
+          Batch size
+          <input id="limitInput" type="number" min="1" max="2000" value="60" />
+        </label>
+        <label class="input">
+          Skip
+          <input id="skipInput" type="number" min="0" value="0" />
+        </label>
+        <button id="scanBtn" class="primary" type="button">Scan videos</button>
+        <button id="deleteBtn" class="danger" type="button" disabled>Delete obsolete videos</button>
+        <button id="nextBatchBtn" type="button" disabled>Scan next batch</button>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div id="summary" class="summary hidden"></div>
+      <div id="list" class="video-list"></div>
+    </main>
+
+    <script type="module">
+      const statusEl = document.getElementById('status')
+      const summaryEl = document.getElementById('summary')
+      const listEl = document.getElementById('list')
+      const scanBtn = document.getElementById('scanBtn')
+      const deleteBtn = document.getElementById('deleteBtn')
+      const nextBatchBtn = document.getElementById('nextBatchBtn')
+      const limitInput = document.getElementById('limitInput')
+      const skipInput = document.getElementById('skipInput')
+
+      let adminKey = ''
+      let busy = false
+      let lastResult = null
+
+      const storedKey = localStorage.getItem('local-ingest-key') || ''
+      adminKey = storedKey || window.prompt('Admin ingest key', '') || ''
+      if (adminKey) {
+        localStorage.setItem('local-ingest-key', adminKey)
+      }
+      document.body.dataset.key = adminKey
+
+      function setBusy(state) {
+        busy = state
+        scanBtn.disabled = state
+        deleteBtn.disabled = state || !(lastResult && lastResult.obsolete && lastResult.obsolete.length)
+        nextBatchBtn.disabled = state || !(lastResult && lastResult.checked)
+        statusEl.textContent = state ? 'Working…' : ''
+      }
+
+      function renderSummary(data) {
+        if (!data) {
+          summaryEl.classList.add('hidden')
+          summaryEl.innerHTML = ''
+          return
+        }
+        summaryEl.classList.remove('hidden')
+        const total = data.counts?.total || 0
+        const providers = data.counts?.providers || {}
+        const providerEntries = Object.entries(providers)
+        summaryEl.innerHTML = `
+          <div><strong>Checked:</strong> ${data.checked} • <strong>Obsolete:</strong> ${total}</div>
+          <div><strong>Limit:</strong> ${data.limit} • <strong>Skip:</strong> ${data.skip}</div>
+          ${providerEntries.length
+            ? `<ul class="summary-list">${providerEntries
+                .map(([name, value]) => `<li><strong>${name}</strong>: ${value}</li>`)
+                .join('')}</ul>`
+            : '<p>No obsolete videos detected.</p>'}
+        `
+      }
+
+      function renderList(data) {
+        if (!data?.obsolete?.length) {
+          listEl.innerHTML = ''
+          return
+        }
+        const items = data.obsolete
+          .map((item) => {
+            const safeReason = item.reason ? item.reason.replace(/</g, '&lt;') : 'unknown'
+            const safeTitle = item.title ? item.title.replace(/</g, '&lt;') : ''
+            const urlLink = item.url
+              ? `<a href="${item.url}" target="_blank" rel="noreferrer">${item.url}</a>`
+              : '<em>No URL</em>'
+            const videoId = item.videoId ? `<div>videoId: <code>${item.videoId}</code></div>` : ''
+            const status = item.status != null ? `<div>Status: ${item.status}</div>` : ''
+            const titleLine = safeTitle ? `<div>Title: ${safeTitle}</div>` : ''
+            return `
+              <details class="video-item">
+                <summary>
+                  <span>${item.provider}</span>
+                  <span class="meta">
+                    <span>${safeReason}</span>
+                    ${item.status != null ? `<span>${item.status}</span>` : ''}
+                  </span>
+                </summary>
+                <div class="body">
+                  <div>ID: <code>${item.id}</code></div>
+                  ${titleLine}
+                  ${videoId}
+                  ${status}
+                  <div style="margin-top:6px;">${urlLink}</div>
+                </div>
+              </details>
+            `
+          })
+          .join('')
+        listEl.innerHTML = items
+      }
+
+      async function scanVideos() {
+        if (!adminKey) {
+          alert('Missing admin ingest key.')
+          return
+        }
+        const limit = Math.max(1, Math.min(200, Number(limitInput.value) || 60))
+        const skip = Math.max(0, Number(skipInput.value) || 0)
+        const params = new URLSearchParams({ limit: String(limit), skip: String(skip) })
+        setBusy(true)
+        try {
+          const res = await fetch(`/api/tools/videos/obsolete?${params.toString()}`, {
+            method: 'GET',
+            headers: { 'x-admin-ingest-key': adminKey },
+          })
+          const data = await res.json()
+          if (!res.ok) {
+            throw new Error(data?.error || res.statusText)
+          }
+          lastResult = data
+          renderSummary(data)
+          renderList(data)
+          deleteBtn.disabled = !(data?.obsolete?.length)
+          nextBatchBtn.disabled = !(data?.checked)
+          statusEl.textContent = data?.obsolete?.length
+            ? `${data.obsolete.length} obsolete videos detected.`
+            : 'No obsolete videos detected in this batch.'
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Error: ${message}`
+          lastResult = null
+          summaryEl.classList.add('hidden')
+          listEl.innerHTML = ''
+          deleteBtn.disabled = true
+          nextBatchBtn.disabled = true
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      async function deleteVideos() {
+        if (!lastResult?.obsolete?.length) return
+        if (!adminKey) {
+          alert('Missing admin ingest key.')
+          return
+        }
+        const count = lastResult.obsolete.length
+        const confirmMessage = `Delete ${count} video${count > 1 ? 's' : ''}? This cannot be undone.`
+        if (!window.confirm(confirmMessage)) return
+
+        setBusy(true)
+        try {
+          const res = await fetch('/api/tools/videos/obsolete', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-ingest-key': adminKey,
+            },
+            body: JSON.stringify({ ids: lastResult.obsolete.map((item) => item.id) }),
+          })
+          const data = await res.json()
+          if (!res.ok) {
+            throw new Error(data?.error || res.statusText)
+          }
+          statusEl.textContent = `Deleted ${data?.deleted ?? 0} videos.`
+          lastResult = null
+          deleteBtn.disabled = true
+          summaryEl.classList.add('hidden')
+          listEl.innerHTML = ''
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Delete failed: ${message}`
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      scanBtn.addEventListener('click', () => {
+        if (!busy) scanVideos()
+      })
+
+      nextBatchBtn.addEventListener('click', () => {
+        if (busy || !lastResult?.checked) return
+        const currentSkip = Number(skipInput.value) || 0
+        const advance = lastResult.checked || lastResult.limit || 0
+        if (!advance) return
+        skipInput.value = String(currentSkip + advance)
+        scanVideos()
+      })
+
+      deleteBtn.addEventListener('click', () => {
+        if (!busy) deleteVideos()
+      })
+    </script>
+  </body>
+</html>

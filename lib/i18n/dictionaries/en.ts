@@ -35,7 +35,24 @@ const enDictionary = {
     "youSuffix": "are stored here for 24 hours.",
     "weDescription": "Here is the most",
     "weSuffix": "content.",
+    "banner": {
+      "youPrefix": "Your",
+      "youSuffix": "are stored here for 24 hours.",
+      "wePrefix": "Here is the most",
+      "weSuffix": "content."
+    },
     "weEmpty": "No global favourites yet. Be the first to like something!"
+  },
+  "shareMenu": {
+    "siteName": "Random",
+    "title": "Share",
+    "close": "Close",
+    "native": "Share by message",
+    "copy": "Copy",
+    "copied": "Copied!"
+  },
+  "video": {
+    "fullscreen": "Fullscreen"
   },
   "shuffle": {
     "title": "Filter content",

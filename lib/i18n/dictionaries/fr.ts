@@ -35,7 +35,24 @@ const frDictionary = {
     "youSuffix": "likes sont conservés ici pendant 24 heures.",
     "weDescription": "Voici les contenus les plus",
     "weSuffix": "aimés.",
+    "banner": {
+      "youPrefix": "Vos",
+      "youSuffix": "likes sont conservés ici pendant 24 heures.",
+      "wePrefix": "Voici les contenus les plus",
+      "weSuffix": "aimés."
+    },
     "weEmpty": "Pas encore de favoris globaux. Soyez le premier à aimer un contenu !"
+  },
+  "shareMenu": {
+    "siteName": "Random",
+    "title": "Partager",
+    "close": "Fermer",
+    "native": "Partager par message",
+    "copy": "Copier",
+    "copied": "Copié !"
+  },
+  "video": {
+    "fullscreen": "Plein écran"
   },
   "shuffle": {
     "title": "Filtrer le contenu",

@@ -35,7 +35,24 @@ const deDictionary = {
     "youSuffix": "Likes bleiben hier 24 Stunden gespeichert.",
     "weDescription": "Die beliebtesten",
     "weSuffix": "Inhalte der Community.",
+    "banner": {
+      "youPrefix": "Deine",
+      "youSuffix": "Likes bleiben hier 24 Stunden gespeichert.",
+      "wePrefix": "Die beliebtesten",
+      "weSuffix": "Inhalte der Community."
+    },
     "weEmpty": "Noch keine globalen Favoriten. Sei der Erste, der etwas liked!"
+  },
+  "shareMenu": {
+    "siteName": "Random",
+    "title": "Teilen",
+    "close": "Schließen",
+    "native": "Per Nachricht teilen",
+    "copy": "Kopieren",
+    "copied": "Kopiert!"
+  },
+  "video": {
+    "fullscreen": "Vollbild"
   },
   "shuffle": {
     "title": "Inhalt filtern",

@@ -188,7 +188,15 @@ function ImageBlock({
   )
 }
 
-function VideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight: string }) {
+function VideoEmbed({
+  item,
+  frameHeight,
+  fullscreenLabel,
+}: {
+  item: VideoContentItem
+  frameHeight: string
+  fullscreenLabel: string
+}) {
   const provider = (item.provider || '').toLowerCase()
   const url = item.url
   if (!url) return null
@@ -197,17 +205,25 @@ function VideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight
   const looksDailymotion = !looksYouTube && (provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(url))
 
   if (looksYouTube) {
-    return <YouTubeEmbed item={item} frameHeight={frameHeight} />
+    return <YouTubeEmbed item={item} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} />
   }
 
   if (looksDailymotion) {
-    return <DailymotionEmbed item={item} frameHeight={frameHeight} />
+    return <DailymotionEmbed item={item} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} />
   }
 
   return <HtmlVideoEmbed item={item} frameHeight={frameHeight} />
 }
 
-function YouTubeEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight: string }) {
+function YouTubeEmbed({
+  item,
+  frameHeight,
+  fullscreenLabel,
+}: {
+  item: VideoContentItem
+  frameHeight: string
+  fullscreenLabel: string
+}) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [originParam, setOriginParam] = useState('')
@@ -264,6 +280,32 @@ function YouTubeEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeig
     } catch {}
   }
 
+  const requestFullscreen = () => {
+    const iframe = iframeRef.current
+    const attempt = (element: Element | null) => {
+      if (!element) return false
+      const anyEl = element as HTMLElement & {
+        webkitRequestFullscreen?: () => void
+        msRequestFullscreen?: () => void
+      }
+      if (typeof anyEl.requestFullscreen === 'function') {
+        Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
+        return true
+      }
+      if (typeof anyEl.webkitRequestFullscreen === 'function') {
+        anyEl.webkitRequestFullscreen()
+        return true
+      }
+      if (typeof anyEl.msRequestFullscreen === 'function') {
+        anyEl.msRequestFullscreen()
+        return true
+      }
+      return false
+    }
+    if (attempt(iframe)) return
+    attempt(iframe?.parentElement ?? null)
+  }
+
   return (
     <div className="w-full h-full" style={{ position: 'relative', height: frameHeight }}>
       <div
@@ -288,6 +330,14 @@ function YouTubeEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeig
             transform: 'translate(-50%, -50%)',
           }}
         />
+        <button
+          type="button"
+          onClick={requestFullscreen}
+          className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+          style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+        >
+          {fullscreenLabel}
+        </button>
         {isMuted ? (
           <button
             type="button"
@@ -303,8 +353,17 @@ function YouTubeEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeig
   )
 }
 
-function DailymotionEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight: string }) {
+function DailymotionEmbed({
+  item,
+  frameHeight,
+  fullscreenLabel,
+}: {
+  item: VideoContentItem
+  frameHeight: string
+  fullscreenLabel: string
+}) {
   const { url } = item
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const embedUrl = useMemo(() => {
     try {
       const u = new URL(url)
@@ -326,6 +385,7 @@ function DailymotionEmbed({ item, frameHeight }: { item: VideoContentItem; frame
         }}
       >
         <iframe
+          ref={iframeRef}
           src={embedUrl}
           className="absolute top-1/2 left-1/2"
           allow="autoplay; fullscreen"
@@ -338,12 +398,54 @@ function DailymotionEmbed({ item, frameHeight }: { item: VideoContentItem; frame
             transform: 'translate(-50%, -50%)',
           }}
         />
+        <button
+          type="button"
+          onClick={() => {
+            const iframe = iframeRef.current
+            const attempt = (element: Element | null) => {
+              if (!element) return false
+              const anyEl = element as HTMLElement & {
+                webkitRequestFullscreen?: () => void
+                msRequestFullscreen?: () => void
+              }
+              if (typeof anyEl.requestFullscreen === 'function') {
+                Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
+                return true
+              }
+              if (typeof anyEl.webkitRequestFullscreen === 'function') {
+                anyEl.webkitRequestFullscreen()
+                return true
+              }
+              if (typeof anyEl.msRequestFullscreen === 'function') {
+                anyEl.msRequestFullscreen()
+                return true
+              }
+              return false
+            }
+            if (attempt(iframe)) return
+            attempt(iframe?.parentElement ?? null)
+          }}
+          className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+          style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+        >
+          {fullscreenLabel}
+        </button>
       </div>
     </div>
   )
 }
 
 function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.setAttribute('playsinline', 'true')
+    video.setAttribute('webkit-playsinline', 'true')
+    video.setAttribute('x5-playsinline', 'true')
+  }, [item.url])
+
   return (
     <div className="w-full h-full" style={{ position: 'relative', height: frameHeight }}>
       <div
@@ -355,7 +457,9 @@ function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHe
         }}
       >
         <video
+          ref={videoRef}
           controls
+          playsInline
           className="absolute top-1/2 left-1/2"
           style={{
             backgroundColor: '#000',
@@ -364,6 +468,8 @@ function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHe
             transform: 'translate(-50%, -50%)',
           }}
           poster={item.thumbUrl ?? undefined}
+          controlsList="nodownload"
+          disablePictureInPicture
         >
           <source src={item.url} />
         </video>
@@ -377,11 +483,13 @@ function ContentRenderer({
   theme,
   frameHeight,
   viewportWidth,
+  fullscreenLabel,
 }: {
   item: DisplayItem
   theme: { cream: string }
   frameHeight: string
   viewportWidth: number | null
+  fullscreenLabel: string
 }) {
   if (item.type === 'encourage') {
     const encourageStyle: EncourageStyle = {
@@ -515,7 +623,7 @@ function ContentRenderer({
   }
 
   if (item.type === 'video') {
-    return <VideoEmbed item={item} frameHeight={frameHeight} />
+    return <VideoEmbed item={item} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} />
   }
 
   return null
@@ -631,6 +739,7 @@ export default function RandomExperiencePage({
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
+  const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
 
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
@@ -1155,7 +1264,13 @@ export default function RandomExperiencePage({
               <span className="font-inter opacity-70">Loading…</span>
             </div>
           ) : viewItem ? (
-            <ContentRenderer item={viewItem} theme={theme} frameHeight={contentHeight} viewportWidth={viewportWidth} />
+            <ContentRenderer
+              item={viewItem}
+              theme={theme}
+              frameHeight={contentHeight}
+              viewportWidth={viewportWidth}
+              fullscreenLabel={fullscreenLabel}
+            />
           ) : (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">No content</span>

@@ -12,8 +12,16 @@ const RECENT_LIMIT = 10
 const recentJokes: string[] = []
 const MAX_ATTEMPTS = 10
 
+const BLOCKED_KEYWORDS = ['hitler', 'nazi', 'holocaust', 'auschwitz', 'jew', 'jews', 'jewish']
+
 const BLOCKED_PATTERNS: RegExp[] = [
   /difference\s+between\s+a\s+pizza\s+and\s+a\s+black\s+man/i,
+  new RegExp(`\\b(${BLOCKED_KEYWORDS.join('|')})\\b`, 'i'),
+]
+
+const CATEGORY_PATTERNS: RegExp[] = [
+  /^(short|best|funny|silly|corny|clean|halloween|christmas|holiday|kids?|child|family|knock[-\s]?knock|dad|one-liner|animal|school)\s+(jokes?|pranks?|puns?|stories|one-liners?)$/i,
+  /^(jokes?|pranks?|puns?|one-liners?)\s*(for|about)\s+[a-z\s]{1,40}$/i,
 ]
 
 const JOKE_TOPIC_SEEDS: Record<string, string[]> = {
@@ -172,8 +180,24 @@ export async function selectJoke(): Promise<JokeItem | null> {
   }
 }
 
-function isBlockedJoke(text: string): boolean {
+function looksLikeCategoryLabel(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  if (CATEGORY_PATTERNS.some((pattern) => pattern.test(trimmed))) return true
+
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length
+  const hasPunctuation = /[.!?]/.test(trimmed)
+  const hasJokeKeyword = /\b(jokes?|pranks?|puns?|one-liners?)\b/i.test(trimmed)
+
+  if (!hasPunctuation && hasJokeKeyword && wordCount <= 4) return true
+  if (!hasPunctuation && !hasJokeKeyword && wordCount <= 2) return true
+
+  return false
+}
+
+export function isBlockedJoke(text: string): boolean {
   if (!text) return false
+  if (looksLikeCategoryLabel(text)) return true
   return BLOCKED_PATTERNS.some((pattern) => pattern.test(text))
 }
 

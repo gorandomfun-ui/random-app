@@ -232,7 +232,7 @@ type NeocitiesListResponse = {
   }>
 }
 
-async function pullNeocities(limit: number): Promise<ProviderResult> {
+async function pullNeocities(limit: number, requireOg = true): Promise<ProviderResult> {
   const response = await fetchJson<NeocitiesListResponse>('https://neocities.org/api/list?t=' + Date.now(), {
     headers: ROUTE_HEADERS,
     timeoutMs: 10000,
@@ -275,6 +275,10 @@ async function pullNeocities(limit: number): Promise<ProviderResult> {
   }
 
   const deduped = dedupeByUrl(raw)
+  if (!requireOg) {
+    return { rows: deduped.slice(0, limit), scanned: raw.length, checked: deduped.length }
+  }
+
   const { rows, checked } = await ensureOgImages(deduped, limit)
   return { rows, scanned: raw.length, checked }
 }
@@ -285,7 +289,7 @@ type WikipediaExternalLinksResponse = {
   }
 }
 
-async function pullWikipediaList(limit: number): Promise<ProviderResult> {
+async function pullWikipediaList(limit: number, requireOg = true): Promise<ProviderResult> {
   const data = await fetchJson<WikipediaExternalLinksResponse>(
     'https://en.wikipedia.org/w/api.php?action=parse&page=List_of_websites&prop=externallinks&format=json',
     { headers: ROUTE_HEADERS, timeoutMs: 10000 },
@@ -321,6 +325,10 @@ async function pullWikipediaList(limit: number): Promise<ProviderResult> {
   }
 
   const deduped = dedupeByUrl(raw)
+  if (!requireOg) {
+    return { rows: deduped.slice(0, limit), scanned: raw.length, checked: deduped.length }
+  }
+
   const ensured = await ensureOgImages(deduped, limit)
   return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked }
 }
@@ -351,6 +359,11 @@ export async function GET(req: NextRequest) {
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
   const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'wikipedia']
 
+  const requireOgParam = req.nextUrl.searchParams.get('requireOg')
+  const requireOg = requireOgParam == null
+    ? true
+    : !['0', 'false', 'no'].includes(requireOgParam.toLowerCase())
+
   const dryParam = req.nextUrl.searchParams.get('dry') || req.nextUrl.searchParams.get('preview')
   const dryRun = dryParam === '1' || dryParam === 'true'
   const sampleSizeRaw = Number(req.nextUrl.searchParams.get('sample') || 6)
@@ -358,9 +371,10 @@ export async function GET(req: NextRequest) {
 
   const limitParam = Number(req.nextUrl.searchParams.get('limit') || 0)
   const baseTarget = Math.max(12, per * pages * queries.length)
+  const MAX_BATCH = 2000
   const totalTarget = Number.isFinite(limitParam) && limitParam > 0
-    ? Math.min(Math.max(8, Math.floor(limitParam)), 200)
-    : Math.min(baseTarget, 200)
+    ? Math.min(Math.max(8, Math.floor(limitParam)), MAX_BATCH)
+    : Math.min(baseTarget, MAX_BATCH)
   const perProviderTarget = Math.max(5, Math.ceil(totalTarget / providers.length))
 
   const aggregated: WebRow[] = []
@@ -378,7 +392,7 @@ export async function GET(req: NextRequest) {
 
   if (providers.includes('neocities')) {
     try {
-      const result = await pullNeocities(perProviderTarget)
+      const result = await pullNeocities(perProviderTarget, requireOg)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
@@ -387,14 +401,14 @@ export async function GET(req: NextRequest) {
 
   if (providers.includes('wikipedia')) {
     try {
-      const result = await pullWikipediaList(perProviderTarget)
+      const result = await pullWikipediaList(perProviderTarget, requireOg)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
     } catch {}
   }
 
-  const deduped = dedupeRowsWithOg(aggregated)
+  const deduped = requireOg ? dedupeRowsWithOg(aggregated) : dedupeByUrl(aggregated)
   const sample = deduped.slice(0, Math.max(0, sampleSize))
   const providerCounts: Record<string, number> = {}
   for (const row of deduped) {

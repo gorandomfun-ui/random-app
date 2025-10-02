@@ -235,7 +235,15 @@ function SharePopover({
 }
 
 /* ---------------- RENDERER (image/quote/fact/joke/web/video) ---------------- */
-function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
+function ContentRenderer({
+  item,
+  theme,
+  fullscreenLabel,
+}: {
+  item: DisplayItem
+  theme: Theme
+  fullscreenLabel: string
+}) {
   if (item.type === 'encourage') {
     return (
       <div className="flex flex-col items-center gap-3 text-center max-w-[58ch]">
@@ -340,13 +348,13 @@ function ContentRenderer({ item, theme }: { item: DisplayItem; theme: Theme }) {
   }
 
   if (item.type === 'video') {
-    return <VideoEmbed item={item} />
+    return <VideoEmbed item={item} fullscreenLabel={fullscreenLabel} />
   }
 
   return null
 }
 
-function VideoEmbed({ item }: { item: VideoContentItem }) {
+function VideoEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fullscreenLabel: string }) {
   const provider = (item.provider || '').toLowerCase()
   const url = item.url
   if (!url) return null
@@ -355,17 +363,17 @@ function VideoEmbed({ item }: { item: VideoContentItem }) {
   const looksDailymotion = !looksYouTube && (provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(url))
 
   if (looksYouTube) {
-    return <YouTubeEmbed item={item} />
+    return <YouTubeEmbed item={item} fullscreenLabel={fullscreenLabel} />
   }
 
   if (looksDailymotion) {
-    return <DailymotionEmbed item={item} />
+    return <DailymotionEmbed item={item} fullscreenLabel={fullscreenLabel} />
   }
 
   return <HtmlVideoEmbed item={item} />
 }
 
-function YouTubeEmbed({ item }: { item: VideoContentItem }) {
+function YouTubeEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fullscreenLabel: string }) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [originParam, setOriginParam] = useState('')
@@ -423,6 +431,32 @@ function YouTubeEmbed({ item }: { item: VideoContentItem }) {
     } catch {}
   }
 
+  const requestFullscreen = () => {
+    const iframe = iframeRef.current
+    const attempt = (element: Element | null) => {
+      if (!element) return false
+      const anyEl = element as HTMLElement & {
+        webkitRequestFullscreen?: () => void
+        msRequestFullscreen?: () => void
+      }
+      if (typeof anyEl.requestFullscreen === 'function') {
+        Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
+        return true
+      }
+      if (typeof anyEl.webkitRequestFullscreen === 'function') {
+        anyEl.webkitRequestFullscreen()
+        return true
+      }
+      if (typeof anyEl.msRequestFullscreen === 'function') {
+        anyEl.msRequestFullscreen()
+        return true
+      }
+      return false
+    }
+    if (attempt(iframe)) return
+    attempt(iframe?.parentElement ?? null)
+  }
+
   return (
     <div className="w-full">
       <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
@@ -435,6 +469,14 @@ function YouTubeEmbed({ item }: { item: VideoContentItem }) {
           title={text || 'YouTube'}
           style={{ border: 'none' }}
         />
+        <button
+          type="button"
+          onClick={requestFullscreen}
+          className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+          style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+        >
+          {fullscreenLabel}
+        </button>
         {isMuted && (
           <button
             type="button"
@@ -466,8 +508,9 @@ function extractDailymotionId(url: string): string | null {
   return null
 }
 
-function DailymotionEmbed({ item }: { item: VideoContentItem }) {
+function DailymotionEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fullscreenLabel: string }) {
   const { url, text } = item
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const videoId = useMemo(() => extractDailymotionId(url), [url])
   const src = useMemo(() => {
     if (!videoId) return ''
@@ -491,6 +534,7 @@ function DailymotionEmbed({ item }: { item: VideoContentItem }) {
     <div className="w-full">
       <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
         <iframe
+          ref={iframeRef}
           src={src}
           className="w-full h-full"
           allow="autoplay; fullscreen; picture-in-picture"
@@ -498,6 +542,38 @@ function DailymotionEmbed({ item }: { item: VideoContentItem }) {
           title={text || 'Dailymotion'}
           style={{ border: 'none' }}
         />
+        <button
+          type="button"
+          onClick={() => {
+            const iframe = iframeRef.current
+            const attempt = (element: Element | null) => {
+              if (!element) return false
+              const anyEl = element as HTMLElement & {
+                webkitRequestFullscreen?: () => void
+                msRequestFullscreen?: () => void
+              }
+              if (typeof anyEl.requestFullscreen === 'function') {
+                Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
+                return true
+              }
+              if (typeof anyEl.webkitRequestFullscreen === 'function') {
+                anyEl.webkitRequestFullscreen()
+                return true
+              }
+              if (typeof anyEl.msRequestFullscreen === 'function') {
+                anyEl.msRequestFullscreen()
+                return true
+              }
+              return false
+            }
+            if (attempt(iframe)) return
+            attempt(iframe?.parentElement ?? null)
+          }}
+          className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+          style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+        >
+          {fullscreenLabel}
+        </button>
       </div>
     </div>
   )
@@ -512,6 +588,12 @@ function HtmlVideoEmbed({ item }: { item: VideoContentItem }) {
   useEffect(() => {
     setIsMuted(true)
     setHasError(false)
+    const video = videoRef.current
+    if (video) {
+      video.setAttribute('playsinline', 'true')
+      video.setAttribute('webkit-playsinline', 'true')
+      video.setAttribute('x5-playsinline', 'true')
+    }
   }, [url])
 
   const unmute = () => {
@@ -538,6 +620,8 @@ function HtmlVideoEmbed({ item }: { item: VideoContentItem }) {
           poster={thumbUrl || undefined}
           playsInline
           controls
+          controlsList="nodownload"
+          disablePictureInPicture
           autoPlay
           loop
           muted={isMuted}
@@ -741,6 +825,7 @@ export default function RandomModal({
   const isEncourage = viewItem?.type === 'encourage'
   const showChildren = !viewItem && !!children
   const randomAgainLabel = t('modal.randomAgain', 'RANDOM AGAIN')
+  const fullscreenLabel = t('video.fullscreen', 'Fullscreen')
 
   useEffect(() => {
     if (isEncourage && shareOpen) setShareOpen(false)
@@ -804,7 +889,7 @@ export default function RandomModal({
         {/* corps */}
         <div className="px-6 py-5 flex items-center justify-center min-h-[320px] md:min-h-[360px] overflow-y-auto overflow-x-hidden flex-1">
           {viewItem ? (
-            <ContentRenderer item={viewItem} theme={theme} />
+            <ContentRenderer item={viewItem} theme={theme} fullscreenLabel={fullscreenLabel} />
           ) : showChildren ? (
             children
           ) : loading ? (
