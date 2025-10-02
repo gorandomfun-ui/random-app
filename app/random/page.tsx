@@ -188,7 +188,7 @@ function ImageBlock({
   )
 }
 
-function requestFullscreen(element: HTMLElement | null): boolean {
+function attemptFullscreen(element: HTMLElement | null): boolean {
   if (!element) return false
   const anyEl = element as HTMLElement & {
     requestFullscreen?: () => Promise<void>
@@ -373,7 +373,7 @@ function YouTubeEmbed({
         <button
           type="button"
           onClick={() => {
-            const ok = requestFullscreen(iframeRef.current)
+            const ok = attemptFullscreen(iframeRef.current)
             if (!ok) openProviderUrl(item.url)
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
@@ -445,7 +445,7 @@ function DailymotionEmbed({
           type="button"
           onClick={() => {
             const iframe = iframeRef.current
-            const ok = requestFullscreen(iframe) || requestFullscreen(iframe?.parentElement ?? null)
+            const ok = attemptFullscreen(iframe) || attemptFullscreen(iframe?.parentElement ?? null)
             if (!ok) openProviderUrl(item.url)
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
