@@ -278,7 +278,7 @@
           alert('Missing admin ingest key.')
           return
         }
-        const limit = Math.max(1, Math.min(200, Number(limitInput.value) || 60))
+        const limit = Math.max(1, Math.min(2000, Number(limitInput.value) || 60))
         const skip = Math.max(0, Number(skipInput.value) || 0)
         const params = new URLSearchParams({ limit: String(limit), skip: String(skip) })
         setBusy(true)

@@ -201,7 +201,8 @@ export async function GET(req: NextRequest) {
   const url = req.nextUrl
   const rawLimit = Number(url.searchParams.get('limit') || '60')
   const rawSkip = Number(url.searchParams.get('skip') || '0')
-  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.floor(rawLimit))) : 60
+  const MAX_LIMIT = 2000
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(MAX_LIMIT, Math.floor(rawLimit))) : 60
   const skip = Number.isFinite(rawSkip) ? Math.max(0, Math.floor(rawSkip)) : 0
 
   const cursor = db

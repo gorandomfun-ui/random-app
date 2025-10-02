@@ -246,9 +246,9 @@ function ContentRenderer({
 }) {
   if (item.type === 'encourage') {
     return (
-      <div className="flex flex-col items-center gap-3 text-center max-w-[58ch]">
+      <div key={item.text} className="encourage-modal flex flex-col items-center gap-3 text-center max-w-[58ch]">
         {item.icon ? (
-          <div className="encourage-icon-wrapper">
+          <div className="encourage-icon-wrapper encourage-icon-glitch">
             <img
               src={item.icon}
               alt="Encouragement"
@@ -352,6 +352,46 @@ function ContentRenderer({
   }
 
   return null
+}
+
+function requestFullscreen(element: HTMLElement | null): boolean {
+  if (!element) return false
+  const anyEl = element as HTMLElement & {
+    requestFullscreen?: () => Promise<void>
+    webkitRequestFullscreen?: () => void
+    msRequestFullscreen?: () => void
+    webkitEnterFullscreen?: () => void
+  }
+  try {
+    if (typeof anyEl.requestFullscreen === 'function') {
+      anyEl.requestFullscreen().catch(() => {})
+      return true
+    }
+    if (typeof anyEl.webkitRequestFullscreen === 'function') {
+      anyEl.webkitRequestFullscreen()
+      return true
+    }
+    if (typeof anyEl.msRequestFullscreen === 'function') {
+      anyEl.msRequestFullscreen()
+      return true
+    }
+    if (typeof anyEl.webkitEnterFullscreen === 'function') {
+      anyEl.webkitEnterFullscreen()
+      return true
+    }
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
+function openProviderUrl(url?: string | null) {
+  if (!url || typeof window === 'undefined') return
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch {
+    /* ignore */
+  }
 }
 
 function VideoEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fullscreenLabel: string }) {
@@ -471,7 +511,10 @@ function YouTubeEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fulls
         />
         <button
           type="button"
-          onClick={requestFullscreen}
+          onClick={() => {
+            const ok = requestFullscreen(iframeRef.current)
+            if (!ok) openProviderUrl(item.url)
+          }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
         >
@@ -546,28 +589,8 @@ function DailymotionEmbed({ item, fullscreenLabel }: { item: VideoContentItem; f
           type="button"
           onClick={() => {
             const iframe = iframeRef.current
-            const attempt = (element: Element | null) => {
-              if (!element) return false
-              const anyEl = element as HTMLElement & {
-                webkitRequestFullscreen?: () => void
-                msRequestFullscreen?: () => void
-              }
-              if (typeof anyEl.requestFullscreen === 'function') {
-                Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
-                return true
-              }
-              if (typeof anyEl.webkitRequestFullscreen === 'function') {
-                anyEl.webkitRequestFullscreen()
-                return true
-              }
-              if (typeof anyEl.msRequestFullscreen === 'function') {
-                anyEl.msRequestFullscreen()
-                return true
-              }
-              return false
-            }
-            if (attempt(iframe)) return
-            attempt(iframe?.parentElement ?? null)
+            const ok = requestFullscreen(iframe) || requestFullscreen(iframe?.parentElement ?? null)
+            if (!ok) openProviderUrl(item.url)
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
@@ -1004,15 +1027,35 @@ export default function RandomModal({
         justify-content: center;
         padding-block: clamp(4px, 1vh, 12px);
         min-height: clamp(110px, 26vh, 230px);
+        position: relative;
+        overflow: visible;
       }
       .encourage-icon {
         width: auto;
         max-width: clamp(190px, 60vw, 320px);
         height: clamp(160px, 38vh, 280px);
         object-fit: contain;
-        filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.28));
-        animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        filter: drop-shadow(0 36px 48px rgba(0, 0, 0, 0.45));
         transform-origin: center;
+        position: relative;
+        z-index: 5;
+      }
+      .encourage-icon-wrapper::before,
+      .encourage-icon-wrapper::after {
+        content: '';
+        position: absolute;
+        inset: -16%;
+        border-radius: 30px;
+        mix-blend-mode: screen;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 4;
+      }
+      .encourage-icon-wrapper::before {
+        background: repeating-linear-gradient(90deg, rgba(0, 255, 255, 0.92) 0 12px, rgba(0, 255, 255, 0) 12px 24px);
+      }
+      .encourage-icon-wrapper::after {
+        background: repeating-linear-gradient(0deg, rgba(255, 0, 150, 0.88) 0 16px, rgba(123, 104, 238, 0) 16px 32px);
       }
       @media (min-width: 768px) {
         .encourage-icon-wrapper {
@@ -1021,6 +1064,10 @@ export default function RandomModal({
         .encourage-icon {
           max-width: clamp(300px, 46vw, 420px);
           height: clamp(260px, 36vh, 380px);
+        }
+        .encourage-icon-wrapper::before,
+        .encourage-icon-wrapper::after {
+          inset: -18%;
         }
       }
       @keyframes heartPulse {
@@ -1042,6 +1089,49 @@ export default function RandomModal({
           opacity: 1;
           transform: scale(1) rotate(0deg);
         }
+      }
+      .encourage-modal .encourage-icon-wrapper::before {
+        animation: encourage-glitch-before 2200ms steps(8, end);
+      }
+      .encourage-modal .encourage-icon-wrapper::after {
+        animation: encourage-glitch-after 2200ms steps(8, end);
+      }
+      .encourage-modal .encourage-icon {
+        animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28), encourage-shift 2200ms steps(8, end), encourage-flicker 2200ms linear;
+      }
+      @keyframes encourage-glitch-before {
+        0% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+        10% { opacity: 1; transform: translate(-38px, 24px) scale(1.14) skewX(-10deg); filter: blur(4.4px) saturate(2.2); }
+        26% { opacity: 0.85; transform: translate(32px, -22px) scale(0.92) skewX(8deg); filter: blur(3.4px); }
+        44% { opacity: 0.6; transform: translate(-26px, 18px) scale(1.08) skewX(-6deg); filter: blur(2.6px); }
+        64% { opacity: 0.38; transform: translate(20px, -14px) scale(0.96) skewX(4deg); filter: blur(1.9px); }
+        84% { opacity: 0.24; transform: translate(-16px, 10px) scale(1.04) skewX(-3deg); filter: blur(1.3px); }
+        100% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+      }
+      @keyframes encourage-glitch-after {
+        0% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+        14% { opacity: 0.95; transform: translate(44px, -30px) scale(1.12) skewX(11deg); filter: blur(4px) saturate(2.2); }
+        32% { opacity: 0.72; transform: translate(-34px, 26px) scale(0.9) skewX(-9deg); filter: blur(3.2px); }
+        52% { opacity: 0.48; transform: translate(26px, -20px) scale(1.08) skewX(6deg); filter: blur(2.3px); }
+        74% { opacity: 0.3; transform: translate(-20px, 14px) scale(0.95) skewX(-4deg); filter: blur(1.6px); }
+        92% { opacity: 0.18; transform: translate(16px, -10px) scale(1.05) skewX(3deg); filter: blur(1.1px); }
+        100% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+      }
+      @keyframes encourage-shift {
+        0% { transform: translate3d(0,0,0); }
+        20% { transform: translate3d(-32px, 22px, 0); }
+        40% { transform: translate3d(26px, -18px, 0); }
+        60% { transform: translate3d(-22px, 16px, 0); }
+        80% { transform: translate3d(18px, -13px, 0); }
+        100% { transform: translate3d(0,0,0); }
+      }
+      @keyframes encourage-flicker {
+        0%, 100% { filter: drop-shadow(0 36px 48px rgba(0, 0, 0, 0.45)) brightness(1); }
+        14% { filter: drop-shadow(0 42px 56px rgba(0, 0, 0, 0.52)) brightness(1.95); }
+        32% { filter: drop-shadow(0 34px 46px rgba(0, 0, 0, 0.42)) brightness(1.35); }
+        54% { filter: drop-shadow(0 44px 60px rgba(0, 0, 0, 0.55)) brightness(1.75); }
+        76% { filter: drop-shadow(0 38px 52px rgba(0, 0, 0, 0.48)) brightness(1.4); }
+        92% { filter: drop-shadow(0 32px 44px rgba(0, 0, 0, 0.38)) brightness(1.85); }
       }
     `}</style>
     </>

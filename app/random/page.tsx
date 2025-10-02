@@ -49,7 +49,7 @@ const FIXED_SEQUENCE: ItemType[] = [
 
 const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
-const ENCOURAGE_TRIGGER_COUNT = 13
+const ENCOURAGE_INTERVALS = [15, 15, 20, 15, 20, 15]
 
 const PRELOAD_TARGET_PER_TYPE = 4
 const RECENT_SESSION_LIMIT = 10
@@ -186,6 +186,46 @@ function ImageBlock({
       />
     </div>
   )
+}
+
+function requestFullscreen(element: HTMLElement | null): boolean {
+  if (!element) return false
+  const anyEl = element as HTMLElement & {
+    requestFullscreen?: () => Promise<void>
+    webkitRequestFullscreen?: () => void
+    msRequestFullscreen?: () => void
+    webkitEnterFullscreen?: () => void
+  }
+  try {
+    if (typeof anyEl.requestFullscreen === 'function') {
+      anyEl.requestFullscreen().catch(() => {})
+      return true
+    }
+    if (typeof anyEl.webkitRequestFullscreen === 'function') {
+      anyEl.webkitRequestFullscreen()
+      return true
+    }
+    if (typeof anyEl.msRequestFullscreen === 'function') {
+      anyEl.msRequestFullscreen()
+      return true
+    }
+    if (typeof anyEl.webkitEnterFullscreen === 'function') {
+      anyEl.webkitEnterFullscreen()
+      return true
+    }
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
+function openProviderUrl(url?: string | null) {
+  if (!url || typeof window === 'undefined') return
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch {
+    /* ignore */
+  }
 }
 
 function VideoEmbed({
@@ -332,7 +372,10 @@ function YouTubeEmbed({
         />
         <button
           type="button"
-          onClick={requestFullscreen}
+          onClick={() => {
+            const ok = requestFullscreen(iframeRef.current)
+            if (!ok) openProviderUrl(item.url)
+          }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
         >
@@ -402,28 +445,8 @@ function DailymotionEmbed({
           type="button"
           onClick={() => {
             const iframe = iframeRef.current
-            const attempt = (element: Element | null) => {
-              if (!element) return false
-              const anyEl = element as HTMLElement & {
-                webkitRequestFullscreen?: () => void
-                msRequestFullscreen?: () => void
-              }
-              if (typeof anyEl.requestFullscreen === 'function') {
-                Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
-                return true
-              }
-              if (typeof anyEl.webkitRequestFullscreen === 'function') {
-                anyEl.webkitRequestFullscreen()
-                return true
-              }
-              if (typeof anyEl.msRequestFullscreen === 'function') {
-                anyEl.msRequestFullscreen()
-                return true
-              }
-              return false
-            }
-            if (attempt(iframe)) return
-            attempt(iframe?.parentElement ?? null)
+            const ok = requestFullscreen(iframe) || requestFullscreen(iframe?.parentElement ?? null)
+            if (!ok) openProviderUrl(item.url)
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
@@ -505,11 +528,11 @@ function ContentRenderer({
         ? 'min(320px, 50vw)'
         : 'min(280px, 70vw)'
     return (
-      <div className="h-full w-full px-5 sm:px-8" style={encourageStyle}>
-        <div className="encourage-layout flex h-full w-full flex-col items-center justify-center gap-4 text-center md:flex-row md:items-center md:justify-center">
+      <div key={item.text} className="h-full w-full px-5 sm:px-8" style={encourageStyle}>
+        <div className="encourage-layout encourage-active flex h-full w-full flex-col items-center justify-center gap-4 text-center md:flex-row md:items-center md:justify-center">
           {item.icon ? (
             <div
-              className="encourage-icon-wrapper"
+              className="encourage-icon-wrapper encourage-icon-glitch"
               style={{
                 maxWidth: iconMaxWidth,
                 width: iconMaxWidth,
@@ -743,7 +766,15 @@ export default function RandomExperiencePage({
 
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
-  const sequenceStateRef = useRef({ step: 0, round: 0, encourage: 0, draws: 0 })
+const sequenceStateRef = useRef({
+  step: 0,
+  round: 0,
+  encourage: 0,
+  draws: 0,
+  sinceEncourage: 0,
+  currentInterval: ENCOURAGE_INTERVALS[0] ?? 15,
+  intervalIndex: 0,
+})
   const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skippedVideosRef = useRef<Set<string>>(new Set())
@@ -815,7 +846,15 @@ export default function RandomExperiencePage({
   }, [selectedTypes])
 
   const resetSequence = useCallback(() => {
-    sequenceStateRef.current = { step: 0, round: 0, encourage: 0, draws: 0 }
+    sequenceStateRef.current = {
+      step: 0,
+      round: 0,
+      encourage: 0,
+      draws: 0,
+      sinceEncourage: 0,
+      currentInterval: ENCOURAGE_INTERVALS[0] ?? 15,
+      intervalIndex: 0,
+    }
     setSequenceVersion((v) => v + 1)
   }, [])
 
@@ -824,18 +863,27 @@ export default function RandomExperiencePage({
     if (!seq.length) return { kind: 'content', itemType: 'image' }
 
     const state = sequenceStateRef.current
-    const draws = state.draws ?? 0
-    const shouldEncourage = draws >= ENCOURAGE_TRIGGER_COUNT - 1
+    const currentInterval = state.currentInterval ?? (ENCOURAGE_INTERVALS[0] ?? 15)
+    const progress = state.sinceEncourage ?? 0
+    const currentDraws = state.draws ?? 0
+    const shouldEncourage = progress >= currentInterval
 
     if (shouldEncourage) {
       const round = state.round + 1
       const encourage = state.encourage + 1
       const normalizedStep = state.step % seq.length
+
+      const nextIndex = state.intervalIndex != null ? state.intervalIndex + 1 : 1
+      const nextInterval = ENCOURAGE_INTERVALS[nextIndex % ENCOURAGE_INTERVALS.length] ?? currentInterval
+
       sequenceStateRef.current = {
         step: normalizedStep,
         round,
         encourage,
         draws: 0,
+        sinceEncourage: 0,
+        currentInterval: nextInterval,
+        intervalIndex: nextIndex,
       }
       return { kind: 'encourage', round, encourageIndex: encourage }
     }
@@ -847,7 +895,10 @@ export default function RandomExperiencePage({
       step: nextStep,
       round: state.round,
       encourage: state.encourage,
-      draws: draws + 1,
+      draws: currentDraws + 1,
+      sinceEncourage: progress + 1,
+      currentInterval,
+      intervalIndex: state.intervalIndex ?? 0,
     }
     return { kind: 'content', itemType }
   }, [filteredSequence])
@@ -1497,14 +1548,34 @@ export default function RandomExperiencePage({
           padding-block: clamp(4px, 1.2vh, 12px);
           width: clamp(140px, 60vw, 280px);
           height: clamp(170px, 35vh, 320px);
+          position: relative;
+          overflow: visible;
         }
         .encourage-icon {
           width: 100%;
           height: 100%;
           object-fit: contain;
-          filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.26));
-          animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+          filter: drop-shadow(0 36px 48px rgba(0, 0, 0, 0.45));
           transform-origin: center;
+          position: relative;
+          z-index: 5;
+        }
+        .encourage-icon-wrapper::before,
+        .encourage-icon-wrapper::after {
+          content: '';
+          position: absolute;
+          inset: -14%;
+          border-radius: 28px;
+          pointer-events: none;
+          mix-blend-mode: screen;
+          opacity: 0;
+          z-index: 4;
+        }
+        .encourage-icon-wrapper::before {
+          background: repeating-linear-gradient(90deg, rgba(0, 255, 255, 0.9) 0 10px, rgba(0, 255, 255, 0) 10px 20px);
+        }
+        .encourage-icon-wrapper::after {
+          background: repeating-linear-gradient(0deg, rgba(255, 0, 150, 0.85) 0 14px, rgba(123, 104, 238, 0) 14px 28px);
         }
         .encourage-copy-wrapper {
           flex: 1 1 auto;
@@ -1531,6 +1602,7 @@ export default function RandomExperiencePage({
           .encourage-icon-wrapper {
             width: clamp(360px, 52vw, 540px);
             height: clamp(320px, 48vh, 520px);
+            border-radius: 26px;
           }
           .encourage-copy-wrapper {
             flex: 1 1 clamp(320px, 44vw, 500px);
@@ -1562,11 +1634,59 @@ export default function RandomExperiencePage({
           .encourage-icon {
             height: auto;
           }
+          .encourage-icon-wrapper::before,
+          .encourage-icon-wrapper::after {
+            inset: -14%;
+          }
         }
         @keyframes encourage-pop {
           0% { transform: scale(0.82) rotate(-4deg); }
           54% { transform: scale(1.06) rotate(1.5deg); }
           100% { transform: scale(1) rotate(0deg); }
+        }
+        .encourage-layout.encourage-active .encourage-icon-wrapper::before {
+          animation: encourage-glitch-before 2200ms steps(8, end);
+        }
+        .encourage-layout.encourage-active .encourage-icon-wrapper::after {
+          animation: encourage-glitch-after 2200ms steps(8, end);
+        }
+        .encourage-layout.encourage-active .encourage-icon {
+          animation: encourage-pop 520ms cubic-bezier(0.18, 0.89, 0.32, 1.28), encourage-shift 2200ms steps(8, end), encourage-flicker 2200ms linear;
+        }
+        @keyframes encourage-glitch-before {
+          0% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+          10% { opacity: 1; transform: translate(-42px, 26px) scale(1.14) skewX(-9deg); filter: blur(4.2px) saturate(2.2); }
+          25% { opacity: 0.85; transform: translate(30px, -22px) scale(0.94) skewX(7deg); filter: blur(3.2px); }
+          42% { opacity: 0.6; transform: translate(-22px, 16px) scale(1.06) skewX(-5deg); filter: blur(2.4px); }
+          60% { opacity: 0.38; transform: translate(18px, -12px) scale(0.97) skewX(4deg); filter: blur(1.8px); }
+          80% { opacity: 0.22; transform: translate(-14px, 9px) scale(1.04) skewX(-3deg); filter: blur(1.2px); }
+          100% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+        }
+        @keyframes encourage-glitch-after {
+          0% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+          12% { opacity: 0.95; transform: translate(40px, -28px) scale(1.12) skewX(10deg); filter: blur(3.8px) saturate(2.2); }
+          30% { opacity: 0.75; transform: translate(-32px, 24px) scale(0.92) skewX(-8deg); filter: blur(3px); }
+          50% { opacity: 0.5; transform: translate(24px, -18px) scale(1.08) skewX(6deg); filter: blur(2.2px); }
+          72% { opacity: 0.3; transform: translate(-18px, 12px) scale(0.95) skewX(-4deg); filter: blur(1.6px); }
+          90% { opacity: 0.18; transform: translate(14px, -9px) scale(1.05) skewX(3deg); filter: blur(1.1px); }
+          100% { opacity: 0; transform: translate(0,0) scale(1); filter: blur(0); }
+        }
+        @keyframes encourage-shift {
+          0% { transform: translate3d(0,0,0); }
+          18% { transform: translate3d(-34px, 24px, 0); }
+          36% { transform: translate3d(28px, -20px, 0); }
+          54% { transform: translate3d(-24px, 17px, 0); }
+          72% { transform: translate3d(20px, -13px, 0); }
+          90% { transform: translate3d(-15px, 9px, 0); }
+          100% { transform: translate3d(0,0,0); }
+        }
+        @keyframes encourage-flicker {
+          0%, 100% { filter: drop-shadow(0 36px 48px rgba(0, 0, 0, 0.45)) brightness(1); }
+          12% { filter: drop-shadow(0 42px 56px rgba(0, 0, 0, 0.5)) brightness(1.9); }
+          30% { filter: drop-shadow(0 34px 46px rgba(0, 0, 0, 0.4)) brightness(1.3); }
+          48% { filter: drop-shadow(0 44px 60px rgba(0, 0, 0, 0.52)) brightness(1.7); }
+          68% { filter: drop-shadow(0 38px 52px rgba(0, 0, 0, 0.46)) brightness(1.4); }
+          86% { filter: drop-shadow(0 32px 44px rgba(0, 0, 0, 0.38)) brightness(1.8); }
         }
       `}</style>
 
