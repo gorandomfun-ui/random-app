@@ -784,8 +784,8 @@ const sequenceStateRef = useRef({
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const makePageGlitchBars = useCallback((): GlitchBar[] => {
-    const count = randomInt(5, 9)
+  const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
+    const count = mode === 'boost' ? randomInt(18, 28) : randomInt(5, 9)
     const stamp = Date.now()
 
     const gradientForSet = (colors: [string, string, string]) => {
@@ -797,16 +797,26 @@ const sequenceStateRef = useRef({
 
     return Array.from({ length: count }, (_, index) => {
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
-      const wide = index < 2 || Math.random() < 0.45
-      const widthValue = wide ? randomBetween(58, 98) : randomBetween(18, 46)
+      const wideThreshold = mode === 'boost' ? 4 : 2
+      const wideChance = mode === 'boost' ? 0.7 : 0.45
+      const wide = index < wideThreshold || Math.random() < wideChance
+      const widthValue = wide
+        ? randomBetween(mode === 'boost' ? 64 : 58, mode === 'boost' ? 112 : 98)
+        : randomBetween(14, mode === 'boost' ? 58 : 46)
       const maxLeft = Math.max(-6, 100 - widthValue)
       const leftValue = randomBetween(-6, maxLeft)
-      const topValue = randomBetween(6, 92)
-      const heightValue = wide ? randomBetween(6, 9) : randomBetween(2, 4.4)
-      const delay = Math.round(randomBetween(0, 120))
-      const duration = Math.round(randomBetween(220, 340))
-      const shiftValue = wide ? randomBetween(12, 20) : randomBetween(6, 14)
-      const opacity = parseFloat(randomBetween(wide ? 0.78 : 0.6, 0.92).toFixed(2))
+      const topValue = randomBetween(4, 94)
+      const heightValue = wide
+        ? randomBetween(mode === 'boost' ? 8 : 6, mode === 'boost' ? 12 : 9)
+        : randomBetween(1.6, mode === 'boost' ? 5.2 : 4.4)
+      const delay = Math.round(randomBetween(0, mode === 'boost' ? 160 : 120))
+      const duration = Math.round(randomBetween(mode === 'boost' ? 260 : 220, mode === 'boost' ? 380 : 340))
+      const shiftValue = mode === 'boost'
+        ? randomBetween(wide ? 18 : 10, wide ? 30 : 18)
+        : randomBetween(wide ? 12 : 6, wide ? 20 : 14)
+      const opacity = parseFloat(
+        randomBetween(wide ? 0.82 : 0.58, mode === 'boost' ? 0.97 : 0.92).toFixed(2)
+      )
 
       return {
         id: `${stamp}-${index}-${Math.random().toString(16).slice(2, 6)}`,
@@ -835,13 +845,15 @@ const sequenceStateRef = useRef({
     heartGlitchTimeoutRef.current = setTimeout(() => setHeartGlitch(false), 420)
   }, [])
 
-  const triggerPageGlitch = useCallback(() => {
-    const bars = makePageGlitchBars()
+  const triggerPageGlitch = useCallback((mode: 'normal' | 'boost' = 'normal') => {
+    const bars = makePageGlitchBars(mode)
     setPageGlitchBars(bars)
     setPageGlitchActive(true)
     if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
-    const total = Math.max(320, (longest || 320) + 120)
+    const base = mode === 'boost' ? 420 : 320
+    const tail = mode === 'boost' ? 180 : 120
+    const total = Math.max(base, (longest || base) + tail)
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
   }, [makePageGlitchBars])
 
@@ -1209,13 +1221,13 @@ const sequenceStateRef = useRef({
   }, [])
 
   const loadNext = useCallback(async () => {
-    triggerPageGlitch()
     setLoading(true)
     setIsSecond((prev) => !prev)
     setTrigger((t) => t + 1)
 
     try {
       const slot = getNextSlot()
+      triggerPageGlitch(slot.kind === 'encourage' ? 'boost' : 'normal')
       if (slot.kind === 'encourage') {
         const encourageItem = buildEncourageItem(slot.encourageIndex)
         setCurrentItem(encourageItem)
