@@ -99,7 +99,7 @@ export default function ShareMenu({
     if (!item) return ''
     switch (item.type) {
       case 'image':
-        return item.text ? truncate(item.text, 200) : item.title || getSourceLabel(item.source, item.provider) || ''
+        return item.title || getSourceLabel(item.source, item.provider) || ''
       case 'video':
       case 'web':
         return item.text ? truncate(item.text, 200) : item.url || getSourceLabel(item.source, item.provider) || ''
