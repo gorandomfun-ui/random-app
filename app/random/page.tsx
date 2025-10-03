@@ -92,6 +92,12 @@ type GlitchBarStyle = CSSProperties & {
   ['--glitch-bar-shift']?: string
 }
 
+type FullscreenVideoPayload = {
+  kind: 'youtube' | 'dailymotion'
+  src: string
+  title?: string | null
+}
+
 
 function parseTypesParam(value: string | string[] | undefined): ItemType[] {
   if (!value) return []
@@ -261,10 +267,12 @@ function VideoEmbed({
   item,
   frameHeight,
   fullscreenLabel,
+  onOpenFullscreen,
 }: {
   item: VideoContentItem
   frameHeight: string
   fullscreenLabel: string
+  onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
 }) {
   const provider = (item.provider || '').toLowerCase()
   const url = item.url
@@ -274,11 +282,25 @@ function VideoEmbed({
   const looksDailymotion = !looksYouTube && (provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(url))
 
   if (looksYouTube) {
-    return <YouTubeEmbed item={item} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} />
+    return (
+      <YouTubeEmbed
+        item={item}
+        frameHeight={frameHeight}
+        fullscreenLabel={fullscreenLabel}
+        onFullscreenFallback={onOpenFullscreen}
+      />
+    )
   }
 
   if (looksDailymotion) {
-    return <DailymotionEmbed item={item} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} />
+    return (
+      <DailymotionEmbed
+        item={item}
+        frameHeight={frameHeight}
+        fullscreenLabel={fullscreenLabel}
+        onFullscreenFallback={onOpenFullscreen}
+      />
+    )
   }
 
   return <HtmlVideoEmbed item={item} frameHeight={frameHeight} />
@@ -288,10 +310,12 @@ function YouTubeEmbed({
   item,
   frameHeight,
   fullscreenLabel,
+  onFullscreenFallback,
 }: {
   item: VideoContentItem
   frameHeight: string
   fullscreenLabel: string
+  onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
 }) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -377,7 +401,13 @@ function YouTubeEmbed({
           type="button"
           onClick={() => {
             const ok = attemptFullscreen(iframeRef.current)
-            if (!ok) openProviderUrl(item.url)
+            if (!ok) {
+              if (onFullscreenFallback) {
+                onFullscreenFallback({ kind: 'youtube', src, title: text })
+              } else {
+                openProviderUrl(item.url)
+              }
+            }
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
@@ -403,10 +433,12 @@ function DailymotionEmbed({
   item,
   frameHeight,
   fullscreenLabel,
+  onFullscreenFallback,
 }: {
   item: VideoContentItem
   frameHeight: string
   fullscreenLabel: string
+  onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
 }) {
   const { url } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -414,7 +446,7 @@ function DailymotionEmbed({
     try {
       const u = new URL(url)
       const videoId = u.pathname.split('/').pop()
-      return `https://www.dailymotion.com/embed/video/${videoId}`
+      return `https://www.dailymotion.com/embed/video/${videoId}?autoplay=1`
     } catch {
       return url
     }
@@ -449,7 +481,13 @@ function DailymotionEmbed({
           onClick={() => {
             const iframe = iframeRef.current
             const ok = attemptFullscreen(iframe) || attemptFullscreen(iframe?.parentElement ?? null)
-            if (!ok) openProviderUrl(item.url)
+            if (!ok) {
+              if (onFullscreenFallback) {
+                onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: item.text })
+              } else {
+                openProviderUrl(item.url)
+              }
+            }
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
@@ -463,6 +501,10 @@ function DailymotionEmbed({
 
 function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight: string }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const shouldAutoPlay = useMemo(() => {
+    const provider = (item.provider || '').toLowerCase()
+    return provider.includes('pixabay') || provider.includes('pexels')
+  }, [item.provider])
 
   useEffect(() => {
     const video = videoRef.current
@@ -470,7 +512,14 @@ function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHe
     video.setAttribute('playsinline', 'true')
     video.setAttribute('webkit-playsinline', 'true')
     video.setAttribute('x5-playsinline', 'true')
-  }, [item.url])
+    if (shouldAutoPlay) {
+      video.muted = true
+      const playPromise = video.play()
+      if (playPromise) playPromise.catch(() => undefined)
+    } else {
+      video.pause()
+    }
+  }, [item.url, shouldAutoPlay])
 
   return (
     <div className="w-full h-full" style={{ position: 'relative', height: frameHeight }}>
@@ -486,6 +535,8 @@ function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHe
           ref={videoRef}
           controls
           playsInline
+          autoPlay={shouldAutoPlay}
+          muted={shouldAutoPlay}
           className="absolute top-1/2 left-1/2"
           style={{
             backgroundColor: '#000',
@@ -510,12 +561,14 @@ function ContentRenderer({
   frameHeight,
   viewportWidth,
   fullscreenLabel,
+  onOpenFullscreen,
 }: {
   item: DisplayItem
   theme: { cream: string }
   frameHeight: string
   viewportWidth: number | null
   fullscreenLabel: string
+  onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
 }) {
   if (item.type === 'encourage') {
     const encourageStyle: EncourageStyle = {
@@ -649,7 +702,14 @@ function ContentRenderer({
   }
 
   if (item.type === 'video') {
-    return <VideoEmbed item={item} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} />
+    return (
+      <VideoEmbed
+        item={item}
+        frameHeight={frameHeight}
+        fullscreenLabel={fullscreenLabel}
+        onOpenFullscreen={onOpenFullscreen}
+      />
+    )
   }
 
   return null
@@ -695,6 +755,36 @@ export default function RandomExperiencePage({
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
+  const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
+  const fullscreenSrc = useMemo(() => {
+    if (!fullscreenVideo) return ''
+    try {
+      const base = fullscreenVideo.src.startsWith('http')
+        ? fullscreenVideo.src
+        : typeof window !== 'undefined'
+          ? new URL(fullscreenVideo.src, window.location.origin).toString()
+          : fullscreenVideo.src
+      const url = new URL(base)
+      if (fullscreenVideo.kind === 'youtube') {
+        url.searchParams.set('autoplay', '1')
+        url.searchParams.set('mute', '0')
+      }
+      if (fullscreenVideo.kind === 'dailymotion') {
+        url.searchParams.set('autoplay', '1')
+      }
+      return url.toString()
+    } catch {
+      if (fullscreenVideo.kind === 'youtube' && !/mute=0/.test(fullscreenVideo.src)) {
+        return fullscreenVideo.src.replace('mute=1', 'mute=0')
+      }
+      if (fullscreenVideo.kind === 'dailymotion' && !/autoplay=/.test(fullscreenVideo.src)) {
+        return fullscreenVideo.src.includes('?')
+          ? `${fullscreenVideo.src}&autoplay=1`
+          : `${fullscreenVideo.src}?autoplay=1`
+      }
+      return fullscreenVideo.src
+    }
+  }, [fullscreenVideo])
 
   const theme = THEMES[themeIdx]
   const contentHeight = useMemo(() => {
@@ -857,6 +947,12 @@ const sequenceStateRef = useRef({
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
   }, [makePageGlitchBars])
 
+  const openFullscreen = useCallback((payload: FullscreenVideoPayload) => {
+    setFullscreenVideo(payload)
+  }, [])
+
+  const closeFullscreen = useCallback(() => setFullscreenVideo(null), [])
+
   useEffect(() => {
     const initial = randIdx(THEMES.length)
     setThemeIdx(initial)
@@ -884,6 +980,26 @@ const sequenceStateRef = useRef({
   useEffect(() => {
     encourageQueueRef.current = shuffleArray(encourageMessages)
   }, [encourageMessages])
+
+  useEffect(() => {
+    if (!fullscreenVideo) return undefined
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeFullscreen()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [closeFullscreen, fullscreenVideo])
+
+  useEffect(() => {
+    if (fullscreenVideo) closeFullscreen()
+  }, [closeFullscreen, fullscreenVideo, trigger])
 
   const pickEncourageMessage = useCallback(() => {
     if (!encourageQueueRef.current.length) {
@@ -1410,6 +1526,7 @@ const sequenceStateRef = useRef({
               frameHeight={contentHeight}
               viewportWidth={viewportWidth}
               fullscreenLabel={fullscreenLabel}
+              onOpenFullscreen={openFullscreen}
             />
           ) : (
             <div className="flex items-center justify-center w-full h-full">
@@ -1597,6 +1714,41 @@ const sequenceStateRef = useRef({
         theme={theme}
         key={sequenceVersion}
       />
+
+      {fullscreenVideo ? (
+        <div className="video-fullscreen-overlay" role="dialog" aria-modal="true">
+          <div className="video-fullscreen-backdrop" onClick={closeFullscreen} />
+          <div className="video-fullscreen-frame">
+            <button
+              type="button"
+              aria-label="Close video"
+              className="video-fullscreen-close"
+              onClick={closeFullscreen}
+            >
+              ×
+            </button>
+            <div className="video-fullscreen-player">
+              {fullscreenVideo.kind === 'youtube' ? (
+                <iframe
+                  key={`yt-${fullscreenSrc}`}
+                  src={fullscreenSrc || fullscreenVideo.src}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                  allowFullScreen
+                  title={fullscreenVideo.title || 'Video'}
+                />
+              ) : (
+                <iframe
+                  key={`dm-${fullscreenSrc}`}
+                  src={fullscreenSrc || fullscreenVideo.src}
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  title={fullscreenVideo.title || 'Video'}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ShareMenu
         open={shareOpen}
@@ -1799,6 +1951,73 @@ const sequenceStateRef = useRef({
           border-radius: 0;
           will-change: transform, opacity;
           --glitch-bar-shift: 12px;
+        }
+        .video-fullscreen-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 80;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .video-fullscreen-backdrop {
+          position: absolute;
+          inset: 0;
+          background: rgba(4, 5, 16, 0.86);
+        }
+        .video-fullscreen-frame {
+          position: relative;
+          width: min(960px, 96vw);
+          aspect-ratio: 16 / 9;
+          background: #000;
+          border-radius: 24px;
+          overflow: hidden;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+          z-index: 1;
+          display: flex;
+          align-items: stretch;
+          justify-content: center;
+        }
+        .video-fullscreen-player {
+          position: relative;
+          width: 100%;
+          height: 100%;
+        }
+        .video-fullscreen-player iframe {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          border: none;
+        }
+        .video-fullscreen-close {
+          position: absolute;
+          top: 12px;
+          right: 16px;
+          height: 36px;
+          width: 36px;
+          border-radius: 50%;
+          background: rgba(0, 0, 0, 0.6);
+          color: #fff;
+          font-size: 26px;
+          line-height: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 2;
+        }
+        @media (max-width: 768px) {
+          .video-fullscreen-frame {
+            width: 100vw;
+            height: 100vh;
+            max-height: 100vh;
+            border-radius: 0;
+          }
+          .video-fullscreen-close {
+            top: 16px;
+            right: 18px;
+            background: rgba(0, 0, 0, 0.75);
+          }
         }
         .page-glitch-overlay--active {
           animation: page-glitch-fade 320ms ease-out forwards;
