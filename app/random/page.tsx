@@ -63,6 +63,35 @@ const FALLBACK_ENCOURAGE_MESSAGES = [
   'Unlock another surprise.',
 ]
 
+const GLITCH_COLOR_SETS: Array<[string, string, string]> = [
+  ['#22FF9C', '#00E1FF', '#FFFFFF'],
+  ['#FF005C', '#FF8A00', '#FFE500'],
+  ['#42FF73', '#00B2FF', '#FF3AFB'],
+  ['#00E8FF', '#2D6BFF', '#FFFFFF'],
+  ['#FF0066', '#FF2FD2', '#00FFE5'],
+  ['#ADFF00', '#00FFE3', '#FFFC00'],
+]
+
+const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min
+const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
+
+type GlitchBar = {
+  id: string
+  top: string
+  width: string
+  left: string
+  height: string
+  background: string
+  delay: number
+  duration: number
+  shift: string
+  opacity: number
+}
+
+type GlitchBarStyle = CSSProperties & {
+  ['--glitch-bar-shift']?: string
+}
+
 
 function parseTypesParam(value: string | string[] | undefined): ItemType[] {
   if (!value) return []
@@ -318,32 +347,6 @@ function YouTubeEmbed({
       )
       setIsMuted(false)
     } catch {}
-  }
-
-  const requestFullscreen = () => {
-    const iframe = iframeRef.current
-    const attempt = (element: Element | null) => {
-      if (!element) return false
-      const anyEl = element as HTMLElement & {
-        webkitRequestFullscreen?: () => void
-        msRequestFullscreen?: () => void
-      }
-      if (typeof anyEl.requestFullscreen === 'function') {
-        Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
-        return true
-      }
-      if (typeof anyEl.webkitRequestFullscreen === 'function') {
-        anyEl.webkitRequestFullscreen()
-        return true
-      }
-      if (typeof anyEl.msRequestFullscreen === 'function') {
-        anyEl.msRequestFullscreen()
-        return true
-      }
-      return false
-    }
-    if (attempt(iframe)) return
-    attempt(iframe?.parentElement ?? null)
   }
 
   return (
@@ -690,6 +693,8 @@ export default function RandomExperiencePage({
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [heartGlitch, setHeartGlitch] = useState(false)
+  const [pageGlitchActive, setPageGlitchActive] = useState(false)
+  const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
 
   const theme = THEMES[themeIdx]
   const contentHeight = useMemo(() => {
@@ -777,8 +782,46 @@ const sequenceStateRef = useRef({
 })
   const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const skippedVideosRef = useRef<Set<string>>(new Set())
-  const externalVideoCacheRef = useRef<Map<string, { provider: string; url: string }>>(new Map())
+  const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const makePageGlitchBars = useCallback((): GlitchBar[] => {
+    const count = randomInt(5, 9)
+    const stamp = Date.now()
+
+    const gradientForSet = (colors: [string, string, string]) => {
+      const [c1, c2, c3] = colors
+      const stopA = randomBetween(22, 38)
+      const stopB = randomBetween(stopA + 8, 88)
+      return `linear-gradient(90deg, ${c1} 0% ${stopA.toFixed(0)}%, ${c2} ${stopA.toFixed(0)}% ${stopB.toFixed(0)}%, ${c3} ${stopB.toFixed(0)}% 100%)`
+    }
+
+    return Array.from({ length: count }, (_, index) => {
+      const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
+      const wide = index < 2 || Math.random() < 0.45
+      const widthValue = wide ? randomBetween(58, 98) : randomBetween(18, 46)
+      const maxLeft = Math.max(-6, 100 - widthValue)
+      const leftValue = randomBetween(-6, maxLeft)
+      const topValue = randomBetween(6, 92)
+      const heightValue = wide ? randomBetween(6, 9) : randomBetween(2, 4.4)
+      const delay = Math.round(randomBetween(0, 120))
+      const duration = Math.round(randomBetween(220, 340))
+      const shiftValue = wide ? randomBetween(12, 20) : randomBetween(6, 14)
+      const opacity = parseFloat(randomBetween(wide ? 0.78 : 0.6, 0.92).toFixed(2))
+
+      return {
+        id: `${stamp}-${index}-${Math.random().toString(16).slice(2, 6)}`,
+        top: `${topValue.toFixed(2)}%`,
+        width: `${widthValue.toFixed(2)}%`,
+        left: `${leftValue.toFixed(2)}%`,
+        height: `${heightValue.toFixed(1)}px`,
+        background: gradientForSet(palette),
+        delay,
+        duration,
+        shift: `${shiftValue.toFixed(1)}px`,
+        opacity,
+      }
+    })
+  }, [])
 
   const triggerBurgerGlitch = useCallback(() => {
     setBurgerGlitch(true)
@@ -792,6 +835,16 @@ const sequenceStateRef = useRef({
     heartGlitchTimeoutRef.current = setTimeout(() => setHeartGlitch(false), 420)
   }, [])
 
+  const triggerPageGlitch = useCallback(() => {
+    const bars = makePageGlitchBars()
+    setPageGlitchBars(bars)
+    setPageGlitchActive(true)
+    if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
+    const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
+    const total = Math.max(320, (longest || 320) + 120)
+    pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
+  }, [makePageGlitchBars])
+
   useEffect(() => {
     const initial = randIdx(THEMES.length)
     setThemeIdx(initial)
@@ -801,6 +854,7 @@ const sequenceStateRef = useRef({
     return () => {
       if (burgerGlitchTimeoutRef.current) clearTimeout(burgerGlitchTimeoutRef.current)
       if (heartGlitchTimeoutRef.current) clearTimeout(heartGlitchTimeoutRef.current)
+      if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     }
   }, [])
 
@@ -1155,6 +1209,7 @@ const sequenceStateRef = useRef({
   }, [])
 
   const loadNext = useCallback(async () => {
+    triggerPageGlitch()
     setLoading(true)
     setIsSecond((prev) => !prev)
     setTrigger((t) => t + 1)
@@ -1177,7 +1232,7 @@ const sequenceStateRef = useRef({
     } finally {
       setLoading(false)
     }
-  }, [acquireItem, buildEncourageItem, getNextSlot, updateTheme])
+  }, [acquireItem, buildEncourageItem, getNextSlot, triggerPageGlitch, updateTheme])
 
   useEffect(() => {
     loadNext().catch(() => setLoading(false))
@@ -1257,6 +1312,28 @@ const sequenceStateRef = useRef({
 
   return (
     <main className="min-h-screen flex flex-col" style={mainStyle}>
+      <div
+        className={`page-glitch-overlay${pageGlitchActive ? ' page-glitch-overlay--active' : ''}`}
+        aria-hidden="true"
+      >
+        <div className="page-glitch-overlay__bars">
+          {pageGlitchBars.map((bar) => {
+            const style: GlitchBarStyle = {
+              top: bar.top,
+              height: bar.height,
+              width: bar.width,
+              left: bar.left,
+              background: bar.background,
+              animationDelay: `${bar.delay}ms`,
+              animationDuration: `${bar.duration}ms`,
+              '--glitch-bar-shift': bar.shift,
+              opacity: bar.opacity,
+            }
+
+            return <span key={bar.id} className="page-glitch-overlay__bar" style={style} />
+          })}
+        </div>
+      </div>
       <header className="flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
         <button
           type="button"
@@ -1691,6 +1768,58 @@ const sequenceStateRef = useRef({
       `}</style>
 
       <style jsx global>{`
+        .page-glitch-overlay {
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          z-index: 60;
+          opacity: 0;
+          background-color: transparent;
+          overflow: hidden;
+        }
+        .page-glitch-overlay__bars {
+          position: absolute;
+          inset: 0;
+        }
+        .page-glitch-overlay__bar {
+          position: absolute;
+          opacity: 0;
+          border-radius: 0;
+          will-change: transform, opacity;
+          --glitch-bar-shift: 12px;
+        }
+        .page-glitch-overlay--active {
+          animation: page-glitch-fade 320ms ease-out forwards;
+        }
+        .page-glitch-overlay--active .page-glitch-overlay__bar {
+          animation-name: page-glitch-bar;
+          animation-timing-function: steps(4, jump-start);
+          animation-fill-mode: forwards;
+        }
+        @keyframes page-glitch-fade {
+          0% { opacity: 0; }
+          15% { opacity: 0.92; }
+          55% { opacity: 0.64; }
+          100% { opacity: 0; }
+        }
+        @keyframes page-glitch-bar {
+          0% {
+            opacity: 0;
+            transform: translate3d(calc(-0.6 * var(--glitch-bar-shift, 12px)), 0, 0);
+          }
+          25% {
+            opacity: 1;
+            transform: translate3d(calc(0.45 * var(--glitch-bar-shift, 12px)), 0, 0);
+          }
+          55% {
+            opacity: 0.8;
+            transform: translate3d(calc(-0.3 * var(--glitch-bar-shift, 12px)), 0, 0);
+          }
+          100% {
+            opacity: 0;
+            transform: translate3d(0, 0, 0);
+          }
+        }
         .burger-icon {
           position: relative;
         }

@@ -471,32 +471,6 @@ function YouTubeEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fulls
     } catch {}
   }
 
-  const requestFullscreen = () => {
-    const iframe = iframeRef.current
-    const attempt = (element: Element | null) => {
-      if (!element) return false
-      const anyEl = element as HTMLElement & {
-        webkitRequestFullscreen?: () => void
-        msRequestFullscreen?: () => void
-      }
-      if (typeof anyEl.requestFullscreen === 'function') {
-        Promise.resolve(anyEl.requestFullscreen()).catch(() => {})
-        return true
-      }
-      if (typeof anyEl.webkitRequestFullscreen === 'function') {
-        anyEl.webkitRequestFullscreen()
-        return true
-      }
-      if (typeof anyEl.msRequestFullscreen === 'function') {
-        anyEl.msRequestFullscreen()
-        return true
-      }
-      return false
-    }
-    if (attempt(iframe)) return
-    attempt(iframe?.parentElement ?? null)
-  }
-
   return (
     <div className="w-full">
       <div className="-mx-6 w-[calc(100%+3rem)]" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
