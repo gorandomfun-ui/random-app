@@ -148,7 +148,7 @@ export default function ShareMenu({
         text: shareText,
         url: shareUrl,
       }
-      const logoFile = nav.canShare ? await getShareLogoFile() : null
+      const logoFile = typeof nav.canShare === 'function' ? await getShareLogoFile() : null
       if (logoFile) {
         const withFile = { ...baseData, files: [logoFile] }
         if (nav.canShare?.(withFile)) {
