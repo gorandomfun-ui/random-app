@@ -32,13 +32,13 @@ const deDictionary = {
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "Deine",
-    "youSuffix": "Likes bleiben hier 24 Stunden gespeichert.",
-    "weDescription": "Die beliebtesten",
+    "youSuffix": "bleiben hier 24 h gespeichert.",
+    "weDescription": "Die Top",
     "weSuffix": "Inhalte der Community.",
     "banner": {
       "youPrefix": "Deine",
-      "youSuffix": "Likes bleiben hier 24 Stunden gespeichert.",
-      "wePrefix": "Die beliebtesten",
+      "youSuffix": "bleiben hier 24 h gespeichert.",
+      "wePrefix": "Top",
       "weSuffix": "Inhalte der Community."
     },
     "weEmpty": "Noch keine globalen Favoriten. Sei der Erste, der etwas liked!"

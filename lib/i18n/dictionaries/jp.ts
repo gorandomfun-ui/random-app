@@ -32,14 +32,14 @@ const jpDictionary = {
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "あなたの",
-    "youSuffix": "いいねは24時間ここに保存されます。",
+    "youSuffix": "は24時間ここで保存されます。",
     "weDescription": "みんながたくさん",
-    "weSuffix": "いいねしたコンテンツ。",
+    "weSuffix": "選んだコンテンツ。",
     "banner": {
       "youPrefix": "あなたの",
-      "youSuffix": "いいねは24時間ここに保存されます。",
+      "youSuffix": "は24時間ここで保存されます。",
       "wePrefix": "みんながたくさん",
-      "weSuffix": "いいねしたコンテンツ。"
+      "weSuffix": "選んだコンテンツ。"
     },
     "weEmpty": "まだグローバルなお気に入りはありません。最初のいいねを押してみて！"
   },

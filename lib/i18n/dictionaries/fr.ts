@@ -32,13 +32,13 @@ const frDictionary = {
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "Vos",
-    "youSuffix": "likes sont conservés ici pendant 24 heures.",
+    "youSuffix": "sont gardés ici pendant 24 h.",
     "weDescription": "Voici les contenus les plus",
     "weSuffix": "aimés.",
     "banner": {
       "youPrefix": "Vos",
-      "youSuffix": "likes sont conservés ici pendant 24 heures.",
-      "wePrefix": "Voici les contenus les plus",
+      "youSuffix": "sont gardés ici pendant 24 h.",
+      "wePrefix": "Ici, les contenus les plus",
       "weSuffix": "aimés."
     },
     "weEmpty": "Pas encore de favoris globaux. Soyez le premier à aimer un contenu !"
