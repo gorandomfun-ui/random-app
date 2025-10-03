@@ -25,6 +25,26 @@ type ShareUrls = {
   telegram: string
 }
 
+const truncate = (text: string, maxLength: number) => {
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
+}
+
+let cachedShareLogo: File | null = null
+
+async function getShareLogoFile(): Promise<File | null> {
+  if (cachedShareLogo) return cachedShareLogo
+  try {
+    const response = await fetch('/elements/logo_black.png')
+    if (!response.ok) return null
+    const blob = await response.blob()
+    cachedShareLogo = new File([blob], 'random-logo.png', { type: blob.type || 'image/png' })
+    return cachedShareLogo
+  } catch {
+    return null
+  }
+}
+
 function buildShareUrls(url: string, text: string): ShareUrls {
   const u = encodeURIComponent(url)
   const t = encodeURIComponent(text)
@@ -75,12 +95,39 @@ export default function ShareMenu({
     return 'Random'
   }, [item, title])
 
-  const shareMessage = useMemo(() => {
-    const label = contentTitle || 'Random'
-    return `${label} — ${siteName}`
-  }, [contentTitle, siteName])
+  const contentSnippet = useMemo(() => {
+    if (!item) return ''
+    switch (item.type) {
+      case 'image':
+        return item.text ? truncate(item.text, 200) : item.title || getSourceLabel(item.source, item.provider) || ''
+      case 'video':
+      case 'web':
+        return item.text ? truncate(item.text, 200) : item.url || getSourceLabel(item.source, item.provider) || ''
+      case 'quote':
+        return item.text ? truncate(item.text, 200) : ''
+      case 'fact':
+      case 'joke':
+      case 'encourage':
+        return item.text ? truncate(item.text, 220) : ''
+      default:
+        return ''
+    }
+  }, [item])
 
-  const urls = useMemo(() => buildShareUrls(shareUrl || '', shareMessage || siteName), [shareUrl, shareMessage, siteName])
+  const shareHeadline = useMemo(() => contentTitle || siteName, [contentTitle, siteName])
+
+  const shareMessage = useMemo(() => {
+    const snippet = contentSnippet || shareHeadline
+    const parts = new Set([shareHeadline, snippet, siteName])
+    return Array.from(parts).filter(Boolean).join('\n')
+  }, [contentSnippet, shareHeadline, siteName])
+
+  const shareText = useMemo(() => {
+    const snippet = contentSnippet || shareHeadline
+    return `${snippet}\n${siteName}`
+  }, [contentSnippet, shareHeadline, siteName])
+
+  const urls = useMemo(() => buildShareUrls(shareUrl || '', shareMessage || siteName), [shareMessage, shareUrl, siteName])
 
   if (!open) return null
 
@@ -95,7 +142,22 @@ export default function ShareMenu({
 
   async function nativeShare() {
     try {
-      await navigator.share({ title: siteName, text: shareMessage, url: shareUrl })
+      const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean }
+      const baseData: ShareData = {
+        title: shareHeadline,
+        text: shareText,
+        url: shareUrl,
+      }
+      const logoFile = nav.canShare ? await getShareLogoFile() : null
+      if (logoFile) {
+        const withFile = { ...baseData, files: [logoFile] }
+        if (nav.canShare?.(withFile)) {
+          await nav.share(withFile)
+          onClose()
+          return
+        }
+      }
+      await nav.share(baseData)
       onClose()
     } catch {
       /* ignore */
@@ -160,15 +222,6 @@ export default function ShareMenu({
             </a>
             <a className="rounded-xl py-2 text-center font-medium" href={urls.telegram} target="_blank" rel="noreferrer" style={{ background: soft, color: text }}>
               Telegram
-            </a>
-            <a
-              className="rounded-xl py-2 text-center font-medium"
-              href={`/api/share/og?title=${encodeURIComponent(contentTitle)}&url=${encodeURIComponent(shareUrl)}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{ background: soft, color: text }}
-            >
-              OG image
             </a>
           </div>
 
