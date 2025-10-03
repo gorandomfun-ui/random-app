@@ -223,7 +223,7 @@ function ImageBlock({
   )
 }
 
-function attemptFullscreen(element: HTMLElement | null): boolean {
+async function attemptFullscreen(element: HTMLElement | null): Promise<boolean> {
   if (!element) return false
   const anyEl = element as HTMLElement & {
     requestFullscreen?: () => Promise<void>
@@ -233,7 +233,7 @@ function attemptFullscreen(element: HTMLElement | null): boolean {
   }
   try {
     if (typeof anyEl.requestFullscreen === 'function') {
-      anyEl.requestFullscreen().catch(() => {})
+      await anyEl.requestFullscreen()
       return true
     }
     if (typeof anyEl.webkitRequestFullscreen === 'function') {
@@ -399,8 +399,8 @@ function YouTubeEmbed({
         />
         <button
           type="button"
-          onClick={() => {
-            const ok = attemptFullscreen(iframeRef.current)
+          onClick={async () => {
+            const ok = await attemptFullscreen(iframeRef.current)
             if (!ok) {
               if (onFullscreenFallback) {
                 onFullscreenFallback({ kind: 'youtube', src, title: text })
@@ -478,9 +478,11 @@ function DailymotionEmbed({
         />
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             const iframe = iframeRef.current
-            const ok = attemptFullscreen(iframe) || attemptFullscreen(iframe?.parentElement ?? null)
+            const ok =
+              (await attemptFullscreen(iframe)) ||
+              (await attemptFullscreen(iframe?.parentElement ?? null))
             if (!ok) {
               if (onFullscreenFallback) {
                 onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: item.text })

@@ -354,7 +354,7 @@ function ContentRenderer({
   return null
 }
 
-function attemptFullscreen(element: HTMLElement | null): boolean {
+async function attemptFullscreen(element: HTMLElement | null): Promise<boolean> {
   if (!element) return false
   const anyEl = element as HTMLElement & {
     requestFullscreen?: () => Promise<void>
@@ -364,7 +364,7 @@ function attemptFullscreen(element: HTMLElement | null): boolean {
   }
   try {
     if (typeof anyEl.requestFullscreen === 'function') {
-      anyEl.requestFullscreen().catch(() => {})
+      await anyEl.requestFullscreen()
       return true
     }
     if (typeof anyEl.webkitRequestFullscreen === 'function') {
@@ -485,8 +485,8 @@ function YouTubeEmbed({ item, fullscreenLabel }: { item: VideoContentItem; fulls
         />
         <button
           type="button"
-          onClick={() => {
-            const ok = attemptFullscreen(iframeRef.current)
+          onClick={async () => {
+            const ok = await attemptFullscreen(iframeRef.current)
             if (!ok) openProviderUrl(item.url)
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
@@ -561,9 +561,11 @@ function DailymotionEmbed({ item, fullscreenLabel }: { item: VideoContentItem; f
         />
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             const iframe = iframeRef.current
-            const ok = attemptFullscreen(iframe) || attemptFullscreen(iframe?.parentElement ?? null)
+            const ok =
+              (await attemptFullscreen(iframe)) ||
+              (await attemptFullscreen(iframe?.parentElement ?? null))
             if (!ok) openProviderUrl(item.url)
           }}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
