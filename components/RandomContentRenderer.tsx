@@ -164,89 +164,95 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
   const isCorrect = revealed && selected === item.correctIndex
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4">
-      <p
-        className="font-tomorrow font-bold text-xl md:text-3xl leading-snug text-center"
-        style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
-      >
-        {item.question}
-      </p>
-      <div className="mt-3 text-center text-xs font-inter opacity-70">
-        <span>Source : </span>
-        <a
-          href="https://opentdb.com"
-          target="_blank"
-          rel="noreferrer"
-          className="underline"
+    <div
+      className="w-full max-w-3xl mx-auto flex h-full flex-col gap-4"
+      style={{ paddingBottom: '24px' }}
+    >
+      <div className="px-1">
+        <p
+          className="font-tomorrow font-bold text-xl md:text-3xl leading-snug text-center"
+          style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
         >
-          Open Trivia DB
-        </a>
+          {item.question}
+        </p>
+        <div className="mt-2 text-center text-[11px] font-inter opacity-70">
+          <span>Source : </span>
+          <a
+            href="https://opentdb.com"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Open Trivia DB
+          </a>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[10px] uppercase tracking-wide opacity-80 font-inter">
+          {item.category ? (
+            <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.22)' }}>
+              {item.category}
+            </span>
+          ) : null}
+          {item.difficulty ? (
+            <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.18)' }}>
+              {item.difficulty}
+            </span>
+          ) : null}
+        </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] uppercase tracking-wide opacity-80 font-inter">
-        {item.category ? (
-          <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.28)' }}>
-            {item.category}
-          </span>
-        ) : null}
-        {item.difficulty ? (
-          <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
-            {item.difficulty}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-5 flex flex-col gap-2.5">
-        {item.options.map((option, index) => {
-          const isSelected = selected === index
-          const isAnswer = index === item.correctIndex
-          const revealState = revealed && (isSelected || isAnswer)
-          const style = {
-            color: theme.cream,
-            borderColor: 'rgba(255,255,255,0.08)',
-            background: 'rgba(0,0,0,0.22)',
-            boxShadow: '0 8px 22px rgba(0,0,0,0.18)',
-            padding: '12px 16px',
-          } as CSSProperties
-          if (!revealed && isSelected) {
-            style.borderColor = 'rgba(255,255,255,0.28)'
-            style.background = 'rgba(255,255,255,0.05)'
-          }
-          if (revealState && isAnswer) {
-            style.borderColor = '#22FF9C'
-            style.background = 'rgba(34,255,156,0.12)'
-            style.color = theme.text
-            style.boxShadow = '0 10px 26px rgba(34,255,156,0.22)'
-          } else if (revealState && !isAnswer) {
-            style.borderColor = '#FF005C'
-            style.background = 'rgba(255,0,92,0.12)'
-            style.boxShadow = '0 6px 18px rgba(255,0,92,0.22)'
-          }
-          return (
-            <button
-              key={`${item.id}-${index}`}
-              type="button"
-              onClick={() => onSelect(index)}
-              disabled={revealed}
-              className="w-full border rounded-lg text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default"
-              style={style}
-            >
-              <span className="flex items-center gap-3 justify-between md:justify-center">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/30 text-[11px] font-semibold" style={{ borderColor: 'rgba(255,255,255,0.22)' }}>
-                  {String.fromCharCode(65 + index)}
-                </span>
-                <span className="flex-1 text-left md:text-center">{option}</span>
-                {revealed && isAnswer ? (
-                  <span className="hidden md:inline-flex text-xs font-semibold" style={{ color: '#22FF9C' }}>
-                    ✓
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
+        <div className="flex flex-col gap-1.5">
+          {item.options.map((option, index) => {
+            const isSelected = selected === index
+            const isAnswer = index === item.correctIndex
+            const revealState = revealed && (isSelected || isAnswer)
+            const style = {
+              color: theme.cream,
+              background: 'transparent',
+              padding: '10px 8px',
+            } as CSSProperties
+            if (!revealed && isSelected) {
+              style.background = 'rgba(255,255,255,0.06)'
+            }
+            if (revealState && isAnswer) {
+              style.background = 'rgba(34,255,156,0.16)'
+              style.color = theme.text
+            } else if (revealState && !isAnswer) {
+              style.background = 'rgba(255,0,92,0.12)'
+            }
+            return (
+              <button
+                key={`${item.id}-${index}`}
+                type="button"
+                onClick={() => onSelect(index)}
+                disabled={revealed}
+                className="w-full rounded-md text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default"
+                style={style}
+              >
+                <span className="flex items-center gap-3 justify-between md:justify-center">
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold"
+                    style={{ borderColor: 'rgba(255,255,255,0.35)' }}
+                  >
+                    {String.fromCharCode(65 + index)}
                   </span>
-                ) : null}
-              </span>
-            </button>
-          )
-        })}
+                  <span className="flex-1 text-left md:text-center leading-snug">{option}</span>
+                  {revealed && isAnswer ? (
+                    <span className="hidden md:inline-flex text-xs font-semibold" style={{ color: '#22FF9C' }}>
+                      ✓
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
       {revealed && selected !== null ? (
         <div
-          className="mt-6 font-inter text-sm md:text-base text-center"
+          className="px-1 font-inter text-sm md:text-base text-center"
           style={{ color: isCorrect ? '#22FF9C' : '#FF8A8A' }}
         >
           {isCorrect ? 'Bonne réponse ! ✅' : (

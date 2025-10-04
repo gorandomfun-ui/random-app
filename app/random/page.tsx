@@ -706,7 +706,10 @@ function ContentRenderer({
     const fact = item as FactItem
     if (fact.variant === 'quiz') {
       return (
-        <div className="h-full w-full flex items-center justify-center px-4" style={{ height: '100%' }}>
+        <div
+          className="h-full w-full px-4"
+          style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+        >
           <FactQuizCard item={fact as FactQuizItem} theme={theme} />
         </div>
       )
