@@ -405,7 +405,7 @@ function YouTubeEmbed({
           ref={iframeRef}
           src={src}
           className="absolute top-1/2 left-1/2"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowFullScreen
           title={text || 'Video'}
           style={{
