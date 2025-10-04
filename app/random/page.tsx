@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import Link from 'next/link'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
+import { FactQuizCard } from '@/components/RandomContentRenderer'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ShareMenu from '@/components/ShareMenu'
@@ -13,6 +14,8 @@ import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import type {
+  FactItem,
+  FactQuizItem,
   DisplayItem,
   EncourageItem as EncourageContentItem,
   RandomContentItem,
@@ -613,7 +616,7 @@ function ContentRenderer({
   onOpenFullscreen,
 }: {
   item: DisplayItem
-  theme: { cream: string }
+  theme: { cream: string; text: string; deep: string; bg: string }
   frameHeight: string
   viewportWidth: number | null
   fullscreenLabel: string
@@ -699,7 +702,28 @@ function ContentRenderer({
     )
   }
 
-  if (item.type === 'fact' || item.type === 'joke') {
+  if (item.type === 'fact') {
+    const fact = item as FactItem
+    if (fact.variant === 'quiz') {
+      return (
+        <div className="h-full w-full flex items-center justify-center px-4" style={{ height: '100%' }}>
+          <FactQuizCard item={fact as FactQuizItem} theme={theme} />
+        </div>
+      )
+    }
+    return (
+      <div className="h-full w-full flex items-center justify-center px-6" style={{ height: '100%' }}>
+        <p
+          className="max-w-[85ch] text-center font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
+          style={{ color: theme.cream, letterSpacing: '.01em' }}
+        >
+          {fact.text}
+        </p>
+      </div>
+    )
+  }
+
+  if (item.type === 'joke') {
     return (
       <div className="h-full w-full flex items-center justify-center px-6" style={{ height: '100%' }}>
         <p

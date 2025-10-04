@@ -2,9 +2,11 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type {
   FactItem,
+  FactQuizItem,
+  FactTextItem,
   ImageItem,
   JokeItem,
   QuoteItem,
@@ -47,12 +49,26 @@ export default function RandomContentRenderer({
     )
   }
 
-  if (item.type === 'quote' || item.type === 'fact' || item.type === 'joke') {
-    const textItem = item.type === 'quote'
-      ? (item as QuoteItem)
-      : item.type === 'fact'
-        ? (item as FactItem)
-        : (item as JokeItem)
+  if (item.type === 'fact') {
+    const fact = item as FactItem
+    if (fact.variant === 'quiz') {
+      return <FactQuizCard item={fact as FactQuizItem} theme={theme} />
+    }
+    const factText = fact as FactTextItem
+    return (
+      <div className="w-full max-w-3xl mx-auto text-center px-4">
+        <p
+          className="font-tomorrow font-bold text-xl md:text-3xl leading-snug"
+          style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
+        >
+          {factText.text}
+        </p>
+      </div>
+    )
+  }
+
+  if (item.type === 'quote' || item.type === 'joke') {
+    const textItem = item.type === 'quote' ? (item as QuoteItem) : (item as JokeItem)
     return (
       <div className="w-full max-w-3xl mx-auto text-center px-4">
         <p
@@ -126,6 +142,108 @@ export default function RandomContentRenderer({
   return (
     <div className="w-full max-w-3xl mx-auto text-center px-4">
       <pre className="text-xs md:text-sm opacity-80 overflow-auto">{JSON.stringify(item, null, 2)}</pre>
+    </div>
+  )
+}
+
+export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme }) {
+  const [selected, setSelected] = useState<number | null>(null)
+  const [revealed, setRevealed] = useState(false)
+
+  useEffect(() => {
+    setSelected(null)
+    setRevealed(false)
+  }, [item.id])
+
+  const onSelect = (index: number) => {
+    if (revealed) return
+    setSelected(index)
+    setRevealed(true)
+  }
+
+  const isCorrect = revealed && selected === item.correctIndex
+
+  return (
+    <div className="w-full max-w-3xl mx-auto px-4">
+      <p
+        className="font-tomorrow font-bold text-xl md:text-3xl leading-snug text-center"
+        style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
+      >
+        {item.question}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide opacity-80 font-inter">
+        {item.category ? (
+          <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.28)' }}>
+            {item.category}
+          </span>
+        ) : null}
+        {item.difficulty ? (
+          <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
+            {item.difficulty}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-6 flex flex-col gap-3">
+        {item.options.map((option, index) => {
+          const isSelected = selected === index
+          const isAnswer = index === item.correctIndex
+          const revealState = revealed && (isSelected || isAnswer)
+          const style = {
+            color: theme.cream,
+            borderColor: 'rgba(255,255,255,0.14)',
+            background: 'rgba(255,255,255,0.04)',
+          } as CSSProperties
+          if (!revealed && isSelected) {
+            style.borderColor = 'rgba(255,255,255,0.34)'
+            style.background = 'rgba(255,255,255,0.08)'
+          }
+          if (revealState && isAnswer) {
+            style.borderColor = '#22FF9C'
+            style.background = 'rgba(34,255,156,0.18)'
+            style.color = theme.text
+          } else if (revealState && !isAnswer) {
+            style.borderColor = '#FF005C'
+            style.background = 'rgba(255,0,92,0.18)'
+          }
+          return (
+            <button
+              key={`${item.id}-${index}`}
+              type="button"
+              onClick={() => onSelect(index)}
+              disabled={revealed}
+              className="w-full border rounded-xl px-4 py-3 text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default"
+              style={style}
+            >
+              <span className="flex items-center gap-3 justify-between md:justify-center">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/30 text-xs font-semibold" style={{ borderColor: 'rgba(255,255,255,0.25)' }}>
+                  {String.fromCharCode(65 + index)}
+                </span>
+                <span className="flex-1 text-left md:text-center">{option}</span>
+                {revealed && isAnswer ? (
+                  <span className="hidden md:inline-flex text-xs font-semibold" style={{ color: '#22FF9C' }}>
+                    ✓
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {revealed && selected !== null ? (
+        <div
+          className="mt-6 font-inter text-sm md:text-base text-center"
+          style={{ color: isCorrect ? '#22FF9C' : '#FF8A8A' }}
+        >
+          {isCorrect ? 'Bonne réponse ! ✅' : (
+            <span>
+              Mauvaise réponse ❌
+              <span className="block mt-1 text-xs md:text-sm opacity-80" style={{ color: theme.cream }}>
+                Réponse correcte : {item.answer}
+              </span>
+            </span>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }

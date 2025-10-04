@@ -47,12 +47,32 @@ export type JokeItem = {
   source: { name: string; url?: string }
 }
 
-export type FactItem = {
+export type TriviaDifficulty = 'easy' | 'medium' | 'hard'
+
+export type FactTextItem = {
   type: 'fact'
+  variant: 'text'
   text: string
   provider: string
   source: { name: string; url?: string }
 }
+
+export type FactQuizItem = {
+  type: 'fact'
+  variant: 'quiz'
+  id: string
+  text: string
+  question: string
+  options: string[]
+  correctIndex: number
+  answer: string
+  provider: string
+  source: { name: string; url?: string }
+  category?: string
+  difficulty?: TriviaDifficulty
+}
+
+export type FactItem = FactTextItem | FactQuizItem
 
 export type WebItem = {
   type: 'web'
