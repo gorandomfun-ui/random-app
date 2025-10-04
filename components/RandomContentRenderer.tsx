@@ -171,7 +171,18 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
       >
         {item.question}
       </p>
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide opacity-80 font-inter">
+      <div className="mt-3 text-center text-xs font-inter opacity-70">
+        <span>Source : </span>
+        <a
+          href="https://opentdb.com"
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          Open Trivia DB
+        </a>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] uppercase tracking-wide opacity-80 font-inter">
         {item.category ? (
           <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.28)' }}>
             {item.category}
@@ -183,27 +194,31 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
           </span>
         ) : null}
       </div>
-      <div className="mt-6 flex flex-col gap-3">
+      <div className="mt-5 flex flex-col gap-2.5">
         {item.options.map((option, index) => {
           const isSelected = selected === index
           const isAnswer = index === item.correctIndex
           const revealState = revealed && (isSelected || isAnswer)
           const style = {
             color: theme.cream,
-            borderColor: 'rgba(255,255,255,0.14)',
-            background: 'rgba(255,255,255,0.04)',
+            borderColor: 'rgba(255,255,255,0.08)',
+            background: 'rgba(0,0,0,0.22)',
+            boxShadow: '0 8px 22px rgba(0,0,0,0.18)',
+            padding: '12px 16px',
           } as CSSProperties
           if (!revealed && isSelected) {
-            style.borderColor = 'rgba(255,255,255,0.34)'
-            style.background = 'rgba(255,255,255,0.08)'
+            style.borderColor = 'rgba(255,255,255,0.28)'
+            style.background = 'rgba(255,255,255,0.05)'
           }
           if (revealState && isAnswer) {
             style.borderColor = '#22FF9C'
-            style.background = 'rgba(34,255,156,0.18)'
+            style.background = 'rgba(34,255,156,0.12)'
             style.color = theme.text
+            style.boxShadow = '0 10px 26px rgba(34,255,156,0.22)'
           } else if (revealState && !isAnswer) {
             style.borderColor = '#FF005C'
-            style.background = 'rgba(255,0,92,0.18)'
+            style.background = 'rgba(255,0,92,0.12)'
+            style.boxShadow = '0 6px 18px rgba(255,0,92,0.22)'
           }
           return (
             <button
@@ -211,11 +226,11 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
               type="button"
               onClick={() => onSelect(index)}
               disabled={revealed}
-              className="w-full border rounded-xl px-4 py-3 text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default"
+              className="w-full border rounded-lg text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default"
               style={style}
             >
               <span className="flex items-center gap-3 justify-between md:justify-center">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/30 text-xs font-semibold" style={{ borderColor: 'rgba(255,255,255,0.25)' }}>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/30 text-[11px] font-semibold" style={{ borderColor: 'rgba(255,255,255,0.22)' }}>
                   {String.fromCharCode(65 + index)}
                 </span>
                 <span className="flex-1 text-left md:text-center">{option}</span>
