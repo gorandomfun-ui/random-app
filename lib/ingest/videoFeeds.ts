@@ -23,6 +23,17 @@ const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+function shuffleArray<T>(input: ReadonlyArray<T>): T[] {
+  const arr = Array.from(input)
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+  }
+  return arr
+}
+
 type RedditCursorRecord = {
   updatedAt: string
   subs: Record<string, {
@@ -224,7 +235,7 @@ export async function ingestVideoFeeds(options: VideoFeedsOptions = {}): Promise
   const collected: RawVideo[] = []
   const seen = new Set<string>()
 
-  const listSources = selectListSources(options.lists)
+  const listSources = shuffleArray(selectListSources(options.lists))
   for (const source of listSources) {
     const markdown = await fetchMarkdown(source, warnings)
     if (!markdown) continue
@@ -241,7 +252,7 @@ export async function ingestVideoFeeds(options: VideoFeedsOptions = {}): Promise
   }
 
   const redditLimit = options.redditLimit ?? 60
-  const subreddits = selectSubreddits(options.subreddits)
+  const subreddits = shuffleArray(selectSubreddits(options.subreddits))
   const cursorStore = await loadCursorStore()
   const updatedSubCursors: Record<string, { lastIds?: Record<string, string>; lastFetchedAt?: string }> = {}
 

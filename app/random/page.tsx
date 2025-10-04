@@ -223,6 +223,16 @@ function ImageBlock({
   )
 }
 
+const getFullscreenElement = () => {
+  if (typeof document === 'undefined') return null
+  const doc = document as Document & {
+    webkitFullscreenElement?: Element | null
+    mozFullScreenElement?: Element | null
+    msFullscreenElement?: Element | null
+  }
+  return doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement || null
+}
+
 async function attemptFullscreen(element: HTMLElement | null): Promise<boolean> {
   if (!element) return false
   const anyEl = element as HTMLElement & {
@@ -231,26 +241,34 @@ async function attemptFullscreen(element: HTMLElement | null): Promise<boolean> 
     msRequestFullscreen?: () => void
     webkitEnterFullscreen?: () => void
   }
+  let invoked = false
   try {
     if (typeof anyEl.requestFullscreen === 'function') {
       await anyEl.requestFullscreen()
-      return true
-    }
-    if (typeof anyEl.webkitRequestFullscreen === 'function') {
+      invoked = true
+    } else if (typeof anyEl.webkitRequestFullscreen === 'function') {
       anyEl.webkitRequestFullscreen()
-      return true
-    }
-    if (typeof anyEl.msRequestFullscreen === 'function') {
+      invoked = true
+    } else if (typeof anyEl.msRequestFullscreen === 'function') {
       anyEl.msRequestFullscreen()
-      return true
-    }
-    if (typeof anyEl.webkitEnterFullscreen === 'function') {
+      invoked = true
+    } else if (typeof anyEl.webkitEnterFullscreen === 'function') {
       anyEl.webkitEnterFullscreen()
-      return true
+      invoked = true
     }
   } catch {
-    /* ignore */
+    invoked = false
   }
+
+  if (!invoked) return false
+
+  // wait a tick to allow fullscreen state to update
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  const fs = getFullscreenElement()
+  if (!fs) return false
+  if (fs === element) return true
+  // some browsers wrap iframe fullscreen in an internal element
+  if (element instanceof HTMLIFrameElement) return true
   return false
 }
 

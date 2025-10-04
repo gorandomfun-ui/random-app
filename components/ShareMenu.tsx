@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react'
 import type { DisplayItem } from '../lib/random/clientTypes'
-import { getSourceLabel } from '../lib/random/clientTypes'
+import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useI18n } from '@/providers/I18nProvider'
 
 type Theme = { deep: string; cream: string; text: string }
@@ -72,13 +72,22 @@ export default function ShareMenu({
     return process.env.NEXT_PUBLIC_BASE_URL || 'https://random.app'
   }, [])
 
+  const directItemUrl = useMemo(() => {
+    if (!item || item.type === 'encourage') return null
+    const linkable = item as Parameters<typeof getSourceHref>[0]
+    const href = getSourceHref(linkable, item.type === 'web' ? item.url : undefined)
+    if (!href) return null
+    return /^https?:\/\//i.test(href) ? href : null
+  }, [item])
+
   const shareUrl = useMemo(() => {
+    if (directItemUrl) return directItemUrl
     const base = (siteOrigin || '').replace(/\/$/, '')
     if (!url) return `${base || 'https://random.app'}/random`
     if (/^https?:\/\//i.test(url)) return url
     const trimmed = url.startsWith('/') ? url.slice(1) : url
     return base ? `${base}/${trimmed}` : url
-  }, [siteOrigin, url])
+  }, [directItemUrl, siteOrigin, url])
 
   const siteName = useMemo(() => t('shareMenu.siteName', 'Random'), [t])
 
