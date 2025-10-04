@@ -267,8 +267,7 @@ async function attemptFullscreen(element: HTMLElement | null): Promise<boolean> 
   const fs = getFullscreenElement()
   if (!fs) return false
   if (fs === element) return true
-  // some browsers wrap iframe fullscreen in an internal element
-  if (element instanceof HTMLIFrameElement) return true
+  if (Boolean(fs.contains(element)) || Boolean(element.contains(fs))) return true
   return false
 }
 
