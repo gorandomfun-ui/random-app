@@ -690,14 +690,25 @@ function ContentRenderer({
   }
 
   if (item.type === 'quote') {
+    const disclaimer = item.disclaimer || (item.ai?.source ? `Généré par IA – ${item.ai.source}` : null)
     return (
-      <div className="h-full w-full flex items-center justify-center px-6" style={{ height: '100%' }}>
+      <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center" style={{ height: '100%' }}>
         <blockquote
-          className="max-w-[80ch] text-center font-tomorrow font-bold text-[22px] md:text-[32px] leading-snug"
+          className="max-w-[80ch] font-tomorrow font-bold text-[22px] md:text-[32px] leading-snug"
           style={{ color: theme.cream, letterSpacing: '.01em' }}
         >
           “{item.text}”
         </blockquote>
+        {item.author ? (
+          <p className="mt-3 text-sm font-inter opacity-80" style={{ color: theme.cream }}>
+            — {item.author}
+          </p>
+        ) : null}
+        {disclaimer ? (
+          <p className="mt-3 text-xs font-inter opacity-75" style={{ color: theme.cream }}>
+            {disclaimer}
+          </p>
+        ) : null}
       </div>
     )
   }
@@ -714,27 +725,39 @@ function ContentRenderer({
         </div>
       )
     }
+    const disclaimer = fact.disclaimer || (fact.ai?.source ? `Généré par IA – ${fact.ai.source}` : null)
     return (
-      <div className="h-full w-full flex items-center justify-center px-6" style={{ height: '100%' }}>
+      <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center" style={{ height: '100%' }}>
         <p
-          className="max-w-[85ch] text-center font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
+          className="max-w-[85ch] font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
           style={{ color: theme.cream, letterSpacing: '.01em' }}
         >
           {fact.text}
         </p>
+        {disclaimer ? (
+          <p className="mt-3 text-xs font-inter opacity-75" style={{ color: theme.cream }}>
+            {disclaimer}
+          </p>
+        ) : null}
       </div>
     )
   }
 
   if (item.type === 'joke') {
+    const disclaimer = item.disclaimer || (item.ai?.source ? `Généré par IA – ${item.ai.source}` : null)
     return (
-      <div className="h-full w-full flex items-center justify-center px-6" style={{ height: '100%' }}>
+      <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center" style={{ height: '100%' }}>
         <p
-          className="max-w-[85ch] text-center font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
+          className="max-w-[85ch] font-tomorrow font-bold text-[20px] md:text-[28px] leading-snug"
           style={{ color: theme.cream, letterSpacing: '.01em' }}
         >
           {item.text}
         </p>
+        {disclaimer ? (
+          <p className="mt-3 text-xs font-inter opacity-75" style={{ color: theme.cream }}>
+            {disclaimer}
+          </p>
+        ) : null}
       </div>
     )
   }

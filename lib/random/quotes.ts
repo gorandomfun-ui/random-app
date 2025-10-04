@@ -18,6 +18,12 @@ const QUOTE_TOPIC_SEEDS: Record<string, string[]> = {
   leadership: ['lead', 'leader', 'team', 'vision', 'inspire'],
 }
 
+export type QuoteAIMetadata = {
+  source?: string
+  model?: string
+  generatedAt?: string
+}
+
 export type QuoteDocument = {
   type: 'quote'
   text: string
@@ -26,6 +32,11 @@ export type QuoteDocument = {
   source: { name: string; url?: string }
   tags: string[]
   keywords: string[]
+  variant?: 'text' | 'ai'
+  lang?: string
+  hash?: string
+  ai?: QuoteAIMetadata | null
+  disclaimer?: string
 }
 
 export type QuoteItem = {
@@ -34,6 +45,10 @@ export type QuoteItem = {
   author: string
   provider: string
   source: { name: string; url?: string }
+  variant?: 'text' | 'ai'
+  lang?: string
+  ai?: QuoteAIMetadata | null
+  disclaimer?: string
 }
 
 type QuoteRecord = {
@@ -43,6 +58,11 @@ type QuoteRecord = {
   source?: { name?: string | null; url?: string | null } | null
   tags?: string[]
   keywords?: string[]
+  variant?: 'text' | 'ai'
+  lang?: string | null
+  ai?: QuoteAIMetadata | null
+  disclaimer?: string | null
+  hash?: string | null
 }
 
 const LOCAL_QUOTES = [
@@ -139,6 +159,16 @@ export async function selectQuote(): Promise<QuoteItem | null> {
   const sourceUrl = rawSource && typeof rawSource.url === 'string' && rawSource.url ? rawSource.url : undefined
   const tags = Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === 'string') : []
   const keywords = Array.isArray(record.keywords) ? record.keywords.filter((word): word is string => typeof word === 'string') : []
+  const variant: 'text' | 'ai' = record.variant === 'ai' ? 'ai' : 'text'
+  const lang = typeof record.lang === 'string' && record.lang.trim() ? record.lang.trim() : undefined
+  const aiMeta = record.ai && typeof record.ai === 'object'
+    ? {
+        source: typeof record.ai.source === 'string' ? record.ai.source : undefined,
+        model: typeof record.ai.model === 'string' ? record.ai.model : undefined,
+        generatedAt: typeof record.ai.generatedAt === 'string' ? record.ai.generatedAt : undefined,
+      }
+    : null
+  const disclaimer = typeof record.disclaimer === 'string' && record.disclaimer.trim() ? record.disclaimer.trim() : undefined
 
   registerRecent(text, author)
   await touchLastShown('quote', { text, author })
@@ -154,5 +184,9 @@ export async function selectQuote(): Promise<QuoteItem | null> {
     author,
     provider,
     source: { name: sourceName, url: sourceUrl },
+    variant,
+    lang,
+    ai: aiMeta,
+    disclaimer,
   }
 }

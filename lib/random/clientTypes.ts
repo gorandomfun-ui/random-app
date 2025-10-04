@@ -32,12 +32,22 @@ export type VideoItem = {
   source?: SourceInfo
 }
 
+export type AiMetadata = {
+  source?: string
+  model?: string
+  generatedAt?: string
+}
+
 export type QuoteItem = {
   type: 'quote'
   text: string
   author: string
   provider: string
   source: { name: string; url?: string }
+  variant?: 'text' | 'ai'
+  lang?: string
+  ai?: AiMetadata | null
+  disclaimer?: string
 }
 
 export type JokeItem = {
@@ -45,16 +55,23 @@ export type JokeItem = {
   text: string
   provider: string
   source: { name: string; url?: string }
+  variant?: 'text' | 'ai'
+  lang?: string
+  ai?: AiMetadata | null
+  disclaimer?: string
 }
 
 export type TriviaDifficulty = 'easy' | 'medium' | 'hard'
 
 export type FactTextItem = {
   type: 'fact'
-  variant: 'text'
+  variant: 'text' | 'ai'
   text: string
   provider: string
   source: { name: string; url?: string }
+  lang?: string
+  ai?: AiMetadata | null
+  disclaimer?: string
 }
 
 export type FactQuizItem = {

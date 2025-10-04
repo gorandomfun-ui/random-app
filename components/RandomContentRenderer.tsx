@@ -63,6 +63,7 @@ export default function RandomContentRenderer({
         >
           {factText.text}
         </p>
+        <AiAttribution item={factText} theme={theme} />
       </div>
     )
   }
@@ -80,6 +81,7 @@ export default function RandomContentRenderer({
         {textItem.type === 'quote' && textItem.author ? (
           <p className="mt-3 opacity-80 font-inter">— {textItem.author}</p>
         ) : null}
+        <AiAttribution item={textItem} theme={theme} />
       </div>
     )
   }
@@ -143,6 +145,19 @@ export default function RandomContentRenderer({
     <div className="w-full max-w-3xl mx-auto text-center px-4">
       <pre className="text-xs md:text-sm opacity-80 overflow-auto">{JSON.stringify(item, null, 2)}</pre>
     </div>
+  )
+}
+
+function AiAttribution({ item, theme }: { item: QuoteItem | JokeItem | FactTextItem; theme: Theme }) {
+  const label = item.disclaimer || (item.ai?.source ? `Généré par IA – ${item.ai.source}` : null)
+  if (!label) return null
+  return (
+    <p
+      className="mt-3 text-xs font-inter opacity-75"
+      style={{ color: theme.cream }}
+    >
+      {label}
+    </p>
   )
 }
 

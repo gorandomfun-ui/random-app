@@ -33,6 +33,12 @@ const JOKE_TOPIC_SEEDS: Record<string, string[]> = {
   food: ['food', 'pizza', 'burger', 'cookie', 'cake'],
 }
 
+export type JokeAIMetadata = {
+  source?: string
+  model?: string
+  generatedAt?: string
+}
+
 export type JokeDocument = {
   type: 'joke'
   text: string
@@ -40,6 +46,11 @@ export type JokeDocument = {
   source: { name: string; url?: string }
   tags: string[]
   keywords: string[]
+  variant?: 'text' | 'ai'
+  lang?: string
+  hash?: string
+  ai?: JokeAIMetadata | null
+  disclaimer?: string
 }
 
 export type JokeItem = {
@@ -47,6 +58,10 @@ export type JokeItem = {
   text: string
   provider: string
   source: { name: string; url?: string }
+  variant?: 'text' | 'ai'
+  lang?: string
+  ai?: JokeAIMetadata | null
+  disclaimer?: string
 }
 
 type JokeRecord = {
@@ -55,6 +70,11 @@ type JokeRecord = {
   source?: { name?: string | null; url?: string | null } | null
   tags?: string[]
   keywords?: string[]
+  variant?: 'text' | 'ai'
+  lang?: string | null
+  ai?: JokeAIMetadata | null
+  disclaimer?: string | null
+  hash?: string | null
 }
 
 const trim = (value?: string | null) => (value || '').trim()
@@ -163,6 +183,16 @@ export async function selectJoke(): Promise<JokeItem | null> {
   const sourceUrl = rawSource && typeof rawSource.url === 'string' && rawSource.url ? rawSource.url : undefined
   const tags = Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === 'string') : []
   const keywords = Array.isArray(record.keywords) ? record.keywords.filter((word): word is string => typeof word === 'string') : []
+  const variant: 'text' | 'ai' = record.variant === 'ai' ? 'ai' : 'text'
+  const lang = typeof record.lang === 'string' && record.lang.trim() ? record.lang.trim() : undefined
+  const aiMeta = record.ai && typeof record.ai === 'object'
+    ? {
+        source: typeof record.ai.source === 'string' ? record.ai.source : undefined,
+        model: typeof record.ai.model === 'string' ? record.ai.model : undefined,
+        generatedAt: typeof record.ai.generatedAt === 'string' ? record.ai.generatedAt : undefined,
+      }
+    : null
+  const disclaimer = typeof record.disclaimer === 'string' && record.disclaimer.trim() ? record.disclaimer.trim() : undefined
 
   registerRecent(text)
   await touchLastShown('joke', { text })
@@ -177,6 +207,10 @@ export async function selectJoke(): Promise<JokeItem | null> {
     text,
     provider,
     source: { name: sourceName, url: sourceUrl },
+    variant,
+    lang,
+    ai: aiMeta,
+    disclaimer,
   }
 }
 

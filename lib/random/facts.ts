@@ -50,16 +50,31 @@ export type FactDocument = {
   source: { name: string; url?: string }
   tags: string[]
   keywords: string[]
-  variant: 'text' | 'quiz'
+  variant: 'text' | 'quiz' | 'ai'
   quiz?: FactQuizPayload
+  lang?: string
+  hash?: string
+  ai?: {
+    source?: string
+    model?: string
+    generatedAt?: string
+  } | null
+  disclaimer?: string
 }
 
 export type FactTextItem = {
   type: 'fact'
-  variant: 'text'
+  variant: 'text' | 'ai'
   text: string
   provider: string
   source: { name: string; url?: string }
+  lang?: string
+  ai?: {
+    source?: string
+    model?: string
+    generatedAt?: string
+  } | null
+  disclaimer?: string
 }
 
 export type FactQuizItem = {
@@ -421,10 +436,19 @@ export async function selectFact(): Promise<FactItem | null> {
       ensureQuizPreloaded(buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))).catch(() => undefined)
       return {
         type: 'fact',
-        variant: 'text',
+        variant: doc.variant === 'ai' ? 'ai' : 'text',
         text,
         provider,
         source: { name: sourceName, url: sourceUrl },
+        lang: typeof doc.lang === 'string' && doc.lang.trim() ? doc.lang.trim() : undefined,
+        ai: doc.ai && typeof doc.ai === 'object'
+          ? {
+              source: typeof doc.ai.source === 'string' ? doc.ai.source : undefined,
+              model: typeof doc.ai.model === 'string' ? doc.ai.model : undefined,
+              generatedAt: typeof doc.ai.generatedAt === 'string' ? doc.ai.generatedAt : undefined,
+            }
+          : null,
+        disclaimer: typeof doc.disclaimer === 'string' && doc.disclaimer.trim() ? doc.disclaimer.trim() : undefined,
       }
     }
   }
