@@ -280,6 +280,14 @@ function openProviderUrl(url?: string | null) {
   }
 }
 
+const shouldBypassNativeFullscreen = () => {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || navigator.vendor || ''
+  const isiOS = /iP(ad|hone|od)/.test(ua)
+  const isIpadOnMac = /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1
+  return isiOS || isIpadOnMac
+}
+
 function VideoEmbed({
   item,
   frameHeight,
@@ -390,6 +398,20 @@ function YouTubeEmbed({
     } catch {}
   }
 
+  const handleFullscreen = async () => {
+    const bypassNative = shouldBypassNativeFullscreen()
+    let ok = false
+    if (!bypassNative) {
+      ok = await attemptFullscreen(iframeRef.current)
+    }
+    if (ok) return
+    if (onFullscreenFallback) {
+      onFullscreenFallback({ kind: 'youtube', src, title: text })
+    } else {
+      openProviderUrl(item.url)
+    }
+  }
+
   return (
     <div className="w-full h-full" style={{ position: 'relative', height: frameHeight }}>
       <div
@@ -416,18 +438,9 @@ function YouTubeEmbed({
         />
         <button
           type="button"
-          onClick={async () => {
-            const ok = await attemptFullscreen(iframeRef.current)
-            if (!ok) {
-              if (onFullscreenFallback) {
-                onFullscreenFallback({ kind: 'youtube', src, title: text })
-              } else {
-                openProviderUrl(item.url)
-              }
-            }
-          }}
+          onClick={handleFullscreen}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-          style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+          style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
         >
           {fullscreenLabel}
         </button>
@@ -457,17 +470,46 @@ function DailymotionEmbed({
   fullscreenLabel: string
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
 }) {
-  const { url } = item
+  const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const embedUrl = useMemo(() => {
     try {
       const u = new URL(url)
-      const videoId = u.pathname.split('/').pop()
-      return `https://www.dailymotion.com/embed/video/${videoId}?autoplay=1`
+      let videoId = u.pathname.split('/').pop() || ''
+      if (!videoId && u.hostname === 'dai.ly') {
+        videoId = u.pathname.replace('/', '')
+      }
+      const params = new URLSearchParams()
+      params.set('autoplay', '1')
+      params.set('mute', '1')
+      params.set('controls', '1')
+      params.set('queue-enable', '0')
+      params.set('sharing-enable', '0')
+      params.set('ui-logo', '0')
+      params.set('quality', '480')
+      params.set('playsinline', '1')
+      return videoId
+        ? `https://www.dailymotion.com/embed/video/${videoId}?${params.toString()}`
+        : url
     } catch {
       return url
     }
   }, [url])
+
+  const handleFullscreen = async () => {
+    const bypassNative = shouldBypassNativeFullscreen()
+    let ok = false
+    if (!bypassNative) {
+      const iframe = iframeRef.current
+      ok = (await attemptFullscreen(iframe)) || (await attemptFullscreen(iframe?.parentElement ?? null))
+    }
+    if (ok) return
+    if (onFullscreenFallback) {
+      onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: text })
+    } else {
+      openProviderUrl(item.url)
+    }
+  }
 
   return (
     <div className="w-full h-full" style={{ position: 'relative', height: frameHeight }}>
@@ -483,9 +525,9 @@ function DailymotionEmbed({
           ref={iframeRef}
           src={embedUrl}
           className="absolute top-1/2 left-1/2"
-          allow="autoplay; fullscreen"
+          allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
-          title={item.text || 'Video'}
+          title={text || 'Video'}
           style={{
             border: 'none',
             width: '177.8%',
@@ -495,21 +537,9 @@ function DailymotionEmbed({
         />
         <button
           type="button"
-          onClick={async () => {
-            const iframe = iframeRef.current
-            const ok =
-              (await attemptFullscreen(iframe)) ||
-              (await attemptFullscreen(iframe?.parentElement ?? null))
-            if (!ok) {
-              if (onFullscreenFallback) {
-                onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: item.text })
-              } else {
-                openProviderUrl(item.url)
-              }
-            }
-          }}
+          onClick={handleFullscreen}
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-          style={{ position: 'absolute', bottom: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+          style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
         >
           {fullscreenLabel}
         </button>
@@ -790,6 +820,7 @@ export default function RandomExperiencePage({
       }
       if (fullscreenVideo.kind === 'dailymotion') {
         url.searchParams.set('autoplay', '1')
+        url.searchParams.set('mute', '0')
       }
       return url.toString()
     } catch {
@@ -798,8 +829,13 @@ export default function RandomExperiencePage({
       }
       if (fullscreenVideo.kind === 'dailymotion' && !/autoplay=/.test(fullscreenVideo.src)) {
         return fullscreenVideo.src.includes('?')
-          ? `${fullscreenVideo.src}&autoplay=1`
-          : `${fullscreenVideo.src}?autoplay=1`
+          ? `${fullscreenVideo.src}&autoplay=1&mute=0`
+          : `${fullscreenVideo.src}?autoplay=1&mute=0`
+      }
+      if (fullscreenVideo.kind === 'dailymotion' && !/mute=0/.test(fullscreenVideo.src)) {
+        return fullscreenVideo.src.includes('?')
+          ? `${fullscreenVideo.src}&mute=0`
+          : `${fullscreenVideo.src}?mute=0`
       }
       return fullscreenVideo.src
     }

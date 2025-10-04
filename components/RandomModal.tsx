@@ -424,6 +424,14 @@ function openProviderUrl(url?: string | null) {
   }
 }
 
+const shouldBypassNativeFullscreen = () => {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || navigator.vendor || ''
+  const isiOS = /iP(ad|hone|od)/.test(ua)
+  const isIpadOnMac = /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1
+  return isiOS || isIpadOnMac
+}
+
 function VideoEmbed({
   item,
   fullscreenLabel,
@@ -530,10 +538,15 @@ function YouTubeEmbed({
   }
 
   const handleFullscreen = async () => {
-    const ok = await attemptFullscreen(iframeRef.current)
-    if (!ok && onOpenFullscreen) {
+    const bypassNative = shouldBypassNativeFullscreen()
+    let ok = false
+    if (!bypassNative) {
+      ok = await attemptFullscreen(iframeRef.current)
+    }
+    if (ok) return
+    if (onOpenFullscreen) {
       onOpenFullscreen({ kind: 'youtube', src, title: text })
-    } else if (!ok) {
+    } else {
       openProviderUrl(item.url)
     }
   }
@@ -620,12 +633,18 @@ function DailymotionEmbed({
   }
 
   const handleFullscreen = async () => {
-    const iframe = iframeRef.current
-    const ok = (await attemptFullscreen(iframe)) || (await attemptFullscreen(iframe?.parentElement ?? null))
+    const bypassNative = shouldBypassNativeFullscreen()
+    let ok = false
+    if (!bypassNative) {
+      const iframe = iframeRef.current
+      ok = (await attemptFullscreen(iframe)) || (await attemptFullscreen(iframe?.parentElement ?? null))
+    }
 
-    if (!ok && onOpenFullscreen) {
+    if (ok) return
+
+    if (onOpenFullscreen) {
       onOpenFullscreen({ kind: 'dailymotion', src, title: text })
-    } else if (!ok) {
+    } else {
       openProviderUrl(item.url)
     }
   }
@@ -919,6 +938,7 @@ export default function RandomModal({
       }
       if (fullscreenVideo.kind === 'dailymotion') {
         nextUrl.searchParams.set('autoplay', '1')
+        nextUrl.searchParams.set('mute', '0')
       }
       return nextUrl.toString()
     } catch {
@@ -927,8 +947,13 @@ export default function RandomModal({
       }
       if (fullscreenVideo.kind === 'dailymotion' && !/autoplay=/.test(fullscreenVideo.src)) {
         return fullscreenVideo.src.includes('?')
-          ? `${fullscreenVideo.src}&autoplay=1`
-          : `${fullscreenVideo.src}?autoplay=1`
+          ? `${fullscreenVideo.src}&autoplay=1&mute=0`
+          : `${fullscreenVideo.src}?autoplay=1&mute=0`
+      }
+      if (fullscreenVideo.kind === 'dailymotion' && !/mute=0/.test(fullscreenVideo.src)) {
+        return fullscreenVideo.src.includes('?')
+          ? `${fullscreenVideo.src}&mute=0`
+          : `${fullscreenVideo.src}?mute=0`
       }
       return fullscreenVideo.src
     }
