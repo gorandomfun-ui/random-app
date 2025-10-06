@@ -215,11 +215,13 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
     const url = normalizeUrl(urlRaw)
     const baseMeta = payload.metadata ? ensureStrings(payload.metadata) : undefined
     const parsed = parseVideo(url)
-    const canEmbed = resolveEmbedCapability(baseMeta?.provider ?? parsed.provider, baseMeta?.videoId ?? parsed.videoId)
+    const baseProvider = baseMeta && 'provider' in baseMeta ? (baseMeta as { provider?: string | null }).provider ?? null : null
+    const baseVideoId = baseMeta && 'videoId' in baseMeta ? (baseMeta as { videoId?: string | null }).videoId ?? null : null
+    const canEmbed = resolveEmbedCapability(baseProvider ?? parsed.provider, baseVideoId ?? parsed.videoId)
     submissionMeta = {
       ...baseMeta,
-      videoId: baseMeta?.videoId ?? parsed.videoId ?? null,
-      provider: baseMeta?.provider ?? parsed.provider ?? null,
+      videoId: baseVideoId ?? parsed.videoId ?? null,
+      provider: baseProvider ?? parsed.provider ?? null,
       canEmbed,
     }
     data = { kind: 'video', url, meta: submissionMeta }
