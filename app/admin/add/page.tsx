@@ -240,7 +240,7 @@ function SubmissionCard({
   onReject: () => void
 }) {
   const createdAt = useMemo(() => new Date(submission.createdAt).toLocaleString(), [submission.createdAt])
-  const textKind = state?.textKind ?? (submission.type === 'text' ? submission.data.textKind : 'joke')
+  const textKind = state?.textKind ?? (submission.type === 'text' ? (submission.data.kind === 'text' ? submission.data.textKind : 'joke') : 'joke')
 
   const renderPreview = () => {
     if (submission.type === 'image') {
