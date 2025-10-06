@@ -60,6 +60,69 @@ const deDictionary = {
     "imagesVideos": "Bilder & Videos",
     "imagesOnly": "Nur Bilder"
   },
+  "add": {
+    "title": "Hinzufügen",
+    "banner": "Füge den Content hinzu, den du",
+    "pendingNote": "Jeder Beitrag wird manuell geprüft. Danke für deine Geduld!",
+    "tabs": {
+      "image": "Bild",
+      "text": "Witze · Zitate · Fakten",
+      "web": "Web",
+      "video": "Videos"
+    },
+    "remainingSpace": "Verfügbarer Speicher:",
+    "storageFull": "Der Speicher für Einsendungen ist aktuell voll. Versuch es später erneut.",
+    "image": {
+      "uploadLabel": "Zieh ein Bild hierher oder lade es hoch",
+      "limit": "Max. 1 MB. PNG, JPG, GIF möglich.",
+      "select": "Datei wählen",
+      "urlLabel": "Oder eine Bild-URL einfügen",
+      "previewAlt": "Vorschau des ausgewählten Bildes",
+      "remove": "Datei entfernen",
+      "firstName": "Vorname",
+      "lastName": "Nachname"
+    },
+    "fileTooLarge": "Das Bild ist größer als 1 MB.",
+    "errors": {
+      "invalidImage": "Bitte eine Bilddatei auswählen.",
+      "imageRequired": "Füge ein Bild hinzu oder verlinke eins, bevor du sendest.",
+      "textRequired": "Schreibe etwas, bevor du sendest.",
+      "urlRequired": "Bitte eine gültige URL angeben.",
+      "storageUnavailable": "Einsendungen sind gerade nicht verfügbar. Versuch es später erneut.",
+      "missingContributor": "Wer hat dieses Bild erstellt? Bitte Name angeben.",
+      "missingAuthor": "Bitte gib an, wer dieses Zitat gesagt hat.",
+      "duplicate": "Dieser Link befindet sich bereits in unserer Warteschlange."
+    },
+    "text": {
+      "placeholder": "Schreibe deinen besten Witz, dein Zitat oder deinen Fakt...",
+      "options": {
+        "joke": "Witz",
+        "quote": "Zitat",
+        "fact": "Fakt"
+      },
+      "authorLabel": "Wer hat es gesagt?",
+      "authorPlaceholder": "Autor"
+    },
+    "web": {
+      "urlLabel": "Website-URL"
+    },
+    "video": {
+      "urlLabel": "Video-URL",
+      "disclaimer": "Wir hosten nur Links, keine Videodateien. Teile die Plattform-URL.",
+      "embedWarning": "Dieser Link lässt sich eventuell nicht einbetten. Wir prüfen das manuell."
+    },
+    "analyzing": "Analysiere...",
+    "analyzeError": "Dieser Link konnte noch nicht analysiert werden. Du kannst ihn trotzdem senden.",
+    "email": {
+      "label": "Deine E-Mail (Pflichtfeld)",
+      "placeholder": "du@example.com",
+      "required": "Für Einsendungen benötigen wir eine E-Mail."
+    },
+    "success": "Danke! Wir prüfen deinen Beitrag in Kürze.",
+    "error": "Senden gerade nicht möglich. Bitte versuch es erneut.",
+    "submitting": "Senden...",
+    "submit": "Content senden"
+  },
   legal: {
     title: "Impressum",
     close: "Schließen",

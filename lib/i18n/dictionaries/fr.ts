@@ -60,6 +60,69 @@ const frDictionary = {
     "imagesVideos": "Images & Vidéos",
     "imagesOnly": "Images seulement"
   },
+  "add": {
+    "title": "Ajouter",
+    "banner": "Ajoute le contenu que tu",
+    "pendingNote": "Chaque proposition est vérifiée à la main. Merci pour ta patience !",
+    "tabs": {
+      "image": "Image",
+      "text": "Blagues · Citations · Infos",
+      "web": "Web",
+      "video": "Vidéos"
+    },
+    "remainingSpace": "Espace disponible :",
+    "storageFull": "Les soumissions sont pleines pour le moment. Réessaie plus tard.",
+    "image": {
+      "uploadLabel": "Dépose ou importe une image",
+      "limit": "1 Mo max. PNG, JPG, GIF acceptés.",
+      "select": "Choisir un fichier",
+      "urlLabel": "Ou colle une URL d'image",
+      "previewAlt": "Prévisualisation de l'image choisie",
+      "remove": "Retirer le fichier",
+      "firstName": "Prénom",
+      "lastName": "Nom"
+    },
+    "fileTooLarge": "L'image dépasse 1 Mo.",
+    "errors": {
+      "invalidImage": "Merci de choisir un fichier image.",
+      "imageRequired": "Ajoute ou colle une image avant d'envoyer.",
+      "textRequired": "Écris quelque chose avant d'envoyer.",
+      "urlRequired": "Merci d'indiquer une URL valide.",
+      "storageUnavailable": "Les soumissions sont indisponibles pour le moment. Réessaie plus tard.",
+      "missingContributor": "Indique qui est l'auteur de cette image.",
+      "missingAuthor": "Indique qui a prononcé cette citation.",
+      "duplicate": "Ce lien est déjà dans notre file d'attente."
+    },
+    "text": {
+      "placeholder": "Écris ta meilleure blague, citation ou info...",
+      "options": {
+        "joke": "Blague",
+        "quote": "Citation",
+        "fact": "Info"
+      },
+      "authorLabel": "Qui a dit ça ?",
+      "authorPlaceholder": "Auteur"
+    },
+    "web": {
+      "urlLabel": "URL du site"
+    },
+    "video": {
+      "urlLabel": "URL de la vidéo",
+      "disclaimer": "On ne stocke pas les vidéos, uniquement des liens. Partage l'URL de la plateforme.",
+      "embedWarning": "Ce lien semble difficile à intégrer. Nous vérifierons manuellement."
+    },
+    "analyzing": "Analyse en cours...",
+    "analyzeError": "Impossible d'analyser ce lien pour l'instant. Tu peux quand même l'envoyer.",
+    "email": {
+      "label": "Ton e-mail (obligatoire)",
+      "placeholder": "toi@example.com",
+      "required": "Un e-mail est nécessaire pour envoyer."
+    },
+    "success": "Merci ! Nous examinerons rapidement ta proposition.",
+    "error": "Impossible d'envoyer maintenant. Réessaie plus tard.",
+    "submitting": "Envoi...",
+    "submit": "Envoyer le contenu"
+  },
   legal: {
     title: "Mentions légales",
     close: "Fermer",

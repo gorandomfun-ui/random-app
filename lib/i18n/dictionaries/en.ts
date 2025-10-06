@@ -60,6 +60,69 @@ const enDictionary = {
     "imagesVideos": "Images & Videos",
     "imagesOnly": "Images only"
   },
+  "add": {
+    "title": "Add",
+    "banner": "Add the content you",
+    "pendingNote": "Every submission is curated by humans. Thanks for your patience!",
+    "tabs": {
+      "image": "Image",
+      "text": "Jokes · Quotes · Facts",
+      "web": "Web",
+      "video": "Videos"
+    },
+    "remainingSpace": "Remaining space:",
+    "storageFull": "Submissions are full for now. Try again later.",
+    "image": {
+      "uploadLabel": "Drop or upload an image",
+      "limit": "Max 1 MB. PNG, JPG, GIF accepted.",
+      "select": "Choose a file",
+      "urlLabel": "Or paste an image URL",
+      "previewAlt": "Selected image preview",
+      "remove": "Remove file",
+      "firstName": "First name",
+      "lastName": "Last name"
+    },
+    "fileTooLarge": "The selected image is larger than 1 MB.",
+    "errors": {
+      "invalidImage": "Please choose an image file.",
+      "imageRequired": "Please upload or link to an image.",
+      "textRequired": "Share something before submitting.",
+      "urlRequired": "Please share a valid URL.",
+      "storageUnavailable": "Submissions are down right now. Please retry later.",
+      "missingContributor": "Please tell us who captured this image.",
+      "missingAuthor": "Please share who said this quote.",
+      "duplicate": "We already have this link in our queue."
+    },
+    "text": {
+      "placeholder": "Write your best joke, quote or fact...",
+      "options": {
+        "joke": "Joke",
+        "quote": "Quote",
+        "fact": "Fact"
+      },
+      "authorLabel": "Who said it?",
+      "authorPlaceholder": "Author"
+    },
+    "web": {
+      "urlLabel": "Website URL"
+    },
+    "video": {
+      "urlLabel": "Video URL",
+      "disclaimer": "We host only links, not video files. Share a platform URL.",
+      "embedWarning": "This link may not allow embedding. We will double-check manually."
+    },
+    "analyzing": "Analyzing...",
+    "analyzeError": "Could not analyze this link yet. You can still submit it.",
+    "email": {
+      "label": "Your email (required)",
+      "placeholder": "you@example.com",
+      "required": "Email is required to submit."
+    },
+    "success": "Thanks! We will review your submission soon.",
+    "error": "Unable to submit right now. Please try again.",
+    "submitting": "Sending...",
+    "submit": "Send content"
+  },
   legal: {
     title: "Legal notice",
     close: "Close",

@@ -60,6 +60,69 @@ const jpDictionary = {
     "imagesVideos": "画像と動画",
     "imagesOnly": "画像のみ"
   },
+  "add": {
+    "title": "投稿",
+    "banner": "あなたの好きなコンテンツを追加",
+    "pendingNote": "すべての投稿は人が確認します。少しだけお待ちください。",
+    "tabs": {
+      "image": "画像",
+      "text": "ジョーク・引用・豆知識",
+      "web": "ウェブ",
+      "video": "動画"
+    },
+    "remainingSpace": "利用可能な容量：",
+    "storageFull": "現在は投稿容量がいっぱいです。後でもう一度お試しください。",
+    "image": {
+      "uploadLabel": "画像をドロップまたはアップロード",
+      "limit": "最大1MB。PNG・JPG・GIFが利用できます。",
+      "select": "ファイルを選択",
+      "urlLabel": "または画像URLを貼り付け",
+      "previewAlt": "選択した画像のプレビュー",
+      "remove": "ファイルを削除",
+      "firstName": "名",
+      "lastName": "姓"
+    },
+    "fileTooLarge": "画像サイズが1MBを超えています。",
+    "errors": {
+      "invalidImage": "画像ファイルを選択してください。",
+      "imageRequired": "送信する前に画像を追加するかURLを入力してください。",
+      "textRequired": "送信前にテキストを入力してください。",
+      "urlRequired": "正しいURLを入力してください。",
+      "storageUnavailable": "現在投稿機能は利用できません。後でもう一度お試しください。",
+      "missingContributor": "この画像の作者の名前を教えてください。",
+      "missingAuthor": "この引用を発言した人を教えてください。",
+      "duplicate": "このリンクはすでに審査待ちです。"
+    },
+    "text": {
+      "placeholder": "お気に入りのジョークや引用、豆知識を書いてください...",
+      "options": {
+        "joke": "ジョーク",
+        "quote": "引用",
+        "fact": "豆知識"
+      },
+      "authorLabel": "誰の言葉？",
+      "authorPlaceholder": "発言者"
+    },
+    "web": {
+      "urlLabel": "ウェブサイトURL"
+    },
+    "video": {
+      "urlLabel": "動画URL",
+      "disclaimer": "動画ファイルは保存できません。プラットフォームのURLを共有してください。",
+      "embedWarning": "このリンクは埋め込みできない可能性があります。後で手動確認します。"
+    },
+    "analyzing": "解析中...",
+    "analyzeError": "今はリンクを解析できませんが、そのまま送信できます。",
+    "email": {
+      "label": "メールアドレス（必須）",
+      "placeholder": "you@example.com",
+      "required": "送信にはメールアドレスが必要です。"
+    },
+    "success": "ありがとう！内容をまもなく確認します。",
+    "error": "今は送信できません。少し時間をあけてお試しください。",
+    "submitting": "送信中...",
+    "submit": "コンテンツを送信"
+  },
   legal: {
     title: "特定商取引法に基づく表記",
     close: "閉じる",
