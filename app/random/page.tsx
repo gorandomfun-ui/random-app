@@ -7,9 +7,11 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
+import ScoreCounter from '@/components/ScoreCounter'
 import ShareMenu from '@/components/ShareMenu'
 import ShufflePicker from '@/components/ShufflePicker'
 import { useI18n } from '@/providers/I18nProvider'
+import { useScore } from '@/providers/ScoreProvider'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
@@ -833,6 +835,7 @@ export default function RandomExperiencePage({
   searchParams?: Record<string, string | string[] | undefined>
 }) {
   const { dict, locale, locales, setLocale, t } = useI18n()
+  const { addAction, maybeSpawnDiamond } = useScore()
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
@@ -1441,7 +1444,7 @@ const sequenceStateRef = useRef({
     setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))
   }, [])
 
-  const loadNext = useCallback(async () => {
+  const loadNext = useCallback(async (reward = false) => {
     setLoading(true)
     setIsSecond((prev) => !prev)
     setTrigger((t) => t + 1)
@@ -1449,26 +1452,37 @@ const sequenceStateRef = useRef({
     try {
       const slot = getNextSlot()
       triggerPageGlitch(slot.kind === 'encourage' ? 'boost' : 'normal')
+      let outcome: 'none' | 'content' | 'encourage' = 'none'
       if (slot.kind === 'encourage') {
         const encourageItem = buildEncourageItem(slot.encourageIndex)
         setCurrentItem(encourageItem)
         setLiked(false)
+        outcome = 'encourage'
       } else {
         const item = await acquireItem(slot.itemType)
         setCurrentItem(item)
         setLiked(item ? isLiked(item) : false)
+        if (item) outcome = 'content'
       }
       updateTheme()
       playRandom()
+
+      if (reward && outcome !== 'none') {
+        addAction('random')
+        if (outcome === 'encourage') {
+          addAction('encourage')
+        }
+        maybeSpawnDiamond()
+      }
     } catch {
       setCurrentItem(null)
     } finally {
       setLoading(false)
     }
-  }, [acquireItem, buildEncourageItem, getNextSlot, triggerPageGlitch, updateTheme])
+  }, [acquireItem, addAction, buildEncourageItem, getNextSlot, maybeSpawnDiamond, triggerPageGlitch, updateTheme])
 
   useEffect(() => {
-    loadNext().catch(() => setLoading(false))
+    loadNext(false).catch(() => setLoading(false))
   }, [loadNext])
 
   useEffect(() => {
@@ -1481,7 +1495,7 @@ const sequenceStateRef = useRef({
   }, [currentItem])
 
   const handleRandomAgain = useCallback(() => {
-    loadNext().catch(() => undefined)
+    loadNext(true).catch(() => undefined)
     playAgain()
   }, [loadNext])
 
@@ -1506,7 +1520,8 @@ const sequenceStateRef = useRef({
     backgroundColor: theme.bg,
     color: theme.cream,
     '--theme-cream': theme.cream,
-  }), [theme.bg, theme.cream])
+    '--theme-text': theme.text,
+  }), [theme.bg, theme.cream, theme.text])
 
   const viewItem = currentItem
   const isEncourage = viewItem?.type === 'encourage'
@@ -1601,22 +1616,33 @@ const sequenceStateRef = useRef({
         </button>
       </header>
 
-      {categoryLabel ? (
-        <div className="px-4 sm:px-6" style={{ marginBottom: '10px' }}>
-          <div
-            className="px-4 py-2 font-semibold uppercase tracking-wide flex items-center justify-center gap-3 text-center"
-            style={{
-              backgroundColor: theme.text,
-              color: theme.cream,
-              borderRadius: 0,
-              fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
-            }}
-          >
-            {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
-            <span>{categoryLabel}</span>
+      <div className="px-4 sm:px-6" style={{ marginBottom: '10px' }}>
+        <div className="flex items-stretch" style={{ gap: '3px' }}>
+          <div className="flex justify-center" style={{ flex: '0 0 66%' }}>
+            {categoryLabel ? (
+              <div
+                className="px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3 text-center"
+                style={{
+                  backgroundColor: theme.text,
+                  color: theme.cream,
+                  fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+                  height: '40px',
+                  width: '100%',
+                }}
+              >
+                {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
+                <span>{categoryLabel}</span>
+              </div>
+            ) : (
+              <div style={{ height: '40px', width: '100%' }} />
+            )}
+          </div>
+
+          <div className="flex justify-end" style={{ flex: '0 0 calc(34% - 3px)' }}>
+            <ScoreCounter variant="random" className="w-full justify-center" />
           </div>
         </div>
-      ) : null}
+      </div>
 
       <section className="flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
         <div className="w-full" style={contentFrameStyle}>
@@ -1717,7 +1743,8 @@ const sequenceStateRef = useRef({
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between gap-3">
+              <ScoreCounter variant="menu" style={{ color: '#191916' }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -1739,11 +1766,10 @@ const sequenceStateRef = useRef({
               <Link
                 href="/random"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2"
+                className="flex items-center"
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-                <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={22} />
               </Link>
 
               <Link

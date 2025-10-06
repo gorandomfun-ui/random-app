@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import Link from 'next/link'
 import LikesGrid from '../../components/LikesGrid'
 import ShufflePicker from '@/components/ShufflePicker'
+import ScoreCounter from '@/components/ScoreCounter'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
@@ -327,7 +328,8 @@ export default function LikesPage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between gap-3">
+              <ScoreCounter variant="menu" style={{ color: '#191916' }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -349,11 +351,10 @@ export default function LikesPage() {
               <Link
                 href="/random"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2"
+                className="flex items-center"
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-                <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={22} />
               </Link>
 
               <Link

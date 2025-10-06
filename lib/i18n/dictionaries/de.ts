@@ -1,7 +1,7 @@
 const deDictionary = {
   "hero": {
     "tagline1": "ENTDECKE ZUFÄLLIGE INHALTE.",
-    "tagline2": "KEINE NEWS, KEIN GRUND, KEIN SINN.",
+    "tagline2": "KEINE MISSION, KEIN ZIEL, KEIN GRUND.",
     "tagline3": "NUR NUTZLOSE ÜBERRASCHUNG.",
     "startButton": "GO RANDOM"
   },

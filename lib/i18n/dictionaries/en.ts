@@ -1,7 +1,7 @@
 const enDictionary = {
   "hero": {
     "tagline1": "EXPLORE RANDOM CONTENTS.",
-    "tagline2": "NO NEWS, NO REASON, NO SENSE.",
+    "tagline2": "NO MISSION, NO GOAL, NO REASON.",
     "tagline3": "ONLY USELESS SURPRISE.",
     "startButton": "GO RANDOM"
   },

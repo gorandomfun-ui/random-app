@@ -6,6 +6,7 @@ import I18nProvider from '@/providers/I18nProvider'; // <- ton provider i18n (no
 import { CookieConsentProvider } from '@/components/CookieConsent'; // <- export nommé
 import CookieBanner from '@/components/CookieBanner';
 import CookieSettingsModal from '@/components/CookieSettingsModal';
+import { ScoreProvider } from '@/providers/ScoreProvider';
 import { interTight, tomorrow } from './fonts';
 
 export const metadata = {
@@ -58,13 +59,15 @@ export default function RootLayout({
         <I18nProvider initialLocale={lang}>
           {/* Le provider de consentement doit envelopper la bannière + modal + app */}
           <CookieConsentProvider>
-            {children}
+            <ScoreProvider>
+              {children}
 
-            {/* La bannière s’affiche à l’ouverture si pas de consentement */}
-            <CookieBanner />
+              {/* La bannière s’affiche à l’ouverture si pas de consentement */}
+              <CookieBanner />
 
-            {/* Le modal de réglages est monté globalement et sera ouvert par <CookieSettingsLink /> */}
-            <CookieSettingsModal />
+              {/* Le modal de réglages est monté globalement et sera ouvert par <CookieSettingsLink /> */}
+              <CookieSettingsModal />
+            </ScoreProvider>
           </CookieConsentProvider>
         </I18nProvider>
       </body>

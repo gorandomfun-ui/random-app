@@ -1,7 +1,7 @@
 const jpDictionary = {
   "hero": {
     "tagline1": "ランダムコンテンツを探索。",
-    "tagline2": "ニュースなし、理由なし、意味なし。",
+    "tagline2": "ミッションなし、ゴールなし、理由なし。",
     "tagline3": "無駄な驚きだけ。",
     "startButton": "GO RANDOM"
   },

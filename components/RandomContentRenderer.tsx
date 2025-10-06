@@ -15,6 +15,7 @@ import type {
   WebItem,
 } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
+import { useScore } from '@/providers/ScoreProvider'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
@@ -164,6 +165,7 @@ function AiAttribution({ item, theme }: { item: QuoteItem | JokeItem | FactTextI
 export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme }) {
   const [selected, setSelected] = useState<number | null>(null)
   const [revealed, setRevealed] = useState(false)
+  const { addAction } = useScore()
 
   useEffect(() => {
     setSelected(null)
@@ -172,8 +174,12 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
 
   const onSelect = (index: number) => {
     if (revealed) return
+    const correct = index === item.correctIndex
     setSelected(index)
     setRevealed(true)
+    if (correct) {
+      addAction('quizSuccess')
+    }
   }
 
   const isCorrect = revealed && selected === item.correctIndex

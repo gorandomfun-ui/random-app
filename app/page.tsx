@@ -17,12 +17,14 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
+import ScoreCounter from '@/components/ScoreCounter'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
+import { useScore } from '@/providers/ScoreProvider'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp'
@@ -114,6 +116,7 @@ function useButtonWidth(
 export default function HomePage() {
   const router = useRouter()
   const { t, locale, locales, setLocale } = useI18n()
+  const { addAction, maybeSpawnDiamond } = useScore()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -206,7 +209,7 @@ export default function HomePage() {
   const heroCopy = useMemo(() => ({
     startButton: t('hero.startButton', 'GO RANDOM'),
     tagline1: t('hero.tagline1', 'EXPLORE RANDOM CONTENTS.'),
-    tagline2: t('hero.tagline2', 'NO NEWS, NO REASON, NO SENSE.'),
+    tagline2: t('hero.tagline2', 'NO MISSION, NO GOAL, NO REASON.'),
     tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
   }), [t])
 
@@ -340,12 +343,16 @@ export default function HomePage() {
     }
 
     const typesParam = selectedTypes.join(',')
+
+    addAction('random')
+    maybeSpawnDiamond()
+
     if (typesParam.length) {
       router.push(`/random?types=${encodeURIComponent(typesParam)}`)
     } else {
       router.push('/random')
     }
-  }, [isSecond, router, selectedTypes])
+  }, [addAction, isSecond, maybeSpawnDiamond, router, selectedTypes])
 
   return (
     <main className="min-h-screen flex flex-col" style={mainStyle}>
@@ -374,6 +381,8 @@ export default function HomePage() {
           >
             <MonoIcon src="/icons/Heart.svg" color={theme.text} size={28} />
           </Link>
+
+          <ScoreCounter variant="home" style={{ color: theme.cream }} />
         </div>
 
         <button
@@ -538,7 +547,8 @@ export default function HomePage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between gap-3">
+              <ScoreCounter variant="menu" style={{ color: '#191916' }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -560,11 +570,10 @@ export default function HomePage() {
               <Link
                 href="/random"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2"
+                className="flex items-center"
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-                <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={22} />
               </Link>
 
               <Link
