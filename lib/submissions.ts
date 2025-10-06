@@ -220,8 +220,8 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
     const canEmbed = resolveEmbedCapability(baseProvider ?? parsed.provider, baseVideoId ?? parsed.videoId)
     submissionMeta = {
       ...baseMeta,
-      videoId: baseVideoId ?? parsed.videoId ?? null,
-      provider: baseProvider ?? parsed.provider ?? null,
+      ...(baseVideoId || parsed.videoId ? { videoId: baseVideoId ?? parsed.videoId ?? null } : {}),
+      ...(baseProvider || parsed.provider ? { provider: baseProvider ?? parsed.provider ?? null } : {}),
       canEmbed,
     }
     data = { kind: 'video', url, meta: submissionMeta }
