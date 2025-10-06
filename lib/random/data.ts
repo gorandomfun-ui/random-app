@@ -3,13 +3,20 @@ import { getDb } from '@/lib/db'
 import type { ItemType } from './types'
 
 let cachedDb: Db | null = null
+let lastDbFailureAt: number | null = null
+const DB_RETRY_DELAY_MS = 60_000
 
 export async function getDbSafe(): Promise<Db | null> {
   try {
     if (cachedDb) return cachedDb
+    if (lastDbFailureAt && Date.now() - lastDbFailureAt < DB_RETRY_DELAY_MS) {
+      return null
+    }
     cachedDb = await getDb(process.env.MONGODB_DB || process.env.MONGO_DB || 'randomapp')
+    lastDbFailureAt = null
     return cachedDb
   } catch {
+    lastDbFailureAt = Date.now()
     return null
   }
 }

@@ -358,10 +358,10 @@ export default function HomePage() {
     <main className="min-h-screen flex flex-col" style={mainStyle}>
       <header
         ref={headerRef}
-        className="relative flex items-center justify-between px-4 pt-4 pb-2"
+        className="relative flex items-center px-4 pt-4 pb-2"
         style={{ height: HEADER_H }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-1">
           <button
             type="button"
             aria-label="Menu"
@@ -381,21 +381,24 @@ export default function HomePage() {
           >
             <MonoIcon src="/icons/Heart.svg" color={theme.text} size={28} />
           </Link>
+        </div>
 
+        <div className="flex-1 flex justify-center">
           <ScoreCounter variant="home" style={{ color: theme.cream }} />
         </div>
 
-        <button
-          className="absolute left-1/2 -translate-x-1/2"
-          onClick={() => setIsShuffleOpen(true)}
-          aria-label={shuffleLabel}
-        >
-          <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
-        </button>
-
-        <span className="text-xs font-bold flex items-center gap-1" style={{ color: theme.text }}>
-          V 0.1. <LanguageSwitcher />
-        </span>
+        <div className="flex items-center justify-end gap-2 flex-1">
+          <button
+            onClick={() => setIsShuffleOpen(true)}
+            aria-label={shuffleLabel}
+            className="flex items-center"
+          >
+            <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
+          </button>
+          <div style={{ color: theme.text }} className="flex">
+            <LanguageSwitcher />
+          </div>
+        </div>
       </header>
 
       <section
@@ -501,10 +504,15 @@ export default function HomePage() {
             <MonoIcon src="/icons/info.svg" color={theme.cream} size={20} />
             <span className="font-inter font-semibold" style={{ color: theme.cream }}>{footerCopy.legal}</span>
           </Link>
-          <button className="flex items-center gap-2" onClick={shareFromFooter}>
-            <MonoIcon src="/icons/share.svg" color={theme.text} size={20} />
-            <span className="font-inter font-semibold" style={{ color: theme.text }}>{footerCopy.share}</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <Link href="/add" className="flex items-center gap-1">
+              <span className="font-inter font-semibold" style={{ color: theme.cream }}>Add</span>
+              <MonoIcon src="/icons/plus.svg" color={theme.cream} size={20} />
+            </Link>
+            <button className="flex items-center" onClick={shareFromFooter} aria-label={footerCopy.share}>
+              <MonoIcon src="/icons/share.svg" color={theme.text} size={20} />
+            </button>
+          </div>
         </div>
       </footer>
 
@@ -632,6 +640,16 @@ export default function HomePage() {
                 style={{ color: theme.cream }}
               >
                 {legalLabel}
+              </Link>
+
+              <Link
+                href="/add"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2"
+                style={{ color: theme.cream }}
+              >
+                <span>Add</span>
+                <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
             </nav>
           </div>

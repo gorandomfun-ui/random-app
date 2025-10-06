@@ -1833,6 +1833,16 @@ const sequenceStateRef = useRef({
               >
                 {legalLabel}
               </Link>
+
+              <Link
+                href="/add"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2"
+                style={{ color: theme.cream }}
+              >
+                <span>Add</span>
+                <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
+              </Link>
             </nav>
           </div>
         </div>

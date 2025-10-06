@@ -126,6 +126,10 @@ export default function LegalPage() {
           </p>
         </section>
 
+        <p className="mt-2 text-sm font-bold uppercase tracking-widest" style={{ color: theme.text }}>
+          V 0.1.
+        </p>
+
         <section className="space-y-6 text-base leading-relaxed">
           <div>
             <h3 className="font-semibold text-lg uppercase tracking-wide text-white">
@@ -288,6 +292,16 @@ export default function LegalPage() {
                 style={{ color: theme.cream }}
               >
                 {legalLabel}
+              </Link>
+
+              <Link
+                href="/add"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2"
+                style={{ color: theme.cream }}
+              >
+                <span>Add</span>
+                <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
             </nav>
           </div>

@@ -1,7 +1,7 @@
 const frDictionary = {
   "hero": {
     "tagline1": "EXPLORE DES CONTENUS ALÉATOIRES.",
-    "tagline2": "PAS DE MISSION, PAS D'OBJECTIF, PAS DE RAISON.",
+    "tagline2": "ZÉRO MISSION. ZÉRO SENS. ZÉRO UTILITÉ.",
     "tagline3": "SEULEMENT DES SURPRISES INUTILES.",
     "startButton": "GO RANDOM"
   },

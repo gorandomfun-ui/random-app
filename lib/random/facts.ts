@@ -99,9 +99,16 @@ type FactRecord = FactDocument & { lastShownAt?: Date | string | null; hash?: st
 type FactQuizDoc = FactRecord & { variant: 'quiz'; quiz: FactQuizPayload }
 type FactQuizQueueEntry = { doc: FactQuizDoc; item: FactQuizItem }
 
-const QUIZ_PRELOAD_TARGET = 4
+const QUIZ_PRELOAD_TARGET = 6
+const QUIZ_HISTORY_LIMIT = 600
+const TRIVIA_API_BASE = 'https://opentdb.com'
+const TRIVIA_MAX_ATTEMPTS = 5
 const quizQueue: FactQuizQueueEntry[] = []
 let quizPreloadRunning = false
+
+let triviaToken: string | null = null
+let triviaTokenPromise: Promise<string | null> | null = null
+const servedQuizHistory = new Set<string>()
 
 function trim(value?: string | null): string {
   return (value || '').trim()
@@ -215,29 +222,122 @@ type OpenTriviaResponse = {
   results?: OpenTriviaQuestion[]
 }
 
+type OpenTriviaTokenResponse = {
+  response_code?: number
+  token?: string
+}
+
+async function requestTriviaToken(command: 'request' | 'reset', current?: string | null): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({ command })
+    if (command === 'reset' && current) params.set('token', current)
+    const res = await fetch(`${TRIVIA_API_BASE}/api_token.php?${params.toString()}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const payload = (await res.json()) as OpenTriviaTokenResponse
+    if (payload?.response_code === 0 && typeof payload.token === 'string' && payload.token) {
+      return payload.token
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+async function refreshTriviaToken(): Promise<string | null> {
+  if (triviaTokenPromise) return triviaTokenPromise
+  triviaTokenPromise = (async () => {
+    const token = await requestTriviaToken('request')
+    triviaToken = token || null
+    return triviaToken
+  })()
+  try {
+    return await triviaTokenPromise
+  } finally {
+    triviaTokenPromise = null
+  }
+}
+
+async function resetTriviaToken(): Promise<string | null> {
+  if (triviaTokenPromise) return triviaTokenPromise
+  triviaTokenPromise = (async () => {
+    let token: string | null = null
+    if (triviaToken) {
+      token = await requestTriviaToken('reset', triviaToken)
+    }
+    if (!token) {
+      token = await requestTriviaToken('request')
+    }
+    triviaToken = token || null
+    return triviaToken
+  })()
+  try {
+    return await triviaTokenPromise
+  } finally {
+    triviaTokenPromise = null
+  }
+}
+
+async function getTriviaToken(): Promise<string | null> {
+  if (triviaToken) return triviaToken
+  return refreshTriviaToken()
+}
+
 async function sampleQuizFromCacheDoc(
   exclusion: QuizExclusionContext,
   avoidIds: Set<string>,
 ): Promise<FactQuizDoc | null> {
   const filter: Record<string, unknown> = { variant: 'quiz' }
-  const blockedIds = new Set([...avoidIds, ...exclusion.ids])
+  const blockedIds = new Set([...avoidIds, ...exclusion.ids, ...servedQuizHistory])
   if (blockedIds.size) filter['quiz.id'] = { $nin: Array.from(blockedIds) }
   const doc = await sampleFromCache<FactQuizDoc>('fact', filter)
   if (doc?.quiz) return doc
   return null
 }
 
-async function fetchTriviaBatch(count: number): Promise<FactQuizDoc[]> {
-  try {
-    const url = `https://opentdb.com/api.php?amount=${Math.max(1, Math.min(10, count))}&type=multiple`
-    const res = await fetch(url, { cache: 'no-store' })
-    if (!res.ok) return []
-    const payload = (await res.json()) as OpenTriviaResponse
-    if (!Array.isArray(payload?.results)) return []
-    const docs: FactQuizDoc[] = []
+async function fetchTriviaBatch(
+  count: number,
+  exclusion: QuizExclusionContext,
+  avoidIds: Set<string>,
+  history: Set<string>,
+): Promise<FactQuizDoc[]> {
+  const target = Math.max(1, Math.min(12, count))
+  const docs: FactQuizDoc[] = []
+  const seenHashes = new Set<string>()
+
+  for (let attempt = 0; attempt < TRIVIA_MAX_ATTEMPTS && docs.length < target; attempt++) {
+    const remaining = Math.max(1, target - docs.length)
+    const amount = Math.min(20, Math.max(remaining * 2, remaining, 3))
+
+    const params = new URLSearchParams({ amount: String(amount), type: 'multiple' })
+    const token = await getTriviaToken()
+    if (token) params.set('token', token)
+
+    let payload: OpenTriviaResponse | null = null
+    try {
+      const res = await fetch(`${TRIVIA_API_BASE}/api.php?${params.toString()}`, { cache: 'no-store' })
+      if (!res.ok) continue
+      payload = (await res.json()) as OpenTriviaResponse
+    } catch {
+      payload = null
+    }
+
+    if (!payload) continue
+    const code = payload.response_code ?? 0
+    if (code === 3 || code === 4) {
+      await resetTriviaToken()
+      continue
+    }
+    if (!Array.isArray(payload.results) || !payload.results.length) {
+      if (code === 1) break
+      continue
+    }
+
     for (const entry of payload.results) {
       const question = decodeHtml(entry?.question ?? '')
       if (!question) continue
+      const normalizedQuestion = question.toLowerCase()
+      if (exclusion.questions.has(normalizedQuestion)) continue
+
       const correctAnswer = decodeHtml(entry?.correct_answer ?? '')
       const incorrectAnswers = Array.isArray(entry?.incorrect_answers)
         ? entry.incorrect_answers.map((answer) => decodeHtml(answer)).filter(Boolean)
@@ -245,14 +345,17 @@ async function fetchTriviaBatch(count: number): Promise<FactQuizDoc[]> {
       if (!correctAnswer || incorrectAnswers.length < 1) continue
       const options = shuffleArray([...incorrectAnswers, correctAnswer])
       const correctIndex = Math.max(0, options.findIndex((option) => option === correctAnswer))
+
+      const hash = createHash('sha1').update(normalizedQuestion).digest('hex')
+      if (exclusion.ids.has(hash) || avoidIds.has(hash) || seenHashes.has(hash) || history.has(hash)) continue
+
       const baseDoc = createFactDocument({
         text: question,
         provider: 'open-trivia-db',
-        source: { name: 'Open Trivia DB', url: 'https://opentdb.com' },
+        source: { name: 'Open Trivia DB', url: TRIVIA_API_BASE },
       })
       if (!baseDoc) continue
-      const normalizedQuestion = question.toLowerCase()
-      const hash = createHash('sha1').update(normalizedQuestion).digest('hex')
+
       const category = entry?.category ? decodeHtml(entry.category) : undefined
       const difficulty = mapDifficulty(entry?.difficulty)
       const tags = new Set<string>([...baseDoc.tags, 'quiz', 'trivia'])
@@ -263,11 +366,12 @@ async function fetchTriviaBatch(count: number): Promise<FactQuizDoc[]> {
         const lowered = option.toLowerCase()
         if (lowered.length >= 3 && lowered.length <= 26) keywordSet.add(lowered)
       }
+
       const doc: FactQuizDoc = {
         ...baseDoc,
         text: question,
         provider: 'open-trivia-db',
-        source: { name: 'Open Trivia DB', url: 'https://opentdb.com' },
+        source: { name: 'Open Trivia DB', url: TRIVIA_API_BASE },
         tags: Array.from(tags),
         keywords: Array.from(keywordSet).slice(0, 14),
         variant: 'quiz',
@@ -282,13 +386,16 @@ async function fetchTriviaBatch(count: number): Promise<FactQuizDoc[]> {
         },
         hash,
       }
+
       await upsertCache('fact', { hash }, doc)
       docs.push(doc)
+      seenHashes.add(hash)
+      avoidIds.add(hash)
+      if (docs.length >= target) break
     }
-    return docs
-  } catch {
-    return []
   }
+
+  return docs
 }
 
 async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> {
@@ -307,7 +414,7 @@ async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> 
     }
   }
 
-  const fetchedDocs = await fetchTriviaBatch(QUIZ_PRELOAD_TARGET)
+  const fetchedDocs = await fetchTriviaBatch(QUIZ_PRELOAD_TARGET, exclusion, currentIds, servedQuizHistory)
   let added = false
   for (const fetched of fetchedDocs) {
     if (!fetched.quiz) continue
@@ -411,6 +518,11 @@ export async function selectFact(): Promise<FactItem | null> {
       markGlobalOrigin(doc._id ? 'db-random' : 'network')
       markGlobalTopics(Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [])
       markGlobalKeywords(Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [])
+      servedQuizHistory.add(item.id)
+      if (servedQuizHistory.size > QUIZ_HISTORY_LIMIT) {
+        const oldest = servedQuizHistory.values().next()
+        if (!oldest.done) servedQuizHistory.delete(oldest.value)
+      }
       lastFactWasQuiz = true
       ensureQuizPreloaded(updatedExclusion).catch(() => undefined)
       return item
