@@ -1639,7 +1639,11 @@ const sequenceStateRef = useRef({
           </div>
 
           <div className="flex justify-end" style={{ flex: '0 0 calc(34% - 3px)' }}>
-            <ScoreCounter variant="random" className="w-full justify-center" />
+            <ScoreCounter
+              variant="random"
+              className="w-full h-full"
+              style={{ color: '#191916' }}
+            />
           </div>
         </div>
       </div>
