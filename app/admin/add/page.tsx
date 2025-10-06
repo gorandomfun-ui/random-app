@@ -263,14 +263,16 @@ function SubmissionCard({
       )
     }
     const meta = submission.data.kind === 'video' || submission.data.kind === 'web' ? submission.data.meta ?? submission.metadata : submission.metadata
+    const metaProvider = submission.type === 'video' && meta && 'provider' in meta ? (meta as { provider?: string | null }).provider : null
+    const metaCanEmbed = submission.type === 'video' && meta && 'canEmbed' in meta ? (meta as { canEmbed?: boolean | null }).canEmbed ?? null : null
     return (
       <div className="space-y-2 text-sm">
         {meta?.image ? <img src={meta.image} alt="preview" className="w-full rounded-lg object-cover" /> : null}
         {meta?.title ? <p className="font-semibold">{meta.title}</p> : null}
         <p className="break-words text-xs text-white/60">{submission.data.kind === 'video' ? submission.data.url : ''}</p>
-        {meta?.provider ? <p className="text-xs text-white/60">Provider: {meta.provider}</p> : null}
-        {typeof meta?.canEmbed === 'boolean' ? (
-          <p className="text-xs text-white/60">Embeddable: {meta.canEmbed ? 'yes' : 'needs review'}</p>
+        {metaProvider ? <p className="text-xs text-white/60">Provider: {metaProvider}</p> : null}
+        {typeof metaCanEmbed === 'boolean' ? (
+          <p className="text-xs text-white/60">Embeddable: {metaCanEmbed ? 'yes' : 'needs review'}</p>
         ) : null}
       </div>
     )
