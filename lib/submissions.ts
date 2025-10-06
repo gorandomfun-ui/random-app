@@ -52,6 +52,8 @@ type SubmissionMetadata = {
   image?: string | null
   siteName?: string | null
   canEmbed?: boolean | null
+  provider?: string | null
+  videoId?: string | null
 }
 
 export type SubmissionRecord = {
@@ -106,6 +108,8 @@ function ensureStrings(value: unknown): SubmissionMetadata | undefined {
     image: typeof meta.image === 'string' ? meta.image : null,
     siteName: typeof meta.siteName === 'string' ? meta.siteName : null,
     canEmbed: typeof meta.canEmbed === 'boolean' ? meta.canEmbed : null,
+    provider: typeof meta.provider === 'string' ? meta.provider : null,
+    videoId: typeof meta.videoId === 'string' ? meta.videoId : null,
   }
 }
 
@@ -215,13 +219,11 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
     const url = normalizeUrl(urlRaw)
     const baseMeta = payload.metadata ? ensureStrings(payload.metadata) : undefined
     const parsed = parseVideo(url)
-    const baseProvider = baseMeta && 'provider' in baseMeta ? (baseMeta as { provider?: string | null }).provider ?? null : null
-    const baseVideoId = baseMeta && 'videoId' in baseMeta ? (baseMeta as { videoId?: string | null }).videoId ?? null : null
-    const canEmbed = resolveEmbedCapability(baseProvider ?? parsed.provider, baseVideoId ?? parsed.videoId)
+    const canEmbed = resolveEmbedCapability(baseMeta?.provider ?? parsed.provider, baseMeta?.videoId ?? parsed.videoId)
     submissionMeta = {
       ...baseMeta,
-      ...(baseVideoId || parsed.videoId ? { videoId: baseVideoId ?? parsed.videoId ?? null } : {}),
-      ...(baseProvider || parsed.provider ? { provider: baseProvider ?? parsed.provider ?? null } : {}),
+      videoId: baseMeta?.videoId ?? parsed.videoId ?? null,
+      provider: baseMeta?.provider ?? parsed.provider ?? null,
       canEmbed,
     }
     data = { kind: 'video', url, meta: submissionMeta }
@@ -231,8 +233,8 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
       if (submissionMeta.description) sizeBytes += Buffer.byteLength(submissionMeta.description, 'utf8')
       if (submissionMeta.image) sizeBytes += Buffer.byteLength(submissionMeta.image, 'utf8')
       if (submissionMeta.siteName) sizeBytes += Buffer.byteLength(submissionMeta.siteName, 'utf8')
-      if ('videoId' in submissionMeta && submissionMeta.videoId) sizeBytes += Buffer.byteLength(String((submissionMeta as { videoId?: string | null }).videoId), 'utf8')
-      if ('provider' in submissionMeta && submissionMeta.provider) sizeBytes += Buffer.byteLength(String((submissionMeta as { provider?: string | null }).provider), 'utf8')
+      if (submissionMeta.videoId) sizeBytes += Buffer.byteLength(submissionMeta.videoId, 'utf8')
+      if (submissionMeta.provider) sizeBytes += Buffer.byteLength(submissionMeta.provider, 'utf8')
     }
   }
 
@@ -244,7 +246,8 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
   }
 
   const now = new Date()
-  const result = await collection.insertOne({
+  const record: SubmissionRecord = {
+    _id: new ObjectId(),
     type: payload.type,
     status: 'pending',
     email: cleanEmail,
@@ -253,7 +256,9 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
     updatedAt: now,
     data,
     metadata: submissionMeta ?? null,
-  })
+  }
+
+  const result = await collection.insertOne(record)
 
   return { id: result.insertedId.toHexString() }
 }
