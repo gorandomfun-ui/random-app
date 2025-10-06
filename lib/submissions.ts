@@ -231,8 +231,8 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
       if (submissionMeta.description) sizeBytes += Buffer.byteLength(submissionMeta.description, 'utf8')
       if (submissionMeta.image) sizeBytes += Buffer.byteLength(submissionMeta.image, 'utf8')
       if (submissionMeta.siteName) sizeBytes += Buffer.byteLength(submissionMeta.siteName, 'utf8')
-      if (submissionMeta.videoId) sizeBytes += Buffer.byteLength(submissionMeta.videoId, 'utf8')
-      if (submissionMeta.provider) sizeBytes += Buffer.byteLength(submissionMeta.provider, 'utf8')
+      if ('videoId' in submissionMeta && submissionMeta.videoId) sizeBytes += Buffer.byteLength(String((submissionMeta as { videoId?: string | null }).videoId), 'utf8')
+      if ('provider' in submissionMeta && submissionMeta.provider) sizeBytes += Buffer.byteLength(String((submissionMeta as { provider?: string | null }).provider), 'utf8')
     }
   }
 
