@@ -858,8 +858,17 @@ export default function RandomExperiencePage({
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
+  const shouldForceMutedAutoplay = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    const ua = (navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '').toString()
+    const isIOS = /iPad|iPhone|iPod/.test(ua)
+    const isAndroid = /Android/i.test(ua)
+    // Autoplay with sound is blocked on most mobile browsers; mute to allow auto-play.
+    return isIOS || isAndroid
+  }, [])
   const fullscreenSrc = useMemo(() => {
     if (!fullscreenVideo) return ''
+    const muteValue = shouldForceMutedAutoplay ? '1' : '0'
     try {
       const base = fullscreenVideo.src.startsWith('http')
         ? fullscreenVideo.src
@@ -869,30 +878,49 @@ export default function RandomExperiencePage({
       const url = new URL(base)
       if (fullscreenVideo.kind === 'youtube') {
         url.searchParams.set('autoplay', '1')
-        url.searchParams.set('mute', '0')
+        url.searchParams.set('playsinline', '1')
+        url.searchParams.set('mute', muteValue)
       }
       if (fullscreenVideo.kind === 'dailymotion') {
         url.searchParams.set('autoplay', '1')
-        url.searchParams.set('mute', '0')
+        url.searchParams.set('mute', muteValue)
+        url.searchParams.set('playsinline', '1')
       }
       return url.toString()
     } catch {
-      if (fullscreenVideo.kind === 'youtube' && !/mute=0/.test(fullscreenVideo.src)) {
-        return fullscreenVideo.src.replace('mute=1', 'mute=0')
+      if (fullscreenVideo.kind === 'youtube') {
+        let src = fullscreenVideo.src
+        if (!/autoplay=/.test(src)) {
+          src = src.includes('?') ? `${src}&autoplay=1` : `${src}?autoplay=1`
+        }
+        if (!/playsinline=/.test(src)) {
+          src = src.includes('?') ? `${src}&playsinline=1` : `${src}?playsinline=1`
+        }
+        if (shouldForceMutedAutoplay) {
+          if (/mute=0/.test(src)) src = src.replace('mute=0', 'mute=1')
+          else if (!/mute=/.test(src)) src = `${src}&mute=1`
+        } else {
+          if (/mute=1/.test(src)) src = src.replace('mute=1', 'mute=0')
+          else if (!/mute=/.test(src)) src = `${src}&mute=0`
+        }
+        return src
       }
-      if (fullscreenVideo.kind === 'dailymotion' && !/autoplay=/.test(fullscreenVideo.src)) {
-        return fullscreenVideo.src.includes('?')
-          ? `${fullscreenVideo.src}&autoplay=1&mute=0`
-          : `${fullscreenVideo.src}?autoplay=1&mute=0`
-      }
-      if (fullscreenVideo.kind === 'dailymotion' && !/mute=0/.test(fullscreenVideo.src)) {
-        return fullscreenVideo.src.includes('?')
-          ? `${fullscreenVideo.src}&mute=0`
-          : `${fullscreenVideo.src}?mute=0`
+      if (fullscreenVideo.kind === 'dailymotion') {
+        let src = fullscreenVideo.src
+        if (!/autoplay=/.test(src)) src = src.includes('?') ? `${src}&autoplay=1` : `${src}?autoplay=1`
+        if (!/playsinline=/.test(src)) src = src.includes('?') ? `${src}&playsinline=1` : `${src}?playsinline=1`
+        if (shouldForceMutedAutoplay) {
+          if (/mute=0/.test(src)) src = src.replace('mute=0', 'mute=1')
+          else if (!/mute=/.test(src)) src = `${src}&mute=1`
+        } else {
+          if (/mute=1/.test(src)) src = src.replace('mute=1', 'mute=0')
+          else if (!/mute=/.test(src)) src = `${src}&mute=0`
+        }
+        return src
       }
       return fullscreenVideo.src
     }
-  }, [fullscreenVideo])
+  }, [fullscreenVideo, shouldForceMutedAutoplay])
 
   const theme = THEMES[themeIdx]
   const contentHeight = useMemo(() => {
