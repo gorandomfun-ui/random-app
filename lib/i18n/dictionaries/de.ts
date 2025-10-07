@@ -81,7 +81,9 @@ const deDictionary = {
       "previewAlt": "Vorschau des ausgewählten Bildes",
       "remove": "Datei entfernen",
       "firstName": "Vorname",
-      "lastName": "Nachname"
+      "lastName": "Nachname",
+      "keywordsLabel": "Bild-Schlüsselwörter",
+      "keywordsHint": "Füge 4–5 Stichwörter durch Kommata getrennt hinzu (Portrait, Nacht, Straße...)"
     },
     "fileTooLarge": "Das Bild ist größer als 1 MB.",
     "errors": {
@@ -92,7 +94,8 @@ const deDictionary = {
       "storageUnavailable": "Einsendungen sind gerade nicht verfügbar. Versuch es später erneut.",
       "missingContributor": "Wer hat dieses Bild erstellt? Bitte Name angeben.",
       "missingAuthor": "Bitte gib an, wer dieses Zitat gesagt hat.",
-      "duplicate": "Dieser Link befindet sich bereits in unserer Warteschlange."
+      "duplicate": "Dieser Link befindet sich bereits in unserer Warteschlange.",
+      "missingKeywords": "Bitte gib 4–5 Schlüsselwörter für dein Bild an."
     },
     "text": {
       "placeholder": "Schreibe deinen besten Witz, dein Zitat oder deinen Fakt...",

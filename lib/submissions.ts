@@ -27,6 +27,7 @@ type SubmissionData =
       imageUrl?: string
       imageFile?: ImageFilePayload | null
       contributor: { firstName: string; lastName: string }
+      keywords: string[]
     }
   | {
       kind: 'text'
@@ -120,6 +121,7 @@ export type ImageSubmissionPayload = {
   imageFile?: ImageFilePayload | null
   firstName: string
   lastName: string
+  keywords: string[]
 }
 
 export type TextSubmissionPayload = {
@@ -159,6 +161,30 @@ function sanitizeName(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+function sanitizeKeywordsList(values: unknown, min = 4, max = 6): string[] {
+  const results: string[] = []
+  if (!values) return results
+  const list = Array.isArray(values)
+    ? values
+    : typeof values === 'string'
+      ? values.split(/[,\n]/)
+      : []
+  const seen = new Set<string>()
+  for (const entry of list) {
+    if (typeof entry !== 'string') continue
+    const trimmed = entry.replace(/\s+/g, ' ').trim()
+    if (!trimmed) continue
+    const lower = trimmed.toLowerCase()
+    if (seen.has(lower)) continue
+    if (trimmed.length < 2 || trimmed.length > 40) continue
+    seen.add(lower)
+    results.push(trimmed)
+    if (results.length >= max) break
+  }
+  if (results.length < min) return []
+  return results
+}
+
 export class SubmissionError extends Error {
   status: number
 
@@ -191,8 +217,15 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
     const firstName = sanitizeName(payload.firstName)
     const lastName = sanitizeName(payload.lastName)
     if (!firstName || !lastName) throw new SubmissionError('missing-contributor')
-    data = { kind: 'image', imageUrl, imageFile, contributor: { firstName, lastName } }
-    sizeBytes = (imageFile?.size ?? 0) + (imageUrl ? Buffer.byteLength(imageUrl, 'utf8') : 0) + Buffer.byteLength(firstName, 'utf8') + Buffer.byteLength(lastName, 'utf8')
+    const keywords = sanitizeKeywordsList(payload.keywords, 4, 6)
+    if (!keywords.length) throw new SubmissionError('missing-keywords')
+    data = { kind: 'image', imageUrl, imageFile, contributor: { firstName, lastName }, keywords }
+    sizeBytes =
+      (imageFile?.size ?? 0) +
+      (imageUrl ? Buffer.byteLength(imageUrl, 'utf8') : 0) +
+      Buffer.byteLength(firstName, 'utf8') +
+      Buffer.byteLength(lastName, 'utf8') +
+      keywords.reduce((sum, keyword) => sum + Buffer.byteLength(keyword, 'utf8'), 0)
   } else if (payload.type === 'text') {
     const text = payload.text.trim()
     if (!text) throw new SubmissionError('missing-text')
@@ -363,6 +396,7 @@ async function approveImageSubmission(record: SubmissionRecord, db: Db): Promise
   if (!url) throw new SubmissionError('missing-image', 400)
   const contributor = data.contributor
   const contributorName = contributor ? `${contributor.firstName} ${contributor.lastName}`.trim() : ''
+  const keywords = Array.isArray(data.keywords) ? data.keywords : []
   const doc = {
     type: 'image',
     url,
@@ -372,8 +406,8 @@ async function approveImageSubmission(record: SubmissionRecord, db: Db): Promise
       name: contributorName ? `Community submission – ${contributorName}` : 'Community submission',
       url: data.imageUrl ? normalizeUrl(data.imageUrl) : undefined,
     },
-    tags: [],
-    keywords: [],
+    tags: keywords,
+    keywords,
   }
   const result = await db.collection('items').insertOne(doc)
   return result.insertedId

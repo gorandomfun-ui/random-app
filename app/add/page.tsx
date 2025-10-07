@@ -79,6 +79,7 @@ export default function AddPage() {
   const [imageUrl, setImageUrl] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [imageKeywords, setImageKeywords] = useState('')
   const [textKind, setTextKind] = useState<'joke' | 'quote' | 'fact'>('joke')
   const [textValue, setTextValue] = useState('')
   const [quoteAuthor, setQuoteAuthor] = useState('')
@@ -278,6 +279,15 @@ export default function AddPage() {
         setMessage({ type: 'error', code: 'missing-contributor', text: t('add.errors.missingContributor', 'Please tell us who captured this image.') })
         return
       }
+      const keywordList = imageKeywords
+        .split(/[,\n]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+      if (keywordList.length < 4 || keywordList.length > 6) {
+        setMessage({ type: 'error', code: 'missing-keywords', text: t('add.errors.missingKeywords', 'Please add 4–5 keywords for your image.') })
+        return
+      }
+      form.set('imageKeywords', keywordList.join(','))
       if (!imageFile && !imageUrl.trim()) {
         setMessage({ type: 'error', code: 'missing-image', text: t('add.errors.imageRequired', 'Please upload or link to an image.') })
         return
@@ -324,6 +334,7 @@ export default function AddPage() {
         setImageUrl('')
         setFirstName('')
         setLastName('')
+        setImageKeywords('')
         setTextValue('')
         setQuoteAuthor('')
         setWebUrl('')
@@ -337,7 +348,7 @@ export default function AddPage() {
     } finally {
       setSubmitting(false)
     }
-  }, [email, fetchUsage, firstName, imageFile, imageFilePreview, imageUrl, lastName, preview.data, quoteAuthor, selectedType, submitting, t, textKind, textValue, usage?.allowed, videoUrl, webUrl])
+  }, [email, fetchUsage, firstName, imageFile, imageFilePreview, imageKeywords, imageUrl, lastName, preview.data, quoteAuthor, selectedType, submitting, t, textKind, textValue, usage?.allowed, videoUrl, webUrl])
 
 
   return (
@@ -476,6 +487,20 @@ export default function AddPage() {
                     className="w-full rounded-3xl border border-white/10 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/40 focus:border-white"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold" htmlFor="image-keywords">
+                  {t('add.image.keywordsLabel', 'Image keywords')}
+                </label>
+                <textarea
+                  id="image-keywords"
+                  value={imageKeywords}
+                  onChange={(event) => setImageKeywords(event.target.value)}
+                  rows={2}
+                  placeholder={t('add.image.keywordsHint', 'Add 4–5 keywords separated by commas (portrait, street, night...)')}
+                  className="w-full rounded-3xl border border-white/10 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/40 focus:border-white"
+                />
               </div>
 
               {fileError === 'file-too-large' && (
@@ -817,6 +842,8 @@ function translateError(code: string, t: ReturnType<typeof useI18n>['t']): strin
       return t('add.errors.missingAuthor', 'Please share who said this quote.')
     case 'missing-url':
       return t('add.errors.urlRequired', 'Please share a valid URL.')
+    case 'missing-keywords':
+      return t('add.errors.missingKeywords', 'Please add 4–5 keywords for your image.')
     case 'duplicate-url':
       return t('add.errors.duplicate', 'We already have this link in our queue.')
     case 'storage-full':

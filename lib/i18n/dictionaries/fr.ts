@@ -81,7 +81,9 @@ const frDictionary = {
       "previewAlt": "Prévisualisation de l'image choisie",
       "remove": "Retirer le fichier",
       "firstName": "Prénom",
-      "lastName": "Nom"
+      "lastName": "Nom",
+      "keywordsLabel": "Mots-clés de l'image",
+      "keywordsHint": "Ajoute 4 à 5 mots-clés séparés par des virgules (portrait, nuit, rue...)"
     },
     "fileTooLarge": "L'image dépasse 1 Mo.",
     "errors": {
@@ -92,7 +94,8 @@ const frDictionary = {
       "storageUnavailable": "Les soumissions sont indisponibles pour le moment. Réessaie plus tard.",
       "missingContributor": "Indique qui est l'auteur de cette image.",
       "missingAuthor": "Indique qui a prononcé cette citation.",
-      "duplicate": "Ce lien est déjà dans notre file d'attente."
+      "duplicate": "Ce lien est déjà dans notre file d'attente.",
+      "missingKeywords": "Ajoute 4 à 5 mots-clés pour ton image."
     },
     "text": {
       "placeholder": "Écris ta meilleure blague, citation ou info...",

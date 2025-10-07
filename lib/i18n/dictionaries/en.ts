@@ -81,7 +81,9 @@ const enDictionary = {
       "previewAlt": "Selected image preview",
       "remove": "Remove file",
       "firstName": "First name",
-      "lastName": "Last name"
+      "lastName": "Last name",
+      "keywordsLabel": "Image keywords",
+      "keywordsHint": "Add 4–5 keywords separated by commas (portrait, street, night...)"
     },
     "fileTooLarge": "The selected image is larger than 1 MB.",
     "errors": {
@@ -92,7 +94,8 @@ const enDictionary = {
       "storageUnavailable": "Submissions are down right now. Please retry later.",
       "missingContributor": "Please tell us who captured this image.",
       "missingAuthor": "Please share who said this quote.",
-      "duplicate": "We already have this link in our queue."
+      "duplicate": "We already have this link in our queue.",
+      "missingKeywords": "Please add 4–5 keywords for your image."
     },
     "text": {
       "placeholder": "Write your best joke, quote or fact...",

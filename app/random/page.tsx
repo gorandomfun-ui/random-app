@@ -522,6 +522,8 @@ function DailymotionEmbed({
       params.set('queue-enable', '0')
       params.set('sharing-enable', '0')
       params.set('ui-logo', '0')
+      params.set('ui-start-screen-info', 'false')
+      params.set('ui-start-screen-controls', 'true')
       params.set('quality', '480')
       params.set('playsinline', '1')
       if (disableFullscreen) {

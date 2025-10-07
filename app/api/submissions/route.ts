@@ -53,6 +53,13 @@ async function buildPayload(request: NextRequest): Promise<SubmissionPayload> {
           fileName: fileEntry.name,
         } as never
       }
+      const keywordsRaw = form.get('imageKeywords')
+      const keywords = typeof keywordsRaw === 'string'
+        ? keywordsRaw
+            .split(/[,\n]/)
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : []
       const firstNameRaw = form.get('firstName')
       const lastNameRaw = form.get('lastName')
       return {
@@ -62,6 +69,7 @@ async function buildPayload(request: NextRequest): Promise<SubmissionPayload> {
         imageFile,
         firstName: typeof firstNameRaw === 'string' ? firstNameRaw : '',
         lastName: typeof lastNameRaw === 'string' ? lastNameRaw : '',
+        keywords,
       }
     }
 
@@ -102,6 +110,9 @@ async function buildPayload(request: NextRequest): Promise<SubmissionPayload> {
   }
 
   const data = (await request.json()) as SubmissionPayload
+  if (data.type === 'image' && !Array.isArray(data.keywords)) {
+    data.keywords = []
+  }
   return data
 }
 

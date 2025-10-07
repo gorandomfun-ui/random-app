@@ -81,7 +81,9 @@ const jpDictionary = {
       "previewAlt": "選択した画像のプレビュー",
       "remove": "ファイルを削除",
       "firstName": "名",
-      "lastName": "姓"
+      "lastName": "姓",
+      "keywordsLabel": "画像のキーワード",
+      "keywordsHint": "カンマ区切りで4〜5個のキーワードを入力 (ポートレート, 夜, 都市 など)"
     },
     "fileTooLarge": "画像サイズが1MBを超えています。",
     "errors": {
@@ -92,7 +94,8 @@ const jpDictionary = {
       "storageUnavailable": "現在投稿機能は利用できません。後でもう一度お試しください。",
       "missingContributor": "この画像の作者の名前を教えてください。",
       "missingAuthor": "この引用を発言した人を教えてください。",
-      "duplicate": "このリンクはすでに審査待ちです。"
+      "duplicate": "このリンクはすでに審査待ちです。",
+      "missingKeywords": "画像用に4〜5個のキーワードを入力してください。"
     },
     "text": {
       "placeholder": "お気に入りのジョークや引用、豆知識を書いてください...",

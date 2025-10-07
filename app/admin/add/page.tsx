@@ -320,6 +320,9 @@ function SubmissionCard({
             <p className="text-xs text-white/60">
               Contributor: {submission.data.contributor.firstName} {submission.data.contributor.lastName}
             </p>
+            {submission.data.keywords?.length ? (
+              <p className="text-xs text-white/60">Keywords: {submission.data.keywords.join(', ')}</p>
+            ) : null}
           </>
         ) : null}
         {submission.type === 'text' && submission.data.kind === 'text' && submission.data.author ? (
