@@ -35,7 +35,7 @@ function getItemKey(item: RandomContentItem): string {
     case 'fact':
       return `${item.type}:${item.text || ''}`
     default:
-      return `${item.type}:${Math.random()}`
+      return `${(item as { type?: string }).type || 'unknown'}:${Math.random()}`
   }
 }
 
