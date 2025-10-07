@@ -456,14 +456,26 @@ function YouTubeEmbed({
             transform: 'translate(-50%, -50%)',
           }}
         />
-        <button
-          type="button"
-          onClick={handleFullscreen}
-          className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-          style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
-        >
-          {disableFullscreen ? openExternallyLabel : fullscreenLabel}
-        </button>
+        {!disableFullscreen ? (
+          <button
+            type="button"
+            onClick={handleFullscreen}
+            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+            style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+          >
+            {fullscreenLabel}
+          </button>
+        ) : null}
+        {disableFullscreen ? (
+          <button
+            type="button"
+            onClick={handleFullscreen}
+            className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/90 hover:bg-white/25"
+            style={{ pointerEvents: 'auto' }}
+          >
+            {openExternallyLabel}
+          </button>
+        ) : null}
         {isMuted ? (
           <button
             type="button"
@@ -512,13 +524,17 @@ function DailymotionEmbed({
       params.set('ui-logo', '0')
       params.set('quality', '480')
       params.set('playsinline', '1')
+      if (disableFullscreen) {
+        params.set('fullscreen-enable', '0')
+        params.set('fullscreen-action', 'app')
+      }
       return videoId
         ? `https://www.dailymotion.com/embed/video/${videoId}?${params.toString()}`
         : url
     } catch {
       return url
     }
-  }, [url])
+  }, [disableFullscreen, url])
 
   const handleFullscreen = async () => {
     if (disableFullscreen) {
@@ -563,14 +579,26 @@ function DailymotionEmbed({
             transform: 'translate(-50%, -50%)',
           }}
         />
-        <button
-          type="button"
-          onClick={handleFullscreen}
-          className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-          style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
-        >
-          {disableFullscreen ? openExternallyLabel : fullscreenLabel}
-        </button>
+        {!disableFullscreen ? (
+          <button
+            type="button"
+            onClick={handleFullscreen}
+            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
+            style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
+          >
+            {fullscreenLabel}
+          </button>
+        ) : null}
+        {disableFullscreen ? (
+          <button
+            type="button"
+            onClick={handleFullscreen}
+            className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/90 hover:bg-white/25"
+            style={{ pointerEvents: 'auto' }}
+          >
+            {openExternallyLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -784,13 +812,13 @@ function ContentRenderer({
         </p>
         {disclaimer ? (
           <div
-            className="mt-4 max-w-md px-4 py-3 text-sm font-semibold uppercase tracking-wide"
+            className="mt-3 max-w-sm px-3 py-2 text-xs"
             style={{
               backgroundColor: '#b1001f',
               color: '#fff5f5',
-              borderRadius: '16px',
-              border: '1px solid rgba(255,255,255,0.35)',
               fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
             }}
           >
             {disclaimer}
