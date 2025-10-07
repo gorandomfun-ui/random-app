@@ -207,6 +207,7 @@ export default function HomePage() {
 
   const heroCopy = useMemo(() => ({
     startButton: t('hero.startButton', 'GO RANDOM'),
+    noroscopeButton: t('hero.noroscopeButton', 'NOROSCOPE'),
     tagline1: t('hero.tagline1', 'EXPLORE RANDOM CONTENTS.'),
     tagline2: t('hero.tagline2', 'NO MISSION, NO GOAL, NO REASON.'),
     tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
@@ -223,6 +224,7 @@ export default function HomePage() {
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
 
@@ -314,6 +316,25 @@ export default function HomePage() {
 
   const targetBtnW = useButtonWidth(heroRef, logoRef)
 
+  const heroButtonsWidth = useMemo(() => {
+    if (!targetBtnW) return undefined
+    const width = viewportWidth ?? 0
+    if (width >= 768) {
+      const total = targetBtnW + targetBtnW / 3 + 24
+      return Math.min(Math.round(total), 880)
+    }
+    return targetBtnW
+  }, [targetBtnW, viewportWidth])
+
+  const noroscopeButtonWidth = useMemo(() => {
+    if (!targetBtnW) return undefined
+    const width = viewportWidth ?? 0
+    if (width >= 768) {
+      return Math.round(targetBtnW / 3)
+    }
+    return undefined
+  }, [targetBtnW, viewportWidth])
+
   const shareFromFooter = useCallback(() => {
     const shareData = {
       title: 'Random',
@@ -352,6 +373,10 @@ export default function HomePage() {
       router.push('/random')
     }
   }, [addAction, isSecond, maybeSpawnDiamond, router, selectedTypes])
+
+  const handleNoroscope = useCallback(() => {
+    router.push('/noroscope')
+  }, [router])
 
   return (
     <main className="min-h-screen flex flex-col" style={mainStyle}>
@@ -422,26 +447,44 @@ export default function HomePage() {
 
           <div
             className="mt-6 mx-auto w-full max-w-[880px]"
-            style={{ width: targetBtnW ? `${targetBtnW}px` : undefined }}
+            style={{ width: heroButtonsWidth ? `${heroButtonsWidth}px` : undefined }}
           >
-            <button
-              onClick={handleStart}
-              className={`w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase flex items-center justify-center ${isButtonBursting ? 'btn-energized' : ''}`}
-              style={{
-                backgroundColor: theme.text,
-                color: theme.cream,
-                fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
-                fontWeight: 700,
-              }}
-            >
-              <span className="sr-only">{heroCopy.startButton}</span>
-              <AnimatedButtonLabel
-                text={heroCopy.startButton}
-                color={theme.cream}
-                trigger={trigger}
-                toSecond={isSecond}
-              />
-            </button>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-center md:gap-4">
+              <button
+                onClick={handleStart}
+                className={`w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase flex items-center justify-center ${isButtonBursting ? 'btn-energized' : ''}`}
+                style={{
+                  backgroundColor: theme.text,
+                  color: theme.cream,
+                  fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
+                  fontWeight: 700,
+                  width: viewportWidth && viewportWidth >= 768 && targetBtnW ? `${targetBtnW}px` : undefined,
+                }}
+              >
+                <span className="sr-only">{heroCopy.startButton}</span>
+                <AnimatedButtonLabel
+                  text={heroCopy.startButton}
+                  color={theme.cream}
+                  trigger={trigger}
+                  toSecond={isSecond}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNoroscope}
+                className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase flex items-center justify-center"
+                style={{
+                  backgroundColor: theme.cream,
+                  color: theme.text,
+                  fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
+                  fontWeight: 700,
+                  width: viewportWidth && viewportWidth >= 768 && noroscopeButtonWidth ? `${noroscopeButtonWidth}px` : undefined,
+                }}
+              >
+                <span>{heroCopy.noroscopeButton}</span>
+              </button>
+            </div>
           </div>
 
           <p
@@ -454,7 +497,7 @@ export default function HomePage() {
           </p>
 
           <div
-            className="mt-6 flex flex-col items-center font-inter font-semibold text-base md:text-lg tracking-tight"
+            className="mt-6 hidden flex-col items-center font-inter font-semibold text-base md:text-lg tracking-tight md:flex"
             style={{ color: theme.cream, letterSpacing: '-0.01em' }}
           >
             <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5 md:gap-x-1.5">
@@ -575,6 +618,15 @@ export default function HomePage() {
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
+              </Link>
+
+              <Link
+                href="/noroscope"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center"
+                style={{ color: theme.cream }}
+              >
+                <span>{noroscopeLabel}</span>
               </Link>
 
               <Link

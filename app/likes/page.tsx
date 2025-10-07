@@ -120,6 +120,7 @@ export default function LikesPage() {
   }), [theme.bg, theme.cream])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
   const adFormat = useMemo(() => {
@@ -353,6 +354,15 @@ export default function LikesPage() {
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
+              </Link>
+
+              <Link
+                href="/noroscope"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center"
+                style={{ color: theme.cream }}
+              >
+                <span>{noroscopeLabel}</span>
               </Link>
 
               <Link

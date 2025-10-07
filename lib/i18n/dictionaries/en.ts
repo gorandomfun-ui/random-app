@@ -3,7 +3,19 @@ const enDictionary = {
     "tagline1": "EXPLORE RANDOM CONTENTS.",
     "tagline2": "NO MISSION, NO GOAL, NO REASON.",
     "tagline3": "ONLY USELESS SURPRISE.",
-    "startButton": "GO RANDOM"
+    "startButton": "GO RANDOM",
+    "noroscopeButton": "NOROSCOPE"
+  },
+  "noroscope": {
+    "menu": "Noroscope",
+    "titleBar": "Here is your Noroscope for today.",
+    "shareTitle": "Share your Noroscope",
+    "shareAction": "Share this Noroscope",
+    "loading": "Aligning today's Noroscope...",
+    "error": "Couldn't load everything. Give it another try.",
+    "retry": "Try again",
+    "empty": "No content available yet.",
+    "expressionFallback": "The vibes are undecided today."
   },
   "nav": {
     "images": "images",

@@ -3,7 +3,19 @@ const deDictionary = {
     "tagline1": "ENTDECKE ZUFÄLLIGE INHALTE.",
     "tagline2": "KEINE MISSION, KEIN ZIEL, KEIN GRUND.",
     "tagline3": "NUR NUTZLOSE ÜBERRASCHUNG.",
-    "startButton": "GO RANDOM"
+    "startButton": "GO RANDOM",
+    "noroscopeButton": "NOROSCOPE"
+  },
+  "noroscope": {
+    "menu": "Noroscope",
+    "titleBar": "Hier ist dein Noroscope für heute.",
+    "shareTitle": "Teile dein Noroscope",
+    "shareAction": "Dieses Noroscope teilen",
+    "loading": "Wir stimmen dein Noroscope ab...",
+    "error": "Nicht alles konnte geladen werden. Bitte erneut versuchen.",
+    "retry": "Erneut versuchen",
+    "empty": "Noch kein Inhalt verfügbar.",
+    "expressionFallback": "Die Stimmung ist heute noch unentschieden."
   },
   "nav": {
     "images": "Bilder",

@@ -3,7 +3,19 @@ const jpDictionary = {
     "tagline1": "ランダムコンテンツを探索。",
     "tagline2": "ミッションなし、ゴールなし、理由なし。",
     "tagline3": "無駄な驚きだけ。",
-    "startButton": "GO RANDOM"
+    "startButton": "GO RANDOM",
+    "noroscopeButton": "NOROSCOPE"
+  },
+  "noroscope": {
+    "menu": "Noroscope",
+    "titleBar": "今日のノロスコープはこちら。",
+    "shareTitle": "ノロスコープをシェア",
+    "shareAction": "このノロスコープを共有",
+    "loading": "ノロスコープを調整中...",
+    "error": "すべてを読み込めませんでした。再試行してください。",
+    "retry": "再試行",
+    "empty": "利用できるコンテンツがありません。",
+    "expressionFallback": "今日のムードはまだ決めかねています。"
   },
   "nav": {
     "images": "画像",

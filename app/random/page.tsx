@@ -1064,6 +1064,7 @@ export default function RandomExperiencePage({
   const likeLabel = useMemo(() => t('modal.like', 'Like'), [t])
   const randomAgainLabel = useMemo(() => t('modal.randomAgain', 'RANDOM AGAIN'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
@@ -1864,6 +1865,15 @@ const sequenceStateRef = useRef({
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
+              </Link>
+
+              <Link
+                href="/noroscope"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center"
+                style={{ color: theme.cream }}
+              >
+                <span>{noroscopeLabel}</span>
               </Link>
 
               <Link

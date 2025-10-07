@@ -3,7 +3,19 @@ const frDictionary = {
     "tagline1": "EXPLORE DES CONTENUS ALÉATOIRES.",
     "tagline2": "ZÉRO MISSION. ZÉRO SENS. ZÉRO UTILITÉ.",
     "tagline3": "SEULEMENT DES SURPRISES INUTILES.",
-    "startButton": "GO RANDOM"
+    "startButton": "GO RANDOM",
+    "noroscopeButton": "NOROSCOPE"
+  },
+  "noroscope": {
+    "menu": "Noroscope",
+    "titleBar": "Voici votre Noroscope du jour.",
+    "shareTitle": "Partager votre Noroscope",
+    "shareAction": "Partager ce Noroscope",
+    "loading": "On aligne votre Noroscope...",
+    "error": "Impossible de tout charger. Réessayez.",
+    "retry": "Réessayer",
+    "empty": "Contenu indisponible.",
+    "expressionFallback": "L'ambiance hésite encore aujourd'hui."
   },
   "nav": {
     "images": "images",
