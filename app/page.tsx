@@ -17,7 +17,6 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import ScoreCounter from '@/components/ScoreCounter'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
@@ -358,10 +357,10 @@ export default function HomePage() {
     <main className="min-h-screen flex flex-col" style={mainStyle}>
       <header
         ref={headerRef}
-        className="relative flex items-center px-4 pt-4 pb-2"
+        className="relative flex items-center justify-between px-4 pt-4 pb-2"
         style={{ height: HEADER_H }}
       >
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             aria-label="Menu"
@@ -384,17 +383,12 @@ export default function HomePage() {
         </div>
 
         <div className="flex-1 flex justify-center">
-          <ScoreCounter variant="home" style={{ color: theme.cream }} />
-        </div>
-
-        <div className="flex items-center justify-end gap-2 flex-1">
-          <button
-            onClick={() => setIsShuffleOpen(true)}
-            aria-label={shuffleLabel}
-            className="flex items-center"
-          >
+          <button onClick={() => setIsShuffleOpen(true)} aria-label={shuffleLabel} className="flex items-center">
             <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
           </button>
+        </div>
+
+        <div className="flex items-center gap-2">
           <div style={{ color: theme.text }} className="flex">
             <LanguageSwitcher />
           </div>
@@ -555,8 +549,7 @@ export default function HomePage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between gap-3">
-              <ScoreCounter variant="menu" style={{ color: '#191916' }} />
+            <div className="flex items-center justify-end">
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

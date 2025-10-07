@@ -115,7 +115,14 @@ export async function GET(request: NextRequest) {
   if (isAdmin(request)) {
     try {
       const submissions = await listPendingSubmissions()
-      return NextResponse.json({ submissions })
+      const usage = await getSubmissionUsage()
+      return NextResponse.json({
+        submissions,
+        usage,
+        allowed: usage.remaining > 0,
+        limit: SUBMISSION_STORAGE_LIMIT,
+        fileLimit: SUBMISSION_FILE_LIMIT,
+      })
     } catch (error) {
       console.error('[submissions-admin]', error)
       return NextResponse.json({ error: 'admin-fetch-failed' }, { status: 500 })

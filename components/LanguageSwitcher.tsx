@@ -93,6 +93,7 @@ export default function LanguageSwitcher() {
         ref={btnRef}
         onClick={() => setOpen(o => !o)}
         className="ml-1 rounded-full px-2 py-1 text-[10px] font-bold border border-white/20 hover:bg-white/10"
+        style={{ fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif", fontWeight: 700 }}
         aria-label="change language"
       >
         {(locale || 'en').toUpperCase()}

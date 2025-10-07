@@ -2,7 +2,6 @@
 
 import CookieSettingsLink from '@/components/CookieSettingsLink'
 import MonoIcon from '@/components/MonoIcon'
-import ScoreCounter from '@/components/ScoreCounter'
 import { THEMES } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 import Link from 'next/link'
@@ -207,8 +206,7 @@ export default function LegalPage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between gap-3">
-              <ScoreCounter variant="menu" style={{ color: '#191916' }} />
+            <div className="flex items-center justify-end">
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

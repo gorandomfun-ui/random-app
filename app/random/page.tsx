@@ -7,7 +7,6 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import ScoreCounter from '@/components/ScoreCounter'
 import ShareMenu from '@/components/ShareMenu'
 import ShufflePicker from '@/components/ShufflePicker'
 import { useI18n } from '@/providers/I18nProvider'
@@ -784,9 +783,18 @@ function ContentRenderer({
           {item.text}
         </p>
         {disclaimer ? (
-          <p className="mt-3 text-xs font-inter opacity-75" style={{ color: theme.cream }}>
+          <div
+            className="mt-4 max-w-md px-4 py-3 text-sm font-semibold uppercase tracking-wide"
+            style={{
+              backgroundColor: '#b1001f',
+              color: '#fff5f5',
+              borderRadius: '16px',
+              border: '1px solid rgba(255,255,255,0.35)',
+              fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+            }}
+          >
             {disclaimer}
-          </p>
+          </div>
         ) : null}
       </div>
     )
@@ -1681,35 +1689,22 @@ const sequenceStateRef = useRef({
       </header>
 
       <div className="px-4 sm:px-6" style={{ marginBottom: '10px' }}>
-        <div className="flex items-stretch" style={{ gap: '3px' }}>
-          <div className="flex justify-center" style={{ flex: '0 0 66%' }}>
-            {categoryLabel ? (
-              <div
-                className="px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3 text-center"
-                style={{
-                  backgroundColor: theme.text,
-                  color: theme.cream,
-                  fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
-                  height: '40px',
-                  width: '100%',
-                }}
-              >
-                {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
-                <span>{categoryLabel}</span>
-              </div>
-            ) : (
-              <div style={{ height: '40px', width: '100%' }} />
-            )}
+        {categoryLabel ? (
+          <div
+            className="px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3 text-center"
+            style={{
+              backgroundColor: theme.text,
+              color: theme.cream,
+              fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+              height: '40px',
+            }}
+          >
+            {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
+            <span>{categoryLabel}</span>
           </div>
-
-          <div className="flex justify-end" style={{ flex: '0 0 calc(34% - 3px)' }}>
-            <ScoreCounter
-              variant="random"
-              className="w-full h-full"
-              style={{ color: '#191916' }}
-            />
-          </div>
-        </div>
+        ) : (
+          <div style={{ height: '40px' }} />
+        )}
       </div>
 
       <section className="flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
@@ -1813,8 +1808,7 @@ const sequenceStateRef = useRef({
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between gap-3">
-              <ScoreCounter variant="menu" style={{ color: '#191916' }} />
+            <div className="flex items-center justify-end">
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

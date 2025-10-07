@@ -52,6 +52,8 @@ export default function AdminAddPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<PublicSubmission[]>([])
+  const [usage, setUsage] = useState<{ remaining: number; limit: number } | null>(null)
+  const [usageAllowed, setUsageAllowed] = useState<boolean | null>(null)
   const [cardState, setCardState] = useState<Record<string, SubmissionCardState>>({})
 
   const theme = THEMES[0]
@@ -66,11 +68,19 @@ export default function AdminAddPage() {
       if (!res.ok) {
         setError(res.status === 401 ? 'Wrong admin key' : 'Unable to fetch submissions')
         setSubmissions([])
+        setUsage(null)
+        setUsageAllowed(null)
         setLoading(false)
         return false
       }
-      const json = (await res.json()) as { submissions: PublicSubmission[] }
+      const json = (await res.json()) as {
+        submissions: PublicSubmission[]
+        usage?: { remaining: number; limit: number }
+        allowed?: boolean
+      }
       setSubmissions(json.submissions || [])
+      setUsage(json.usage ?? null)
+      setUsageAllowed(typeof json.allowed === 'boolean' ? json.allowed : null)
       setError(null)
       setCardState((prev) => {
         const next: Record<string, SubmissionCardState> = { ...prev }
@@ -86,6 +96,8 @@ export default function AdminAddPage() {
       console.error('[admin-submissions]', err)
       setError('Network error while loading submissions')
       setSubmissions([])
+      setUsage(null)
+      setUsageAllowed(null)
       return false
     } finally {
       setLoading(false)
@@ -96,6 +108,13 @@ export default function AdminAddPage() {
     if (!adminKey) return
     loadSubmissions(adminKey).catch(() => undefined)
   }, [adminKey, loadSubmissions])
+
+  useEffect(() => {
+    if (!adminKey) {
+      setUsage(null)
+      setUsageAllowed(null)
+    }
+  }, [adminKey])
 
   const handleLogin = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -197,6 +216,12 @@ export default function AdminAddPage() {
                 <p className="text-sm font-semibold">Pending submissions</p>
                 <p className="text-xs opacity-70">{submissions.length} item(s)</p>
               </div>
+              {usage ? (
+                <div className="rounded-xl border border-white/15 px-3 py-2 text-xs text-white/80">
+                  Remaining: {formatBytesToMb(usage.remaining)} MB / {formatBytesToMb(usage.limit)} MB
+                  {usageAllowed === false ? <span className="ml-2 text-rose-300">(Queue full)</span> : null}
+                </div>
+              ) : null}
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -336,4 +361,8 @@ function SubmissionCard({
       </div>
     </div>
   )
+}
+
+function formatBytesToMb(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1)
 }

@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import HeartIcon from '@/components/HeartIcon'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import ScoreCounter from '@/components/ScoreCounter'
 import { THEMES } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 
@@ -64,10 +63,6 @@ const TYPE_OPTIONS: Array<{ key: SubmissionKind; icon: string }> = [
   { key: 'web', icon: '/icons/web.svg' },
   { key: 'video', icon: '/icons/Video.svg' },
 ]
-
-function formatBytesToMb(bytes: number): string {
-  return (bytes / (1024 * 1024)).toFixed(1)
-}
 
 export default function AddPage() {
   const { t, locale, locales, setLocale } = useI18n()
@@ -344,7 +339,6 @@ export default function AddPage() {
     }
   }, [email, fetchUsage, firstName, imageFile, imageFilePreview, imageUrl, lastName, preview.data, quoteAuthor, selectedType, submitting, t, textKind, textValue, usage?.allowed, videoUrl, webUrl])
 
-  const remainingMb = usage ? formatBytesToMb(usage.remainingBytes) : null
 
   return (
     <main className="min-h-screen pb-12" style={mainStyle}>
@@ -373,7 +367,7 @@ export default function AddPage() {
           gapDesktop={1}
         />
 
-        <ScoreCounter variant="menu" style={{ color: theme.cream }} />
+        <div style={{ width: 28, height: 28 }} />
       </header>
 
       <div className="px-6">
@@ -414,18 +408,6 @@ export default function AddPage() {
               </button>
             ))}
           </div>
-
-          {usage && (
-            <div className="rounded-2xl border border-white/10 px-4 py-2 text-sm text-white/80">
-              {usage.allowed ? (
-                <span>
-                  {t('add.remainingSpace', 'Remaining space:')} {remainingMb} MB
-                </span>
-              ) : (
-                <span>{t('add.storageFull', 'Submissions are full for now. Try again later.')}</span>
-              )}
-            </div>
-          )}
 
           {selectedType === 'image' && (
             <section className="space-y-4">
@@ -748,8 +730,7 @@ function MenuOverlay({ close, languagesOpen, setLanguagesOpen, langs, locale, se
           fontFamily: 'var(--font-inter-tight), sans-serif',
         }}
       >
-        <div className="flex items-center justify-between gap-3">
-          <ScoreCounter variant="menu" style={{ color: '#191916' }} />
+        <div className="flex items-center justify-end">
           <button type="button" aria-label="Close" onClick={close} className="text-2xl" style={{ color: theme.cream }}>
             ×
           </button>
