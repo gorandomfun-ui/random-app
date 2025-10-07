@@ -540,9 +540,10 @@ export default function NoroscopePage() {
         const candidate = response?.item ?? null
         if (!candidate) continue
 
-        if (candidate.type === 'encourage') continue
-        if (!NOROSCOPE_TYPES.includes(candidate.type as ItemType)) continue
-        if (candidate.type === 'fact' && (candidate as FactItem).variant === 'quiz') continue
+        const candidateType = candidate.type as ItemType | 'encourage'
+        if (candidateType === 'encourage') continue
+        if (!NOROSCOPE_TYPES.includes(candidateType)) continue
+        if (candidateType === 'fact' && (candidate as FactItem).variant === 'quiz') continue
 
         const key = getItemKey(candidate)
         const allowDuplicate = attempts > 24
@@ -634,7 +635,7 @@ export default function NoroscopePage() {
     }
 
     if (item.type === 'video') {
-      const badgeText = (navLabels.videos || 'video').toUpperCase()
+      const badgeText = (navLabels.video || 'video').toUpperCase()
       const badge = (
         <span
           className="absolute top-3 left-3 px-3 py-1 text-[10px] font-inter uppercase tracking-[0.24em]"
@@ -744,10 +745,19 @@ export default function NoroscopePage() {
       )
     }
 
+    const fallbackText = (item as { text?: string }).text || ''
+    if (!fallbackText) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center px-4 text-center" style={wrapperStyle}>
+          <MonoIcon src="/icons/info.svg" color={variant.color} size={28} />
+        </div>
+      )
+    }
+
     return (
       <div className="absolute inset-0 flex items-center justify-center px-4 text-center" style={wrapperStyle}>
         <p className="font-tomorrow text-sm sm:text-base leading-snug" style={{ fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}>
-          {('text' in item && item.text) || ''}
+          {fallbackText}
         </p>
       </div>
     )
