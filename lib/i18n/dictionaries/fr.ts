@@ -52,7 +52,8 @@ const frDictionary = {
     "copied": "Copié !"
   },
   "video": {
-    "fullscreen": "Plein écran"
+    "fullscreen": "Plein écran",
+    "openExternally": "Ouvrir dans l'app"
   },
   "shuffle": {
     "title": "Filtrer le contenu",

@@ -52,7 +52,8 @@ const deDictionary = {
     "copied": "Kopiert!"
   },
   "video": {
-    "fullscreen": "Vollbild"
+    "fullscreen": "Vollbild",
+    "openExternally": "In App öffnen"
   },
   "shuffle": {
     "title": "Inhalt filtern",

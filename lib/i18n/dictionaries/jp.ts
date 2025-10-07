@@ -52,7 +52,8 @@ const jpDictionary = {
     "copied": "コピーしました！"
   },
   "video": {
-    "fullscreen": "全画面"
+    "fullscreen": "全画面",
+    "openExternally": "アプリで開く"
   },
   "shuffle": {
     "title": "コンテンツをフィルター",

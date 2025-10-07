@@ -297,11 +297,15 @@ function VideoEmbed({
   item,
   frameHeight,
   fullscreenLabel,
+  openExternallyLabel,
+  disableFullscreen,
   onOpenFullscreen,
 }: {
   item: VideoContentItem
   frameHeight: string
   fullscreenLabel: string
+  openExternallyLabel: string
+  disableFullscreen: boolean
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
 }) {
   const provider = (item.provider || '').toLowerCase()
@@ -317,6 +321,8 @@ function VideoEmbed({
         item={item}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
+        openExternallyLabel={openExternallyLabel}
+        disableFullscreen={disableFullscreen}
         onFullscreenFallback={onOpenFullscreen}
       />
     )
@@ -328,6 +334,8 @@ function VideoEmbed({
         item={item}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
+        openExternallyLabel={openExternallyLabel}
+        disableFullscreen={disableFullscreen}
         onFullscreenFallback={onOpenFullscreen}
       />
     )
@@ -340,11 +348,15 @@ function YouTubeEmbed({
   item,
   frameHeight,
   fullscreenLabel,
+  openExternallyLabel,
+  disableFullscreen,
   onFullscreenFallback,
 }: {
   item: VideoContentItem
   frameHeight: string
   fullscreenLabel: string
+  openExternallyLabel: string
+  disableFullscreen: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
 }) {
   const { url, text } = item
@@ -404,6 +416,10 @@ function YouTubeEmbed({
   }
 
   const handleFullscreen = async () => {
+    if (disableFullscreen) {
+      openProviderUrl(item.url)
+      return
+    }
     const bypassNative = shouldBypassNativeFullscreen()
     let ok = false
     if (!bypassNative) {
@@ -447,7 +463,7 @@ function YouTubeEmbed({
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
         >
-          {fullscreenLabel}
+          {disableFullscreen ? openExternallyLabel : fullscreenLabel}
         </button>
         {isMuted ? (
           <button
@@ -468,11 +484,15 @@ function DailymotionEmbed({
   item,
   frameHeight,
   fullscreenLabel,
+  openExternallyLabel,
+  disableFullscreen,
   onFullscreenFallback,
 }: {
   item: VideoContentItem
   frameHeight: string
   fullscreenLabel: string
+  openExternallyLabel: string
+  disableFullscreen: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
 }) {
   const { url, text } = item
@@ -502,6 +522,10 @@ function DailymotionEmbed({
   }, [url])
 
   const handleFullscreen = async () => {
+    if (disableFullscreen) {
+      openProviderUrl(item.url)
+      return
+    }
     const bypassNative = shouldBypassNativeFullscreen()
     let ok = false
     if (!bypassNative) {
@@ -546,7 +570,7 @@ function DailymotionEmbed({
           className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
           style={{ position: 'absolute', top: '12px', left: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
         >
-          {fullscreenLabel}
+          {disableFullscreen ? openExternallyLabel : fullscreenLabel}
         </button>
       </div>
     </div>
@@ -615,6 +639,8 @@ function ContentRenderer({
   frameHeight,
   viewportWidth,
   fullscreenLabel,
+  openExternallyLabel,
+  disableFullscreen,
   onOpenFullscreen,
 }: {
   item: DisplayItem
@@ -622,6 +648,8 @@ function ContentRenderer({
   frameHeight: string
   viewportWidth: number | null
   fullscreenLabel: string
+  openExternallyLabel: string
+  disableFullscreen: boolean
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
 }) {
   if (item.type === 'encourage') {
@@ -808,6 +836,8 @@ function ContentRenderer({
         item={item}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
+        openExternallyLabel={openExternallyLabel}
+        disableFullscreen={disableFullscreen}
         onOpenFullscreen={onOpenFullscreen}
       />
     )
@@ -858,6 +888,7 @@ export default function RandomExperiencePage({
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
+  const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
   const shouldForceMutedAutoplay = useMemo(() => {
     if (typeof window === 'undefined') return false
     const ua = (navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '').toString()
@@ -944,6 +975,10 @@ export default function RandomExperiencePage({
   }), [contentHeight, theme.bg])
 
   useEffect(() => {
+    setDisableFullscreenButton(shouldBypassNativeFullscreen())
+  }, [])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return
     const update = () => setViewportWidth(window.innerWidth)
     update()
@@ -994,6 +1029,7 @@ export default function RandomExperiencePage({
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
+  const openExternallyLabel = useMemo(() => t('video.openExternally', 'Open in app'), [t])
 
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
@@ -1689,6 +1725,8 @@ const sequenceStateRef = useRef({
               frameHeight={contentHeight}
               viewportWidth={viewportWidth}
               fullscreenLabel={fullscreenLabel}
+              openExternallyLabel={openExternallyLabel}
+              disableFullscreen={disableFullscreenButton}
               onOpenFullscreen={openFullscreen}
             />
           ) : (

@@ -52,7 +52,8 @@ const enDictionary = {
     "copied": "Copied!"
   },
   "video": {
-    "fullscreen": "Fullscreen"
+    "fullscreen": "Fullscreen",
+    "openExternally": "Open in app"
   },
   "shuffle": {
     "title": "Filter content",
