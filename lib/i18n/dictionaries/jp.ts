@@ -15,7 +15,25 @@ const jpDictionary = {
     "error": "すべてを読み込めませんでした。再試行してください。",
     "retry": "再試行",
     "empty": "利用できるコンテンツがありません。",
-    "expressionFallback": "今日のムードはまだ決めかねています。"
+    "expressionFallback": "今日のムードはまだ決めかねています。",
+    "tiles": {
+      "weirdDrop": "1. ヘンなドロップ",
+      "luckyMess": "2. ラッキーなカオス",
+      "dumbSpark": "3. まぬけスパーク",
+      "randomVibe": "4. ランダムバイブ",
+      "lostThought": "5. 迷子の思考",
+      "secretUselessness": "6. 秘密のムダ"
+    },
+    "instructions": "四角をタップして、今日のバイブを見つけよう。",
+    "progress": {
+      "none": "まだ何も解放されていません。最初の四角をタップ。",
+      "partial": "{count}/{total} のバイブを解放。どんどんいこう。",
+      "full": ""
+    },
+    "revealAction": "このバイブを解放",
+    "revealUnavailable": "読み込み中",
+    "tileFallback": "解放して",
+    "aiDisclaimer": "AI生成 — {source}"
   },
   "nav": {
     "images": "画像",

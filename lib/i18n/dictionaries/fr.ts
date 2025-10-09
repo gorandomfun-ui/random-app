@@ -15,7 +15,25 @@ const frDictionary = {
     "error": "Impossible de tout charger. Réessayez.",
     "retry": "Réessayer",
     "empty": "Contenu indisponible.",
-    "expressionFallback": "L'ambiance hésite encore aujourd'hui."
+    "expressionFallback": "L'ambiance hésite encore aujourd'hui.",
+    "tiles": {
+      "weirdDrop": "1. Weird Drop",
+      "luckyMess": "2. Lucky Mess",
+      "dumbSpark": "3. Dumb Spark",
+      "randomVibe": "4. Random Vibe",
+      "lostThought": "5. Lost Thought",
+      "secretUselessness": "6. Secret Uselessness"
+    },
+    "instructions": "Appuyez sur les carrés et découvrez votre vibe du jour.",
+    "progress": {
+      "none": "Rien révélé pour l'instant. Choisis un carré pour commencer.",
+      "partial": "{count}/{total} vibes révélées. Continue.",
+      "full": ""
+    },
+    "revealAction": "Dévoiler cette vibe",
+    "revealUnavailable": "Contenu en cours de chargement",
+    "tileFallback": "Révèle-moi",
+    "aiDisclaimer": "Généré par IA – {source}"
   },
   "nav": {
     "images": "images",

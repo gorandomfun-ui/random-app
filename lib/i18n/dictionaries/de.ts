@@ -15,7 +15,25 @@ const deDictionary = {
     "error": "Nicht alles konnte geladen werden. Bitte erneut versuchen.",
     "retry": "Erneut versuchen",
     "empty": "Noch kein Inhalt verfügbar.",
-    "expressionFallback": "Die Stimmung ist heute noch unentschieden."
+    "expressionFallback": "Die Stimmung ist heute noch unentschieden.",
+    "tiles": {
+      "weirdDrop": "1. Seltsamer Drop",
+      "luckyMess": "2. Glückliches Chaos",
+      "dumbSpark": "3. Dummer Funke",
+      "randomVibe": "4. Zufalls-Vibe",
+      "lostThought": "5. Verlorener Gedanke",
+      "secretUselessness": "6. Geheime Nutzlosigkeit"
+    },
+    "instructions": "Tippe auf die Quadrate und entdecke deine Tagesvibe.",
+    "progress": {
+      "none": "Noch nichts enthüllt. Tipp ein Quadrat zum Start.",
+      "partial": "{count}/{total} Vibes enthüllt. Weiterklicken.",
+      "full": ""
+    },
+    "revealAction": "Diese Vibe enthüllen",
+    "revealUnavailable": "Inhalt wird geladen",
+    "tileFallback": "Enthülle mich",
+    "aiDisclaimer": "Mit KI erzeugt – {source}"
   },
   "nav": {
     "images": "Bilder",
