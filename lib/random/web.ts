@@ -91,7 +91,13 @@ export async function selectWeb(): Promise<WebItem | null> {
   const keywords = Array.isArray(doc.keywords) && doc.keywords.length
     ? (doc.keywords as unknown[]).filter((word): word is string => typeof word === 'string')
     : computeKeywords(descriptor)
-  let tone = typeof (doc as { tone?: unknown }).tone === 'string' ? (doc as { tone?: string }).tone : undefined
+  const toneRaw = typeof (doc as { tone?: unknown }).tone === 'string' ? (doc as { tone?: string }).tone : undefined
+  let tone: 'positive' | 'neutral' | 'negative' | undefined
+  if (toneRaw === 'positive' || toneRaw === 'negative' || toneRaw === 'neutral') {
+    tone = toneRaw
+  } else {
+    tone = undefined
+  }
   let toneConfidence = typeof (doc as { toneConfidence?: unknown }).toneConfidence === 'number'
     ? (doc as { toneConfidence?: number }).toneConfidence
     : undefined
