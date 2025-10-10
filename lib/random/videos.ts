@@ -1,3 +1,4 @@
+import type { VideoItem } from '@/lib/random/clientTypes'
 import { sampleFromCache, touchLastShown } from '@/lib/random/data'
 import {
   markGlobalItem,
