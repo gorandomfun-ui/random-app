@@ -10,15 +10,6 @@ import {
 const RECENT_LIMIT = 10
 const recentVideoIds: string[] = []
 
-export type VideoItem = {
-  type: 'video'
-  url: string
-  thumbUrl?: string | null
-  text?: string | null
-  provider: string
-  source: { name: string; url?: string | null }
-}
-
 type VideoRecord = {
   videoId?: string | null
   url?: string | null
