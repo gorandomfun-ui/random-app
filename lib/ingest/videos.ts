@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db';
 import type { Collection, Db, Filter } from 'mongodb';
 import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
+import { deriveToneAugmentation, flattenToneSegments } from './tone';
 
 export type VideoProvider =
   | 'youtube'
@@ -44,6 +45,9 @@ export type VideoDocument = {
   duration?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  tone?: 'positive' | 'neutral' | 'negative';
+  toneConfidence?: number;
+  toneSignals?: string[];
 };
 
 type IngestVideosOptions = {
@@ -742,12 +746,23 @@ function buildVideoDocument(raw: RawVideo): VideoDocument | null {
     raw.apiTags,
     raw.channelTitle,
   ];
-  const tags = buildTagList(candidates, 14);
+  const toneSegments = flattenToneSegments([
+    raw.provider,
+    raw.source?.name,
+    raw.title,
+    raw.description,
+    raw.channelTitle,
+    contextTags,
+    raw.apiTags,
+  ]);
+  const tone = deriveToneAugmentation(toneSegments);
+  const tags = buildTagList([...candidates, tone?.toneTagHints], 14);
   const keywords = mergeKeywordSources([
     raw.title,
     raw.description,
     raw.channelTitle,
     (raw.contextQueries || []).join(' '),
+    tone?.toneSignals.join(' '),
   ], 16);
 
   if (!raw.videoId || !looksLikeHttpUrl(raw.url)) return null;
@@ -767,6 +782,9 @@ function buildVideoDocument(raw: RawVideo): VideoDocument | null {
     duration: raw.duration,
     tags,
     keywords,
+    tone: tone?.tone,
+    toneConfidence: tone?.toneConfidence,
+    toneSignals: tone?.toneSignals,
   };
 }
 

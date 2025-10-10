@@ -7,6 +7,7 @@ import {
   markGlobalTopics,
 } from './globalState'
 import type { WebItem } from './clientTypes'
+import { deriveToneAugmentation, flattenToneSegments } from '@/lib/ingest/tone'
 
 const RECENT_LIMIT = 10
 const recentWebUrls: string[] = []
@@ -90,6 +91,24 @@ export async function selectWeb(): Promise<WebItem | null> {
   const keywords = Array.isArray(doc.keywords) && doc.keywords.length
     ? (doc.keywords as unknown[]).filter((word): word is string => typeof word === 'string')
     : computeKeywords(descriptor)
+  let tone = typeof (doc as { tone?: unknown }).tone === 'string' ? (doc as { tone?: string }).tone : undefined
+  let toneConfidence = typeof (doc as { toneConfidence?: unknown }).toneConfidence === 'number'
+    ? (doc as { toneConfidence?: number }).toneConfidence
+    : undefined
+  let toneSignals = Array.isArray((doc as { toneSignals?: unknown }).toneSignals)
+    ? ((doc as { toneSignals?: unknown }).toneSignals as unknown[])
+        .filter((entry): entry is string => typeof entry === 'string')
+    : undefined
+
+  if (!tone || toneConfidence === undefined) {
+    const toneSegments = flattenToneSegments([provider, sourceName, text, host, tags, keywords])
+    const computedTone = deriveToneAugmentation(toneSegments)
+    if (computedTone) {
+      tone = computedTone.tone
+      toneConfidence = computedTone.toneConfidence
+      toneSignals = computedTone.toneSignals
+    }
+  }
 
   registerRecent(urlRaw)
   await touchLastShown('web', { url: urlRaw })
@@ -109,5 +128,8 @@ export async function selectWeb(): Promise<WebItem | null> {
     host,
     tags,
     keywords,
+    tone,
+    toneConfidence,
+    toneSignals,
   }
 }

@@ -30,6 +30,9 @@ type VideoRecord = {
   source?: { name?: string | null; url?: string | null } | null
   tags?: string[]
   keywords?: string[]
+  tone?: 'positive' | 'neutral' | 'negative' | null
+  toneConfidence?: number | null
+  toneSignals?: string[] | null
 }
 
 function registerRecent(id: string) {
@@ -77,6 +80,11 @@ export async function selectVideo(): Promise<VideoItem | null> {
   const title = typeof doc.title === 'string' && doc.title.trim() ? doc.title.trim() : typeof doc.text === 'string' ? doc.text.trim() : undefined
   const tags = Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : []
   const keywords = Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : []
+  const tone = typeof doc.tone === 'string' ? doc.tone : undefined
+  const toneConfidence = typeof doc.toneConfidence === 'number' ? doc.toneConfidence : undefined
+  const toneSignals = Array.isArray(doc.toneSignals)
+    ? doc.toneSignals.filter((entry): entry is string => typeof entry === 'string')
+    : undefined
 
   registerRecent(id)
   await touchLastShown('video', { videoId: id })
@@ -93,5 +101,8 @@ export async function selectVideo(): Promise<VideoItem | null> {
     text: title,
     provider,
     source: { name: sourceName, url: sourceUrl },
+    tone,
+    toneConfidence,
+    toneSignals,
   }
 }

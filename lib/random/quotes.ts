@@ -6,6 +6,12 @@ import {
   markGlobalProvider,
   markGlobalTopics,
 } from './globalState'
+import {
+  deriveToneAugmentation,
+  flattenToneSegments,
+  mergeToneHintsIntoTags,
+  mergeToneSignalsIntoKeywords,
+} from '@/lib/ingest/tone'
 
 const RECENT_LIMIT = 10
 const recentQuotes: string[] = []
@@ -37,6 +43,9 @@ export type QuoteDocument = {
   hash?: string
   ai?: QuoteAIMetadata | null
   disclaimer?: string
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 export type QuoteItem = {
@@ -49,6 +58,9 @@ export type QuoteItem = {
   lang?: string
   ai?: QuoteAIMetadata | null
   disclaimer?: string
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 type QuoteRecord = {
@@ -63,6 +75,9 @@ type QuoteRecord = {
   ai?: QuoteAIMetadata | null
   disclaimer?: string | null
   hash?: string | null
+  tone?: 'positive' | 'neutral' | 'negative' | null
+  toneConfidence?: number | null
+  toneSignals?: string[] | null
 }
 
 const LOCAL_QUOTES = [
@@ -120,6 +135,17 @@ export function createQuoteDocument(doc: Record<string, unknown>): QuoteDocument
   const keywords = Array.isArray(doc.keywords) && doc.keywords.length
     ? doc.keywords.filter((entry): entry is string => typeof entry === 'string')
     : computeKeywords(text, author)
+  const toneSegments = flattenToneSegments([
+    provider,
+    sourceName,
+    text,
+    author,
+    tags,
+    keywords,
+  ])
+  const tone = deriveToneAugmentation(toneSegments)
+  const mergedTags = mergeToneHintsIntoTags(tags, tone?.toneTagHints, 12)
+  const mergedKeywords = mergeToneSignalsIntoKeywords(keywords, tone?.toneSignals, 14)
 
   return {
     type: 'quote',
@@ -127,8 +153,11 @@ export function createQuoteDocument(doc: Record<string, unknown>): QuoteDocument
     author,
     provider,
     source: { name: sourceName, url: sourceUrl },
-    tags,
-    keywords,
+    tags: mergedTags,
+    keywords: mergedKeywords,
+    tone: tone?.tone,
+    toneConfidence: tone?.toneConfidence,
+    toneSignals: tone?.toneSignals,
   }
 }
 
@@ -169,6 +198,11 @@ export async function selectQuote(): Promise<QuoteItem | null> {
       }
     : null
   const disclaimer = typeof record.disclaimer === 'string' && record.disclaimer.trim() ? record.disclaimer.trim() : undefined
+  const tone = typeof record.tone === 'string' ? record.tone : undefined
+  const toneConfidence = typeof record.toneConfidence === 'number' ? record.toneConfidence : undefined
+  const toneSignals = Array.isArray(record.toneSignals)
+    ? record.toneSignals.filter((entry): entry is string => typeof entry === 'string')
+    : undefined
 
   registerRecent(text, author)
   await touchLastShown('quote', { text, author })
@@ -188,5 +222,8 @@ export async function selectQuote(): Promise<QuoteItem | null> {
     lang,
     ai: aiMeta,
     disclaimer,
+    tone,
+    toneConfidence,
+    toneSignals,
   }
 }

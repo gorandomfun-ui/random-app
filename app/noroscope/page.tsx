@@ -13,6 +13,8 @@ import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import type { DisplayItem, FactItem, RandomContentItem, WebItem } from '@/lib/random/clientTypes'
 import { NOROSCOPE_EXPRESSIONS, type ExpressionLocale, type ExpressionTone } from '@/data/noroscopeExpressions'
+import { NOROSCOPE_SUMMARIES } from '@/data/noroscopeSummaries'
+import { computeToneScore } from '@/lib/tone/analyze'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
@@ -123,190 +125,6 @@ function makeGlitchBars(mode: 'normal' | 'boost' = 'boost'): GlitchBar[] {
   })
 }
 
-const POSITIVE_SEEDS: readonly string[] = [
-  'love',
-  'lovely',
-  'happy',
-  'happiness',
-  'joy',
-  'joyful',
-  'fun',
-  'funny',
-  'amazing',
-  'great',
-  'awesome',
-  'win',
-  'winner',
-  'victory',
-  'lucky',
-  'glad',
-  'smile',
-  'smiling',
-  'peace',
-  'calm',
-  'bright',
-  'sunny',
-  'hope',
-  'hopeful',
-  'kind',
-  'cute',
-  'sweet',
-  'success',
-  'celebrate',
-  'wow',
-  'yay',
-  'delight',
-  'good',
-  'wonderful',
-  'brilliant',
-  'energize',
-  'spark',
-  'shine',
-  'playful',
-  'cozy',
-  'uplift',
-  'magic',
-  'bliss',
-  'cheer',
-  'amour',
-  'heureux',
-  'joie',
-  'rire',
-  'succès',
-  'chance',
-  'lumineux',
-  'positif',
-  'génial',
-  'liebe',
-  'glück',
-  'glücklich',
-  'freu',
-  'lustig',
-  'witzig',
-  'erfolg',
-  'hoffnung',
-  'sonnig',
-  'toll',
-  'super',
-  '嬉',
-  '楽',
-  '幸',
-  '笑',
-  '良',
-  '素敵',
-  '最高',
-  '平和',
-  '明る',
-  '希望',
-]
-
-const NEGATIVE_SEEDS: readonly string[] = [
-  'sad',
-  'sorrow',
-  'pain',
-  'hurt',
-  'bad',
-  'worse',
-  'worst',
-  'dark',
-  'death',
-  'dead',
-  'kill',
-  'killing',
-  'fear',
-  'scared',
-  'anger',
-  'angry',
-  'hate',
-  'hated',
-  'broken',
-  'fail',
-  'failure',
-  'lost',
-  'loss',
-  'doom',
-  'gloom',
-  'cry',
-  'tears',
-  'crash',
-  'bleed',
-  'bleeding',
-  'rage',
-  'tired',
-  'bored',
-  'lonely',
-  'void',
-  'grim',
-  'triste',
-  'peur',
-  'colère',
-  'angoisse',
-  'perdu',
-  'perte',
-  'haine',
-  'mort',
-  'noir',
-  'fatigue',
-  'traur',
-  'angst',
-  'wut',
-  'verlust',
-  'schmerz',
-  'tod',
-  'müde',
-  'dunkel',
-  'hass',
-  '悲',
-  '辛',
-  '怖',
-  '恐',
-  '死',
-  '負け',
-  '闇',
-  '泣',
-  '壊',
-  '憂',
-  '絶望',
-]
-
-const ACCENT_REGEX = /[\u0300-\u036f]/g
-const NON_ALPHANUM_REGEX = /[^a-z0-9\u3040-\u30ff\u4e00-\u9faf\s]/g
-
-function normalizeForSentiment(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(ACCENT_REGEX, '')
-    .replace(NON_ALPHANUM_REGEX, ' ')
-}
-
-function containsSeed(normalizedText: string, seed: string): boolean {
-  const normalizedSeed = normalizeForSentiment(seed).trim()
-  if (!normalizedSeed) return false
-  if (/^[a-z0-9]+$/.test(normalizedSeed)) {
-    const pattern = new RegExp(`\\b${normalizedSeed}\\b`, 'i')
-    return pattern.test(normalizedText)
-  }
-  return normalizedText.includes(normalizedSeed)
-}
-
-function scoreSegments(segments: string[]): { positive: number; negative: number } {
-  const normalized = normalizeForSentiment(segments.filter(Boolean).join(' '))
-  if (!normalized.trim()) return { positive: 0, negative: 0 }
-
-  let positive = 0
-  let negative = 0
-
-  for (const seed of POSITIVE_SEEDS) {
-    if (containsSeed(normalized, seed)) positive += 1
-  }
-  for (const seed of NEGATIVE_SEEDS) {
-    if (containsSeed(normalized, seed)) negative += 1
-  }
-
-  return { positive, negative }
-}
-
 function scoreItem(item: RandomContentItem): { positive: number; negative: number } {
   const segments: string[] = []
 
@@ -360,7 +178,22 @@ function scoreItem(item: RandomContentItem): { positive: number; negative: numbe
   const keywords = (item as { keywords?: unknown }).keywords
   if (Array.isArray(keywords)) segments.push(keywords.join(' '))
 
-  return scoreSegments(segments)
+  const { score } = computeToneScore(segments)
+  const tone = (item as { tone?: unknown }).tone
+  const toneConfidenceRaw = (item as { toneConfidence?: unknown }).toneConfidence
+  const toneConfidence =
+    typeof toneConfidenceRaw === 'number' && Number.isFinite(toneConfidenceRaw)
+      ? Math.max(0, Math.min(1, toneConfidenceRaw))
+      : 0
+  const toneWeight =
+    toneConfidence >= 0.75 ? 3 : toneConfidence >= 0.5 ? 2 : toneConfidence >= 0.25 ? 1 : 0
+
+  if (toneWeight > 0) {
+    if (tone === 'positive') score.positive += toneWeight
+    if (tone === 'negative') score.negative += toneWeight
+  }
+
+  return score
 }
 
 function computeExpressionTone(entries: RandomContentItem[]): ExpressionTone {
@@ -373,9 +206,10 @@ function computeExpressionTone(entries: RandomContentItem[]): ExpressionTone {
     negative += score.negative
   }
 
-  if (positive === 0 && negative === 0) return 'positiveMedium'
+  if (positive === 0 && negative === 0) return Math.random() < 0.3 ? 'negativeMedium' : 'positiveMedium'
   if (positive === 0) return negative >= 2 ? 'negative' : 'negativeMedium'
   if (negative === 0) return positive >= 2 ? 'positive' : 'positiveMedium'
+  if (positive === negative) return Math.random() < 0.35 ? 'negativeMedium' : 'positiveMedium'
 
   const ratio = positive / (negative || 1)
   if (ratio >= 1.6) return 'positive'
@@ -454,6 +288,7 @@ export default function NoroscopePage() {
   const [entries, setEntries] = useState<RandomContentItem[]>([])
   const [revealedTiles, setRevealedTiles] = useState<boolean[]>(() => Array(TARGET_COUNT).fill(false))
   const [globalGlitches, setGlobalGlitches] = useState<Array<{ id: string; bars: GlitchBar[]; rect: { top: number; left: number; width: number; height: number } }>>([])
+  const [summaryIndex, setSummaryIndex] = useState<number | null>(null)
   const glitchTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const tileRefs = useRef<Array<HTMLDivElement | null>>([])
   const fetchLangRef = useRef<Lang>((locale || 'en') as Lang)
@@ -677,6 +512,17 @@ const [loading, setLoading] = useState(true)
     return { type: 'encourage', text: shareSummary, icon: '' }
   }, [shareSummary])
 
+  const summaryTone = useMemo(() => computeExpressionTone(entries), [entries])
+
+  const summaryText = useMemo(() => {
+    const localeKey = (locale || 'en') as ExpressionLocale
+    const summaries = NOROSCOPE_SUMMARIES[localeKey]?.[summaryTone] ?? []
+    if (!summaries.length) return null
+    if (summaryIndex == null) return summaries[0]
+    const safeIndex = ((summaryIndex % summaries.length) + summaries.length) % summaries.length
+    return summaries[safeIndex]
+  }, [locale, summaryTone, summaryIndex])
+
   const revealedCount = useMemo(
     () => revealedTiles.reduce((acc, flag) => (flag ? acc + 1 : acc), 0),
     [revealedTiles]
@@ -721,7 +567,12 @@ const [loading, setLoading] = useState(true)
       try {
         const raw = localStorage.getItem(storageKey)
         if (raw) {
-          const parsed = JSON.parse(raw) as { timestamp?: number; entries?: RandomContentItem[]; revealed?: number[] }
+          const parsed = JSON.parse(raw) as {
+            timestamp?: number
+            entries?: RandomContentItem[]
+            revealed?: number[]
+            summaryIndex?: number | null
+          }
           const cached = Array.isArray(parsed?.entries) ? parsed.entries : []
           const isFresh = typeof parsed?.timestamp === 'number' && Date.now() - parsed.timestamp <= CACHE_TTL_MS
           const isComplete = cached.length === TARGET_COUNT && cached.every((item) => item && typeof item.type === 'string')
@@ -736,6 +587,7 @@ const [loading, setLoading] = useState(true)
             } else {
               setRevealedTiles(Array(TARGET_COUNT).fill(false))
             }
+            setSummaryIndex(typeof parsed?.summaryIndex === 'number' ? parsed.summaryIndex : null)
             setGlobalGlitches([])
             glitchTimeoutsRef.current = {}
             setLoading(false)
@@ -809,10 +661,15 @@ const [loading, setLoading] = useState(true)
       }
       setLoadErrorFlag(hadError)
 
+      const tone = computeExpressionTone(results)
+      const summaries = NOROSCOPE_SUMMARIES[fetchLangRef.current]?.[tone] ?? []
+      const pickedSummaryIndex = summaries.length ? Math.floor(Math.random() * summaries.length) : null
+      setSummaryIndex(pickedSummaryIndex)
+
       const canPersist = !hadError && results.length === TARGET_COUNT
       if (canPersist) {
         try {
-          const payload = { timestamp: Date.now(), entries: results, revealed: Array(TARGET_COUNT).fill(0) }
+          const payload = { timestamp: Date.now(), entries: results, revealed: Array(TARGET_COUNT).fill(0), summaryIndex: pickedSummaryIndex }
           localStorage.setItem(storageKey, JSON.stringify(payload))
         } catch {
           /* ignore cache write errors */
@@ -828,6 +685,7 @@ const [loading, setLoading] = useState(true)
       setRevealedTiles(Array(TARGET_COUNT).fill(false))
       setGlobalGlitches([])
       glitchTimeoutsRef.current = {}
+      setSummaryIndex(null)
       setLoadErrorFlag(true)
       return
     }
@@ -1346,7 +1204,7 @@ const [loading, setLoading] = useState(true)
                   fontWeight: 700,
                 }}
               >
-                {expressionData.text}
+                {summaryText ?? expressionData.text}
               </div>
             </div>
           ) : null}

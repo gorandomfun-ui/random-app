@@ -9,6 +9,12 @@ import {
   markGlobalProvider,
   markGlobalTopics,
 } from '@/lib/random/globalState'
+import {
+  deriveToneAugmentation,
+  flattenToneSegments,
+  mergeToneHintsIntoTags,
+  mergeToneSignalsIntoKeywords,
+} from '@/lib/ingest/tone'
 
 const RECENT_LIMIT = 10
 const recentFacts: string[] = []
@@ -60,6 +66,9 @@ export type FactDocument = {
     generatedAt?: string
   } | null
   disclaimer?: string
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 export type FactTextItem = {
@@ -75,6 +84,9 @@ export type FactTextItem = {
     generatedAt?: string
   } | null
   disclaimer?: string
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 export type FactQuizItem = {
@@ -90,6 +102,9 @@ export type FactQuizItem = {
   source: { name: string; url?: string }
   category?: string
   difficulty?: TriviaDifficulty
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 export type FactItem = FactTextItem | FactQuizItem
@@ -192,6 +207,11 @@ function buildQuizItem(doc: FactQuizDoc): FactQuizItem | null {
   const sourceName = trim(doc.source?.name || '') || provider
   const sourceUrl = typeof doc.source?.url === 'string' ? doc.source.url : undefined
   const id = doc.quiz.id || doc.hash || createHash('sha1').update(question.toLowerCase()).digest('hex')
+  const tone = typeof doc.tone === 'string' ? doc.tone : undefined
+  const toneConfidence = typeof doc.toneConfidence === 'number' ? doc.toneConfidence : undefined
+  const toneSignals = Array.isArray(doc.toneSignals)
+    ? doc.toneSignals.filter((entry): entry is string => typeof entry === 'string')
+    : undefined
   return {
     type: 'fact',
     variant: 'quiz',
@@ -205,6 +225,9 @@ function buildQuizItem(doc: FactQuizDoc): FactQuizItem | null {
     source: { name: sourceName, url: sourceUrl },
     category: doc.quiz.category,
     difficulty: doc.quiz.difficulty,
+    tone,
+    toneConfidence,
+    toneSignals,
   }
 }
 
@@ -366,14 +389,30 @@ async function fetchTriviaBatch(
         const lowered = option.toLowerCase()
         if (lowered.length >= 3 && lowered.length <= 26) keywordSet.add(lowered)
       }
+      const baseTagList = Array.from(tags)
+      const baseKeywordList = Array.from(keywordSet)
+      const toneDetails = deriveToneAugmentation(
+        flattenToneSegments([
+          'quiz',
+          question,
+          correctAnswer,
+          options,
+          category,
+          difficulty,
+          baseTagList,
+          baseKeywordList,
+        ]),
+      )
+      const mergedTags = mergeToneHintsIntoTags(baseTagList, toneDetails?.toneTagHints, 16)
+      const mergedKeywords = mergeToneSignalsIntoKeywords(baseKeywordList, toneDetails?.toneSignals, 18)
 
       const doc: FactQuizDoc = {
         ...baseDoc,
         text: question,
         provider: 'open-trivia-db',
         source: { name: 'Open Trivia DB', url: TRIVIA_API_BASE },
-        tags: Array.from(tags),
-        keywords: Array.from(keywordSet).slice(0, 14),
+        tags: mergedTags,
+        keywords: mergedKeywords,
         variant: 'quiz',
         quiz: {
           id: hash,
@@ -385,6 +424,9 @@ async function fetchTriviaBatch(
           difficulty,
         },
         hash,
+        tone: toneDetails?.tone ?? baseDoc.tone,
+        toneConfidence: toneDetails?.toneConfidence ?? baseDoc.toneConfidence,
+        toneSignals: toneDetails?.toneSignals ?? baseDoc.toneSignals,
       }
 
       await upsertCache('fact', { hash }, doc)
@@ -471,14 +513,27 @@ export function createFactDocument(doc: Record<string, unknown>): FactDocument |
   const keywords = Array.isArray(doc.keywords) && doc.keywords.length
     ? doc.keywords.filter((entry): entry is string => typeof entry === 'string')
     : computeKeywords(text)
+  const toneSegments = flattenToneSegments([
+    provider,
+    sourceName,
+    text,
+    tags,
+    keywords,
+  ])
+  const tone = deriveToneAugmentation(toneSegments)
+  const mergedTags = mergeToneHintsIntoTags(tags, tone?.toneTagHints, 14)
+  const mergedKeywords = mergeToneSignalsIntoKeywords(keywords, tone?.toneSignals, 16)
   return {
     type: 'fact',
     text,
     provider,
     source: { name: sourceName, url: sourceUrl },
-    tags,
-    keywords,
+    tags: mergedTags,
+    keywords: mergedKeywords,
     variant: 'text',
+    tone: tone?.tone,
+    toneConfidence: tone?.toneConfidence,
+    toneSignals: tone?.toneSignals,
   }
 }
 
@@ -561,6 +616,11 @@ export async function selectFact(): Promise<FactItem | null> {
             }
           : null,
         disclaimer: typeof doc.disclaimer === 'string' && doc.disclaimer.trim() ? doc.disclaimer.trim() : undefined,
+        tone: typeof doc.tone === 'string' ? doc.tone : undefined,
+        toneConfidence: typeof doc.toneConfidence === 'number' ? doc.toneConfidence : undefined,
+        toneSignals: Array.isArray(doc.toneSignals)
+          ? doc.toneSignals.filter((entry): entry is string => typeof entry === 'string')
+          : undefined,
       }
     }
   }
@@ -568,11 +628,15 @@ export async function selectFact(): Promise<FactItem | null> {
   const fallback = LOCAL_FACTS.find((entry) => !exclude.includes(entry.toLowerCase())) || LOCAL_FACTS[0]
   registerRecent(fallback)
   lastFactWasQuiz = false
+  const fallbackTone = deriveToneAugmentation(flattenToneSegments(['fact', fallback]))
   return {
     type: 'fact',
     variant: 'text',
     text: fallback,
     provider: 'local',
     source: { name: 'Local' },
+    tone: fallbackTone?.tone,
+    toneConfidence: fallbackTone?.toneConfidence,
+    toneSignals: fallbackTone?.toneSignals,
   }
 }

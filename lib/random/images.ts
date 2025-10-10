@@ -23,6 +23,9 @@ export type ImageItem = {
   url: string
   thumbUrl: string | null
   source: { name: string; url?: string | null }
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 type ImageRecord = ImageDocument & {
@@ -98,9 +101,22 @@ function buildCandidate(doc: ImageRecord, origin: CandidateOrigin) {
   const resolved = resolveImageUrl(doc)
   if (!resolved) return null
   const source = normalizeSource(doc)
+  const tone = typeof doc.tone === 'string' ? doc.tone : undefined
+  const toneConfidence = typeof doc.toneConfidence === 'number' ? doc.toneConfidence : undefined
+  const toneSignals = Array.isArray(doc.toneSignals)
+    ? doc.toneSignals.filter((entry): entry is string => typeof entry === 'string')
+    : undefined
   return {
     url: resolved.url,
-    item: { type: 'image' as const, url: resolved.url, thumbUrl: resolved.thumb ?? null, source },
+    item: {
+      type: 'image' as const,
+      url: resolved.url,
+      thumbUrl: resolved.thumb ?? null,
+      source,
+      tone,
+      toneConfidence,
+      toneSignals,
+    },
     tags: Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [],
     keywords: Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [],
     provider: source.name || 'image',

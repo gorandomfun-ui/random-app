@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db';
 import type { Collection, Db, Filter } from 'mongodb';
 import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
+import { deriveToneAugmentation, flattenToneSegments } from './tone';
 
 export const IMAGE_PROVIDERS = ['giphy', 'pixabay', 'tenor', 'pexels'] as const;
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
@@ -100,6 +101,9 @@ export type ImageDocument = {
   createdAt?: Date;
   updatedAt?: Date;
   description?: string | null;
+  tone?: 'positive' | 'neutral' | 'negative';
+  toneConfidence?: number;
+  toneSignals?: string[];
 };
 
 type IngestImagesOptions = {
@@ -324,12 +328,23 @@ function buildImageDocument(source: ImageSource): ImageDocument | null {
     source.alt,
     source.description,
   ];
-  const tags = buildTagList(candidates, 12).filter((tag) => !STOP_TAGS.has(tag));
+  const toneSegments = flattenToneSegments([
+    source.provider,
+    source.source?.name,
+    source.title,
+    source.alt,
+    source.description,
+    contextTags,
+    source.apiTags,
+  ]);
+  const tone = deriveToneAugmentation(toneSegments);
+  const tags = buildTagList([...candidates, tone?.toneTagHints], 12).filter((tag) => !STOP_TAGS.has(tag));
   const keywords = mergeKeywordSources([
     source.title,
     source.alt,
     (source.contextQueries || []).join(' '),
     source.description,
+    tone?.toneSignals.join(' '),
   ], 14);
 
   const url = source.provider === 'pixabay'
@@ -348,6 +363,9 @@ function buildImageDocument(source: ImageSource): ImageDocument | null {
     tags,
     keywords,
     title: source.title,
+    tone: tone?.tone,
+    toneConfidence: tone?.toneConfidence,
+    toneSignals: tone?.toneSignals,
   };
 }
 

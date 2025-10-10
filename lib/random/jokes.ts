@@ -7,6 +7,12 @@ import {
   markGlobalProvider,
   markGlobalTopics,
 } from './globalState'
+import {
+  deriveToneAugmentation,
+  flattenToneSegments,
+  mergeToneHintsIntoTags,
+  mergeToneSignalsIntoKeywords,
+} from '@/lib/ingest/tone'
 
 const RECENT_LIMIT = 10
 const recentJokes: string[] = []
@@ -51,6 +57,9 @@ export type JokeDocument = {
   hash?: string
   ai?: JokeAIMetadata | null
   disclaimer?: string
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 export type JokeItem = {
@@ -62,6 +71,9 @@ export type JokeItem = {
   lang?: string
   ai?: JokeAIMetadata | null
   disclaimer?: string
+  tone?: 'positive' | 'neutral' | 'negative'
+  toneConfidence?: number
+  toneSignals?: string[]
 }
 
 type JokeRecord = {
@@ -75,6 +87,9 @@ type JokeRecord = {
   ai?: JokeAIMetadata | null
   disclaimer?: string | null
   hash?: string | null
+  tone?: 'positive' | 'neutral' | 'negative' | null
+  toneConfidence?: number | null
+  toneSignals?: string[] | null
 }
 
 const trim = (value?: string | null) => (value || '').trim()
@@ -114,13 +129,26 @@ export function createJokeDocument(doc: Record<string, unknown>): JokeDocument |
   const keywords = Array.isArray(doc.keywords) && doc.keywords.length
     ? doc.keywords.filter((entry): entry is string => typeof entry === 'string')
     : computeKeywords(text)
+  const toneSegments = flattenToneSegments([
+    provider,
+    sourceName,
+    text,
+    tags,
+    keywords,
+  ])
+  const tone = deriveToneAugmentation(toneSegments)
+  const mergedTags = mergeToneHintsIntoTags(tags, tone?.toneTagHints, 12)
+  const mergedKeywords = mergeToneSignalsIntoKeywords(keywords, tone?.toneSignals, 14)
   return {
     type: 'joke',
     text,
     provider,
     source: { name: sourceName, url: sourceUrl },
-    tags,
-    keywords,
+    tags: mergedTags,
+    keywords: mergedKeywords,
+    tone: tone?.tone,
+    toneConfidence: tone?.toneConfidence,
+    toneSignals: tone?.toneSignals,
   }
 }
 
@@ -193,6 +221,11 @@ export async function selectJoke(): Promise<JokeItem | null> {
       }
     : null
   const disclaimer = typeof record.disclaimer === 'string' && record.disclaimer.trim() ? record.disclaimer.trim() : undefined
+  const tone = typeof record.tone === 'string' ? record.tone : undefined
+  const toneConfidence = typeof record.toneConfidence === 'number' ? record.toneConfidence : undefined
+  const toneSignals = Array.isArray(record.toneSignals)
+    ? record.toneSignals.filter((entry): entry is string => typeof entry === 'string')
+    : undefined
 
   registerRecent(text)
   await touchLastShown('joke', { text })
@@ -211,6 +244,9 @@ export async function selectJoke(): Promise<JokeItem | null> {
     lang,
     ai: aiMeta,
     disclaimer,
+    tone,
+    toneConfidence,
+    toneSignals,
   }
 }
 

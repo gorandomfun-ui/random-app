@@ -2,6 +2,12 @@ import type { ItemType } from './types'
 
 type Nullable<T> = T | null | undefined
 
+type ToneAttributes = {
+  tone?: 'positive' | 'neutral' | 'negative' | null
+  toneConfidence?: number | null
+  toneSignals?: string[] | null
+}
+
 export type SourceInfo = {
   name?: string | null
   url?: string | null
@@ -20,7 +26,7 @@ export type ImageItem = {
   pageUrl?: string | null
   link?: string | null
   attribution?: string | null
-}
+} & ToneAttributes
 
 export type VideoItem = {
   type: 'video'
@@ -30,7 +36,7 @@ export type VideoItem = {
   lang?: 'en' | 'fr' | 'de' | 'jp'
   provider?: string | null
   source?: SourceInfo
-}
+} & ToneAttributes
 
 export type AiMetadata = {
   source?: string
@@ -48,7 +54,7 @@ export type QuoteItem = {
   lang?: string
   ai?: AiMetadata | null
   disclaimer?: string
-}
+} & ToneAttributes
 
 export type JokeItem = {
   type: 'joke'
@@ -59,7 +65,7 @@ export type JokeItem = {
   lang?: string
   ai?: AiMetadata | null
   disclaimer?: string
-}
+} & ToneAttributes
 
 export type TriviaDifficulty = 'easy' | 'medium' | 'hard'
 
@@ -87,7 +93,7 @@ export type FactQuizItem = {
   source: { name: string; url?: string }
   category?: string
   difficulty?: TriviaDifficulty
-}
+} & ToneAttributes
 
 export type FactItem = FactTextItem | FactQuizItem
 
@@ -101,7 +107,7 @@ export type WebItem = {
   tags?: string[]
   keywords?: string[]
   host?: string | null
-}
+} & ToneAttributes
 
 export type RandomContentItem = ImageItem | VideoItem | QuoteItem | FactItem | JokeItem | WebItem
 
