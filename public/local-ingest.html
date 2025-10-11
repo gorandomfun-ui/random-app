@@ -62,6 +62,20 @@
       </label>
     </div>
 
+    <div style="margin-bottom: 18px;">
+      <label style="display:inline-flex; align-items:center; gap:8px; font-size:14px;">
+        Région
+        <select id="regionSelect" style="padding:4px 8px; border-radius:4px; border:1px solid #d0d0d0;">
+          <option value="global">Global</option>
+          <option value="north-america">Amérique Nord</option>
+          <option value="south-america">Amérique Sud</option>
+          <option value="europe">Europe</option>
+          <option value="asia">Asie</option>
+          <option value="africa">Afrique</option>
+        </select>
+      </label>
+    </div>
+
     <div style="margin-bottom: 24px;">
       <h2>Vidéos</h2>
       <div id="videoProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 16px; font-size:14px;">
@@ -77,15 +91,12 @@
 
     <div style="margin-bottom: 24px;">
       <h2>Web</h2>
-      <p style="margin: 6px 0 12px; font-size: 14px;">Utilise le générateur de mots-clés (A/B/C) pour découvrir des sites via Google CSE, les listes curées, Neocities et Wikipédia.</p>
+      <p style="margin: 6px 0 12px; font-size: 14px;">Utilise le générateur de mots-clés (A/B/C) pour découvrir des sites via Google CSE et les listes curées.</p>
       <div id="webProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; font-size:14px;">
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="cse" checked /> Google CSE</label>
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="curated" checked /> Listes curées</label>
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="neocities" checked /> Neocities</label>
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="wikipedia" checked /> Wikipédia</label>
       </div>
       <button id="runWeb" class="secondary">Ingest Web</button>
-      <button id="runWebDirect" class="secondary">Ingest Neocities + Wikipédia</button>
     </div>
 
     <div id="log"></div>
@@ -101,7 +112,6 @@
         videos: document.getElementById('runVideos'),
         feeds: document.getElementById('runFeeds'),
         web: document.getElementById('runWeb'),
-        webDirect: document.getElementById('runWebDirect'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -111,6 +121,7 @@
       }
       const videoProvidersEl = document.getElementById('videoProviders')
       const webProvidersEl = document.getElementById('webProviders')
+      const regionSelectEl = document.getElementById('regionSelect')
 
       let stopRequested = false
 
@@ -125,7 +136,6 @@
         buttons.videos.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
         if (buttons.web) buttons.web.disabled = running
-        if (buttons.webDirect) buttons.webDirect.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -140,6 +150,8 @@
         if (parts.secondary) out.push(parts.secondary)
         if (parts.country) out.push(parts.country)
         if (parts.year) out.push(String(parts.year))
+        const labelRegion = parts.region || getSelectedRegion()
+        out.push(`[${labelRegion}]`)
         return out.join(' • ')
       }
 
@@ -151,7 +163,8 @@
       }
 
       const getSelectedVideoProviders = () => getSelectedValues(videoProvidersEl, ['youtube'])
-      const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'curated', 'neocities', 'wikipedia'])
+      const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'curated'])
+      const getSelectedRegion = () => (regionSelectEl ? regionSelectEl.value : 'global')
 
       const manualContainer = document.getElementById('manualCombos')
       const addManualBtn = document.getElementById('addManual')
@@ -223,7 +236,7 @@
             const queryParts = [primary, secondary, country, year && String(year)].filter(Boolean)
             if (!queryParts.length) return null
             return {
-              components: { primary, secondary, country, year },
+              components: { primary, secondary, country, year, region: getSelectedRegion() },
               query: queryParts.join(' '),
             }
           })
@@ -234,7 +247,8 @@
       createManualRow()
 
       async function fetchCombo() {
-        const res = await fetch('/api/ingest/keywords/combo', {
+        const params = new URLSearchParams({ region: getSelectedRegion() })
+        const res = await fetch(`/api/ingest/keywords/combo?${params.toString()}`, {
           cache: 'no-store',
           headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
         })
@@ -252,6 +266,7 @@
         const dryRun = dryRunEl.checked
         const maxCombos = Math.max(1, Number(maxCombosEl.value) || 1)
         const sleepMs = Math.max(0, Number(sleepEl.value) || 0)
+        const region = getSelectedRegion()
         let executed = 0
         let totals = { scanned: 0, unique: 0, inserted: 0, updated: 0, skipped: 0 }
         const providerCounts = {}
@@ -267,20 +282,23 @@
             if (category === 'images') {
               endpoint = '/api/ingest/images'
               params.set('sample', '6')
+              params.set('region', region)
             } else if (category === 'videos') {
               endpoint = '/api/ingest/videos'
               params.set('mode', 'search')
               params.set('durations', 'short,medium,long')
-              params.set('pages', '2')
-              params.set('per', '32')
+              params.set('pages', region === 'global' ? '2' : '3')
+              params.set('per', region === 'global' ? '32' : '48')
+              params.set('region', region)
               params.set('providers', getSelectedVideoProviders().join(','))
             } else if (category === 'web') {
               endpoint = '/api/ingest/web'
-              params.set('per', '10')
-              params.set('pages', '2')
+              params.set('per', region === 'global' ? '10' : '12')
+              params.set('pages', region === 'global' ? '3' : '5')
               params.set('sample', '6')
               params.set('limit', String(Math.max(30, maxCombos * 24)))
               params.set('providers', getSelectedWebProviders().join(','))
+              params.set('region', region)
             }
             params.set('q', combo.query)
 
@@ -331,7 +349,7 @@
             : ''
 
           appendLog(`
-            <p class="summary">Terminé → combos:${executed} scanned:${totals.scanned} unique:${totals.unique} inserted:${totals.inserted} updated:${totals.updated}${totals.skipped ? ` skipped:${totals.skipped}` : ''}${providerSummary}</p>
+            <p class="summary">Terminé (${region}) → combos:${executed} scanned:${totals.scanned} unique:${totals.unique} inserted:${totals.inserted} updated:${totals.updated}${totals.skipped ? ` skipped:${totals.skipped}` : ''}${providerSummary}</p>
           `)
         } catch (error) {
           appendLog(`<p class="error">Erreur → ${(error instanceof Error ? error.message : String(error))}</p>`)
@@ -365,43 +383,6 @@
           appendLog(`<p class="success">Sources curées → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${providerSummary}</p>`)
         } catch (error) {
           appendLog(`<p class="error">Sources curées → ${(error instanceof Error ? error.message : String(error))}</p>`)
-        } finally {
-          setRunning(false)
-        }
-      }
-
-      async function runWebDirect() {
-        stopRequested = false
-        setRunning(true)
-        appendLog(`<p><strong>Web direct (Neocities/Wikipédia)</strong> — ${new Date().toLocaleTimeString()}</p>`)
-
-        try {
-          const key = document.body.dataset.key || ''
-          const params = new URLSearchParams({
-            providers: 'neocities,wikipedia',
-            per: '12',
-            pages: '3',
-            sample: '8',
-            limit: '48',
-            requireOg: '0',
-          })
-          if (dryRunEl.checked) params.set('dry', '1')
-
-          const res = await fetch(`/api/ingest/web?${params.toString()}`, {
-            method: 'GET',
-            headers: { 'x-admin-ingest-key': key },
-          })
-          const data = await res.json()
-          if (!res.ok) throw new Error(data?.error || 'Ingest failed')
-
-          const providerCounts = data?.providerCounts || {}
-          const providerSummary = Object.keys(providerCounts).length
-            ? ` → ${Object.entries(providerCounts).map(([name, value]) => `${name}:${value}`).join(' • ')}`
-            : ''
-
-          appendLog(`<p class="success">Neocities/Wikipédia → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${providerSummary}</p>`)
-        } catch (error) {
-          appendLog(`<p class="error">Neocities/Wikipédia → ${(error instanceof Error ? error.message : String(error))}</p>`)
         } finally {
           setRunning(false)
         }
@@ -452,7 +433,6 @@
       buttons.images.addEventListener('click', () => run('images'))
       buttons.videos.addEventListener('click', () => run('videos'))
       if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
-      if (buttons.webDirect) buttons.webDirect.addEventListener('click', runWebDirect)
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       stopBtn.addEventListener('click', () => {
         stopRequested = true

@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { generateKeywordCombo } from '@/lib/ingest/keywords/combo'
+import { resolveRegionKey } from '@/lib/ingest/keywords/regionPools'
 
 export async function GET(req: Request) {
   const expectedKey = process.env.ADMIN_INGEST_KEY || ''
@@ -13,7 +14,9 @@ export async function GET(req: Request) {
   }
 
   try {
-    const combo = await generateKeywordCombo()
+    const url = new URL(req.url)
+    const region = resolveRegionKey(url.searchParams.get('region'))
+    const combo = await generateKeywordCombo({ region })
     return NextResponse.json(combo)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'combo generation failed'

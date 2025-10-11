@@ -4,6 +4,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { ingestVideos } from '@/lib/ingest/videos';
 import { buildVideoQueries, loadVideoKeywordDictionary } from '@/lib/ingest/videoKeywords';
+import { buildComboQueries } from '@/lib/ingest/keywords/combo';
+import { resolveRegionKey } from '@/lib/ingest/keywords/regionPools';
 
 function parseList(value: string | null): string[] {
   if (!value) return [];
@@ -112,9 +114,25 @@ export async function GET(req: NextRequest) {
       .map((token) => token.toLowerCase())
       .filter((token): token is SearchProvider => (SEARCH_PROVIDERS as readonly string[]).includes(token));
 
+    const region = resolveRegionKey(url.searchParams.get('region'));
+
+    const filteredProviders = region === 'global'
+      ? providers
+      : providers.filter((provider) => provider !== 'pixabay' && provider !== 'pexels');
+    const finalProviders = filteredProviders.length ? filteredProviders : (region === 'global' ? providers : ['youtube', 'dailymotion'] as SearchProvider[]);
+
     if (!queries.length) {
-      const dictionary = await loadVideoKeywordDictionary();
-      queries = buildVideoQueries(dictionary, count);
+      if (region === 'global') {
+        const combos = await buildComboQueries(count, { region: 'global' });
+        queries = combos.map((combo) => combo.query);
+        if (!queries.length) {
+          const dictionary = await loadVideoKeywordDictionary();
+          queries = buildVideoQueries(dictionary, count, { region });
+        }
+      } else {
+        const dictionary = await loadVideoKeywordDictionary();
+        queries = buildVideoQueries(dictionary, count, { region });
+      }
     }
 
     const result = await ingestVideos({
@@ -130,12 +148,13 @@ export async function GET(req: NextRequest) {
       dryRun,
       sampleSize,
       durations,
-      providers,
+      providers: finalProviders,
     });
 
     return NextResponse.json({
       ok: true,
       mode,
+      region,
       queries,
       playlistId,
       channelId,
@@ -144,7 +163,7 @@ export async function GET(req: NextRequest) {
       sampleSize,
       count,
       durations,
-      providers,
+      providers: finalProviders,
       ...result,
     });
   } catch (error: unknown) {

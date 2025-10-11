@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { buildRegionalQueries, type RegionKey } from '@/lib/ingest/keywords/regionPools'
 
 export type VideoKeywordDictionary = {
   energies?: string[]
@@ -28,9 +29,9 @@ function toArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0)
 }
 
-function pickOne(list: string[]): string | undefined {
+function pickOne(list: string[], rng: () => number = Math.random): string | undefined {
   if (!list.length) return undefined
-  const index = Math.floor(Math.random() * list.length)
+  const index = Math.floor(rng() * list.length)
   return list[index]
 }
 
@@ -57,7 +58,18 @@ export async function loadVideoKeywordDictionary(): Promise<Required<VideoKeywor
   }
 }
 
-export function buildVideoQueries(dict: Required<VideoKeywordDictionary>, count: number): string[] {
+export function buildVideoQueries(
+  dict: Required<VideoKeywordDictionary>,
+  count: number,
+  options: { region?: RegionKey; rng?: () => number } = {},
+): string[] {
+  const region = options.region ?? 'global'
+  const rng = options.rng ?? Math.random
+
+  if (region !== 'global') {
+    return buildRegionalQueries(region, 'video', count, rng).map((entry) => entry.query)
+  }
+
   const results = new Set<string>()
   const fallbackPool = [...dict.subjects]
   const maxAttempts = Math.max(count * 12, 40)
@@ -66,23 +78,16 @@ export function buildVideoQueries(dict: Required<VideoKeywordDictionary>, count:
   while (results.size < count && attempts < maxAttempts) {
     attempts += 1
 
-    const energy = Math.random() < 0.8 ? pickOne(dict.energies) : undefined
-    const era = Math.random() < 0.6 ? pickOne(dict.eras) : undefined
-    const subject = pickOne(dict.subjects)
+    const energy = rng() < 0.8 ? pickOne(dict.energies, rng) : undefined
+    const era = rng() < 0.6 ? pickOne(dict.eras, rng) : undefined
+    const subject = pickOne(dict.subjects, rng)
     if (!subject) continue
-    const format = Math.random() < 0.9 ? pickOne(dict.formats) : undefined
-    const locale = Math.random() < 0.65 ? pickOne(dict.locales) : undefined
-    const extra = Math.random() < 0.45 ? pickOne(dict.extras) : undefined
+    const format = rng() < 0.9 ? pickOne(dict.formats, rng) : undefined
+    const locale = rng() < 0.65 ? pickOne(dict.locales, rng) : undefined
+    const extra = rng() < 0.45 ? pickOne(dict.extras, rng) : undefined
 
     const localePart = locale ? `${locale} scene` : undefined
-    const tokens = buildTokens([
-      energy,
-      era,
-      subject,
-      format,
-      localePart,
-      extra,
-    ])
+    const tokens = buildTokens([energy, era, subject, format, localePart, extra])
 
     if (!tokens) continue
     results.add(tokens)
@@ -91,7 +96,7 @@ export function buildVideoQueries(dict: Required<VideoKeywordDictionary>, count:
   if (results.size < count && fallbackPool.length) {
     for (const subject of fallbackPool) {
       if (results.size >= count) break
-      const fallbackQuery = buildTokens([pickOne(dict.energies), subject, pickOne(dict.formats)])
+      const fallbackQuery = buildTokens([pickOne(dict.energies, rng), subject, pickOne(dict.formats, rng)])
       if (fallbackQuery) results.add(fallbackQuery)
     }
   }
@@ -99,7 +104,7 @@ export function buildVideoQueries(dict: Required<VideoKeywordDictionary>, count:
   if (results.size < count && dict.extras.length) {
     for (const extra of dict.extras) {
       if (results.size >= count) break
-      const fallbackQuery = buildTokens([pickOne(dict.energies), extra, pickOne(dict.formats)])
+      const fallbackQuery = buildTokens([pickOne(dict.energies, rng), extra, pickOne(dict.formats, rng)])
       if (fallbackQuery) results.add(fallbackQuery)
     }
   }
@@ -108,5 +113,15 @@ export function buildVideoQueries(dict: Required<VideoKeywordDictionary>, count:
   if (!final.length) {
     return ['weird archive footage', 'retro craft tutorial'].slice(0, count)
   }
+
+  // Inject a handful of non-English global queries for variety
+  if (final.length < count) {
+    const additional = buildRegionalQueries('global', 'video', count - final.length, rng)
+    for (const entry of additional) {
+      final.push(entry.query)
+      if (final.length >= count) break
+    }
+  }
+
   return final.slice(0, count)
 }

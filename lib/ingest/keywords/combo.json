@@ -18,7 +18,7 @@
       "synthwave",
       "dreamgaze",
       "psychedelic",
-      "krautrock",
+      "rock",
       "spacefunk",
       "soultrain",
       "boombap",
@@ -60,7 +60,7 @@
       "teletext",
       "shortwave",
       "pirate",
-      "numbersstation",
+      "radio",
       "glitch",
       "datamosh",
       "pixel",
@@ -250,7 +250,8 @@
       "fireworks",
       "laserlight",
       "audiovisual",
-      "immersive"
+      "immersive",
+      "news","magazine","culture","music","film","movies","series","animation","art","design","photography","fashion","beauty","style","travel","food","cooking","recipes","science","technology","history","architecture","space","nature","wildlife","environment","climate","health","fitness","education","books","literature","theatre","dance","podcast","radio","video","tv","streaming","games","gaming","esports","sports","football","soccer","basketball","baseball","tennis","cycling","running","motorsport","business","economy","politics","society","community","youth","women","festival","events","city","local","global","museum","gallery","archive","library","guide","review","tips","tutorial","interview","documentary","feature","special","highlights","clip","episode","trailer","teaser","playlist","channel","retro","vintage","indie","underground","street","creative","visual","editorial","lifestyle"
     ]
   },
   "wordSecondary": {
@@ -567,7 +568,8 @@
       "rodeo",
       "livestream",
       "replay",
-      "rebroadcast"
+      "rebroadcast",
+      "guide","review","tips","tutorial","interview","documentary","feature","special","archive","gallery","spotlight","showcase","collection","playlist","channel","clip","highlight","recap","episode","trailer","teaser","behindthescenes","makingof","stream","live","broadcast","report","analysis","commentary","opinion","essay","profile","story","explainer","howto","walkthrough","handbook","journal","newsletter","podcast","radio","tv","visualizer","montage","timelapse","animation","exhibition","artisttalk","portfolio","lookbook","styleedit","runwayshow","roadtrip","travelvlog","cityguide","streetfood","cookalong","recipe","unboxing","gear","setup","bts","cinematic","slowmo","stopmotion","sketch","parody","asmr","relax"
     ]
   },
   "countries": {

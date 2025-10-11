@@ -798,7 +798,12 @@ async function getCollection(): Promise<Collection<VideoDocument>> {
   }
   if (!videoIndexesEnsured && cachedCollection) {
     videoIndexesEnsured = true;
-    cachedCollection.createIndex({ type: 1, videoId: 1 }, { unique: true, name: 'uniq_video_id' }).catch((error) => {
+    cachedCollection
+      .createIndex(
+        { type: 1, videoId: 1 },
+        { unique: true, name: 'uniq_video_id', partialFilterExpression: { type: 'video', videoId: { $type: 'string' } } },
+      )
+      .catch((error) => {
       console.warn('[ingest:videos] failed to ensure index', error);
     });
   }

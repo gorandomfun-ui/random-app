@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ingestImages, IMAGE_PROVIDERS } from '@/lib/ingest/images';
 import type { ImageProvider } from '@/lib/ingest/images';
+import { buildComboQueries } from '@/lib/ingest/keywords/combo';
+import { buildRegionalQueries, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools';
 
 type PhotoKeywordDictionary = {
   adjectives: string[];
@@ -69,22 +71,39 @@ export async function GET(req: Request) {
     const queries = parseList(url.searchParams.get('q'));
     const per = Math.max(5, Math.min(80, Number(url.searchParams.get('per') || 40)));
     const providersRaw = parseList(url.searchParams.get('providers'));
+    const region = resolveRegionKey(url.searchParams.get('region'));
     const providers = normalizeProviders(providersRaw);
     const dry = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dry === '1' || dry === 'true';
 
     let finalQueries = queries;
     if (!finalQueries.length) {
-      const dict = await loadKeywordDictionary();
-      const photos = buildPhotoQueries(dict.photo, 6);
-      const gifs = buildGifQueries(dict.gif, 3);
-      finalQueries = [...photos, ...gifs];
+      if (region === 'global') {
+        const combos = await buildComboQueries(9, { region: 'global' });
+        finalQueries = combos.map((combo) => combo.query);
+        if (!finalQueries.length) {
+          const dict = await loadKeywordDictionary();
+          const photos = buildPhotoQueries(dict.photo, 6, { region });
+          const gifs = buildGifQueries(dict.gif, 3, { region });
+          finalQueries = [...photos, ...gifs];
+        }
+      } else {
+        const photos = buildRegionalQueries(region, 'image', 6).map((entry) => entry.query);
+        const gifsRegional = buildRegionalQueries(region, 'video', 3).map((entry) => entry.query);
+        finalQueries = [...photos, ...gifsRegional];
+      }
     }
+
+    const baseProviders = providers ?? [...IMAGE_PROVIDERS];
+    const filteredProviders = region === 'global'
+      ? baseProviders
+      : baseProviders.filter((provider) => provider !== 'pixabay' && provider !== 'pexels');
+    const finalProviders = filteredProviders.length ? filteredProviders : ['giphy', 'tenor'] as ImageProvider[];
 
     const result = await ingestImages({
       queries: finalQueries,
       perQuery: per,
-      providers,
+      providers: finalProviders,
       dryRun,
       sampleSize: 6,
     });
@@ -92,7 +111,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       queries: finalQueries,
-      providers: providers ?? [...IMAGE_PROVIDERS],
+      providers: finalProviders,
+      region,
       dryRun,
       ...result,
     });
@@ -103,9 +123,9 @@ export async function GET(req: Request) {
   }
 }
 
-function pickOne<T>(array: T[]): T | undefined {
+function pickOne<T>(array: T[], rng: () => number = Math.random): T | undefined {
   if (!array.length) return undefined;
-  const index = Math.floor(Math.random() * array.length);
+  const index = Math.floor(rng() * array.length);
   return array[index];
 }
 
@@ -115,7 +135,13 @@ function uniquePush(target: Set<string>, value: string | undefined) {
   if (trimmed) target.add(trimmed);
 }
 
-function buildPhotoQueries(dict: PhotoKeywordDictionary, count: number): string[] {
+function buildPhotoQueries(dict: PhotoKeywordDictionary, count: number, options: { region?: RegionKey; rng?: () => number } = {}): string[] {
+  const region = options.region ?? 'global';
+  const rng = options.rng ?? Math.random;
+  if (region !== 'global') {
+    return buildRegionalQueries(region, 'image', count, rng).map((entry) => entry.query);
+  }
+
   const results = new Set<string>();
   const adjectives = dict?.adjectives ?? [];
   const subjects = dict?.subjects ?? [];
@@ -125,12 +151,12 @@ function buildPhotoQueries(dict: PhotoKeywordDictionary, count: number): string[
   let attempts = 0;
   while (results.size < count && attempts < maxAttempts) {
     attempts += 1;
-    const adj = pickOne(adjectives);
-    const subject = pickOne(subjects);
+    const adj = pickOne(adjectives, rng);
+    const subject = pickOne(subjects, rng);
     if (!subject || !adj) continue;
     const parts = [adj, subject];
-    if (Math.random() < 0.6) {
-      const context = pickOne(contexts);
+    if (rng() < 0.6) {
+      const context = pickOne(contexts, rng);
       if (context) parts.push(context);
     }
     uniquePush(results, parts.join(' '));
@@ -141,10 +167,21 @@ function buildPhotoQueries(dict: PhotoKeywordDictionary, count: number): string[
     subjects.slice(0, count).forEach((subject) => uniquePush(results, subject));
   }
 
+  if (results.size < count) {
+    const extras = buildRegionalQueries('global', 'image', count - results.size, rng)
+    extras.forEach((entry) => uniquePush(results, entry.query))
+  }
+
   return Array.from(results).slice(0, count);
 }
 
-function buildGifQueries(dict: GifKeywordDictionary, count: number): string[] {
+function buildGifQueries(dict: GifKeywordDictionary, count: number, options: { region?: RegionKey; rng?: () => number } = {}): string[] {
+  const region = options.region ?? 'global';
+  const rng = options.rng ?? Math.random;
+  if (region !== 'global') {
+    return buildRegionalQueries(region, 'video', count, rng).map((entry) => entry.query);
+  }
+
   const results = new Set<string>();
   const actions = dict?.actions ?? [];
   const styles = dict?.styles ?? [];
@@ -155,16 +192,16 @@ function buildGifQueries(dict: GifKeywordDictionary, count: number): string[] {
   let attempts = 0;
   while (results.size < count && attempts < maxAttempts) {
     attempts += 1;
-    const action = pickOne(actions);
-    const theme = pickOne(themes);
+    const action = pickOne(actions, rng);
+    const theme = pickOne(themes, rng);
     if (!action || !theme) continue;
     const parts = [action, theme];
-    if (Math.random() < 0.7) {
-      const style = pickOne(styles);
+    if (rng() < 0.7) {
+      const style = pickOne(styles, rng);
       if (style) parts.push(style);
     }
-    if (Math.random() < 0.4) {
-      const feeling = pickOne(feelings);
+    if (rng() < 0.4) {
+      const feeling = pickOne(feelings, rng);
       if (feeling) parts.push(feeling);
     }
     uniquePush(results, parts.join(' '));
@@ -172,6 +209,11 @@ function buildGifQueries(dict: GifKeywordDictionary, count: number): string[] {
 
   if (results.size < count) {
     themes.slice(0, count).forEach((theme) => uniquePush(results, theme));
+  }
+
+  if (results.size < count) {
+    const extras = buildRegionalQueries('global', 'video', count - results.size, rng)
+    extras.forEach((entry) => uniquePush(results, entry.query))
   }
 
   return Array.from(results).slice(0, count);

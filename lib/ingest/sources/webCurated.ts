@@ -1,3 +1,5 @@
+import type { RegionKey } from '@/lib/ingest/keywords/regionPools'
+
 export type CuratedWebSource = {
   url: string
   title?: string
@@ -6,6 +8,7 @@ export type CuratedWebSource = {
   provider?: string
   sourceName?: string
   sourceUrl?: string
+  regions?: RegionKey[]
 }
 
 export const CURATED_WEB_SOURCES: CuratedWebSource[] = [
@@ -50,18 +53,21 @@ export const CURATED_WEB_SOURCES: CuratedWebSource[] = [
     title: 'Open Culture',
     description: 'Free cultural and educational media on the web.',
     tags: ['education', 'culture', 'media'],
+    regions: ['global'],
   },
   {
     url: 'https://www.booooooom.com/',
     title: 'BOOOOOOOM',
     description: 'Contemporary art & photography from emerging creators.',
     tags: ['art', 'photography', 'blog'],
+    regions: ['global'],
   },
   {
     url: 'https://www.neondystopia.com/',
     title: 'Neon Dystopia',
     description: 'Cyberpunk culture, essays, and world-building.',
     tags: ['cyberpunk', 'culture', 'fiction'],
+    regions: ['global'],
   },
   {
     url: 'https://thecreativeindependent.com/',
@@ -419,5 +425,76 @@ export const CURATED_WEB_SOURCES: CuratedWebSource[] = [
     title: 'The Sampler',
     description: 'Curated newsletter bringing contemporary music projects to light.',
     tags: ['music', 'newsletter'],
+    regions: ['global'],
+  },
+  {
+    url: 'https://www.nytimes.com/',
+    title: 'The New York Times',
+    description: 'Major US newsroom covering world news, culture, and opinion.',
+    tags: ['news', 'culture'],
+    regions: ['north-america', 'global'],
+  },
+  {
+    url: 'https://www.latimes.com/',
+    title: 'Los Angeles Times',
+    description: 'West Coast perspectives on news, culture, and lifestyle.',
+    tags: ['news', 'culture'],
+    regions: ['north-america'],
+  },
+  {
+    url: 'https://www.lemonde.fr/',
+    title: 'Le Monde',
+    description: 'Référence francophone pour l’actualité mondiale.',
+    tags: ['news', 'france'],
+    regions: ['europe'],
+  },
+  {
+    url: 'https://www.zeit.de/',
+    title: 'Die Zeit',
+    description: 'Analyses et opinion depuis l’Europe germanophone.',
+    tags: ['news', 'analysis'],
+    regions: ['europe'],
+  },
+  {
+    url: 'https://elpais.com/',
+    title: 'El País',
+    description: 'Actualité hispanophone et culture européenne.',
+    tags: ['news', 'culture'],
+    regions: ['europe', 'south-america'],
+  },
+  {
+    url: 'https://www.folha.uol.com.br/',
+    title: 'Folha de S.Paulo',
+    description: 'Média brésilien de référence couvrant société, économie et culture.',
+    tags: ['news', 'brasil'],
+    regions: ['south-america'],
+  },
+  {
+    url: 'https://www.scmp.com/',
+    title: 'South China Morning Post',
+    description: 'Actualité asiatique depuis Hong Kong.',
+    tags: ['news', 'asia'],
+    regions: ['asia'],
+  },
+  {
+    url: 'https://www.thehindu.com/',
+    title: 'The Hindu',
+    description: 'Journal indien couvrant politiques, économie, et culture.',
+    tags: ['news', 'india'],
+    regions: ['asia'],
+  },
+  {
+    url: 'https://mg.co.za/',
+    title: 'Mail & Guardian',
+    description: 'Investigation et analyses panafricaines.',
+    tags: ['news', 'africa'],
+    regions: ['africa'],
+  },
+  {
+    url: 'https://www.dailymaverick.co.za/',
+    title: 'Daily Maverick',
+    description: 'Analyses politiques et sociales sud-africaines.',
+    tags: ['news', 'analysis'],
+    regions: ['africa'],
   },
 ]

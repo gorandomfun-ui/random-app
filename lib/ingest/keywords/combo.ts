@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { buildRegionalQuery, type RegionKey } from '@/lib/ingest/keywords/regionPools'
 
 export type WeightedKeywordList = {
   includeProbability: number
@@ -31,6 +32,7 @@ export type KeywordComponents = {
   secondary?: string
   country?: string
   year?: number
+  region?: string
 }
 
 export type KeywordCombo = {
@@ -178,7 +180,31 @@ function prioritizeTokens(tokens: ComponentToken[]): ComponentToken[] {
     })
 }
 
-export async function generateKeywordCombo(rng: () => number = Math.random): Promise<KeywordCombo> {
+export type GenerateComboOptions = {
+  region?: RegionKey
+  rng?: () => number
+}
+
+export async function generateKeywordCombo(options: GenerateComboOptions = {}): Promise<KeywordCombo> {
+  const rng = options.rng ?? Math.random
+  const region = options.region ?? 'global'
+
+  if (region !== 'global') {
+    const { terms, language } = buildRegionalQuery(region, 'web', rng)
+    const [primary, secondary, ...rest] = terms
+    const components: KeywordComponents = {
+      primary,
+      secondary,
+      country: language,
+      region,
+    }
+    if (rest.length) components.year = undefined
+    return {
+      query: terms.join(' '),
+      components,
+    }
+  }
+
   const config = await loadKeywordComboConfig()
 
   const primary = maybePickFromList(config.wordPrimary, rng)
@@ -232,6 +258,7 @@ export async function generateKeywordCombo(rng: () => number = Math.random): Pro
     secondary: selectedMap.get('secondary'),
     country: selectedMap.get('country'),
     year: selectedMap.has('year') ? Number(selectedMap.get('year')) : undefined,
+    region: 'global',
   }
 
   return {
@@ -240,8 +267,9 @@ export async function generateKeywordCombo(rng: () => number = Math.random): Pro
   }
 }
 
-export function buildComboQueries(count: number, rng: () => number = Math.random): Promise<KeywordCombo[]> {
-  const tasks = Array.from({ length: Math.max(1, count) }, () => generateKeywordCombo(rng))
+export function buildComboQueries(count: number, options: GenerateComboOptions = {}): Promise<KeywordCombo[]> {
+  const rng = options.rng ?? Math.random
+  const tasks = Array.from({ length: Math.max(1, count) }, () => generateKeywordCombo({ region: options.region, rng }))
   return Promise.all(tasks)
 }
 

@@ -4,6 +4,8 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
+import { generateKeywordCombo } from '@/lib/ingest/keywords/combo'
+import { buildRegionalQuery, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools'
 import { CURATED_WEB_SOURCES, type CuratedWebSource } from '@/lib/ingest/sources/webCurated'
 
 /* ---------- DB helpers (identiques au style des autres ingests) ---------- */
@@ -143,6 +145,14 @@ function normalizeStrings(value: unknown): string[] {
   return []
 }
 
+const REGION_GL_MAP: Partial<Record<RegionKey, string>> = {
+  'north-america': 'us',
+  'south-america': 'br',
+  europe: 'fr',
+  asia: 'sg',
+  africa: 'za',
+}
+
 type WebRow = Omit<WebDoc, 'createdAt' | 'updatedAt'>
 
 function isHostBlocked(host: string): boolean {
@@ -260,7 +270,13 @@ type ProviderResult = {
   ogFailed?: number
 }
 
-async function runGoogleCSE(queries: string[], per: number, pages: number, limit: number): Promise<ProviderResult> {
+async function runGoogleCSE(
+  queries: string[],
+  per: number,
+  pages: number,
+  limit: number,
+  region: RegionKey,
+): Promise<ProviderResult> {
   const KEY = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_API_KEY
   const CX  = process.env.GOOGLE_CSE_CX  || process.env.GOOGLE_CSE_ID
   if (!KEY || !CX) return { rows: [], scanned: 0, checked: 0 }
@@ -273,9 +289,17 @@ async function runGoogleCSE(queries: string[], per: number, pages: number, limit
     for (let p = 0; p < pages; p++) {
       const start = 1 + p * per
       const queryWithNegatives = `${q} ${NEGATIVE_QUERY_SUFFIX}`.trim()
-      const url = `https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(queryWithNegatives)}&num=${per}&start=${start}&safe=off`
+      const url = new URL('https://www.googleapis.com/customsearch/v1')
+      url.searchParams.set('key', KEY)
+      url.searchParams.set('cx', CX)
+      url.searchParams.set('q', queryWithNegatives)
+      url.searchParams.set('num', String(per))
+      url.searchParams.set('start', String(start))
+      url.searchParams.set('safe', 'off')
+      const gl = REGION_GL_MAP[region]
+      if (gl) url.searchParams.set('gl', gl)
       try {
-        const data = await fetchJson<GoogleCSEResponse>(url, { headers: ROUTE_HEADERS, timeoutMs: 10000 })
+        const data = await fetchJson<GoogleCSEResponse>(url.toString(), { headers: ROUTE_HEADERS, timeoutMs: 10000 })
         const items = Array.isArray(data?.items) ? data?.items ?? [] : []
         for (const it of items) {
           const link = it?.link?.trim()
@@ -309,8 +333,14 @@ async function runGoogleCSE(queries: string[], per: number, pages: number, limit
 
   const deduped = dedupeByUrl(raw)
   const { rows: filteredRows, filtered } = filterBlockedRows(deduped)
-  const { rows, checked, failed } = await ensureOgImages(filteredRows, limit)
-  return { rows, scanned: raw.length, checked, filtered: filtered + filteredLocal, ogFailed: failed }
+  const ensured = await ensureOgImages(filteredRows, limit)
+  return {
+    rows: ensured.rows,
+    scanned: raw.length,
+    checked: ensured.checked,
+    filtered: filtered + filteredLocal,
+    ogFailed: ensured.failed,
+  }
 }
 
 type NeocitiesListResponse = {
@@ -426,7 +456,7 @@ async function pullWikipediaList(limit: number, requireOg = true): Promise<Provi
   return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered, ogFailed: ensured.failed }
 }
 
-async function pullCurated(limit: number, requireOg = true): Promise<ProviderResult> {
+async function pullCurated(limit: number, requireOg = true, region: RegionKey = 'global'): Promise<ProviderResult> {
   if (!CURATED_WEB_SOURCES.length || limit <= 0) {
     return { rows: [], scanned: 0, checked: 0 }
   }
@@ -434,7 +464,13 @@ async function pullCurated(limit: number, requireOg = true): Promise<ProviderRes
   const raw: WebRow[] = []
   const seen = new Set<string>()
 
-  for (const entry of shuffle<CuratedWebSource>(CURATED_WEB_SOURCES)) {
+  const regionalSources = CURATED_WEB_SOURCES.filter((entry) => {
+    if (!entry.regions || !entry.regions.length) return true
+    if (entry.regions.includes('global')) return true
+    return entry.regions.includes(region)
+  })
+
+  for (const entry of shuffle<CuratedWebSource>(regionalSources)) {
     const url = entry.url?.trim()
     if (!url || seen.has(url)) continue
     seen.add(url)
@@ -484,20 +520,27 @@ export async function GET(req: NextRequest) {
 
   const per   = Math.max(1, Math.min(10, Number(req.nextUrl.searchParams.get('per') || 10)))
   const pages = Math.max(1, Math.min(10, Number(req.nextUrl.searchParams.get('pages') || 3)))
+  const region = resolveRegionKey(req.nextUrl.searchParams.get('region'))
   const incoming = (req.nextUrl.searchParams.get('q') || '')
     .split(',').map(s => s.trim()).filter(Boolean)
-  const fallback = [
-    'weird interactive site','dessert recipe blog','late night advice column','hidden travel diary','odd fashion zine'
-  ]
-  const queries = incoming.length ? incoming : fallback
 
-  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,curated,neocities,wikipedia')
+  let fallbackQuery: string
+  if (region === 'global') {
+    const combo = await generateKeywordCombo({ region: 'global' })
+    fallbackQuery = combo.query
+  } else {
+    fallbackQuery = buildRegionalQuery(region, 'web').terms.join(' ')
+  }
+
+  const queries = incoming.length ? incoming : [fallbackQuery]
+
+  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,curated')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
   const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
-  const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'wikipedia']
+  const providers = requestedProviders.length ? requestedProviders : ['cse', 'curated']
 
   const requireOgParam = req.nextUrl.searchParams.get('requireOg')
   const requireOg = requireOgParam == null
@@ -525,7 +568,7 @@ export async function GET(req: NextRequest) {
 
   if (providers.includes('cse')) {
     try {
-      const result = await runGoogleCSE(queries, per, pages, perProviderTarget)
+      const result = await runGoogleCSE(queries, per, pages, perProviderTarget, region)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
@@ -536,7 +579,7 @@ export async function GET(req: NextRequest) {
 
   if (providers.includes('curated')) {
     try {
-      const result = await pullCurated(perProviderTarget, requireOg)
+      const result = await pullCurated(perProviderTarget, requireOg, region)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
@@ -582,6 +625,7 @@ export async function GET(req: NextRequest) {
         providers,
         providerCounts,
         queries,
+        region,
         per,
         pages,
         limit: totalTarget,
@@ -603,6 +647,7 @@ export async function GET(req: NextRequest) {
       providers,
       providerCounts,
       queries,
+      region,
       per,
       pages,
       limit: totalTarget,
