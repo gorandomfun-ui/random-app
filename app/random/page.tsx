@@ -1559,7 +1559,7 @@ const sequenceStateRef = useRef({
       prevState = { ...sequenceStateRef.current }
       slot = getNextSlot()
       triggerPageGlitch(slot.kind === 'encourage' ? 'boost' : 'normal')
-      let outcome: 'none' | 'content' | 'encourage' = 'none'
+      let outcome: 'content' | 'encourage' | null = null
       if (slot.kind === 'encourage') {
         const encourageItem = buildEncourageItem(slot.encourageIndex)
         setCurrentItem(encourageItem)
@@ -1580,7 +1580,7 @@ const sequenceStateRef = useRef({
       updateTheme()
       playRandom()
 
-      if (reward && outcome !== 'none') {
+      if (reward && outcome !== null) {
         addAction('random')
         if (outcome === 'encourage') {
           addAction('encourage')
