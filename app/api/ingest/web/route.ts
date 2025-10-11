@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
+import { CURATED_WEB_SOURCES, type CuratedWebSource } from '@/lib/ingest/sources/webCurated'
 
 /* ---------- DB helpers (identiques au style des autres ingests) ---------- */
 let _db: Db | null = null
@@ -61,6 +62,36 @@ const ROUTE_HEADERS: HeadersInit = {
   'User-Agent': 'RandomAppBot/1.0 (+https://random.app)',
 }
 
+const NEGATIVE_QUERY_SUFFIX = '-reddit -forum -forums -thread -threads -discord -stackexchange -stackoverflow -subreddit -tapatalk -4chan';
+const BLOCKED_HOST_SUBSTRINGS = [
+  'reddit.com',
+  'discord.com',
+  'discord.gg',
+  'stackexchange.com',
+  'stackoverflow.com',
+  'stackprinter.appspot.com',
+  'steamcommunity.com',
+  'tapatalk.com',
+  '4chan.org',
+  '8kun.top',
+  'quora.com',
+  'facebook.com',
+  'twitter.com',
+  'x.com',
+  'pinterest.com',
+] as const;
+
+const BLOCKED_HOST_PATTERNS: RegExp[] = [
+  /(^|\.)forums?\./i,
+  /(^|\.)community\./i,
+  /(^|\.)board\./i,
+  /(^|\.)bbs\./i,
+  /(^|\.)mail-archive\.com$/i,
+  /(^|\.)groups\.google\.com$/i,
+];
+
+const FORUM_KEYWORDS_REGEX = /\b(forum|thread|threads|subreddit|discord|community board|message board)\b/i;
+
 function shuffle<T>(items: T[]): T[] {
   const arr = items.slice()
   for (let i = arr.length - 1; i > 0; i--) {
@@ -114,6 +145,38 @@ function normalizeStrings(value: unknown): string[] {
 
 type WebRow = Omit<WebDoc, 'createdAt' | 'updatedAt'>
 
+function isHostBlocked(host: string): boolean {
+  if (!host) return false
+  const lower = host.toLowerCase()
+  for (const token of BLOCKED_HOST_SUBSTRINGS) {
+    if (lower.includes(token)) return true
+  }
+  for (const pattern of BLOCKED_HOST_PATTERNS) {
+    if (pattern.test(lower)) return true
+  }
+  return false
+}
+
+function isLikelyForum(row: Pick<WebRow, 'url' | 'title' | 'text' | 'host'>): boolean {
+  const haystack = `${row.host || ''} ${row.title || ''} ${row.text || ''} ${row.url || ''}`
+  return FORUM_KEYWORDS_REGEX.test(haystack)
+}
+
+function filterBlockedRows(rows: WebRow[]): { rows: WebRow[]; filtered: number } {
+  if (!rows.length) return { rows: [], filtered: 0 }
+  const out: WebRow[] = []
+  let filtered = 0
+  for (const row of rows) {
+    const host = row?.host || hostFromUrl(row?.url || '')
+    if (isHostBlocked(host) || isLikelyForum({ ...row, host })) {
+      filtered += 1
+      continue
+    }
+    out.push({ ...row, host })
+  }
+  return { rows: out, filtered }
+}
+
 /* ------------------------------- OG fetcher ------------------------------ */
 async function fetchOgImage(link: string): Promise<string | null> {
   try {
@@ -153,26 +216,49 @@ function dedupeRowsWithOg(rows: WebRow[]): WebRow[] {
   return Array.from(map.values())
 }
 
-async function ensureOgImages(rows: WebRow[], limit: number): Promise<{ rows: WebRow[]; checked: number }> {
+async function ensureOgImages(
+  rows: WebRow[],
+  limit: number,
+  concurrency = 6,
+): Promise<{ rows: WebRow[]; checked: number; failed: number }> {
+  if (!rows.length || limit <= 0) return { rows: [], checked: 0, failed: 0 }
   const out: WebRow[] = []
   let checked = 0
-  for (const row of rows) {
-    if (!row.url) continue
-    checked += 1
-    let og = row.ogImage || null
-    if (!og) og = await fetchOgImage(row.url)
-    if (!og) continue
-    out.push({ ...row, ogImage: og })
-    if (out.length >= limit) break
+  let failed = 0
+  let index = 0
+  const workers = Math.max(1, Math.min(concurrency, rows.length))
+
+  async function worker() {
+    while (index < rows.length && out.length < limit) {
+      const current = rows[index++]
+      if (!current?.url) continue
+      checked += 1
+      let og = current.ogImage || null
+      if (!og) og = await fetchOgImage(current.url)
+      if (!og) {
+        failed += 1
+        continue
+      }
+      if (out.length >= limit) break
+      out.push({ ...current, ogImage: og })
+    }
   }
-  return { rows: out, checked }
+
+  await Promise.all(Array.from({ length: workers }, () => worker()))
+  return { rows: out.slice(0, limit), checked, failed }
 }
 
 /* --------------------------------- CSE ---------------------------------- */
 type GoogleCSEItem = { link?: string; title?: string; snippet?: string }
 type GoogleCSEResponse = { items?: GoogleCSEItem[] }
 
-type ProviderResult = { rows: WebRow[]; scanned: number; checked: number }
+type ProviderResult = {
+  rows: WebRow[]
+  scanned: number
+  checked: number
+  filtered?: number
+  ogFailed?: number
+}
 
 async function runGoogleCSE(queries: string[], per: number, pages: number, limit: number): Promise<ProviderResult> {
   const KEY = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_API_KEY
@@ -180,12 +266,14 @@ async function runGoogleCSE(queries: string[], per: number, pages: number, limit
   if (!KEY || !CX) return { rows: [], scanned: 0, checked: 0 }
 
   const raw: WebRow[] = []
+  let filteredLocal = 0
   for (const rawQuery of queries) {
     const q = rawQuery.trim()
     if (!q) continue
     for (let p = 0; p < pages; p++) {
       const start = 1 + p * per
-      const url = `https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(q)}&num=${per}&start=${start}&safe=off`
+      const queryWithNegatives = `${q} ${NEGATIVE_QUERY_SUFFIX}`.trim()
+      const url = `https://www.googleapis.com/customsearch/v1?key=${KEY}&cx=${CX}&q=${encodeURIComponent(queryWithNegatives)}&num=${per}&start=${start}&safe=off`
       try {
         const data = await fetchJson<GoogleCSEResponse>(url, { headers: ROUTE_HEADERS, timeoutMs: 10000 })
         const items = Array.isArray(data?.items) ? data?.items ?? [] : []
@@ -195,6 +283,10 @@ async function runGoogleCSE(queries: string[], per: number, pages: number, limit
           const host = hostFromUrl(link)
           const title = (it?.title || '').trim() || host || link
           const snippet = (it?.snippet || '').trim()
+          if (isHostBlocked(host) || isLikelyForum({ url: link, title, text: snippet, host })) {
+            filteredLocal += 1
+            continue
+          }
           const descriptor = `${title} ${snippet}`
           const keywords = deriveKeywords(descriptor, 7)
           const tags = Array.from(new Set([host, 'search'])).filter(Boolean)
@@ -216,8 +308,9 @@ async function runGoogleCSE(queries: string[], per: number, pages: number, limit
   }
 
   const deduped = dedupeByUrl(raw)
-  const { rows, checked } = await ensureOgImages(deduped, limit)
-  return { rows, scanned: raw.length, checked }
+  const { rows: filteredRows, filtered } = filterBlockedRows(deduped)
+  const { rows, checked, failed } = await ensureOgImages(filteredRows, limit)
+  return { rows, scanned: raw.length, checked, filtered: filtered + filteredLocal, ogFailed: failed }
 }
 
 type NeocitiesListResponse = {
@@ -274,13 +367,13 @@ async function pullNeocities(limit: number, requireOg = true): Promise<ProviderR
     })
   }
 
-  const deduped = dedupeByUrl(raw)
+  const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
   if (!requireOg) {
-    return { rows: deduped.slice(0, limit), scanned: raw.length, checked: deduped.length }
+    return { rows: filteredRows.slice(0, limit), scanned: raw.length, checked: filteredRows.length, filtered }
   }
 
-  const { rows, checked } = await ensureOgImages(deduped, limit)
-  return { rows, scanned: raw.length, checked }
+  const ensured = await ensureOgImages(filteredRows, limit)
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered, ogFailed: ensured.failed }
 }
 
 type WikipediaExternalLinksResponse = {
@@ -324,13 +417,60 @@ async function pullWikipediaList(limit: number, requireOg = true): Promise<Provi
     })
   }
 
-  const deduped = dedupeByUrl(raw)
+  const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
   if (!requireOg) {
-    return { rows: deduped.slice(0, limit), scanned: raw.length, checked: deduped.length }
+    return { rows: filteredRows.slice(0, limit), scanned: raw.length, checked: filteredRows.length, filtered }
   }
 
-  const ensured = await ensureOgImages(deduped, limit)
-  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked }
+  const ensured = await ensureOgImages(filteredRows, limit)
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered, ogFailed: ensured.failed }
+}
+
+async function pullCurated(limit: number, requireOg = true): Promise<ProviderResult> {
+  if (!CURATED_WEB_SOURCES.length || limit <= 0) {
+    return { rows: [], scanned: 0, checked: 0 }
+  }
+
+  const raw: WebRow[] = []
+  const seen = new Set<string>()
+
+  for (const entry of shuffle<CuratedWebSource>(CURATED_WEB_SOURCES)) {
+    const url = entry.url?.trim()
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    const host = hostFromUrl(url)
+    if (!host) continue
+    const title = entry.title?.trim() || host
+    const description = entry.description?.trim() || title
+    const tags = Array.from(new Set([host, 'curated', ...(entry.tags || [])])).filter(Boolean)
+    const keywords = deriveKeywords(`${title} ${description}`, 8)
+    raw.push({
+      type: 'web',
+      url,
+      title,
+      text: description,
+      host,
+      ogImage: null,
+      provider: entry.provider || 'curated-list',
+      source: { name: entry.sourceName || title, url: entry.sourceUrl || url },
+      tags,
+      keywords,
+    })
+  }
+
+  const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
+  if (!requireOg) {
+    return { rows: filteredRows.slice(0, limit), scanned: raw.length, checked: filteredRows.length, filtered }
+  }
+
+  const ensured = await ensureOgImages(filteredRows, limit)
+  return {
+    rows: ensured.rows,
+    scanned: raw.length,
+    checked: ensured.checked,
+    filtered,
+    ogFailed: ensured.failed,
+  }
 }
 
 /* -------------------------------- Handler -------------------------------- */
@@ -351,11 +491,11 @@ export async function GET(req: NextRequest) {
   ]
   const queries = incoming.length ? incoming : fallback
 
-  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,neocities,wikipedia')
+  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,curated,neocities,wikipedia')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
-  const allowedProviders = new Set(['cse', 'neocities', 'wikipedia'])
+  const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
   const providers = requestedProviders.length ? requestedProviders : ['cse', 'neocities', 'wikipedia']
 
@@ -370,7 +510,7 @@ export async function GET(req: NextRequest) {
   const sampleSize = Number.isFinite(sampleSizeRaw) ? Math.max(1, Math.min(20, sampleSizeRaw)) : 6
 
   const limitParam = Number(req.nextUrl.searchParams.get('limit') || 0)
-  const baseTarget = Math.max(12, per * pages * queries.length)
+  const baseTarget = Math.max(24, per * pages * Math.max(queries.length, 1))
   const MAX_BATCH = 2000
   const totalTarget = Number.isFinite(limitParam) && limitParam > 0
     ? Math.min(Math.max(8, Math.floor(limitParam)), MAX_BATCH)
@@ -380,6 +520,8 @@ export async function GET(req: NextRequest) {
   const aggregated: WebRow[] = []
   let scanned = 0
   let checked = 0
+  let filteredByHost = 0
+  let ogFailed = 0
 
   if (providers.includes('cse')) {
     try {
@@ -387,6 +529,19 @@ export async function GET(req: NextRequest) {
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
+      filteredByHost += result.filtered ?? 0
+      ogFailed += result.ogFailed ?? 0
+    } catch {}
+  }
+
+  if (providers.includes('curated')) {
+    try {
+      const result = await pullCurated(perProviderTarget, requireOg)
+      aggregated.push(...result.rows)
+      scanned += result.scanned
+      checked += result.checked
+      filteredByHost += result.filtered ?? 0
+      ogFailed += result.ogFailed ?? 0
     } catch {}
   }
 
@@ -396,6 +551,8 @@ export async function GET(req: NextRequest) {
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
+      filteredByHost += result.filtered ?? 0
+      ogFailed += result.ogFailed ?? 0
     } catch {}
   }
 
@@ -405,6 +562,8 @@ export async function GET(req: NextRequest) {
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked
+      filteredByHost += result.filtered ?? 0
+      ogFailed += result.ogFailed ?? 0
     } catch {}
   }
 
@@ -429,6 +588,8 @@ export async function GET(req: NextRequest) {
         scanned,
         checked,
         unique: deduped.length,
+        filtered: filteredByHost,
+        ogFailed,
         dryRun,
         sample,
         inserted: 0,
@@ -448,6 +609,8 @@ export async function GET(req: NextRequest) {
       scanned,
       checked,
       unique: deduped.length,
+      filtered: filteredByHost,
+      ogFailed,
       dryRun,
       sample,
       inserted,

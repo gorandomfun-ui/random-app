@@ -53,7 +53,7 @@ const FIXED_SEQUENCE: ItemType[] = [
 
 const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
-const ENCOURAGE_INTERVALS = [15, 15, 20, 15, 20, 15]
+const ENCOURAGE_INTERVALS = [22, 24, 28, 24, 26, 28]
 
 const PRELOAD_TARGET_PER_TYPE = 4
 const RECENT_SESSION_LIMIT = 10
@@ -1552,8 +1552,12 @@ const sequenceStateRef = useRef({
     setIsSecond((prev) => !prev)
     setTrigger((t) => t + 1)
 
+    let slot: SequenceSlot | null = null
+    let prevState: typeof sequenceStateRef.current | null = null
+
     try {
-      const slot = getNextSlot()
+      prevState = { ...sequenceStateRef.current }
+      slot = getNextSlot()
       triggerPageGlitch(slot.kind === 'encourage' ? 'boost' : 'normal')
       let outcome: 'none' | 'content' | 'encourage' = 'none'
       if (slot.kind === 'encourage') {
@@ -1563,9 +1567,15 @@ const sequenceStateRef = useRef({
         outcome = 'encourage'
       } else {
         const item = await acquireItem(slot.itemType)
+        if (!item) {
+          if (prevState) sequenceStateRef.current = prevState
+          setCurrentItem(null)
+          setLiked(false)
+          return
+        }
         setCurrentItem(item)
-        setLiked(item ? isLiked(item) : false)
-        if (item) outcome = 'content'
+        setLiked(isLiked(item))
+        outcome = 'content'
       }
       updateTheme()
       playRandom()
@@ -1578,6 +1588,9 @@ const sequenceStateRef = useRef({
         maybeSpawnDiamond()
       }
     } catch {
+      if (slot?.kind === 'content' && prevState) {
+        sequenceStateRef.current = prevState
+      }
       setCurrentItem(null)
     } finally {
       setLoading(false)

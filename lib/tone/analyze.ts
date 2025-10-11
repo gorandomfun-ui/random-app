@@ -120,6 +120,102 @@ const POSITIVE_SEEDS_RAW: readonly string[] = [
   '平和',
   '明る',
   '希望',
+  // French
+  'bonheur',
+  'joie',
+  'heureuse',
+  'ravi',
+  'content',
+  'magnifique',
+  'formidable',
+  'incroyable',
+  'superbe',
+  'chouette',
+  'bravo',
+  'félicitations',
+  // German
+  'wunderbar',
+  'großartig',
+  'grossartig',
+  'herrlich',
+  'zufrieden',
+  'erfolgreich',
+  'glückwunsch',
+  // Spanish (bonus)
+  'amor',
+  'alegría',
+  'feliz',
+  'sonrisa',
+  'éxito',
+  'paz',
+  'esperanza',
+  'increíble',
+  'genial',
+  // Japanese (full words)
+  '嬉しい',
+  '楽しい',
+  '幸せ',
+  '笑顔',
+  '素晴らしい',
+  '成功',
+  '勝利',
+  '感謝',
+  'おめでとう',
+  // Extra positive nuances
+  'kindness',
+  // FR nuances
+  'bienveillance',
+  'solidarité',
+  'solidarite',
+  'entraide',
+  'générosité',
+  'generosite',
+  'rayonnant',
+  'épanoui',
+  'epanoui',
+  'serein',
+  'paisible',
+  'réconfort',
+  'reconfort',
+  'apaisant',
+  'harmonie',
+  'fier',
+  'fière',
+  'fiere',
+  // DE nuances
+  'freundlich',
+  'mitgefühl',
+  'mitgefuhl',
+  'dankbarkeit',
+  'hilfsbereit',
+  'gemeinschaft',
+  'gemeinsam',
+  'ermutigend',
+  'aufmunternd',
+  'inspirierend',
+  // ES nuances
+  'alegre',
+  'agradecido',
+  'orgullo',
+  'orgulloso',
+  'orgullosa',
+  'esperanzador',
+  'alentador',
+  'hermoso',
+  'precioso',
+  // JP nuances
+  '優しい',
+  '穏やか',
+  '平穏',
+  '感動',
+  '励まし',
+  '誇り',
+  '誇らしい',
+  '希望に満ちた',
+  '幸運',
+  '微笑み',
+  '支援',
+  '助け合い',
 ]
 
 const NEGATIVE_SEEDS_RAW: readonly string[] = [
@@ -189,6 +285,47 @@ const NEGATIVE_SEEDS_RAW: readonly string[] = [
   '壊',
   '憂',
   '絶望',
+  // French
+  'tristesse',
+  'déprime',
+  'deprime',
+  'peine',
+  'moche',
+  'nul',
+  'pourri',
+  'ennui',
+  'ennuyeux',
+  'galère',
+  'galere',
+  'difficile',
+  'stressant',
+  'guerre',
+  // German
+  'traurig',
+  'schlimm',
+  'furchtbar',
+  'grausam',
+  'langweilig',
+  'krieg',
+  // Spanish (bonus)
+  'triste',
+  'miedo',
+  'odio',
+  'fracaso',
+  'dolor',
+  'muerte',
+  'guerra',
+  // Japanese (full words)
+  '悲しい',
+  '怖い',
+  '恐怖',
+  '怒り',
+  '憎しみ',
+  '暴力',
+  '戦争',
+  '不安',
+  '最悪',
+  'つらい',
 ]
 
 function normalizeForSentiment(value: string): string {
@@ -485,10 +622,90 @@ const TOKEN_HEURISTICS: readonly TokenRule[] = [
       'bored',
       'creep',
       'ominous',
+      // English
+      'annoyed',
+      'upset',
+      'frustrated',
+      'toxic',
+      'threat',
+      'threats',
+      'scam',
+      'scammer',
+      // French
+      'tristesse',
+      'deprime',
+      'déprime',
+      'peine',
+      'ennui',
+      'ennuyeux',
+      'galere',
+      'galère',
+      'moche',
+      'nul',
+      'pourri',
+      'stressant',
+      // German
+      'traurig',
+      'schlimm',
+      'furchtbar',
+      'grausam',
+      'langweilig',
+      // Japanese
+      '最悪',
+      'つらい',
+      '怖い',
+      '悲しい',
       'spoopy',
       'uneasy',
       'badending',
       'badvibes',
+      // EN extra
+      'troll',
+      'trolling',
+      'insult',
+      'insults',
+      'hateful',
+      // FR extra
+      'toxique',
+      'insulte',
+      'insultes',
+      'mechant',
+      'méchant',
+      'agressif',
+      'agressive',
+      'grossier',
+      'vulgaire',
+      'hargneux',
+      'venimeux',
+      // DE extra
+      'giftig',
+      'beleidigung',
+      'beleidigungen',
+      'hasserfullt',
+      'hasserfüllt',
+      'troll',
+      'trollen',
+      'bosartig',
+      'bösartig',
+      // ES extra
+      'toxico',
+      'tóxico',
+      'insulto',
+      'insultos',
+      'odioso',
+      'grosero',
+      'vulgar',
+      'agresivo',
+      'agresiva',
+      'trol',
+      'troleo',
+      // JP extra
+      '荒らし',
+      '暴言',
+      '侮辱',
+      '攻撃的',
+      'ヘイト',
+      '毒舌',
     ]),
   },
   {
@@ -650,6 +867,118 @@ const TOKEN_HEURISTICS: readonly TokenRule[] = [
       'contagiouslaughter',
       'natureisfuckinglit',
       'nextfuckinglevel',
+      // English
+      'grateful',
+      'thankful',
+      'thanks',
+      'blessed',
+      'celebration',
+      'celebrating',
+      'achievement',
+      'achievements',
+      'progress',
+      'healing',
+      'recovery',
+      'donation',
+      'donations',
+      'charity',
+      'volunteer',
+      'volunteering',
+      'proud',
+      'pride',
+      'congrats',
+      'congratulations',
+      // French
+      'bonheur',
+      'heureux',
+      'heureuse',
+      'joie',
+      'sourire',
+      'souriant',
+      'ravi',
+      'content',
+      'magnifique',
+      'formidable',
+      'incroyable',
+      'superbe',
+      'bravo',
+      'felicitations',
+      // German
+      'freude',
+      'zufrieden',
+      'stolz',
+      'erfolg',
+      'erfolgreich',
+      'wunderbar',
+      'grossartig',
+      'großartig',
+      'herrlich',
+      'gluckwunsch',
+      'glückwunsch',
+      // Japanese
+      '素晴らしい',
+      '嬉しい',
+      '楽しい',
+      '幸せ',
+      '笑顔',
+      '最高',
+      '成功',
+      '勝利',
+      '感謝',
+      'おめでとう',
+      // Extra EN
+      'compassion',
+      'empathy',
+      'kindhearted',
+      'warmhearted',
+      'benevolent',
+      'benevolence',
+      'pay it forward',
+      'neighbourly',
+      'neighborly',
+      'inclusive',
+      'inclusion',
+      // Extra FR
+      'bienveillance',
+      'solidarite',
+      'solidarité',
+      'entraide',
+      'generosite',
+      'générosité',
+      'apaisant',
+      'reconfortant',
+      'réconfortant',
+      'harmonie',
+      'epanoui',
+      'épanoui',
+      'fier',
+      'fierement',
+      'fièrement',
+      // Extra DE
+      'freundlich',
+      'mitgefuhl',
+      'mitgefühl',
+      'hilfsbereit',
+      'ermutigend',
+      'aufmunternd',
+      'inspirierend',
+      'gemeinschaft',
+      'gemeinsam',
+      // Extra ES
+      'solidaridad',
+      'agradecido',
+      'alentador',
+      'esperanzador',
+      'hermoso',
+      'precioso',
+      // Extra JP
+      '優しい',
+      '穏やか',
+      '平穏',
+      '感動',
+      '励まし',
+      '調和',
+      '癒し',
     ]),
   },
   {
@@ -696,6 +1025,27 @@ const TOKEN_HEURISTICS: readonly TokenRule[] = [
       'sweetheart',
       'wholesomememe',
       'goodnews',
+      // FR
+      'mignon',
+      'mignonne',
+      'drole',
+      'drôle',
+      // DE
+      'niedlich',
+      'suss',
+      'süß',
+      'knuffig',
+      // ES
+      'lindo',
+      'linda',
+      'bonito',
+      'bonita',
+      'tierno',
+      'tierna',
+      'risas',
+      // JP
+      'かわいい',
+      '可愛い',
     ]),
   },
 ]
@@ -796,6 +1146,68 @@ const PHRASE_HEURISTICS: readonly PhraseRule[] = [
       'dark web',
       'dark internet',
       'caught on camera',
+      // French
+      'fusillade de masse',
+      'fusillade scolaire',
+      'accident mortel',
+      'accident grave',
+      'corps sans vie',
+      'scène de crime',
+      'scene de crime',
+      'tueur en série',
+      'tueur en serie',
+      'discours de haine',
+      'insultes racistes',
+      'menace de mort',
+      'menace à la bombe',
+      'menace a la bombe',
+      'harcèlement sexuel',
+      'harcelement sexuel',
+      'émeutes',
+      'emeutes',
+      // German
+      'massenerschießung',
+      'massenerschiessung',
+      'amoklauf',
+      'tödlicher unfall',
+      'toedlicher unfall',
+      'schwerer unfall',
+      'tatort',
+      'serienmörder',
+      'serienmoerder',
+      'hassrede',
+      'rassistische beleidigungen',
+      'todesdrohung',
+      'bombendrohung',
+      'sexuelle belästigung',
+      'sexuelle belaestigung',
+      'krawalle',
+      // Spanish
+      'tiroteo masivo',
+      'tiroteo escolar',
+      'accidente mortal',
+      'accidente grave',
+      'escena del crimen',
+      'asesino en serie',
+      'discurso de odio',
+      'insultos racistas',
+      'amenaza de muerte',
+      'amenaza de bomba',
+      'acoso sexual',
+      'disturbios',
+      // Japanese
+      '銃乱射事件',
+      '学校での銃撃',
+      '致命的な事故',
+      '重大事故',
+      '犯罪現場',
+      '連続殺人犯',
+      'ヘイトスピーチ',
+      '人種差別的な発言',
+      '殺害予告',
+      '爆破予告',
+      '性的嫌がらせ',
+      '暴動',
     ]),
   },
   {
@@ -895,6 +1307,50 @@ const PHRASE_HEURISTICS: readonly PhraseRule[] = [
       '妊娠を発表',
       '婚約を発表',
       '結婚記念日を祝う',
+      // Extra EN achievements/community
+      'wins gold medal',
+      'earns a scholarship',
+      'earns scholarship',
+      'community raises funds',
+      'free tuition announced',
+      'cancer in remission',
+      'safe return home',
+      'reunited with family',
+      // FR
+      'remporte la médaille d or',
+      'remporte la medaille d or',
+      'obtient une bourse',
+      'la communauté lève des fonds',
+      'la communaute leve des fonds',
+      'cancer en rémission',
+      'cancer en remission',
+      'retour sain et sauf',
+      'réuni avec sa famille',
+      'reuni avec sa famille',
+      // DE
+      'gewinnt die goldmedaille',
+      'erhält ein stipendium',
+      'erhaelt ein stipendium',
+      'gemeinschaft sammelt spenden',
+      'krebs in remission',
+      'sichere rückkehr nach hause',
+      'sichere rueckkehr nach hause',
+      'mit familie wiedervereint',
+      // ES
+      'gana la medalla de oro',
+      'obtiene una beca',
+      'la comunidad recauda fondos',
+      'cáncer en remisión',
+      'cancer en remision',
+      'regreso a salvo a casa',
+      'reunido con su familia',
+      // JP
+      '金メダルを獲得',
+      '奨学金を獲得',
+      '地域コミュニティが資金を集める',
+      'がんが寛解',
+      '無事に帰還',
+      '家族と再会',
     ]),
   },
   {
@@ -923,6 +1379,92 @@ const PHRASE_HEURISTICS: readonly PhraseRule[] = [
       'next fucking level',
       'pure happiness',
       'good ending',
+      // French
+      'bonne nouvelle',
+      'bonnes nouvelles',
+      'bonne vibe',
+      'bonnes vibes',
+      'histoire qui fait du bien',
+      'moment réconfortant',
+      'moment reconfortant',
+      'réchauffe le cœur',
+      'rechauffe le coeur',
+      'foi en l humanité restaurée',
+      'foi en l humanite restauree',
+      'me fait ma journée',
+      'me fait ma journee',
+      'fin heureuse',
+      // German
+      'gute nachrichten',
+      'positive schwingungen',
+      'gute vibes',
+      'gute stimmung',
+      'macht meinen tag',
+      'glückliches ende',
+      'herzerwärmender moment',
+      'herzerwaermender moment',
+      'glaube an die menschheit wiederhergestellt',
+      // Spanish
+      'buenas noticias',
+      'buenas vibras',
+      'historia que reconforta',
+      'me alegró el día',
+      'me alegro el dia',
+      'final feliz',
+      // Japanese
+      '良いニュース',
+      '良い知らせ',
+      '心温まる話',
+      '心温まる瞬間',
+      '嬉しい結末',
+      // Community/environmental
+      'random acts of kindness',
+      'gives back to the community',
+      'opens a free clinic',
+      'opens free school',
+      'community garden opens',
+      'plants trees',
+      'cleans up the beach',
+      // FR
+      'actes de gentillesse',
+      'rend à la communauté',
+      'rend a la communaute',
+      'ouvre une clinique gratuite',
+      'ouvre une école gratuite',
+      'ouvre une ecole gratuite',
+      'jardin partagé',
+      'jardin partage',
+      'plante des arbres',
+      'nettoie la plage',
+      // DE
+      'taten der freundlichkeit',
+      'gibt der gemeinschaft etwas zurück',
+      'gibt der gemeinschaft etwas zurueck',
+      'eroeffnet eine kostenlose klinik',
+      'eröffnet eine kostenlose klinik',
+      'gemeinschaftsgarten eröffnet',
+      'gemeinschaftsgarten eroeffnet',
+      'pflanzt bäume',
+      'pflanzt baeume',
+      'säubert den strand',
+      'saeubert den strand',
+      // ES
+      'actos de bondad',
+      'devuelve a la comunidad',
+      'abre una clínica gratuita',
+      'abre una clinica gratuita',
+      'huerto comunitario',
+      'planta árboles',
+      'planta arboles',
+      'limpia la playa',
+      // JP
+      '親切の連鎖',
+      '地域に還元',
+      '無料クリニックを開く',
+      '無料の学校を開く',
+      'コミュニティガーデンがオープン',
+      '植樹',
+      'ビーチを清掃',
     ]),
   },
 ]
@@ -948,7 +1490,7 @@ type EvaluationResult = {
   signals: ToneSignals
 }
 
-function evaluateSeeds(normalizedText: string): EvaluationResult {
+function evaluateSeeds(normalizedText: string, langHints: Set<LangHint>): EvaluationResult {
   let positive = 0
   let negative = 0
   const positiveSeeds = new Set<string>()
@@ -956,7 +1498,7 @@ function evaluateSeeds(normalizedText: string): EvaluationResult {
 
   for (const seed of POSITIVE_SEEDS) {
     if (matchesNormalized(normalizedText, seed)) {
-      positive += 1
+      positive += seedDeltaForLang(seed, langHints)
       positiveSeeds.add(seed.raw)
     }
   }
@@ -991,7 +1533,9 @@ function tokenMatches(token: string, keyword: string, mode: TokenMatchMode): boo
   }
 }
 
-function evaluateTokenHeuristics(tokens: readonly string[]): EvaluationResult {
+function evaluateTokenHeuristics(tokens: readonly string[], _langHints: Set<LangHint>): EvaluationResult {
+  // currently not used; reserved for future language-specific token tweaks
+  void _langHints
   if (!tokens.length) {
     return {
       score: { positive: 0, negative: 0 },
@@ -1036,7 +1580,9 @@ function evaluateTokenHeuristics(tokens: readonly string[]): EvaluationResult {
   }
 }
 
-function evaluatePhraseHeuristics(normalizedText: string): EvaluationResult {
+function evaluatePhraseHeuristics(normalizedText: string, _langHints: Set<LangHint>): EvaluationResult {
+  // currently not used; reserved for future language-specific phrase tweaks
+  void _langHints
   if (!normalizedText.trim()) {
     return {
       score: { positive: 0, negative: 0 },
@@ -1097,6 +1643,51 @@ function mergeSignals(parts: ToneSignals[]): ToneSignals {
   }
 }
 
+type LangHint = 'en' | 'fr' | 'de' | 'es' | 'jp'
+
+function detectLangHintsFromRaw(raw: string): Set<LangHint> {
+  const hints = new Set<LangHint>()
+  if (!raw || typeof raw !== 'string') return hints
+  // Japanese characters
+  if (/[\u3040-\u30ff\u4e00-\u9faf]/.test(raw)) hints.add('jp')
+  // Accented ranges
+  if (/[éèêëàâîïôùûçÉÈÊËÀÂÎÏÔÙÛÇ]/.test(raw)) hints.add('fr')
+  if (/[äöüÄÖÜß]/.test(raw)) hints.add('de')
+  if (/[ñáéíóúÁÉÍÓÚÑ]/.test(raw)) hints.add('es')
+  // If no strong non-EN marker, assume English context may apply
+  if (!hints.size) hints.add('en')
+  return hints
+}
+
+const GUARDED_POSITIVE_SEEDS: Record<string, LangHint[]> = {
+  // normalized (accents stripped) -> allowed languages
+  toll: ['de'],
+  genial: ['fr', 'es', 'de'],
+}
+
+const SEED_WEIGHT_OVERRIDES: Record<string, number> = {
+  // normalized seed -> weight delta
+  super: 0.5,
+  wow: 0.5,
+  yay: 0.5,
+  good: 0.75,
+}
+
+function seedDeltaForLang(seed: NormalizedKeyword, langHints: Set<LangHint>): number {
+  const key = seed.normalized
+  if (!key) return 1
+  const override = SEED_WEIGHT_OVERRIDES[key]
+  if (typeof override === 'number') return override
+  const guard = GUARDED_POSITIVE_SEEDS[key]
+  if (guard && guard.length) {
+    for (const g of guard) {
+      if (langHints.has(g)) return 1
+    }
+    return 0.5
+  }
+  return 1
+}
+
 export function computeToneScore(segments: readonly string[]): ToneScoreResult {
   const meaningful = segments
     .filter((segment): segment is string => typeof segment === 'string' && segment.trim().length > 0)
@@ -1104,16 +1695,18 @@ export function computeToneScore(segments: readonly string[]): ToneScoreResult {
     return { score: { positive: 0, negative: 0 }, signals: EMPTY_SIGNALS }
   }
 
-  const normalizedText = normalizeForSentiment(meaningful.join(' '))
+  const rawText = meaningful.join(' ')
+  const normalizedText = normalizeForSentiment(rawText)
+  const langHints = detectLangHintsFromRaw(rawText)
   if (!normalizedText.trim()) {
     return { score: { positive: 0, negative: 0 }, signals: EMPTY_SIGNALS }
   }
 
   const tokens = normalizedText.split(/\s+/).filter(Boolean)
 
-  const seedResult = evaluateSeeds(normalizedText)
-  const tokenResult = evaluateTokenHeuristics(tokens)
-  const phraseResult = evaluatePhraseHeuristics(normalizedText)
+  const seedResult = evaluateSeeds(normalizedText, langHints)
+  const tokenResult = evaluateTokenHeuristics(tokens, langHints)
+  const phraseResult = evaluatePhraseHeuristics(normalizedText, langHints)
 
   let positive = seedResult.score.positive + tokenResult.score.positive + phraseResult.score.positive
   let negative = seedResult.score.negative + tokenResult.score.negative + phraseResult.score.negative

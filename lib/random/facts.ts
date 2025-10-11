@@ -446,18 +446,9 @@ async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> 
     if (entry.doc.quiz?.id) currentIds.add(entry.doc.quiz.id)
   }
 
-  const docFromCache = await sampleQuizFromCacheDoc(exclusion, currentIds)
-  if (docFromCache?.quiz) {
-    const item = buildQuizItem(docFromCache)
-    if (item && !exclusion.ids.has(item.id) && !currentIds.has(item.id)) {
-      quizQueue.push({ doc: docFromCache, item })
-      currentIds.add(item.id)
-      return true
-    }
-  }
+  let added = false
 
   const fetchedDocs = await fetchTriviaBatch(QUIZ_PRELOAD_TARGET, exclusion, currentIds, servedQuizHistory)
-  let added = false
   for (const fetched of fetchedDocs) {
     if (!fetched.quiz) continue
     const item = buildQuizItem(fetched)
@@ -467,6 +458,21 @@ async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> 
     currentIds.add(item.id)
     added = true
   }
+
+  if (quizQueue.length >= QUIZ_PRELOAD_TARGET) return added
+
+  const CACHE_ATTEMPTS = 4
+  for (let attempt = 0; attempt < CACHE_ATTEMPTS && quizQueue.length < QUIZ_PRELOAD_TARGET; attempt++) {
+    const docFromCache = await sampleQuizFromCacheDoc(exclusion, currentIds)
+    if (!docFromCache?.quiz) continue
+    const item = buildQuizItem(docFromCache)
+    if (!item) continue
+    if (exclusion.ids.has(item.id) || currentIds.has(item.id) || servedQuizHistory.has(item.id)) continue
+    quizQueue.push({ doc: docFromCache, item })
+    currentIds.add(item.id)
+    added = true
+  }
+
   return added
 }
 

@@ -25,6 +25,8 @@ const CACHE_TTL_MS = 12 * 60 * 60 * 1000
 const TARGET_COUNT = 6
 const VIDEO_FILE_REGEX = /\.(mp4|m4v|webm|mov|ogg)(\?.*)?$/i
 
+type TileKey = 'weirdDrop' | 'luckyMess' | 'dumbSpark' | 'randomVibe' | 'lostThought' | 'secretUselessness'
+
 const GLITCH_COLOR_SETS: Array<[string, string, string]> = [
   ['#22FF9C', '#00E1FF', '#FFFFFF'],
   ['#FF005C', '#FF8A00', '#FFE500'],
@@ -123,6 +125,70 @@ function makeGlitchBars(mode: 'normal' | 'boost' = 'boost'): GlitchBar[] {
       opacity,
     }
   })
+}
+
+const TILE_KEYS: readonly TileKey[] = [
+  'weirdDrop',
+  'luckyMess',
+  'dumbSpark',
+  'randomVibe',
+  'lostThought',
+  'secretUselessness',
+] as const
+
+const TILE_LABELS: Record<Lang, Record<TileKey, string>> = {
+  en: {
+    weirdDrop: 'Open this one',
+    luckyMess: 'Take a peek',
+    dumbSpark: 'A small surprise',
+    randomVibe: 'One more hint',
+    lostThought: 'Keep going',
+    secretUselessness: 'Reveal now',
+  },
+  fr: {
+    weirdDrop: 'Ouvrir ici',
+    luckyMess: 'Jeter un oeil',
+    dumbSpark: 'Petite surprise',
+    randomVibe: 'Un indice de plus',
+    lostThought: 'On continue',
+    secretUselessness: 'Reveler maintenant',
+  },
+  de: {
+    weirdDrop: 'Oeffnen',
+    luckyMess: 'Kurz reinschauen',
+    dumbSpark: 'Kleine Ueberraschung',
+    randomVibe: 'Noch ein Hinweis',
+    lostThought: 'Weiter gehts',
+    secretUselessness: 'Jetzt aufdecken',
+  },
+  jp: {
+    weirdDrop: '\u3053\u3053\u3092\u958b\u304f',
+    luckyMess: '\u3061\u3087\u3063\u3068\u306e\u305e\u304f',
+    dumbSpark: '\u5c0f\u3055\u306a\u30b5\u30d7\u30e9\u30a4\u30ba',
+    randomVibe: '\u30d2\u30f3\u30c8\u3082\u3046\u3072\u3068\u3064',
+    lostThought: '\u3064\u3065\u3051\u3088\u3046',
+    secretUselessness: '\u3044\u307e\u958b\u304f',
+  },
+}
+
+function resolveLang(input: string | undefined): Lang {
+  if (input === 'fr' || input === 'de' || input === 'jp') return input
+  return 'en'
+}
+
+function getTileLabel({
+  locale,
+  key,
+  override,
+}: {
+  locale: string | undefined
+  key: TileKey
+  override?: string
+}): string {
+  const normalizedLocale = resolveLang(locale)
+  const base = TILE_LABELS[normalizedLocale]?.[key] ?? TILE_LABELS.en[key]
+  const raw = (override || base || '').trim()
+  return raw || TILE_LABELS.en[key]
 }
 
 function scoreItem(item: RandomContentItem): { positive: number; negative: number } {
@@ -424,17 +490,29 @@ const [loading, setLoading] = useState(true)
     [t]
   )
 
+  const tileOverrides = useMemo<Record<TileKey, string>>(
+    () => ({
+      weirdDrop: t('noroscope.tiles.weirdDrop', ''),
+      luckyMess: t('noroscope.tiles.luckyMess', ''),
+      dumbSpark: t('noroscope.tiles.dumbSpark', ''),
+      randomVibe: t('noroscope.tiles.randomVibe', ''),
+      lostThought: t('noroscope.tiles.lostThought', ''),
+      secretUselessness: t('noroscope.tiles.secretUselessness', ''),
+    }),
+    [t]
+  )
+
   const tileMeta = useMemo(
     () =>
-      [
-        { key: 'weirdDrop', label: t('noroscope.tiles.weirdDrop', '1. Weird Drop') },
-        { key: 'luckyMess', label: t('noroscope.tiles.luckyMess', '2. Lucky Mess') },
-        { key: 'dumbSpark', label: t('noroscope.tiles.dumbSpark', '3. Dumb Spark') },
-        { key: 'randomVibe', label: t('noroscope.tiles.randomVibe', '4. Random Vibe') },
-        { key: 'lostThought', label: t('noroscope.tiles.lostThought', '5. Lost Thought') },
-        { key: 'secretUselessness', label: t('noroscope.tiles.secretUselessness', '6. Secret Uselessness') },
-      ].map((entry, index) => ({ ...entry, color: TEXT_COLORS[index % TEXT_COLORS.length] })),
-    [t]
+      TILE_KEYS.map((key, index) => {
+        const override = tileOverrides[key]
+        return {
+          key,
+          label: getTileLabel({ locale, key, override }),
+          color: TEXT_COLORS[index % TEXT_COLORS.length],
+        }
+      }),
+    [locale, tileOverrides]
   )
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
@@ -994,7 +1072,6 @@ const [loading, setLoading] = useState(true)
       const hasContent = !!item
       const info = tileMeta[index]
       const label = info?.label ?? tileFallbackLabel
-      const labelColor = info?.color ?? theme.text
       const backgroundColor = isRevealed && item && item.type === 'image' ? 'rgba(0,0,0,0.55)' : theme.deep
 
       const handleReveal = () => {
@@ -1042,10 +1119,7 @@ const [loading, setLoading] = useState(true)
                 aria-label={!hasContent || loading ? revealUnavailableLabel : revealActionLabel}
                 data-tile-key={info?.key ?? `tile-${index}`}
               >
-                <span
-                  className="noroscope-tile-label"
-                  style={{ color: labelColor }}
-                >
+                <span className="noroscope-tile-label" style={{ color: theme.cream }}>
                   {label}
                 </span>
                 {!hasContent || loading ? (

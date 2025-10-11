@@ -77,9 +77,10 @@
 
     <div style="margin-bottom: 24px;">
       <h2>Web</h2>
-      <p style="margin: 6px 0 12px; font-size: 14px;">Utilise le générateur de mots-clés (A/B/C) pour découvrir des sites via Google CSE, Neocities et Wikipédia.</p>
+      <p style="margin: 6px 0 12px; font-size: 14px;">Utilise le générateur de mots-clés (A/B/C) pour découvrir des sites via Google CSE, les listes curées, Neocities et Wikipédia.</p>
       <div id="webProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; font-size:14px;">
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="cse" checked /> Google CSE</label>
+        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="curated" checked /> Listes curées</label>
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="neocities" checked /> Neocities</label>
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="wikipedia" checked /> Wikipédia</label>
       </div>
@@ -150,7 +151,7 @@
       }
 
       const getSelectedVideoProviders = () => getSelectedValues(videoProvidersEl, ['youtube'])
-      const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'neocities', 'wikipedia'])
+      const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'curated', 'neocities', 'wikipedia'])
 
       const manualContainer = document.getElementById('manualCombos')
       const addManualBtn = document.getElementById('addManual')
@@ -278,7 +279,7 @@
               params.set('per', '10')
               params.set('pages', '2')
               params.set('sample', '6')
-              params.set('limit', String(Math.max(12, maxCombos * 12)))
+              params.set('limit', String(Math.max(30, maxCombos * 24)))
               params.set('providers', getSelectedWebProviders().join(','))
             }
             params.set('q', combo.query)
