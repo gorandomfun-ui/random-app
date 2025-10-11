@@ -12,7 +12,7 @@ import { THEMES, TEXT_COLORS } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import type { DisplayItem, FactItem, RandomContentItem, WebItem } from '@/lib/random/clientTypes'
-import { NOROSCOPE_EXPRESSIONS, type ExpressionLocale, type ExpressionTone } from '@/data/noroscopeExpressions'
+import type { ExpressionLocale, ExpressionTone } from '@/data/noroscopeExpressions'
 import { NOROSCOPE_SUMMARIES } from '@/data/noroscopeSummaries'
 import { computeToneScore } from '@/lib/tone/analyze'
 
@@ -199,23 +199,54 @@ function scoreItem(item: RandomContentItem): { positive: number; negative: numbe
 function computeExpressionTone(entries: RandomContentItem[]): ExpressionTone {
   let positive = 0
   let negative = 0
+  let strongPositive = false
+  let strongNegative = false
 
   for (const item of entries) {
     const score = scoreItem(item)
     positive += score.positive
     negative += score.negative
+    if (!strongNegative && score.negative - score.positive >= 3 && score.negative >= 4) {
+      strongNegative = true
+    }
+    if (!strongPositive && score.positive - score.negative >= 3 && score.positive >= 4) {
+      strongPositive = true
+    }
   }
 
-  if (positive === 0 && negative === 0) return Math.random() < 0.3 ? 'negativeMedium' : 'positiveMedium'
-  if (positive === 0) return negative >= 2 ? 'negative' : 'negativeMedium'
-  if (negative === 0) return positive >= 2 ? 'positive' : 'positiveMedium'
-  if (positive === negative) return Math.random() < 0.35 ? 'negativeMedium' : 'positiveMedium'
+  let tone: ExpressionTone
 
-  const ratio = positive / (negative || 1)
-  if (ratio >= 1.6) return 'positive'
-  if (ratio <= 1 / 1.6) return 'negative'
-  if (positive >= negative) return 'positiveMedium'
-  return 'negativeMedium'
+  if (positive === 0 && negative === 0) {
+    tone = Math.random() < 0.3 ? 'negativeMedium' : 'positiveMedium'
+  } else if (positive === 0) {
+    tone = negative >= 2 ? 'negative' : 'negativeMedium'
+  } else if (negative === 0) {
+    tone = positive >= 2 ? 'positive' : 'positiveMedium'
+  } else if (positive === negative) {
+    tone = Math.random() < 0.35 ? 'negativeMedium' : 'positiveMedium'
+  } else {
+    const ratio = positive / (negative || 1)
+    if (ratio >= 1.6) tone = 'positive'
+    else if (ratio <= 1 / 1.6) tone = 'negative'
+    else if (positive >= negative) tone = 'positiveMedium'
+    else tone = 'negativeMedium'
+  }
+
+  if (strongNegative) {
+    if (tone === 'positive') {
+      tone = negative > positive ? 'negative' : 'negativeMedium'
+    } else if (tone === 'positiveMedium') {
+      tone = negative > positive ? 'negative' : 'negativeMedium'
+    }
+  } else if (strongPositive) {
+    if (tone === 'negative') {
+      tone = positive > negative ? 'positive' : 'positiveMedium'
+    } else if (tone === 'negativeMedium') {
+      tone = positive > negative ? 'positive' : 'positiveMedium'
+    }
+  }
+
+  return tone
 }
 
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
@@ -417,7 +448,7 @@ const [loading, setLoading] = useState(true)
   const errorLabel = useMemo(() => t('noroscope.error', "Couldn't load everything. Give it another try."), [t])
   const retryLabel = useMemo(() => t('noroscope.retry', 'Try again'), [t])
   const emptyLabel = useMemo(() => t('noroscope.empty', 'No content available yet.'), [t])
-  const expressionFallback = useMemo(() => t('noroscope.expressionFallback', 'The vibes are undecided today.'), [t])
+  const summaryFallback = useMemo(() => t('noroscope.expressionFallback', 'The vibes are undecided today.'), [t])
   const revealActionLabel = useMemo(() => t('noroscope.revealAction', 'Reveal this vibe'), [t])
   const revealUnavailableLabel = useMemo(() => t('noroscope.revealUnavailable', 'Content still loading'), [t])
   const tileFallbackLabel = useMemo(() => t('noroscope.tileFallback', 'Reveal me'), [t])
@@ -464,20 +495,6 @@ const [loading, setLoading] = useState(true)
       delete glitchTimeoutsRef.current[id]
     }, total)
   }, [])
-
-  const expressionData = useMemo(() => {
-    if (!entries.length) {
-      return { tone: 'positiveMedium' as ExpressionTone, text: expressionFallback }
-    }
-    const tone = computeExpressionTone(entries)
-    const localeKey = (locale || 'en') as ExpressionLocale
-    const pool = NOROSCOPE_EXPRESSIONS[tone]?.[localeKey] ?? []
-    if (!pool || pool.length === 0) {
-      return { tone, text: expressionFallback }
-    }
-    const pick = pool[Math.floor(Math.random() * pool.length)] ?? expressionFallback
-    return { tone, text: pick }
-  }, [entries, locale, expressionFallback])
 
   const shareSummary = useMemo(() => {
     if (!entries.length) return null
@@ -527,6 +544,8 @@ const [loading, setLoading] = useState(true)
     () => revealedTiles.reduce((acc, flag) => (flag ? acc + 1 : acc), 0),
     [revealedTiles]
   )
+
+  const showSummary = useMemo(() => !loading && revealedCount >= TARGET_COUNT, [loading, revealedCount])
 
   const progressText = useMemo(() => {
     if (revealedCount === 0) return progressNoneLabel
@@ -1191,7 +1210,7 @@ const [loading, setLoading] = useState(true)
               {loadingLabel}
             </p>
           ) : null}
-          {!loading ? (
+          {showSummary ? (
             <div className="mt-6">
               <div
                 className="mx-auto w-full px-4 py-3 text-center font-tomorrow text-base sm:text-lg leading-snug"
@@ -1204,7 +1223,7 @@ const [loading, setLoading] = useState(true)
                   fontWeight: 700,
                 }}
               >
-                {summaryText ?? expressionData.text}
+                {summaryText ?? summaryFallback}
               </div>
             </div>
           ) : null}
