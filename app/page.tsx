@@ -566,10 +566,12 @@ export default function HomePage() {
         }}
       >
         <div
-          className="flex items-center justify-center border border-dashed border-neutral-300 rounded"
+          className="flex items-center justify-center"
           style={{ width: adFormat.width, height: adFormat.height }}
         >
-          <span className="font-inter font-semibold opacity-70">Ad space</span>
+          {/* Ezoic - bottom_of_page - bottom_of_page */}
+          <div id="ezoic-pub-ad-placeholder-118" />
+          {/* End Ezoic - bottom_of_page - bottom_of_page */}
         </div>
       </div>
 
