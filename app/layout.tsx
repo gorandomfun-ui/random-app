@@ -1,6 +1,7 @@
 // app/layout.tsx
 import './globals.css';
 import { cookies, headers } from 'next/headers';
+import Script from 'next/script';
 
 import I18nProvider from '@/providers/I18nProvider'; // <- ton provider i18n (nommé "default")
 import { CookieConsentProvider } from '@/components/CookieConsent'; // <- export nommé
@@ -38,6 +39,8 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const ezoicEnabled = process.env.NEXT_PUBLIC_EZOIC_ENABLED === 'true'
+
   const cookieStore = cookies()
   const cookieLangRaw = cookieStore.get('lang')?.value
   const headerList = headers()
@@ -48,11 +51,22 @@ export default function RootLayout({
   const lang = cookieLangRaw ? mapLocale(cookieLangRaw) : (countryLang ?? autoLang)
 
   return (
-    <html
-      lang={lang}
-      suppressHydrationWarning
-      className={`${interTight.variable} ${tomorrow.variable}`}
-    >
+    <html lang={lang} suppressHydrationWarning className={`${interTight.variable} ${tomorrow.variable}`}>
+      <head>
+        {ezoicEnabled ? (
+          <>
+            <Script
+              id="ezoic-sa"
+              src="//www.ezojs.com/ezoic/sa.min.js"
+              strategy="beforeInteractive"
+              data-cfasync="false"
+            />
+            <Script id="ezoic-init" strategy="beforeInteractive">
+              {`window.ezstandalone=window.ezstandalone||{};window.ezstandalone.cmd=window.ezstandalone.cmd||[];`}
+            </Script>
+          </>
+        ) : null}
+      </head>
       {/* ⚠️ Remets ici exactement les classes que tu avais sur <body> si besoin */}
       <body className={interTight.className}>
         {/* i18n DOIT envelopper tout ce qui consomme useI18n */}
