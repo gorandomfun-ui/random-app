@@ -24,6 +24,7 @@ import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
+import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp'
@@ -116,6 +117,7 @@ export default function HomePage() {
   const router = useRouter()
   const { t, locale, locales, setLocale } = useI18n()
   const { addAction, maybeSpawnDiamond } = useScore()
+  useEzoicFooterAd()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -570,7 +572,7 @@ export default function HomePage() {
           style={{ width: adFormat.width, height: adFormat.height }}
         >
           {/* Ezoic - bottom_of_page - bottom_of_page */}
-          <div id="ezoic-pub-ad-placeholder-118" />
+          <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
           {/* End Ezoic - bottom_of_page - bottom_of_page */}
         </div>
       </div>

@@ -25,6 +25,7 @@ import type {
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { playAgain, playRandom } from '@/utils/sound'
+import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',
@@ -911,6 +912,7 @@ export default function RandomExperiencePage({
 }) {
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, maybeSpawnDiamond } = useScore()
+  useEzoicFooterAd()
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
@@ -2037,7 +2039,7 @@ const sequenceStateRef = useRef({
           style={{ width: adWidth, height: adHeight }}
         >
           {/* Ezoic - bottom_of_page - bottom_of_page */}
-          <div id="ezoic-pub-ad-placeholder-118" />
+          <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
           {/* End Ezoic - bottom_of_page - bottom_of_page */}
         </div>
       </div>

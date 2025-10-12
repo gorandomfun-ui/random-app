@@ -11,6 +11,7 @@ import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
+import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
@@ -31,6 +32,7 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
 
 export default function LikesPage() {
   const { t, locale, locales, setLocale } = useI18n()
+  useEzoicFooterAd()
   const [items, setItems] = useState<LikeItem[]>([])
   const [globalItems, setGlobalItems] = useState<GlobalLikeItem[]>([])
   const [globalLoaded, setGlobalLoaded] = useState(false)
@@ -180,7 +182,7 @@ export default function LikesPage() {
         style={{ width: adFormat.width, height: adFormat.height }}
       >
         {/* Ezoic - bottom_of_page - bottom_of_page */}
-        <div id="ezoic-pub-ad-placeholder-118" />
+        <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
         {/* End Ezoic - bottom_of_page - bottom_of_page */}
       </div>
     </div>

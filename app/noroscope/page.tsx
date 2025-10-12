@@ -15,6 +15,7 @@ import type { DisplayItem, FactItem, RandomContentItem, WebItem } from '@/lib/ra
 import type { ExpressionLocale, ExpressionTone } from '@/data/noroscopeExpressions'
 import { NOROSCOPE_SUMMARIES } from '@/data/noroscopeSummaries'
 import { computeToneScore } from '@/lib/tone/analyze'
+import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
@@ -372,6 +373,7 @@ function AutoPlayingVideo({ src, poster, label }: { src: string; poster?: string
 
 export default function NoroscopePage() {
   const { t, locale, locales, setLocale } = useI18n()
+  useEzoicFooterAd()
 
   const [themeIdx] = useState(() => Math.floor(Math.random() * THEMES.length))
   const theme = THEMES[themeIdx]
@@ -821,7 +823,7 @@ const [loading, setLoading] = useState(true)
         style={{ width: adFormat.width, height: adFormat.height }}
       >
         {/* Ezoic - bottom_of_page - bottom_of_page */}
-        <div id="ezoic-pub-ad-placeholder-118" />
+        <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
         {/* End Ezoic - bottom_of_page - bottom_of_page */}
       </div>
     </div>
