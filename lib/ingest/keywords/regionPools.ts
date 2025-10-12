@@ -11,6 +11,7 @@ export type RegionLanguagePool = {
 type RegionPoolMap = Record<RegionKey, RegionLanguagePool[]>
 
 export const REGION_KEYS: RegionKey[] = ['global', 'north-america', 'south-america', 'europe', 'asia', 'africa']
+export const REGION_NON_GLOBAL_KEYS: RegionKey[] = REGION_KEYS.filter((region) => region !== 'global')
 
 export function resolveRegionKey(value: string | null | undefined): RegionKey {
   if (!value) return 'global'
@@ -1042,4 +1043,49 @@ export function buildRegionalQueries(
     results.push({ query: terms.join(' '), language, terms })
   }
   return results
+}
+
+export function mixRegionalQueries(
+  baseQueries: string[],
+  category: MediaCategory,
+  rng: () => number = Math.random,
+  ratio = 6,
+): string[] {
+  const total = baseQueries.length
+  if (!total || ratio <= 0) return baseQueries
+  const mixCount = total >= ratio ? Math.max(1, Math.floor(total / ratio)) : 0
+  if (!mixCount) return baseQueries
+
+  const result = baseQueries.slice()
+  const usedIndices = new Set<number>()
+  const existing = new Set(result)
+
+  for (let i = 0; i < mixCount; i++) {
+    let index = Math.floor(rng() * total)
+    let attempts = 0
+    while (usedIndices.has(index) && attempts < total) {
+      index = (index + 1) % total
+      attempts += 1
+    }
+    usedIndices.add(index)
+
+    let replacement = ''
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const region = REGION_NON_GLOBAL_KEYS[Math.floor(rng() * REGION_NON_GLOBAL_KEYS.length)]
+      const { terms } = buildRegionalQuery(region, category, rng)
+      const candidate = terms.join(' ').trim()
+      if (candidate && !existing.has(candidate)) {
+        replacement = candidate
+        break
+      }
+    }
+
+    if (replacement) {
+      existing.delete(result[index])
+      result[index] = replacement
+      existing.add(replacement)
+    }
+  }
+
+  return result
 }

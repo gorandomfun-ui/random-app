@@ -279,26 +279,27 @@
             if (dryRun) params.set('dry', '1')
 
             let endpoint = ''
+            const runRegion = (combo && combo._regionOverride) || region
             if (category === 'images') {
               endpoint = '/api/ingest/images'
               params.set('sample', '6')
-              params.set('region', region)
+              params.set('region', runRegion)
             } else if (category === 'videos') {
               endpoint = '/api/ingest/videos'
               params.set('mode', 'search')
               params.set('durations', 'short,medium,long')
-              params.set('pages', region === 'global' ? '2' : '3')
-              params.set('per', region === 'global' ? '32' : '48')
-              params.set('region', region)
+              params.set('pages', runRegion === 'global' ? '2' : '3')
+              params.set('per', runRegion === 'global' ? '32' : '48')
+              params.set('region', runRegion)
               params.set('providers', getSelectedVideoProviders().join(','))
             } else if (category === 'web') {
               endpoint = '/api/ingest/web'
-              params.set('per', region === 'global' ? '10' : '12')
-              params.set('pages', region === 'global' ? '3' : '5')
+              params.set('per', runRegion === 'global' ? '10' : '12')
+              params.set('pages', runRegion === 'global' ? '3' : '5')
               params.set('sample', '6')
               params.set('limit', String(Math.max(30, maxCombos * 24)))
               params.set('providers', getSelectedWebProviders().join(','))
-              params.set('region', region)
+              params.set('region', runRegion)
             }
             params.set('q', combo.query)
 
@@ -342,6 +343,21 @@
             await runOne(combo)
             executed += 1
             if (sleepMs > 0 && executed < maxCombos && !stopRequested) await sleep(sleepMs)
+          }
+
+          // Ajout: 4 requêtes régionales aléatoires à la fin (images/vidéos) quand region=global
+          if (!stopRequested && (category === 'images' || category === 'videos') && region === 'global') {
+            const EXTRA_REGIONS = ['north-america', 'south-america', 'europe', 'asia', 'africa']
+            const EXTRA_COUNT = 4
+            for (let i = 0; i < EXTRA_COUNT; i++) {
+              if (stopRequested) break
+              const rand = Math.floor(Math.random() * EXTRA_REGIONS.length)
+              const extraRegion = EXTRA_REGIONS[rand]
+              const pseudoCombo = { components: { region: extraRegion }, query: '', _regionOverride: extraRegion }
+              await runOne(pseudoCombo)
+              executed += 1
+              if (sleepMs > 0 && i < EXTRA_COUNT - 1 && !stopRequested) await sleep(sleepMs)
+            }
           }
 
           const providerSummary = Object.keys(providerCounts).length

@@ -1275,8 +1275,8 @@ const [loading, setLoading] = useState(true)
         className="flex-1"
         style={{ paddingBottom: `calc(${adFormat.height}px + 72px + env(safe-area-inset-bottom, 0px))` }}
       >
-        <div className="px-4 sm:px-6 mt-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mx-auto w-full">
+        <div className="px-3 sm:px-5 mt-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6 gap-[3px] sm:gap-[3px] mx-auto w-full">
             {renderGrid()}
           </div>
           {loading ? (

@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { ingestVideos } from '@/lib/ingest/videos';
 import { buildVideoQueries, loadVideoKeywordDictionary } from '@/lib/ingest/videoKeywords';
 import { buildComboQueries } from '@/lib/ingest/keywords/combo';
-import { resolveRegionKey } from '@/lib/ingest/keywords/regionPools';
+import { mixRegionalQueries, resolveRegionKey } from '@/lib/ingest/keywords/regionPools';
 
 function parseList(value: string | null): string[] {
   if (!value) return [];
@@ -129,6 +129,7 @@ export async function GET(req: NextRequest) {
           const dictionary = await loadVideoKeywordDictionary();
           queries = buildVideoQueries(dictionary, count, { region });
         }
+        queries = mixRegionalQueries(queries, 'video');
       } else {
         const dictionary = await loadVideoKeywordDictionary();
         queries = buildVideoQueries(dictionary, count, { region });

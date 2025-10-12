@@ -838,27 +838,34 @@ function ContentRenderer({
         host = new URL(href).hostname.replace(/^www\./, '')
       } catch {}
     }
+    const webImageHeight = `calc(${frameHeight} - 120px)`
     return (
       <div
-        className="h-full w-full flex flex-col items-center justify-center gap-4 px-6 text-center"
+        className="h-full w-full flex flex-col items-center justify-center gap-4 text-center"
         style={{ height: '100%' }}
       >
         {item.ogImage ? (
-          <ImageBlock src={item.ogImage} alt={item.text || host || 'web'} height={frameHeight} />
+          <div className="w-full">
+            <ImageBlock
+              src={item.ogImage}
+              alt={item.text || host || 'web'}
+              height={webImageHeight}
+            />
+          </div>
         ) : null}
         {href ? (
           <a
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="underline font-inter text-xl md:text-2xl break-words"
+            className="px-5 sm:px-6 underline font-inter text-xl md:text-2xl break-words"
             style={{ color: theme.cream }}
           >
             {item.text || host || href}
           </a>
         ) : (
           <p
-            className="font-inter text-lg md:text-xl"
+            className="px-5 sm:px-6 font-inter text-lg md:text-xl"
             style={{ color: theme.cream }}
           >
             {item.text}

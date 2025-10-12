@@ -6,7 +6,7 @@ import path from 'node:path';
 import { ingestImages, IMAGE_PROVIDERS } from '@/lib/ingest/images';
 import type { ImageProvider } from '@/lib/ingest/images';
 import { buildComboQueries } from '@/lib/ingest/keywords/combo';
-import { buildRegionalQueries, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools';
+import { buildRegionalQueries, mixRegionalQueries, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools';
 
 type PhotoKeywordDictionary = {
   adjectives: string[];
@@ -87,6 +87,7 @@ export async function GET(req: Request) {
           const gifs = buildGifQueries(dict.gif, 3, { region });
           finalQueries = [...photos, ...gifs];
         }
+        finalQueries = mixRegionalQueries(finalQueries, 'image');
       } else {
         const photos = buildRegionalQueries(region, 'image', 6).map((entry) => entry.query);
         const gifsRegional = buildRegionalQueries(region, 'video', 3).map((entry) => entry.query);
