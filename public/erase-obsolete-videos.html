@@ -163,21 +163,12 @@
       <h1>Erase Obsolete Videos</h1>
       <p class="description">
         Scan the <code>items</code> collection for videos that look unavailable (404, removed, dead links).
-        The scan inspects a limited batch ordered by <code>updatedAt</code> so you can clean out old entries first.
+        The tool now sweeps the full catalog in one go so you always get an up-to-date obsolete list.
       </p>
 
       <div class="controls">
-        <label class="input">
-          Batch size
-          <input id="limitInput" type="number" min="1" max="2000" value="60" />
-        </label>
-        <label class="input">
-          Skip
-          <input id="skipInput" type="number" min="0" value="0" />
-        </label>
-        <button id="scanBtn" class="primary" type="button">Scan videos</button>
+        <button id="scanBtn" class="primary" type="button">Scan all videos</button>
         <button id="deleteBtn" class="danger" type="button" disabled>Delete obsolete videos</button>
-        <button id="nextBatchBtn" type="button" disabled>Scan next batch</button>
       </div>
 
       <div id="status" class="status"></div>
@@ -191,9 +182,6 @@
       const listEl = document.getElementById('list')
       const scanBtn = document.getElementById('scanBtn')
       const deleteBtn = document.getElementById('deleteBtn')
-      const nextBatchBtn = document.getElementById('nextBatchBtn')
-      const limitInput = document.getElementById('limitInput')
-      const skipInput = document.getElementById('skipInput')
 
       let adminKey = ''
       let busy = false
@@ -210,8 +198,9 @@
         busy = state
         scanBtn.disabled = state
         deleteBtn.disabled = state || !(lastResult && lastResult.obsolete && lastResult.obsolete.length)
-        nextBatchBtn.disabled = state || !(lastResult && lastResult.checked)
-        statusEl.textContent = state ? 'Working…' : ''
+        if (state) {
+          statusEl.textContent = 'Scanning…'
+        }
       }
 
       function renderSummary(data) {
@@ -224,9 +213,21 @@
         const total = data.counts?.total || 0
         const providers = data.counts?.providers || {}
         const providerEntries = Object.entries(providers)
+        const duration =
+          typeof data.durationMs === 'number'
+            ? (data.durationMs / 1000).toFixed(data.durationMs >= 10000 ? 0 : 1)
+            : null
         summaryEl.innerHTML = `
-          <div><strong>Checked:</strong> ${data.checked} • <strong>Obsolete:</strong> ${total}</div>
-          <div><strong>Limit:</strong> ${data.limit} • <strong>Skip:</strong> ${data.skip}</div>
+          <div>
+            <strong>Checked:</strong> ${data.checked}
+            ${data.errors ? `• <strong>Errors:</strong> ${data.errors}` : ''}
+            • <strong>Obsolete:</strong> ${total}
+          </div>
+          ${
+            duration
+              ? `<div><strong>Duration:</strong> ${duration}s</div>`
+              : ''
+          }
           ${providerEntries.length
             ? `<ul class="summary-list">${providerEntries
                 .map(([name, value]) => `<li><strong>${name}</strong>: ${value}</li>`)
@@ -278,27 +279,104 @@
           alert('Missing admin ingest key.')
           return
         }
-        const limit = Math.max(1, Math.min(2000, Number(limitInput.value) || 60))
-        const skip = Math.max(0, Number(skipInput.value) || 0)
-        const params = new URLSearchParams({ limit: String(limit), skip: String(skip) })
         setBusy(true)
+        lastResult = null
+        summaryEl.classList.add('hidden')
+        listEl.innerHTML = ''
         try {
-          const res = await fetch(`/api/tools/videos/obsolete?${params.toString()}`, {
+          const res = await fetch(`/api/tools/videos/obsolete?full=1`, {
             method: 'GET',
             headers: { 'x-admin-ingest-key': adminKey },
           })
-          const data = await res.json()
           if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
             throw new Error(data?.error || res.statusText)
           }
-          lastResult = data
-          renderSummary(data)
-          renderList(data)
-          deleteBtn.disabled = !(data?.obsolete?.length)
-          nextBatchBtn.disabled = !(data?.checked)
-          statusEl.textContent = data?.obsolete?.length
-            ? `${data.obsolete.length} obsolete videos detected.`
-            : 'No obsolete videos detected in this batch.'
+          if (!res.body) {
+            throw new Error('Streaming response not available.')
+          }
+
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let completed = false
+
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            let newlineIndex = buffer.indexOf('\n')
+            while (newlineIndex !== -1) {
+              const line = buffer.slice(0, newlineIndex).trim()
+              buffer = buffer.slice(newlineIndex + 1)
+              if (line) {
+                const payload = JSON.parse(line)
+                if (payload.type === 'progress') {
+                  const progressMessage =
+                    payload.errors && payload.errors > 0
+                      ? `Scanning… ${payload.checked} checked (${payload.errors} errors)`
+                      : `Scanning… ${payload.checked} checked`
+                  statusEl.textContent = progressMessage
+                } else if (payload.type === 'done') {
+                  completed = true
+                  const result = {
+                    checked: payload.checked || 0,
+                    errors: payload.errors || 0,
+                    durationMs: payload.durationMs || 0,
+                    obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
+                    counts: payload.counts || { total: 0, providers: {} },
+                  }
+                  lastResult = result
+                  renderSummary(result)
+                  renderList(result)
+                  deleteBtn.disabled = !(result.obsolete.length)
+                  statusEl.textContent = result.obsolete.length
+                    ? `Done. ${result.obsolete.length} obsolete video${result.obsolete.length > 1 ? 's' : ''} detected.`
+                    : 'Done. No obsolete videos detected.'
+                  await reader.cancel()
+                  break
+                } else if (payload.type === 'error') {
+                  throw new Error(payload.message || 'Scan failed.')
+                }
+              }
+              newlineIndex = buffer.indexOf('\n')
+            }
+            if (completed) break
+          }
+
+          if (!completed) {
+            const remainder = buffer + decoder.decode()
+            const trimmed = remainder.trim()
+            if (trimmed) {
+              try {
+                const payload = JSON.parse(trimmed)
+                if (payload.type === 'done') {
+                  const result = {
+                    checked: payload.checked || 0,
+                    errors: payload.errors || 0,
+                    durationMs: payload.durationMs || 0,
+                    obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
+                    counts: payload.counts || { total: 0, providers: {} },
+                  }
+                  lastResult = result
+                  renderSummary(result)
+                  renderList(result)
+                  deleteBtn.disabled = !(result.obsolete.length)
+                  statusEl.textContent = result.obsolete.length
+                    ? `Done. ${result.obsolete.length} obsolete video${result.obsolete.length > 1 ? 's' : ''} detected.`
+                    : 'Done. No obsolete videos detected.'
+                } else if (payload.type === 'error') {
+                  throw new Error(payload.message || 'Scan failed.')
+                }
+              } catch (error) {
+                console.warn('Failed to parse trailing payload', error)
+              }
+            }
+          }
+
+          if (!lastResult) {
+            throw new Error('Scan finished without a result.')
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           statusEl.textContent = `Error: ${message}`
@@ -306,7 +384,6 @@
           summaryEl.classList.add('hidden')
           listEl.innerHTML = ''
           deleteBtn.disabled = true
-          nextBatchBtn.disabled = true
         } finally {
           setBusy(false)
         }
@@ -351,15 +428,6 @@
 
       scanBtn.addEventListener('click', () => {
         if (!busy) scanVideos()
-      })
-
-      nextBatchBtn.addEventListener('click', () => {
-        if (busy || !lastResult?.checked) return
-        const currentSkip = Number(skipInput.value) || 0
-        const advance = lastResult.checked || lastResult.limit || 0
-        if (!advance) return
-        skipInput.value = String(currentSkip + advance)
-        scanVideos()
       })
 
       deleteBtn.addEventListener('click', () => {

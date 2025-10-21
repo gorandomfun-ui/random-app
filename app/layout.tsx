@@ -5,6 +5,8 @@ import Script from 'next/script';
 
 import I18nProvider from '@/providers/I18nProvider'; // <- ton provider i18n (nommé "default")
 import { CookieConsentProvider } from '@/components/CookieConsent'; // <- export nommé
+import AadsMobileBanner from '@/components/AadsMobileBanner';
+import AadsDesktopBanner from '@/components/AadsDesktopBanner';
 import CookieBanner from '@/components/CookieBanner';
 import CookieSettingsModal from '@/components/CookieSettingsModal';
 import { ScoreProvider } from '@/providers/ScoreProvider';
@@ -81,6 +83,9 @@ export default function RootLayout({
 
               {/* Le modal de réglages est monté globalement et sera ouvert par <CookieSettingsLink /> */}
               <CookieSettingsModal />
+
+              <AadsMobileBanner />
+              <AadsDesktopBanner />
             </ScoreProvider>
           </CookieConsentProvider>
         </I18nProvider>

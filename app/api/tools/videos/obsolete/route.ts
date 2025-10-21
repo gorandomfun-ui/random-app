@@ -21,6 +21,10 @@ type CheckOutcome = {
 }
 
 const USER_AGENT = 'RandomAppBot/1.0 (+https://random.app)'
+const FULL_SCAN_CONCURRENCY = 10
+const FULL_SCAN_BATCH_SIZE = 200
+const PROGRESS_INTERVAL = 50
+const RETRY_DELAY_MS = 200
 
 function isAuthorized(req: NextRequest): boolean {
   const expected = (process.env.ADMIN_INGEST_KEY || '').trim()
@@ -190,6 +194,30 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
   }
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isAmbiguousOutcome(outcome: CheckOutcome): boolean {
+  if (!outcome.obsolete) return false
+  const status = outcome.status ?? null
+  if (status === null) return true
+  if (status === 429) return true
+  if (status >= 500) return true
+  return false
+}
+
+async function checkVideoWithRetry(doc: VideoDoc, retries = 1): Promise<CheckOutcome> {
+  let attempt = 0
+  let result = await checkVideo(doc)
+  while (attempt < retries && isAmbiguousOutcome(result)) {
+    attempt += 1
+    await delay(RETRY_DELAY_MS)
+    result = await checkVideo(doc)
+  }
+  return result
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return unauthorized()
 
@@ -199,6 +227,140 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl
+  const fullScan =
+    url.searchParams.get('full') === '1' ||
+    url.searchParams.get('full') === 'true' ||
+    url.searchParams.get('mode') === 'full'
+
+  if (fullScan) {
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        const providerCounts: Record<string, number> = {}
+        const obsolete: Array<{
+          id: string
+          provider: string
+          url: string
+          videoId?: string
+          title?: string | null
+          reason: string
+          status: number | null
+        }> = []
+        const startTime = Date.now()
+
+        let checked = 0
+        let errors = 0
+
+        const cursor = db
+          .collection<VideoDoc>('items')
+          .find({ type: 'video' })
+          .sort({ _id: 1 })
+          .batchSize(FULL_SCAN_BATCH_SIZE)
+
+        const pool: Promise<void>[] = []
+
+        const processDoc = async (doc: VideoDoc) => {
+          const provider = normalizeProvider(doc.provider)
+          try {
+            const result = await checkVideoWithRetry(doc, 1)
+            if (result.obsolete) {
+              providerCounts[provider] = (providerCounts[provider] || 0) + 1
+              obsolete.push({
+                id: doc._id.toHexString(),
+                provider,
+                url: doc.url || '',
+                videoId: doc.videoId || undefined,
+                title: doc.title ?? null,
+                reason: result.reason || 'unknown',
+                status: result.status ?? null,
+              })
+            }
+          } catch {
+            errors += 1
+          } finally {
+            checked += 1
+            if (checked % PROGRESS_INTERVAL === 0) {
+              controller.enqueue(
+                encoder.encode(
+                  JSON.stringify({
+                    type: 'progress',
+                    checked,
+                    errors,
+                  }) + '\n',
+                ),
+              )
+            }
+          }
+        }
+
+        try {
+          for await (const doc of cursor) {
+            if (pool.length >= FULL_SCAN_CONCURRENCY) {
+              await Promise.race(pool)
+            }
+            const task = processDoc(doc)
+            pool.push(task)
+            task.finally(() => {
+              const idx = pool.indexOf(task)
+              if (idx >= 0) pool.splice(idx, 1)
+            })
+          }
+
+          await Promise.all(pool)
+
+          if (checked % PROGRESS_INTERVAL !== 0) {
+            controller.enqueue(
+              encoder.encode(
+                JSON.stringify({
+                  type: 'progress',
+                  checked,
+                  errors,
+                }) + '\n',
+              ),
+            )
+          }
+
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                type: 'done',
+                checked,
+                errors,
+                durationMs: Date.now() - startTime,
+                obsolete,
+                counts: {
+                  total: obsolete.length,
+                  providers: providerCounts,
+                },
+              }) + '\n',
+            ),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                type: 'error',
+                message,
+                checked,
+                errors,
+              }) + '\n',
+            ),
+          )
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new NextResponse(stream, {
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-store',
+      },
+    })
+  }
+
   const rawLimit = Number(url.searchParams.get('limit') || '60')
   const rawSkip = Number(url.searchParams.get('skip') || '0')
   const MAX_LIMIT = 2000
