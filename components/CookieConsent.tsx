@@ -26,9 +26,9 @@ export type Region = 'eu' | 'us' | 'other';
 
 const DEFAULT_CONSENT: Consent = {
   necessary: true,
-  analytics: true,
+  analytics: false,
   ads: true,
-  personalization: true,
+  personalization: false,
 };
 
 const ConsentCtx = createContext<Ctx | null>(null);

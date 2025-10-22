@@ -19,6 +19,11 @@ import {
 const RECENT_LIMIT = 10
 const recentFacts: string[] = []
 let lastFactWasQuiz = false
+const nextTriviaProvider = (): TriviaProvider => {
+  const provider = TRIVIA_PROVIDERS[triviaProviderCursor]
+  triviaProviderCursor = (triviaProviderCursor + 1) % TRIVIA_PROVIDERS.length
+  return provider
+}
 
 const FACT_TOPIC_SEEDS: Record<string, string[]> = {
   science: ['planet', 'star', 'space', 'physics', 'chemistry', 'biology', 'atom', 'quantum', 'experiment'],
@@ -36,6 +41,148 @@ const LOCAL_FACTS = [
   'Bananas are berries.',
   'A group of flamingos is a flamboyance.',
 ]
+
+const LOCAL_TRIVIA_API_COM_BANK: Array<{
+  question: string
+  correct: string
+  incorrect: string[]
+  category?: string
+  difficulty?: TriviaDifficulty
+}> = [
+  {
+    question: 'In computing, what does “CPU” stand for?',
+    correct: 'Central Processing Unit',
+    incorrect: ['Computer Processing Unit', 'Central Performance Utility', 'Core Processing Usage'],
+    category: 'technology',
+    difficulty: 'easy',
+  },
+  {
+    question: 'Which element has the chemical symbol “Na”?',
+    correct: 'Sodium',
+    incorrect: ['Nitrogen', 'Neon', 'Nickel'],
+    category: 'science',
+    difficulty: 'easy',
+  },
+  {
+    question: 'Who wrote the novel “To Kill a Mockingbird”?',
+    correct: 'Harper Lee',
+    incorrect: ['F. Scott Fitzgerald', 'John Steinbeck', 'Toni Morrison'],
+    category: 'literature',
+    difficulty: 'medium',
+  },
+  {
+    question: 'Which planet in our solar system has the largest number of moons?',
+    correct: 'Saturn',
+    incorrect: ['Jupiter', 'Neptune', 'Mars'],
+    category: 'space',
+    difficulty: 'medium',
+  },
+  {
+    question: 'In what year did the Berlin Wall fall?',
+    correct: '1989',
+    incorrect: ['1991', '1987', '1993'],
+    category: 'history',
+    difficulty: 'medium',
+  },
+  {
+    question: 'What is the capital city of Canada?',
+    correct: 'Ottawa',
+    incorrect: ['Toronto', 'Vancouver', 'Montreal'],
+    category: 'geography',
+    difficulty: 'easy',
+  },
+]
+
+const LOCAL_THE_TRIVIA_API_BANK: Array<{
+  question: string
+  correct: string
+  incorrect: string[]
+  category?: string
+  difficulty?: TriviaDifficulty
+}> = [
+  {
+    question: 'Which film won the Academy Award for Best Picture in 2020?',
+    correct: 'Parasite',
+    incorrect: ['1917', 'Joker', 'Ford v Ferrari'],
+    category: 'film_and_tv',
+    difficulty: 'medium',
+  },
+  {
+    question: 'In Greek mythology, who is the god of the sea?',
+    correct: 'Poseidon',
+    incorrect: ['Zeus', 'Hades', 'Apollo'],
+    category: 'mythology',
+    difficulty: 'easy',
+  },
+  {
+    question: 'What is the hardest natural substance on Earth?',
+    correct: 'Diamond',
+    incorrect: ['Quartz', 'Sapphire', 'Obsidian'],
+    category: 'science',
+    difficulty: 'easy',
+  },
+  {
+    question: 'Which band released the album “The Dark Side of the Moon”?',
+    correct: 'Pink Floyd',
+    incorrect: ['Led Zeppelin', 'The Beatles', 'Queen'],
+    category: 'music',
+    difficulty: 'easy',
+  },
+  {
+    question: 'How many hearts does an octopus have?',
+    correct: 'Three',
+    incorrect: ['One', 'Two', 'Four'],
+    category: 'animal',
+    difficulty: 'medium',
+  },
+  {
+    question: 'Which country hosted the first modern Olympic Games in 1896?',
+    correct: 'Greece',
+    incorrect: ['France', 'United Kingdom', 'United States'],
+    category: 'history',
+    difficulty: 'medium',
+  },
+]
+
+const LOCAL_GENERAL_QUIZZES: Array<{
+  question: string
+  correct: string
+  incorrect: string[]
+  category?: string
+  difficulty?: TriviaDifficulty
+}> = [
+  {
+    question: 'Which planet in our solar system has the shortest day?',
+    correct: 'Jupiter',
+    incorrect: ['Mercury', 'Earth', 'Saturn'],
+    category: 'space',
+    difficulty: 'easy',
+  },
+  {
+    question: 'Who painted the famous mural “Guernica”?',
+    correct: 'Pablo Picasso',
+    incorrect: ['Salvador Dalí', 'Henri Matisse', 'Frida Kahlo'],
+    category: 'culture',
+    difficulty: 'medium',
+  },
+  {
+    question: 'The term “byte” is equal to how many bits?',
+    correct: '8',
+    incorrect: ['16', '32', '4'],
+    category: 'technology',
+    difficulty: 'easy',
+  },
+  {
+    question: 'What is the tallest breed of dog in the world?',
+    correct: 'Irish Wolfhound',
+    incorrect: ['Great Dane', 'Mastiff', 'Newfoundland'],
+    category: 'animal',
+    difficulty: 'medium',
+  },
+]
+let triviaApiLocalCursor = 0
+let theTriviaLocalCursor = 0
+let generalQuizLocalCursor = 0
 
 type TriviaDifficulty = 'easy' | 'medium' | 'hard'
 
@@ -118,6 +265,12 @@ const QUIZ_PRELOAD_TARGET = 6
 const QUIZ_HISTORY_LIMIT = 600
 const TRIVIA_API_BASE = 'https://opentdb.com'
 const TRIVIA_MAX_ATTEMPTS = 5
+const TRIVIA_API_COM_ENDPOINT = 'https://triviaapi.com/api/questions'
+const THE_TRIVIA_API_ENDPOINT = 'https://the-trivia-api.com/api/questions'
+
+type TriviaProvider = 'open-trivia-db' | 'triviaapi.com' | 'the-trivia-api'
+const TRIVIA_PROVIDERS: TriviaProvider[] = ['open-trivia-db', 'triviaapi.com', 'the-trivia-api']
+let triviaProviderCursor = 0
 const quizQueue: FactQuizQueueEntry[] = []
 let quizPreloadRunning = false
 
@@ -185,6 +338,201 @@ function mapDifficulty(value?: string | null): TriviaDifficulty | undefined {
   const normalized = value.trim().toLowerCase()
   if (normalized === 'easy' || normalized === 'medium' || normalized === 'hard') return normalized
   return undefined
+}
+
+function takeTriviaApiLocalDocs(
+  count: number,
+  exclusion: QuizExclusionContext,
+  avoidIds: Set<string>,
+  history: Set<string>,
+): FactQuizDoc[] {
+  const docs: FactQuizDoc[] = []
+  if (!LOCAL_TRIVIA_API_COM_BANK.length) return docs
+  const maxAttempts = LOCAL_TRIVIA_API_COM_BANK.length * 2
+  let attempts = 0
+  while (docs.length < count && attempts < maxAttempts) {
+    const entry = LOCAL_TRIVIA_API_COM_BANK[triviaApiLocalCursor % LOCAL_TRIVIA_API_COM_BANK.length]
+    triviaApiLocalCursor = (triviaApiLocalCursor + 1) % LOCAL_TRIVIA_API_COM_BANK.length
+    attempts += 1
+    const doc = createQuizDocFromSource({
+      provider: 'triviaapi.com',
+      sourceName: 'TriviaAPI.com (offline)',
+      question: entry.question,
+      correctAnswer: entry.correct,
+      incorrectAnswers: entry.incorrect,
+      category: entry.category,
+      difficulty: entry.difficulty,
+    })
+    if (!doc?.quiz) continue
+    const normalized = doc.quiz.question.toLowerCase()
+    if (exclusion.questions.has(normalized)) continue
+    const quizId = doc.quiz.id
+    if (exclusion.ids.has(quizId) || avoidIds.has(quizId) || history.has(quizId)) continue
+    docs.push(doc)
+    avoidIds.add(quizId)
+  }
+  return docs
+}
+
+function takeTheTriviaLocalDocs(
+  count: number,
+  exclusion: QuizExclusionContext,
+  avoidIds: Set<string>,
+  history: Set<string>,
+): FactQuizDoc[] {
+  const docs: FactQuizDoc[] = []
+  if (!LOCAL_THE_TRIVIA_API_BANK.length) return docs
+  const maxAttempts = LOCAL_THE_TRIVIA_API_BANK.length * 2
+  let attempts = 0
+  while (docs.length < count && attempts < maxAttempts) {
+    const entry = LOCAL_THE_TRIVIA_API_BANK[theTriviaLocalCursor % LOCAL_THE_TRIVIA_API_BANK.length]
+    theTriviaLocalCursor = (theTriviaLocalCursor + 1) % LOCAL_THE_TRIVIA_API_BANK.length
+    attempts += 1
+    const doc = createQuizDocFromSource({
+      provider: 'the-trivia-api',
+      sourceName: 'The Trivia API (offline)',
+      question: entry.question,
+      correctAnswer: entry.correct,
+      incorrectAnswers: entry.incorrect,
+      category: entry.category,
+      difficulty: entry.difficulty,
+    })
+    if (!doc?.quiz) continue
+    const normalized = doc.quiz.question.toLowerCase()
+    if (exclusion.questions.has(normalized)) continue
+    const quizId = doc.quiz.id
+    if (exclusion.ids.has(quizId) || avoidIds.has(quizId) || history.has(quizId)) continue
+    docs.push(doc)
+    avoidIds.add(quizId)
+  }
+  return docs
+}
+
+function takeGeneralLocalDocs(
+  count: number,
+  exclusion: QuizExclusionContext,
+  avoidIds: Set<string>,
+  history: Set<string>,
+): FactQuizDoc[] {
+  const docs: FactQuizDoc[] = []
+  if (!LOCAL_GENERAL_QUIZZES.length) return docs
+  const maxAttempts = LOCAL_GENERAL_QUIZZES.length * 2
+  let attempts = 0
+  while (docs.length < count && attempts < maxAttempts) {
+    const entry = LOCAL_GENERAL_QUIZZES[generalQuizLocalCursor % LOCAL_GENERAL_QUIZZES.length]
+    generalQuizLocalCursor = (generalQuizLocalCursor + 1) % LOCAL_GENERAL_QUIZZES.length
+    attempts += 1
+    const doc = createQuizDocFromSource({
+      provider: 'local-quiz',
+      sourceName: 'Local Quiz Bank',
+      question: entry.question,
+      correctAnswer: entry.correct,
+      incorrectAnswers: entry.incorrect,
+      category: entry.category,
+      difficulty: entry.difficulty,
+    })
+    if (!doc?.quiz) continue
+    const normalized = doc.quiz.question.toLowerCase()
+    if (exclusion.questions.has(normalized)) continue
+    const quizId = doc.quiz.id
+    if (exclusion.ids.has(quizId) || avoidIds.has(quizId) || history.has(quizId)) continue
+    docs.push(doc)
+    avoidIds.add(quizId)
+  }
+  return docs
+}
+
+type QuizDocInput = {
+  provider: string
+  sourceName?: string
+  sourceUrl?: string
+  question: string
+  correctAnswer: string
+  incorrectAnswers: string[]
+  category?: string
+  difficulty?: string
+  id?: string
+  extraTags?: string[]
+  extraKeywords?: string[]
+}
+
+function createQuizDocFromSource(input: QuizDocInput): FactQuizDoc | null {
+  const provider = trim(input.provider) || 'quiz'
+  const question = decodeHtml(input.question)
+  const correctAnswer = decodeHtml(input.correctAnswer)
+  const incorrectAnswers = Array.isArray(input.incorrectAnswers)
+    ? input.incorrectAnswers.map((answer) => decodeHtml(answer)).filter(Boolean)
+    : []
+
+  if (!question || !correctAnswer || incorrectAnswers.length < 1) return null
+
+  const options = shuffleArray([...incorrectAnswers, correctAnswer])
+  let correctIndex = options.findIndex((option) => option === correctAnswer)
+  if (correctIndex < 0) {
+    correctIndex = 0
+    options[0] = correctAnswer
+  }
+
+  const sourceName = trim(input.sourceName || '') || provider
+  const baseDoc = createFactDocument({
+    text: question,
+    provider,
+    source: { name: sourceName, url: input.sourceUrl },
+    tags: input.extraTags,
+    keywords: input.extraKeywords,
+  })
+  if (!baseDoc) return null
+
+  const category = input.category ? decodeHtml(input.category) : undefined
+  const difficulty = mapDifficulty(input.difficulty)
+  const tagSet = new Set<string>([...baseDoc.tags, 'quiz', 'trivia'])
+  if (category) tagSet.add(category.toLowerCase())
+  if (difficulty) tagSet.add(difficulty)
+  const keywordSet = new Set<string>(baseDoc.keywords)
+  for (const option of options) {
+    const lowered = option.toLowerCase()
+    if (lowered.length >= 3 && lowered.length <= 48) keywordSet.add(lowered)
+  }
+
+  const toneSegments = flattenToneSegments([
+    provider,
+    sourceName,
+    question,
+    correctAnswer,
+    options,
+    category,
+    difficulty,
+    Array.from(tagSet),
+    Array.from(keywordSet),
+  ])
+  const toneDetails = deriveToneAugmentation(toneSegments)
+  const mergedTags = mergeToneHintsIntoTags(Array.from(tagSet), toneDetails?.toneTagHints, 16)
+  const mergedKeywords = mergeToneSignalsIntoKeywords(Array.from(keywordSet), toneDetails?.toneSignals, 18)
+
+  const baseId = input.id ? String(input.id) : question.toLowerCase()
+  const hash = createHash('sha1').update(`${provider}:${baseId}`).digest('hex')
+
+  const doc: FactQuizDoc = {
+    ...baseDoc,
+    variant: 'quiz',
+    tags: mergedTags,
+    keywords: mergedKeywords,
+    quiz: {
+      id: hash,
+      question,
+      options,
+      correctIndex,
+      answer: correctAnswer,
+      category,
+      difficulty,
+    },
+    hash,
+    tone: toneDetails?.tone ?? baseDoc.tone,
+    toneConfidence: toneDetails?.toneConfidence ?? baseDoc.toneConfidence,
+    toneSignals: toneDetails?.toneSignals ?? baseDoc.toneSignals,
+  }
+
+  return doc
 }
 
 function buildQuizExclusion(exclude: string[]): QuizExclusionContext {
@@ -317,7 +665,7 @@ async function sampleQuizFromCacheDoc(
   return null
 }
 
-async function fetchTriviaBatch(
+async function fetchOpenTriviaDocs(
   count: number,
   exclusion: QuizExclusionContext,
   avoidIds: Set<string>,
@@ -356,83 +704,26 @@ async function fetchTriviaBatch(
     }
 
     for (const entry of payload.results) {
-      const question = decodeHtml(entry?.question ?? '')
-      if (!question) continue
-      const normalizedQuestion = question.toLowerCase()
-      if (exclusion.questions.has(normalizedQuestion)) continue
-
-      const correctAnswer = decodeHtml(entry?.correct_answer ?? '')
-      const incorrectAnswers = Array.isArray(entry?.incorrect_answers)
-        ? entry.incorrect_answers.map((answer) => decodeHtml(answer)).filter(Boolean)
-        : []
-      if (!correctAnswer || incorrectAnswers.length < 1) continue
-      const options = shuffleArray([...incorrectAnswers, correctAnswer])
-      const correctIndex = Math.max(0, options.findIndex((option) => option === correctAnswer))
-
-      const hash = createHash('sha1').update(normalizedQuestion).digest('hex')
-      if (exclusion.ids.has(hash) || avoidIds.has(hash) || seenHashes.has(hash) || history.has(hash)) continue
-
-      const baseDoc = createFactDocument({
-        text: question,
+      const doc = createQuizDocFromSource({
         provider: 'open-trivia-db',
-        source: { name: 'Open Trivia DB', url: TRIVIA_API_BASE },
+        sourceName: 'Open Trivia DB',
+        sourceUrl: TRIVIA_API_BASE,
+        question: entry?.question ?? '',
+        correctAnswer: entry?.correct_answer ?? '',
+        incorrectAnswers: Array.isArray(entry?.incorrect_answers) ? entry.incorrect_answers : [],
+        category: entry?.category,
+        difficulty: entry?.difficulty,
       })
-      if (!baseDoc) continue
+      if (!doc?.quiz) continue
+      const normalizedQuestion = doc.quiz.question.toLowerCase()
+      if (exclusion.questions.has(normalizedQuestion)) continue
+      const quizId = doc.quiz.id
+      if (exclusion.ids.has(quizId) || avoidIds.has(quizId) || seenHashes.has(quizId) || history.has(quizId)) continue
 
-      const category = entry?.category ? decodeHtml(entry.category) : undefined
-      const difficulty = mapDifficulty(entry?.difficulty)
-      const tags = new Set<string>([...baseDoc.tags, 'quiz', 'trivia'])
-      if (category) tags.add(category.toLowerCase())
-      if (difficulty) tags.add(difficulty)
-      const keywordSet = new Set<string>([...baseDoc.keywords])
-      for (const option of options) {
-        const lowered = option.toLowerCase()
-        if (lowered.length >= 3 && lowered.length <= 26) keywordSet.add(lowered)
-      }
-      const baseTagList = Array.from(tags)
-      const baseKeywordList = Array.from(keywordSet)
-      const toneDetails = deriveToneAugmentation(
-        flattenToneSegments([
-          'quiz',
-          question,
-          correctAnswer,
-          options,
-          category,
-          difficulty,
-          baseTagList,
-          baseKeywordList,
-        ]),
-      )
-      const mergedTags = mergeToneHintsIntoTags(baseTagList, toneDetails?.toneTagHints, 16)
-      const mergedKeywords = mergeToneSignalsIntoKeywords(baseKeywordList, toneDetails?.toneSignals, 18)
-
-      const doc: FactQuizDoc = {
-        ...baseDoc,
-        text: question,
-        provider: 'open-trivia-db',
-        source: { name: 'Open Trivia DB', url: TRIVIA_API_BASE },
-        tags: mergedTags,
-        keywords: mergedKeywords,
-        variant: 'quiz',
-        quiz: {
-          id: hash,
-          question,
-          options,
-          correctIndex,
-          answer: correctAnswer,
-          category,
-          difficulty,
-        },
-        hash,
-        tone: toneDetails?.tone ?? baseDoc.tone,
-        toneConfidence: toneDetails?.toneConfidence ?? baseDoc.toneConfidence,
-        toneSignals: toneDetails?.toneSignals ?? baseDoc.toneSignals,
-      }
-
-      await upsertCache('fact', { hash }, doc)
+      await upsertCache('fact', { hash: quizId }, doc)
       docs.push(doc)
-      seenHashes.add(hash)
-      avoidIds.add(hash)
+      seenHashes.add(quizId)
+      avoidIds.add(quizId)
       if (docs.length >= target) break
     }
   }
@@ -448,15 +739,62 @@ async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> 
 
   let added = false
 
-  const fetchedDocs = await fetchTriviaBatch(QUIZ_PRELOAD_TARGET, exclusion, currentIds, servedQuizHistory)
-  for (const fetched of fetchedDocs) {
-    if (!fetched.quiz) continue
-    const item = buildQuizItem(fetched)
-    if (!item) continue
-    if (exclusion.ids.has(item.id) || currentIds.has(item.id)) continue
-    quizQueue.push({ doc: fetched, item })
-    currentIds.add(item.id)
-    added = true
+  const providersToTry = [...TRIVIA_PROVIDERS]
+  providersToTry.sort((a, b) => {
+    const idxA = (TRIVIA_PROVIDERS.indexOf(a) - triviaProviderCursor + TRIVIA_PROVIDERS.length) % TRIVIA_PROVIDERS.length
+    const idxB = (TRIVIA_PROVIDERS.indexOf(b) - triviaProviderCursor + TRIVIA_PROVIDERS.length) % TRIVIA_PROVIDERS.length
+    return idxA - idxB
+  })
+
+  for (let index = 0; index < providersToTry.length && quizQueue.length < QUIZ_PRELOAD_TARGET; index++) {
+    const provider = providersToTry[index]
+    const remainingNeeded = Math.max(1, QUIZ_PRELOAD_TARGET - quizQueue.length)
+    const providersLeft = providersToTry.length - index
+    const perProviderTarget = Math.max(1, Math.ceil(remainingNeeded / Math.max(1, providersLeft)))
+    let fetchedDocs: FactQuizDoc[] = []
+    if (provider === 'open-trivia-db') {
+      fetchedDocs = await fetchOpenTriviaDocs(perProviderTarget, exclusion, currentIds, servedQuizHistory)
+    } else if (provider === 'triviaapi.com') {
+      fetchedDocs = await fetchTriviaApiComDocs(perProviderTarget, exclusion, currentIds, servedQuizHistory)
+    } else {
+      fetchedDocs = await fetchTheTriviaApiDocs(perProviderTarget, exclusion, currentIds, servedQuizHistory)
+    }
+    triviaProviderCursor = (TRIVIA_PROVIDERS.indexOf(provider) + 1) % TRIVIA_PROVIDERS.length
+
+    for (const fetched of fetchedDocs) {
+      if (!fetched.quiz) continue
+      const normalizedQuestion = fetched.quiz.question.toLowerCase()
+      if (exclusion.questions.has(normalizedQuestion)) continue
+      const item = buildQuizItem(fetched)
+      if (!item) continue
+      if (exclusion.ids.has(item.id) || currentIds.has(item.id)) continue
+      quizQueue.push({ doc: fetched, item })
+      currentIds.add(item.id)
+      added = true
+      if (quizQueue.length >= QUIZ_PRELOAD_TARGET) break
+    }
+    if (quizQueue.length >= QUIZ_PRELOAD_TARGET) break
+  }
+
+  if (quizQueue.length < QUIZ_PRELOAD_TARGET) {
+    const fallbackDocs = await fetchOpenTriviaDocs(
+      QUIZ_PRELOAD_TARGET - quizQueue.length,
+      exclusion,
+      currentIds,
+      servedQuizHistory,
+    )
+    for (const fetched of fallbackDocs) {
+      if (!fetched.quiz) continue
+      const normalizedQuestion = fetched.quiz.question.toLowerCase()
+      if (exclusion.questions.has(normalizedQuestion)) continue
+      const item = buildQuizItem(fetched)
+      if (!item) continue
+      if (exclusion.ids.has(item.id) || currentIds.has(item.id)) continue
+      quizQueue.push({ doc: fetched, item })
+      currentIds.add(item.id)
+      added = true
+      if (quizQueue.length >= QUIZ_PRELOAD_TARGET) break
+    }
   }
 
   if (quizQueue.length >= QUIZ_PRELOAD_TARGET) return added
@@ -471,6 +809,20 @@ async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> 
     quizQueue.push({ doc: docFromCache, item })
     currentIds.add(item.id)
     added = true
+  }
+
+  if (quizQueue.length < QUIZ_PRELOAD_TARGET) {
+    const needed = QUIZ_PRELOAD_TARGET - quizQueue.length
+    const localGeneralDocs = takeGeneralLocalDocs(needed, exclusion, currentIds, servedQuizHistory)
+    for (const doc of localGeneralDocs) {
+      if (!doc.quiz) continue
+      const item = buildQuizItem(doc)
+      if (!item) continue
+      if (currentIds.has(item.id)) continue
+      quizQueue.push({ doc, item })
+      currentIds.add(item.id)
+      added = true
+    }
   }
 
   return added
@@ -645,4 +997,213 @@ export async function selectFact(): Promise<FactItem | null> {
     toneConfidence: fallbackTone?.toneConfidence,
     toneSignals: fallbackTone?.toneSignals,
   }
+}
+async function fetchTriviaApiComDocs(
+  count: number,
+  exclusion: QuizExclusionContext,
+  avoidIds: Set<string>,
+  history: Set<string>,
+): Promise<FactQuizDoc[]> {
+  const target = Math.max(1, Math.min(10, count))
+  const docs: FactQuizDoc[] = []
+  const seenHashes = new Set<string>()
+
+  const amount = Math.min(20, Math.max(target * 2, target, 4))
+  let payload: unknown = null
+  try {
+    const res = await fetch(`${TRIVIA_API_COM_ENDPOINT}?limit=${amount}`, { cache: 'no-store' })
+    if (!res.ok) return docs
+    payload = await res.json()
+  } catch {
+    return docs
+  }
+
+  const entries: Array<Record<string, unknown>> = Array.isArray(payload)
+    ? (payload as Array<Record<string, unknown>>)
+    : Array.isArray((payload as { data?: unknown })?.data)
+      ? (((payload as { data?: unknown }).data as Array<Record<string, unknown>>))
+      : Array.isArray((payload as { results?: unknown })?.results)
+        ? (((payload as { results?: unknown }).results as Array<Record<string, unknown>>))
+        : []
+
+  for (const entry of entries) {
+    let questionRaw =
+      typeof entry.question === 'string'
+        ? entry.question
+        : typeof (entry.question as { text?: unknown })?.text === 'string'
+          ? ((entry.question as { text?: string }).text as string)
+          : typeof entry.prompt === 'string'
+            ? entry.prompt
+            : typeof entry.text === 'string'
+              ? entry.text
+              : ''
+
+    const correctRaw =
+      typeof entry.correctAnswer === 'string'
+        ? entry.correctAnswer
+        : typeof entry.correct_answer === 'string'
+          ? entry.correct_answer
+          : typeof entry.answer === 'string'
+            ? entry.answer
+            : typeof (entry.correct as { text?: unknown })?.text === 'string'
+              ? ((entry.correct as { text?: string }).text as string)
+              : ''
+
+    let incorrectRaw: unknown =
+      entry.incorrectAnswers ??
+      entry.incorrect_answers ??
+      entry.wrongAnswers ??
+      entry.wrong_answers ??
+      entry.answers ??
+      null
+
+    let incorrectAnswers: string[] = []
+    if (Array.isArray(incorrectRaw)) {
+      incorrectAnswers = incorrectRaw
+        .map((value) => {
+          if (typeof value === 'string') return value
+          if (value && typeof value === 'object' && typeof (value as { text?: unknown }).text === 'string') {
+            return (value as { text: string }).text
+          }
+          return ''
+        })
+        .filter(Boolean)
+    } else if (incorrectRaw && typeof incorrectRaw === 'object') {
+      const entries = Object.entries(incorrectRaw as Record<string, unknown>)
+      incorrectAnswers = entries
+        .map(([, value]) => {
+          if (typeof value === 'string') return value
+          if (value && typeof value === 'object' && typeof (value as { text?: unknown }).text === 'string') {
+            return (value as { text: string }).text
+          }
+          return ''
+        })
+        .filter(Boolean)
+        .filter((val) => val !== correctRaw)
+    }
+
+    if (!questionRaw || !correctRaw || incorrectAnswers.length < 1) continue
+
+    const doc = createQuizDocFromSource({
+      provider: 'triviaapi.com',
+      sourceName: 'TriviaAPI.com',
+      sourceUrl: 'https://triviaapi.com',
+      question: questionRaw,
+      correctAnswer: correctRaw,
+      incorrectAnswers,
+      category:
+        typeof entry.category === 'string'
+          ? entry.category
+          : typeof (entry.category as { name?: unknown })?.name === 'string'
+            ? ((entry.category as { name: string }).name as string)
+            : undefined,
+      difficulty: typeof entry.difficulty === 'string' ? entry.difficulty : undefined,
+      id:
+        typeof entry.id === 'string'
+          ? entry.id
+          : typeof entry._id === 'string'
+            ? entry._id
+            : questionRaw,
+    })
+
+    if (!doc?.quiz) continue
+    const normalizedQuestion = doc.quiz.question.toLowerCase()
+    if (exclusion.questions.has(normalizedQuestion)) continue
+    const quizId = doc.quiz.id
+    if (exclusion.ids.has(quizId) || avoidIds.has(quizId) || seenHashes.has(quizId) || history.has(quizId)) continue
+
+    await upsertCache('fact', { hash: quizId }, doc)
+    docs.push(doc)
+    seenHashes.add(quizId)
+    avoidIds.add(quizId)
+    if (docs.length >= target) break
+  }
+
+  if (docs.length < target) {
+    const localDocs = takeTriviaApiLocalDocs(target - docs.length, exclusion, avoidIds, history)
+    docs.push(...localDocs)
+  }
+
+  return docs
+}
+
+async function fetchTheTriviaApiDocs(
+  count: number,
+  exclusion: QuizExclusionContext,
+  avoidIds: Set<string>,
+  history: Set<string>,
+): Promise<FactQuizDoc[]> {
+  const target = Math.max(1, Math.min(10, count))
+  const docs: FactQuizDoc[] = []
+  const seenHashes = new Set<string>()
+
+  const amount = Math.min(20, Math.max(target * 2, target, 4))
+  let payload: unknown = null
+  try {
+    const res = await fetch(`${THE_TRIVIA_API_ENDPOINT}?limit=${amount}`, { cache: 'no-store' })
+    if (!res.ok) return docs
+    payload = await res.json()
+  } catch {
+    return docs
+  }
+
+  const entries: Array<Record<string, unknown>> = Array.isArray(payload)
+    ? (payload as Array<Record<string, unknown>>)
+    : []
+
+  for (const entry of entries) {
+    const questionRaw =
+      typeof entry.question === 'string'
+        ? entry.question
+        : typeof (entry.question as { text?: unknown })?.text === 'string'
+          ? ((entry.question as { text?: string }).text as string)
+          : ''
+
+    const correctRaw =
+      typeof entry.correctAnswer === 'string'
+        ? entry.correctAnswer
+        : typeof entry.correct_answer === 'string'
+          ? entry.correct_answer
+          : ''
+
+    const incorrectRaw = Array.isArray(entry.incorrectAnswers)
+      ? entry.incorrectAnswers
+      : Array.isArray(entry.incorrect_answers)
+        ? entry.incorrect_answers
+        : []
+
+    if (!questionRaw || !correctRaw || incorrectRaw.length < 1) continue
+
+    const doc = createQuizDocFromSource({
+      provider: 'the-trivia-api',
+      sourceName: 'The Trivia API',
+      sourceUrl: 'https://the-trivia-api.com',
+      question: questionRaw,
+      correctAnswer: correctRaw,
+      incorrectAnswers: incorrectRaw as string[],
+      category: typeof entry.category === 'string' ? entry.category : undefined,
+      difficulty: typeof entry.difficulty === 'string' ? entry.difficulty : undefined,
+      id: typeof entry.id === 'string' ? entry.id : questionRaw,
+      extraTags: Array.isArray(entry.tags) ? (entry.tags as string[]) : undefined,
+    })
+
+    if (!doc?.quiz) continue
+    const normalizedQuestion = doc.quiz.question.toLowerCase()
+    if (exclusion.questions.has(normalizedQuestion)) continue
+    const quizId = doc.quiz.id
+    if (exclusion.ids.has(quizId) || avoidIds.has(quizId) || seenHashes.has(quizId) || history.has(quizId)) continue
+
+    await upsertCache('fact', { hash: quizId }, doc)
+    docs.push(doc)
+    seenHashes.add(quizId)
+    avoidIds.add(quizId)
+    if (docs.length >= target) break
+  }
+
+  if (docs.length < target) {
+    const localDocs = takeTheTriviaLocalDocs(target - docs.length, exclusion, avoidIds, history)
+    docs.push(...localDocs)
+  }
+
+  return docs
 }

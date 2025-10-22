@@ -53,7 +53,7 @@ export default function CookieSettingsModal() {
             </li>
 
             <li className="flex items-start gap-3 opacity-50">
-              <input type="checkbox" checked readOnly className="mt-1" />
+              <input type="checkbox" checked={false} readOnly className="mt-1" />
               <div>
                 <div className="font-semibold">Analytics</div>
                 <div className="text-sm text-neutral-600">
@@ -78,7 +78,7 @@ export default function CookieSettingsModal() {
             </li>
 
             <li className="flex items-start gap-3 opacity-50">
-              <input type="checkbox" checked readOnly className="mt-1" />
+              <input type="checkbox" checked={false} readOnly className="mt-1" />
               <div>
                 <div className="font-semibold">Personnalisation</div>
                 <div className="text-sm text-neutral-600">

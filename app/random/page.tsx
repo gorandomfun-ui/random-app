@@ -1290,8 +1290,9 @@ const sequenceStateRef = useRef({
     icon: pickEncourageIcon(encourageIndex),
   }), [pickEncourageIcon, pickEncourageMessage])
 
-  const filteredSequence = useMemo(() => {
-    return FIXED_SEQUENCE.filter((type) => selectedTypes.includes(type))
+  const allowedTypes = useMemo(() => {
+    const set = new Set<ItemType>(selectedTypes.length ? selectedTypes : ALL_ITEM_TYPES)
+    return set
   }, [selectedTypes])
 
   const resetSequence = useCallback(() => {
@@ -1308,7 +1309,7 @@ const sequenceStateRef = useRef({
   }, [])
 
   const getNextSlot = useCallback((): SequenceSlot => {
-    const seq = filteredSequence
+    const seq = FIXED_SEQUENCE
     if (!seq.length) return { kind: 'content', itemType: 'image' }
 
     const state = sequenceStateRef.current
@@ -1337,9 +1338,24 @@ const sequenceStateRef = useRef({
       return { kind: 'encourage', round, encourageIndex: encourage }
     }
 
-    const normalizedStep = state.step % seq.length
-    const itemType = seq[normalizedStep]
-    const nextStep = (normalizedStep + 1) % seq.length
+    let normalizedStep = state.step % seq.length
+    let chosenType: ItemType | null = null
+    let nextStep = normalizedStep
+    for (let attempt = 0; attempt < seq.length; attempt++) {
+      const candidate = seq[normalizedStep]
+      normalizedStep = (normalizedStep + 1) % seq.length
+      if (allowedTypes.has(candidate)) {
+        chosenType = candidate
+        nextStep = normalizedStep
+        break
+      }
+    }
+
+    if (!chosenType) {
+      const fallback = selectedTypes[0] ?? 'fact'
+      chosenType = fallback
+    }
+
     sequenceStateRef.current = {
       step: nextStep,
       round: state.round,
@@ -1349,8 +1365,8 @@ const sequenceStateRef = useRef({
       currentInterval,
       intervalIndex: state.intervalIndex ?? 0,
     }
-    return { kind: 'content', itemType }
-  }, [filteredSequence])
+    return { kind: 'content', itemType: chosenType }
+  }, [allowedTypes, selectedTypes])
 
   const preloadQueuesRef = useRef<Record<ItemType, RandomContentItem[]>>({
     image: [],
