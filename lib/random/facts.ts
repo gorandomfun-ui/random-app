@@ -88,6 +88,7 @@ export type FactQuizPayload = {
   options: string[]
   correctIndex: number
   answer: string
+  correctIndices?: number[]
   category?: string
   difficulty?: TriviaDifficulty
 }
@@ -275,8 +276,10 @@ type QuizDocInput = {
   sourceName?: string
   sourceUrl?: string
   question: string
-  correctAnswer: string
-  incorrectAnswers: string[]
+  correctAnswer?: string
+  incorrectAnswers?: string[]
+  options?: string[]
+  correctIndices?: number[]
   category?: string
   difficulty?: string
   id?: string
@@ -287,19 +290,48 @@ type QuizDocInput = {
 function createQuizDocFromSource(input: QuizDocInput): FactQuizDoc | null {
   const provider = trim(input.provider) || 'quiz'
   const question = decodeHtml(input.question)
-  const correctAnswer = decodeHtml(input.correctAnswer)
-  const incorrectAnswers = Array.isArray(input.incorrectAnswers)
-    ? input.incorrectAnswers.map((answer) => decodeHtml(answer)).filter(Boolean)
-    : []
+  if (!question) return null
 
-  if (!question || !correctAnswer || incorrectAnswers.length < 1) return null
+  let options: string[] = []
+  let correctIndices: number[] = []
 
-  const options = shuffleArray([...incorrectAnswers, correctAnswer])
-  let correctIndex = options.findIndex((option) => option === correctAnswer)
-  if (correctIndex < 0) {
-    correctIndex = 0
-    options[0] = correctAnswer
+  if (Array.isArray(input.options) && input.options.length >= 2) {
+    const decodedOptions = input.options.map((option) => decodeHtml(option)).filter(Boolean)
+    if (decodedOptions.length < 2) return null
+    const indexed = decodedOptions.map((option, index) => ({ option, index }))
+    const shuffled = shuffleArray(indexed)
+    options = shuffled.map((entry) => entry.option)
+    const indexMap = new Map<number, number>()
+    shuffled.forEach((entry, idx) => indexMap.set(entry.index, idx))
+    if (Array.isArray(input.correctIndices)) {
+      for (const rawIdx of input.correctIndices) {
+        const mapped = typeof rawIdx === 'number' ? indexMap.get(rawIdx) : undefined
+        if (typeof mapped === 'number' && mapped >= 0) correctIndices.push(mapped)
+      }
+    }
+    if (!correctIndices.length && typeof input.correctAnswer === 'string') {
+      const fallbackAnswer = decodeHtml(input.correctAnswer)
+      const fallbackIdx = options.findIndex((opt) => opt === fallbackAnswer)
+      if (fallbackIdx >= 0) correctIndices.push(fallbackIdx)
+    }
+  } else {
+    const correctAnswer = decodeHtml(input.correctAnswer ?? '')
+    const incorrectAnswers = Array.isArray(input.incorrectAnswers)
+      ? input.incorrectAnswers.map((answer) => decodeHtml(answer)).filter(Boolean)
+      : []
+    if (!correctAnswer || incorrectAnswers.length < 1) return null
+    options = shuffleArray([...incorrectAnswers, correctAnswer])
+    const idx = options.findIndex((option) => option === correctAnswer)
+    correctIndices = [idx >= 0 ? idx : 0]
+    if (idx < 0) options[0] = correctAnswer
   }
+
+  if (options.length < 2) return null
+  const uniqueCorrect = Array.from(new Set(correctIndices.filter((idx) => idx >= 0 && idx < options.length)))
+  if (!uniqueCorrect.length) uniqueCorrect.push(0)
+  const primaryCorrectIndex = uniqueCorrect[0]
+  const answerList = uniqueCorrect.map((idx) => options[idx]).filter(Boolean)
+  const answer = answerList.length ? answerList.join(', ') : options[primaryCorrectIndex]
 
   const sourceName = trim(input.sourceName || '') || provider
   const baseDoc = createFactDocument({
@@ -326,7 +358,7 @@ function createQuizDocFromSource(input: QuizDocInput): FactQuizDoc | null {
     provider,
     sourceName,
     question,
-    correctAnswer,
+    answer,
     options,
     category,
     difficulty,
@@ -349,8 +381,9 @@ function createQuizDocFromSource(input: QuizDocInput): FactQuizDoc | null {
       id: hash,
       question,
       options,
-      correctIndex,
-      answer: correctAnswer,
+      correctIndex: primaryCorrectIndex,
+      correctIndices: uniqueCorrect,
+      answer,
       category,
       difficulty,
     },
@@ -396,6 +429,7 @@ function buildQuizItem(doc: FactQuizDoc): FactQuizItem | null {
     question,
     options: doc.quiz.options.slice(),
     correctIndex: doc.quiz.correctIndex,
+    correctIndices: doc.quiz.correctIndices ? doc.quiz.correctIndices.slice() : undefined,
     answer: doc.quiz.answer,
     provider,
     source: { name: sourceName, url: sourceUrl },
@@ -616,8 +650,8 @@ async function fetchQuizApiDocs(
 
     if (options.length < 2) continue
     if (!correctIndices.length) continue
-    const correctIndex = correctIndices[0]
-    const correctAnswer = options[correctIndex]
+    const uniqueIndices = Array.from(new Set(correctIndices))
+    const correctAnswer = options[uniqueIndices[0]]
 
     const tags = Array.isArray(entry.tags)
       ? (entry.tags as Array<{ name?: string }>).map((tag) => (typeof tag?.name === 'string' ? tag.name : ''))
@@ -629,7 +663,8 @@ async function fetchQuizApiDocs(
       sourceUrl: 'https://quizapi.io',
       question: questionRaw,
       correctAnswer,
-      incorrectAnswers: options.filter((_, idx) => idx !== correctIndex),
+      options,
+      correctIndices: uniqueIndices,
       category: typeof entry.category === 'string' ? entry.category : undefined,
       difficulty: typeof entry.difficulty === 'string' ? entry.difficulty : undefined,
       id: typeof entry.id === 'string' ? entry.id : questionRaw,

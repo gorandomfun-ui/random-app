@@ -88,6 +88,7 @@ export type FactQuizItem = {
   question: string
   options: string[]
   correctIndex: number
+  correctIndices?: number[]
   answer: string
   provider: string
   source: { name: string; url?: string }

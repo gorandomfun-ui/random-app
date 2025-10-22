@@ -167,6 +167,21 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
   const [revealed, setRevealed] = useState(false)
   const { addAction } = useScore()
 
+  const allCorrectIndices = useMemo(() => {
+    if (Array.isArray(item.correctIndices) && item.correctIndices.length) {
+      const unique = Array.from(new Set(item.correctIndices.filter((idx) => idx >= 0 && idx < item.options.length)))
+      if (unique.length) return unique
+    }
+    return [item.correctIndex]
+  }, [item.correctIndices, item.correctIndex, item.options.length])
+
+  const sourceName = item.source?.name || item.provider || 'Quiz'
+  const sourceUrl = item.source?.url
+  const correctAnswers = useMemo(
+    () => allCorrectIndices.map((idx) => item.options[idx]).filter(Boolean),
+    [allCorrectIndices, item.options],
+  )
+
   useEffect(() => {
     setSelected(null)
     setRevealed(false)
@@ -174,7 +189,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
 
   const onSelect = (index: number) => {
     if (revealed) return
-    const correct = index === item.correctIndex
+    const correct = allCorrectIndices.includes(index)
     setSelected(index)
     setRevealed(true)
     if (correct) {
@@ -182,7 +197,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     }
   }
 
-  const isCorrect = revealed && selected === item.correctIndex
+  const isCorrect = revealed && selected !== null && allCorrectIndices.includes(selected)
 
   return (
     <div
@@ -198,14 +213,13 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
         </p>
         <div className="mt-2 text-center text-[11px] font-inter opacity-70">
           <span>Source : </span>
-          <a
-            href="https://opentdb.com"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            Open Trivia DB
-          </a>
+          {sourceUrl ? (
+            <a href={sourceUrl} target="_blank" rel="noreferrer" className="underline">
+              {sourceName}
+            </a>
+          ) : (
+            <span>{sourceName}</span>
+          )}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[10px] uppercase tracking-wide opacity-80 font-inter">
           {item.category ? (
@@ -227,7 +241,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
         <div className="flex flex-col gap-1.5">
           {item.options.map((option, index) => {
             const isSelected = selected === index
-            const isAnswer = index === item.correctIndex
+            const isAnswer = allCorrectIndices.includes(index)
             const revealState = revealed && (isSelected || isAnswer)
             const style = {
               color: theme.cream,
@@ -280,7 +294,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
             <span>
               Mauvaise réponse ❌
               <span className="block mt-1 text-xs md:text-sm opacity-80" style={{ color: theme.cream }}>
-                Réponse correcte : {item.answer}
+                Réponse correcte : {correctAnswers.length ? correctAnswers.join(', ') : item.answer}
               </span>
             </span>
           )}
