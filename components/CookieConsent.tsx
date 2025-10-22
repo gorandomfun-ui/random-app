@@ -16,13 +16,30 @@ type Ctx = {
   save: (next: Consent) => void;        // sauvegarder réglages
   openSettings: () => void;
   closeSettings: () => void;
+  region: Region;
 };
 
 const KEY = 'random.consent.v1';
+const ADS_EVENT = 'cookie:ads-changed';
+
+export type Region = 'eu' | 'us' | 'other';
+
+const DEFAULT_CONSENT: Consent = {
+  necessary: true,
+  analytics: true,
+  ads: true,
+  personalization: true,
+};
 
 const ConsentCtx = createContext<Ctx | null>(null);
 
-export function CookieConsentProvider({ children }: { children: React.ReactNode }) {
+export function CookieConsentProvider({
+  children,
+  region = 'other',
+}: {
+  children: React.ReactNode;
+  region?: Region;
+}) {
   const [consent, setConsent] = useState<Consent | null>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
 
@@ -36,12 +53,21 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
         parsed.necessary = true;
         setConsent(parsed);
       } else {
-        setConsent(null); // force la bannière
+        if (region === 'eu') {
+          setConsent(null); // force la bannière uniquement en zone EU
+        } else {
+          setConsent({ ...DEFAULT_CONSENT });
+          localStorage.setItem(KEY, JSON.stringify(DEFAULT_CONSENT));
+        }
       }
     } catch {
-      setConsent(null);
+      if (region === 'eu') {
+        setConsent(null);
+      } else {
+        setConsent({ ...DEFAULT_CONSENT });
+      }
     }
-  }, []);
+  }, [region]);
 
   const save = useCallback((next: Consent) => {
     const fixed = { ...next, necessary: true };
@@ -51,7 +77,7 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const acceptAll = useCallback(() => {
-    save({ necessary: true, analytics: true, ads: true, personalization: true });
+    save({ necessary: true, analytics: false, ads: true, personalization: false });
   }, [save]);
 
   const rejectAll = useCallback(() => {
@@ -62,7 +88,7 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const decided = consent !== null;
-  const isBannerOpen = !decided && !isSettingsOpen;
+  const isBannerOpen = region === 'eu' ? !decided && !isSettingsOpen : false;
 
   const value = useMemo<Ctx>(
     () => ({
@@ -75,9 +101,16 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
       save,
       openSettings,
       closeSettings,
+      region,
     }),
-    [consent, decided, isBannerOpen, isSettingsOpen, acceptAll, rejectAll, save, openSettings, closeSettings]
+    [consent, decided, isBannerOpen, isSettingsOpen, acceptAll, rejectAll, save, openSettings, closeSettings, region]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const adsEnabled = consent?.ads === true;
+    window.dispatchEvent(new CustomEvent(ADS_EVENT, { detail: adsEnabled }));
+  }, [consent?.ads]);
 
   return <ConsentCtx.Provider value={value}>{children}</ConsentCtx.Provider>;
 }

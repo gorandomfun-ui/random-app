@@ -159,11 +159,12 @@ const deDictionary = {
   },
   legal: {
     title: "Impressum",
+    subtitle: "Transparenz & Verantwortung",
     close: "Schließen",
     disclaimer: {
       title: "Hinweis zu Inhalten",
       body:
-        "Random bezieht Inhalte von externen Anbietern und APIs. Wir können nicht jeden Beitrag vorab prüfen. Wenn dir unangemessene, rassistische oder anderweitig schädliche Inhalte auffallen, mache bitte einen Screenshot und sende ihn an gorandomfun@gmail.com, damit wir ihn schnell entfernen können.",
+        "Random bündelt Inhalte aus APIs und manuellen Einsendungen. Eine Vorabprüfung jedes Beitrags ist nicht möglich. Bitte sende bei rechtswidrig oder schädlich wirkenden Inhalten einen Screenshot/Link an gorandomfun@gmail.com, damit wir schnell entfernen können.",
     },
 
     editor: {
@@ -180,30 +181,30 @@ const deDictionary = {
 
     purpose: {
       title: "Zweck",
-      body: "Zufällige Inhalte (Bilder, GIFs, Videos, Texte). Monetarisierung über Werbung/Affiliate."
+      body: "Zufällige Inhalte (Bilder, GIFs, Videos, Texte) zur Unterhaltung. Monetarisierung über kontextbezogene Anzeigen (A-ADS) und gelegentliche Affiliate-Links."
     },
 
     privacy: {
       title: "Cookies & Datenschutz",
-      bodyPrefix: "In der EU werden nicht notwendige Tracker erst nach Einwilligung aktiviert.",
+      bodyPrefix: "Wir setzen nur unbedingt erforderliche Cookies (Sprachauswahl, Einwilligungsprotokoll). A-ADS liefert Anzeigen ohne Tracking-Cookies; zusätzliche Tracker werden hier zur Einwilligung angeboten.",
       manageCookies: "Cookies verwalten",
       privacyPolicy: "Datenschutzerklärung"
     },
 
     usa: {
       title: "USA",
-      bodyPrefix: "CCPA/CPRA: Opt-out-Recht beim „Verkauf/Teilen“.",
+      bodyPrefix: "Wir verkaufen oder teilen keine personenbezogenen Daten. Für Rechte nach CCPA/CPRA schreiben Sie an gorandomfun@gmail.com.",
       doNotSell: "Do Not Sell or Share"
     },
 
     dmca: {
       title: "DMCA",
-      body: "Mitteilungen: gorandomfun@gmail.com"
+      body: "DMCA-Mitteilungen: gorandomfun@gmail.com"
     },
 
     law: {
       title: "Anwendbares Recht",
-      body: "Französisches Recht, sofern zwingende Vorschriften nichts anderes bestimmen."
+      body: "Anwendbares Recht: Frankreich, vorbehaltlich zwingender lokaler Vorschriften."
     }
   }  ,
   "encourage": {

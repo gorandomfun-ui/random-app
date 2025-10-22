@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import Link from 'next/link'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
+import { useCookieConsent } from '@/components/CookieConsent'
+import AadsInlineContentAd from '@/components/AadsInlineContentAd'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
@@ -143,6 +145,8 @@ function randDiffIdx(max: number, not: number) {
   if (i === not) i = (i + 1 + randIdx(max - 1)) % max
   return i
 }
+
+const RANDOM_INLINE_AD_KEY = 'random.inline.count'
 
 function shortenText(text: string, maxWords: number) {
   const words = text.trim().split(/\s+/)
@@ -912,7 +916,7 @@ export default function RandomExperiencePage({
 }) {
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, maybeSpawnDiamond } = useScore()
-  useEzoicFooterAd()
+  const { consent } = useCookieConsent()
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
@@ -925,6 +929,9 @@ export default function RandomExperiencePage({
   const [sequenceVersion, setSequenceVersion] = useState(0)
   const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
   const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
+  const randomDrawCountRef = useRef(0)
+  const [inlineAdActive, setInlineAdActive] = useState(false)
+  const footerAdCounterRef = useRef(0)
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
@@ -936,6 +943,16 @@ export default function RandomExperiencePage({
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
   const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
+  const adsAllowed = consent?.ads === true
+
+  useEffect(() => {
+    if (!adsAllowed) {
+      setInlineAdActive(false)
+      footerAdCounterRef.current = 0
+    }
+  }, [adsAllowed])
+
+  useEzoicFooterAd(adsAllowed)
   const shouldForceMutedAutoplay = useMemo(() => {
     if (typeof window === 'undefined') return false
     const ua = (navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '').toString()
@@ -943,6 +960,22 @@ export default function RandomExperiencePage({
     const isAndroid = /Android/i.test(ua)
     // Autoplay with sound is blocked on most mobile browsers; mute to allow auto-play.
     return isIOS || isAndroid
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem(RANDOM_INLINE_AD_KEY)
+      if (!stored) return
+      const parsed = Number.parseInt(stored, 10)
+      if (Number.isFinite(parsed)) {
+        const normalized = ((parsed % 30) + 30) % 30
+        randomDrawCountRef.current = normalized
+        setInlineAdActive(false)
+      }
+    } catch {
+      /* ignore */
+    }
   }, [])
   const fullscreenSrc = useMemo(() => {
     if (!fullscreenVideo) return ''
@@ -1220,6 +1253,20 @@ const sequenceStateRef = useRef({
   useEffect(() => {
     if (fullscreenVideo) closeFullscreen()
   }, [closeFullscreen, fullscreenVideo, trigger])
+
+  const incrementRandomDrawCount = useCallback(() => {
+    if (!adsAllowed) return
+    const next = (randomDrawCountRef.current + 1) % 30
+    randomDrawCountRef.current = next
+    setInlineAdActive(next === 0)
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(RANDOM_INLINE_AD_KEY, String(next))
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [adsAllowed])
 
   const pickEncourageMessage = useCallback(() => {
     if (!encourageQueueRef.current.length) {
@@ -1589,6 +1636,17 @@ const sequenceStateRef = useRef({
       updateTheme()
       playRandom()
 
+      if (outcome !== null) {
+        if (adsAllowed) {
+          footerAdCounterRef.current = (footerAdCounterRef.current + 1) % 10
+          if (footerAdCounterRef.current === 0 && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('random:footer-ad-cycle'))
+          }
+        } else {
+          footerAdCounterRef.current = 0
+        }
+      }
+
       if (reward && outcome !== null) {
         addAction('random')
         if (outcome === 'encourage') {
@@ -1604,7 +1662,7 @@ const sequenceStateRef = useRef({
     } finally {
       setLoading(false)
     }
-  }, [acquireItem, addAction, buildEncourageItem, getNextSlot, maybeSpawnDiamond, triggerPageGlitch, updateTheme])
+  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, getNextSlot, maybeSpawnDiamond, triggerPageGlitch, updateTheme])
 
   useEffect(() => {
     loadNext(false).catch(() => setLoading(false))
@@ -1620,9 +1678,10 @@ const sequenceStateRef = useRef({
   }, [currentItem])
 
   const handleRandomAgain = useCallback(() => {
+    incrementRandomDrawCount()
     loadNext(true).catch(() => undefined)
     playAgain()
-  }, [loadNext])
+  }, [incrementRandomDrawCount, loadNext])
 
   function applyLangOut(next: Lang) {
     try {
@@ -1649,15 +1708,19 @@ const sequenceStateRef = useRef({
   }), [theme.bg, theme.cream, theme.text])
 
   const viewItem = currentItem
-  const isEncourage = viewItem?.type === 'encourage'
+  const shouldShowInlineAd = adsAllowed && inlineAdActive && !loading
+  const isEncourage = !shouldShowInlineAd && viewItem?.type === 'encourage'
   const categoryType: ItemType | null =
-    viewItem && viewItem.type !== 'encourage' ? viewItem.type : null
+    shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' ? null : viewItem.type
 
   useEffect(() => {
-    if (isEncourage && shareOpen) setShareOpen(false)
-  }, [isEncourage, shareOpen])
+    if ((isEncourage || shouldShowInlineAd) && shareOpen) setShareOpen(false)
+  }, [isEncourage, shareOpen, shouldShowInlineAd])
+
+  const adLabel = useMemo(() => t('ads.sponsored', 'Sponsored'), [t])
 
   const categoryLabel = useMemo(() => {
+    if (shouldShowInlineAd) return adLabel
     if (!categoryType) return null
     const labelMap: Record<ItemType, string> = {
       image: navLabels.images,
@@ -1668,11 +1731,13 @@ const sequenceStateRef = useRef({
       fact: navLabels.facts,
     }
     return labelMap[categoryType]
-  }, [categoryType, navLabels])
+  }, [adLabel, categoryType, navLabels, shouldShowInlineAd])
 
-  const categoryIcon = categoryType ? TYPE_ICONS[categoryType] : null
+  const categoryIcon = shouldShowInlineAd || !categoryType ? null : TYPE_ICONS[categoryType]
   const adHeight = viewportWidth && viewportWidth >= 768 ? 90 : 50
   const adWidth = viewportWidth && viewportWidth >= 768 ? 728 : 320
+  const footerPadHeight = adsAllowed ? adHeight : 0
+  const controlsDisabled = shouldShowInlineAd || !viewItem || viewItem.type === 'encourage'
 
   useEffect(() => {
     if (!menuOpen) return
@@ -1766,6 +1831,10 @@ const sequenceStateRef = useRef({
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
             </div>
+          ) : shouldShowInlineAd ? (
+            <div className="flex items-center justify-center w-full h-full">
+              <AadsInlineContentAd />
+            </div>
           ) : viewItem ? (
             <ContentRenderer
               item={viewItem}
@@ -1784,20 +1853,20 @@ const sequenceStateRef = useRef({
           )}
         </div>
 
-        {viewItem && viewItem.type !== 'encourage' ? (
+        {!shouldShowInlineAd && viewItem && viewItem.type !== 'encourage' ? (
           <div className="text-center text-sm md:text-base font-inter opacity-80" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
         ) : null}
       </section>
 
-      <section className="px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: adHeight + 16 }}>
+      <section className="px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: footerPadHeight + 16 }}>
         <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
           <button
             type="button"
             aria-label={likeLabel}
             onClick={() => {
-              if (!viewItem || viewItem.type === 'encourage') return
+              if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage') return
               if (liked) {
                 removeLike(viewItem)
                 setLiked(false)
@@ -1813,7 +1882,7 @@ const sequenceStateRef = useRef({
               }
             }}
             className="p-3"
-            disabled={!viewItem || viewItem.type === 'encourage'}
+            disabled={controlsDisabled}
           >
             <MonoIcon
               src="/icons/Heart.svg"
@@ -1841,9 +1910,12 @@ const sequenceStateRef = useRef({
           <button
             type="button"
             aria-label={shareLabel}
-            onClick={() => setShareOpen(true)}
+            onClick={() => {
+              if (controlsDisabled) return
+              setShareOpen(true)
+            }}
             className="p-3"
-            disabled={!viewItem || viewItem.type === 'encourage'}
+            disabled={controlsDisabled}
           >
             <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
           </button>
@@ -2024,25 +2096,27 @@ const sequenceStateRef = useRef({
         item={viewItem}
       />
 
-      <div
-        className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
-        style={{
-          height: adHeight,
-          backgroundColor: '#ffffff',
-          color: '#111',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          zIndex: 60,
-        }}
-      >
+      {adsAllowed ? (
         <div
-          className="flex items-center justify-center"
-          style={{ width: adWidth, height: adHeight }}
+          className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
+          style={{
+            height: adHeight,
+            backgroundColor: '#ffffff',
+            color: '#111',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            zIndex: 60,
+          }}
         >
-          {/* Ezoic - bottom_of_page - bottom_of_page */}
-          <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
-          {/* End Ezoic - bottom_of_page - bottom_of_page */}
+          <div
+            className="flex items-center justify-center"
+            style={{ width: adWidth, height: adHeight }}
+          >
+            {/* Ezoic - bottom_of_page - bottom_of_page */}
+            <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
+            {/* End Ezoic - bottom_of_page - bottom_of_page */}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <style jsx>{`
         .encourage-layout {

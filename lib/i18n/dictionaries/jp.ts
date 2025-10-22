@@ -159,11 +159,12 @@ const jpDictionary = {
   },
   legal: {
     title: "特定商取引法に基づく表記",
+    subtitle: "運営責任の明確化",
     close: "閉じる",
     disclaimer: {
       title: "コンテンツに関する注意",
       body:
-        "Random は外部プロバイダーや API からコンテンツを取得しており、すべてを事前に確認することはできません。不適切・人種差別的・有害な内容を見つけた場合は、スクリーンショットを添えて gorandomfun@gmail.com までご連絡ください。迅速に対応します。",
+        "Random は外部 API や手動投稿からコンテンツを集約しており、すべてを事前検証することはできません。違法または有害と思われる内容を見つけた場合は、スクリーンショットと URL を添えて gorandomfun@gmail.com までご連絡ください。迅速に対応します。",
     },
 
     editor: {
@@ -180,30 +181,30 @@ const jpDictionary = {
 
     purpose: {
       title: "目的",
-      body: "ランダムなコンテンツ（画像、GIF、動画、テキスト）。広告/アフィリエイトによる収益化。"
+      body: "エンタメ向けランダムコンテンツ（画像・GIF・動画・テキスト）。A-ADS によるコンテキスト広告と一部アフィリエイトリンクで収益化しています。"
     },
 
     privacy: {
       title: "クッキーとプライバシー",
-      bodyPrefix: "EU では、同意後にのみ不要なトラッカーが有効化されます。",
+      bodyPrefix: "当サイトで設定するのは必須クッキーのみ（言語設定・同意記録）。A-ADS はトラッキングクッキーを使わずに広告を配信します。追加のトラッカーを導入する際は、ここでオプトインをお願いする予定です。",
       manageCookies: "クッキーを管理",
       privacyPolicy: "プライバシーポリシー"
     },
 
     usa: {
       title: "USA",
-      bodyPrefix: "CCPA/CPRA：｢販売/共有｣のオプトアウト権。",
+      bodyPrefix: "個人データの販売や共有は行いません。CCPA/CPRA の権利行使は gorandomfun@gmail.com までご連絡ください。",
       doNotSell: "Do Not Sell or Share"
     },
 
     dmca: {
       title: "DMCA",
-      body: "通知先：gorandomfun@gmail.com"
+      body: "DMCA 通知先：gorandomfun@gmail.com"
     },
 
     law: {
       title: "準拠法",
-      body: "強行法規に別段の定めがある場合を除き、フランス法に準拠します。"
+      body: "準拠法：フランス法（各国の強行法規に従います）。"
     }
   }  ,
   "encourage": {

@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 const SCRIPT_ID = 'ezoic-sa-script'
 const SCRIPT_SRC = 'https://www.ezojs.com/ezoic/sa.min.js'
 
-const ENABLED = process.env.NEXT_PUBLIC_EZOIC_ENABLED === 'true'
+const ENV_ENABLED = process.env.NEXT_PUBLIC_EZOIC_ENABLED === 'true'
 const PLACEHOLDER_ID = (() => {
   const raw = process.env.NEXT_PUBLIC_EZOIC_PLACEHOLDER_ID_FOOTER ?? ''
   const parsed = Number.parseInt(raw, 10)
@@ -20,12 +20,12 @@ const REFRESH_SECONDS = (() => {
 
 export const EZOIC_PLACEHOLDER_ID = PLACEHOLDER_ID
 
-export function useEzoicFooterAd() {
+export function useEzoicFooterAd(enabled = true) {
   const retryTimerRef = useRef<number | null>(null)
   const refreshTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!ENABLED) return undefined
+    if (!ENV_ENABLED || !enabled) return undefined
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
 
     let cancelled = false
@@ -105,5 +105,5 @@ export function useEzoicFooterAd() {
         refreshTimerRef.current = null
       }
     }
-  }, [])
+  }, [enabled])
 }

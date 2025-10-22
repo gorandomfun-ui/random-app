@@ -52,17 +52,12 @@ export default function CookieSettingsModal() {
               </div>
             </li>
 
-            <li className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={local.analytics}
-                onChange={() => onToggle('analytics')}
-                className="mt-1"
-              />
+            <li className="flex items-start gap-3 opacity-50">
+              <input type="checkbox" checked readOnly className="mt-1" />
               <div>
                 <div className="font-semibold">Analytics</div>
                 <div className="text-sm text-neutral-600">
-                  Mesure d’audience anonyme pour améliorer le site.
+                  Pas d’outil configuré pour le moment.
                 </div>
               </div>
             </li>
@@ -77,22 +72,17 @@ export default function CookieSettingsModal() {
               <div>
                 <div className="font-semibold">Publicité</div>
                 <div className="text-sm text-neutral-600">
-                  Annonces personnalisées et suivi publicitaire.
+                  Affiche ou masque les annonces A-ADS (contextuelles, sans suivi).
                 </div>
               </div>
             </li>
 
-            <li className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={local.personalization}
-                onChange={() => onToggle('personalization')}
-                className="mt-1"
-              />
+            <li className="flex items-start gap-3 opacity-50">
+              <input type="checkbox" checked readOnly className="mt-1" />
               <div>
                 <div className="font-semibold">Personnalisation</div>
                 <div className="text-sm text-neutral-600">
-                  Contenus recommandés en fonction de votre usage.
+                  Non utilisé actuellement.
                 </div>
               </div>
             </li>

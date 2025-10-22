@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 const outerStyle: React.CSSProperties = { position: 'absolute', zIndex: 99999 }
 const wrapperStyle: React.CSSProperties = { paddingTop: 0, paddingBottom: '50px' }
@@ -14,16 +14,18 @@ const containerStyle: React.CSSProperties = {
   left: 0,
   right: 0,
   margin: 'auto',
+  paddingRight: '32px',
 }
 const closeStyle: React.CSSProperties = {
-  top: '-24px',
-  right: 0,
+  top: '50%',
+  right: '4px',
   position: 'absolute',
   borderRadius: '4px',
   background: 'rgba(248, 248, 249, 0.70)',
   padding: '4px',
   zIndex: 99999,
   cursor: 'pointer',
+  transform: 'translateY(-50%)',
 }
 const frameStyle: React.CSSProperties = {
   width: '100%',
@@ -41,9 +43,21 @@ const iframeStyle: React.CSSProperties = {
 }
 
 export default function AadsMobileBanner() {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    const handler = () => {
+      setReloadKey((prev) => prev + 1)
+      if (inputRef.current) inputRef.current.checked = false
+    }
+    window.addEventListener('random:footer-ad-cycle', handler)
+    return () => window.removeEventListener('random:footer-ad-cycle', handler)
+  }, [])
+
   return (
     <div className="md:hidden" style={outerStyle}>
-      <input autoComplete="off" type="checkbox" id="aadsstickymgzj6lbr" hidden />
+      <input autoComplete="off" type="checkbox" id="aadsstickymgzj6lbr" hidden ref={inputRef} />
       <div style={wrapperStyle}>
         <div style={containerStyle}>
           <label htmlFor="aadsstickymgzj6lbr" style={closeStyle}>
@@ -53,6 +67,7 @@ export default function AadsMobileBanner() {
           </label>
           <div id="frame" style={frameStyle}>
             <iframe
+              key={reloadKey}
               title="a-ads-banner"
               data-aa="2414406"
               src="//ad.a-ads.com/2414406/?size=320x50"

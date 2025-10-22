@@ -159,11 +159,12 @@ const enDictionary = {
   },
   legal: {
     title: "Legal notice",
+    subtitle: "Clarity on responsibility",
     close: "Close",
     disclaimer: {
       title: "Content advisory",
       body:
-        "Random aggregates content from external providers and APIs. We do not pre-screen every piece. If you encounter inappropriate, racist, or otherwise harmful material, please capture it and email gorandomfun@gmail.com so we can remove it quickly.",
+        "Random aggregates content from APIs and manual submissions. We cannot pre-screen every piece. If something looks unlawful or harmful, please capture it and email gorandomfun@gmail.com so we can remove it quickly.",
     },
 
     editor: {
@@ -180,30 +181,30 @@ const enDictionary = {
 
     purpose: {
       title: "Purpose",
-      body: "Random content (images, GIFs, videos, texts). Monetized by ads/affiliation."
+      body: "Random content (images, GIFs, videos, text) for entertainment. Monetised with contextual ads (A-ADS) and occasional affiliate links."
     },
 
     privacy: {
       title: "Cookies & privacy",
-      bodyPrefix: "In the EU, non-essential trackers are only activated after consent.",
+      bodyPrefix: "We only set essential cookies (language choice, consent log). A-ADS delivers ads without tracking cookies; if we add other trackers they will appear here for opt-in.",
       manageCookies: "Manage my cookies",
       privacyPolicy: "Privacy policy"
     },
 
     usa: {
       title: "USA",
-      bodyPrefix: "CCPA/CPRA: right to opt-out of “sale/sharing”.",
+      bodyPrefix: "We do not sell or share personal data. To exercise CCPA/CPRA rights, email gorandomfun@gmail.com.",
       doNotSell: "Do Not Sell or Share"
     },
 
     dmca: {
       title: "DMCA",
-      body: "Notifications: gorandomfun@gmail.com"
+      body: "DMCA notices: gorandomfun@gmail.com"
     },
 
     law: {
       title: "Governing law",
-      body: "French law, unless mandatory provisions state otherwise."
+      body: "Governing law: France, unless mandatory local law applies."
     }
   }  ,
   "encourage": {

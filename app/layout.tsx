@@ -4,9 +4,8 @@ import { cookies, headers } from 'next/headers';
 import Script from 'next/script';
 
 import I18nProvider from '@/providers/I18nProvider'; // <- ton provider i18n (nommé "default")
-import { CookieConsentProvider } from '@/components/CookieConsent'; // <- export nommé
-import AadsMobileBanner from '@/components/AadsMobileBanner';
-import AadsDesktopBanner from '@/components/AadsDesktopBanner';
+import { CookieConsentProvider, type Region } from '@/components/CookieConsent'; // <- export nommé
+import FooterAds from '@/components/FooterAds';
 import CookieBanner from '@/components/CookieBanner';
 import CookieSettingsModal from '@/components/CookieSettingsModal';
 import { ScoreProvider } from '@/providers/ScoreProvider';
@@ -36,6 +35,19 @@ const mapCountry = (country?: string | null): 'en' | 'fr' | 'de' | 'jp' | null =
   return null
 }
 
+const EU_COUNTRY_CODES = new Set([
+  'AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE',
+  'IS','LI','NO','CH','GB','UK'
+])
+
+const detectRegion = (country?: string | null): Region => {
+  if (!country) return 'other'
+  const code = country.toUpperCase()
+  if (code === 'US') return 'us'
+  if (EU_COUNTRY_CODES.has(code)) return 'eu'
+  return 'other'
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -49,8 +61,10 @@ export default function RootLayout({
   const acceptLang = headerList.get('accept-language') || ''
   const primaryRequested = acceptLang.split(',')[0]?.trim()
   const autoLang = mapLocale(primaryRequested)
-  const countryLang = mapCountry(headerList.get('x-vercel-ip-country'))
+  const countryCode = headerList.get('x-vercel-ip-country')
+  const countryLang = mapCountry(countryCode)
   const lang = cookieLangRaw ? mapLocale(cookieLangRaw) : (countryLang ?? autoLang)
+  const region = detectRegion(countryCode)
 
   return (
     <html lang={lang} suppressHydrationWarning className={`${interTight.variable} ${tomorrow.variable}`}>
@@ -74,7 +88,7 @@ export default function RootLayout({
         {/* i18n DOIT envelopper tout ce qui consomme useI18n */}
         <I18nProvider initialLocale={lang}>
           {/* Le provider de consentement doit envelopper la bannière + modal + app */}
-          <CookieConsentProvider>
+          <CookieConsentProvider region={region}>
             <ScoreProvider>
               {children}
 
@@ -84,8 +98,7 @@ export default function RootLayout({
               {/* Le modal de réglages est monté globalement et sera ouvert par <CookieSettingsLink /> */}
               <CookieSettingsModal />
 
-              <AadsMobileBanner />
-              <AadsDesktopBanner />
+              <FooterAds />
             </ScoreProvider>
           </CookieConsentProvider>
         </I18nProvider>

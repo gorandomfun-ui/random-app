@@ -16,7 +16,7 @@ export default function RootClient({
   initialLang: string
 }) {
   return (
-    <CookieConsentProvider>
+    <CookieConsentProvider region="other">
       <CookieBanner />
       <CookieSettingsModal />
       <I18nProvider initialLocale={initialLang}>{children}</I18nProvider>
