@@ -576,7 +576,7 @@ async function fetchQuizApiDocs(
   const amount = Math.min(20, Math.max(target * 2, target, 5))
   const difficulties: TriviaDifficulty[] = ['easy', 'medium', 'hard']
   const difficulty = difficulties[Math.floor(Math.random() * difficulties.length)]
-  const params = new URLSearchParams({ limit: String(amount), difficulty })
+  const params = new URLSearchParams({ limit: String(amount), difficulty, "multiple_correct_answers": 'true' })
 
   let payload: unknown = null
   try {
@@ -615,7 +615,7 @@ async function fetchQuizApiDocs(
     })
 
     if (options.length < 2) continue
-    if (correctIndices.length !== 1) continue
+    if (!correctIndices.length) continue
     const correctIndex = correctIndices[0]
     const correctAnswer = options[correctIndex]
 
