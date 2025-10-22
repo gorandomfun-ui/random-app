@@ -386,7 +386,6 @@ function createQuizDocFromSource(input: QuizDocInput): FactQuizDoc | null {
       answer,
       category,
       difficulty,
-      correctIndices: uniqueCorrect,
     },
     hash,
     tone: toneDetails?.tone ?? baseDoc.tone,
