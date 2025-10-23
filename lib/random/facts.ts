@@ -164,6 +164,7 @@ const TRIVIA_API_BASE = 'https://opentdb.com'
 const TRIVIA_MAX_ATTEMPTS = 5
 const QUIZ_API_ENDPOINT = 'https://quizapi.io/api/v1/questions'
 const QUIZ_API_TOKEN = (process.env.QUIZAPI_IO_TOKEN || '').trim()
+const QUIZ_API_CATEGORIES = ['history', 'music', 'film', 'geography', 'general', 'literature']
 
 type TriviaProvider = 'open-trivia-db' | 'quizapi.io'
 const TRIVIA_PROVIDERS: TriviaProvider[] = ['open-trivia-db', 'quizapi.io']
@@ -252,8 +253,8 @@ function takeQuizApiLocalDocs(
     quizApiLocalCursor = (quizApiLocalCursor + 1) % LOCAL_GENERAL_QUIZZES.length
     attempts += 1
     const doc = createQuizDocFromSource({
-      provider: 'quizapi.io',
-      sourceName: 'QuizAPI.io (offline)',
+      provider: 'quizapi.io-fallback',
+      sourceName: 'QuizAPI Offline',
       question: entry.question,
       correctAnswer: entry.correct,
       incorrectAnswers: entry.incorrect,
@@ -608,9 +609,15 @@ async function fetchQuizApiDocs(
   }
 
   const amount = Math.min(20, Math.max(target * 2, target, 5))
-  const difficulties: TriviaDifficulty[] = ['easy', 'medium', 'hard']
+  const difficulties: TriviaDifficulty[] = ['easy', 'medium']
   const difficulty = difficulties[Math.floor(Math.random() * difficulties.length)]
-  const params = new URLSearchParams({ limit: String(amount), difficulty, "multiple_correct_answers": 'true' })
+  const category = QUIZ_API_CATEGORIES[Math.floor(Math.random() * QUIZ_API_CATEGORIES.length)]
+  const params = new URLSearchParams({
+    limit: String(amount),
+    difficulty,
+    "multiple_correct_answers": 'true',
+    category,
+  })
 
   let payload: unknown = null
   try {
