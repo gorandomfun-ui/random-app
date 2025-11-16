@@ -126,9 +126,10 @@ async function pullFunnyQuotes(limit: number) {
       const quote = typeof row.quote === 'string' ? row.quote : ''
       const joke = typeof row.joke === 'string' ? row.joke : ''
       const text = norm(quote || joke)
-      if (!text || !isLikelyJokeText(fullText)) return null
+      if (!text) return null
       const author = norm(typeof row.author === 'string' ? row.author : '')
       const fullText = author ? `${text} — ${author}` : text
+      if (!isLikelyJokeText(fullText)) return null
       const base = createJokeDocument({
         text: fullText,
         provider: 'github-funny-quotes',
