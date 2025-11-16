@@ -26,7 +26,7 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
   const [pointerPos, setPointerPos] = useState<PointerPosition | null>(null)
   const [jitterOffset, setJitterOffset] = useState({ x: 0, y: 0 })
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const timerRef = useRef<number | null>(null)
   const holdFrameRef = useRef<number | null>(null)
   const holdStartRef = useRef<number>(0)

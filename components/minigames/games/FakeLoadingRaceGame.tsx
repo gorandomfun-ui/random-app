@@ -26,7 +26,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
   const [finishOrder, setFinishOrder] = useState<RunnerId[]>([])
   const [result, setResult] = useState<RaceResult | null>(null)
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const speedsRef = useRef<number[]>([])
   const targetsRef = useRef<number[]>([])
   const intervalRef = useRef<number | null>(null)

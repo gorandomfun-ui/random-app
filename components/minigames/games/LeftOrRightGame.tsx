@@ -21,7 +21,7 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
     () => `Choisis la flèche la moins fréquente dans les ${historySize} dernières !`,
   )
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const timerRef = useRef<number | null>(null)
   const startRef = useRef<number>(0)
   const endedRef = useRef(false)

@@ -24,7 +24,7 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
   const [pressedIndex, setPressedIndex] = useState<number | null>(null)
   const [sequenceStep, setSequenceStep] = useState(0)
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const timersRef = useRef<number[]>([])
   const inputTimeoutRef = useRef<number | null>(null)
   const endedRef = useRef(false)

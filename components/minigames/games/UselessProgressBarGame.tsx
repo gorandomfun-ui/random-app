@@ -20,7 +20,7 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
   const [charging, setCharging] = useState(false)
   const [state, setState] = useState<GameState>('running')
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const timerRef = useRef<number | null>(null)
   const chargeIntervalRef = useRef<number | null>(null)
   const endedRef = useRef(false)

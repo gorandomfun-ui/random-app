@@ -22,7 +22,7 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
   const [pulse, setPulse] = useState(false)
   const [tapCount, setTapCount] = useState(0)
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const awaitingTapRef = useRef(false)
   const clickedThisBeatRef = useRef(false)
   const finishedRef = useRef(false)
