@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react'
 import type { MiniGameId } from '@/lib/random/clientTypes'
 import TapToNotTapGame from './games/TapToNotTapGame'
 import EmojiEchoGame from './games/EmojiEchoGame'
@@ -32,7 +33,7 @@ export type MiniGameDefinition = {
   name: string
   tagline: string
   instructions: string[]
-  Component: (props: MiniGameRuntimeProps) => JSX.Element | null
+  Component: (props: MiniGameRuntimeProps) => ReactElement | null
 }
 
 export const MINI_GAME_DEFINITIONS: Record<MiniGameId, MiniGameDefinition> = {
