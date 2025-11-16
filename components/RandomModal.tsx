@@ -11,6 +11,8 @@ import AnimatedButtonLabel from './AnimatedButtonLabel'
 import type { ItemType } from '../lib/random/types'
 import type {
   DisplayItem,
+  EncourageItem,
+  MiniGameItem,
   SourceInfo,
   VideoItem as VideoContentItem,
 } from '../lib/random/clientTypes'
@@ -25,6 +27,13 @@ const TYPE_ICONS: Record<ItemType, string> = {
   quote: '/icons/quote.svg',
   joke: '/icons/joke.svg',
   fact: '/icons/fact.svg',
+}
+const MINIGAME_ICON = '/icons/Game.svg'
+
+type LikeableDisplayItem = Exclude<DisplayItem, EncourageItem | MiniGameItem>
+
+function isLikeableItem(item: DisplayItem | null | undefined): item is LikeableDisplayItem {
+  return !!item && item.type !== 'encourage' && item.type !== 'minigame'
 }
 
 type Props = {
@@ -752,8 +761,10 @@ function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage' || item.type === 'minigame') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
 
-  const baseSource: SourceInfo = item.source ?? null
-  const fallbackSource: SourceInfo = baseSource ?? (item.provider ? { name: item.provider } : null)
+  const baseSource: SourceInfo =
+    'source' in item && item.source ? item.source : null
+  const providerName = 'provider' in item && item.provider ? item.provider : null
+  const fallbackSource: SourceInfo = baseSource ?? (providerName ? { name: providerName } : null)
 
   const snippet = item.type === 'video' && item.text ? shortenText(item.text, 4) : null
 
@@ -881,7 +892,7 @@ export default function RandomModal({
 
   useEffect(() => {
     const current = forceItem ?? item ?? null
-    if (current && current.type !== 'encourage') setLiked(isLiked(current))
+    if (isLikeableItem(current)) setLiked(isLiked(current))
     else setLiked(false)
   }, [forceItem, item, open])
 
@@ -919,6 +930,7 @@ export default function RandomModal({
 
   const viewItem: DisplayItem | null = forceItem ?? item ?? null
   const isEncourage = viewItem?.type === 'encourage'
+  const isMiniGame = viewItem?.type === 'minigame'
   const showChildren = !viewItem && !!children
   const randomAgainLabel = t('modal.randomAgain', 'RANDOM AGAIN')
   const fullscreenLabel = t('video.fullscreen', 'Fullscreen')
@@ -1034,7 +1046,7 @@ export default function RandomModal({
         {viewItem && viewItem.type !== 'encourage' && (
           <div className="px-6 pt-2 text-[28px] md:text-[30px] font-inter font-semibold flex items-center justify-center gap-2 shrink-0">
             <MonoIcon
-              src={TYPE_ICONS[viewItem.type]}
+              src={viewItem.type === 'minigame' ? MINIGAME_ICON : TYPE_ICONS[viewItem.type as ItemType]}
               color={theme.cream}
               size={30}
             />
@@ -1071,12 +1083,12 @@ export default function RandomModal({
         <div className="border-t border-white/20 px-4 py-4 shrink-0">
           <div className="grid grid-cols-3 items-center">
             <div className="flex items-center gap-4 justify-start">
-              {!isEncourage && (
+              {!isEncourage && !isMiniGame && (
                 <button
                   className={`like-button p-2 rounded-full ${liked ? 'liked' : ''}`}
                   aria-label="Like"
                   onClick={() => {
-                    if (!viewItem) return
+                    if (!viewItem || !isLikeableItem(viewItem)) return
                     if (liked) {
                       removeLike(viewItem)
                       setLiked(false)
