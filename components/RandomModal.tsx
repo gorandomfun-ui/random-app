@@ -749,7 +749,7 @@ function HtmlVideoEmbed({ item }: { item: VideoContentItem }) {
 }
 
 function SourceLine({ item }: { item: DisplayItem }) {
-  if (item.type === 'encourage') return null
+  if (item.type === 'encourage' || item.type === 'minigame') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
 
   const baseSource: SourceInfo = item.source ?? null
