@@ -14,7 +14,7 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
   const tileCount = gridSize * gridSize
   const tileSize = Math.max(34, 108 - normalized * 4 - (gridSize - 3) * 6)
 
-  const rngRef = useRef<() => number>(() => Math.random)
+  const rngRef = useRef<() => number>(() => Math.random())
   const [round, setRound] = useState(1)
   const [tiles, setTiles] = useState<string[]>([])
   const [targetIndex, setTargetIndex] = useState(0)
