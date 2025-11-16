@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 type Direction = 'L' | 'R'
 
 export default function LeftOrRightGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.left-or-right'
   const normalized = normalizeLevel(level, 18)
   const historySize = Math.min(9, 5 + Math.floor(normalized / 3))
   const goalRounds = Math.min(12, 5 + Math.floor(normalized * 0.7))
@@ -17,8 +21,41 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
   const [successes, setSuccesses] = useState(0)
   const [mistakes, setMistakes] = useState(0)
   const [timeLeft, setTimeLeft] = useState(durationMs)
-  const [status, setStatus] = useState(
-    () => `Choisis la flèche la moins fréquente dans les ${historySize} dernières !`,
+  const introTemplate = t(
+    `${baseKey}.status.intro`,
+    'Choisis la flèche la moins fréquente dans les {count} dernières !',
+  )
+  const analyzingLabel = t(`${baseKey}.status.analyzing`, 'Analyse en cours…')
+  const tieLabel = t(`${baseKey}.status.tie`, 'Égalité parfaite : choisis n’importe laquelle.')
+  const guidanceTemplate = t(
+    `${baseKey}.status.guidance`,
+    '{direction} est la moins fréquente (écart {diff}).',
+  )
+  const correctStatus = t(`${baseKey}.status.correct`, 'Bien vu ! Continue.')
+  const mistakeStatus = t(`${baseKey}.status.mistake`, 'Oups, ce n’était pas la meilleure option…')
+  const tooManyMessage = t(`${baseKey}.messages.tooMany`, 'Trop d’erreurs.')
+  const successMessage = t(`${baseKey}.messages.success`, 'Challenge complété !')
+  const failMessage = t(`${baseKey}.messages.fail`, 'Encore une erreur de trop.')
+  const timeMessage = t(`${baseKey}.messages.time`, 'Le temps est écoulé.')
+  const feedbackCorrect = t(`${baseKey}.feedback.correct`, 'Bien vu !')
+  const feedbackWrong = t(`${baseKey}.feedback.wrong`, 'Essaie l’autre sens.')
+  const directionLeftLabel = t(`${baseKey}.directions.left`, '← Gauche')
+  const directionRightLabel = t(`${baseKey}.directions.right`, 'Droite →')
+  const directionEitherLabel = t(`${baseKey}.directions.either`, '← ou →')
+  const hudHistoryTemplate = t(
+    `${baseKey}.hud.history`,
+    'Derniers {count} : ← {left} · → {right}',
+  )
+  const hudTargetTemplate = t(`${baseKey}.hud.target`, 'Cible : {label}')
+  const hudRoundTemplate = t(
+    `${baseKey}.hud.round`,
+    'Round {round}/{total} · Réussites {successes} · Erreurs {mistakes}/{allowed} · Temps {seconds}s',
+  )
+  const detailRoundsLabel = t(`${baseKey}.details.rounds`, 'Tours')
+  const detailSuccessLabel = t(`${baseKey}.details.success`, 'Réussites')
+  const detailErrorsLabel = t(`${baseKey}.details.errors`, 'Erreurs')
+  const [status, setStatus] = useState(() =>
+    formatI18n(introTemplate, { count: historySize }),
   )
 
   const rngRef = useRef<() => number>(() => Math.random())
@@ -55,26 +92,35 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
         outcome: won ? 'win' : 'lose',
         message: reason,
         details: [
-          { label: 'Tours', value: `${roundRef.current - 1} / ${goalRounds}` },
-          { label: 'Réussites', value: `${successRef.current}` },
-          { label: 'Erreurs', value: `${mistakeRef.current} / ${allowedMistakes}` },
+          { label: detailRoundsLabel, value: `${roundRef.current - 1} / ${goalRounds}` },
+          { label: detailSuccessLabel, value: `${successRef.current}` },
+          { label: detailErrorsLabel, value: `${mistakeRef.current} / ${allowedMistakes}` },
         ],
       })
     },
-    [allowedMistakes, clearFeedback, clearTimer, goalRounds, onComplete],
+    [
+      allowedMistakes,
+      clearFeedback,
+      clearTimer,
+      detailErrorsLabel,
+      detailRoundsLabel,
+      detailSuccessLabel,
+      goalRounds,
+      onComplete,
+    ],
   )
 
   const describeGuidance = useCallback((hist: Direction[]): string => {
-    if (hist.length < historySize) return 'Analyse en cours…'
+    if (hist.length < historySize) return analyzingLabel
     const leftCount = hist.filter((entry) => entry === 'L').length
     const rightCount = hist.length - leftCount
     if (leftCount === rightCount) {
-      return 'Égalité parfaite : choisis n’importe laquelle.'
+      return tieLabel
     }
-    const target = leftCount < rightCount ? '← Gauche' : 'Droite →'
+    const target = leftCount < rightCount ? directionLeftLabel : directionRightLabel
     const diff = Math.abs(leftCount - rightCount)
-    return `${target} est la moins fréquente (écart ${diff}).`
-  }, [historySize])
+    return formatI18n(guidanceTemplate, { direction: target, diff })
+  }, [analyzingLabel, directionLeftLabel, directionRightLabel, guidanceTemplate, historySize, tieLabel])
 
   const rollInitialHistory = useCallback(() => {
     const rng = rngRef.current
@@ -106,7 +152,7 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
       const remaining = Math.max(0, durationMs - elapsed)
       setTimeLeft(remaining)
       if (remaining <= 0) {
-        finalize(false, 'Le temps est écoulé.')
+        finalize(false, timeMessage)
       }
     }, 120)
     return () => {
@@ -114,7 +160,7 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
        clearFeedback()
       endedRef.current = true
     }
-  }, [clearFeedback, clearTimer, describeGuidance, durationMs, finalize, level, rollInitialHistory, seed])
+  }, [clearFeedback, clearTimer, describeGuidance, durationMs, finalize, level, rollInitialHistory, seed, timeMessage])
 
   const computeAllowed = useCallback(
     (hist: Direction[]): Direction[] => {
@@ -141,16 +187,16 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
       const nextSuccess = successRef.current + 1
       successRef.current = nextSuccess
       setSuccesses(nextSuccess)
-      setStatus('Bien vu ! Continue.')
+      setStatus(correctStatus)
     } else {
       const nextMistake = mistakeRef.current + 1
       mistakeRef.current = nextMistake
       setMistakes(nextMistake)
       if (nextMistake > allowedMistakes) {
-        finalize(false, 'Trop d’erreurs.')
+        finalize(false, tooManyMessage)
         return
       }
-      setStatus('Oups, ce n’était pas la meilleure option…')
+      setStatus(mistakeStatus)
     }
 
     const nextArrow = rng() > 0.5 ? 'L' : 'R'
@@ -164,12 +210,12 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
     if (nextRound > goalRounds) {
       const minSuccess = goalRounds - allowedMistakes
       const win = successRef.current >= minSuccess && mistakeRef.current <= allowedMistakes
-      finalize(win, win ? 'Challenge complété !' : 'Encore une erreur de trop.')
+      finalize(win, win ? successMessage : failMessage)
       return
     }
 
     const guidance = describeGuidance(updated)
-    const feedback = correct ? 'Bien vu !' : 'Essaie l’autre sens.'
+    const feedback = correct ? feedbackCorrect : feedbackWrong
     setStatus(`${feedback} ${guidance}`)
     const indicator = correct ? '👍' : '✖'
     setFeedbackIndicator(indicator)
@@ -190,10 +236,10 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
   const targetLabel = !ready
     ? '...'
     : currentTarget.length === 2
-      ? '← ou →'
+      ? directionEitherLabel
       : currentTarget.includes('L')
-        ? '← Gauche'
-        : 'Droite →'
+        ? directionLeftLabel
+        : directionRightLabel
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
@@ -208,10 +254,10 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
         ))}
       </div>
       <div className="text-xs font-inter opacity-70" style={{ color: theme.cream }}>
-        Derniers {historySize}&nbsp;: ← {counts.left} · → {counts.right}
+        {formatI18n(hudHistoryTemplate, { count: historySize, left: counts.left, right: counts.right })}
       </div>
       <div className="text-xs font-tomorrow uppercase tracking-[0.18em]" style={{ color: theme.cream }}>
-        Cible&nbsp;: {targetLabel}
+        {formatI18n(hudTargetTemplate, { label: targetLabel })}
       </div>
       {feedbackIndicator ? (
         <div className="text-xl font-tomorrow" style={{ color: theme.cream }}>
@@ -230,7 +276,7 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
             opacity: ready ? 1 : 0.4,
           }}
         >
-          ← Gauche
+          {directionLeftLabel}
         </button>
         <button
           type="button"
@@ -243,11 +289,18 @@ export default function LeftOrRightGame({ level, seed, onComplete, theme }: Mini
             opacity: ready ? 1 : 0.4,
           }}
         >
-          Droite →
+          {directionRightLabel}
         </button>
       </div>
       <div className="text-xs font-inter uppercase tracking-[0.18em] opacity-70" style={{ color: theme.cream }}>
-        Round {round}/{goalRounds} · Réussites {successes} · Erreurs {mistakes}/{allowedMistakes} · Temps {(timeLeft / 1000).toFixed(1)} s
+        {formatI18n(hudRoundTemplate, {
+          round,
+          total: goalRounds,
+          successes,
+          mistakes,
+          allowed: allowedMistakes,
+          seconds: (timeLeft / 1000).toFixed(1),
+        })}
       </div>
     </div>
   )

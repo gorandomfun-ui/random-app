@@ -91,6 +91,257 @@ const frDictionary = {
     "imagesVideos": "Images & Vidéos",
     "imagesOnly": "Images seulement"
   },
+  "minigames": {
+    "card": {
+      "unavailable": "Mini-jeu indisponible pour le moment.",
+      "category": "Mini-jeu",
+      "level": "Niveau {level}",
+      "rulesIntro": "Prêt ? Voici les règles :",
+      "defaultRule": "Amuse-toi et reste concentré.",
+      "actions": {
+        "start": "Jouer",
+        "replay": "Rejouer",
+        "guide": "Guide"
+      },
+      "result": {
+        "win": "Gagné !",
+        "lose": "Perdu"
+      }
+    },
+    "games": {
+      "tap-to-not-tap": {
+        "name": "Tap-to-not-Tap",
+        "tagline": "Suit le rythme sans te tromper.",
+        "instructions": [
+          "Les flashs TAP / DON'T TAP sont séparés par de vrais blancs.",
+          "Clique uniquement pendant TAP, reste immobile pendant DON'T TAP.",
+          "Au niveau 1–2, seulement 2 erreurs possibles."
+        ],
+        "status": {
+          "ready": "La séquence commence...",
+          "tap": "TAP ! Clique avant le prochain flash.",
+          "dontTap": "DON'T TAP !",
+          "tip": "Clique uniquement quand le mot TAP apparaît. Chaque flash arrive plus vite.",
+          "encourage": "Bien joué ! Reste concentré.",
+          "errorCount": "{reason} · erreur {current}/{max}"
+        },
+        "messages": {
+          "missedTap": "Tu as manqué un TAP.",
+          "wrongClick": "Il ne fallait pas cliquer.",
+          "sequenceComplete": "Séquence complétée !",
+          "sequenceInterrupted": "Séquence interrompue.",
+          "tooManyErrors": "Trop d’erreurs !"
+        },
+        "details": {
+          "steps": "Étapes",
+          "success": "TAP réussis",
+          "errors": "Erreurs"
+        },
+        "hud": {
+          "step": "Étape",
+          "tapCount": "TAP faits",
+          "errors": "Erreurs"
+        }
+      },
+      "emoji-echo": {
+        "name": "Emoji Echo",
+        "tagline": "Souviens-toi de la séquence.",
+        "instructions": [
+          "Deux séquences à retenir par niveau : ex. 2 puis 3 emojis.",
+          "Chaque séquence est rejouée depuis zéro avec de nouveaux emojis.",
+          "Reproduis-les sans faute avant la fin du chrono."
+        ],
+        "status": {
+          "observeSequence": "Observe la séquence d’emojis…",
+          "observe": "Observe…",
+          "repeat": "Reproduis la séquence !"
+        },
+        "messages": {
+          "timeout": "Trop tard.",
+          "wrong": "Ce n’est pas la bonne suite !",
+          "perfect": "Mémoire impeccable !"
+        },
+        "details": {
+          "sequence": "Séquence atteinte"
+        },
+        "hud": {
+          "progress": "Séquence {current}/{total} · Longueur {length}"
+        }
+      },
+      "useless-progress-bar": {
+        "name": "Useless Progress Bar",
+        "tagline": "Une barre qui ne finit jamais… ou presque.",
+        "instructions": [
+          "Maintiens le bouton pour charger la barre en continu.",
+          "Relâche exactement sur la cible indiquée (± tolérance).",
+          "Chaque dépassement fait perdre instantanément."
+        ],
+        "status": {
+          "ready": "Charge la barre inutile avec précision…",
+          "target": "Objectif {current}/{total} · Vise {target}% (±{tolerance}%)"
+        },
+        "messages": {
+          "timeout": "Temps écoulé !",
+          "over": "Trop chargé !",
+          "under": "Pas assez chargé !",
+          "win": "Barre inutile parfaitement calibrée !"
+        },
+        "details": {
+          "validated": "Cibles validées",
+          "lastGoal": "Dernier objectif"
+        },
+        "hud": {
+          "progress": "Charge {progress}% · Cible {target}% ± {tolerance}%",
+          "timer": "Temps : {seconds}s · Cible {current}/{total}"
+        },
+        "buttons": {
+          "press": "Appuie pour charger",
+          "release": "Relâche pour valider"
+        }
+      },
+      "left-or-right": {
+        "name": "Left or Right?",
+        "tagline": "Préfère la flèche la moins fréquente.",
+        "instructions": [
+          "Observe les dernières flèches (5 à 9 selon ton niveau).",
+          "Choisis celle la moins utilisée.",
+          "Limite tes erreurs successives."
+        ],
+        "details": {
+          "rounds": "Tours",
+          "success": "Réussites",
+          "errors": "Erreurs"
+        },
+        "status": {
+          "intro": "Choisis la flèche la moins fréquente dans les {count} dernières !",
+          "analyzing": "Analyse en cours…",
+          "tie": "Égalité parfaite : choisis n’importe laquelle.",
+          "guidance": "{direction} est la moins fréquente (écart {diff}).",
+          "correct": "Bien vu ! Continue.",
+          "mistake": "Oups, ce n’était pas la meilleure option…"
+        },
+        "messages": {
+          "tooMany": "Trop d’erreurs.",
+          "success": "Challenge complété !",
+          "fail": "Encore une erreur de trop.",
+          "time": "Le temps est écoulé."
+        },
+        "feedback": {
+          "correct": "Bien vu !",
+          "wrong": "Essaie l’autre sens."
+        },
+        "directions": {
+          "left": "← Gauche",
+          "right": "Droite →",
+          "either": "← ou →"
+        },
+        "hud": {
+          "history": "Derniers {count} : ← {left} · → {right}",
+          "target": "Cible : {label}",
+          "round": "Round {round}/{total} · Réussites {successes} · Erreurs {mistakes}/{allowed} · Temps {seconds}s"
+        }
+      },
+      "fake-loading-race": {
+        "name": "Loading Race",
+        "tagline": "Parie sur le loader gagnant.",
+        "instructions": [
+          "Choisis ton loader (3 à 5 barres) avant le départ.",
+          "Tu peux changer de pari une seule fois pendant la course.",
+          "Observe les variations de vitesse et devine la barre gagnante."
+        ],
+        "messages": {
+          "start": "Parie sur le loader gagnant !",
+          "selected": "Tu paries sur le loader {index}. Course lancée !",
+          "swap": "Tu changes de pari pour le loader {index} !",
+          "win": "Ton loader {index} passe la ligne en tête !",
+          "lose": "Loader {index} gagne la course.",
+          "hint": "Tu peux changer de pari une seule fois pendant la course."
+        },
+        "details": {
+          "bet": "Pari",
+          "none": "Aucun",
+          "winner": "Gagnant"
+        },
+        "labels": {
+          "loader": "Loader {index}"
+        },
+        "buttons": {
+          "bet": "Parier",
+          "switch": "Switch",
+          "locked": "Pari",
+          "replay": "Rejouer",
+          "exit": "Quitter"
+        },
+        "finish": {
+          "prefix": "Arrivée :",
+          "entry": "{position}ᵉ → Loader {runner}"
+        },
+        "result": {
+          "winTitle": "VICTOIRE !",
+          "loseTitle": "DÉFAITE",
+          "summary": "Pari : {bet} · Gagnant : Loader {winner}"
+        }
+      },
+      "color-off-by-one": {
+        "name": "Color Off-By-One",
+        "tagline": "Une nuance presque identique.",
+        "instructions": [
+          "Observe la grille (3×3 qui passe en 5×5).",
+          "Clique la nuance légèrement différente.",
+          "Plus ton niveau monte, plus les teintes se rapprochent."
+        ],
+        "details": {
+          "round": "Round",
+          "difference": "Différence"
+        },
+        "status": {
+          "look": "Repère la nuance différente.",
+          "harder": "Encore plus subtil…"
+        },
+        "messages": {
+          "win": "Œil de lynx !",
+          "fail": "Ce n’était pas la bonne nuance."
+        },
+        "hud": {
+          "round": "Round {round}/{total}"
+        },
+        "aria": {
+          "tile": "Case {index}"
+        }
+      },
+      "steady-spots": {
+        "name": "Steady Spots",
+        "tagline": "Atterris sur chaque spot sans trembler.",
+        "instructions": [
+          "Atteins chaque halo dans l’ordre indiqué.",
+          "Maintiens le pointeur dessus ~2 s sans bouger pour valider.",
+          "Les niveaux avancés ajoutent des spots et réduisent leur taille."
+        ],
+        "status": {
+          "start": "Atteins chaque spot et maintiens-le environ 2 secondes.",
+          "validated": "Spot validé !",
+          "next": "Spot {next}/{total} — clique et maintiens 2 s.",
+          "hold": "Ne bouge plus…",
+          "win": "Tu as tenu tous les spots !"
+        },
+        "messages": {
+          "time": "Temps écoulé.",
+          "leftSpot": "Tu as quitté le spot !",
+          "released": "Tu as relâché trop tôt.",
+          "leftArea": "Tu as quitté la zone."
+        },
+        "details": {
+          "validated": "Spots validés"
+        },
+        "hud": {
+          "progress": "Spot {current}/{total} · Temps {seconds}s"
+        },
+        "overlay": {
+          "hold": "Maintiens"
+        }
+      }
+    }
+  },
   "add": {
     "title": "Ajouter",
     "banner": "Ajoute le contenu que tu",

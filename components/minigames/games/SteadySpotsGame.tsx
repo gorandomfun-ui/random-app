@@ -3,12 +3,16 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 type Spot = { x: number; y: number }
 type PointerPosition = { xPct: number; yPct: number; xPx: number; yPx: number }
 type PointerInfo = PointerPosition & { rect: DOMRect }
 
 export default function SteadySpotsGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.steady-spots'
   const normalized = normalizeLevel(level, 18)
   const totalSpots = Math.min(7, 2 + Math.floor(normalized * 0.7))
   const holdDuration = Math.max(1100, Math.round(scaleLevel(normalized, 1700, 1150, 18)))
@@ -19,7 +23,26 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
 
   const [spots, setSpots] = useState<Spot[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
-  const [status, setStatus] = useState('Atteins chaque spot et maintiens-le environ 2 secondes.')
+  const startStatus = t(
+    `${baseKey}.status.start`,
+    'Atteins chaque spot et maintiens-le environ 2 secondes.',
+  )
+  const validatedStatus = t(`${baseKey}.status.validated`, 'Spot validé !')
+  const nextTemplate = t(
+    `${baseKey}.status.next`,
+    'Spot {next}/{total} — clique et maintiens 2 s.',
+  )
+  const holdStatus = t(`${baseKey}.status.hold`, 'Ne bouge plus…')
+  const winMessage = t(`${baseKey}.status.win`, 'Tu as tenu tous les spots !')
+  const timeMessage = t(`${baseKey}.messages.time`, 'Temps écoulé.')
+  const leftSpotMessage = t(`${baseKey}.messages.leftSpot`, 'Tu as quitté le spot !')
+  const releasedMessage = t(`${baseKey}.messages.released`, 'Tu as relâché trop tôt.')
+  const leftAreaMessage = t(`${baseKey}.messages.leftArea`, 'Tu as quitté la zone.')
+  const detailValidatedLabel = t(`${baseKey}.details.validated`, 'Spots validés')
+  const hudTemplate = t(`${baseKey}.hud.progress`, 'Spot {current}/{total} · Temps {seconds}s')
+  const overlayHoldLabel = t(`${baseKey}.overlay.hold`, 'Hold')
+
+  const [status, setStatus] = useState(startStatus)
   const [timeLeft, setTimeLeft] = useState(timeLimit)
   const [holding, setHolding] = useState(false)
   const [holdProgress, setHoldProgress] = useState(0)
@@ -82,10 +105,15 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
       onComplete({
         outcome: won ? 'win' : 'lose',
         message,
-        details: [{ label: 'Spots validés', value: `${Math.min(activeIndexRef.current, totalSpots)}/${totalSpots}` }],
+        details: [
+          {
+            label: detailValidatedLabel,
+            value: `${Math.min(activeIndexRef.current, totalSpots)}/${totalSpots}`,
+          },
+        ],
       })
     },
-    [onComplete, resetHoldState, totalSpots],
+    [detailValidatedLabel, onComplete, resetHoldState, totalSpots],
   )
 
   const fail = useCallback((reason: string) => finalize(false, reason), [finalize])
@@ -93,18 +121,18 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
   const validateSpot = useCallback(() => {
     if (endedRef.current) return
     resetHoldState()
-    setStatus('Spot validé !')
+    setStatus(validatedStatus)
     setActiveIndex((prev) => {
       const next = prev + 1
       activeIndexRef.current = next
       if (next >= totalSpots) {
-        finalize(true, 'Tu as tenu tous les spots !')
+        finalize(true, winMessage)
         return next
       }
-      setStatus(`Spot ${next + 1}/${totalSpots} — clique et maintiens 2 s.`)
+      setStatus(formatI18n(nextTemplate, { next: next + 1, total: totalSpots }))
       return next
     })
-  }, [finalize, resetHoldState, totalSpots])
+  }, [finalize, nextTemplate, resetHoldState, totalSpots, validatedStatus, winMessage])
 
   const trackHold = useCallback(() => {
     const tick = () => {
@@ -139,10 +167,10 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
     holdStartRef.current = performance.now()
     setHolding(true)
     setHoldProgress(0)
-    setStatus('Ne bouge plus…')
+    setStatus(holdStatus)
     trackHold()
     startJitter()
-  }, [startJitter, trackHold])
+  }, [holdStatus, startJitter, trackHold])
 
   const computePosition = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): PointerInfo | null => {
@@ -185,7 +213,7 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
     setSpots(generated)
     setActiveIndex(0)
     activeIndexRef.current = 0
-    setStatus(`Spot 1/${totalSpots} — clique et maintiens 2 s.`)
+    setStatus(formatI18n(nextTemplate, { next: 1, total: totalSpots }))
     setTimeLeft(timeLimit)
     setHoldProgress(0)
     setPointerPos(null)
@@ -197,7 +225,7 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
       setTimeLeft((prev) => {
         const next = prev - 250
         if (next <= 0) {
-          fail('Temps écoulé.')
+          fail(timeMessage)
           return 0
         }
         return next
@@ -211,7 +239,7 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
       }
       resetHoldState()
     }
-  }, [fail, level, resetHoldState, seed, timeLimit, totalSpots])
+  }, [fail, level, nextTemplate, resetHoldState, seed, timeLimit, timeMessage, totalSpots])
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -219,7 +247,8 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
     if (Date.now() < lockUntilRef.current) return
     const info = computePosition(event)
     if (!info) return
-    const { rect: _rect, ...coords } = info
+    const { rect, ...coords } = info
+    void rect
     setPointerPos(coords)
     if (pointerIdRef.current != null) return
     if (!isInsideActive(info)) return
@@ -232,24 +261,25 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
     if (endedRef.current) return
     const info = computePosition(event)
     if (!info) return
-    const { rect: _rect, ...coords } = info
+    const { rect, ...coords } = info
+    void rect
     setPointerPos(coords)
     if (!holding) return
     if (pointerIdRef.current === event.pointerId && !isInsideActive(info)) {
-      fail('Tu as quitté le spot !')
+      fail(leftSpotMessage)
     }
   }
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current == null || pointerIdRef.current !== event.pointerId) return
     lockUntilRef.current = Date.now() + 450
-    fail('Tu as relâché trop tôt.')
+    fail(releasedMessage)
   }
 
   const handlePointerLeave = () => {
     if (pointerIdRef.current != null) {
       lockUntilRef.current = Date.now() + 450
-      fail('Tu as quitté la zone.')
+      fail(leftAreaMessage)
     }
   }
 
@@ -327,7 +357,7 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
             className="absolute left-1/2 top-4 flex w-40 -translate-x-1/2 items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs font-inter"
             style={{ color: theme.cream }}
           >
-            <span>Hold</span>
+            <span>{overlayHoldLabel}</span>
             <div className="h-1 flex-1 rounded-full bg-white/20">
               <div
                 style={{
@@ -342,7 +372,11 @@ export default function SteadySpotsGame({ level, seed, onComplete, theme }: Mini
         ) : null}
       </div>
       <div className="text-xs font-inter uppercase tracking-[0.18em] opacity-70" style={{ color: theme.cream }}>
-        Spot {Math.min(activeIndex + 1, totalSpots)}/{totalSpots} · Temps {(timeLeft / 1000).toFixed(1)} s
+        {formatI18n(hudTemplate, {
+          current: Math.min(activeIndex + 1, totalSpots),
+          total: totalSpots,
+          seconds: (timeLeft / 1000).toFixed(1),
+        })}
       </div>
     </div>
   )

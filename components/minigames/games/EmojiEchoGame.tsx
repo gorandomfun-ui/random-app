@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 const EMOJIS = ['🍋', '🍉', '🍇', '🍒', '🫐', '🥝', '🍍', '🥥', '🍑', '🍎'] as const
 
 type Phase = 'playing' | 'input'
 
 export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.emoji-echo'
   const normalized = normalizeLevel(level, 18)
   const baseLength = Math.min(6, 2 + Math.max(0, normalized - 1))
   const sequenceLengths = useMemo(
@@ -17,10 +21,19 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
   const playbackInterval = Math.max(360, Math.round(scaleLevel(normalized, 780, 380, 18)))
   const inputWindow = Math.max(3000, Math.round(scaleLevel(normalized, 8400, 4800, 18)))
 
+  const observeSequenceLabel = t(`${baseKey}.status.observeSequence`, 'Observe la séquence d’emojis…')
+  const observeLabel = t(`${baseKey}.status.observe`, 'Observe…')
+  const repeatLabel = t(`${baseKey}.status.repeat`, 'Reproduis la séquence !')
+  const timeoutMessage = t(`${baseKey}.messages.timeout`, 'Trop tard.')
+  const wrongMessage = t(`${baseKey}.messages.wrong`, 'Ce n’est pas la bonne suite !')
+  const perfectMessage = t(`${baseKey}.messages.perfect`, 'Mémoire impeccable !')
+  const detailSequenceLabel = t(`${baseKey}.details.sequence`, 'Séquence atteinte')
+  const hudTemplate = t(`${baseKey}.hud.progress`, 'Séquence {current}/{total} · Longueur {length}')
+
   const [phase, setPhase] = useState<Phase>('playing')
   const [highlight, setHighlight] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
-  const [status, setStatus] = useState('Observe la séquence d’emojis…')
+  const [status, setStatus] = useState(observeSequenceLabel)
   const [pressedIndex, setPressedIndex] = useState<number | null>(null)
   const [sequenceStep, setSequenceStep] = useState(0)
 
@@ -53,26 +66,26 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
         outcome: won ? 'win' : 'lose',
         message,
         details: [
-          { label: 'Séquence atteinte', value: `${sequenceStep + 1} / ${sequenceLengths.length}` },
+          { label: detailSequenceLabel, value: `${sequenceStep + 1} / ${sequenceLengths.length}` },
         ],
       })
     },
-    [clearTimers, onComplete, sequenceLengths.length, sequenceStep],
+    [clearTimers, detailSequenceLabel, onComplete, sequenceLengths.length, sequenceStep],
   )
 
   const restartInputTimer = useCallback(() => {
     clearInputTimer()
     inputTimeoutRef.current = window.setTimeout(() => {
-      finalize(false, 'Trop tard.')
+      finalize(false, timeoutMessage)
     }, inputWindow)
-  }, [clearInputTimer, finalize, inputWindow])
+  }, [clearInputTimer, finalize, inputWindow, timeoutMessage])
 
   const playSequence = useCallback(
     (sequence: number[]) => {
       clearTimers()
       setPhase('playing')
       setProgress(0)
-      setStatus('Observe…')
+      setStatus(observeLabel)
       const timers: number[] = []
       sequence.forEach((index, idx) => {
         timers.push(
@@ -90,14 +103,14 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
         window.setTimeout(() => {
           setHighlight(null)
           setPhase('input')
-          setStatus('Reproduis la séquence !')
+          setStatus(repeatLabel)
           setProgress(0)
           restartInputTimer()
         }, sequence.length * playbackInterval + playbackInterval),
       )
       timersRef.current = timers
     },
-    [clearTimers, playbackInterval, restartInputTimer],
+    [clearTimers, observeLabel, playbackInterval, repeatLabel, restartInputTimer],
   )
 
   const buildSequence = useCallback((length: number) => {
@@ -117,11 +130,12 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
     rngRef.current = createSeededRng(`${seed}-${level}-echo`)
     endedRef.current = false
     setSequenceStep(0)
+    setStatus(observeSequenceLabel)
     return () => {
       clearTimers()
       endedRef.current = true
     }
-  }, [clearTimers, level, seed])
+  }, [clearTimers, level, observeSequenceLabel, seed])
 
   useEffect(() => {
     if (endedRef.current) return
@@ -137,7 +151,7 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
     setPressedIndex(index)
     window.setTimeout(() => setPressedIndex((prev) => (prev === index ? null : prev)), 180)
     if (index !== expected) {
-      finalize(false, 'Ce n’est pas la bonne suite !')
+      finalize(false, wrongMessage)
       return
     }
     const nextProgress = progress + 1
@@ -145,7 +159,7 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
     if (nextProgress >= sequence.length) {
       clearInputTimer()
       if (sequenceStep >= sequenceLengths.length - 1) {
-        finalize(true, 'Mémoire impeccable !')
+        finalize(true, perfectMessage)
       } else {
         setSequenceStep((prev) => prev + 1)
       }
@@ -195,7 +209,11 @@ export default function EmojiEchoGame({ level, seed, onComplete, theme }: MiniGa
         className="rounded-full px-4 py-2 text-sm font-inter"
         style={{ backgroundColor: 'rgba(0,0,0,0.35)', color: theme.cream }}
       >
-        Séquence {sequenceStep + 1}/{sequenceLengths.length} · Longueur {seqRef.current.length}
+        {formatI18n(hudTemplate, {
+          current: sequenceStep + 1,
+          total: sequenceLengths.length,
+          length: seqRef.current.length || 0,
+        })}
       </div>
     </div>
   )

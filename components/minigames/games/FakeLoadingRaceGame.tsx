@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 const TICK_MS = 80
 
@@ -10,6 +12,8 @@ type RunnerId = number
 type RaceResult = { won: boolean; message: string; winningRunner: RunnerId }
 
 export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.fake-loading-race'
   const normalized = normalizeLevel(level, 18)
   const runnerCount = Math.min(5, 3 + Math.floor(normalized / 5))
   const raceDuration = Math.max(6 - normalized * 0.18, 2.8)
@@ -21,7 +25,46 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
   const [progresses, setProgresses] = useState<number[]>(() => Array(runnerCount).fill(0))
   const [selected, setSelected] = useState<RunnerId | null>(null)
   const [swapUsed, setSwapUsed] = useState(false)
-  const [message, setMessage] = useState('Parie sur le loader gagnant !')
+  const startMessage = t(`${baseKey}.messages.start`, 'Parie sur le loader gagnant !')
+  const selectedTemplate = t(
+    `${baseKey}.messages.selected`,
+    'Parie sur le loader {index}. Course lancée !',
+  )
+  const swapTemplate = t(
+    `${baseKey}.messages.swap`,
+    'Tu changes de pari pour le loader {index} !',
+  )
+  const winTemplate = t(
+    `${baseKey}.messages.win`,
+    'Ton loader {index} passe la ligne en tête !',
+  )
+  const loseTemplate = t(`${baseKey}.messages.lose`, 'Loader {index} gagne la course.')
+  const hintText = t(
+    `${baseKey}.messages.hint`,
+    'Tu peux changer de pari une seule fois pendant la course.',
+  )
+  const detailBetLabel = t(`${baseKey}.details.bet`, 'Pari')
+  const detailNoneLabel = t(`${baseKey}.details.none`, 'Aucun')
+  const detailWinnerLabel = t(`${baseKey}.details.winner`, 'Gagnant')
+  const loaderLabelTemplate = t(`${baseKey}.labels.loader`, 'Loader {index}')
+  const buttonBetLabel = t(`${baseKey}.buttons.bet`, 'Parier')
+  const buttonSwitchLabel = t(`${baseKey}.buttons.switch`, 'Switch')
+  const buttonLockedLabel = t(`${baseKey}.buttons.locked`, 'Pari')
+  const replayLabel = t(`${baseKey}.buttons.replay`, 'Rejouer')
+  const exitLabel = t(`${baseKey}.buttons.exit`, 'Quitter')
+  const finishPrefix = t(`${baseKey}.finish.prefix`, 'Arrivée :')
+  const finishEntryTemplate = t(
+    `${baseKey}.finish.entry`,
+    '{position}ᵉ → Loader {runner}',
+  )
+  const resultWinTitle = t(`${baseKey}.result.winTitle`, 'VICTOIRE !')
+  const resultLoseTitle = t(`${baseKey}.result.loseTitle`, 'DÉFAITE')
+  const resultSummaryTemplate = t(
+    `${baseKey}.result.summary`,
+    'Pari : {bet} · Gagnant : Loader {winner}',
+  )
+
+  const [message, setMessage] = useState(startMessage)
   const [winner, setWinner] = useState<RunnerId | null>(null)
   const [finishOrder, setFinishOrder] = useState<RunnerId[]>([])
   const [result, setResult] = useState<RaceResult | null>(null)
@@ -52,12 +95,21 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
         outcome: raceResult.won ? 'win' : 'lose',
         message: raceResult.message,
         details: [
-          { label: 'Pari', value: selected != null ? `Loader ${selected + 1}` : 'Aucun' },
-          { label: 'Gagnant', value: `Loader ${raceResult.winningRunner + 1}` },
+          {
+            label: detailBetLabel,
+            value:
+              selected != null
+                ? formatI18n(loaderLabelTemplate, { index: selected + 1 })
+                : detailNoneLabel,
+          },
+          {
+            label: detailWinnerLabel,
+            value: formatI18n(loaderLabelTemplate, { index: raceResult.winningRunner + 1 }),
+          },
         ],
       })
     },
-    [onComplete, selected, stopRace],
+    [detailBetLabel, detailNoneLabel, detailWinnerLabel, loaderLabelTemplate, onComplete, selected, stopRace],
   )
 
   const resetRace = useCallback(() => {
@@ -69,7 +121,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
     setWinner(null)
     setFinishOrder([])
     setResult(null)
-    setMessage('Parie sur le loader gagnant !')
+    setMessage(startMessage)
     finishOrderRef.current = []
     speedsRef.current = []
     targetsRef.current = []
@@ -77,7 +129,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
     endedRef.current = false
     ticksRef.current = 0
     stopRace()
-  }, [level, runnerCount, seed, stopRace])
+  }, [level, runnerCount, seed, startMessage, stopRace])
 
   useEffect(() => {
     resetRace()
@@ -106,14 +158,14 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
     (winningRunner: RunnerId) => {
       const won = currentBetRef.current === winningRunner
       const messageText = won
-        ? `Ton loader ${winningRunner + 1} passe la ligne en tête !`
-        : `Loader ${winningRunner + 1} gagne la course.`
+        ? formatI18n(winTemplate, { index: winningRunner + 1 })
+        : formatI18n(loseTemplate, { index: winningRunner + 1 })
       setWinner(winningRunner)
       setResult({ won, message: messageText, winningRunner })
       setMessage(messageText)
       setFinishOrder(finishOrderRef.current.slice())
     },
-    [],
+    [loseTemplate, winTemplate],
   )
 
   const startRace = useCallback(() => {
@@ -166,7 +218,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
     if (selected == null) {
       setSelected(runner)
       currentBetRef.current = runner
-      setMessage(`Parie sur le loader ${runner + 1}. Course lancée !`)
+      setMessage(formatI18n(selectedTemplate, { index: runner + 1 }))
       return
     }
 
@@ -174,7 +226,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
       setSelected(runner)
       currentBetRef.current = runner
       setSwapUsed(true)
-      setMessage(`Tu changes de pari pour le loader ${runner + 1} !`)
+      setMessage(formatI18n(swapTemplate, { index: runner + 1 }))
     }
   }
 
@@ -199,7 +251,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
         {runners.map((idx) => (
           <div key={idx} className="flex flex-col gap-1">
             <div className="flex items-center justify-between text-xs font-inter uppercase tracking-[0.18em]" style={{ color: theme.cream }}>
-              <span>Loader {idx + 1}</span>
+              <span>{formatI18n(loaderLabelTemplate, { index: idx + 1 })}</span>
               <span>{(progresses[idx] ?? 0).toFixed(1)}%</span>
             </div>
             <div className="h-2 rounded-full bg-white/15" style={{ overflow: 'hidden' }}>
@@ -233,24 +285,35 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
                 opacity: disabled && !isActive ? 0.4 : 1,
               }}
             >
-              {selected == null ? 'Parier' : canSwap ? 'Switch' : 'Pari'} {idx + 1}
+              {(selected == null ? buttonBetLabel : canSwap ? buttonSwitchLabel : buttonLockedLabel)} {idx + 1}
             </button>
           )
         })}
       </div>
       {finishOrder.length ? (
         <div className="text-xs font-inter uppercase tracking-[0.14em] opacity-75" style={{ color: theme.cream }}>
-          Arrivée : {finishOrder.map((runner, index) => `${index + 1}ᵉ → Loader ${runner + 1}`).join(' · ')}
+          {finishPrefix}{' '}
+          {finishOrder
+            .map((runner, index) =>
+              formatI18n(finishEntryTemplate, { position: index + 1, runner: runner + 1 }),
+            )
+            .join(' · ')}
         </div>
       ) : null}
       {result ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-inter" style={{ color: theme.cream }}>
           <div className="text-lg font-tomorrow font-bold" style={{ color: result.won ? '#3cff8f' : '#ff708f' }}>
-            {result.won ? 'VICTOIRE !' : 'DÉFAITE'}
+            {result.won ? resultWinTitle : resultLoseTitle}
           </div>
           <div>{result.message}</div>
           <div className="text-xs uppercase tracking-[0.18em] opacity-80">
-            Pari&nbsp;: {selected != null ? `Loader ${selected + 1}` : 'Aucun'} · Gagnant&nbsp;: Loader {result.winningRunner + 1}
+            {formatI18n(resultSummaryTemplate, {
+              bet:
+                selected != null
+                  ? formatI18n(loaderLabelTemplate, { index: selected + 1 })
+                  : detailNoneLabel,
+              winner: result.winningRunner + 1,
+            })}
           </div>
           <div className="flex gap-3">
             <button
@@ -259,7 +322,7 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
               className="rounded-full px-4 py-2 font-tomorrow text-xs font-bold uppercase tracking-[0.12em]"
               style={{ backgroundColor: theme.text, color: theme.cream }}
             >
-              Rejouer
+              {replayLabel}
             </button>
             <button
               type="button"
@@ -267,13 +330,13 @@ export default function FakeLoadingRaceGame({ level, seed, onComplete, theme }: 
               className="rounded-full px-4 py-2 font-tomorrow text-xs font-bold uppercase tracking-[0.12em]"
               style={{ backgroundColor: 'rgba(0,0,0,0.45)', color: theme.cream }}
             >
-              Quitter
+              {exitLabel}
             </button>
           </div>
         </div>
       ) : canSwap ? (
         <div className="text-xs font-inter opacity-70" style={{ color: theme.cream }}>
-          Tu peux changer de pari une seule fois pendant la course.
+          {hintText}
         </div>
       ) : null}
     </div>

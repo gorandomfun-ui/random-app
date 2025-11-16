@@ -91,6 +91,257 @@ const deDictionary = {
     "imagesVideos": "Bilder & Videos",
     "imagesOnly": "Nur Bilder"
   },
+  "minigames": {
+    "card": {
+      "unavailable": "Minispiel derzeit nicht verfügbar.",
+      "category": "Minispiel",
+      "level": "Level {level}",
+      "rulesIntro": "Bereit? Hier sind die Regeln:",
+      "defaultRule": "Hab Spaß und bleib fokussiert.",
+      "actions": {
+        "start": "Start",
+        "replay": "Nochmal",
+        "guide": "Anleitung"
+      },
+      "result": {
+        "win": "Sieg!",
+        "lose": "Niederlage"
+      }
+    },
+    "games": {
+      "tap-to-not-tap": {
+        "name": "Tap-to-not-Tap",
+        "tagline": "Folge dem Rhythmus ohne Fehler.",
+        "instructions": [
+          "TAP-/DON'T-TAP-Blitze werden durch echte Pausen getrennt.",
+          "Klicke nur bei TAP, bleib während DON'T TAP ruhig.",
+          "In Level 1–2 sind nur 2 Fehler erlaubt."
+        ],
+        "status": {
+          "ready": "Sequenz startet...",
+          "tap": "TAP! Klicke vor dem nächsten Blitz.",
+          "dontTap": "DON'T TAP!",
+          "tip": "Klicke nur, wenn TAP erscheint. Jeder Blitz wird schneller.",
+          "encourage": "Gute Reaktion! Bleib dran.",
+          "errorCount": "{reason} · Fehler {current}/{max}"
+        },
+        "messages": {
+          "missedTap": "Du hast einen TAP verpasst.",
+          "wrongClick": "Du hättest nicht klicken dürfen.",
+          "sequenceComplete": "Sequenz geschafft!",
+          "sequenceInterrupted": "Sequenz unterbrochen.",
+          "tooManyErrors": "Zu viele Fehler!"
+        },
+        "details": {
+          "steps": "Schritte",
+          "success": "TAP-Treffer",
+          "errors": "Fehler"
+        },
+        "hud": {
+          "step": "Schritt",
+          "tapCount": "TAP-Zähler",
+          "errors": "Fehler"
+        }
+      },
+      "emoji-echo": {
+        "name": "Emoji Echo",
+        "tagline": "Merk dir die Sequenz.",
+        "instructions": [
+          "Zwei Sequenzen pro Level, z. B. 2 dann 3 Emojis.",
+          "Jede Sequenz startet neu mit frischen Emojis.",
+          "Gib sie fehlerfrei ein, bevor die Zeit endet."
+        ],
+        "status": {
+          "observeSequence": "Präge dir die Emoji-Reihe ein...",
+          "observe": "Beobachten...",
+          "repeat": "Gib die Reihenfolge ein!"
+        },
+        "messages": {
+          "timeout": "Zu langsam.",
+          "wrong": "Das war nicht die richtige Reihenfolge!",
+          "perfect": "Perfektes Gedächtnis!"
+        },
+        "details": {
+          "sequence": "Erreichte Sequenz"
+        },
+        "hud": {
+          "progress": "Sequenz {current}/{total} · Länge {length}"
+        }
+      },
+      "useless-progress-bar": {
+        "name": "Useless Progress Bar",
+        "tagline": "Eine Leiste, die nie endet… fast.",
+        "instructions": [
+          "Halte den Button, um die Leiste durchgehend zu laden.",
+          "Lass genau auf dem Ziel los (± Toleranz).",
+          "Jedes Überschießen beendet den Versuch sofort."
+        ],
+        "status": {
+          "ready": "Lade die nutzlose Leiste präzise...",
+          "target": "Ziel {current}/{total} · Triff {target}% (±{tolerance}%)"
+        },
+        "messages": {
+          "timeout": "Zeit abgelaufen!",
+          "over": "Zu viel geladen!",
+          "under": "Zu wenig geladen!",
+          "win": "Perfekt kalibrierte nutzlose Leiste!"
+        },
+        "details": {
+          "validated": "Ziele geschafft",
+          "lastGoal": "Letztes Ziel"
+        },
+        "hud": {
+          "progress": "Ladung {progress}% · Ziel {target}% ± {tolerance}%",
+          "timer": "Zeit: {seconds}s · Ziel {current}/{total}"
+        },
+        "buttons": {
+          "press": "Gedrückt halten",
+          "release": "Loslassen zum Bestätigen"
+        }
+      },
+      "left-or-right": {
+        "name": "Left or Right?",
+        "tagline": "Wähle den selteneren Pfeil.",
+        "instructions": [
+          "Beobachte die letzten Pfeile (5 bis 9 je nach Level).",
+          "Wähle den Pfeil, der am seltensten vorkommt.",
+          "Begrenze aufeinanderfolgende Fehler."
+        ],
+        "details": {
+          "rounds": "Runden",
+          "success": "Treffer",
+          "errors": "Fehler"
+        },
+        "status": {
+          "intro": "Wähle den seltensten Pfeil der letzten {count}!",
+          "analyzing": "Analyse läuft...",
+          "tie": "Gleichstand: wähle irgendeinen.",
+          "guidance": "{direction} ist am seltensten (Diff {diff}).",
+          "correct": "Guter Riecher! Weiter so.",
+          "mistake": "Ups, das war nicht optimal..."
+        },
+        "messages": {
+          "tooMany": "Zu viele Fehler.",
+          "success": "Challenge geschafft!",
+          "fail": "Noch ein Fehler zu viel.",
+          "time": "Zeit ist abgelaufen."
+        },
+        "feedback": {
+          "correct": "Guter Riecher!",
+          "wrong": "Probier die andere Richtung."
+        },
+        "directions": {
+          "left": "← Links",
+          "right": "Rechts →",
+          "either": "← oder →"
+        },
+        "hud": {
+          "history": "Letzte {count}: ← {left} · → {right}",
+          "target": "Ziel: {label}",
+          "round": "Runde {round}/{total} · Treffer {successes} · Fehler {mistakes}/{allowed} · Zeit {seconds}s"
+        }
+      },
+      "fake-loading-race": {
+        "name": "Loading Race",
+        "tagline": "Setz auf den Sieger-Loader.",
+        "instructions": [
+          "Wähle vor dem Start deinen Loader (3 bis 5 Balken).",
+          "Du darfst deine Wette einmal während des Rennens wechseln.",
+          "Beobachte die Geschwindigkeiten und errate den Gewinner."
+        ],
+        "messages": {
+          "start": "Setz auf den Sieger-Loader!",
+          "selected": "Du wettest auf Loader {index}. Rennen startet!",
+          "swap": "Du wechselst zu Loader {index}!",
+          "win": "Dein Loader {index} erreicht als Erster das Ziel!",
+          "lose": "Loader {index} gewinnt das Rennen.",
+          "hint": "Du darfst nur einmal während des Rennens wechseln."
+        },
+        "details": {
+          "bet": "Wette",
+          "none": "Keine",
+          "winner": "Sieger"
+        },
+        "labels": {
+          "loader": "Loader {index}"
+        },
+        "buttons": {
+          "bet": "Wette",
+          "switch": "Wechseln",
+          "locked": "Wette",
+          "replay": "Nochmal",
+          "exit": "Beenden"
+        },
+        "finish": {
+          "prefix": "Ziel:",
+          "entry": "{position}. → Loader {runner}"
+        },
+        "result": {
+          "winTitle": "Sieg!",
+          "loseTitle": "Niederlage",
+          "summary": "Wette: {bet} · Sieger: Loader {winner}"
+        }
+      },
+      "color-off-by-one": {
+        "name": "Color Off-By-One",
+        "tagline": "Eine fast identische Nuance.",
+        "instructions": [
+          "Betrachte das Raster (von 3×3 bis 5×5).",
+          "Klicke auf das leicht andere Feld.",
+          "Höhere Level machen die Farben fast identisch."
+        ],
+        "details": {
+          "round": "Runde",
+          "difference": "Differenz"
+        },
+        "status": {
+          "look": "Finde die abweichende Nuance.",
+          "harder": "Noch subtiler..."
+        },
+        "messages": {
+          "win": "Adleraugen!",
+          "fail": "Das war nicht das andere Feld."
+        },
+        "hud": {
+          "round": "Runde {round}/{total}"
+        },
+        "aria": {
+          "tile": "Feld {index}"
+        }
+      },
+      "steady-spots": {
+        "name": "Steady Spots",
+        "tagline": "Land auf jedem Spot ohne Zittern.",
+        "instructions": [
+          "Erreiche jeden Halo in der angegebenen Reihenfolge.",
+          "Halte den Zeiger ~2 s ruhig darauf.",
+          "Höhere Level fügen Spots hinzu und verkleinern sie."
+        ],
+        "status": {
+          "start": "Erreiche jeden Spot und halte ca. 2 Sekunden.",
+          "validated": "Spot geschafft!",
+          "next": "Spot {next}/{total} — klicken und 2 s halten.",
+          "hold": "Nicht bewegen...",
+          "win": "Du hast alle Spots gehalten!"
+        },
+        "messages": {
+          "time": "Zeit abgelaufen.",
+          "leftSpot": "Du hast den Spot verlassen!",
+          "released": "Zu früh losgelassen.",
+          "leftArea": "Du hast das Feld verlassen."
+        },
+        "details": {
+          "validated": "Spots geschafft"
+        },
+        "hud": {
+          "progress": "Spot {current}/{total} · Zeit {seconds}s"
+        },
+        "overlay": {
+          "hold": "Halten"
+        }
+      }
+    }
+  },
   "add": {
     "title": "Hinzufügen",
     "banner": "Füge den Content hinzu, den du",

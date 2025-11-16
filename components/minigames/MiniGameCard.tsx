@@ -5,6 +5,8 @@ import {
   type MiniGameDefinition,
   type MiniGameResult,
 } from './definitions'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
@@ -44,6 +46,7 @@ const subtleButtonStyle: CSSProperties = {
 }
 
 export default function MiniGameCard({ item, theme }: { item: MiniGameItem; theme: Theme }) {
+  const { t } = useI18n()
   const definition = useMemo<MiniGameDefinition | null>(
     () => getMiniGameDefinition(item.gameId) ?? null,
     [item.gameId],
@@ -85,7 +88,7 @@ export default function MiniGameCard({ item, theme }: { item: MiniGameItem; them
     return (
       <div className="flex h-full w-full items-center justify-center text-center px-6">
         <p className="text-sm font-inter opacity-70" style={{ color: theme.cream }}>
-          Mini-jeu indisponible pour le moment.
+          {t('minigames.card.unavailable', 'Mini-game currently unavailable.')}
         </p>
       </div>
     )
@@ -178,6 +181,11 @@ export default function MiniGameCard({ item, theme }: { item: MiniGameItem; them
     fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
   }
 
+  const defaultRule = t('minigames.card.defaultRule', 'Have fun and stay focused.')
+  const instructionLines = (definition.instructions.length ? definition.instructions : [defaultRule]).map(
+    (line, idx) => t(`minigames.games.${definition.id}.instructions.${idx}`, line),
+  )
+
   return (
     <div className="mini-game-card" style={cardStyle}>
       <header style={headerStyle}>
@@ -186,40 +194,40 @@ export default function MiniGameCard({ item, theme }: { item: MiniGameItem; them
             className="text-xs font-inter opacity-70 uppercase tracking-[0.12em]"
             style={{ color: theme.cream }}
           >
-            Mini-game
+            {t('minigames.card.category', 'Mini-game')}
           </p>
           <h3
             className="text-xl md:text-2xl font-tomorrow font-bold"
             style={{ color: theme.cream, letterSpacing: '.04em' }}
           >
-            {definition.name}
+            {t(`minigames.games.${definition.id}.name`, definition.name)}
           </h3>
           <p className="mt-1 text-sm font-inter opacity-80" style={{ color: theme.cream }}>
-            {definition.tagline}
+            {t(`minigames.games.${definition.id}.tagline`, definition.tagline)}
           </p>
         </div>
-        <span style={levelBadgeStyle}>Niveau {item.level}</span>
+        <span style={levelBadgeStyle}>
+          {formatI18n(t('minigames.card.level', 'Level {level}'), { level: item.level })}
+        </span>
       </header>
 
       {state === 'intro' ? (
         <div style={introStyle}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <p className="text-sm font-inter opacity-85" style={{ color: theme.cream }}>
-              Prêt ? Voici les règles :
+              {t('minigames.card.rulesIntro', 'Ready? Here are the rules:')}
             </p>
             <ul style={instructionListStyle}>
-              {(definition.instructions.length ? definition.instructions : ['Amuse-toi et reste concentré.']).map(
-                (line, idx) => (
-                  <li key={`${definition.id}-rule-${idx}`} style={instructionItemStyle}>
-                    {line}
-                  </li>
-                )
-              )}
+              {instructionLines.map((line, idx) => (
+                <li key={`${definition.id}-rule-${idx}`} style={instructionItemStyle}>
+                  {line}
+                </li>
+              ))}
             </ul>
           </div>
           <div className="flex justify-center">
             <button type="button" onClick={startGame} style={primaryButtonStyle}>
-              Start
+              {t('minigames.card.actions.start', 'Start')}
             </button>
           </div>
         </div>
@@ -243,7 +251,9 @@ export default function MiniGameCard({ item, theme }: { item: MiniGameItem; them
             className="text-3xl font-tomorrow font-bold tracking-[0.08em]"
             style={{ color: result.outcome === 'win' ? theme.cream : '#FF7A7A' }}
           >
-            {result.outcome === 'win' ? 'Gagné !' : 'Perdu'}
+            {result.outcome === 'win'
+              ? t('minigames.card.result.win', 'Victory!')
+              : t('minigames.card.result.lose', 'Defeat')}
           </p>
           {result.message ? (
             <p className="text-sm font-inter opacity-85 max-w-md" style={{ color: theme.cream }}>
@@ -262,10 +272,10 @@ export default function MiniGameCard({ item, theme }: { item: MiniGameItem; them
           ) : null}
           <div className="mt-2 flex flex-wrap items-center justify-center gap-10">
             <button type="button" onClick={replayGame} style={primaryButtonStyle}>
-              Rejouer
+              {t('minigames.card.actions.replay', 'Replay')}
             </button>
             <button type="button" onClick={showIntro} style={subtleButtonStyle}>
-              Guide
+              {t('minigames.card.actions.guide', 'Guide')}
             </button>
           </div>
         </div>

@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 type GameState = 'running' | 'ended'
 
 export default function UselessProgressBarGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.useless-progress-bar'
   const normalized = normalizeLevel(level, 18)
   const targetsPerRun = Math.min(6, 2 + Math.floor(normalized / 3))
   const perTargetTime = Math.max(2000, Math.round(scaleLevel(normalized, 6000, 2000, 18)))
@@ -16,7 +20,29 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
   const [targetValue, setTargetValue] = useState(50)
   const [targetIndex, setTargetIndex] = useState(0)
   const [timeLeft, setTimeLeft] = useState(perTargetTime)
-  const [message, setMessage] = useState('Charge la barre inutile avec précision…')
+  const readyLabel = t(`${baseKey}.status.ready`, 'Charge la barre inutile avec précision…')
+  const targetTemplate = t(
+    `${baseKey}.status.target`,
+    'Objectif {current}/{total} · Vise {target}% (±{tolerance}%)',
+  )
+  const timeoutMessage = t(`${baseKey}.messages.timeout`, 'Temps écoulé !')
+  const overMessage = t(`${baseKey}.messages.over`, 'Trop chargé !')
+  const underMessage = t(`${baseKey}.messages.under`, 'Pas assez chargé !')
+  const winMessage = t(`${baseKey}.messages.win`, 'Barre inutile parfaitement calibrée !')
+  const detailValidatedLabel = t(`${baseKey}.details.validated`, 'Cibles validées')
+  const detailLastGoalLabel = t(`${baseKey}.details.lastGoal`, 'Dernier objectif')
+  const progressTemplate = t(
+    `${baseKey}.hud.progress`,
+    'Charge {progress}% · Cible {target}% ± {tolerance}%',
+  )
+  const timerTemplate = t(
+    `${baseKey}.hud.timer`,
+    'Temps : {seconds}s · Cible {current}/{total}',
+  )
+  const pressLabel = t(`${baseKey}.buttons.press`, 'Appuie pour charger')
+  const releaseLabel = t(`${baseKey}.buttons.release`, 'Relâche pour valider')
+
+  const [message, setMessage] = useState(readyLabel)
   const [charging, setCharging] = useState(false)
   const [state, setState] = useState<GameState>('running')
 
@@ -54,12 +80,12 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
         outcome: 'lose',
         message: reason,
         details: [
-          { label: 'Cibles validées', value: `${targetIndexRef.current}/${targetsPerRun}` },
-          { label: 'Dernier objectif', value: `${targetRef.current.toFixed(0)}%` },
+          { label: detailValidatedLabel, value: `${targetIndexRef.current}/${targetsPerRun}` },
+          { label: detailLastGoalLabel, value: `${targetRef.current.toFixed(0)}%` },
         ],
       })
     },
-    [clearTimer, onComplete, stopCharging, targetsPerRun],
+    [clearTimer, detailLastGoalLabel, detailValidatedLabel, onComplete, stopCharging, targetsPerRun],
   )
 
   const finalizeWin = useCallback(() => {
@@ -70,10 +96,10 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
     stopCharging()
     onComplete({
       outcome: 'win',
-      message: 'Barre inutile parfaitement calibrée !',
-      details: [{ label: 'Cibles validées', value: `${targetsPerRun}/${targetsPerRun}` }],
+      message: winMessage,
+      details: [{ label: detailValidatedLabel, value: `${targetsPerRun}/${targetsPerRun}` }],
     })
-  }, [clearTimer, onComplete, stopCharging, targetsPerRun])
+  }, [clearTimer, detailValidatedLabel, onComplete, stopCharging, targetsPerRun, winMessage])
 
   const startTimer = useCallback(
     (duration: number) => {
@@ -84,14 +110,14 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
           const next = Math.max(0, prev - 100)
           if (next <= 0) {
             clearTimer()
-            fail('Temps écoulé !')
+            fail(timeoutMessage)
             return 0
           }
           return next
         })
       }, 100)
     },
-    [clearTimer, fail],
+    [clearTimer, fail, timeoutMessage],
   )
 
   const prepareTarget = useCallback(
@@ -112,10 +138,26 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
       setTargetIndex(index)
       setProgress(0)
       progressRef.current = 0
-      setMessage(`Objectif ${index + 1}/${targetsPerRun} · Vise ${target}% (±${tolerance}%)`)
+      setMessage(
+        formatI18n(targetTemplate, {
+          current: index + 1,
+          total: targetsPerRun,
+          target,
+          tolerance,
+        }),
+      )
       startTimer(perTargetTime)
     },
-    [finalizeWin, level, perTargetTime, seed, startTimer, targetsPerRun, tolerance],
+    [
+      finalizeWin,
+      level,
+      perTargetTime,
+      seed,
+      startTimer,
+      targetTemplate,
+      targetsPerRun,
+      tolerance,
+    ],
   )
 
   useEffect(() => {
@@ -125,13 +167,14 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
     stopCharging()
     setProgress(0)
     progressRef.current = 0
+    setMessage(readyLabel)
     prepareTarget(0)
     return () => {
       endedRef.current = true
       clearTimer()
       stopCharging()
     }
-  }, [clearTimer, level, prepareTarget, seed, stopCharging])
+  }, [clearTimer, level, prepareTarget, readyLabel, seed, stopCharging])
 
   const handleSuccess = useCallback(() => {
     const nextIndex = targetIndexRef.current + 1
@@ -146,11 +189,11 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
     if (diff <= tolerance) {
       handleSuccess()
     } else if (progressRef.current > targetRef.current) {
-      fail('Trop chargé !')
+      fail(overMessage)
     } else {
-      fail('Pas assez chargé !')
+      fail(underMessage)
     }
-  }, [fail, handleSuccess, state, stopCharging, tolerance])
+  }, [charging, fail, handleSuccess, overMessage, state, stopCharging, tolerance, underMessage])
 
   const startCharging = useCallback(() => {
     if (state !== 'running' || charging) return
@@ -161,12 +204,12 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
         progressRef.current = next
         if (next > targetRef.current + tolerance + 1) {
           stopCharging()
-          fail('Trop chargé !')
+          fail(overMessage)
         }
         return next
       })
     }, 120)
-  }, [charging, fail, gainPerTick, state, stopCharging, tolerance])
+  }, [charging, fail, gainPerTick, overMessage, state, stopCharging, tolerance])
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
@@ -186,7 +229,11 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
           />
         </div>
         <div className="text-xs font-inter uppercase tracking-[0.18em] opacity-70" style={{ color: theme.cream }}>
-          Charge {(progress).toFixed(1)}% · Cible {targetValue.toFixed(0)}% ± {tolerance}%
+          {formatI18n(progressTemplate, {
+            progress: progress.toFixed(1),
+            target: targetValue.toFixed(0),
+            tolerance,
+          })}
         </div>
       </div>
       <button
@@ -210,14 +257,18 @@ export default function UselessProgressBarGame({ level, seed, onComplete, theme 
           boxShadow: charging ? '0 0 22px rgba(0,0,0,0.45)' : '0 12px 22px rgba(0,0,0,0.35)',
           opacity: state === 'running' ? 1 : 0.6,
         }}
-      >
-        {charging ? 'Relâche pour valider' : 'Appuie pour charger'}
+        >
+        {charging ? releaseLabel : pressLabel}
       </button>
       <div
         className="rounded-full px-4 py-2 text-sm font-inter"
         style={{ backgroundColor: 'rgba(0,0,0,0.35)', color: theme.cream }}
       >
-        Temps&nbsp;: {(timeLeft / 1000).toFixed(1)} s · Cible {targetIndex + 1}/{targetsPerRun}
+        {formatI18n(timerTemplate, {
+          seconds: (timeLeft / 1000).toFixed(1),
+          current: targetIndex + 1,
+          total: targetsPerRun,
+        })}
       </div>
     </div>
   )

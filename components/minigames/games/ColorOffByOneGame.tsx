@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 function hslToCss(h: number, s: number, l: number) {
   return `hsl(${Math.round(h)} ${Math.round(s)}% ${Math.round(l)}%)`
 }
 
 export default function ColorOffByOneGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.color-off-by-one'
   const normalized = normalizeLevel(level, 18)
   const rounds = Math.min(4, 2 + Math.floor(normalized / 4))
   const gridSize = Math.min(5, 3 + Math.floor(normalized / 4))
@@ -18,7 +22,16 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
   const [round, setRound] = useState(1)
   const [tiles, setTiles] = useState<string[]>([])
   const [targetIndex, setTargetIndex] = useState(0)
-  const [status, setStatus] = useState('Repère la nuance différente.')
+  const lookLabel = t(`${baseKey}.status.look`, 'Repère la nuance différente.')
+  const harderLabel = t(`${baseKey}.status.harder`, 'Encore plus subtil…')
+  const winMessage = t(`${baseKey}.messages.win`, 'Œil de lynx !')
+  const failMessage = t(`${baseKey}.messages.fail`, 'Ce n’était pas la bonne nuance.')
+  const hudTemplate = t(`${baseKey}.hud.round`, 'Round {round}/{total}')
+  const ariaTemplate = t(`${baseKey}.aria.tile`, 'Case {index}')
+  const detailRoundLabel = t(`${baseKey}.details.round`, 'Round')
+  const detailDifferenceLabel = t(`${baseKey}.details.difference`, 'Différence')
+
+  const [status, setStatus] = useState(lookLabel)
   const [difference, setDifference] = useState(scaleLevel(normalized, 16, 3, 18))
   const endedRef = useRef(false)
 
@@ -48,12 +61,12 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
         outcome: won ? 'win' : 'lose',
         message,
         details: [
-          { label: 'Round', value: `${round} / ${rounds}` },
-          { label: 'Différence', value: `${difference.toFixed(1)}` },
+          { label: detailRoundLabel, value: `${round} / ${rounds}` },
+          { label: detailDifferenceLabel, value: `${difference.toFixed(1)}` },
         ],
       })
     },
-    [difference, onComplete, round, rounds],
+    [detailDifferenceLabel, detailRoundLabel, difference, onComplete, round, rounds],
   )
 
   useEffect(() => {
@@ -63,15 +76,15 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
     const initialDiff = scaleLevel(normalized, 16, 3, 18)
     setDifference(initialDiff)
     buildTiles(initialDiff)
-    setStatus('Repère la nuance différente.')
+    setStatus(lookLabel)
     return () => {
       endedRef.current = true
     }
-  }, [buildTiles, level, normalized, seed])
+  }, [buildTiles, level, lookLabel, normalized, seed])
 
   const advanceRound = () => {
     if (round >= rounds) {
-      finalize(true, 'Œil de lynx !')
+      finalize(true, winMessage)
       return
     }
     const nextRound = round + 1
@@ -79,7 +92,7 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
     const nextDiff = Math.max(0.8, difference * 0.65)
     setDifference(nextDiff)
     buildTiles(nextDiff)
-    setStatus('Encore plus subtil…')
+    setStatus(harderLabel)
   }
 
   const handlePick = (index: number) => {
@@ -87,7 +100,7 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
     if (index === targetIndex) {
       advanceRound()
     } else {
-      finalize(false, 'Ce n’était pas la bonne nuance.')
+      finalize(false, failMessage)
     }
   }
 
@@ -119,12 +132,12 @@ export default function ColorOffByOneGame({ level, seed, onComplete, theme }: Mi
               backgroundColor: color,
               cursor: 'pointer',
             }}
-            aria-label={`Case ${idx + 1}`}
+            aria-label={formatI18n(ariaTemplate, { index: idx + 1 })}
           />
         ))}
       </div>
       <div className="text-xs font-inter uppercase tracking-[0.18em] opacity-70" style={{ color: theme.cream }}>
-        Round {round}/{rounds}
+        {formatI18n(hudTemplate, { round, total: rounds })}
       </div>
     </div>
   )

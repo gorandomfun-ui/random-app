@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MiniGameRuntimeProps } from '../definitions'
 import { normalizeLevel, scaleLevel } from '@/lib/minigames/progression'
 import { createSeededRng } from '../utils/random'
+import { useI18n } from '@/providers/I18nProvider'
+import { formatI18n } from '@/lib/i18n/format'
 
 type SequenceLabel = 'tap' | 'dont'
 
 export default function TapToNotTapGame({ level, seed, onComplete, theme }: MiniGameRuntimeProps) {
+  const { t } = useI18n()
+  const baseKey = 'minigames.games.tap-to-not-tap'
   const normalized = normalizeLevel(level, 18)
   const sequenceLength = Math.min(22, 10 + Math.floor(normalized * 0.8))
   const promptWindow = Math.max(360, Math.round(scaleLevel(normalized, 980, 360, 18)))
@@ -14,11 +18,38 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
   const maxErrors = normalized <= 2 ? 2 : normalized <= 5 ? 3 : 4
   const assistColors = normalized <= 2
 
+  const readyLabel = t(`${baseKey}.status.ready`, 'La séquence va commencer…')
+  const tapStatus = t(`${baseKey}.status.tap`, 'TAP ! Clique avant le prochain flash.')
+  const dontStatus = t(`${baseKey}.status.dontTap`, "DON’T TAP !")
+  const tipText = t(
+    `${baseKey}.status.tip`,
+    'Clique uniquement quand le mot TAP apparaît. Chaque flash arrive plus vite.',
+  )
+  const encourageText = t(`${baseKey}.status.encourage`, 'Bien joué ! Reste concentré.')
+  const errorTemplate = t(`${baseKey}.status.errorCount`, '{reason} · erreur {current}/{max}')
+  const missedTapMessage = t(`${baseKey}.messages.missedTap`, 'Tu as manqué un TAP.')
+  const wrongClickMessage = t(`${baseKey}.messages.wrongClick`, 'Il ne fallait pas cliquer.')
+  const sequenceCompleteMessage = t(
+    `${baseKey}.messages.sequenceComplete`,
+    'Séquence complétée !',
+  )
+  const sequenceInterruptedMessage = t(
+    `${baseKey}.messages.sequenceInterrupted`,
+    'Séquence interrompue.',
+  )
+  const tooManyErrorsMessage = t(`${baseKey}.messages.tooManyErrors`, 'Trop d’erreurs !')
+  const detailStepsLabel = t(`${baseKey}.details.steps`, 'Étapes')
+  const detailSuccessLabel = t(`${baseKey}.details.success`, 'TAP réussis')
+  const detailErrorsLabel = t(`${baseKey}.details.errors`, 'Erreurs')
+  const hudStepLabel = t(`${baseKey}.hud.step`, 'Étape')
+  const hudTapLabel = t(`${baseKey}.hud.tapCount`, 'TAP faits')
+  const hudErrorsLabel = t(`${baseKey}.hud.errors`, 'Erreurs')
+
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [currentLabel, setCurrentLabel] = useState<SequenceLabel | null>(null)
   const [errors, setErrors] = useState(0)
   const [successes, setSuccesses] = useState(0)
-  const [status, setStatus] = useState('La séquence va commencer…')
+  const [status, setStatus] = useState(readyLabel)
   const [pulse, setPulse] = useState(false)
   const [tapCount, setTapCount] = useState(0)
 
@@ -55,17 +86,26 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
       finishedRef.current = true
       clearTimers()
       const details = [
-        { label: 'Étapes', value: `${sequenceRef.current.length}` },
-        { label: 'TAP réussis', value: `${successesRef.current}` },
-        { label: 'Erreurs', value: `${errorsRef.current}/${maxErrors}` },
+        { label: detailStepsLabel, value: `${sequenceRef.current.length}` },
+        { label: detailSuccessLabel, value: `${successesRef.current}` },
+        { label: detailErrorsLabel, value: `${errorsRef.current}/${maxErrors}` },
       ]
       onComplete({
         outcome: won ? 'win' : 'lose',
-        message: message ?? (won ? 'Séquence complétée !' : 'Séquence interrompue.'),
+        message: message ?? (won ? sequenceCompleteMessage : sequenceInterruptedMessage),
         details,
       })
     },
-    [clearTimers, maxErrors, onComplete],
+    [
+      clearTimers,
+      detailErrorsLabel,
+      detailStepsLabel,
+      detailSuccessLabel,
+      maxErrors,
+      onComplete,
+      sequenceCompleteMessage,
+      sequenceInterruptedMessage,
+    ],
   )
 
   const registerError = useCallback(
@@ -75,15 +115,15 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
         const next = prev + 1
         errorsRef.current = next
         if (next > maxErrors) {
-          setStatus('Trop d’erreurs !')
+          setStatus(tooManyErrorsMessage)
           finalize(false, reason)
         } else {
-          setStatus(`${reason} · erreur ${next}/${maxErrors}`)
+          setStatus(formatI18n(errorTemplate, { reason, current: next, max: maxErrors }))
         }
         return next
       })
     },
-    [finalize, maxErrors],
+    [errorTemplate, finalize, maxErrors, tooManyErrorsMessage],
   )
 
   const advanceStep = useCallback(
@@ -92,7 +132,7 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
       const seq = sequenceRef.current
       if (!seq.length) return
       if (index >= seq.length) {
-        finalize(true, 'Séquence complétée !')
+        finalize(true, sequenceCompleteMessage)
         return
       }
 
@@ -103,7 +143,7 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
       clickedThisBeatRef.current = false
 
       setPulse(true)
-      setStatus(label === 'tap' ? 'TAP ! Clique avant le prochain flash.' : "DON’T TAP !")
+      setStatus(label === 'tap' ? tapStatus : dontStatus)
       if (pulseTimeoutRef.current != null) {
         clearTimeout(pulseTimeoutRef.current)
       }
@@ -118,12 +158,15 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
         if (finishedRef.current) return
         if (awaitingTapRef.current) {
           awaitingTapRef.current = false
-          registerError('Tu as manqué un TAP.')
+          registerError(missedTapMessage)
         }
         setCurrentLabel(null)
         const nextIndex = index + 1
         if (nextIndex >= seq.length) {
-          finalize(errorsRef.current <= maxErrors, errorsRef.current <= maxErrors ? 'Séquence complétée !' : 'Séquence interrompue.')
+          finalize(
+            errorsRef.current <= maxErrors,
+            errorsRef.current <= maxErrors ? sequenceCompleteMessage : sequenceInterruptedMessage,
+          )
           return
         }
         stepTimeoutRef.current = window.setTimeout(() => {
@@ -131,7 +174,19 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
         }, blankWindow)
       }, promptWindow)
     },
-    [blankWindow, finalize, maxErrors, promptWindow, pulseDuration, registerError],
+    [
+      blankWindow,
+      dontStatus,
+      finalize,
+      maxErrors,
+      missedTapMessage,
+      promptWindow,
+      pulseDuration,
+      registerError,
+      sequenceCompleteMessage,
+      sequenceInterruptedMessage,
+      tapStatus,
+    ],
   )
 
   useEffect(() => {
@@ -149,7 +204,7 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
     setSuccesses(0)
     setCurrentIndex(-1)
     setCurrentLabel(null)
-    setStatus('La séquence va commencer…')
+    setStatus(readyLabel)
 
     const rng = rngRef.current
     const seq = Array.from({ length: sequenceLength }, () => (rng() > 0.5 ? 'tap' : 'dont') as SequenceLabel)
@@ -167,7 +222,7 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
       finishedRef.current = true
       clearTimers()
     }
-  }, [advanceStep, clearTimers, sequenceLength])
+  }, [advanceStep, clearTimers, readyLabel, sequenceLength])
 
   const handlePress = () => {
     if (finishedRef.current || currentLabel == null) return
@@ -177,10 +232,10 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
         clickedThisBeatRef.current = true
         successesRef.current += 1
         setSuccesses((prev) => prev + 1)
-        setStatus('Bien joué ! Reste concentré.')
+        setStatus(encourageText)
       }
     } else {
-      registerError('Il ne fallait pas cliquer.')
+      registerError(wrongClickMessage)
     }
   }
 
@@ -198,17 +253,17 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-        <div className="text-xs uppercase tracking-[0.12em] opacity-75">Étape</div>
+        <div className="text-xs uppercase tracking-[0.12em] opacity-75">{hudStepLabel}</div>
         <div className="text-lg font-tomorrow font-bold" style={{ color: theme.cream }}>
           {currentIndex >= 0 ? `${currentIndex + 1}/${sequenceLength}` : `0/${sequenceLength}`}
         </div>
         <div className="flex flex-row items-center gap-5 text-sm font-inter">
           <span>
-            TAP faits&nbsp;
+            {hudTapLabel}&nbsp;
             <strong>{successes}</strong> / {tapCount}
           </span>
           <span>
-            Erreurs&nbsp;
+            {hudErrorsLabel}&nbsp;
             <strong>{errors}</strong> / {maxErrors}
           </span>
         </div>
@@ -216,7 +271,7 @@ export default function TapToNotTapGame({ level, seed, onComplete, theme }: Mini
 
       <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
         <p className="text-sm font-inter opacity-80" style={{ color: theme.cream }}>
-          Clique uniquement quand le mot <span className="font-semibold">TAP</span> apparaît. Chaque flash arrive plus vite.
+          {tipText}
         </p>
         <button
           type="button"

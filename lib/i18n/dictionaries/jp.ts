@@ -91,6 +91,257 @@ const jpDictionary = {
     "imagesVideos": "画像と動画",
     "imagesOnly": "画像のみ"
   },
+  "minigames": {
+    "card": {
+      "unavailable": "ミニゲームは現在利用できません。",
+      "category": "ミニゲーム",
+      "level": "レベル {level}",
+      "rulesIntro": "準備はいい？ ルールはこちら:",
+      "defaultRule": "楽しみながら集中しよう。",
+      "actions": {
+        "start": "スタート",
+        "replay": "もう一度",
+        "guide": "ガイド"
+      },
+      "result": {
+        "win": "勝利！",
+        "lose": "敗北"
+      }
+    },
+    "games": {
+      "tap-to-not-tap": {
+        "name": "Tap-to-not-Tap",
+        "tagline": "リズムを崩さずについていこう。",
+        "instructions": [
+          "TAP / DON'T TAP の点滅は本物の空白で区切られる。",
+          "TAPのときだけクリック、DON'T TAP中は静止。",
+          "レベル1〜2はミス2回まで。"
+        ],
+        "status": {
+          "ready": "シーケンス開始...",
+          "tap": "TAP！ 次の点滅の前にクリック。",
+          "dontTap": "DON'T TAP！",
+          "tip": "TAPと表示されたときだけ押して。点滅はどんどん速くなる。",
+          "encourage": "ナイス！ 集中を続けて。",
+          "errorCount": "{reason} · エラー {current}/{max}"
+        },
+        "messages": {
+          "missedTap": "TAPを逃したよ。",
+          "wrongClick": "今はクリックしちゃダメ。",
+          "sequenceComplete": "シーケンス達成！",
+          "sequenceInterrupted": "シーケンス中断。",
+          "tooManyErrors": "ミスが多すぎる！"
+        },
+        "details": {
+          "steps": "ステップ",
+          "success": "TAP成功",
+          "errors": "エラー"
+        },
+        "hud": {
+          "step": "ステップ",
+          "tapCount": "TAPカウント",
+          "errors": "エラー"
+        }
+      },
+      "emoji-echo": {
+        "name": "Emoji Echo",
+        "tagline": "並びを覚えて。",
+        "instructions": [
+          "各レベルで2つのシーケンス（例: 絵文字2個→3個）。",
+          "毎回 新しい絵文字で最初から再生。",
+          "タイマーが切れる前に完璧に再現。"
+        ],
+        "status": {
+          "observeSequence": "絵文字の並びを観察して…",
+          "observe": "観察中...",
+          "repeat": "同じ順番で入力！"
+        },
+        "messages": {
+          "timeout": "遅すぎた。",
+          "wrong": "順番が違うよ！",
+          "perfect": "完璧な記憶！"
+        },
+        "details": {
+          "sequence": "達成したシーケンス"
+        },
+        "hud": {
+          "progress": "シーケンス {current}/{total} · 長さ {length}"
+        }
+      },
+      "useless-progress-bar": {
+        "name": "Useless Progress Bar",
+        "tagline": "終わらないバー…ほぼ。",
+        "instructions": [
+          "ボタンを押し続けてバーをチャージ。",
+          "指定の目標で正確に離す（±許容）。",
+          "超過したら即失敗。"
+        ],
+        "status": {
+          "ready": "無駄なバーを正確にチャージ...",
+          "target": "目標 {current}/{total} · {target}% (±{tolerance}%) を狙え"
+        },
+        "messages": {
+          "timeout": "タイムアップ！",
+          "over": "チャージしすぎ！",
+          "under": "まだ足りない！",
+          "win": "無駄バーを完璧にキャリブレーション！"
+        },
+        "details": {
+          "validated": "クリアした目標",
+          "lastGoal": "最後の目標"
+        },
+        "hud": {
+          "progress": "チャージ {progress}% · 目標 {target}% ± {tolerance}%",
+          "timer": "時間: {seconds}秒 · 目標 {current}/{total}"
+        },
+        "buttons": {
+          "press": "長押しでチャージ",
+          "release": "離して判定"
+        }
+      },
+      "left-or-right": {
+        "name": "Left or Right?",
+        "tagline": "出現の少ない矢印を選ぼう。",
+        "instructions": [
+          "レベルに応じて直近5〜9本の矢印を観察。",
+          "一番少ない矢印を選択。",
+          "連続ミスを抑える。"
+        ],
+        "details": {
+          "rounds": "ラウンド数",
+          "success": "成功数",
+          "errors": "ミス"
+        },
+        "status": {
+          "intro": "直近{count}で最も少ない矢印を選んで！",
+          "analyzing": "分析中...",
+          "tie": "同数。どちらでもOK。",
+          "guidance": "{direction} がより少ない (差 {diff})。",
+          "correct": "いい選択！ 続けて。",
+          "mistake": "うーん、ベストではなかった…"
+        },
+        "messages": {
+          "tooMany": "ミスが多すぎる。",
+          "success": "チャレンジ達成！",
+          "fail": "ミスが一つ多かった。",
+          "time": "時間切れ。"
+        },
+        "feedback": {
+          "correct": "いい選択！",
+          "wrong": "反対側を試して。"
+        },
+        "directions": {
+          "left": "← 左",
+          "right": "右 →",
+          "either": "← か →"
+        },
+        "hud": {
+          "history": "直近{count}: ← {left} · → {right}",
+          "target": "ターゲット: {label}",
+          "round": "ラウンド {round}/{total} · 成功 {successes} · ミス {mistakes}/{allowed} · 時間 {seconds}秒"
+        }
+      },
+      "fake-loading-race": {
+        "name": "Loading Race",
+        "tagline": "勝つローダーに賭けよう。",
+        "instructions": [
+          "スタート前にローダー（3〜5本）を選ぶ。",
+          "レース中の乗り換えは1回だけ。",
+          "スピードの変化を見て勝者を当てよう。"
+        ],
+        "messages": {
+          "start": "勝ちそうなローダーに賭けて！",
+          "selected": "ローダー {index} に賭けたよ。レース開始！",
+          "swap": "ローダー {index} に乗り換え！",
+          "win": "あなたのローダー {index} がトップでゴール！",
+          "lose": "ローダー {index} が勝利。",
+          "hint": "レース中に乗り換えできるのは1回だけ。"
+        },
+        "details": {
+          "bet": "ベット",
+          "none": "なし",
+          "winner": "勝者"
+        },
+        "labels": {
+          "loader": "ローダー {index}"
+        },
+        "buttons": {
+          "bet": "ベット",
+          "switch": "スイッチ",
+          "locked": "ベット",
+          "replay": "リプレイ",
+          "exit": "終了"
+        },
+        "finish": {
+          "prefix": "ゴール:",
+          "entry": "{position}位 → ローダー {runner}"
+        },
+        "result": {
+          "winTitle": "勝利！",
+          "loseTitle": "敗北",
+          "summary": "ベット: {bet} · 勝者: ローダー {winner}"
+        }
+      },
+      "color-off-by-one": {
+        "name": "Color Off-By-One",
+        "tagline": "ほぼ同じ色味。",
+        "instructions": [
+          "3×3から5×5までのグリッドを観察。",
+          "わずかに違うマスをクリック。",
+          "レベルが上がるほど色差が小さくなる。"
+        ],
+        "details": {
+          "round": "ラウンド",
+          "difference": "差"
+        },
+        "status": {
+          "look": "違う色を見つけよう。",
+          "harder": "さらに微妙に…"
+        },
+        "messages": {
+          "win": "鷹の目だね！",
+          "fail": "違うマスだったよ。"
+        },
+        "hud": {
+          "round": "ラウンド {round}/{total}"
+        },
+        "aria": {
+          "tile": "タイル {index}"
+        }
+      },
+      "steady-spots": {
+        "name": "Steady Spots",
+        "tagline": "震えずに全スポットへ。",
+        "instructions": [
+          "指示された順番で各ハローに到達。",
+          "ポインターを動かさず約2秒ホールド。",
+          "上級レベルではスポットが増え、サイズも縮む。"
+        ],
+        "status": {
+          "start": "各スポットに触れて約2秒キープ。",
+          "validated": "スポットクリア！",
+          "next": "スポット {next}/{total} — クリックして2秒維持。",
+          "hold": "動かないで…",
+          "win": "すべてのスポットをキープできた！"
+        },
+        "messages": {
+          "time": "タイムアップ。",
+          "leftSpot": "スポットから外れた！",
+          "released": "離すのが早すぎる。",
+          "leftArea": "フィールド外に出たよ。"
+        },
+        "details": {
+          "validated": "クリアしたスポット"
+        },
+        "hud": {
+          "progress": "スポット {current}/{total} · 時間 {seconds}秒"
+        },
+        "overlay": {
+          "hold": "ホールド"
+        }
+      }
+    }
+  },
   "add": {
     "title": "投稿",
     "banner": "あなたの好きなコンテンツを追加",
