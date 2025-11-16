@@ -110,7 +110,23 @@ export type WebItem = {
   host?: string | null
 } & ToneAttributes
 
-export type RandomContentItem = ImageItem | VideoItem | QuoteItem | FactItem | JokeItem | WebItem
+export type MiniGameId =
+  | 'tap-to-not-tap'
+  | 'emoji-echo'
+  | 'useless-progress-bar'
+  | 'left-or-right'
+  | 'fake-loading-race'
+  | 'color-off-by-one'
+  | 'steady-spots'
+
+export type MiniGameItem = {
+  type: 'minigame'
+  gameId: MiniGameId
+  level: number
+  seed: string
+}
+
+export type RandomContentItem = ImageItem | VideoItem | QuoteItem | FactItem | JokeItem | WebItem | MiniGameItem
 
 export type RandomApiResponse = {
   item: RandomContentItem
@@ -126,7 +142,7 @@ export type EncourageItem = {
 
 export type DisplayItem = RandomContentItem | EncourageItem
 
-export type ContentItemType = ItemType | 'encourage'
+export type ContentItemType = ItemType | 'encourage' | 'minigame'
 
 export const isImageItem = (item: RandomContentItem): item is ImageItem => item.type === 'image'
 export const isVideoItem = (item: RandomContentItem): item is VideoItem => item.type === 'video'

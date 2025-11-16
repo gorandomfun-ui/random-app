@@ -18,6 +18,7 @@ type CheckOutcome = {
   obsolete: boolean
   reason?: string
   status?: number | null
+  kind?: 'obsolete' | 'rate-limited'
 }
 
 const USER_AGENT = 'RandomAppBot/1.0 (+https://random.app)'
@@ -148,6 +149,9 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
     if (status === 401 || status === 403) {
       return { obsolete: false, status, reason: 'restricted' }
     }
+    if (status === 429) {
+      return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
+    }
     return {
       obsolete: true,
       status,
@@ -167,6 +171,9 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
     if (status === 401 || status === 403) {
       return { obsolete: false, status, reason: 'restricted' }
     }
+    if (status === 429) {
+      return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
+    }
     return {
       obsolete: true,
       status,
@@ -183,6 +190,9 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
     status = await fetchStatus(targetUrl, { method: 'GET', timeoutMs: 5000 })
   }
 
+  if (status === 429) {
+    return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
+  }
   if (status !== null && status >= 200 && status < 400) {
     return { obsolete: false, status }
   }
@@ -199,10 +209,10 @@ function delay(ms: number) {
 }
 
 function isAmbiguousOutcome(outcome: CheckOutcome): boolean {
-  if (!outcome.obsolete) return false
   const status = outcome.status ?? null
-  if (status === null) return true
   if (status === 429) return true
+  if (!outcome.obsolete) return false
+  if (status === null) return true
   if (status >= 500) return true
   return false
 }
@@ -236,8 +246,18 @@ export async function GET(req: NextRequest) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const encoder = new TextEncoder()
-        const providerCounts: Record<string, number> = {}
+        const obsoleteCounts: Record<string, number> = {}
+        const rateLimitedCounts: Record<string, number> = {}
         const obsolete: Array<{
+          id: string
+          provider: string
+          url: string
+          videoId?: string
+          title?: string | null
+          reason: string
+          status: number | null
+        }> = []
+        const rateLimited: Array<{
           id: string
           provider: string
           url: string
@@ -263,8 +283,19 @@ export async function GET(req: NextRequest) {
           const provider = normalizeProvider(doc.provider)
           try {
             const result = await checkVideoWithRetry(doc, 1)
-            if (result.obsolete) {
-              providerCounts[provider] = (providerCounts[provider] || 0) + 1
+            if (result.status === 429 || result.reason === 'rate-limited' || result.kind === 'rate-limited') {
+              rateLimitedCounts[provider] = (rateLimitedCounts[provider] || 0) + 1
+              rateLimited.push({
+                id: doc._id.toHexString(),
+                provider,
+                url: doc.url || '',
+                videoId: doc.videoId || undefined,
+                title: doc.title ?? null,
+                reason: result.reason || 'rate-limited',
+                status: result.status ?? null,
+              })
+            } else if (result.obsolete) {
+              obsoleteCounts[provider] = (obsoleteCounts[provider] || 0) + 1
               obsolete.push({
                 id: doc._id.toHexString(),
                 provider,
@@ -328,9 +359,18 @@ export async function GET(req: NextRequest) {
                 errors,
                 durationMs: Date.now() - startTime,
                 obsolete,
+                rateLimited,
                 counts: {
                   total: obsolete.length,
-                  providers: providerCounts,
+                  providers: obsoleteCounts,
+                  obsolete: {
+                    total: obsolete.length,
+                    providers: obsoleteCounts,
+                  },
+                  rateLimited: {
+                    total: rateLimited.length,
+                    providers: rateLimitedCounts,
+                  },
                 },
               }) + '\n',
             ),
@@ -384,13 +424,37 @@ export async function GET(req: NextRequest) {
     reason: string
     status: number | null
   }> = []
+  const rateLimited: Array<{
+    id: string
+    provider: string
+    url: string
+    videoId?: string
+    title?: string | null
+    reason: string
+    status: number | null
+  }> = []
   const providerCounts: Record<string, number> = {}
+  const rateLimitedCounts: Record<string, number> = {}
   let checked = 0
 
   for (const doc of docs) {
     checked += 1
     const provider = normalizeProvider(doc.provider)
     const result = await checkVideo(doc)
+    if (result.status === 429 || result.reason === 'rate-limited' || result.kind === 'rate-limited') {
+      rateLimitedCounts[provider] = (rateLimitedCounts[provider] || 0) + 1
+      rateLimited.push({
+        id: doc._id.toHexString(),
+        provider,
+        url: doc.url || '',
+        videoId: doc.videoId || undefined,
+        title: doc.title ?? null,
+        reason: result.reason || 'rate-limited',
+        status: result.status ?? null,
+      })
+      continue
+    }
+
     if (!result.obsolete) continue
 
     providerCounts[provider] = (providerCounts[provider] || 0) + 1
@@ -411,9 +475,18 @@ export async function GET(req: NextRequest) {
     skip,
     checked,
     obsolete,
+    rateLimited,
     counts: {
       total: obsolete.length,
       providers: providerCounts,
+      obsolete: {
+        total: obsolete.length,
+        providers: providerCounts,
+      },
+      rateLimited: {
+        total: rateLimited.length,
+        providers: rateLimitedCounts,
+      },
     },
   })
 }

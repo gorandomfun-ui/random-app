@@ -7,6 +7,7 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { useCookieConsent } from '@/components/CookieConsent'
 import AadsInlineContentAd from '@/components/AadsInlineContentAd'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
+import MiniGameCard from '@/components/minigames/MiniGameCard'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ShareMenu from '@/components/ShareMenu'
@@ -15,12 +16,14 @@ import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
+import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType } from '@/lib/random/types'
 import type {
   FactItem,
   FactQuizItem,
   DisplayItem,
   EncourageItem as EncourageContentItem,
+  MiniGameId,
   RandomContentItem,
   SourceInfo,
   VideoItem as VideoContentItem,
@@ -61,6 +64,7 @@ const ENCOURAGE_INTERVALS = [22, 24, 28, 24, 26, 28]
 const PRELOAD_TARGET_PER_TYPE = 4
 const RECENT_SESSION_LIMIT = 10
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
+const MINI_GAME_FREQUENCY = 3
 
 const FALLBACK_ENCOURAGE_MESSAGES = [
   'Keep exploring forward.',
@@ -158,6 +162,7 @@ function shortenText(text: string, maxWords: number) {
 
 function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage') return null
+  if (item.type === 'minigame') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
 
   const baseSource: SourceInfo = item.source ?? null
@@ -835,6 +840,17 @@ function ContentRenderer({
     )
   }
 
+  if (item.type === 'minigame') {
+    return (
+      <div
+        className="h-full w-full px-4"
+        style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+      >
+        <MiniGameCard item={item} theme={theme} />
+      </div>
+    )
+  }
+
   if (item.type === 'web') {
     const href = item.url
     let host = item.host || ''
@@ -1114,6 +1130,24 @@ export default function RandomExperiencePage({
 
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
+  const miniGameStateRef = useRef<{
+    totalContent: number
+    jokeDisplays: number
+    gamesServed: number
+    pool: MiniGameId[]
+    gameLevels: Record<MiniGameId, number>
+    globalLevel: number
+    gamesAtCurrentLevel: number
+  }>({
+    totalContent: 0,
+    jokeDisplays: 0,
+    gamesServed: 0,
+    pool: shuffleArray([...MINI_GAME_IDS]),
+    gameLevels: Object.create(null) as Record<MiniGameId, number>,
+    globalLevel: 1,
+    gamesAtCurrentLevel: 0,
+  })
+
 const sequenceStateRef = useRef({
   step: 0,
   round: 0,
@@ -1405,6 +1439,7 @@ const sequenceStateRef = useRef({
     if (item.type === 'joke') return ['joke', item.text, item.provider].filter(Boolean).join('|')
     if (item.type === 'fact') return ['fact', item.text, item.provider].filter(Boolean).join('|')
     if (item.type === 'web') return ['web', item.url, item.text, item.host].filter(Boolean).join('|')
+    if (item.type === 'minigame') return ['minigame', item.gameId, item.level, item.seed].join('|')
     return `other:${JSON.stringify(item)}`
   }, [])
 
@@ -1548,6 +1583,32 @@ const sequenceStateRef = useRef({
   }, [getContentKey, isRecentKey, locale])
 
   const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
+    if (type === 'joke' && MINI_GAME_FREQUENCY > 0) {
+      const state = miniGameStateRef.current
+      const upcoming = state.jokeDisplays + 1
+      if (upcoming % MINI_GAME_FREQUENCY === 0) {
+        if (!state.pool.length) {
+          state.pool = shuffleArray([...MINI_GAME_IDS])
+        }
+        const id = state.pool.shift() ?? MINI_GAME_IDS[0]
+        const gameLevel = state.gameLevels[id] ?? state.globalLevel
+        const level = Math.max(state.globalLevel, gameLevel)
+        const nextLevel = Math.min(level + 1, 20)
+        state.gameLevels = {
+          ...state.gameLevels,
+          [id]: nextLevel,
+        }
+        state.gamesAtCurrentLevel += 1
+        if (state.gamesAtCurrentLevel >= 4) {
+          state.globalLevel = Math.min(state.globalLevel + 1, 20)
+          state.gamesAtCurrentLevel = 0
+        }
+        const miniGame = createMiniGameItem({ id, level })
+        ensureQueue(type).catch(() => undefined)
+        return miniGame
+      }
+    }
+
     await ensureQueue(type, 1)
 
     let candidate: RandomContentItem | undefined
@@ -1626,6 +1687,7 @@ const sequenceStateRef = useRef({
 
     let slot: SequenceSlot | null = null
     let prevState: typeof sequenceStateRef.current | null = null
+    let contentItem: RandomContentItem | null = null
 
     try {
       prevState = { ...sequenceStateRef.current }
@@ -1645,9 +1707,24 @@ const sequenceStateRef = useRef({
           setLiked(false)
           return
         }
+        contentItem = item
         setCurrentItem(item)
-        setLiked(isLiked(item))
+        if (item.type === 'minigame') {
+          setLiked(false)
+        } else {
+          setLiked(isLiked(item))
+        }
         outcome = 'content'
+      }
+      if (outcome === 'content' && contentItem) {
+        const state = miniGameStateRef.current
+        state.totalContent += 1
+        if (contentItem.type === 'minigame') {
+          state.jokeDisplays += 1
+          state.gamesServed += 1
+        } else if (contentItem.type === 'joke') {
+          state.jokeDisplays += 1
+        }
       }
       updateTheme()
       playRandom()
@@ -1686,7 +1763,7 @@ const sequenceStateRef = useRef({
 
   useEffect(() => {
     const current = currentItem
-    if (current && current.type !== 'encourage') {
+    if (current && current.type !== 'encourage' && current.type !== 'minigame') {
       setLiked(isLiked(current))
     } else {
       setLiked(false)
@@ -1726,8 +1803,11 @@ const sequenceStateRef = useRef({
   const viewItem = currentItem
   const shouldShowInlineAd = adsAllowed && inlineAdActive && !loading
   const isEncourage = !shouldShowInlineAd && viewItem?.type === 'encourage'
-  const categoryType: ItemType | null =
-    shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' ? null : viewItem.type
+  const categoryType: ItemType | null = useMemo(() => {
+    if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage') return null
+    if (viewItem.type === 'minigame') return 'joke'
+    return viewItem.type
+  }, [shouldShowInlineAd, viewItem])
 
   useEffect(() => {
     if ((isEncourage || shouldShowInlineAd) && shareOpen) setShareOpen(false)
@@ -1753,7 +1833,7 @@ const sequenceStateRef = useRef({
   const adHeight = viewportWidth && viewportWidth >= 768 ? 90 : 50
   const adWidth = viewportWidth && viewportWidth >= 768 ? 728 : 320
   const footerPadHeight = adsAllowed ? adHeight : 0
-  const controlsDisabled = shouldShowInlineAd || !viewItem || viewItem.type === 'encourage'
+  const controlsDisabled = shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
 
   useEffect(() => {
     if (!menuOpen) return
@@ -1882,7 +1962,7 @@ const sequenceStateRef = useRef({
             type="button"
             aria-label={likeLabel}
             onClick={() => {
-              if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage') return
+              if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return
               if (liked) {
                 removeLike(viewItem)
                 setLiked(false)

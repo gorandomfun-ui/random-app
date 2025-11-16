@@ -63,6 +63,14 @@
         background: #e04646;
         color: #fff;
       }
+      button.ghost {
+        background: #fff;
+        color: #333;
+        border: 1px solid #d4d4d4;
+      }
+      button.ghost:not(:disabled):hover {
+        background: #f5f5f5;
+      }
       button:disabled {
         opacity: 0.55;
         cursor: not-allowed;
@@ -91,11 +99,51 @@
         list-style: none;
         font-size: 14px;
       }
-      .video-list {
-        display: grid;
-        gap: 10px;
+      .summary-list.muted {
+        color: #5f646c;
+      }
+      #list {
         max-height: 55vh;
         overflow-y: auto;
+        padding-right: 4px;
+      }
+      .list-section {
+        margin-bottom: 24px;
+      }
+      .list-section:last-child {
+        margin-bottom: 0;
+      }
+      .list-section h2 {
+        font-size: 18px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .list-section.rate-limited h2 {
+        color: #7b4c0d;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        font-size: 12px;
+        border-radius: 999px;
+        background: #e6ecf4;
+        color: #2d3a4b;
+      }
+      .list-section.rate-limited .badge {
+        background: #f7e5c7;
+        color: #7b4c0d;
+      }
+      .note {
+        font-size: 13px;
+        color: #5a5f66;
+        margin-bottom: 12px;
+      }
+      .list-section .video-list {
+        display: grid;
+        gap: 10px;
       }
       details.video-item {
         background: #fff;
@@ -144,9 +192,34 @@
           color: #f1f1f1;
           border-color: #2a2d33;
         }
+        button.ghost {
+          background: #15181d;
+          color: #f1f1f1;
+          border-color: #2a2d33;
+        }
+        button.ghost:not(:disabled):hover {
+          background: #1e2229;
+        }
         .summary {
           background: #161a1f;
           border-color: #22272f;
+        }
+        .summary-list.muted {
+          color: #9da3af;
+        }
+        .list-section.rate-limited h2 {
+          color: #f3c37a;
+        }
+        .badge {
+          background: #2a3140;
+          color: #c5ccda;
+        }
+        .list-section.rate-limited .badge {
+          background: #3a2a15;
+          color: #f3c37a;
+        }
+        .note {
+          color: #adb3c0;
         }
         details.video-item {
           background: #161a1f;
@@ -168,12 +241,13 @@
 
       <div class="controls">
         <button id="scanBtn" class="primary" type="button">Scan all videos</button>
-        <button id="deleteBtn" class="danger" type="button" disabled>Delete obsolete videos</button>
+        <button id="deleteBtn" class="danger" type="button" disabled>Delete confirmed obsolete</button>
+        <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>Delete 429 items (use sparingly)</button>
       </div>
 
       <div id="status" class="status"></div>
       <div id="summary" class="summary hidden"></div>
-      <div id="list" class="video-list"></div>
+      <div id="list"></div>
     </main>
 
     <script type="module">
@@ -182,6 +256,7 @@
       const listEl = document.getElementById('list')
       const scanBtn = document.getElementById('scanBtn')
       const deleteBtn = document.getElementById('deleteBtn')
+      const deleteRateLimitedBtn = document.getElementById('deleteRateLimitedBtn')
 
       let adminKey = ''
       let busy = false
@@ -194,10 +269,73 @@
       }
       document.body.dataset.key = adminKey
 
+      function normalizeCounts(rawCounts) {
+        const counts = rawCounts && typeof rawCounts === 'object' ? rawCounts : {}
+        const obsolete = counts.obsolete && typeof counts.obsolete === 'object' ? counts.obsolete : {}
+        const rateLimited = counts.rateLimited && typeof counts.rateLimited === 'object' ? counts.rateLimited : {}
+        return {
+          total:
+            typeof counts.total === 'number'
+              ? counts.total
+              : typeof obsolete.total === 'number'
+                ? obsolete.total
+                : 0,
+          providers:
+            counts.providers && typeof counts.providers === 'object'
+              ? counts.providers
+              : obsolete.providers && typeof obsolete.providers === 'object'
+                ? obsolete.providers
+                : {},
+          obsolete: {
+            total:
+              typeof obsolete.total === 'number'
+                ? obsolete.total
+                : typeof counts.total === 'number'
+                  ? counts.total
+                  : 0,
+            providers:
+              obsolete.providers && typeof obsolete.providers === 'object'
+                ? obsolete.providers
+                : counts.providers && typeof counts.providers === 'object'
+                  ? counts.providers
+                  : {},
+          },
+          rateLimited: {
+            total: typeof rateLimited.total === 'number' ? rateLimited.total : 0,
+            providers:
+              rateLimited.providers && typeof rateLimited.providers === 'object'
+                ? rateLimited.providers
+                : {},
+          },
+        }
+      }
+
+      function updateActionButtons(forceDisable = false) {
+        const disable = forceDisable || busy
+        const obsoleteCount = lastResult?.obsolete?.length ?? 0
+        const rateLimitedCount = lastResult?.rateLimited?.length ?? 0
+        deleteBtn.disabled = disable || !obsoleteCount
+        deleteRateLimitedBtn.disabled = disable || !rateLimitedCount
+      }
+
+      function buildCompletionMessage(result) {
+        if (!result) return ''
+        const obsoleteCount = result.obsolete?.length ?? 0
+        const rateLimitedCount = result.rateLimited?.length ?? 0
+        let message = 'Done.'
+        message += obsoleteCount
+          ? ` ${obsoleteCount} obsolete video${obsoleteCount > 1 ? 's' : ''} detected.`
+          : ' No confirmed obsolete videos.'
+        if (rateLimitedCount) {
+          message += ` ${rateLimitedCount} item${rateLimitedCount > 1 ? 's' : ''} hit HTTP 429.`
+        }
+        return message
+      }
+
       function setBusy(state) {
         busy = state
         scanBtn.disabled = state
-        deleteBtn.disabled = state || !(lastResult && lastResult.obsolete && lastResult.obsolete.length)
+        updateActionButtons(state)
         if (state) {
           statusEl.textContent = 'Scanning…'
         }
@@ -210,68 +348,111 @@
           return
         }
         summaryEl.classList.remove('hidden')
-        const total = data.counts?.total || 0
-        const providers = data.counts?.providers || {}
-        const providerEntries = Object.entries(providers)
+        const counts = normalizeCounts(data.counts)
+        const obsoleteTotal = counts.obsolete.total
+        const obsoleteProviders = counts.obsolete.providers || {}
+        const rateLimitedTotal = counts.rateLimited.total
+        const rateLimitedProviders = counts.rateLimited.providers || {}
         const duration =
           typeof data.durationMs === 'number'
             ? (data.durationMs / 1000).toFixed(data.durationMs >= 10000 ? 0 : 1)
             : null
+        const stats = [
+          `<strong>Checked:</strong> ${data.checked}`,
+          data.errors ? `<strong>Errors:</strong> ${data.errors}` : null,
+          `<strong>Obsolete:</strong> ${obsoleteTotal}`,
+          rateLimitedTotal ? `<strong>429:</strong> ${rateLimitedTotal}` : null,
+        ]
+          .filter(Boolean)
+          .join(' • ')
+        const obsoleteList = obsoleteTotal
+          ? `<ul class="summary-list">${Object.entries(obsoleteProviders)
+              .map(([name, value]) => `<li><strong>${name}</strong>: ${value}</li>`)
+              .join('')}</ul>`
+          : '<p>No confirmed obsolete videos.</p>'
+        const rateLimitedList = rateLimitedTotal
+          ? `<div class="summary-rate-limited">
+              <div class="note">HTTP 429 items were held back from deletion. Retry once the rate limit cools down.</div>
+              ${
+                Object.entries(rateLimitedProviders).length
+                  ? `<ul class="summary-list muted">${Object.entries(rateLimitedProviders)
+                      .map(([name, value]) => `<li><strong>${name}</strong>: ${value}</li>`)
+                      .join('')}</ul>`
+                  : ''
+              }
+            </div>`
+          : ''
         summaryEl.innerHTML = `
-          <div>
-            <strong>Checked:</strong> ${data.checked}
-            ${data.errors ? `• <strong>Errors:</strong> ${data.errors}` : ''}
-            • <strong>Obsolete:</strong> ${total}
-          </div>
-          ${
-            duration
-              ? `<div><strong>Duration:</strong> ${duration}s</div>`
-              : ''
-          }
-          ${providerEntries.length
-            ? `<ul class="summary-list">${providerEntries
-                .map(([name, value]) => `<li><strong>${name}</strong>: ${value}</li>`)
-                .join('')}</ul>`
-            : '<p>No obsolete videos detected.</p>'}
+          <div>${stats}</div>
+          ${duration ? `<div><strong>Duration:</strong> ${duration}s</div>` : ''}
+          ${obsoleteList}
+          ${rateLimitedList}
         `
       }
 
       function renderList(data) {
-        if (!data?.obsolete?.length) {
+        const obsoleteItems = Array.isArray(data?.obsolete) ? data.obsolete : []
+        const rateLimitedItems = Array.isArray(data?.rateLimited) ? data.rateLimited : []
+        const renderItems = (items) =>
+          items
+            .map((item) => {
+              const safeReason = item.reason ? item.reason.replace(/</g, '&lt;') : 'unknown'
+              const safeTitle = item.title ? item.title.replace(/</g, '&lt;') : ''
+              const urlLink = item.url
+                ? `<a href="${item.url}" target="_blank" rel="noreferrer">${item.url}</a>`
+                : '<em>No URL</em>'
+              const videoId = item.videoId ? `<div>videoId: <code>${item.videoId}</code></div>` : ''
+              const status = item.status != null ? `<div>Status: ${item.status}</div>` : ''
+              const titleLine = safeTitle ? `<div>Title: ${safeTitle}</div>` : ''
+              return `
+                <details class="video-item">
+                  <summary>
+                    <span>${item.provider}</span>
+                    <span class="meta">
+                      <span>${safeReason}</span>
+                      ${item.status != null ? `<span>${item.status}</span>` : ''}
+                    </span>
+                  </summary>
+                  <div class="body">
+                    <div>ID: <code>${item.id}</code></div>
+                    ${titleLine}
+                    ${videoId}
+                    ${status}
+                    <div style="margin-top:6px;">${urlLink}</div>
+                  </div>
+                </details>
+              `
+            })
+            .join('')
+
+        const obsoleteSection = `
+          <section class="list-section">
+            <h2>Confirmed obsolete <span class="badge">${obsoleteItems.length}</span></h2>
+            ${
+              obsoleteItems.length
+                ? `<div class="video-list">${renderItems(obsoleteItems)}</div>`
+                : '<p class="note">No confirmed obsolete videos.</p>'
+            }
+          </section>
+        `
+
+        const rateLimitedSection = `
+          <section class="list-section rate-limited">
+            <h2>HTTP 429 (rate limited) <span class="badge">${rateLimitedItems.length}</span></h2>
+            <p class="note">These URLs returned HTTP 429 (Too Many Requests). Wait before retrying or deleting them.</p>
+            ${
+              rateLimitedItems.length
+                ? `<div class="video-list">${renderItems(rateLimitedItems)}</div>`
+                : ''
+            }
+          </section>
+        `
+
+        if (!obsoleteItems.length && !rateLimitedItems.length) {
           listEl.innerHTML = ''
           return
         }
-        const items = data.obsolete
-          .map((item) => {
-            const safeReason = item.reason ? item.reason.replace(/</g, '&lt;') : 'unknown'
-            const safeTitle = item.title ? item.title.replace(/</g, '&lt;') : ''
-            const urlLink = item.url
-              ? `<a href="${item.url}" target="_blank" rel="noreferrer">${item.url}</a>`
-              : '<em>No URL</em>'
-            const videoId = item.videoId ? `<div>videoId: <code>${item.videoId}</code></div>` : ''
-            const status = item.status != null ? `<div>Status: ${item.status}</div>` : ''
-            const titleLine = safeTitle ? `<div>Title: ${safeTitle}</div>` : ''
-            return `
-              <details class="video-item">
-                <summary>
-                  <span>${item.provider}</span>
-                  <span class="meta">
-                    <span>${safeReason}</span>
-                    ${item.status != null ? `<span>${item.status}</span>` : ''}
-                  </span>
-                </summary>
-                <div class="body">
-                  <div>ID: <code>${item.id}</code></div>
-                  ${titleLine}
-                  ${videoId}
-                  ${status}
-                  <div style="margin-top:6px;">${urlLink}</div>
-                </div>
-              </details>
-            `
-          })
-          .join('')
-        listEl.innerHTML = items
+        listEl.innerHTML = `${obsoleteSection}${rateLimitedSection}`
       }
 
       async function scanVideos() {
@@ -319,20 +500,20 @@
                   statusEl.textContent = progressMessage
                 } else if (payload.type === 'done') {
                   completed = true
+                  const counts = normalizeCounts(payload.counts)
                   const result = {
                     checked: payload.checked || 0,
                     errors: payload.errors || 0,
                     durationMs: payload.durationMs || 0,
                     obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
-                    counts: payload.counts || { total: 0, providers: {} },
+                    rateLimited: Array.isArray(payload.rateLimited) ? payload.rateLimited : [],
+                    counts,
                   }
                   lastResult = result
                   renderSummary(result)
                   renderList(result)
-                  deleteBtn.disabled = !(result.obsolete.length)
-                  statusEl.textContent = result.obsolete.length
-                    ? `Done. ${result.obsolete.length} obsolete video${result.obsolete.length > 1 ? 's' : ''} detected.`
-                    : 'Done. No obsolete videos detected.'
+                  updateActionButtons()
+                  statusEl.textContent = buildCompletionMessage(result)
                   await reader.cancel()
                   break
                 } else if (payload.type === 'error') {
@@ -351,20 +532,20 @@
               try {
                 const payload = JSON.parse(trimmed)
                 if (payload.type === 'done') {
+                  const counts = normalizeCounts(payload.counts)
                   const result = {
                     checked: payload.checked || 0,
                     errors: payload.errors || 0,
                     durationMs: payload.durationMs || 0,
                     obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
-                    counts: payload.counts || { total: 0, providers: {} },
+                    rateLimited: Array.isArray(payload.rateLimited) ? payload.rateLimited : [],
+                    counts,
                   }
                   lastResult = result
                   renderSummary(result)
                   renderList(result)
-                  deleteBtn.disabled = !(result.obsolete.length)
-                  statusEl.textContent = result.obsolete.length
-                    ? `Done. ${result.obsolete.length} obsolete video${result.obsolete.length > 1 ? 's' : ''} detected.`
-                    : 'Done. No obsolete videos detected.'
+                  updateActionButtons()
+                  statusEl.textContent = buildCompletionMessage(result)
                 } else if (payload.type === 'error') {
                   throw new Error(payload.message || 'Scan failed.')
                 }
@@ -383,7 +564,6 @@
           lastResult = null
           summaryEl.classList.add('hidden')
           listEl.innerHTML = ''
-          deleteBtn.disabled = true
         } finally {
           setBusy(false)
         }
@@ -413,14 +593,51 @@
           if (!res.ok) {
             throw new Error(data?.error || res.statusText)
           }
-          statusEl.textContent = `Deleted ${data?.deleted ?? 0} videos.`
+          const deleted = data?.deleted ?? 0
+          statusEl.textContent = `Deleted ${deleted} obsolete video${deleted === 1 ? '' : 's'}.`
           lastResult = null
-          deleteBtn.disabled = true
           summaryEl.classList.add('hidden')
           listEl.innerHTML = ''
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           statusEl.textContent = `Delete failed: ${message}`
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      async function deleteRateLimitedVideos() {
+        if (!lastResult?.rateLimited?.length) return
+        if (!adminKey) {
+          alert('Missing admin ingest key.')
+          return
+        }
+        const count = lastResult.rateLimited.length
+        const confirmMessage = `Delete ${count} rate-limited item${count > 1 ? 's' : ''}? They responded with HTTP 429 and may still be valid.`
+        if (!window.confirm(confirmMessage)) return
+
+        setBusy(true)
+        try {
+          const res = await fetch('/api/tools/videos/obsolete', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-ingest-key': adminKey,
+            },
+            body: JSON.stringify({ ids: lastResult.rateLimited.map((item) => item.id) }),
+          })
+          const data = await res.json()
+          if (!res.ok) {
+            throw new Error(data?.error || res.statusText)
+          }
+          const deleted = data?.deleted ?? 0
+          statusEl.textContent = `Deleted ${deleted} rate-limited item${deleted === 1 ? '' : 's'}.`
+          lastResult = null
+          summaryEl.classList.add('hidden')
+          listEl.innerHTML = ''
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Delete (429) failed: ${message}`
         } finally {
           setBusy(false)
         }
@@ -432,6 +649,10 @@
 
       deleteBtn.addEventListener('click', () => {
         if (!busy) deleteVideos()
+      })
+
+      deleteRateLimitedBtn.addEventListener('click', () => {
+        if (!busy) deleteRateLimitedVideos()
       })
     </script>
   </body>

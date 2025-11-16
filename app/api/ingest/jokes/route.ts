@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
-import { createJokeDocument, type JokeDocument } from '@/lib/random/jokes'
+import { createJokeDocument, looksLikeCategoryLabel, type JokeDocument } from '@/lib/random/jokes'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
 
 /* =========================== DB =========================== */
@@ -37,6 +37,21 @@ type JokeDoc = JokeDocument & {
 
 const norm = (v?: string | null) => (v || '').replace(/\s+/g, ' ').trim()
 const jokeHash = (text: string) => createHash('sha1').update(norm(text)).digest('hex')
+const NON_JOKE_KEYWORDS = [/privacy/i, /terms?/i, /cookies?/i, /notice/i, /recipes?/i, /categories?/i, /subscribe/i, /newsletter/i]
+
+function isLikelyJokeText(value: string): boolean {
+  const text = norm(value)
+  if (!text) return false
+  if (looksLikeCategoryLabel(text)) return false
+  if (text.length < 24 || text.length > 420) return false
+  const words = text.split(/\s+/).filter(Boolean)
+  if (words.length < 5) return false
+  if (/https?:\/\//i.test(text)) return false
+  if (/^[A-Z0-9\s]+$/.test(text)) return false
+  if (!/[.!?]/.test(text) && !text.includes('?') && !text.includes('!') && !text.includes(',')) return false
+  if (NON_JOKE_KEYWORDS.some((regex) => regex.test(text)) && words.length <= 12) return false
+  return true
+}
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object') return value as Record<string, unknown>
@@ -87,7 +102,7 @@ async function pullJokesDataset(limit: number) {
       const body = typeof row.body === 'string' ? row.body : ''
       const jokeText = typeof row.joke === 'string' ? row.joke : ''
       const text = norm(body || jokeText)
-      if (!text) return null
+      if (!text || !isLikelyJokeText(text)) return null
       const link = typeof row.link === 'string' ? row.link : undefined
       const base = createJokeDocument({
         text,
@@ -111,7 +126,7 @@ async function pullFunnyQuotes(limit: number) {
       const quote = typeof row.quote === 'string' ? row.quote : ''
       const joke = typeof row.joke === 'string' ? row.joke : ''
       const text = norm(quote || joke)
-      if (!text) return null
+      if (!text || !isLikelyJokeText(fullText)) return null
       const author = norm(typeof row.author === 'string' ? row.author : '')
       const fullText = author ? `${text} — ${author}` : text
       const base = createJokeDocument({
@@ -136,6 +151,7 @@ function collectJokeCandidates($: CheerioRoot, selectors: string[]): string[] {
       const text = norm($(element).text())
       if (!text) return
       if (text.length < 10 || text.length > 320) return
+      if (!isLikelyJokeText(text)) return
       if (seen.has(text)) return
       seen.add(text)
       out.push(text)
@@ -161,7 +177,7 @@ async function scrapeBeano(limit: number): Promise<JokeDoc[]> {
     const $ = cheerio.load(html)
     const candidates = collectJokeCandidates($, ['.collection-list-item', '.collection-card', 'li', 'p'])
     for (const text of candidates) {
-      if (seen.has(text)) continue
+      if (seen.has(text) || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'beano',
@@ -192,7 +208,7 @@ async function scrapeGoodHousekeeping(limit: number): Promise<JokeDoc[]> {
     const $ = cheerio.load(html)
     const candidates = collectJokeCandidates($, ['ol li', '.body-copy li', '.body-copy p', 'blockquote', 'li', 'p'])
     for (const text of candidates) {
-      if (seen.has(text)) continue
+      if (seen.has(text) || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'goodhousekeeping',
@@ -223,7 +239,7 @@ async function scrapePioneerWoman(limit: number): Promise<JokeDoc[]> {
     const $ = cheerio.load(html)
     const candidates = collectJokeCandidates($, ['.body-text li', '.body-text p', 'ol li', 'li', 'p'])
     for (const text of candidates) {
-      if (seen.has(text)) continue
+      if (seen.has(text) || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'pioneerwoman',
@@ -254,7 +270,7 @@ async function scrapeJokesOfTheDay(limit: number): Promise<JokeDoc[]> {
     const $ = cheerio.load(html)
     const candidates = collectJokeCandidates($, ['.joke', '.joke-text', '.entry-content p', 'article p', 'li', 'p'])
     for (const text of candidates) {
-      if (seen.has(text)) continue
+      if (seen.has(text) || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'jokesoftheday',
@@ -283,7 +299,7 @@ async function pullOfficialJokeApi(limit: number) {
       const setup = norm(typeof entry.setup === 'string' ? entry.setup : '')
       const punchline = norm(typeof entry.punchline === 'string' ? entry.punchline : '')
       const text = punchline ? `${setup} ${setup ? '— ' : ''}${punchline}`.trim() : setup
-      if (!text) continue
+      if (!text || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'official-joke-api',
@@ -314,7 +330,7 @@ async function pullIcanHazDadJoke(limit: number): Promise<JokeDoc[]> {
     if (!results.length) break
     for (const entry of results) {
       const text = norm(entry?.joke || '')
-      if (!text) continue
+      if (!text || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'icanhazdadjoke',
@@ -350,7 +366,7 @@ async function pullJokeApi(limit: number): Promise<JokeDoc[]> {
       const delivery = norm(entry.delivery || '')
       const single = norm(entry.joke || '')
       const text = single || (delivery ? `${setup}${setup ? ' — ' : ''}${delivery}` : setup)
-      if (!text) continue
+      if (!text || !isLikelyJokeText(text)) continue
       const base = createJokeDocument({
         text,
         provider: 'jokeapi',

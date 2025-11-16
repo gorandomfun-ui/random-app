@@ -9,6 +9,7 @@ import type {
   FactTextItem,
   ImageItem,
   JokeItem,
+  MiniGameItem,
   QuoteItem,
   RandomContentItem,
   VideoItem,
@@ -16,6 +17,7 @@ import type {
 } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useScore } from '@/providers/ScoreProvider'
+import MiniGameCard from './minigames/MiniGameCard'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
@@ -139,6 +141,10 @@ export default function RandomContentRenderer({
 
   if (item.type === 'video') {
     return <Video block={item as VideoItem} theme={theme} />
+  }
+
+  if (item.type === 'minigame') {
+    return <MiniGameCard item={item as MiniGameItem} theme={theme} />
   }
 
   // Fallback très simple (au cas où)

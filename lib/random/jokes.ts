@@ -28,7 +28,10 @@ const BLOCKED_PATTERNS: RegExp[] = [
 const CATEGORY_PATTERNS: RegExp[] = [
   /^(short|best|funny|silly|corny|clean|halloween|christmas|holiday|kids?|child|family|knock[-\s]?knock|dad|one-liner|animal|school)\s+(jokes?|pranks?|puns?|stories|one-liners?)$/i,
   /^(jokes?|pranks?|puns?|one-liners?)\s*(for|about)\s+[a-z\s]{1,40}$/i,
+  /^food\s*\+\s*recipes$/i,
+  /^science\s+fiction\s+jokes!?$/i,
 ]
+const NON_CONTENT_KEYWORDS = ['privacy', 'terms', 'cookies', 'notice', 'contact', 'subscribe', 'newsletter']
 
 const JOKE_TOPIC_SEEDS: Record<string, string[]> = {
   knock: ['knock', 'door'],
@@ -250,7 +253,7 @@ export async function selectJoke(): Promise<JokeItem | null> {
   }
 }
 
-function looksLikeCategoryLabel(text: string): boolean {
+export function looksLikeCategoryLabel(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
   if (CATEGORY_PATTERNS.some((pattern) => pattern.test(trimmed))) return true
@@ -258,9 +261,12 @@ function looksLikeCategoryLabel(text: string): boolean {
   const wordCount = trimmed.split(/\s+/).filter(Boolean).length
   const hasPunctuation = /[.!?]/.test(trimmed)
   const hasJokeKeyword = /\b(jokes?|pranks?|puns?|one-liners?)\b/i.test(trimmed)
+  const lower = trimmed.toLowerCase()
 
   if (!hasPunctuation && hasJokeKeyword && wordCount <= 4) return true
   if (!hasPunctuation && !hasJokeKeyword && wordCount <= 2) return true
+  if (!hasPunctuation && NON_CONTENT_KEYWORDS.some((keyword) => lower.includes(keyword))) return true
+  if (!hasPunctuation && /\brecipes?\b/i.test(trimmed) && wordCount <= 4) return true
 
   return false
 }
