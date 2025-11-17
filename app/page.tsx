@@ -25,7 +25,6 @@ import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
-import ScoreCounter from '@/components/ScoreCounter'
 import { setMuted } from '@/utils/sound'
 import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
