@@ -7,6 +7,7 @@ import {
 } from './definitions'
 import { useI18n } from '@/providers/I18nProvider'
 import { formatI18n } from '@/lib/i18n/format'
+import { useScore } from '@/providers/ScoreProvider'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
@@ -47,6 +48,7 @@ const subtleButtonStyle: CSSProperties = {
 
 export default function MiniGameCard({ item, theme }: { item: MiniGameItem; theme: Theme }) {
   const { t } = useI18n()
+  const { addPoints } = useScore()
   const definition = useMemo<MiniGameDefinition | null>(
     () => getMiniGameDefinition(item.gameId) ?? null,
     [item.gameId],
@@ -79,10 +81,18 @@ export default function MiniGameCard({ item, theme }: { item: MiniGameItem; them
     setState('intro')
   }, [])
 
-  const onComplete = useCallback((payload: MiniGameResult) => {
-    setResult(payload)
-    setState('result')
-  }, [])
+  const rewardForLevel = useCallback(() => Math.max(5, 4 + Math.max(1, Math.round(item.level || 1))), [item.level])
+
+  const onComplete = useCallback(
+    (payload: MiniGameResult) => {
+      setResult(payload)
+      setState('result')
+      if (payload.outcome === 'win') {
+        addPoints(rewardForLevel())
+      }
+    },
+    [addPoints, rewardForLevel],
+  )
 
   if (!definition) {
     return (

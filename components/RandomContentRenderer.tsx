@@ -171,7 +171,7 @@ function AiAttribution({ item, theme }: { item: QuoteItem | JokeItem | FactTextI
 export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme }) {
   const [selected, setSelected] = useState<number | null>(null)
   const [revealed, setRevealed] = useState(false)
-  const { addAction } = useScore()
+  const { addAction, addPoints } = useScore()
 
   const allCorrectIndices = useMemo(() => {
     if (Array.isArray(item.correctIndices) && item.correctIndices.length) {
@@ -188,6 +188,11 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     [allCorrectIndices, item.options],
   )
 
+  const quizReward = useMemo(() => {
+    const map: Record<string, number> = { easy: 2, medium: 4, hard: 6 }
+    return map[item.difficulty ?? ''] ?? 2
+  }, [item.difficulty])
+
   useEffect(() => {
     setSelected(null)
     setRevealed(false)
@@ -200,6 +205,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     setRevealed(true)
     if (correct) {
       addAction('quizSuccess')
+      addPoints(quizReward)
     }
   }
 

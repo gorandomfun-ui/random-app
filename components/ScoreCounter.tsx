@@ -82,7 +82,7 @@ export default function ScoreCounter({ variant = 'home', className = '', style }
       data-variant={variant}
       style={style}
     >
-      <span className="score-counter__label">Score :</span>
+      <span className="score-counter__label">XP :</span>
       <span className="score-counter__value">{score}</span>
 
       {activeDiamonds.map((diamond) => (

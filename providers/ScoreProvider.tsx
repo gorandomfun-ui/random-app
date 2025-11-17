@@ -1,6 +1,14 @@
 'use client'
 
-import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
 
 type ScoreAction = 'random' | 'encourage' | 'quizSuccess' | 'diamond'
 
@@ -14,18 +22,58 @@ type ScoreContextValue = {
   diamonds: DiamondEvent[]
 }
 
+const STORAGE_KEY = 'xp-session-total'
+
 const ScoreContext = createContext<ScoreContextValue | undefined>(undefined)
 
 export function ScoreProvider({ children }: { children: ReactNode }) {
+  const [score, setScore] = useState(0)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY)
+      if (stored != null) {
+        const parsed = parseInt(stored, 10)
+        if (!Number.isNaN(parsed)) {
+          setScore(parsed)
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const persistScore = useCallback((value: number) => {
+    if (typeof window === 'undefined') return
+    try {
+      sessionStorage.setItem(STORAGE_KEY, String(value))
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const addPoints = useCallback(
+    (amount: number) => {
+      if (!amount || Number.isNaN(amount)) return
+      setScore((prev) => {
+        const next = Math.max(0, Math.round(prev + amount))
+        persistScore(next)
+        return next
+      })
+    },
+    [persistScore],
+  )
+
   const value = useMemo<ScoreContextValue>(
     () => ({
-      score: 0,
+      score,
       addAction: () => undefined,
-      addPoints: () => undefined,
+      addPoints,
       maybeSpawnDiamond: () => false,
       diamonds: [],
     }),
-    [],
+    [addPoints, score],
   )
 
   return <ScoreContext.Provider value={value}>{children}</ScoreContext.Provider>

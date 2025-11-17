@@ -10,6 +10,7 @@ import { FactQuizCard } from '@/components/RandomContentRenderer'
 import MiniGameCard from '@/components/minigames/MiniGameCard'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
+import ScoreCounter from '@/components/ScoreCounter'
 import ShareMenu from '@/components/ShareMenu'
 import ShufflePicker from '@/components/ShufflePicker'
 import { useI18n } from '@/providers/I18nProvider'
@@ -29,7 +30,7 @@ import type {
   VideoItem as VideoContentItem,
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
-import { playAgain, playRandom } from '@/utils/sound'
+import { playAgain, playRandom, setMuted } from '@/utils/sound'
 import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 const TYPE_ICONS: Record<ItemType, string> = {
@@ -85,6 +86,7 @@ const GLITCH_COLOR_SETS: Array<[string, string, string]> = [
 
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
+const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
 
 type GlitchBar = {
   id: string
@@ -959,6 +961,7 @@ export default function RandomExperiencePage({
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
   const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
+  const [soundMuted, setSoundMuted] = useState(false)
   const adsAllowed = consent?.ads === true
 
   useEffect(() => {
@@ -967,6 +970,42 @@ export default function RandomExperiencePage({
       footerAdCounterRef.current = 0
     }
   }, [adsAllowed])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const readSoundPref = () => {
+      try {
+        return localStorage.getItem(SOUND_STORAGE_KEY) === 'true'
+      } catch {
+        return false
+      }
+    }
+    const initial = readSoundPref()
+    setSoundMuted(initial)
+    setMuted(initial)
+    const handler = (event: StorageEvent) => {
+      if (event.key === SOUND_STORAGE_KEY && event.newValue != null) {
+        const next = event.newValue === 'true'
+        setSoundMuted(next)
+        setMuted(next)
+      }
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+
+  const toggleSound = () => {
+    setSoundMuted((prev) => {
+      const next = !prev
+      setMuted(next)
+      try {
+        localStorage.setItem(SOUND_STORAGE_KEY, String(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
 
   useEzoicFooterAd(adsAllowed)
   const shouldForceMutedAutoplay = useMemo(() => {
@@ -1830,6 +1869,12 @@ const sequenceStateRef = useRef({
   }, [adLabel, categoryType, navLabels, shouldShowInlineAd])
 
   const categoryIcon = shouldShowInlineAd || !categoryType ? null : TYPE_ICONS[categoryType]
+  const showXpForCategory = useMemo(() => {
+    if (shouldShowInlineAd || !viewItem) return false
+    if (viewItem.type === 'minigame') return true
+    if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
+    return false
+  }, [shouldShowInlineAd, viewItem])
   const adHeight = viewportWidth && viewportWidth >= 768 ? 90 : 50
   const adWidth = viewportWidth && viewportWidth >= 768 ? 728 : 320
   const footerPadHeight = adsAllowed ? adHeight : 0
@@ -1904,17 +1949,31 @@ const sequenceStateRef = useRef({
 
       <div className="px-4 sm:px-6" style={{ marginBottom: '10px' }}>
         {categoryLabel ? (
-          <div
-            className="px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3 text-center"
-            style={{
-              backgroundColor: theme.text,
-              color: theme.cream,
-              fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
-              height: '40px',
-            }}
-          >
-            {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
-            <span>{categoryLabel}</span>
+          <div className="flex gap-[2px]" style={{ height: '40px' }}>
+            <div
+              className="flex-1 px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3"
+              style={{
+                backgroundColor: theme.text,
+                color: theme.cream,
+                fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+              }}
+            >
+              {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
+              <span>{categoryLabel}</span>
+            </div>
+            {showXpForCategory ? (
+              <div
+                className="px-4 flex items-center justify-center"
+                style={{
+                  backgroundColor: theme.cream,
+                  color: '#191916',
+                  minWidth: '96px',
+                  fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+                }}
+              >
+                <ScoreCounter />
+              </div>
+            ) : null}
           </div>
         ) : (
           <div style={{ height: '40px' }} />
@@ -2029,7 +2088,8 @@ const sequenceStateRef = useRef({
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between" style={{ color: theme.cream }}>
+              <ScoreCounter />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -2133,6 +2193,16 @@ const sequenceStateRef = useRef({
                 <span>Add</span>
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
+
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="mt-2 w-full rounded-xl border border-white/25 px-3 py-2 text-sm font-semibold uppercase tracking-[0.15em]"
+                style={{ color: theme.cream }}
+                aria-pressed={!soundMuted}
+              >
+                Sound FX: {soundMuted ? 'Off' : 'On'}
+              </button>
             </nav>
           </div>
         </div>

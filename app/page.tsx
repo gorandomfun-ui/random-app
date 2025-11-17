@@ -17,6 +17,7 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
+import ScoreCounter from '@/components/ScoreCounter'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
@@ -24,10 +25,14 @@ import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
+import ScoreCounter from '@/components/ScoreCounter'
+import { setMuted } from '@/utils/sound'
 import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp'
+
+const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
 
 const randIdx = (max: number) => Math.floor(Math.random() * max)
 const randDiffIdx = (max: number, not: number) => {
@@ -142,6 +147,7 @@ export default function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
+  const [soundMuted, setSoundMuted] = useState(false)
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const theme = THEMES[themeIdx]
@@ -155,6 +161,42 @@ export default function HomePage() {
   useEffect(() => () => {
     if (burgerTimeoutRef.current) clearTimeout(burgerTimeoutRef.current)
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const readSoundPref = () => {
+      try {
+        return localStorage.getItem(SOUND_STORAGE_KEY) === 'true'
+      } catch {
+        return false
+      }
+    }
+    const initial = readSoundPref()
+    setSoundMuted(initial)
+    setMuted(initial)
+    const handler = (event: StorageEvent) => {
+      if (event.key === SOUND_STORAGE_KEY && event.newValue != null) {
+        const next = event.newValue === 'true'
+        setSoundMuted(next)
+        setMuted(next)
+      }
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+
+  const toggleSound = () => {
+    setSoundMuted((prev) => {
+      const next = !prev
+      setMuted(next)
+      try {
+        localStorage.setItem(SOUND_STORAGE_KEY, String(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -596,7 +638,8 @@ export default function HomePage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between" style={{ color: theme.cream }}>
+              <ScoreCounter />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -655,7 +698,7 @@ export default function HomePage() {
                 </button>
                 {languagesOpen ? (
                   <ul className="space-y-2 text-base font-semibold">
-                    {langs.map((lang) => {
+                {langs.map((lang) => {
                       const active = (locale || 'en') === lang
                       return (
                         <li key={lang}>
@@ -682,6 +725,16 @@ export default function HomePage() {
                 ) : null}
               </div>
 
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="mt-2 w-full rounded-xl border border-white/25 px-3 py-2 text-sm font-semibold uppercase tracking-[0.15em]"
+                style={{ color: theme.cream }}
+                aria-pressed={!soundMuted}
+              >
+                Sound FX: {soundMuted ? 'Off' : 'On'}
+              </button>
+
               <Link
                 href="/legal"
                 onClick={() => setMenuOpen(false)}
@@ -700,6 +753,16 @@ export default function HomePage() {
                 <span>Add</span>
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
+
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="mt-2 w-full rounded-xl border border-white/25 px-3 py-2 text-sm font-semibold uppercase tracking-[0.15em]"
+                style={{ color: theme.cream }}
+                aria-pressed={!soundMuted}
+              >
+                Sound FX: {soundMuted ? 'Off' : 'On'}
+              </button>
             </nav>
           </div>
         </div>
