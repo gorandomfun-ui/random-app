@@ -93,6 +93,8 @@ export type ImageDocument = {
   type: 'image';
   url: string;
   thumb?: string | null;
+  thumbUrl?: string | null;
+  pageUrl?: string | null;
   provider: ImageProvider;
   source?: SourceRef;
   tags: string[];
