@@ -132,6 +132,37 @@ type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
+type PrefetchedBundle = {
+  lang?: Lang
+  item: RandomContentItem
+}
+
+const buildPrefetchStorageKeys = (lang: Lang | null | undefined, type: ItemType) => {
+  const keys: string[] = []
+  if (lang) keys.push(`${PREFETCH_STORAGE_PREFIX}${lang}-${type}`)
+  keys.push(`${PREFETCH_STORAGE_PREFIX}${type}`)
+  return keys
+}
+
+const parsePrefetchEntry = (raw: string): PrefetchedBundle | null => {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === 'object') {
+      if ('item' in (parsed as Record<string, unknown>)) {
+        const bundle = parsed as { item?: RandomContentItem; lang?: Lang }
+        if (bundle.item && typeof bundle.item === 'object') {
+          return { lang: bundle.lang, item: bundle.item }
+        }
+      } else if ('type' in (parsed as Record<string, unknown>)) {
+        return { item: parsed as RandomContentItem }
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 const shuffleArray = <T,>(arr: T[]): T[] => {
   const copy = [...arr]
   for (let i = copy.length - 1; i > 0; i--) {
@@ -153,6 +184,7 @@ function randDiffIdx(max: number, not: number) {
 }
 
 const RANDOM_INLINE_AD_KEY = 'random.inline.count'
+const PREFETCH_STORAGE_PREFIX = 'random-prefetch-'
 
 function shortenText(text: string, maxWords: number) {
   const words = text.trim().split(/\s+/)
@@ -947,6 +979,7 @@ export default function RandomExperiencePage({
   const [sequenceVersion, setSequenceVersion] = useState(0)
   const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
   const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
+  const currentItemRef = useRef<DisplayItem | null>(null)
   const randomDrawCountRef = useRef(0)
   const [inlineAdActive, setInlineAdActive] = useState(false)
   const footerAdCounterRef = useRef(0)
@@ -954,6 +987,9 @@ export default function RandomExperiencePage({
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(true)
+  const loadPendingRef = useRef(false)
+  const queuedLoadRef = useRef<boolean | null>(null)
+  const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [heartGlitch, setHeartGlitch] = useState(false)
@@ -970,6 +1006,10 @@ export default function RandomExperiencePage({
       footerAdCounterRef.current = 0
     }
   }, [adsAllowed])
+
+  useEffect(() => {
+    currentItemRef.current = currentItem
+  }, [currentItem])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1381,7 +1421,7 @@ const sequenceStateRef = useRef({
     setSequenceVersion((v) => v + 1)
   }, [])
 
-  const getNextSlot = useCallback((): SequenceSlot => {
+  const getNextSlot = useCallback((): SequenceSlot | null => {
     const seq = FIXED_SEQUENCE
     if (!seq.length) return { kind: 'content', itemType: 'image' }
 
@@ -1510,27 +1550,71 @@ const sequenceStateRef = useRef({
     preloadQueuesRef.current[type] = queue.filter((entry) => getContentKey(entry) !== key)
   }, [getContentKey])
 
-  const ensureQueue = useCallback(async (type: ItemType, target = PRELOAD_TARGET_PER_TYPE) => {
+  const drainPrefetchedItems = useCallback((type: ItemType) => {
+    if (typeof window === 'undefined') return
+    const langKey = (locale || 'en') as Lang
     const queue = preloadQueuesRef.current[type]
-    if (!prefetchLoadedRef.current.has(type) && typeof window !== 'undefined') {
-      prefetchLoadedRef.current.add(type)
+    const keys = buildPrefetchStorageKeys(langKey, type)
+    for (const key of keys) {
+      let bundle: PrefetchedBundle | null = null
       try {
-        const key = `random-prefetch-${type}`
         const raw = sessionStorage.getItem(key)
-        if (raw) {
-          const parsed = JSON.parse(raw) as RandomContentItem
-          if (parsed && parsed.type === type) {
-            const keyValue = getContentKey(parsed)
-            const exists = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === keyValue)
-            if (!exists) {
-              preloadQueuesRef.current[type].push(parsed)
-            }
-          }
+        if (!raw) continue
+        bundle = parsePrefetchEntry(raw)
+      } catch {
+        bundle = null
+      }
+      if (!bundle) {
+        try {
           sessionStorage.removeItem(key)
+        } catch {
+          /* ignore */
         }
+        continue
+      }
+      if (bundle.lang && bundle.lang !== langKey) continue
+      const item = bundle.item
+      if (!item || item.type !== type) {
+        try {
+          sessionStorage.removeItem(key)
+        } catch {
+          /* ignore */
+        }
+        continue
+      }
+      const candidateKey = getContentKey(item)
+      if (!candidateKey) {
+        try {
+          sessionStorage.removeItem(key)
+        } catch {
+          /* ignore */
+        }
+        continue
+      }
+      const exists = queue.some((entry) => getContentKey(entry) === candidateKey)
+      if (exists) {
+        try {
+          sessionStorage.removeItem(key)
+        } catch {
+          /* ignore */
+        }
+        continue
+      }
+      queue.push(item)
+      try {
+        sessionStorage.removeItem(key)
       } catch {
         /* ignore */
       }
+      break
+    }
+  }, [getContentKey, locale])
+
+  const ensureQueue = useCallback(async (type: ItemType, target = PRELOAD_TARGET_PER_TYPE) => {
+    const queue = preloadQueuesRef.current[type]
+    if (!prefetchLoadedRef.current.has(type)) {
+      prefetchLoadedRef.current.add(type)
+      drainPrefetchedItems(type)
     }
     if (queue.length >= target) return
 
@@ -1619,7 +1703,42 @@ const sequenceStateRef = useRef({
         preloadPromisesRef.current[type] = null
       }
     }
-  }, [getContentKey, isRecentKey, locale])
+  }, [drainPrefetchedItems, getContentKey, isRecentKey, locale])
+
+  const takeFromQueue = useCallback((type: ItemType): RandomContentItem | null => {
+    const queue = preloadQueuesRef.current[type]
+    while (queue.length) {
+      const next = queue.shift()
+      if (!next) continue
+      const key = getContentKey(next)
+      if (key && isRecentKey(key)) continue
+      return next
+    }
+    return null
+  }, [getContentKey, isRecentKey])
+
+  const finalizeCandidate = useCallback((type: ItemType, candidate: RandomContentItem) => {
+    const key = getContentKey(candidate)
+    if (key) registerRecentKey(key)
+    ensureQueue(type).catch(() => undefined)
+    return candidate
+  }, [ensureQueue, getContentKey, registerRecentKey])
+
+  const takeAnyAvailableItem = useCallback(
+    (preferred?: ItemType): { item: RandomContentItem; type: ItemType } | null => {
+      const typesToCheck = preferred
+        ? [preferred, ...selectedTypes.filter((type) => type !== preferred)]
+        : selectedTypes
+      for (const type of typesToCheck) {
+        const candidate = takeFromQueue(type)
+        if (candidate) {
+          return { item: finalizeCandidate(type, candidate), type }
+        }
+      }
+      return null
+    },
+    [finalizeCandidate, selectedTypes, takeFromQueue],
+  )
 
   const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
     if (type === 'joke' && MINI_GAME_FREQUENCY > 0) {
@@ -1650,21 +1769,7 @@ const sequenceStateRef = useRef({
 
     await ensureQueue(type, 1)
 
-    let candidate: RandomContentItem | undefined
-    let attempts = 0
-
-    while (preloadQueuesRef.current[type].length) {
-      const next = preloadQueuesRef.current[type].shift()
-      if (!next) break
-      const key = getContentKey(next)
-      if (key && isRecentKey(key)) {
-        attempts += 1
-        if (attempts >= PRELOAD_TARGET_PER_TYPE * 2) break
-        continue
-      }
-      candidate = next
-      break
-    }
+    let candidate = takeFromQueue(type)
 
     let fallbackAttempts = 0
     while (!candidate && fallbackAttempts < PRELOAD_TARGET_PER_TYPE * 3) {
@@ -1684,12 +1789,8 @@ const sequenceStateRef = useRef({
 
     if (!candidate) return null
 
-    const key = getContentKey(candidate)
-    registerRecentKey(key)
-    purgeKeyFromQueue(type, key)
-    ensureQueue(type).catch(() => undefined)
-    return candidate
-  }, [ensureQueue, getContentKey, isRecentKey, locale, purgeKeyFromQueue, registerRecentKey])
+    return finalizeCandidate(type, candidate)
+  }, [ensureQueue, finalizeCandidate, getContentKey, isRecentKey, locale, takeFromQueue])
 
   useEffect(() => {
     langVersionRef.current += 1
@@ -1697,17 +1798,25 @@ const sequenceStateRef = useRef({
   }, [clearPreloadedCaches, locale])
 
   useEffect(() => {
+    selectedTypes.forEach((type) => drainPrefetchedItems(type))
+  }, [drainPrefetchedItems, selectedTypes])
+
+  useEffect(() => {
     let cancelled = false
     const prime = async () => {
-      for (const type of selectedTypes) {
-        if (cancelled) return
-        try {
-          await ensureQueue(type, 1)
-          ensureQueue(type).catch(() => undefined)
-        } catch {
-          /* ignore */
-        }
-      }
+      await Promise.all(
+        selectedTypes.map(async (type) => {
+          if (cancelled) return
+          try {
+            await ensureQueue(type, 1)
+            if (!cancelled) {
+              ensureQueue(type).catch(() => undefined)
+            }
+          } catch {
+            /* ignore */
+          }
+        }),
+      )
     }
     prime()
     return () => {
@@ -1720,7 +1829,18 @@ const sequenceStateRef = useRef({
   }, [])
 
   const loadNext = useCallback(async (reward = false) => {
-    setLoading(true)
+    if (loadPendingRef.current) {
+      if (queuedLoadRef.current == null) {
+        queuedLoadRef.current = reward
+      } else {
+        queuedLoadRef.current = queuedLoadRef.current || reward
+      }
+      return
+    }
+    loadPendingRef.current = true
+    if (!currentItemRef.current) {
+      setLoading(true)
+    }
     setIsSecond((prev) => !prev)
     setTrigger((t) => t + 1)
 
@@ -1731,22 +1851,43 @@ const sequenceStateRef = useRef({
     try {
       prevState = { ...sequenceStateRef.current }
       slot = getNextSlot()
+      if (!slot) return
       triggerPageGlitch(slot.kind === 'encourage' ? 'boost' : 'normal')
       let outcome: 'content' | 'encourage' | null = null
       if (slot.kind === 'encourage') {
         const encourageItem = buildEncourageItem(slot.encourageIndex)
+        currentItemRef.current = encourageItem
         setCurrentItem(encourageItem)
         setLiked(false)
         outcome = 'encourage'
       } else {
-        const item = await acquireItem(slot.itemType)
+        let item = takeFromQueue(slot.itemType)
+        let resolvedType: ItemType | null = item ? slot.itemType : null
+        if (item) {
+          item = finalizeCandidate(slot.itemType, item)
+        } else {
+          const fallback = takeAnyAvailableItem(slot.itemType)
+          if (fallback) {
+            item = fallback.item
+            resolvedType = fallback.type
+          }
+        }
+        if (!item) {
+          item = await acquireItem(slot.itemType)
+          resolvedType = slot.itemType
+        }
         if (!item) {
           if (prevState) sequenceStateRef.current = prevState
+          currentItemRef.current = null
           setCurrentItem(null)
           setLiked(false)
           return
         }
+        if (resolvedType && resolvedType !== slot.itemType && prevState) {
+          sequenceStateRef.current = prevState
+        }
         contentItem = item
+        currentItemRef.current = item
         setCurrentItem(item)
         if (item.type === 'minigame') {
           setLiked(false)
@@ -1790,13 +1931,23 @@ const sequenceStateRef = useRef({
       if (slot?.kind === 'content' && prevState) {
         sequenceStateRef.current = prevState
       }
+      currentItemRef.current = null
       setCurrentItem(null)
     } finally {
+      loadPendingRef.current = false
       setLoading(false)
+      const queued = queuedLoadRef.current
+      queuedLoadRef.current = null
+      if (queued != null) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        loadNext(queued)
+      }
     }
-  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, getNextSlot, maybeSpawnDiamond, triggerPageGlitch, updateTheme])
+  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, takeAnyAvailableItem, takeFromQueue, triggerPageGlitch, updateTheme])
 
   useEffect(() => {
+    if (initialLoadTriggeredRef.current) return
+    initialLoadTriggeredRef.current = true
     loadNext(false).catch(() => setLoading(false))
   }, [loadNext])
 
@@ -1840,7 +1991,8 @@ const sequenceStateRef = useRef({
   }), [theme.bg, theme.cream, theme.text])
 
   const viewItem = currentItem
-  const shouldShowInlineAd = adsAllowed && inlineAdActive && !loading
+  const isPriming = !viewItem && loading
+  const shouldShowInlineAd = adsAllowed && inlineAdActive && !isPriming
   const isEncourage = !shouldShowInlineAd && viewItem?.type === 'encourage'
   const categoryType: ItemType | null = useMemo(() => {
     if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage') return null
@@ -1982,7 +2134,7 @@ const sequenceStateRef = useRef({
 
       <section className="flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
         <div className="w-full" style={contentFrameStyle}>
-          {loading ? (
+          {isPriming ? (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
             </div>

@@ -63,6 +63,7 @@ export type JokeDocument = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  rand?: number
 }
 
 export type JokeItem = {

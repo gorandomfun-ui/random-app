@@ -39,7 +39,10 @@ async function upsertManyQuotes(rows: Omit<QuoteDoc,'createdAt'|'updatedAt'>[]) 
   const ops = rows.map(r => ({
     updateOne: {
       filter: { type: 'quote', hash: r.hash },
-      update: { $set: { ...r, type: 'quote', updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+      update: {
+        $set: { ...r, type: 'quote', updatedAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
+      },
       upsert: true,
     }
   }))

@@ -200,7 +200,7 @@ async function upsertAiContent(entry: NormalizedAiEntry, dryRun = false): Promis
         ...payload,
         updatedAt: new Date(),
       },
-      $setOnInsert: { createdAt: new Date() },
+      $setOnInsert: { createdAt: new Date(), rand: Math.random() },
     },
     { upsert: true },
   )

@@ -46,6 +46,7 @@ export type QuoteDocument = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  rand?: number
 }
 
 export type QuoteItem = {

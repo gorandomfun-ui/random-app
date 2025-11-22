@@ -66,7 +66,7 @@ async function upsertManyJokes(rows: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[])
       filter: { type: 'joke', hash: r.hash },
       update: {
         $set: { ...r, type: 'joke', updatedAt: new Date() },
-        $setOnInsert: { createdAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
       },
       upsert: true,
     },

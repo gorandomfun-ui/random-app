@@ -49,6 +49,7 @@ type VideoDoc = {
   source?: { name: string; url?: string }
   createdAt?: Date
   updatedAt?: Date
+  rand?: number
 }
 
 async function upsertManyVideos(rows: Omit<VideoDoc, 'createdAt'|'updatedAt'>[]) {
@@ -59,7 +60,7 @@ async function upsertManyVideos(rows: Omit<VideoDoc, 'createdAt'|'updatedAt'>[])
       filter: { type: 'video', videoId: r.videoId },
       update: {
         $set: { ...r, type: 'video', updatedAt: new Date() },
-        $setOnInsert: { createdAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
       },
       upsert: true,
     },

@@ -65,15 +65,23 @@ export function ScoreProvider({ children }: { children: ReactNode }) {
     [persistScore],
   )
 
+  const noopAddAction = useCallback((action: ScoreAction) => {
+    void action
+  }, [])
+
+  const noopMaybeSpawnDiamond = useCallback(() => false, [])
+
+  const diamonds = useMemo<DiamondEvent[]>(() => [], [])
+
   const value = useMemo<ScoreContextValue>(
     () => ({
       score,
-      addAction: () => undefined,
+      addAction: noopAddAction,
       addPoints,
-      maybeSpawnDiamond: () => false,
-      diamonds: [],
+      maybeSpawnDiamond: noopMaybeSpawnDiamond,
+      diamonds,
     }),
-    [addPoints, score],
+    [addPoints, diamonds, noopAddAction, noopMaybeSpawnDiamond, score],
   )
 
   return <ScoreContext.Provider value={value}>{children}</ScoreContext.Provider>

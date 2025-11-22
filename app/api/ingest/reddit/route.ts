@@ -36,7 +36,7 @@ async function upsertCache(type: ItemType, key: CacheDoc, doc: CacheDoc) {
       { type, ...key },
       {
         $set: { type, ...key, ...doc, updatedAt: new Date() },
-        $setOnInsert: { createdAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
       },
       { upsert: true }
     )

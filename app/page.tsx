@@ -201,24 +201,31 @@ export default function HomePage() {
     if (typeof window === 'undefined') return
     const lang = (locale || 'en') as Lang
     const typesToPrefetch: ItemType[] = ['image', 'video', 'joke']
+    const globalWindow = window as Window & { __randomPrefetchInflight?: Set<string> }
+    if (!globalWindow.__randomPrefetchInflight) {
+      globalWindow.__randomPrefetchInflight = new Set()
+    }
+    const inFlight = globalWindow.__randomPrefetchInflight
+
     typesToPrefetch.forEach((type) => {
-      const key = `random-prefetch-${type}`
-      try {
-        if (sessionStorage.getItem(key)) return
-      } catch {
-        return
-      }
+      const storageKey = `random-prefetch-${lang}-${type}`
+      if (inFlight.has(storageKey)) return
+      inFlight.add(storageKey)
       fetchRandom({ types: [type] as RandomTypes, lang })
         .then((result) => {
           const item = result?.item
           if (!item || item.type !== type) return
           try {
-            sessionStorage.setItem(key, JSON.stringify(item))
+            sessionStorage.setItem(storageKey, JSON.stringify({ lang, item }))
+            sessionStorage.removeItem(`random-prefetch-${type}`)
           } catch {
             /* ignore */
           }
         })
         .catch(() => undefined)
+        .finally(() => {
+          inFlight.delete(storageKey)
+        })
     })
   }, [locale])
 

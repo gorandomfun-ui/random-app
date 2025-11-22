@@ -48,6 +48,7 @@ export type VideoDocument = {
   tone?: 'positive' | 'neutral' | 'negative';
   toneConfidence?: number;
   toneSignals?: string[];
+  rand?: number;
 };
 
 type IngestVideosOptions = {
@@ -874,7 +875,7 @@ export async function finalizeVideoIngest(
         filter,
         update: {
           $set: { ...doc, updatedAt: new Date() },
-          $setOnInsert: { createdAt: new Date() },
+          $setOnInsert: { createdAt: new Date(), rand: Math.random() },
         },
         upsert: true,
       },
@@ -927,21 +928,36 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   if (mode === 'search') {
     const effectiveQueries = queries.length ? queries : ['weird public access show', 'retro craft tutorial'];
     let youtubeResults: RawVideo[] = [];
+    const providerTasks: Array<Promise<{ provider: string; results: RawVideo[] }>> = [];
+
+    const wrap = (provider: string, promise: Promise<RawVideo[]>) =>
+      promise
+        .then((results) => ({ provider, results }))
+        .catch((error) => {
+          console.error(`[ingest:videos] ${provider} failed`, error);
+          fetchWarnings.push({ label: `${provider}:error`, message: error instanceof Error ? error.message : String(error) });
+          return { provider, results: [] };
+        });
+
     if (providerSet.has('youtube')) {
-      youtubeResults = await searchYouTube(effectiveQueries, per, pages, days, durations, fetchWarnings);
-      collected.push(...youtubeResults);
+      providerTasks.push(wrap('youtube', searchYouTube(effectiveQueries, per, pages, days, durations, fetchWarnings)));
     }
-
     if (providerSet.has('dailymotion')) {
-      collected.push(...await searchDailymotion(effectiveQueries, per, pages, fetchWarnings));
+      providerTasks.push(wrap('dailymotion', searchDailymotion(effectiveQueries, per, pages, fetchWarnings)));
     }
-
     if (providerSet.has('pixabay')) {
-      collected.push(...await searchPixabayVideos(effectiveQueries, per, pages, fetchWarnings));
+      providerTasks.push(wrap('pixabay', searchPixabayVideos(effectiveQueries, per, pages, fetchWarnings)));
+    }
+    if (providerSet.has('pexels')) {
+      providerTasks.push(wrap('pexels', searchPexelsVideos(effectiveQueries, per, pages, fetchWarnings)));
     }
 
-    if (providerSet.has('pexels')) {
-      collected.push(...await searchPexelsVideos(effectiveQueries, per, pages, fetchWarnings));
+    const providerResults = await Promise.all(providerTasks);
+    for (const { provider, results } of providerResults) {
+      if (provider === 'youtube') {
+        youtubeResults = results;
+      }
+      collected.push(...results);
     }
 
     if (!youtubeResults.length && providerSet.has('youtube') && effectiveQueries.some((q) => /\d{4}/.test(q))) {

@@ -104,6 +104,7 @@ export type ImageDocument = {
   tone?: 'positive' | 'neutral' | 'negative';
   toneConfidence?: number;
   toneSignals?: string[];
+  rand?: number;
 };
 
 type IngestImagesOptions = {
@@ -409,15 +410,22 @@ export async function ingestImages({
   for (const query of queries) {
     const trimmed = query.trim();
     if (!trimmed) continue;
-    for (const provider of providerList) {
-      const fetcher = fetchers[provider];
-      if (!fetcher) continue;
-      try {
-        const results = await fetcher(trimmed, perQuery);
-        collected.push(...results);
-      } catch (error) {
-        console.error(`[ingest:images] ${provider} failed`, error);
-      }
+    const pending = providerList
+      .map((provider) => {
+        const fetcher = fetchers[provider];
+        if (!fetcher) return null;
+        return fetcher(trimmed, perQuery)
+          .then((results) => ({ provider, results }))
+          .catch((error) => {
+            console.error(`[ingest:images] ${provider} failed`, error);
+            return { provider, results: [] };
+          });
+      })
+      .filter((entry): entry is Promise<{ provider: ImageProvider; results: ImageSource[] }> => Boolean(entry));
+
+    const settled = await Promise.all(pending);
+    for (const { results } of settled) {
+      collected.push(...results);
     }
   }
 
@@ -460,7 +468,7 @@ export async function ingestImages({
         filter,
         update: {
           $set: { ...doc, updatedAt: new Date() },
-          $setOnInsert: { createdAt: new Date() },
+          $setOnInsert: { createdAt: new Date(), rand: Math.random() },
         },
         upsert: true,
       },

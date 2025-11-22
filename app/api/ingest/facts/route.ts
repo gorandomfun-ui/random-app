@@ -37,7 +37,10 @@ async function upsertManyFacts(rows: Omit<FactDoc, 'createdAt' | 'updatedAt'>[])
   const ops = rows.map(r => ({
     updateOne: {
       filter: { type: 'fact', hash: r.hash },
-      update: { $set: { ...r, type: 'fact', updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+      update: {
+        $set: { ...r, type: 'fact', updatedAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
+      },
       upsert: true,
     }
   }))

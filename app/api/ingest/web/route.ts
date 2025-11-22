@@ -40,6 +40,7 @@ type WebDoc = {
   keywords?: string[],
   createdAt?: Date,
   updatedAt?: Date,
+  rand?: number,
 }
 
 async function upsertManyWeb(rows: Omit<WebDoc,'createdAt'|'updatedAt'>[]) {
@@ -50,7 +51,7 @@ async function upsertManyWeb(rows: Omit<WebDoc,'createdAt'|'updatedAt'>[]) {
       filter: { type: 'web', url: r.url },
       update: {
         $set: { ...r, type: 'web', updatedAt: new Date() },
-        $setOnInsert: { createdAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
       },
       upsert: true,
     }

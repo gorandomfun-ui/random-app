@@ -408,6 +408,7 @@ async function approveImageSubmission(record: SubmissionRecord, db: Db): Promise
     },
     tags: keywords,
     keywords,
+    rand: Math.random(),
   }
   const result = await db.collection('items').insertOne(doc)
   return result.insertedId
@@ -436,6 +437,7 @@ async function approveTextSubmission(record: SubmissionRecord, db: Db, options?:
   if (!doc) throw new SubmissionError('invalid-content', 422)
   doc.createdAt = new Date()
   doc.updatedAt = new Date()
+  doc.rand = Math.random()
   const result = await db.collection('items').insertOne(doc)
   return result.insertedId
 }
@@ -474,6 +476,7 @@ async function approveVideoSubmission(record: SubmissionRecord, db: Db): Promise
     tags: safeKeywords(text ?? '', 6),
     keywords: safeKeywords(`${text ?? ''} ${parsed.provider ?? ''}`, 10),
     source: { name: 'Community submission', url: parsed.url },
+    rand: Math.random(),
   }
   const result = await db.collection('items').insertOne(doc)
   return result.insertedId
@@ -496,6 +499,7 @@ async function approveWebSubmission(record: SubmissionRecord, db: Db): Promise<O
     tags: safeKeywords(`${title} ${description}`, 8),
     keywords: safeKeywords(`${title} ${description} ${url}`, 12),
     source: { name: data.meta?.siteName || record.metadata?.siteName || 'Community submission', url },
+    rand: Math.random(),
   }
   const result = await db.collection('items').insertOne(doc)
   return result.insertedId

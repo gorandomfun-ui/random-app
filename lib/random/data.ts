@@ -31,7 +31,10 @@ export async function upsertCache(
   try {
     await db.collection('items').updateOne(
       { type, ...key },
-      { $set: { type, ...key, ...doc, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+      {
+        $set: { type, ...key, ...doc, updatedAt: new Date() },
+        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
+      },
       { upsert: true },
     )
   } catch {}
@@ -55,14 +58,20 @@ export async function sampleFromCache<T extends Record<string, unknown>>(
   const db = await getDbSafe()
   if (!db) return null
   try {
-    const [doc] = await db
-      .collection('items')
-      .aggregate<WithId<T>>([
-        { $match: { type, ...extraMatch } },
-        { $sample: { size: 1 } },
-      ])
+    const collection = db.collection<WithId<T>>('items')
+    const rand = Math.random()
+    const first = await collection
+      .find({ type, rand: { $gte: rand }, ...extraMatch })
+      .sort({ rand: 1 })
+      .limit(1)
       .toArray()
-    return (doc as WithId<T>) || null
+    if (first.length) return first[0]
+    const wrap = await collection
+      .find({ type, rand: { $lt: rand }, ...extraMatch })
+      .sort({ rand: 1 })
+      .limit(1)
+      .toArray()
+    return wrap[0] || null
   } catch {
     return null
   }
