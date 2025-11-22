@@ -1,4 +1,4 @@
-import type { Db, WithId } from 'mongodb'
+import type { Db, Document, Filter, WithId } from 'mongodb'
 import { getDb } from '@/lib/db'
 import type { ItemType } from './types'
 
@@ -51,23 +51,25 @@ export async function touchLastShown(
   } catch {}
 }
 
-export async function sampleFromCache<T extends Record<string, unknown>>(
+export async function sampleFromCache<T extends Document>(
   type: ItemType,
-  extraMatch: Record<string, unknown> = {},
+  extraMatch: Filter<T> = {},
 ): Promise<WithId<T> | null> {
   const db = await getDbSafe()
   if (!db) return null
   try {
-    const collection = db.collection<WithId<T>>('items')
+    const collection = db.collection<T>('items')
     const rand = Math.random()
+    const firstFilter: Filter<T> = { type, rand: { $gte: rand }, ...extraMatch }
     const first = await collection
-      .find({ type, rand: { $gte: rand }, ...extraMatch })
+      .find(firstFilter)
       .sort({ rand: 1 })
       .limit(1)
       .toArray()
     if (first.length) return first[0]
+    const wrapFilter: Filter<T> = { type, rand: { $lt: rand }, ...extraMatch }
     const wrap = await collection
-      .find({ type, rand: { $lt: rand }, ...extraMatch })
+      .find(wrapFilter)
       .sort({ rand: 1 })
       .limit(1)
       .toArray()
