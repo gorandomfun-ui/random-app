@@ -24,6 +24,7 @@ import type {
   FactQuizItem,
   DisplayItem,
   EncourageItem as EncourageContentItem,
+  MiniGameItem,
   MiniGameId,
   RandomContentItem,
   SourceInfo,
@@ -1543,13 +1544,6 @@ const sequenceStateRef = useRef({
     return recentKeySetRef.current.has(key)
   }, [])
 
-  const purgeKeyFromQueue = useCallback((type: ItemType, key: string) => {
-    if (!key) return
-    const queue = preloadQueuesRef.current[type]
-    if (!queue.length) return
-    preloadQueuesRef.current[type] = queue.filter((entry) => getContentKey(entry) !== key)
-  }, [getContentKey])
-
   const drainPrefetchedItems = useCallback((type: ItemType) => {
     if (typeof window === 'undefined') return
     const langKey = (locale || 'en') as Lang
@@ -1705,6 +1699,31 @@ const sequenceStateRef = useRef({
     }
   }, [drainPrefetchedItems, getContentKey, isRecentKey, locale])
 
+  const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
+    if (MINI_GAME_FREQUENCY <= 0) return null
+    const state = miniGameStateRef.current
+    const upcoming = state.jokeDisplays + 1
+    if (upcoming % MINI_GAME_FREQUENCY !== 0) return null
+    if (!state.pool.length) {
+      state.pool = shuffleArray([...MINI_GAME_IDS])
+    }
+    const id = state.pool.shift() ?? MINI_GAME_IDS[0]
+    const gameLevel = state.gameLevels[id] ?? state.globalLevel
+    const level = Math.max(state.globalLevel, gameLevel)
+    const nextLevel = Math.min(level + 1, 20)
+    state.gameLevels = {
+      ...state.gameLevels,
+      [id]: nextLevel,
+    }
+    state.gamesAtCurrentLevel += 1
+    if (state.gamesAtCurrentLevel >= 4) {
+      state.globalLevel = Math.min(state.globalLevel + 1, 20)
+      state.gamesAtCurrentLevel = 0
+    }
+    ensureQueue('joke').catch(() => undefined)
+    return createMiniGameItem({ id, level })
+  }, [ensureQueue])
+
   const takeFromQueue = useCallback((type: ItemType): RandomContentItem | null => {
     const queue = preloadQueuesRef.current[type]
     while (queue.length) {
@@ -1741,30 +1760,9 @@ const sequenceStateRef = useRef({
   )
 
   const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
-    if (type === 'joke' && MINI_GAME_FREQUENCY > 0) {
-      const state = miniGameStateRef.current
-      const upcoming = state.jokeDisplays + 1
-      if (upcoming % MINI_GAME_FREQUENCY === 0) {
-        if (!state.pool.length) {
-          state.pool = shuffleArray([...MINI_GAME_IDS])
-        }
-        const id = state.pool.shift() ?? MINI_GAME_IDS[0]
-        const gameLevel = state.gameLevels[id] ?? state.globalLevel
-        const level = Math.max(state.globalLevel, gameLevel)
-        const nextLevel = Math.min(level + 1, 20)
-        state.gameLevels = {
-          ...state.gameLevels,
-          [id]: nextLevel,
-        }
-        state.gamesAtCurrentLevel += 1
-        if (state.gamesAtCurrentLevel >= 4) {
-          state.globalLevel = Math.min(state.globalLevel + 1, 20)
-          state.gamesAtCurrentLevel = 0
-        }
-        const miniGame = createMiniGameItem({ id, level })
-        ensureQueue(type).catch(() => undefined)
-        return miniGame
-      }
+    if (type === 'joke') {
+      const miniGame = spawnMiniGameIfDue()
+      if (miniGame) return miniGame
     }
 
     await ensureQueue(type, 1)
@@ -1790,7 +1788,7 @@ const sequenceStateRef = useRef({
     if (!candidate) return null
 
     return finalizeCandidate(type, candidate)
-  }, [ensureQueue, finalizeCandidate, getContentKey, isRecentKey, locale, takeFromQueue])
+  }, [ensureQueue, finalizeCandidate, getContentKey, isRecentKey, locale, spawnMiniGameIfDue, takeFromQueue])
 
   useEffect(() => {
     langVersionRef.current += 1
@@ -1861,17 +1859,27 @@ const sequenceStateRef = useRef({
         setLiked(false)
         outcome = 'encourage'
       } else {
-        let item = takeFromQueue(slot.itemType)
-        let resolvedType: ItemType | null = item ? slot.itemType : null
-        if (item) {
-          item = finalizeCandidate(slot.itemType, item)
-        } else {
-          const fallback = takeAnyAvailableItem(slot.itemType)
-          if (fallback) {
-            item = fallback.item
-            resolvedType = fallback.type
+        let item: RandomContentItem | null = null
+        let resolvedType: ItemType | null = null
+
+        if (slot.itemType === 'joke') {
+          item = spawnMiniGameIfDue()
+        }
+
+        if (!item) {
+          item = takeFromQueue(slot.itemType)
+          resolvedType = item ? slot.itemType : null
+          if (item) {
+            item = finalizeCandidate(slot.itemType, item)
+          } else {
+            const fallback = takeAnyAvailableItem(slot.itemType)
+            if (fallback) {
+              item = fallback.item
+              resolvedType = fallback.type
+            }
           }
         }
+
         if (!item) {
           item = await acquireItem(slot.itemType)
           resolvedType = slot.itemType
@@ -1939,11 +1947,10 @@ const sequenceStateRef = useRef({
       const queued = queuedLoadRef.current
       queuedLoadRef.current = null
       if (queued != null) {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        loadNext(queued)
+        void loadNext(queued)
       }
     }
-  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, takeAnyAvailableItem, takeFromQueue, triggerPageGlitch, updateTheme])
+  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, spawnMiniGameIfDue, takeAnyAvailableItem, takeFromQueue, triggerPageGlitch, updateTheme])
 
   useEffect(() => {
     if (initialLoadTriggeredRef.current) return

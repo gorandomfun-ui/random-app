@@ -65,6 +65,7 @@ type IngestVideosOptions = {
   sampleSize?: number;
   durations?: Array<'any' | 'short' | 'medium' | 'long'>;
   providers?: Array<'youtube' | 'dailymotion' | 'pixabay' | 'pexels'>;
+  fast?: boolean;
 };
 
 type IngestResult = {
@@ -311,6 +312,9 @@ async function searchYouTube(
   days: number,
   durations: Array<'any' | 'short' | 'medium' | 'long'>,
   warnings?: FetchWarning[],
+  concurrency = 2,
+  maxTimePerQueryMs = 35000,
+  expandVariants = false,
 ): Promise<RawVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) {
@@ -319,11 +323,32 @@ async function searchYouTube(
   }
   const collected: RawVideo[] = [];
 
-  for (const query of queries) {
+  function expandQueryVariants(query: string, cap = 6): string[] {
     const trimmed = query.trim();
-    if (!trimmed) continue;
+    if (!trimmed) return [];
+    if (!expandVariants) return [trimmed];
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    if (tokens.length <= 2) return [trimmed];
+    const variants = new Set<string>();
+    variants.add(trimmed);
+    for (let size = Math.min(tokens.length - 1, 4); size >= 2; size--) {
+      for (let i = 0; i + size <= tokens.length; i++) {
+        variants.add(tokens.slice(i, i + size).join(' '));
+        if (variants.size >= cap) break;
+      }
+      if (variants.size >= cap) break;
+    }
+    return Array.from(variants);
+  }
+  async function fetchForQuery(trimmed: string) {
+    const started = Date.now();
     const durationList = durations.length ? durations : ['any'];
-    for (const duration of durationList) {
+
+    async function fetchForDuration(duration: 'any' | 'short' | 'medium' | 'long') {
+      if (Date.now() - started > maxTimePerQueryMs) {
+        warnings?.push({ label: 'youtube:timeout', message: `Timeout on query ${trimmed}` });
+        return;
+      }
       let pageToken = '';
       for (let page = 0; page < pages; page++) {
         const params = new URLSearchParams({
@@ -335,10 +360,6 @@ async function searchYouTube(
           order: Math.random() < 0.5 ? 'date' : 'relevance',
           videoEmbeddable: 'true',
         });
-        if (days > 0) {
-          const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-          params.set('publishedAfter', publishedAfter);
-        }
         if (days > 0) {
           const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
           params.set('publishedAfter', publishedAfter);
@@ -373,9 +394,42 @@ async function searchYouTube(
         pageToken = data?.nextPageToken || '';
         if (!pageToken) break;
         await new Promise((resolve) => setTimeout(resolve, 250));
+        if (Date.now() - started > maxTimePerQueryMs) {
+          warnings?.push({ label: 'youtube:timeout', message: `Timeout on query ${trimmed}` });
+          return;
+        }
       }
     }
+
+    await Promise.all(durationList.map((duration) => fetchForDuration(duration)));
   }
+
+  const queueSet = new Set<string>();
+  for (const raw of queries) {
+    const variants = expandQueryVariants(raw);
+    for (const variant of variants) {
+      if (variant) queueSet.add(variant);
+    }
+  }
+  const queue = Array.from(queueSet);
+  const limit = Math.min(concurrency, queue.length || 1);
+  const workers: Promise<void>[] = [];
+  const worker = async () => {
+    while (queue.length) {
+      const next = queue.shift();
+      if (!next) continue;
+      try {
+        await fetchForQuery(next);
+      } catch (error) {
+        console.error('[ingest:youtube] query failed', next, error);
+        warnings?.push({ label: 'youtube:query', message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  };
+  for (let i = 0; i < limit; i += 1) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
 
   return collected;
 }
@@ -630,15 +684,15 @@ async function channelUploadsYouTube(channelId: string, per: number, warnings?: 
   return playlistYouTube(playlist, per, warnings);
 }
 
-export async function enrichYouTubeDetails(videos: RawVideo[], warnings?: FetchWarning[]): Promise<void> {
+async function updateYouTubeDetailsForIds(
+  videoIds: string[],
+  warnings?: FetchWarning[],
+): Promise<void> {
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key) return;
-  const youtubeVideos = videos.filter((video) => video.provider === 'youtube');
-  const ids = youtubeVideos.map((video) => video.videoId).filter(Boolean);
-  if (!ids.length) return;
-
-  for (let i = 0; i < ids.length; i += 50) {
-    const chunk = ids.slice(i, i + 50);
+  if (!key || !videoIds.length) return;
+  const collection = await getCollection();
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const chunk = videoIds.slice(i, i + 50);
     const params = new URLSearchParams({ key, part: 'snippet,contentDetails', id: chunk.join(',') });
     const data = await fetchJson<YoutubeVideoDetailsResponse>(
       `${YT_ENDPOINT}/videos?${params.toString()}`,
@@ -647,25 +701,27 @@ export async function enrichYouTubeDetails(videos: RawVideo[], warnings?: FetchW
       warnings,
     );
     const items = data?.items ?? [];
-    const map = new Map<string, YoutubeVideoDetailsItem>();
+    if (!items.length) continue;
     for (const item of items) {
       if (!item?.id) continue;
-      map.set(item.id, item);
-    }
-
-    for (const video of youtubeVideos) {
-      const details = map.get(video.videoId);
-      if (!details) continue;
-      const snippet = details.snippet;
-      if (snippet?.title) video.title = snippet.title;
-      if (snippet?.description) video.description = snippet.description;
-      if (snippet?.channelId) video.channelId = snippet.channelId;
-      if (snippet?.channelTitle) video.channelTitle = snippet.channelTitle;
-      if (Array.isArray(snippet?.tags)) video.apiTags = (video.apiTags || []).concat(snippet.tags);
+      const update: Record<string, unknown> = {};
+      const snippet = item.snippet;
+      if (snippet?.title) update.title = snippet.title;
+      if (snippet?.description) update.description = snippet.description;
+      if (snippet?.channelId) update.channelId = snippet.channelId;
+      if (snippet?.channelTitle) update.channelTitle = snippet.channelTitle;
+      if (Array.isArray(snippet?.tags) && snippet.tags.length) {
+        update.apiTags = snippet.tags;
+      }
       const thumbnails = snippet?.thumbnails;
       const high = thumbnails?.high?.url || thumbnails?.medium?.url || thumbnails?.default?.url;
-      if (high) video.thumb = high;
-      if (details.contentDetails?.duration) video.duration = details.contentDetails.duration;
+      if (high) update.thumb = high;
+      if (item.contentDetails?.duration) update.duration = item.contentDetails.duration;
+      if (!Object.keys(update).length) continue;
+      await collection.updateOne(
+        { type: 'video', videoId: item.id },
+        { $set: update },
+      );
     }
   }
 }
@@ -885,6 +941,17 @@ export async function finalizeVideoIngest(
   const bulk = await collection.bulkWrite(operations, { ordered: false });
   summary.inserted = bulk.upsertedCount || 0;
   summary.updated = bulk.modifiedCount || 0;
+
+  if (bulk.upsertedCount && bulk.upsertedCount > 0) {
+    const upsertedIndexes = Object.keys(bulk.upsertedIds || {}).map((key) => Number(key));
+    const newVideoIds = upsertedIndexes
+      .map((index) => documents[index]?.videoId)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    if (newVideoIds.length) {
+      await updateYouTubeDetailsForIds(newVideoIds, warnings);
+    }
+  }
+
   return summary;
 }
 
@@ -901,8 +968,9 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   manualIds = [],
   dryRun = false,
   sampleSize = 6,
-  durations = ['any'],
-  providers = ['youtube', 'dailymotion', 'pixabay', 'pexels'],
+    durations = ['any'],
+    providers = ['youtube', 'dailymotion', 'pixabay', 'pexels'],
+    fast = false,
   } = options;
 
   const collected: RawVideo[] = [];
@@ -939,8 +1007,28 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
           return { provider, results: [] };
         });
 
+    const ytPer = fast ? Math.max(8, Math.min(16, per)) : per;
+    const ytPages = fast ? 1 : pages;
+    const ytConcurrency = fast ? 4 : 2;
+    const ytTimeout = fast ? 25000 : 45000;
+
     if (providerSet.has('youtube')) {
-      providerTasks.push(wrap('youtube', searchYouTube(effectiveQueries, per, pages, days, durations, fetchWarnings)));
+      providerTasks.push(
+        wrap(
+          'youtube',
+          searchYouTube(
+            effectiveQueries,
+            ytPer,
+            ytPages,
+            days,
+            durations,
+            fetchWarnings,
+            ytConcurrency,
+            ytTimeout,
+            fast,
+          ),
+        ),
+      );
     }
     if (providerSet.has('dailymotion')) {
       providerTasks.push(wrap('dailymotion', searchDailymotion(effectiveQueries, per, pages, fetchWarnings)));
@@ -965,7 +1053,19 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
         .map((q) => q.replace(/\b(19|20)\d{2}\b/g, '').replace(/\s+/g, ' ').trim())
         .filter(Boolean);
       if (relaxedQueries.length) {
-        collected.push(...await searchYouTube(relaxedQueries, per, pages, 0, durations, fetchWarnings));
+        collected.push(
+          ...await searchYouTube(
+            relaxedQueries,
+            ytPer,
+            1,
+            0,
+            durations,
+            fetchWarnings,
+            ytConcurrency,
+            ytTimeout,
+            fast,
+          ),
+        );
       }
     }
   } else if (mode === 'playlist' && playlistId) {
@@ -977,8 +1077,6 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   if (reddit) {
     collected.push(...await redditYouTube(reddit.sub, reddit.limit, fetchWarnings));
   }
-
-  await enrichYouTubeDetails(collected, fetchWarnings);
 
   const summary = await finalizeVideoIngest(collected, {
     dryRun,

@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
     const pages = parseInteger(url.searchParams.get('pages'), 2, 1, 5);
     const days = parseInteger(url.searchParams.get('days'), 120, 1, 365);
     const durationsRaw = parseList(url.searchParams.get('durations') || url.searchParams.get('duration'));
+    const fast = (url.searchParams.get('fast') || '0') === '1';
     const dryParam = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dryParam === '1' || dryParam === 'true';
     const sampleSize = parseInteger(url.searchParams.get('sample'), 6, 1, 20);
@@ -150,6 +151,7 @@ export async function GET(req: NextRequest) {
       sampleSize,
       durations,
       providers: finalProviders,
+      fast,
     });
 
     return NextResponse.json({
@@ -165,6 +167,7 @@ export async function GET(req: NextRequest) {
       count,
       durations,
       providers: finalProviders,
+      fast,
       ...result,
     });
   } catch (error: unknown) {

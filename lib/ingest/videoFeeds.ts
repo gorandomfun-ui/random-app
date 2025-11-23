@@ -6,7 +6,6 @@ import type { IngestResult } from '@/lib/ingest/videoFeedsTypes'
 import {
   finalizeVideoIngest,
   redditYouTube,
-  enrichYouTubeDetails,
   type FetchWarning,
   type RedditListingOptions,
   youtubeThumb,
@@ -330,8 +329,6 @@ export async function ingestVideoFeeds(options: VideoFeedsOptions = {}): Promise
       })
     }
   }
-
-  await enrichYouTubeDetails(collected, warnings)
 
   const validated = await applySafetyNet(collected, warnings)
 

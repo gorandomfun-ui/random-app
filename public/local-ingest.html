@@ -84,6 +84,10 @@
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pixabay" /> Pixabay</label>
         <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pexels" /> Pexels</label>
       </div>
+      <label style="display:inline-flex; align-items:center; gap:6px; font-size:14px; margin-bottom:12px;">
+        <input id="fastVideoMode" type="checkbox" />
+        Mode rapide (YouTube optimisé)
+      </label>
       <button id="runImages" class="primary">Ingest Images</button>
       <button id="runVideos" class="secondary">Ingest Vidéos</button>
       <button id="stopBtn">Stop</button>
@@ -122,8 +126,28 @@
       const videoProvidersEl = document.getElementById('videoProviders')
       const webProvidersEl = document.getElementById('webProviders')
       const regionSelectEl = document.getElementById('regionSelect')
+      const fastVideoModeEl = document.getElementById('fastVideoMode')
 
       let stopRequested = false
+      const FAST_VIDEO_CONCURRENCY = 3
+      const FAST_VIDEO_TIMEOUT_MS = 60000
+      const activeFetchControllers = new Set()
+
+      function trackController(controller) {
+        activeFetchControllers.add(controller)
+        return () => activeFetchControllers.delete(controller)
+      }
+
+      function abortActiveRequests() {
+        activeFetchControllers.forEach((controller) => {
+          try {
+            controller.abort()
+          } catch (error) {
+            console.warn('abort failed', error)
+          }
+        })
+        activeFetchControllers.clear()
+      }
 
       function appendLog(html) {
         const wrapper = document.createElement('div')
@@ -246,8 +270,8 @@
       addManualBtn.addEventListener('click', () => createManualRow())
       createManualRow()
 
-      async function fetchCombo() {
-        const params = new URLSearchParams({ region: getSelectedRegion() })
+      async function fetchCombo(regionOverride) {
+        const params = new URLSearchParams({ region: regionOverride || getSelectedRegion() })
         const res = await fetch(`/api/ingest/keywords/combo?${params.toString()}`, {
           cache: 'no-store',
           headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
@@ -259,6 +283,7 @@
       async function run(category) {
         stopRequested = false
         setRunning(true)
+        abortActiveRequests()
         logEl.innerHTML = ''
 
         appendLog(`<p><strong>Démarrage ${category}</strong> — ${new Date().toLocaleTimeString()}</p>`)
@@ -267,86 +292,82 @@
         const maxCombos = Math.max(1, Number(maxCombosEl.value) || 1)
         const sleepMs = Math.max(0, Number(sleepEl.value) || 0)
         const region = getSelectedRegion()
+        const selectedVideoProviders = getSelectedVideoProviders()
+        const selectedWebProviders = getSelectedWebProviders()
+        const adminKey = document.body.dataset.key || ''
         let executed = 0
-        let totals = { scanned: 0, unique: 0, inserted: 0, updated: 0, skipped: 0 }
+        let failures = 0
+        let combosInFlight = 0
+        let fatalError = null
+        const totals = { scanned: 0, unique: 0, inserted: 0, updated: 0, skipped: 0 }
         const providerCounts = {}
-        const manualCombos = collectManualCombos()
+        const manualQueue = [...collectManualCombos()]
+        const isFastVideos = category === 'videos' && fastVideoModeEl && fastVideoModeEl.checked
+        const concurrency = isFastVideos ? FAST_VIDEO_CONCURRENCY : 1
+        const fastTimeoutMs = isFastVideos ? FAST_VIDEO_TIMEOUT_MS : 0
+
+        const reserveNextCombo = async () => {
+          if (stopRequested) return null
+          if (executed + combosInFlight >= maxCombos) return null
+          if (manualQueue.length) {
+            combosInFlight += 1
+            return manualQueue.shift()
+          }
+          const combo = await fetchCombo(region)
+          if (!combo) return null
+          combosInFlight += 1
+          return combo
+        }
+
+        const runContext = {
+          category,
+          dryRun,
+          defaultRegion: region,
+          totals,
+          providerCounts,
+          selectedVideoProviders,
+          selectedWebProviders,
+          isFastVideos,
+          fastTimeoutMs,
+          key: adminKey,
+          maxCombos,
+        }
 
         try {
-          const runOne = async (combo) => {
-            const label = formatCombo(combo.components || {}) || '(empty)'
-            const params = new URLSearchParams({ max: '1' })
-            if (dryRun) params.set('dry', '1')
+          const createWorker = () => (async function comboWorker() {
+            while (!stopRequested) {
+              let combo = null
+              try {
+                combo = await reserveNextCombo()
+              } catch (error) {
+                fatalError = error instanceof Error ? error.message : String(error)
+                stopRequested = true
+                abortActiveRequests()
+                return
+              }
+              if (!combo) return
 
-            let endpoint = ''
-            const runRegion = (combo && combo._regionOverride) || region
-            if (category === 'images') {
-              endpoint = '/api/ingest/images'
-              params.set('sample', '6')
-              params.set('region', runRegion)
-            } else if (category === 'videos') {
-              endpoint = '/api/ingest/videos'
-              params.set('mode', 'search')
-              params.set('durations', 'short,medium,long')
-              params.set('pages', runRegion === 'global' ? '2' : '3')
-              params.set('per', runRegion === 'global' ? '32' : '48')
-              params.set('region', runRegion)
-              params.set('providers', getSelectedVideoProviders().join(','))
-            } else if (category === 'web') {
-              endpoint = '/api/ingest/web'
-              params.set('per', runRegion === 'global' ? '10' : '12')
-              params.set('pages', runRegion === 'global' ? '3' : '5')
-              params.set('sample', '6')
-              params.set('limit', String(Math.max(30, maxCombos * 24)))
-              params.set('providers', getSelectedWebProviders().join(','))
-              params.set('region', runRegion)
+              const result = await runCombo(combo, runContext)
+              combosInFlight = Math.max(0, combosInFlight - 1)
+              executed += 1
+              if (!result.success && !result.aborted) failures += 1
+              if (result.fatal) {
+                fatalError = result.message || 'Erreur critique'
+                stopRequested = true
+                abortActiveRequests()
+                return
+              }
+
+              if (sleepMs > 0 && executed < maxCombos && !stopRequested) {
+                await sleep(sleepMs)
+              }
             }
-            params.set('q', combo.query)
+          })()
 
-            const url = `${endpoint}?${params.toString()}`
-            const res = await fetch(url, {
-              method: 'GET',
-              headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data?.error || 'Ingest failed')
+          const workers = Array.from({ length: concurrency }, () => createWorker())
+          await Promise.all(workers)
 
-            const providers = data?.providerCounts || {}
-            for (const key of Object.keys(providers)) {
-              providerCounts[key] = (providerCounts[key] || 0) + (providers[key] || 0)
-            }
-
-            totals.scanned += data?.scanned || 0
-            totals.unique += data?.unique || 0
-            totals.inserted += data?.inserted || 0
-            totals.updated += data?.updated || 0
-            totals.skipped += data?.skippedInvalid || 0
-
-            appendLog(`
-              <div class="combo">
-                <h3>${label}</h3>
-                <small>${combo.query}</small>
-                <div>scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${data?.skippedInvalid ? ` skipped:${data.skippedInvalid}` : ''}</div>
-              </div>
-            `)
-          }
-
-          for (const manual of manualCombos) {
-            if (stopRequested || executed >= maxCombos) break
-            await runOne(manual)
-            executed += 1
-            if (sleepMs > 0 && executed < maxCombos && !stopRequested) await sleep(sleepMs)
-          }
-
-          while (!stopRequested && executed < maxCombos) {
-            const combo = await fetchCombo()
-            await runOne(combo)
-            executed += 1
-            if (sleepMs > 0 && executed < maxCombos && !stopRequested) await sleep(sleepMs)
-          }
-
-          // Ajout: 4 requêtes régionales aléatoires à la fin (images/vidéos) quand region=global
-          if (!stopRequested && (category === 'images' || category === 'videos') && region === 'global') {
+          if (!stopRequested && !fatalError && (category === 'images' || category === 'videos') && region === 'global') {
             const EXTRA_REGIONS = ['north-america', 'south-america', 'europe', 'asia', 'africa']
             const EXTRA_COUNT = 4
             for (let i = 0; i < EXTRA_COUNT; i++) {
@@ -354,8 +375,15 @@
               const rand = Math.floor(Math.random() * EXTRA_REGIONS.length)
               const extraRegion = EXTRA_REGIONS[rand]
               const pseudoCombo = { components: { region: extraRegion }, query: '', _regionOverride: extraRegion }
-              await runOne(pseudoCombo)
+              const result = await runCombo(pseudoCombo, { ...runContext, defaultRegion: extraRegion })
               executed += 1
+              if (!result.success && !result.aborted) failures += 1
+              if (result.fatal) {
+                fatalError = result.message || 'Erreur critique'
+                stopRequested = true
+                abortActiveRequests()
+                break
+              }
               if (sleepMs > 0 && i < EXTRA_COUNT - 1 && !stopRequested) await sleep(sleepMs)
             }
           }
@@ -363,14 +391,141 @@
           const providerSummary = Object.keys(providerCounts).length
             ? `<br/>Providers → ${Object.entries(providerCounts).map(([name, value]) => `${name}:${value}`).join(' • ')}`
             : ''
+          const failureSummary = failures ? ` échecs:${failures}` : ''
+          const stopLabel = stopRequested && !fatalError ? ' (arrêté)' : ''
 
-          appendLog(`
-            <p class="summary">Terminé (${region}) → combos:${executed} scanned:${totals.scanned} unique:${totals.unique} inserted:${totals.inserted} updated:${totals.updated}${totals.skipped ? ` skipped:${totals.skipped}` : ''}${providerSummary}</p>
+          if (fatalError) {
+            appendLog(`<p class="error">Erreur critique → ${fatalError}</p>`)
+          } else {
+            appendLog(`
+            <p class="summary">Terminé (${region})${stopLabel} → combos:${executed}${failureSummary} scanned:${totals.scanned} unique:${totals.unique} inserted:${totals.inserted} updated:${totals.updated}${totals.skipped ? ` skipped:${totals.skipped}` : ''}${providerSummary}</p>
           `)
+          }
         } catch (error) {
           appendLog(`<p class="error">Erreur → ${(error instanceof Error ? error.message : String(error))}</p>`)
         } finally {
           setRunning(false)
+        }
+      }
+
+      async function runCombo(combo, context) {
+        const {
+          category,
+          dryRun,
+          defaultRegion,
+          totals,
+          providerCounts,
+          selectedVideoProviders,
+          selectedWebProviders,
+          isFastVideos,
+          fastTimeoutMs,
+          key,
+          maxCombos,
+        } = context
+
+        const label = formatCombo(combo.components || {}) || '(empty)'
+        const params = new URLSearchParams({ max: '1' })
+        if (dryRun) params.set('dry', '1')
+        const runRegion = (combo && combo._regionOverride) || defaultRegion
+        let endpoint = ''
+
+        if (category === 'images') {
+          endpoint = '/api/ingest/images'
+          params.set('sample', '6')
+          params.set('region', runRegion)
+        } else if (category === 'videos') {
+          endpoint = '/api/ingest/videos'
+          params.set('mode', 'search')
+          params.set('durations', 'short,medium,long')
+          const perValue = isFastVideos ? '16' : (runRegion === 'global' ? '32' : '48')
+          const pageValue = isFastVideos ? '1' : (runRegion === 'global' ? '2' : '3')
+          params.set('pages', pageValue)
+          params.set('per', perValue)
+          params.set('region', runRegion)
+          params.set('providers', selectedVideoProviders.join(','))
+          if (isFastVideos) params.set('fast', '1')
+        } else if (category === 'web') {
+          endpoint = '/api/ingest/web'
+          params.set('per', runRegion === 'global' ? '10' : '12')
+          params.set('pages', runRegion === 'global' ? '3' : '5')
+          params.set('sample', '6')
+          params.set('limit', String(Math.max(30, maxCombos * 24)))
+          params.set('providers', selectedWebProviders.join(','))
+          params.set('region', runRegion)
+        } else {
+          endpoint = '/api/ingest/images'
+          params.set('sample', '6')
+          params.set('region', runRegion)
+        }
+
+        params.set('q', combo.query || '')
+
+        const url = `${endpoint}?${params.toString()}`
+        const controller = new AbortController()
+        const cleanup = trackController(controller)
+        let timeoutId
+        let timedOut = false
+        if (category === 'videos' && fastTimeoutMs > 0) {
+          timeoutId = window.setTimeout(() => {
+            timedOut = true
+            controller.abort()
+          }, fastTimeoutMs)
+        }
+
+        try {
+          const res = await fetch(url, {
+            method: 'GET',
+            headers: { 'x-admin-ingest-key': key },
+            signal: controller.signal,
+          })
+          let data = null
+          try {
+            data = await res.json()
+          } catch (parseError) {
+            data = null
+          }
+
+          if (!res.ok || !data) {
+            const message = (data && data.error) || res.statusText || 'Ingest failed'
+            appendLog(`<p class="error">${label} → ${message}</p>`)
+            return { success: false, fatal: res.status === 401 || res.status === 403, message }
+          }
+
+          const providers = data?.providerCounts || {}
+          for (const name of Object.keys(providers)) {
+            providerCounts[name] = (providerCounts[name] || 0) + (providers[name] || 0)
+          }
+
+          totals.scanned += data?.scanned || 0
+          totals.unique += data?.unique || 0
+          totals.inserted += data?.inserted || 0
+          totals.updated += data?.updated || 0
+          totals.skipped += data?.skippedInvalid || 0
+
+          appendLog(`
+            <div class="combo">
+              <h3>${label}</h3>
+              <small>${combo.query}</small>
+              <div>scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${data?.skippedInvalid ? ` skipped:${data.skippedInvalid}` : ''}</div>
+            </div>
+          `)
+
+          return { success: true, fatal: false }
+        } catch (error) {
+          if (timedOut) {
+            appendLog(`<p class="error">${label} → timeout (${Math.round(fastTimeoutMs / 1000)}s)</p>`)
+            return { success: false, fatal: false }
+          }
+          if (controller.signal.aborted && stopRequested) {
+            appendLog(`<p class="error">${label} → arrêté</p>`)
+            return { success: false, fatal: false, aborted: true }
+          }
+          const message = error instanceof Error ? error.message : String(error)
+          appendLog(`<p class="error">${label} → ${message}</p>`)
+          return { success: false, fatal: false, message }
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId)
+          cleanup()
         }
       }
 
@@ -452,6 +607,8 @@
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       stopBtn.addEventListener('click', () => {
         stopRequested = true
+        abortActiveRequests()
+        appendLog('<p>Arrêt demandé…</p>')
       })
 
       setRunning(false)
