@@ -343,7 +343,7 @@ async function searchYouTube(
   }
   async function fetchForQuery(trimmed: string) {
     const started = Date.now();
-    const durationList = durations.length ? durations : ['any'];
+    const durationList = (durations.length ? durations : ['any']) as Array<'any' | 'short' | 'medium' | 'long'>;
 
     async function fetchForDuration(duration: 'any' | 'short' | 'medium' | 'long') {
       if (Date.now() - started > maxTimePerQueryMs) {
