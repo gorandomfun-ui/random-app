@@ -316,11 +316,12 @@ async function searchYouTube(
   maxTimePerQueryMs = 35000,
   expandVariants = false,
 ): Promise<RawVideo[]> {
-  const key = process.env.YOUTUBE_API_KEY;
-  if (!key) {
+  const envKey = process.env.YOUTUBE_API_KEY;
+  if (!envKey) {
     console.warn('[ingest:youtube] missing YOUTUBE_API_KEY');
     return [];
   }
+  const key = envKey;
   const collected: RawVideo[] = [];
 
   function expandQueryVariants(query: string, cap = 6): string[] {
