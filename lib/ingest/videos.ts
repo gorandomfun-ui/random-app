@@ -351,15 +351,14 @@ async function searchYouTube(
       }
       let pageToken = '';
       for (let page = 0; page < pages; page++) {
-        const params = new URLSearchParams({
-          key,
-          part: 'snippet',
-          type: 'video',
-          maxResults: String(Math.min(50, Math.max(1, per))),
-          q: trimmed,
-          order: Math.random() < 0.5 ? 'date' : 'relevance',
-          videoEmbeddable: 'true',
-        });
+        const params = new URLSearchParams();
+        params.set('key', key);
+        params.set('part', 'snippet');
+        params.set('type', 'video');
+        params.set('maxResults', String(Math.min(50, Math.max(1, per))));
+        params.set('q', trimmed);
+        params.set('order', Math.random() < 0.5 ? 'date' : 'relevance');
+        params.set('videoEmbeddable', 'true');
         if (days > 0) {
           const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
           params.set('publishedAfter', publishedAfter);
