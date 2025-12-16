@@ -82,7 +82,7 @@
       <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
         <label style="display:flex; flex-direction:column; font-size:13px;">
           Combos vidéos/jour
-          <input id="videoGoal" type="number" min="0" value="60" style="margin-top:4px; padding:4px 6px;" />
+          <input id="videoGoal" type="number" min="0" value="20" style="margin-top:4px; padding:4px 6px;" />
         </label>
         <label style="display:flex; flex-direction:column; font-size:13px;">
           Combos images/jour
@@ -153,9 +153,13 @@
       let stopRequested = false
       const FAST_VIDEO_CONCURRENCY = 3
       const FAST_VIDEO_TIMEOUT_MS = 60000
-      const AUTO_RUN_HOUR = 19
+      const AUTO_RUN_WINDOWS = [
+        { hour: 9, minute: 30 },
+        { hour: 19, minute: 0 },
+      ]
       const AUTO_RUN_KEY = 'local-ingest:last-auto-run'
       const AUTO_RUN_PREF_KEY = 'local-ingest:auto-run-enabled'
+      const AUTO_RUN_WINDOW_KEY = 'local-ingest:last-auto-window'
       const GOAL_KEYS = {
         video: 'local-ingest:goal-video',
         image: 'local-ingest:goal-image',
@@ -163,6 +167,7 @@
       }
       const activeFetchControllers = new Set()
       let marathonRunning = false
+      let currentAutoWindowIndex = null
 
       function trackController(controller) {
         activeFetchControllers.add(controller)
@@ -252,6 +257,20 @@
         return date.toISOString().slice(0, 10)
       }
 
+      function getWindowTime(window, reference = new Date()) {
+        const d = new Date(reference)
+        d.setHours(window.hour, window.minute, 0, 0)
+        return d
+      }
+
+      function getWindowIndexForNow(now = new Date()) {
+        let index = -1
+        AUTO_RUN_WINDOWS.forEach((window, idx) => {
+          if (now >= getWindowTime(window, now)) index = idx
+        })
+        return index >= 0 ? index : null
+      }
+
       function hasAutoRunToday() {
         const last = localStorage.getItem(AUTO_RUN_KEY)
         if (!last) return false
@@ -259,8 +278,20 @@
         return lastDate.toDateString() === new Date().toDateString()
       }
 
-      function markAutoRunComplete() {
+      function getLastAutoWindowIndex() {
+        const raw = localStorage.getItem(AUTO_RUN_WINDOW_KEY)
+        if (!raw) return null
+        const [date, index] = raw.split(':')
+        if (date !== getTodayKey()) return null
+        if (index === 'manual') return AUTO_RUN_WINDOWS.length
+        const parsed = Number(index)
+        return Number.isFinite(parsed) ? parsed : null
+      }
+
+      function markAutoRunComplete(windowIndex = null) {
         localStorage.setItem(AUTO_RUN_KEY, new Date().toISOString())
+        const indexValue = typeof windowIndex === 'number' ? String(windowIndex) : 'manual'
+        localStorage.setItem(AUTO_RUN_WINDOW_KEY, `${getTodayKey()}:${indexValue}`)
         updateAutoStatus()
       }
 
@@ -268,9 +299,19 @@
         if (!autoRunStatusEl) return
         const lastRun = localStorage.getItem(AUTO_RUN_KEY)
         const autoEnabled = !autoRunToggleEl || autoRunToggleEl.checked
+        const windowsLabel = AUTO_RUN_WINDOWS.map((window) => `${String(window.hour).padStart(2, '0')}:${String(window.minute).padStart(2, '0')}`).join(' / ')
         let message = lastRun ? `Dernier run: ${new Date(lastRun).toLocaleString()}` : 'Aucun run effectué pour le moment.'
         if (autoEnabled) {
-          message += hasAutoRunToday() ? ' • Session du jour déjà effectuée.' : ` • Auto-run prévu dès ${AUTO_RUN_HOUR}h.`
+          if (hasAutoRunToday()) {
+            message += ' • Session du jour déjà effectuée.'
+          } else {
+            const lastWindow = getLastAutoWindowIndex()
+            const nextWindow = AUTO_RUN_WINDOWS.find((_, idx) => (lastWindow ?? -1) < idx)
+            message += nextWindow
+              ? ` • Prochain auto-run vers ${String(nextWindow.hour).padStart(2, '0')}:${String(nextWindow.minute).padStart(2, '0')}.`
+              : ''
+          }
+          message += ` • Fenêtres: ${windowsLabel}.`
         } else {
           message += ' • Auto-run désactivé.'
         }
@@ -279,12 +320,15 @@
 
       function maybeAutoRun() {
         if (!autoRunToggleEl || !autoRunToggleEl.checked) return
-        if (marathonRunning) return
-        if (stopRequested) return
+        if (marathonRunning || stopRequested) return
         if (hasAutoRunToday()) return
         const now = new Date()
-        if (now.getHours() < AUTO_RUN_HOUR) return
-        runMarathon({ reason: 'auto' })
+        const windowIndex = getWindowIndexForNow(now)
+        if (windowIndex === null) return
+        const lastWindow = getLastAutoWindowIndex()
+        if (lastWindow !== null && lastWindow >= windowIndex) return
+        currentAutoWindowIndex = windowIndex
+        runMarathon({ reason: 'auto', windowIndex })
       }
 
       if (autoRunToggleEl) {
@@ -600,8 +644,9 @@
         }
       }
 
-      async function runMarathon({ reason = 'manual' } = {}) {
+      async function runMarathon({ reason = 'manual', windowIndex = null } = {}) {
         if (marathonRunning) return
+        currentAutoWindowIndex = windowIndex
         stopRequested = false
         marathonRunning = true
         setRunning(true)
@@ -640,7 +685,7 @@
         const manualCombos = collectManualCombos()
         const tasks = [
           { category: 'images', limit: getGoalValue(imageGoalEl, 80) },
-          { category: 'videos', limit: getGoalValue(videoGoalEl, 60), forceFast: true },
+          { category: 'videos', limit: getGoalValue(videoGoalEl, 20), forceFast: false },
           { category: 'web', limit: getGoalValue(webGoalEl, 50) },
         ]
 
@@ -661,7 +706,7 @@
         }
 
         if (!stopRequested) {
-          markAutoRunComplete()
+          markAutoRunComplete(currentAutoWindowIndex)
           appendLog('<p class="success">Ingestion complète terminée.</p>')
         } else {
           appendLog('<p class="error">Ingestion complète interrompue.</p>')
@@ -669,6 +714,7 @@
 
         marathonRunning = false
         setRunning(false)
+        currentAutoWindowIndex = null
       }
 
       async function runCombo(combo, context) {

@@ -29,7 +29,7 @@ const TYPE_ICONS: Record<ItemType, string> = {
   fact: '/icons/fact.svg',
 }
 const MINIGAME_ICON = '/icons/Game.svg'
-const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_200_Horizontal_Light-Backgrounds_With_Logo.gif'
+const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
 
 type LikeableDisplayItem = Exclude<DisplayItem, EncourageItem | MiniGameItem>
 
@@ -90,23 +90,25 @@ function ImageBlock({
       </div>
 
       {showCaption && (
-        <figcaption className="mt-3 text-center text-sm opacity-80">
+        <figcaption className={`mt-3 w-full ${isGiphy ? '' : 'text-center text-sm opacity-80'}`}>
           {isGiphy && sourceHref ? (
-            <a
-              href={sourceHref}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="View on Giphy"
-              className="inline-flex items-center justify-center"
-            >
-              <img
-                src={GIPHY_ATTRIBUTION_BADGE}
-                alt="Powered by GIPHY"
-                className="h-10 w-auto"
-                loading="lazy"
-                decoding="async"
-              />
-            </a>
+            <div className="bg-black flex items-center justify-center" style={{ height: '2.6rem' }}>
+              <a
+                href={sourceHref}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="View on Giphy"
+                className="inline-flex items-center justify-center px-4"
+              >
+                <img
+                  src={GIPHY_ATTRIBUTION_BADGE}
+                  alt="Powered by GIPHY"
+                  className="h-10 w-auto"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </a>
+            </div>
           ) : (
             <>
               {sourceLabel ? <span>{sourceLabel}</span> : null}
@@ -372,7 +374,7 @@ function ContentRenderer({
             src={item.ogImage}
             alt={item.text || host || 'web'}
             sourceHref={sourceHref}
-             provider={item.provider}
+            provider={item.provider}
             maxHeight="min(34vh, 320px)"
           />
         ) : null}
@@ -1089,7 +1091,7 @@ export default function RandomModal({
         )}
 
         {/* corps */}
-        <div className="px-6 py-5 flex items-center justify-center min-h-[320px] md:min-h-[360px] overflow-y-auto overflow-x-hidden flex-1">
+        <div className="px-6 py-5 flex items-center justify-center min-h-[320px] md:min-h-[360px] overflow-y-auto flex-1">
           {viewItem ? (
             <ContentRenderer
               item={viewItem}

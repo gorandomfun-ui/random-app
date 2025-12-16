@@ -181,12 +181,6 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     return [item.correctIndex]
   }, [item.correctIndices, item.correctIndex, item.options.length])
 
-  const sourceName = item.source?.name || item.provider || 'Quiz'
-  const sourceUrl = item.source?.url
-  const correctAnswers = useMemo(
-    () => allCorrectIndices.map((idx) => item.options[idx]).filter(Boolean),
-    [allCorrectIndices, item.options],
-  )
 
   const quizReward = useMemo(() => {
     const map: Record<string, number> = { easy: 2, medium: 4, hard: 6 }
@@ -209,48 +203,61 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     }
   }
 
-  const isCorrect = revealed && selected !== null && allCorrectIndices.includes(selected)
+  const isCorrect = useMemo(
+    () => revealed && selected !== null && allCorrectIndices.includes(selected),
+    [allCorrectIndices, revealed, selected],
+  )
+  const difficultyColorMap: Record<string, string> = {
+    easy: '#0FC55D',
+    medium: '#E5972B',
+    hard: '#D90845',
+  }
+  const difficultyColor = difficultyColorMap[item.difficulty ?? ''] ?? '#E5972B'
 
   return (
     <div
-      className="w-full max-w-3xl mx-auto flex h-full flex-col gap-4"
+      className="-mx-4 sm:-mx-6 w-[calc(100%+2rem)] sm:w-[calc(100%+3rem)] flex h-full flex-col gap-4"
       style={{ paddingBottom: '24px' }}
     >
-      <div className="px-1">
+      <div className="px-4 sm:px-6">
         <p
           className="font-tomorrow font-bold text-xl md:text-3xl leading-snug text-center"
           style={{ color: theme.cream, fontFamily: "'Tomorrow', sans-serif", fontWeight: 700 }}
         >
           {item.question}
         </p>
-        <div className="mt-2 text-center text-[11px] font-inter opacity-70">
-          <span>Source : </span>
-          {sourceUrl ? (
-            <a href={sourceUrl} target="_blank" rel="noreferrer" className="underline">
-              {sourceName}
-            </a>
-          ) : (
-            <span>{sourceName}</span>
-          )}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[10px] uppercase tracking-wide opacity-80 font-inter">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-[11px] uppercase tracking-wide font-inter">
           {item.category ? (
-            <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.22)' }}>
+            <span
+              className="px-4 py-1 rounded-full border text-xs font-semibold"
+              style={{ borderColor: 'rgba(255,255,255,0.22)', color: theme.cream }}
+            >
               {item.category}
             </span>
           ) : null}
           {item.difficulty ? (
-            <span className="px-3 py-1 rounded-full border border-white/30" style={{ borderColor: 'rgba(255,255,255,0.18)' }}>
+            <span
+              className="px-4 py-1 rounded-full text-xs font-semibold uppercase"
+              style={{ backgroundColor: difficultyColor, color: '#191916', letterSpacing: '.1em' }}
+            >
               {item.difficulty}
             </span>
           ) : null}
         </div>
+        {revealed && selected !== null ? (
+          <div
+            className="mt-4 px-1 font-inter text-sm md:text-base text-center"
+            style={{ color: isCorrect ? '#0FC55D' : '#D90845' }}
+          >
+            {isCorrect ? 'Bonne réponse ! ✅' : 'Mauvaise réponse ❌'}
+          </div>
+        ) : null}
       </div>
       <div
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto px-4 sm:px-6"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
-        <div className="flex flex-col gap-1.5">
+        <div className="-mx-4 sm:-mx-6 w-[calc(100%+2rem)] sm:w-[calc(100%+3rem)] flex flex-col gap-1.5 px-0">
           {item.options.map((option, index) => {
             const isSelected = selected === index
             const isAnswer = allCorrectIndices.includes(index)
@@ -258,16 +265,20 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
             const style = {
               color: theme.cream,
               background: 'transparent',
-              padding: '10px 8px',
+              border: '1px solid rgba(255,255,255,0.08)',
+              padding: '12px 16px',
             } as CSSProperties
             if (!revealed && isSelected) {
-              style.background = 'rgba(255,255,255,0.06)'
+              style.background = 'rgba(255,255,255,0.08)'
             }
             if (revealState && isAnswer) {
-              style.background = 'rgba(34,255,156,0.16)'
-              style.color = theme.text
+              style.background = '#0FC55D'
+              style.color = '#FFFFFF'
+              style.borderColor = '#0FC55D'
             } else if (revealState && !isAnswer) {
-              style.background = 'rgba(255,0,92,0.12)'
+              style.background = '#D90845'
+              style.color = '#FFFFFF'
+              style.borderColor = '#D90845'
             }
             return (
               <button
@@ -275,19 +286,19 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
                 type="button"
                 onClick={() => onSelect(index)}
                 disabled={revealed}
-                className="w-full rounded-md text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default"
+                className="w-full text-left md:text-center font-inter text-base md:text-lg transition-colors disabled:cursor-default px-4 py-3"
                 style={style}
               >
                 <span className="flex items-center gap-3 justify-between md:justify-center">
                   <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold"
-                    style={{ borderColor: 'rgba(255,255,255,0.35)' }}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center border-2 text-[11px] font-semibold"
+                    style={{ borderColor: 'rgba(255,255,255,0.5)' }}
                   >
                     {String.fromCharCode(65 + index)}
                   </span>
                   <span className="flex-1 text-left md:text-center leading-snug">{option}</span>
                   {revealed && isAnswer ? (
-                    <span className="hidden md:inline-flex text-xs font-semibold" style={{ color: '#22FF9C' }}>
+                    <span className="hidden md:inline-flex text-xs font-semibold" style={{ color: '#0FC55D' }}>
                       ✓
                     </span>
                   ) : null}
@@ -297,21 +308,6 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
           })}
         </div>
       </div>
-      {revealed && selected !== null ? (
-        <div
-          className="px-1 font-inter text-sm md:text-base text-center"
-          style={{ color: isCorrect ? '#22FF9C' : '#FF8A8A' }}
-        >
-          {isCorrect ? 'Bonne réponse ! ✅' : (
-            <span>
-              Mauvaise réponse ❌
-              <span className="block mt-1 text-xs md:text-sm opacity-80" style={{ color: theme.cream }}>
-                Réponse correcte : {correctAnswers.length ? correctAnswers.join(', ') : item.answer}
-              </span>
-            </span>
-          )}
-        </div>
-      ) : null}
     </div>
   )
 }

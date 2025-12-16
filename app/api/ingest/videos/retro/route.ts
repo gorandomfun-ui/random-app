@@ -20,10 +20,8 @@ export async function GET(req: NextRequest) {
   const authError = authorize(req)
   if (authError) return authError
   try {
-    const url = req.nextUrl
-    const count = Math.max(10, Math.min(200, Number(url.searchParams.get('count')) || 100))
-    const result = await ingestRetroTrendingVideos(count)
-    return NextResponse.json({ ok: true, count, ...result })
+    const result = await ingestRetroTrendingVideos()
+    return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'retro ingest failed'
     return NextResponse.json({ error: message }, { status: 500 })

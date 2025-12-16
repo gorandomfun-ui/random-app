@@ -135,8 +135,10 @@ const RETRO_THEMES = [
   'festival recap',
 ];
 
-const YT_TRENDING_PER_REGION = 30;
+const YT_TRENDING_PER_REGION = 50;
 const DAILYMOTION_TRENDING_PER_REGION = 20;
+const RETRO_QUERY_COUNT = 10;
+const RETRO_RESULTS_PER_QUERY = 10;
 
 type YoutubeThumbnails = {
   high?: { url?: string };
@@ -1264,7 +1266,7 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
 export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean } = {}): Promise<IngestResult> {
   const warnings: FetchWarning[] = [];
   const collected: RawVideo[] = [];
-  for (const region of regions) {
+  for (const region of regions.slice(0, 2)) {
     collected.push(...await fetchYouTubeTrending(region, YT_TRENDING_PER_REGION, warnings));
     collected.push(...await fetchDailymotionTrending(region, DAILYMOTION_TRENDING_PER_REGION, warnings));
   }
@@ -1297,29 +1299,30 @@ function seededRandom(seed: number) {
 }
 
 function buildRetroQueries(count: number, date = new Date()): string[] {
-  const daySeed = Number.parseInt(date.toISOString().slice(0, 10).replace(/-/g, ''), 10);
-  const rng = seededRandom(daySeed);
-  const queries: string[] = [];
+  const daySeed = Number.parseInt(date.toISOString().slice(0, 10).replace(/-/g, ''), 10)
+  const rng = seededRandom(daySeed)
+  const queries: string[] = []
   for (let i = 0; i < count; i++) {
-    const theme = RETRO_THEMES[Math.floor(rng() * RETRO_THEMES.length)] || 'retro video';
-    const year = 1965 + Math.floor(rng() * 40);
-    const extra = rng() < 0.5 ? 'full episode' : 'highlight';
-    queries.push(`${theme} ${year} ${extra}`.trim());
+    const theme = RETRO_THEMES[i % RETRO_THEMES.length] || 'retro broadcast'
+    const year = 1965 + Math.floor(rng() * 40)
+    const extras = ['full episode', 'highlight', 'archive footage', 'broadcast']
+    const extra = extras[Math.floor(rng() * extras.length)]
+    queries.push(`${theme} ${year} ${extra}`.trim())
   }
-  return queries;
+  return queries
 }
 
-export async function ingestRetroTrendingVideos(count = 100, options: { dryRun?: boolean } = {}): Promise<IngestResult> {
-  const queries = buildRetroQueries(count);
+export async function ingestRetroTrendingVideos(options: { dryRun?: boolean } = {}): Promise<IngestResult> {
+  const queries = buildRetroQueries(RETRO_QUERY_COUNT)
   return ingestVideos({
     mode: 'search',
     queries,
-    per: 12,
+    per: RETRO_RESULTS_PER_QUERY,
     pages: 1,
     days: 0,
     providers: ['youtube', 'dailymotion'],
     fast: true,
     dryRun: Boolean(options.dryRun),
     sampleSize: 12,
-  });
+  })
 }

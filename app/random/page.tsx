@@ -15,6 +15,7 @@ import ShareMenu from '@/components/ShareMenu'
 import ShufflePicker from '@/components/ShufflePicker'
 import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
+import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
@@ -42,7 +43,7 @@ const TYPE_ICONS: Record<ItemType, string> = {
   joke: '/icons/joke.svg',
   fact: '/icons/fact.svg',
 }
-const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_200_Horizontal_Light-Backgrounds_With_Logo.gif'
+const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
 
 const FIXED_SEQUENCE: ItemType[] = [
   'image',
@@ -67,7 +68,7 @@ const ENCOURAGE_INTERVALS = [22, 24, 28, 24, 26, 28]
 const PRELOAD_TARGET_PER_TYPE = 4
 const RECENT_SESSION_LIMIT = 10
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
-const MINI_GAME_FREQUENCY = 3
+const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
 
 const FALLBACK_ENCOURAGE_MESSAGES = [
   'Keep exploring forward.',
@@ -200,28 +201,31 @@ function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage') return null
   if (item.type === 'minigame') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
+  const isQuizFact = item.type === 'fact' && (item as FactItem).variant === 'quiz'
 
   if (item.type === 'image') {
     const normalizedProvider = (item.provider || item.source?.name || '').toLowerCase()
     const giphyHref = item.source?.url || item.pageUrl || item.link || item.url || null
     if (normalizedProvider === 'giphy' && giphyHref) {
       return (
-        <a
-          href={giphyHref}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="View on Giphy"
-          className="inline-flex items-center justify-center"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={GIPHY_ATTRIBUTION_BADGE}
-            alt="Powered by GIPHY"
-            className="h-10 w-auto"
-            loading="lazy"
-            decoding="async"
-          />
-        </a>
+        <div className="w-full bg-black flex items-center justify-center" style={{ height: '2.6rem' }}>
+          <a
+            href={giphyHref}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="View on Giphy"
+            className="inline-flex items-center justify-center px-4"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={GIPHY_ATTRIBUTION_BADGE}
+              alt="Powered by GIPHY"
+              className="h-10 w-auto"
+              loading="lazy"
+              decoding="async"
+            />
+          </a>
+        </div>
       )
     }
   }
@@ -264,12 +268,16 @@ function SourceLine({ item }: { item: DisplayItem }) {
     if (idx > 0) rendered.push(<span key={`dot-${idx}`} className="opacity-60">·</span>)
     rendered.push(part)
   })
+  if (isQuizFact) {
+    return (
+      <span className="inline-flex flex-wrap items-center justify-center gap-[6px] opacity-80">
+        <span>Source :</span>
+        {rendered}
+      </span>
+    )
+  }
 
-  return (
-    <span className="inline-flex flex-wrap items-center justify-center gap-[6px]">
-      {rendered}
-    </span>
-  )
+  return <span className="inline-flex flex-wrap items-center justify-center gap-[6px] opacity-80">{rendered}</span>
 }
 
 function ImageBlock({
@@ -1169,7 +1177,7 @@ export default function RandomExperiencePage({
   const contentFrameStyle = useMemo(() => ({
     height: contentHeight,
     borderRadius: 0,
-    overflow: 'hidden',
+    overflow: 'visible',
     backgroundColor: theme.bg,
     display: 'flex',
     alignItems: 'center',
@@ -1725,9 +1733,9 @@ const sequenceStateRef = useRef({
     }
   }, [drainPrefetchedItems, getContentKey, isRecentKey, locale])
 
-  const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
-    if (MINI_GAME_FREQUENCY <= 0) return null
-    const state = miniGameStateRef.current
+const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
+  if (!MINIGAMES_ENABLED || MINI_GAME_FREQUENCY <= 0) return null
+  const state = miniGameStateRef.current
     const upcoming = state.jokeDisplays + 1
     if (upcoming % MINI_GAME_FREQUENCY !== 0) return null
     if (!state.pool.length) {
@@ -2054,12 +2062,13 @@ const sequenceStateRef = useRef({
   }, [adLabel, categoryType, navLabels, shouldShowInlineAd])
 
   const categoryIcon = shouldShowInlineAd || !categoryType ? null : TYPE_ICONS[categoryType]
-  const showXpForCategory = useMemo(() => {
-    if (shouldShowInlineAd || !viewItem) return false
-    if (viewItem.type === 'minigame') return true
-    if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
-    return false
-  }, [shouldShowInlineAd, viewItem])
+const showXpForCategory = useMemo(() => {
+  if (!XP_UI_ENABLED) return false
+  if (shouldShowInlineAd || !viewItem) return false
+  if (viewItem.type === 'minigame') return true
+  if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
+  return false
+}, [shouldShowInlineAd, viewItem])
   const adHeight = viewportWidth && viewportWidth >= 768 ? 90 : 50
   const adWidth = viewportWidth && viewportWidth >= 768 ? 728 : 320
   const footerPadHeight = adsAllowed ? adHeight : 0
@@ -2194,7 +2203,7 @@ const sequenceStateRef = useRef({
         </div>
 
         {!shouldShowInlineAd && viewItem && viewItem.type !== 'encourage' ? (
-          <div className="text-center text-sm md:text-base font-inter opacity-80" style={{ color: theme.text }}>
+          <div className="w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
         ) : null}
@@ -2273,8 +2282,11 @@ const sequenceStateRef = useRef({
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between" style={{ color: theme.cream }}>
-              <ScoreCounter />
+            <div
+              className={`flex items-center ${XP_UI_ENABLED ? 'justify-between' : 'justify-end'}`}
+              style={{ color: theme.cream }}
+            >
+              {XP_UI_ENABLED ? <ScoreCounter /> : null}
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

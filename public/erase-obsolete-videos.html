@@ -269,9 +269,13 @@
       let adminKey = ''
       let busy = false
       let lastResult = null
-      const AUTO_SCAN_HOUR = 19
+      const AUTO_SCAN_WINDOWS = [
+        { hour: 9, minute: 30 },
+        { hour: 19, minute: 0 },
+      ]
       const AUTO_SCAN_KEY = 'erase-obsolete:last-auto-scan'
       const AUTO_SCAN_PREF_KEY = 'erase-obsolete:auto-enabled'
+      const AUTO_SCAN_WINDOW_KEY = 'erase-obsolete:last-window'
 
       const storedKey = localStorage.getItem('local-ingest-key') || ''
       adminKey = storedKey || window.prompt('Admin ingest key', '') || ''
@@ -338,14 +342,44 @@
         deleteRateLimitedBtn.disabled = disable || !rateLimitedCount
       }
 
+      function getTodayKey(date = new Date()) {
+        return date.toISOString().slice(0, 10)
+      }
+
+      function getAutoWindowTime(window, reference = new Date()) {
+        const d = new Date(reference)
+        d.setHours(window.hour, window.minute, 0, 0)
+        return d
+      }
+
+      function getAutoWindowIndex(now = new Date()) {
+        let index = -1
+        AUTO_SCAN_WINDOWS.forEach((window, idx) => {
+          if (now >= getAutoWindowTime(window, now)) index = idx
+        })
+        return index >= 0 ? index : null
+      }
+
       function hasAutoScanToday() {
         const lastRun = localStorage.getItem(AUTO_SCAN_KEY)
         if (!lastRun) return false
         return new Date(lastRun).toDateString() === new Date().toDateString()
       }
 
-      function markAutoScan() {
+      function getLastAutoScanWindow() {
+        const raw = localStorage.getItem(AUTO_SCAN_WINDOW_KEY)
+        if (!raw) return null
+        const [date, index] = raw.split(':')
+        if (date !== getTodayKey()) return null
+        if (index === 'manual') return AUTO_SCAN_WINDOWS.length
+        const parsed = Number(index)
+        return Number.isFinite(parsed) ? parsed : null
+      }
+
+      function markAutoScan(windowIndex = null) {
         localStorage.setItem(AUTO_SCAN_KEY, new Date().toISOString())
+        const value = typeof windowIndex === 'number' ? String(windowIndex) : 'manual'
+        localStorage.setItem(AUTO_SCAN_WINDOW_KEY, `${getTodayKey()}:${value}`)
         updateAutoStatus()
       }
 
@@ -353,8 +387,22 @@
         if (!autoScanStatus) return
         const lastRun = localStorage.getItem(AUTO_SCAN_KEY)
         const enabled = autoScanToggle ? autoScanToggle.checked : true
+        const windowsLabel = AUTO_SCAN_WINDOWS.map((window) => `${String(window.hour).padStart(2, '0')}:${String(window.minute).padStart(2, '0')}`).join(' / ')
         let message = lastRun ? `Dernier scan auto: ${new Date(lastRun).toLocaleString()}` : 'Aucun scan auto effectué.'
-        message += enabled ? (hasAutoScanToday() ? ' • Scan du jour effectué.' : ` • Prochain scan auto à ${AUTO_SCAN_HOUR}h si la page reste ouverte.`) : ' • Auto-scan désactivé.'
+        if (enabled) {
+          if (hasAutoScanToday()) {
+            message += ' • Scan du jour effectué.'
+          } else {
+            const lastWindow = getLastAutoScanWindow()
+            const nextWindow = AUTO_SCAN_WINDOWS.find((_, idx) => (lastWindow ?? -1) < idx)
+            if (nextWindow) {
+              message += ` • Prochain auto-scan vers ${String(nextWindow.hour).padStart(2, '0')}:${String(nextWindow.minute).padStart(2, '0')}.`
+            }
+          }
+          message += ` • Fenêtres: ${windowsLabel}.`
+        } else {
+          message += ' • Auto-scan désactivé.'
+        }
         autoScanStatus.textContent = message
       }
 
@@ -711,9 +759,12 @@
         if (busy) return
         if (hasAutoScanToday()) return
         const now = new Date()
-        if (now.getHours() < AUTO_SCAN_HOUR) return
+        const windowIndex = getAutoWindowIndex(now)
+        if (windowIndex === null) return
+        const lastWindow = getLastAutoScanWindow()
+        if (lastWindow !== null && lastWindow >= windowIndex) return
         const ok = await scanVideos()
-        if (ok) markAutoScan()
+        if (ok) markAutoScan(windowIndex)
       }
 
       updateAutoStatus()

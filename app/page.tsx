@@ -21,6 +21,7 @@ import ScoreCounter from '@/components/ScoreCounter'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
+import { XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
@@ -644,8 +645,11 @@ export default function HomePage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between" style={{ color: theme.cream }}>
-              <ScoreCounter />
+            <div
+              className={`flex items-center ${XP_UI_ENABLED ? 'justify-between' : 'justify-end'}`}
+              style={{ color: theme.cream }}
+            >
+              {XP_UI_ENABLED ? <ScoreCounter /> : null}
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -730,16 +734,6 @@ export default function HomePage() {
                   </ul>
                 ) : null}
               </div>
-
-              <button
-                type="button"
-                onClick={toggleSound}
-                className="mt-2 w-full rounded-xl border border-white/25 px-3 py-2 text-sm font-semibold uppercase tracking-[0.15em]"
-                style={{ color: theme.cream }}
-                aria-pressed={!soundMuted}
-              >
-                Sound FX: {soundMuted ? 'Off' : 'On'}
-              </button>
 
               <Link
                 href="/legal"
