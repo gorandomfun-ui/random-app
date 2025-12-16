@@ -1186,7 +1186,13 @@ async function fetchYouTubeTrending(region: string, limit: number, warnings: Fet
   url.searchParams.set('chart', 'mostPopular');
   url.searchParams.set('regionCode', region);
   url.searchParams.set('maxResults', String(Math.min(50, Math.max(1, limit))));
-  const data = await fetchJson<YoutubeVideosResponse>(url.toString(), { headers: USER_AGENT, timeoutMs: 10000 });
+  const data = await fetchJson<YoutubeVideosResponse>(
+    url.toString(),
+    10000,
+    'youtube:trending',
+    warnings,
+    { headers: USER_AGENT },
+  );
   const items = data?.items ?? [];
   const rows: RawVideo[] = [];
   for (const item of items.slice(0, limit)) {
@@ -1220,10 +1226,13 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
   });
   const locale = DAILYMOTION_LOCALE[region];
   if (locale) params.set('localization', locale);
-  const data = await fetchJson<DailymotionResponse>(`https://api.dailymotion.com/videos?${params.toString()}`, {
-    headers: USER_AGENT,
-    timeoutMs: 8000,
-  });
+  const data = await fetchJson<DailymotionResponse>(
+    `https://api.dailymotion.com/videos?${params.toString()}`,
+    8000,
+    'dailymotion:trending',
+    warnings,
+    { headers: USER_AGENT },
+  );
   const list = data?.list ?? [];
   const rows: RawVideo[] = [];
   for (const item of list.slice(0, limit)) {
