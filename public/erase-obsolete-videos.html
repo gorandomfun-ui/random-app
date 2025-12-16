@@ -245,6 +245,12 @@
         <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>Delete 429 items (use sparingly)</button>
       </div>
 
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;">
+        <input id="autoScanToggle" type="checkbox" />
+        Auto-scan quotidien (19h)
+      </label>
+      <p id="autoScanStatus" class="note"></p>
+
       <div id="status" class="status"></div>
       <div id="summary" class="summary hidden"></div>
       <div id="list"></div>
@@ -257,10 +263,15 @@
       const scanBtn = document.getElementById('scanBtn')
       const deleteBtn = document.getElementById('deleteBtn')
       const deleteRateLimitedBtn = document.getElementById('deleteRateLimitedBtn')
+      const autoScanToggle = document.getElementById('autoScanToggle')
+      const autoScanStatus = document.getElementById('autoScanStatus')
 
       let adminKey = ''
       let busy = false
       let lastResult = null
+      const AUTO_SCAN_HOUR = 19
+      const AUTO_SCAN_KEY = 'erase-obsolete:last-auto-scan'
+      const AUTO_SCAN_PREF_KEY = 'erase-obsolete:auto-enabled'
 
       const storedKey = localStorage.getItem('local-ingest-key') || ''
       adminKey = storedKey || window.prompt('Admin ingest key', '') || ''
@@ -268,6 +279,15 @@
         localStorage.setItem('local-ingest-key', adminKey)
       }
       document.body.dataset.key = adminKey
+
+      if (autoScanToggle) {
+        const stored = localStorage.getItem(AUTO_SCAN_PREF_KEY)
+        autoScanToggle.checked = stored === null ? true : stored === '1'
+        autoScanToggle.addEventListener('change', () => {
+          localStorage.setItem(AUTO_SCAN_PREF_KEY, autoScanToggle.checked ? '1' : '0')
+          updateAutoStatus()
+        })
+      }
 
       function normalizeCounts(rawCounts) {
         const counts = rawCounts && typeof rawCounts === 'object' ? rawCounts : {}
@@ -316,6 +336,26 @@
         const rateLimitedCount = lastResult?.rateLimited?.length ?? 0
         deleteBtn.disabled = disable || !obsoleteCount
         deleteRateLimitedBtn.disabled = disable || !rateLimitedCount
+      }
+
+      function hasAutoScanToday() {
+        const lastRun = localStorage.getItem(AUTO_SCAN_KEY)
+        if (!lastRun) return false
+        return new Date(lastRun).toDateString() === new Date().toDateString()
+      }
+
+      function markAutoScan() {
+        localStorage.setItem(AUTO_SCAN_KEY, new Date().toISOString())
+        updateAutoStatus()
+      }
+
+      function updateAutoStatus() {
+        if (!autoScanStatus) return
+        const lastRun = localStorage.getItem(AUTO_SCAN_KEY)
+        const enabled = autoScanToggle ? autoScanToggle.checked : true
+        let message = lastRun ? `Dernier scan auto: ${new Date(lastRun).toLocaleString()}` : 'Aucun scan auto effectué.'
+        message += enabled ? (hasAutoScanToday() ? ' • Scan du jour effectué.' : ` • Prochain scan auto à ${AUTO_SCAN_HOUR}h si la page reste ouverte.`) : ' • Auto-scan désactivé.'
+        autoScanStatus.textContent = message
       }
 
       function buildCompletionMessage(result) {
@@ -458,7 +498,7 @@
       async function scanVideos() {
         if (!adminKey) {
           alert('Missing admin ingest key.')
-          return
+          return false
         }
         setBusy(true)
         lastResult = null
@@ -558,12 +598,14 @@
           if (!lastResult) {
             throw new Error('Scan finished without a result.')
           }
+          return true
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           statusEl.textContent = `Error: ${message}`
           lastResult = null
           summaryEl.classList.add('hidden')
           listEl.innerHTML = ''
+          return false
         } finally {
           setBusy(false)
         }
@@ -654,6 +696,28 @@
       deleteRateLimitedBtn.addEventListener('click', () => {
         if (!busy) deleteRateLimitedVideos()
       })
+
+      function scheduleAutoScan() {
+        setTimeout(() => maybeAutoScan(false), 2000)
+        setInterval(() => maybeAutoScan(false), 60000)
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) maybeAutoScan(true)
+        })
+        window.addEventListener('focus', () => maybeAutoScan(true))
+      }
+
+      async function maybeAutoScan(triggeredByVisibility) {
+        if (!autoScanToggle || !autoScanToggle.checked) return
+        if (busy) return
+        if (hasAutoScanToday()) return
+        const now = new Date()
+        if (now.getHours() < AUTO_SCAN_HOUR) return
+        const ok = await scanVideos()
+        if (ok) markAutoScan()
+      }
+
+      updateAutoStatus()
+      scheduleAutoScan()
     </script>
   </body>
 </html>

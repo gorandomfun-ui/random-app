@@ -42,6 +42,7 @@ const TYPE_ICONS: Record<ItemType, string> = {
   joke: '/icons/joke.svg',
   fact: '/icons/fact.svg',
 }
+const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_200_Horizontal_Light-Backgrounds_With_Logo.gif'
 
 const FIXED_SEQUENCE: ItemType[] = [
   'image',
@@ -199,6 +200,31 @@ function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage') return null
   if (item.type === 'minigame') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
+
+  if (item.type === 'image') {
+    const normalizedProvider = (item.provider || item.source?.name || '').toLowerCase()
+    const giphyHref = item.source?.url || item.pageUrl || item.link || item.url || null
+    if (normalizedProvider === 'giphy' && giphyHref) {
+      return (
+        <a
+          href={giphyHref}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="View on Giphy"
+          className="inline-flex items-center justify-center"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={GIPHY_ATTRIBUTION_BADGE}
+            alt="Powered by GIPHY"
+            className="h-10 w-auto"
+            loading="lazy"
+            decoding="async"
+          />
+        </a>
+      )
+    }
+  }
 
   const baseSource: SourceInfo = item.source ?? null
   const fallbackSource: SourceInfo = baseSource ?? (item.provider ? { name: item.provider } : null)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 type Props = {
   text: string
@@ -17,25 +17,75 @@ export default function AnimatedButtonLabel({ text, color, trigger, toSecond = f
   const [playing, setPlaying] = useState(false)
   const [showSecond, setShowSecond] = useState<boolean>(toSecond)
   const mounted = useRef(false)
+  const targetSecondRef = useRef(toSecond)
+  const playingRef = useRef(false)
+  const pendingSecondRef = useRef<boolean | null>(null)
+  const animationTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const finishAnimation = useCallback((nextState?: boolean) => {
+    const finalState = typeof nextState === 'boolean' ? nextState : targetSecondRef.current
+    targetSecondRef.current = finalState
+    playingRef.current = false
+    setPlaying(false)
+    setShowSecond(finalState)
+  }, [])
+
+  const clearAnimationTimer = useCallback(() => {
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current)
+      animationTimerRef.current = null
+    }
+  }, [])
+
+  const startAnimation = useCallback(
+    (nextState: boolean) => {
+      clearAnimationTimer()
+      setAnimId(Math.floor(Math.random() * VARIANTS))
+      targetSecondRef.current = nextState
+      playingRef.current = true
+      setPlaying(true)
+      animationTimerRef.current = setTimeout(() => {
+        animationTimerRef.current = null
+        finishAnimation(nextState)
+        if (
+          pendingSecondRef.current != null &&
+          pendingSecondRef.current !== targetSecondRef.current
+        ) {
+          const queued = pendingSecondRef.current
+          pendingSecondRef.current = null
+          startAnimation(queued)
+        } else {
+          pendingSecondRef.current = null
+        }
+      }, DURATION)
+    },
+    [clearAnimationTimer, finishAnimation],
+  )
+
+  useEffect(() => {
+    playingRef.current = playing
+  }, [playing])
+
+  useEffect(() => {
+    return () => {
+      clearAnimationTimer()
+    }
+  }, [clearAnimationTimer])
 
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true
+      targetSecondRef.current = toSecond
       setShowSecond(toSecond)
       return
     }
-    if (toSecond === showSecond) return
-
-    setAnimId(Math.floor(Math.random() * VARIANTS))
-    setPlaying(true)
-
-    const timer = setTimeout(() => {
-      setPlaying(false)
-      setShowSecond(toSecond)
-    }, DURATION)
-
-    return () => clearTimeout(timer)
-  }, [trigger, toSecond, showSecond])
+    if (toSecond === targetSecondRef.current && !playingRef.current) return
+    if (playingRef.current) {
+      pendingSecondRef.current = toSecond
+      return
+    }
+    startAnimation(toSecond)
+  }, [trigger, toSecond, startAnimation])
 
   const dir12 = !showSecond && toSecond
   const dir21 = showSecond && !toSecond

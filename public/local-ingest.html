@@ -77,30 +77,49 @@
     </div>
 
     <div style="margin-bottom: 24px;">
-      <h2>Vidéos</h2>
-      <div id="videoProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 16px; font-size:14px;">
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="youtube" checked /> YouTube</label>
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="dailymotion" checked /> Dailymotion</label>
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pixabay" /> Pixabay</label>
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pexels" /> Pexels</label>
+      <h2>Ingestion quotidienne</h2>
+      <p style="margin: 6px 0 16px; font-size: 14px;">Un seul bouton lance les images, vidéos et pages web. Les combos manuels sont toujours exécutés en premier.</p>
+      <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+        <label style="display:flex; flex-direction:column; font-size:13px;">
+          Combos vidéos/jour
+          <input id="videoGoal" type="number" min="0" value="60" style="margin-top:4px; padding:4px 6px;" />
+        </label>
+        <label style="display:flex; flex-direction:column; font-size:13px;">
+          Combos images/jour
+          <input id="imageGoal" type="number" min="0" value="80" style="margin-top:4px; padding:4px 6px;" />
+        </label>
+        <label style="display:flex; flex-direction:column; font-size:13px;">
+          Combos web/jour
+          <input id="webGoal" type="number" min="0" value="50" style="margin-top:4px; padding:4px 6px;" />
+        </label>
       </div>
-      <label style="display:inline-flex; align-items:center; gap:6px; font-size:14px; margin-bottom:12px;">
-        <input id="fastVideoMode" type="checkbox" />
-        Mode rapide (YouTube optimisé)
+      <div style="margin:12px 0;">
+        <strong style="display:block; margin-bottom:6px;">Vidéos</strong>
+        <div id="videoProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; font-size:14px;">
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="youtube" checked /> YouTube</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="dailymotion" checked /> Dailymotion</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pixabay" /> Pixabay</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pexels" /> Pexels</label>
+        </div>
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:14px;">
+          <input id="fastVideoMode" type="checkbox" />
+          Mode rapide (YouTube optimisé)
+        </label>
+      </div>
+      <div style="margin:12px 0;">
+        <strong style="display:block; margin-bottom:6px;">Web</strong>
+        <div id="webProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; font-size:14px;">
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="cse" checked /> Google CSE</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="curated" checked /> Listes curées</label>
+        </div>
+      </div>
+      <label style="display:inline-flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;">
+        <input id="autoRunEnabled" type="checkbox" />
+        Auto-run à 19h (si cette page reste ouverte)
       </label>
-      <button id="runImages" class="primary">Ingest Images</button>
-      <button id="runVideos" class="secondary">Ingest Vidéos</button>
+      <div id="autoRunStatus" style="font-size:13px; color:#555; margin-bottom:12px;"></div>
+      <button id="runMarathon" class="primary">Lancer l’ingestion complète</button>
       <button id="stopBtn">Stop</button>
-    </div>
-
-    <div style="margin-bottom: 24px;">
-      <h2>Web</h2>
-      <p style="margin: 6px 0 12px; font-size: 14px;">Utilise le générateur de mots-clés (A/B/C) pour découvrir des sites via Google CSE et les listes curées.</p>
-      <div id="webProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; font-size:14px;">
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="cse" checked /> Google CSE</label>
-        <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="curated" checked /> Listes curées</label>
-      </div>
-      <button id="runWeb" class="secondary">Ingest Web</button>
     </div>
 
     <div id="log"></div>
@@ -112,10 +131,8 @@
       const dryRunEl = document.getElementById('dryRun')
       const stopBtn = document.getElementById('stopBtn')
       const buttons = {
-        images: document.getElementById('runImages'),
-        videos: document.getElementById('runVideos'),
+        marathon: document.getElementById('runMarathon'),
         feeds: document.getElementById('runFeeds'),
-        web: document.getElementById('runWeb'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -127,11 +144,25 @@
       const webProvidersEl = document.getElementById('webProviders')
       const regionSelectEl = document.getElementById('regionSelect')
       const fastVideoModeEl = document.getElementById('fastVideoMode')
+      const videoGoalEl = document.getElementById('videoGoal')
+      const imageGoalEl = document.getElementById('imageGoal')
+      const webGoalEl = document.getElementById('webGoal')
+      const autoRunToggleEl = document.getElementById('autoRunEnabled')
+      const autoRunStatusEl = document.getElementById('autoRunStatus')
 
       let stopRequested = false
       const FAST_VIDEO_CONCURRENCY = 3
       const FAST_VIDEO_TIMEOUT_MS = 60000
+      const AUTO_RUN_HOUR = 19
+      const AUTO_RUN_KEY = 'local-ingest:last-auto-run'
+      const AUTO_RUN_PREF_KEY = 'local-ingest:auto-run-enabled'
+      const GOAL_KEYS = {
+        video: 'local-ingest:goal-video',
+        image: 'local-ingest:goal-image',
+        web: 'local-ingest:goal-web',
+      }
       const activeFetchControllers = new Set()
+      let marathonRunning = false
 
       function trackController(controller) {
         activeFetchControllers.add(controller)
@@ -156,10 +187,8 @@
       }
 
       function setRunning(running) {
-        buttons.images.disabled = running
-        buttons.videos.disabled = running
+        if (buttons.marathon) buttons.marathon.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
-        if (buttons.web) buttons.web.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -189,6 +218,84 @@
       const getSelectedVideoProviders = () => getSelectedValues(videoProvidersEl, ['youtube'])
       const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'curated'])
       const getSelectedRegion = () => (regionSelectEl ? regionSelectEl.value : 'global')
+
+      function initGoalInput(el, storageKey, fallback) {
+        if (!el) return
+        const stored = localStorage.getItem(storageKey)
+        if (stored !== null && stored !== undefined) {
+          el.value = stored
+        } else if (fallback != null) {
+          el.value = fallback
+        }
+        el.addEventListener('change', () => {
+          const numeric = Number(el.value)
+          const safeValue = Number.isFinite(numeric) ? String(Math.max(0, Math.floor(numeric))) : String(fallback || 0)
+          el.value = safeValue
+          localStorage.setItem(storageKey, safeValue)
+        })
+      }
+
+      initGoalInput(videoGoalEl, GOAL_KEYS.video, 60)
+      initGoalInput(imageGoalEl, GOAL_KEYS.image, 80)
+      initGoalInput(webGoalEl, GOAL_KEYS.web, 50)
+
+      function getGoalValue(el, fallback) {
+        if (!el) return fallback
+        const numeric = Number(el.value)
+        if (!Number.isFinite(numeric)) return fallback
+        return Math.max(0, Math.floor(numeric))
+      }
+
+      const AUTO_REGION_SEQUENCE = ['global', 'north-america', 'south-america', 'europe', 'asia', 'africa']
+
+      function getTodayKey(date = new Date()) {
+        return date.toISOString().slice(0, 10)
+      }
+
+      function hasAutoRunToday() {
+        const last = localStorage.getItem(AUTO_RUN_KEY)
+        if (!last) return false
+        const lastDate = new Date(last)
+        return lastDate.toDateString() === new Date().toDateString()
+      }
+
+      function markAutoRunComplete() {
+        localStorage.setItem(AUTO_RUN_KEY, new Date().toISOString())
+        updateAutoStatus()
+      }
+
+      function updateAutoStatus() {
+        if (!autoRunStatusEl) return
+        const lastRun = localStorage.getItem(AUTO_RUN_KEY)
+        const autoEnabled = !autoRunToggleEl || autoRunToggleEl.checked
+        let message = lastRun ? `Dernier run: ${new Date(lastRun).toLocaleString()}` : 'Aucun run effectué pour le moment.'
+        if (autoEnabled) {
+          message += hasAutoRunToday() ? ' • Session du jour déjà effectuée.' : ` • Auto-run prévu dès ${AUTO_RUN_HOUR}h.`
+        } else {
+          message += ' • Auto-run désactivé.'
+        }
+        autoRunStatusEl.textContent = message
+      }
+
+      function maybeAutoRun() {
+        if (!autoRunToggleEl || !autoRunToggleEl.checked) return
+        if (marathonRunning) return
+        if (stopRequested) return
+        if (hasAutoRunToday()) return
+        const now = new Date()
+        if (now.getHours() < AUTO_RUN_HOUR) return
+        runMarathon({ reason: 'auto' })
+      }
+
+      if (autoRunToggleEl) {
+        const storedPref = localStorage.getItem(AUTO_RUN_PREF_KEY)
+        autoRunToggleEl.checked = storedPref === null ? true : storedPref === '1'
+        autoRunToggleEl.addEventListener('change', () => {
+          localStorage.setItem(AUTO_RUN_PREF_KEY, autoRunToggleEl.checked ? '1' : '0')
+          updateAutoStatus()
+        })
+      }
+      updateAutoStatus()
 
       const manualContainer = document.getElementById('manualCombos')
       const addManualBtn = document.getElementById('addManual')
@@ -242,6 +349,7 @@
 
       function collectManualCombos() {
         const rows = Array.from(manualContainer.children)
+        const selectedRegion = getSelectedRegion()
         return rows
           .map((row) => {
             const inputs = row.querySelectorAll('input')
@@ -259,10 +367,12 @@
             if (!primary && !secondary && !country && !year) return null
             const queryParts = [primary, secondary, country, year && String(year)].filter(Boolean)
             if (!queryParts.length) return null
-            return {
-              components: { primary, secondary, country, year, region: getSelectedRegion() },
+            const combo = {
+              components: { primary, secondary, country, year, region: selectedRegion },
               query: queryParts.join(' '),
             }
+            combo._regionOverride = combo.components.region
+            return combo
           })
           .filter(Boolean)
       }
@@ -280,20 +390,40 @@
         return res.json()
       }
 
-      async function run(category) {
-        stopRequested = false
-        setRunning(true)
-        abortActiveRequests()
-        logEl.innerHTML = ''
+      async function run(category, options = {}) {
+        const {
+          appendOnly = false,
+          preserveRunningState = false,
+          preserveStopFlag = false,
+          manualCombos: manualOverride = null,
+          maxCombos: maxOverride = null,
+          region: regionOverride = null,
+          regionRotation = null,
+          videoProviders: videoOverride = null,
+          webProviders: webOverride = null,
+          forceFastVideos = null,
+          skipExtraRegional = false,
+        } = options
 
-        appendLog(`<p><strong>Démarrage ${category}</strong> — ${new Date().toLocaleTimeString()}</p>`)
+        if (!preserveStopFlag) stopRequested = false
+        if (!preserveRunningState) {
+          abortActiveRequests()
+          setRunning(true)
+        }
+        if (!appendOnly) {
+          logEl.innerHTML = ''
+        }
+
+        const label = category === 'videos' ? 'Vidéos' : category === 'images' ? 'Images' : 'Web'
+        appendLog(`<p><strong>${label} → démarrage</strong> — ${new Date().toLocaleTimeString()}</p>`)
 
         const dryRun = dryRunEl.checked
-        const maxCombos = Math.max(1, Number(maxCombosEl.value) || 1)
+        const baseMax = Math.max(1, Number(maxCombosEl.value) || 1)
+        const targetCombos = maxOverride != null ? Math.max(1, Number(maxOverride) || 1) : baseMax
         const sleepMs = Math.max(0, Number(sleepEl.value) || 0)
-        const region = getSelectedRegion()
-        const selectedVideoProviders = getSelectedVideoProviders()
-        const selectedWebProviders = getSelectedWebProviders()
+        const region = regionOverride || getSelectedRegion()
+        const selectedVideoProviders = videoOverride || getSelectedVideoProviders()
+        const selectedWebProviders = webOverride || getSelectedWebProviders()
         const adminKey = document.body.dataset.key || ''
         let executed = 0
         let failures = 0
@@ -301,19 +431,23 @@
         let fatalError = null
         const totals = { scanned: 0, unique: 0, inserted: 0, updated: 0, skipped: 0 }
         const providerCounts = {}
-        const manualQueue = [...collectManualCombos()]
-        const isFastVideos = category === 'videos' && fastVideoModeEl && fastVideoModeEl.checked
+        const baseManual = Array.isArray(manualOverride) ? manualOverride : collectManualCombos()
+        const manualQueue = baseManual.map((combo) => ({ ...combo }))
+        const isFastVideos = typeof forceFastVideos === 'boolean' ? forceFastVideos : category === 'videos' && fastVideoModeEl && fastVideoModeEl.checked
         const concurrency = isFastVideos ? FAST_VIDEO_CONCURRENCY : 1
         const fastTimeoutMs = isFastVideos ? FAST_VIDEO_TIMEOUT_MS : 0
+        const rotation = Array.isArray(regionRotation) && regionRotation.length ? regionRotation.slice() : null
+        let rotationIndex = 0
 
         const reserveNextCombo = async () => {
           if (stopRequested) return null
-          if (executed + combosInFlight >= maxCombos) return null
+          if (executed + combosInFlight >= targetCombos) return null
           if (manualQueue.length) {
             combosInFlight += 1
             return manualQueue.shift()
           }
-          const combo = await fetchCombo(region)
+          const nextRegion = rotation ? rotation[rotationIndex++ % rotation.length] || region : region
+          const combo = await fetchCombo(nextRegion)
           if (!combo) return null
           combosInFlight += 1
           return combo
@@ -330,7 +464,7 @@
           isFastVideos,
           fastTimeoutMs,
           key: adminKey,
-          maxCombos,
+          maxCombos: targetCombos,
         }
 
         try {
@@ -358,7 +492,7 @@
                 return
               }
 
-              if (sleepMs > 0 && executed < maxCombos && !stopRequested) {
+              if (sleepMs > 0 && executed < targetCombos && !stopRequested) {
                 await sleep(sleepMs)
               }
             }
@@ -367,7 +501,7 @@
           const workers = Array.from({ length: concurrency }, () => createWorker())
           await Promise.all(workers)
 
-          if (!stopRequested && !fatalError && (category === 'images' || category === 'videos') && region === 'global') {
+          if (!skipExtraRegional && !stopRequested && !fatalError && (category === 'images' || category === 'videos') && region === 'global') {
             const EXTRA_REGIONS = ['north-america', 'south-america', 'europe', 'asia', 'africa']
             const EXTRA_COUNT = 4
             for (let i = 0; i < EXTRA_COUNT; i++) {
@@ -404,8 +538,137 @@
         } catch (error) {
           appendLog(`<p class="error">Erreur → ${(error instanceof Error ? error.message : String(error))}</p>`)
         } finally {
-          setRunning(false)
+          if (!preserveRunningState) setRunning(false)
         }
+      }
+
+      async function scanObsoleteVideos(reason = 'manual') {
+        appendLog(`<p>Scan obsolètes (${reason}) → démarrage (${new Date().toLocaleTimeString()})</p>`)
+        const controller = new AbortController()
+        const cleanup = trackController(controller)
+        try {
+          const res = await fetch(`/api/tools/videos/obsolete?full=1`, {
+            method: 'GET',
+            headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
+            signal: controller.signal,
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data?.error || res.statusText)
+          }
+          if (!res.body) throw new Error('Streaming response unavailable')
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let summary = null
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            let newlineIndex = buffer.indexOf('\n')
+            while (newlineIndex !== -1) {
+              const line = buffer.slice(0, newlineIndex).trim()
+              buffer = buffer.slice(newlineIndex + 1)
+              if (line) {
+                const payload = JSON.parse(line)
+                if (payload.type === 'done') {
+                  summary = payload
+                } else if (payload.type === 'error') {
+                  throw new Error(payload.message || 'Scan failed')
+                }
+              }
+              newlineIndex = buffer.indexOf('\n')
+            }
+            if (stopRequested) {
+              controller.abort()
+              appendLog('<p class="error">Scan obsolètes interrompu.</p>')
+              return null
+            }
+          }
+          if (!summary) return null
+          const obsoleteTotal = summary.counts?.obsolete?.total ?? (Array.isArray(summary.obsolete) ? summary.obsolete.length : 0)
+          const rateLimitedTotal = summary.counts?.rateLimited?.total ?? (Array.isArray(summary.rateLimited) ? summary.rateLimited.length : 0)
+          appendLog(`<p class="summary">Scan obsolètes → ${obsoleteTotal} obsolètes / ${rateLimitedTotal} rate-limités.</p>`)
+          appendLog('<p style="font-size:12px; color:#555;">Ouvre <a href="/erase-obsolete-videos.html" target="_blank">erase-obsolete-videos.html</a> pour valider la suppression manuelle.</p>')
+          return summary
+        } catch (error) {
+          if (controller.signal.aborted) return null
+          appendLog(`<p class="error">Scan obsolètes → ${(error instanceof Error ? error.message : String(error))}</p>`)
+          return null
+        } finally {
+          cleanup()
+        }
+      }
+
+      async function runMarathon({ reason = 'manual' } = {}) {
+        if (marathonRunning) return
+        stopRequested = false
+        marathonRunning = true
+        setRunning(true)
+        appendLog(`<p><strong>Ingestion complète (${reason})</strong> — ${new Date().toLocaleTimeString()}</p>`)
+
+        const adminKey = document.body.dataset.key || ''
+        const triggerVideoTask = async (endpoint, label) => {
+          if (!adminKey) return
+          try {
+            appendLog(`<p>${label} → start ${new Date().toLocaleTimeString()}</p>`)
+            const res = await fetch(endpoint, { headers: { 'x-admin-ingest-key': adminKey } })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'failed')
+            appendLog(
+              `<p class="success">${label} → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}</p>`,
+            )
+          } catch (error) {
+            appendLog(`<p class="error">${label} → ${(error instanceof Error ? error.message : String(error))}</p>`)
+          }
+        }
+
+        await triggerVideoTask('/api/ingest/videos/trending', 'Tendances quotidiennes')
+        if (stopRequested) {
+          marathonRunning = false
+          setRunning(false)
+          return
+        }
+
+        await triggerVideoTask('/api/ingest/videos/retro', 'Rétro tendances')
+        if (stopRequested) {
+          marathonRunning = false
+          setRunning(false)
+          return
+        }
+
+        const manualCombos = collectManualCombos()
+        const tasks = [
+          { category: 'images', limit: getGoalValue(imageGoalEl, 80) },
+          { category: 'videos', limit: getGoalValue(videoGoalEl, 60), forceFast: true },
+          { category: 'web', limit: getGoalValue(webGoalEl, 50) },
+        ]
+
+        for (const task of tasks) {
+          if (stopRequested) break
+          if (!task.limit) continue
+          appendLog(`<p>→ ${task.category} (${task.limit} combos)</p>`)
+          await run(task.category, {
+            appendOnly: true,
+            preserveRunningState: true,
+            preserveStopFlag: true,
+            manualCombos,
+            maxCombos: task.limit,
+            regionRotation: AUTO_REGION_SEQUENCE,
+            forceFastVideos: Boolean(task.forceFast),
+            skipExtraRegional: true,
+          })
+        }
+
+        if (!stopRequested) {
+          markAutoRunComplete()
+          appendLog('<p class="success">Ingestion complète terminée.</p>')
+        } else {
+          appendLog('<p class="error">Ingestion complète interrompue.</p>')
+        }
+
+        marathonRunning = false
+        setRunning(false)
       }
 
       async function runCombo(combo, context) {
@@ -601,9 +864,7 @@
       scrapeButtons.jokes.addEventListener('click', () => triggerScrape('jokes'))
       scrapeButtons.all.addEventListener('click', () => triggerScrape('all'))
 
-      buttons.images.addEventListener('click', () => run('images'))
-      buttons.videos.addEventListener('click', () => run('videos'))
-      if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
+      if (buttons.marathon) buttons.marathon.addEventListener('click', () => runMarathon({ reason: 'manual' }))
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       stopBtn.addEventListener('click', () => {
         stopRequested = true
@@ -611,8 +872,13 @@
         appendLog('<p>Arrêt demandé…</p>')
       })
 
+      setInterval(maybeAutoRun, 60000)
+      document.addEventListener('visibilitychange', maybeAutoRun)
+      window.addEventListener('focus', maybeAutoRun)
+      setTimeout(maybeAutoRun, 2000)
+
       setRunning(false)
-      appendLog('<p>Prêt. Choisis une catégorie pour lancer l’ingestion.</p>')
+      appendLog('<p>Prêt. Lance l’ingestion complète ou laisse l’auto-run démarrer à 19h.</p>')
     </script>
   </body>
 </html>

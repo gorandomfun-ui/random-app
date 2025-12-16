@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import type { Db } from 'mongodb'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
+import probe from 'probe-image-size'
 import { generateKeywordCombo } from '@/lib/ingest/keywords/combo'
 import { buildRegionalQuery, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools'
 import { CURATED_WEB_SOURCES, type CuratedWebSource } from '@/lib/ingest/sources/webCurated'
@@ -41,16 +42,28 @@ type WebDoc = {
   createdAt?: Date,
   updatedAt?: Date,
   rand?: number,
+  webImageValidatedAt?: Date,
+  webImageValidation?: { width: number; height: number },
 }
 
-async function upsertManyWeb(rows: Omit<WebDoc,'createdAt'|'updatedAt'>[]) {
+type WebRow = Omit<WebDoc, 'createdAt' | 'updatedAt'> & { imageMeta?: { width: number; height: number } }
+
+async function upsertManyWeb(rows: WebRow[]) {
   const db = await getDbSafe()
   if (!db || !rows.length) return { inserted: 0, updated: 0 }
   const ops = rows.map(r => ({
     updateOne: {
       filter: { type: 'web', url: r.url },
       update: {
-        $set: { ...r, type: 'web', updatedAt: new Date() },
+        $set: (() => {
+          const { imageMeta, ...rest } = r
+          const base: WebDoc = { ...rest, type: 'web', updatedAt: new Date() }
+          if (imageMeta) {
+            base.webImageValidatedAt = new Date()
+            base.webImageValidation = imageMeta
+          }
+          return base
+        })(),
         $setOnInsert: { createdAt: new Date(), rand: Math.random() },
       },
       upsert: true,
@@ -82,6 +95,18 @@ const BLOCKED_HOST_SUBSTRINGS = [
   'twitter.com',
   'x.com',
   'pinterest.com',
+  'cnn.com',
+  'nytimes.com',
+  'washingtonpost.com',
+  'bbc.co.uk',
+  'theguardian.com',
+  'lemonde.fr',
+  'reuters.com',
+  'apnews.com',
+  'bloomberg.com',
+  'forbes.com',
+  'foxnews.com',
+  'huffpost.com',
 ] as const;
 
 const BLOCKED_HOST_PATTERNS: RegExp[] = [
@@ -94,6 +119,13 @@ const BLOCKED_HOST_PATTERNS: RegExp[] = [
 ];
 
 const FORUM_KEYWORDS_REGEX = /\b(forum|thread|threads|subreddit|discord|community board|message board)\b/i;
+const MAX_PAGES_PER_DOMAIN = 2
+const MIN_IMAGE_WIDTH = 500
+const MIN_IMAGE_HEIGHT = 280
+const MIN_IMAGE_AREA = 150_000
+const MIN_IMAGE_BYTES = 15_000
+const MIN_ASPECT_RATIO = 0.35
+const MAX_ASPECT_RATIO = 3.2
 
 function shuffle<T>(items: T[]): T[] {
   const arr = items.slice()
@@ -154,8 +186,6 @@ const REGION_GL_MAP: Partial<Record<RegionKey, string>> = {
   africa: 'za',
 }
 
-type WebRow = Omit<WebDoc, 'createdAt' | 'updatedAt'>
-
 function isHostBlocked(host: string): boolean {
   if (!host) return false
   const lower = host.toLowerCase()
@@ -188,6 +218,20 @@ function filterBlockedRows(rows: WebRow[]): { rows: WebRow[]; filtered: number }
   return { rows: out, filtered }
 }
 
+function limitRowsByDomain(rows: WebRow[], perDomain: number): WebRow[] {
+  if (!rows.length || perDomain <= 0) return []
+  const out: WebRow[] = []
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const host = row.host || hostFromUrl(row.url || '')
+    const count = counts.get(host) || 0
+    if (count >= perDomain) continue
+    counts.set(host, count + 1)
+    out.push(row)
+  }
+  return out
+}
+
 /* ------------------------------- OG fetcher ------------------------------ */
 async function fetchOgImage(link: string): Promise<string | null> {
   try {
@@ -207,6 +251,34 @@ async function fetchOgImage(link: string): Promise<string | null> {
     if (!img) return null
     try { return new URL(img, link).toString() } catch { return img }
   } catch { return null }
+}
+
+function isValidImageUrl(url: string | null | undefined): url is string {
+  if (typeof url !== 'string') return false
+  if (!/^https?:\/\//i.test(url)) return false
+  const lower = url.toLowerCase()
+  if (lower.startsWith('data:')) return false
+  const EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif']
+  if (!EXT.some((ext) => lower.includes(ext))) return false
+  return true
+}
+
+async function validateRemoteImage(url: string): Promise<{ url: string; width: number; height: number } | null> {
+  try {
+    const result = await probe(url, { timeout: 4500 })
+    if (!result?.width || !result?.height) return null
+    const { width, height } = result
+    if (width < MIN_IMAGE_WIDTH || height < MIN_IMAGE_HEIGHT) return null
+    if (width * height < MIN_IMAGE_AREA) return null
+    const ratio = width / height
+    if (ratio < MIN_ASPECT_RATIO || ratio > MAX_ASPECT_RATIO) return null
+    const length = Number(result.length || 0)
+    if (Number.isFinite(length) && length > 0 && length < MIN_IMAGE_BYTES) return null
+    const resolvedUrl = typeof result.url === 'string' && result.url.startsWith('http') ? result.url : url
+    return { url: resolvedUrl, width, height }
+  } catch (error) {
+    return null
+  }
 }
 
 function dedupeByUrl<T extends { url: string }>(rows: T[]): T[] {
@@ -246,12 +318,17 @@ async function ensureOgImages(
       checked += 1
       let og = current.ogImage || null
       if (!og) og = await fetchOgImage(current.url)
-      if (!og) {
+      if (!isValidImageUrl(og)) {
+        failed += 1
+        continue
+      }
+      const meta = await validateRemoteImage(og)
+      if (!meta) {
         failed += 1
         continue
       }
       if (out.length >= limit) break
-      out.push({ ...current, ogImage: og })
+      out.push({ ...current, ogImage: meta.url, imageMeta: { width: meta.width, height: meta.height } })
     }
   }
 
@@ -334,12 +411,13 @@ async function runGoogleCSE(
 
   const deduped = dedupeByUrl(raw)
   const { rows: filteredRows, filtered } = filterBlockedRows(deduped)
-  const ensured = await ensureOgImages(filteredRows, limit)
+  const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
+  const ensured = await ensureOgImages(limited, limit)
   return {
     rows: ensured.rows,
     scanned: raw.length,
     checked: ensured.checked,
-    filtered: filtered + filteredLocal,
+    filtered: filtered + filteredLocal + (filteredRows.length - limited.length),
     ogFailed: ensured.failed,
   }
 }
@@ -399,12 +477,13 @@ async function pullNeocities(limit: number, requireOg = true): Promise<ProviderR
   }
 
   const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
+  const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
   if (!requireOg) {
-    return { rows: filteredRows.slice(0, limit), scanned: raw.length, checked: filteredRows.length, filtered }
+    return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
   }
 
-  const ensured = await ensureOgImages(filteredRows, limit)
-  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered, ogFailed: ensured.failed }
+  const ensured = await ensureOgImages(limited, limit)
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered: filtered + (filteredRows.length - limited.length), ogFailed: ensured.failed }
 }
 
 type WikipediaExternalLinksResponse = {
@@ -449,12 +528,13 @@ async function pullWikipediaList(limit: number, requireOg = true): Promise<Provi
   }
 
   const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
+  const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
   if (!requireOg) {
-    return { rows: filteredRows.slice(0, limit), scanned: raw.length, checked: filteredRows.length, filtered }
+    return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
   }
 
-  const ensured = await ensureOgImages(filteredRows, limit)
-  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered, ogFailed: ensured.failed }
+  const ensured = await ensureOgImages(limited, limit)
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered: filtered + (filteredRows.length - limited.length), ogFailed: ensured.failed }
 }
 
 async function pullCurated(limit: number, requireOg = true, region: RegionKey = 'global'): Promise<ProviderResult> {
@@ -496,16 +576,17 @@ async function pullCurated(limit: number, requireOg = true, region: RegionKey = 
   }
 
   const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
+  const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
   if (!requireOg) {
-    return { rows: filteredRows.slice(0, limit), scanned: raw.length, checked: filteredRows.length, filtered }
+    return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
   }
 
-  const ensured = await ensureOgImages(filteredRows, limit)
+  const ensured = await ensureOgImages(limited, limit)
   return {
     rows: ensured.rows,
     scanned: raw.length,
     checked: ensured.checked,
-    filtered,
+    filtered: filtered + (filteredRows.length - limited.length),
     ogFailed: ensured.failed,
   }
 }

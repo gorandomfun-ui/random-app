@@ -29,6 +29,7 @@ const TYPE_ICONS: Record<ItemType, string> = {
   fact: '/icons/fact.svg',
 }
 const MINIGAME_ICON = '/icons/Game.svg'
+const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_200_Horizontal_Light-Backgrounds_With_Logo.gif'
 
 type LikeableDisplayItem = Exclude<DisplayItem, EncourageItem | MiniGameItem>
 
@@ -61,14 +62,20 @@ function ImageBlock({
   alt,
   sourceLabel,
   sourceHref,
+  provider,
   maxHeight,
 }: {
   src: string
   alt?: string
   sourceLabel?: string
   sourceHref?: string
+  provider?: string | null
   maxHeight?: string
 }) {
+  const normalizedProvider = (provider || sourceLabel || '').toLowerCase()
+  const isGiphy = normalizedProvider === 'giphy'
+  const showCaption = Boolean(sourceLabel || sourceHref)
+
   return (
     <figure className="-mx-6 w-[calc(100%+3rem)]"> {/* supprime le padding horizontal du corps */}
       <div className="relative w-full overflow-hidden">
@@ -82,17 +89,37 @@ function ImageBlock({
         />
       </div>
 
-      {(sourceLabel || sourceHref) && (
+      {showCaption && (
         <figcaption className="mt-3 text-center text-sm opacity-80">
-          {sourceLabel ? <span>{sourceLabel}</span> : null}
-          {sourceHref ? (
+          {isGiphy && sourceHref ? (
+            <a
+              href={sourceHref}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View on Giphy"
+              className="inline-flex items-center justify-center"
+            >
+              <img
+                src={GIPHY_ATTRIBUTION_BADGE}
+                alt="Powered by GIPHY"
+                className="h-10 w-auto"
+                loading="lazy"
+                decoding="async"
+              />
+            </a>
+          ) : (
             <>
-              {sourceLabel ? <span> · </span> : null}
-              <a href={sourceHref} target="_blank" rel="noreferrer" className="underline">
-                {new URL(sourceHref).hostname.replace(/^www\./, '')}
-              </a>
+              {sourceLabel ? <span>{sourceLabel}</span> : null}
+              {sourceHref ? (
+                <>
+                  {sourceLabel ? <span> · </span> : null}
+                  <a href={sourceHref} target="_blank" rel="noreferrer" className="underline">
+                    {new URL(sourceHref).hostname.replace(/^www\./, '')}
+                  </a>
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
         </figcaption>
       )}
     </figure>
@@ -296,7 +323,13 @@ function ContentRenderer({
 
     return (
       <div className="w-full">
-        <ImageBlock src={src} alt={alt} sourceLabel={sourceLabel} sourceHref={sourceHref} />
+        <ImageBlock
+          src={src}
+          alt={alt}
+          sourceLabel={sourceLabel}
+          sourceHref={sourceHref}
+          provider={item.provider}
+        />
       </div>
     )
   }
@@ -339,6 +372,7 @@ function ContentRenderer({
             src={item.ogImage}
             alt={item.text || host || 'web'}
             sourceHref={sourceHref}
+             provider={item.provider}
             maxHeight="min(34vh, 320px)"
           />
         ) : null}

@@ -82,7 +82,61 @@ type IngestResult = {
 };
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
+const YT_VIDEOS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/videos';
 const USER_AGENT = { 'User-Agent': 'RandomAppBot/1.0 (+https://random.app)' };
+
+const TRENDING_REGION_PAIRS: Array<[string, string]> = [
+  ['US', 'FR'],
+  ['JP', 'BR'],
+  ['KR', 'DE'],
+  ['GB', 'ES'],
+  ['MX', 'CA'],
+  ['IN', 'IT'],
+  ['AU', 'AR'],
+];
+
+const DAILYMOTION_LOCALE: Record<string, string> = {
+  US: 'en_US',
+  FR: 'fr_FR',
+  JP: 'ja_JP',
+  BR: 'pt_BR',
+  KR: 'ko_KR',
+  DE: 'de_DE',
+  GB: 'en_GB',
+  ES: 'es_ES',
+  MX: 'es_MX',
+  CA: 'en_CA',
+  IN: 'en_IN',
+  IT: 'it_IT',
+  AU: 'en_AU',
+  AR: 'es_AR',
+};
+
+const RETRO_THEMES = [
+  'retro tv show',
+  'public access',
+  'vintage advertising',
+  'festival documentary',
+  'retro gaming arcade',
+  'city travelogue',
+  'home video',
+  'science documentary',
+  'design showcase',
+  'music performance',
+  'dance competition',
+  'cooking show',
+  'kids program',
+  'news special',
+  'behind the scenes',
+  'talk show',
+  'variety show',
+  'technology expo',
+  'sports recap',
+  'festival recap',
+];
+
+const YT_TRENDING_PER_REGION = 30;
+const DAILYMOTION_TRENDING_PER_REGION = 20;
 
 type YoutubeThumbnails = {
   high?: { url?: string };
@@ -117,6 +171,16 @@ type YoutubePlaylistItem = {
 type YoutubePlaylistResponse = {
   items?: YoutubePlaylistItem[];
   nextPageToken?: string;
+};
+
+type YoutubeVideoItem = {
+  id?: string;
+  snippet?: YoutubeSnippet;
+  contentDetails?: { duration?: string };
+};
+
+type YoutubeVideosResponse = {
+  items?: YoutubeVideoItem[];
 };
 
 type YoutubeChannel = {
@@ -1099,4 +1163,154 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
   });
 
   return summary;
+}
+
+function trendingPairIndex(date = new Date()): number {
+  const dayIndex = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
+  return Math.abs(dayIndex) % TRENDING_REGION_PAIRS.length;
+}
+
+export function pickTrendingRegions(date = new Date()): [string, string] {
+  return TRENDING_REGION_PAIRS[trendingPairIndex(date)];
+}
+
+async function fetchYouTubeTrending(region: string, limit: number, warnings: FetchWarning[]): Promise<RawVideo[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) {
+    warnings.push({ label: 'youtube:trending', message: 'YOUTUBE_API_KEY missing' });
+    return [];
+  }
+  const url = new URL(YT_VIDEOS_ENDPOINT);
+  url.searchParams.set('key', key);
+  url.searchParams.set('part', 'snippet,contentDetails');
+  url.searchParams.set('chart', 'mostPopular');
+  url.searchParams.set('regionCode', region);
+  url.searchParams.set('maxResults', String(Math.min(50, Math.max(1, limit))));
+  const data = await fetchJson<YoutubeVideosResponse>(url.toString(), { headers: USER_AGENT, timeoutMs: 10000 });
+  const items = data?.items ?? [];
+  const rows: RawVideo[] = [];
+  for (const item of items.slice(0, limit)) {
+    const videoId = item?.id?.trim();
+    const snippet = item?.snippet;
+    if (!videoId || !snippet?.title) continue;
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const thumb = snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url;
+    rows.push({
+      videoId,
+      url: `https://youtu.be/${videoId}`,
+      provider: 'youtube',
+      title: snippet.title,
+      description: snippet.description,
+      thumb: thumb || undefined,
+      channelId: snippet.channelId,
+      channelTitle: snippet.channelTitle,
+      duration: item?.contentDetails?.duration,
+      source: { name: snippet.channelTitle || 'YouTube', url: watchUrl },
+      contextQueries: [`youtube:trending:${region.toLowerCase()}`],
+    });
+  }
+  return rows;
+}
+
+async function fetchDailymotionTrending(region: string, limit: number, warnings: FetchWarning[]): Promise<RawVideo[]> {
+  const params = new URLSearchParams({
+    sort: 'trending',
+    limit: String(Math.min(100, Math.max(1, limit))),
+    fields: 'id,title,description,thumbnail_url,thumbnail_480_url,url,duration,channel.name,channel.id,owner.screenname',
+  });
+  const locale = DAILYMOTION_LOCALE[region];
+  if (locale) params.set('localization', locale);
+  const data = await fetchJson<DailymotionResponse>(`https://api.dailymotion.com/videos?${params.toString()}`, {
+    headers: USER_AGENT,
+    timeoutMs: 8000,
+  });
+  const list = data?.list ?? [];
+  const rows: RawVideo[] = [];
+  for (const item of list.slice(0, limit)) {
+    const id = item?.id?.trim();
+    const url = item?.url?.trim() || (id ? `https://www.dailymotion.com/video/${id}` : '');
+    if (!id || !url) continue;
+    const thumb = item?.thumbnail_480_url || item?.thumbnail_url;
+    const title = item?.title?.trim() || undefined;
+    rows.push({
+      videoId: `dailymotion:${id}`,
+      url,
+      provider: 'dailymotion',
+      title,
+      description: item?.description || undefined,
+      thumb: thumb || undefined,
+      channelId: item?.['channel.id'] || undefined,
+      channelTitle: item?.['channel.name'] || item?.['owner.screenname'] || undefined,
+      duration: secondsToIsoDuration(item?.duration),
+      source: { name: 'Dailymotion', url },
+      contextQueries: [`dailymotion:trending:${region.toLowerCase()}`],
+    });
+  }
+  if (!rows.length && !locale) {
+    warnings.push({ label: 'dailymotion:trending', message: `No trending results for region ${region}` });
+  }
+  return rows;
+}
+
+export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean } = {}): Promise<IngestResult> {
+  const warnings: FetchWarning[] = [];
+  const collected: RawVideo[] = [];
+  for (const region of regions) {
+    collected.push(...await fetchYouTubeTrending(region, YT_TRENDING_PER_REGION, warnings));
+    collected.push(...await fetchDailymotionTrending(region, DAILYMOTION_TRENDING_PER_REGION, warnings));
+  }
+  if (!collected.length) {
+    return {
+      scanned: 0,
+      unique: 0,
+      inserted: 0,
+      updated: 0,
+      dryRun: Boolean(options.dryRun),
+      warnings,
+      providers: ['youtube', 'dailymotion'],
+    };
+  }
+  return finalizeVideoIngest(collected, {
+    dryRun: Boolean(options.dryRun),
+    sampleSize: Math.min(20, collected.length),
+    warnings,
+    providers: ['youtube', 'dailymotion'],
+  });
+}
+
+function seededRandom(seed: number) {
+  return function mulberry32() {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildRetroQueries(count: number, date = new Date()): string[] {
+  const daySeed = Number.parseInt(date.toISOString().slice(0, 10).replace(/-/g, ''), 10);
+  const rng = seededRandom(daySeed);
+  const queries: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const theme = RETRO_THEMES[Math.floor(rng() * RETRO_THEMES.length)] || 'retro video';
+    const year = 1965 + Math.floor(rng() * 40);
+    const extra = rng() < 0.5 ? 'full episode' : 'highlight';
+    queries.push(`${theme} ${year} ${extra}`.trim());
+  }
+  return queries;
+}
+
+export async function ingestRetroTrendingVideos(count = 100, options: { dryRun?: boolean } = {}): Promise<IngestResult> {
+  const queries = buildRetroQueries(count);
+  return ingestVideos({
+    mode: 'search',
+    queries,
+    per: 12,
+    pages: 1,
+    days: 0,
+    providers: ['youtube', 'dailymotion'],
+    fast: true,
+    dryRun: Boolean(options.dryRun),
+    sampleSize: 12,
+  });
 }

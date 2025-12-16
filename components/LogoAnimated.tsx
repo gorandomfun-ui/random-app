@@ -43,6 +43,10 @@ export default function LogoAnimated({
   const [animId, setAnimId] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [showSecond, setShowSecond] = useState<boolean>(toSecond)
+  const targetSecondRef = useRef(toSecond)
+  const playingRef = useRef(false)
+  const pendingSecondRef = useRef<boolean | null>(null)
+  const animationTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // fit-to-width
   const outerRef = useRef<HTMLDivElement>(null)
@@ -76,23 +80,71 @@ export default function LogoAnimated({
 
   // alterne 1 ⇄ 2 avec animation tirée au hasard
   const mounted = useRef(false)
+  const finishAnimation = useCallback((nextState?: boolean) => {
+    const finalState = typeof nextState === 'boolean' ? nextState : targetSecondRef.current
+    targetSecondRef.current = finalState
+    playingRef.current = false
+    setPlaying(false)
+    setShowSecond(finalState)
+  }, [])
+
+  const clearAnimationTimer = useCallback(() => {
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current)
+      animationTimerRef.current = null
+    }
+  }, [])
+
+  const startAnimation = useCallback(
+    (nextState: boolean) => {
+      clearAnimationTimer()
+      setAnimId(Math.floor(Math.random() * ANIM_VARIANTS))
+      targetSecondRef.current = nextState
+      playingRef.current = true
+      setPlaying(true)
+      animationTimerRef.current = setTimeout(() => {
+        animationTimerRef.current = null
+        finishAnimation(nextState)
+        if (
+          pendingSecondRef.current != null &&
+          pendingSecondRef.current !== targetSecondRef.current
+        ) {
+          const queued = pendingSecondRef.current
+          pendingSecondRef.current = null
+          startAnimation(queued)
+        } else {
+          pendingSecondRef.current = null
+        }
+      }, DUR)
+    },
+    [clearAnimationTimer, finishAnimation],
+  )
+
+  useEffect(() => {
+    playingRef.current = playing
+  }, [playing])
+
+  useEffect(() => {
+    return () => {
+      clearAnimationTimer()
+    }
+  }, [clearAnimationTimer])
+
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true
+      targetSecondRef.current = toSecond
       setShowSecond(toSecond)
       recalcScale()
       return
     }
-    if (toSecond === showSecond) return
-    setAnimId(Math.floor(Math.random() * ANIM_VARIANTS))
-    setPlaying(true)
-    const t = setTimeout(() => {
-      setPlaying(false)
-      setShowSecond(toSecond)
-    }, DUR)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trigger, toSecond])
+    if (toSecond === targetSecondRef.current && !playingRef.current) return
+    if (playingRef.current) {
+      pendingSecondRef.current = toSecond
+      return
+    }
+    startAnimation(toSecond)
+  }, [trigger, toSecond, recalcScale, startAnimation])
 
   const dir12 = !showSecond && toSecond
   const dir21 = showSecond && !toSecond
