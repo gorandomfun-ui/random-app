@@ -45,11 +45,12 @@ export async function POST(request: Request) {
       },
     )
 
-    if (!result.value) {
+    if (!result || !result.value) {
       return respondError('Item not found', 404)
     }
 
-    const likeCount = typeof result.value.likeCount === 'number' ? result.value.likeCount : 0
+    const record = result.value
+    const likeCount = typeof record.likeCount === 'number' ? record.likeCount : 0
     return NextResponse.json({ success: true, likeCount })
   } catch (error) {
     console.error('[feedback/like] Failed to increment like', error)
@@ -92,8 +93,13 @@ export async function DELETE(request: Request) {
       },
     )
 
-    const likeCount = typeof result.value?.likeCount === 'number' && result.value.likeCount > 0
-      ? result.value.likeCount
+    const updated = result?.value
+    if (!updated) {
+      return respondError('Item not found', 404)
+    }
+
+    const likeCount = typeof updated.likeCount === 'number' && updated.likeCount > 0
+      ? updated.likeCount
       : 0
 
     return NextResponse.json({ success: true, likeCount })
