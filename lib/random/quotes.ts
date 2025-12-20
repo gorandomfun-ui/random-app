@@ -62,6 +62,7 @@ export type QuoteItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  _id?: string
 }
 
 type QuoteRecord = {
