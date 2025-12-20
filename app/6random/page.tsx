@@ -11,7 +11,7 @@ import { useI18n } from '@/providers/I18nProvider'
 import { THEMES, TEXT_COLORS } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
-import type { FactItem, RandomContentItem, WebItem } from '@/lib/random/clientTypes'
+import type { FactItem, RandomContentItem, SourceInfo, WebItem } from '@/lib/random/clientTypes'
 import funPhrasesEn from '@/data/funPhrases/en.json'
 import funPhrasesFr from '@/data/funPhrases/fr.json'
 import funPhrasesDe from '@/data/funPhrases/de.json'
@@ -71,9 +71,16 @@ type GlitchBarStyle = CSSProperties & {
 }
 
 type LikeableRandomItem = Exclude<RandomContentItem, { type: 'minigame' }>
+type SourcefulRandomItem = Extract<RandomContentItem, { source?: SourceInfo | null }>
 
 const isLikeableRandomItem = (item: RandomContentItem): item is LikeableRandomItem =>
   item.type !== 'minigame'
+
+const hasSourceInfo = (item: RandomContentItem): item is SourcefulRandomItem =>
+  'source' in item
+
+const getItemSource = (item: RandomContentItem): SourceInfo | null =>
+  (hasSourceInfo(item) ? item.source ?? null : null)
 
 function getItemKey(item: RandomContentItem): string {
   switch (item.type) {
@@ -93,9 +100,27 @@ function getItemKey(item: RandomContentItem): string {
 }
 
 function formatSourceLabel(item: RandomContentItem): string | null {
-  if ('source' in item && item.source?.name) return item.source.name
+  const source = getItemSource(item)
+  if (source?.name) return source.name
   if ('provider' in item && item.provider) return item.provider
   return null
+}
+
+function getPrimaryShareText(item: RandomContentItem): string {
+  if ('text' in item && typeof item.text === 'string' && item.text) {
+    return item.text
+  }
+  if ('title' in item && typeof item.title === 'string' && item.title) {
+    return item.title
+  }
+  if ('provider' in item && typeof item.provider === 'string' && item.provider) {
+    return item.provider
+  }
+  const source = getItemSource(item)
+  if (source?.name) {
+    return source.name
+  }
+  return ''
 }
 
 function shuffleArray<T>(input: T[]): T[] {
@@ -329,7 +354,7 @@ export default function NoroscopePage() {
   const tileRefs = useRef<Array<HTMLDivElement | null>>([])
   const fetchLangRef = useRef<Lang>((locale || 'en') as Lang)
   const initialLoadRef = useRef(false)
-  const autoRevealTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([])
+  const autoRevealTimersRef = useRef<number[]>([])
   const [loadErrorFlag, setLoadErrorFlag] = useState<boolean>(false)
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -539,14 +564,17 @@ export default function NoroscopePage() {
     const baseUrl = origin.replace(/\/$/, '')
     return entries.map((item, idx) => {
       const label = navLabels[item.type as ItemType] || item.type
+      const shareContent = getPrimaryShareText(item)
+      const fallbackText = shareContent || label
+      const sourceInfo = getItemSource(item)
       const title = item.type === 'quote'
         ? `${label}: ${item.text}${item.author ? ` — ${item.author}` : ''}`
-        : `${label}: ${item.text || item.title || item.provider || ''}`
-      const shareUrl = item.source?.url || ('url' in item ? (item as { url?: string }).url : undefined) || `${baseUrl}/6random?slot=${idx}`
+        : shareContent ? `${label}: ${shareContent}` : label
+      const shareUrl = sourceInfo?.url || ('url' in item ? (item as { url?: string }).url : undefined) || `${baseUrl}/6random?slot=${idx}`
       return {
         type: item.type,
         title: title.trim(),
-        text: item.text || item.title || label,
+        text: fallbackText,
         url: shareUrl,
       }
     })
@@ -781,8 +809,9 @@ export default function NoroscopePage() {
 
     const renderSourceBar = (item: RandomContentItem, inline = false) => {
       const label = formatSourceLabel(item)
+      const sourceInfo = getItemSource(item)
       const href =
-        (item.source?.url && typeof item.source.url === 'string' && item.source.url) ||
+        (sourceInfo?.url && typeof sourceInfo.url === 'string' && sourceInfo.url) ||
         (item.type !== 'quote' && 'url' in item && typeof (item as { url?: string }).url === 'string'
           ? (item as { url?: string }).url
           : null) ||
@@ -841,8 +870,9 @@ export default function NoroscopePage() {
     )
 
     if (item.type === 'image') {
-      const provider = (item.provider || item.source?.name || '').toLowerCase()
-      const giphyHref = item.source?.url || item.pageUrl || item.link || item.url || null
+      const sourceInfo = getItemSource(item)
+      const provider = (item.provider || sourceInfo?.name || '').toLowerCase()
+      const giphyHref = sourceInfo?.url || item.pageUrl || item.link || item.url || null
       return (
         <>
           <img src={item.thumbUrl || item.url} alt={item.title || item.provider || 'Image'} className="absolute inset-0 h-full w-full object-cover" />
@@ -852,6 +882,7 @@ export default function NoroscopePage() {
     }
 
     if (item.type === 'video') {
+      const sourceInfo = getItemSource(item)
       const badgeText = (navLabels.video || 'video').toUpperCase()
       const badge = (
         <span
@@ -874,13 +905,13 @@ export default function NoroscopePage() {
             <AutoPlayingVideo src={url} poster={item.thumbUrl} label={item.text || badgeText} />
             {badge}
             {renderSourceBar(item)}
-            {item.source?.url ? (
+            {sourceInfo?.url ? (
               <a
-                href={item.source.url}
+                href={sourceInfo.url}
                 target="_blank"
                 rel="noreferrer"
                 className="absolute inset-0"
-                aria-label={`${badgeText}: ${item.text || item.source.url}`}
+                aria-label={`${badgeText}: ${item.text || sourceInfo.url}`}
               />
             ) : null}
           </>
