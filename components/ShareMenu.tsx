@@ -8,6 +8,12 @@ import { useI18n } from '@/providers/I18nProvider'
 type Theme = { deep: string; cream: string; text: string }
 type ShareableItem = DisplayItem | null | undefined
 
+type ShareListEntry = {
+  title: string
+  text?: string
+  url?: string
+}
+
 type Props = {
   open: boolean
   onClose: () => void
@@ -15,7 +21,7 @@ type Props = {
   url?: string
   theme?: Theme
   item?: ShareableItem
-  list?: Array<{ title: string; url?: string }>
+  list?: ShareListEntry[]
 }
 
 type ShareUrls = {
