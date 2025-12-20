@@ -132,6 +132,7 @@ export type FactTextItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  _id?: string
 }
 
 export type FactQuizItem = {
@@ -150,6 +151,7 @@ export type FactQuizItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  _id?: string
 }
 
 export type FactItem = FactTextItem | FactQuizItem
