@@ -4,14 +4,14 @@ const jpDictionary = {
     "tagline2": "ミッションなし、ゴールなし、理由なし。",
     "tagline3": "無駄な驚きだけ。",
     "startButton": "GO RANDOM",
-    "noroscopeButton": "NOROSCOPE"
+    "noroscopeButton": "6 RANDOM"
   },
   "noroscope": {
-    "menu": "Noroscope",
-    "titleBar": "今日のノロスコープはこちら。",
-    "shareTitle": "ノロスコープをシェア",
-    "shareAction": "このノロスコープを共有",
-    "loading": "ノロスコープを調整中...",
+    "menu": "6 RANDOM",
+    "titleBar": "あなたの6 RANDOM",
+    "shareTitle": "6 RANDOM を共有",
+    "shareAction": "この 6 RANDOM を共有",
+    "loading": "6 RANDOM を調整中...",
     "error": "すべてを読み込めませんでした。再試行してください。",
     "retry": "再試行",
     "empty": "利用できるコンテンツがありません。",
@@ -58,16 +58,16 @@ const jpDictionary = {
     "title": "あなたのいいね",
     "empty": "まだいいねはありません",
     "maxReached": "最大6いいねに達しました！",
-    "keep24h": "ここでは24時間保存されます。",
+    "keep24h": "この端末に保存されます。",
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "あなたの",
-    "youSuffix": "は24時間ここで保存されます。",
+    "youSuffix": "はこの端末に保存されます。",
     "weDescription": "みんながたくさん",
     "weSuffix": "選んだコンテンツ。",
     "banner": {
       "youPrefix": "あなたの",
-      "youSuffix": "は24時間ここで保存されます。",
+      "youSuffix": "はこの端末に保存されます。",
       "wePrefix": "みんながたくさん",
       "weSuffix": "選んだコンテンツ。"
     },
@@ -79,7 +79,8 @@ const jpDictionary = {
     "close": "閉じる",
     "native": "メッセージで共有",
     "copy": "コピー",
-    "copied": "コピーしました！"
+    "copied": "コピーしました！",
+    "itemsLabel": "共有アイテム"
   },
   "video": {
     "fullscreen": "全画面",

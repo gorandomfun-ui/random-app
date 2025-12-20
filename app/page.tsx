@@ -258,7 +258,7 @@ export default function HomePage() {
 
   const heroCopy = useMemo(() => ({
     startButton: t('hero.startButton', 'GO RANDOM'),
-    noroscopeButton: t('hero.noroscopeButton', 'NOROSCOPE'),
+    noroscopeButton: t('hero.noroscopeButton', '6 RANDOM'),
     tagline1: t('hero.tagline1', 'EXPLORE RANDOM CONTENTS.'),
     tagline2: t('hero.tagline2', 'NO MISSION, NO GOAL, NO REASON.'),
     tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
@@ -275,7 +275,7 @@ export default function HomePage() {
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
 
@@ -426,7 +426,7 @@ export default function HomePage() {
   }, [addAction, isSecond, maybeSpawnDiamond, router, selectedTypes])
 
   const handleNoroscope = useCallback(() => {
-    router.push('/noroscope')
+    router.push('/6random')
   }, [router])
 
   return (
@@ -678,7 +678,7 @@ export default function HomePage() {
               </Link>
 
               <Link
-                href="/noroscope"
+                href="/6random"
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}

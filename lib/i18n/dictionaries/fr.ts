@@ -4,14 +4,14 @@ const frDictionary = {
     "tagline2": "ZÉRO MISSION. ZÉRO SENS. ZÉRO UTILITÉ.",
     "tagline3": "SEULEMENT DES SURPRISES INUTILES.",
     "startButton": "GO RANDOM",
-    "noroscopeButton": "NOROSCOPE"
+    "noroscopeButton": "6 RANDOM"
   },
   "noroscope": {
-    "menu": "Noroscope",
-    "titleBar": "Voici votre Noroscope du jour.",
-    "shareTitle": "Partager votre Noroscope",
-    "shareAction": "Partager ce Noroscope",
-    "loading": "On aligne votre Noroscope...",
+    "menu": "6 RANDOM",
+    "titleBar": "Vos 6 RANDOM",
+    "shareTitle": "Partager votre 6 RANDOM",
+    "shareAction": "Partager ce 6 RANDOM",
+    "loading": "On aligne vos 6 RANDOM...",
     "error": "Impossible de tout charger. Réessayez.",
     "retry": "Réessayer",
     "empty": "Contenu indisponible.",
@@ -58,16 +58,16 @@ const frDictionary = {
     "title": "Vos Likes",
     "empty": "Aucun like",
     "maxReached": "Maximum 6 likes atteint!",
-    "keep24h": "Conservé ici pendant 24 h.",
+    "keep24h": "Conservé localement sur cet appareil.",
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "Vos",
-    "youSuffix": "sont gardés ici pendant 24 h.",
+    "youSuffix": "sont conservés localement sur cet appareil.",
     "weDescription": "Voici les contenus les plus",
     "weSuffix": "aimés.",
     "banner": {
       "youPrefix": "Vos",
-      "youSuffix": "sont gardés ici pendant 24 h.",
+      "youSuffix": "sont conservés localement sur cet appareil.",
       "wePrefix": "Ici, les contenus les plus",
       "weSuffix": "aimés."
     },
@@ -79,7 +79,8 @@ const frDictionary = {
     "close": "Fermer",
     "native": "Partager par message",
     "copy": "Copier",
-    "copied": "Copié !"
+    "copied": "Copié !",
+    "itemsLabel": "Éléments partagés"
   },
   "video": {
     "fullscreen": "Plein écran",

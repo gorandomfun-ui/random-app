@@ -122,7 +122,7 @@ export default function LikesPage() {
   }), [theme.bg, theme.cream])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
   const adFormat = useMemo(() => {
@@ -156,7 +156,7 @@ export default function LikesPage() {
   const infoText = activeTab === 'you'
     ? {
         prefix: t('likes.banner.youPrefix', 'Your'),
-        suffix: t('likes.banner.youSuffix', 'are stored here for 24 Hours.'),
+        suffix: t('likes.banner.youSuffix', 'stay on this device.'),
       }
     : {
         prefix: t('likes.banner.wePrefix', 'Here are the most'),
@@ -260,15 +260,7 @@ export default function LikesPage() {
           </button>
         </div>
 
-        <LogoAnimated
-          trigger={1}
-          toSecond={false}
-          fitToWidth
-          vhMobile={8}
-          vhDesktop={9}
-          gapMobile={1}
-          gapDesktop={1}
-        />
+        <LogoAnimated trigger={1} toSecond={false} vhMobile={8} vhDesktop={8} gapMobile={4} gapDesktop={4} />
 
         <button
           type="button"
@@ -361,7 +353,7 @@ export default function LikesPage() {
               </Link>
 
               <Link
-                href="/noroscope"
+                href="/6random"
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}

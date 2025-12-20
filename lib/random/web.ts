@@ -73,6 +73,9 @@ export async function selectWeb(): Promise<WebItem | null> {
   const doc = await pickFromDb(exclude)
   if (!doc) return null
 
+  const itemId = doc && typeof doc === 'object' && '_id' in doc
+    ? String((doc as { _id: unknown })._id)
+    : undefined
   const urlRaw = typeof doc.url === 'string' ? doc.url.trim() : ''
   if (!urlRaw) return null
   const host = typeof doc.host === 'string' && doc.host.trim() ? doc.host.trim() : (() => {
@@ -125,6 +128,7 @@ export async function selectWeb(): Promise<WebItem | null> {
   markGlobalKeywords(keywords)
 
   return {
+    _id: itemId,
     type: 'web',
     url: urlRaw,
     text,

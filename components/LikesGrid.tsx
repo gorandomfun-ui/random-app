@@ -144,7 +144,7 @@ function Tile({ it, paletteIdx, onDelete, readOnly }: { it: LikeItem; paletteIdx
           style={{ background: 'transparent' }}
           onClick={(e) => {
             e.stopPropagation()
-            removeLike(it.id)
+            removeLike(it)
             onDelete?.()
           }}
         >

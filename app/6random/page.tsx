@@ -11,20 +11,32 @@ import { useI18n } from '@/providers/I18nProvider'
 import { THEMES, TEXT_COLORS } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
-import type { DisplayItem, FactItem, RandomContentItem, WebItem } from '@/lib/random/clientTypes'
-import type { ExpressionLocale, ExpressionTone } from '@/data/noroscopeExpressions'
-import { NOROSCOPE_SUMMARIES } from '@/data/noroscopeSummaries'
-import { computeToneScore } from '@/lib/tone/analyze'
+import type { FactItem, RandomContentItem, WebItem } from '@/lib/random/clientTypes'
+import funPhrasesEn from '@/data/funPhrases/en.json'
+import funPhrasesFr from '@/data/funPhrases/fr.json'
+import funPhrasesDe from '@/data/funPhrases/de.json'
+import funPhrasesJp from '@/data/funPhrases/jp.json'
+import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
-const NOROSCOPE_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 const CACHE_STORAGE_KEY = 'noroscope-cache-v6'
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000
+const CACHE_TTL_MS = 60 * 60 * 1000
 
 const TARGET_COUNT = 6
 const VIDEO_FILE_REGEX = /\.(mp4|m4v|webm|mov|ogg)(\?.*)?$/i
+type PlanType = 'image' | 'video' | 'web' | 'text'
+const MIX_TEMPLATE: PlanType[] = ['image', 'image', 'video', 'video', 'web', 'text']
+const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
+const FUN_PHRASES: Record<Lang, readonly string[]> = {
+  en: funPhrasesEn,
+  fr: funPhrasesFr,
+  de: funPhrasesDe,
+  jp: funPhrasesJp,
+}
+const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
+const AUTO_REVEAL_DELAY_MS = 700
 
 type TileKey = 'weirdDrop' | 'luckyMess' | 'dumbSpark' | 'randomVibe' | 'lostThought' | 'secretUselessness'
 
@@ -78,6 +90,49 @@ function getItemKey(item: RandomContentItem): string {
 function formatSourceLabel(item: RandomContentItem): string | null {
   if ('source' in item && item.source?.name) return item.source.name
   if ('provider' in item && item.provider) return item.provider
+  return null
+}
+
+function shuffleArray<T>(input: T[]): T[] {
+  const arr = input.slice()
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = temp
+  }
+  return arr
+}
+
+function pickFunPhraseForLang(lang: Lang): string {
+  const list = FUN_PHRASES[lang] ?? FUN_PHRASES.en
+  if (!list.length) return ''
+  return list[Math.floor(Math.random() * list.length)] ?? ''
+}
+
+async function fetchPlanItem(planType: PlanType, lang: Lang, seen: Set<string>): Promise<RandomContentItem | null> {
+  const planTypes = planType === 'text' ? TEXT_TYPES : [planType as ItemType]
+  const maxAttempts = 14
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const requestType = planType === 'text'
+      ? planTypes[Math.floor(Math.random() * planTypes.length)]
+      : planTypes[0]
+    const response = await fetchRandom({ types: [requestType] as RandomTypes, lang })
+    const candidate = response?.item ?? null
+    if (!candidate) continue
+    if (planType === 'image' && candidate.type !== 'image') continue
+    if (planType === 'video' && candidate.type !== 'video') continue
+    if (planType === 'web') {
+      if (candidate.type !== 'web') continue
+      if (!(candidate as WebItem).ogImage) continue
+    }
+    if (candidate.type === 'fact' && (candidate as FactItem).variant === 'quiz') continue
+    if (planType === 'text' && !TEXT_TYPES.includes(candidate.type as ItemType)) continue
+    const key = getItemKey(candidate)
+    if (seen.has(key)) continue
+    seen.add(key)
+    return candidate
+  }
   return null
 }
 
@@ -192,130 +247,6 @@ function getTileLabel({
   return raw || TILE_LABELS.en[key]
 }
 
-function scoreItem(item: RandomContentItem): { positive: number; negative: number } {
-  const segments: string[] = []
-
-  switch (item.type) {
-    case 'image':
-      if (item.title) segments.push(item.title)
-      if (item.provider) segments.push(item.provider)
-      if (item.source?.name) segments.push(item.source.name)
-      break
-    case 'video':
-      if (item.text) segments.push(item.text)
-      if (item.provider) segments.push(item.provider)
-      if (item.source?.name) segments.push(item.source.name)
-      if (item.url) segments.push(item.url)
-      break
-    case 'quote':
-      segments.push(item.text)
-      if (item.author) segments.push(item.author)
-      segments.push(item.provider)
-      if (item.source?.name) segments.push(item.source.name)
-      break
-    case 'joke':
-      segments.push(item.text)
-      segments.push(item.provider)
-      if (item.source?.name) segments.push(item.source.name)
-      break
-    case 'fact':
-      segments.push(item.text)
-      if (item.variant === 'quiz') {
-        segments.push(item.question)
-        segments.push(item.answer)
-        segments.push(item.options.join(' '))
-      }
-      segments.push(item.provider)
-      if (item.source?.name) segments.push(item.source.name)
-      break
-    case 'web':
-      segments.push(item.text)
-      if (item.provider) segments.push(item.provider)
-      if (item.source?.name) segments.push(item.source.name)
-      if (item.url) segments.push(item.url)
-      if (item.host) segments.push(item.host)
-      break
-    default:
-      break
-  }
-
-  const tags = (item as { tags?: unknown }).tags
-  if (Array.isArray(tags)) segments.push(tags.join(' '))
-
-  const keywords = (item as { keywords?: unknown }).keywords
-  if (Array.isArray(keywords)) segments.push(keywords.join(' '))
-
-  const { score } = computeToneScore(segments)
-  const tone = (item as { tone?: unknown }).tone
-  const toneConfidenceRaw = (item as { toneConfidence?: unknown }).toneConfidence
-  const toneConfidence =
-    typeof toneConfidenceRaw === 'number' && Number.isFinite(toneConfidenceRaw)
-      ? Math.max(0, Math.min(1, toneConfidenceRaw))
-      : 0
-  const toneWeight =
-    toneConfidence >= 0.75 ? 3 : toneConfidence >= 0.5 ? 2 : toneConfidence >= 0.25 ? 1 : 0
-
-  if (toneWeight > 0) {
-    if (tone === 'positive') score.positive += toneWeight
-    if (tone === 'negative') score.negative += toneWeight
-  }
-
-  return score
-}
-
-function computeExpressionTone(entries: RandomContentItem[]): ExpressionTone {
-  let positive = 0
-  let negative = 0
-  let strongPositive = false
-  let strongNegative = false
-
-  for (const item of entries) {
-    const score = scoreItem(item)
-    positive += score.positive
-    negative += score.negative
-    if (!strongNegative && score.negative - score.positive >= 3 && score.negative >= 4) {
-      strongNegative = true
-    }
-    if (!strongPositive && score.positive - score.negative >= 3 && score.positive >= 4) {
-      strongPositive = true
-    }
-  }
-
-  let tone: ExpressionTone
-
-  if (positive === 0 && negative === 0) {
-    tone = Math.random() < 0.3 ? 'negativeMedium' : 'positiveMedium'
-  } else if (positive === 0) {
-    tone = negative >= 2 ? 'negative' : 'negativeMedium'
-  } else if (negative === 0) {
-    tone = positive >= 2 ? 'positive' : 'positiveMedium'
-  } else if (positive === negative) {
-    tone = Math.random() < 0.35 ? 'negativeMedium' : 'positiveMedium'
-  } else {
-    const ratio = positive / (negative || 1)
-    if (ratio >= 1.6) tone = 'positive'
-    else if (ratio <= 1 / 1.6) tone = 'negative'
-    else if (positive >= negative) tone = 'positiveMedium'
-    else tone = 'negativeMedium'
-  }
-
-  if (strongNegative) {
-    if (tone === 'positive') {
-      tone = negative > positive ? 'negative' : 'negativeMedium'
-    } else if (tone === 'positiveMedium') {
-      tone = negative > positive ? 'negative' : 'negativeMedium'
-    }
-  } else if (strongPositive) {
-    if (tone === 'negative') {
-      tone = positive > negative ? 'positive' : 'positiveMedium'
-    } else if (tone === 'negativeMedium') {
-      tone = positive > negative ? 'positive' : 'positiveMedium'
-    }
-  }
-
-  return tone
-}
-
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
   return (
     <span
@@ -385,15 +316,17 @@ export default function NoroscopePage() {
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isMountedRef = useRef(true)
   const [entries, setEntries] = useState<RandomContentItem[]>([])
+  const [funPhrase, setFunPhrase] = useState<string>('')
+  const [likedMap, setLikedMap] = useState<Record<string, boolean>>({})
   const [revealedTiles, setRevealedTiles] = useState<boolean[]>(() => Array(TARGET_COUNT).fill(false))
   const [globalGlitches, setGlobalGlitches] = useState<Array<{ id: string; bars: GlitchBar[]; rect: { top: number; left: number; width: number; height: number } }>>([])
-  const [summaryIndex, setSummaryIndex] = useState<number | null>(null)
   const glitchTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const tileRefs = useRef<Array<HTMLDivElement | null>>([])
   const fetchLangRef = useRef<Lang>((locale || 'en') as Lang)
   const initialLoadRef = useRef(false)
-const [loadErrorFlag, setLoadErrorFlag] = useState<boolean>(false)
-const [loading, setLoading] = useState(true)
+  const autoRevealTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([])
+  const [loadErrorFlag, setLoadErrorFlag] = useState<boolean>(false)
+  const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
 
@@ -402,6 +335,8 @@ const [loading, setLoading] = useState(true)
     return () => {
       isMountedRef.current = false
       if (burgerTimeoutRef.current) clearTimeout(burgerTimeoutRef.current)
+      autoRevealTimersRef.current.forEach((timer) => clearTimeout(timer))
+      autoRevealTimersRef.current = []
     }
   }, [])
 
@@ -519,35 +454,21 @@ const [loading, setLoading] = useState(true)
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeMenuLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
+  const noroscopeMenuLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
-  const shareLabel = useMemo(() => t('noroscope.shareAction', 'Share this Noroscope'), [t])
-  const shareTitle = useMemo(() => t('noroscope.shareTitle', 'Share your Noroscope'), [t])
-  const titleBar = useMemo(() => t('noroscope.titleBar', 'Here is your Noroscope for today.'), [t])
-  const loadingLabel = useMemo(() => t('noroscope.loading', "Aligning today's Noroscope..."), [t])
+  const shareLabel = useMemo(() => t('noroscope.shareAction', 'Share this 6 RANDOM'), [t])
+  const shareTitle = useMemo(() => t('noroscope.shareTitle', 'Share your 6 RANDOM'), [t])
+  const titleBar = useMemo(() => t('noroscope.titleBar', 'Your 6 RANDOM'), [t])
+  const loadingLabel = useMemo(() => t('noroscope.loading', "Aligning today's 6 RANDOM..."), [t])
   const errorLabel = useMemo(() => t('noroscope.error', "Couldn't load everything. Give it another try."), [t])
   const retryLabel = useMemo(() => t('noroscope.retry', 'Try again'), [t])
   const emptyLabel = useMemo(() => t('noroscope.empty', 'No content available yet.'), [t])
+  const likeLabel = useMemo(() => t('modal.like', 'Like'), [t])
+  const dislikeLabel = useMemo(() => t('modal.dislike', 'Dislike'), [t])
   const summaryFallback = useMemo(() => t('noroscope.expressionFallback', 'The vibes are undecided today.'), [t])
   const revealActionLabel = useMemo(() => t('noroscope.revealAction', 'Reveal this vibe'), [t])
   const revealUnavailableLabel = useMemo(() => t('noroscope.revealUnavailable', 'Content still loading'), [t])
   const tileFallbackLabel = useMemo(() => t('noroscope.tileFallback', 'Reveal me'), [t])
-  const instructionsLabel = useMemo(
-    () => t('noroscope.instructions', 'Tap the squares and uncover your vibe of the day.'),
-    [t]
-  )
-  const progressNoneLabel = useMemo(
-    () => t('noroscope.progress.none', 'Nothing revealed yet. Pick a square to start.'),
-    [t]
-  )
-  const progressPartialLabel = useMemo(
-    () => t('noroscope.progress.partial', '{count}/{total} vibes revealed. Keep going.'),
-    [t]
-  )
-  const progressFullLabel = useMemo(
-    () => t('noroscope.progress.full', 'All vibes revealed. Screenshot the chaos!'),
-    [t]
-  )
   const aiDisclaimerTemplate = useMemo(() => t('noroscope.aiDisclaimer', 'Generated by AI – {source}'), [t])
 
   const formatAiDisclaimer = useCallback(
@@ -576,62 +497,53 @@ const [loading, setLoading] = useState(true)
     }, total)
   }, [])
 
-  const shareSummary = useMemo(() => {
-    if (!entries.length) return null
+  const revealTile = useCallback((index: number) => {
+    const item = entries[index]
+    if (!item) return
+    setRevealedTiles((prev) => {
+      if (prev[index]) return prev
+      const next = [...prev]
+      next[index] = true
+      return next
+    })
+    spawnGlobalGlitch(index, 'boost')
+  }, [entries, spawnGlobalGlitch])
 
-    const lines = entries.map((item) => {
-      const labelType = item.type as ItemType
-      const label = navLabels[labelType] || labelType
-      switch (item.type) {
-        case 'image':
-          return `${label}: ${item.title || item.provider || item.source?.name || item.url || ''}`.trim()
-        case 'video':
-        case 'web':
-          return `${label}: ${item.text || item.source?.name || item.provider || item.url || ''}`.trim()
-        case 'quote':
-          return `${label}: ${item.text}${item.author ? ` — ${item.author}` : ''}`.trim()
-        case 'joke':
-        case 'fact':
-          return `${label}: ${item.text}`.trim()
-        default:
-          return label
+  const handleToggleLike = useCallback((item: RandomContentItem) => {
+    setLikedMap((prev) => {
+      const key = getItemKey(item)
+      const currentlyLiked = prev[key]
+      if (currentlyLiked) {
+        removeLike(item)
+      } else {
+        addLike(item, theme)
       }
-    }).filter(Boolean)
+      try {
+        window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
+      } catch {
+        /* ignore */
+      }
+      return { ...prev, [key]: !currentlyLiked }
+    })
+  }, [theme])
 
-    if (!lines.length) return null
-
+  const shareItems = useMemo(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://gorandom.fun'
-    return [`NOROSCOPE`, ...lines, origin.replace(/\/$/, '') + '/noroscope'].join('\n')
+    const baseUrl = origin.replace(/\/$/, '')
+    return entries.map((item, idx) => {
+      const label = navLabels[item.type as ItemType] || item.type
+      const title = item.type === 'quote'
+        ? `${label}: ${item.text}${item.author ? ` — ${item.author}` : ''}`
+        : `${label}: ${item.text || item.title || item.provider || ''}`
+      const shareUrl = item.source?.url || ('url' in item ? (item as { url?: string }).url : undefined) || `${baseUrl}/6random?slot=${idx}`
+      return {
+        type: item.type,
+        title: title.trim(),
+        text: item.text || item.title || label,
+        url: shareUrl,
+      }
+    })
   }, [entries, navLabels])
-
-  const shareItem = useMemo<DisplayItem | null>(() => {
-    if (!shareSummary) return null
-    return { type: 'encourage', text: shareSummary, icon: '' }
-  }, [shareSummary])
-
-  const summaryTone = useMemo(() => computeExpressionTone(entries), [entries])
-
-  const summaryText = useMemo(() => {
-    const localeKey = (locale || 'en') as ExpressionLocale
-    const summaries = NOROSCOPE_SUMMARIES[localeKey]?.[summaryTone] ?? []
-    if (!summaries.length) return null
-    if (summaryIndex == null) return summaries[0]
-    const safeIndex = ((summaryIndex % summaries.length) + summaries.length) % summaries.length
-    return summaries[safeIndex]
-  }, [locale, summaryTone, summaryIndex])
-
-  const revealedCount = useMemo(
-    () => revealedTiles.reduce((acc, flag) => (flag ? acc + 1 : acc), 0),
-    [revealedTiles]
-  )
-
-  const showSummary = useMemo(() => !loading && revealedCount >= TARGET_COUNT, [loading, revealedCount])
-
-  const progressText = useMemo(() => {
-    if (revealedCount === 0) return progressNoneLabel
-    if (revealedCount >= TARGET_COUNT) return progressFullLabel
-    return progressPartialLabel.replace('{count}', `${revealedCount}`).replace('{total}', `${TARGET_COUNT}`)
-  }, [progressFullLabel, progressNoneLabel, progressPartialLabel, revealedCount])
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -639,17 +551,11 @@ const [loading, setLoading] = useState(true)
     }
   }, [entries])
 
-  useEffect(() => {
-    if (!shareItem && shareOpen) {
-      setShareOpen(false)
-    }
-  }, [shareItem, shareOpen])
-
   const loadNoroscope = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
     const currentLang = force ? ((locale || 'en') as Lang) : fetchLangRef.current
     fetchLangRef.current = currentLang
     const lang = currentLang
-    const storageKey = CACHE_STORAGE_KEY
+    const storageKey = `${CACHE_STORAGE_KEY}-${lang}`
 
     setLoading(true)
     setLoadErrorFlag(false)
@@ -669,24 +575,21 @@ const [loading, setLoading] = useState(true)
           const parsed = JSON.parse(raw) as {
             timestamp?: number
             entries?: RandomContentItem[]
-            revealed?: number[]
-            summaryIndex?: number | null
+            funPhrase?: string
+            lang?: Lang
           }
           const cached = Array.isArray(parsed?.entries) ? parsed.entries : []
           const isFresh = typeof parsed?.timestamp === 'number' && Date.now() - parsed.timestamp <= CACHE_TTL_MS
           const isComplete = cached.length === TARGET_COUNT && cached.every((item) => item && typeof item.type === 'string')
-          if (isFresh && isComplete) {
+          if (isFresh && isComplete && parsed?.lang === lang) {
             if (process.env.NODE_ENV === 'development') {
               console.log('[noroscope] cache hit', parsed)
             }
             setEntries(cached)
+            const cachedPhrase = typeof parsed.funPhrase === 'string' ? parsed.funPhrase : pickFunPhraseForLang(lang)
+            setFunPhrase(cachedPhrase)
+            setRevealedTiles(Array(TARGET_COUNT).fill(false))
             fetchLangRef.current = lang
-            if (Array.isArray(parsed?.revealed) && parsed.revealed.length === TARGET_COUNT) {
-              setRevealedTiles(parsed.revealed.map((value) => value === 1))
-            } else {
-              setRevealedTiles(Array(TARGET_COUNT).fill(false))
-            }
-            setSummaryIndex(typeof parsed?.summaryIndex === 'number' ? parsed.summaryIndex : null)
             setGlobalGlitches([])
             glitchTimeoutsRef.current = {}
             setLoading(false)
@@ -700,45 +603,21 @@ const [loading, setLoading] = useState(true)
     }
 
     try {
-      const results: RandomContentItem[] = []
+      const plan = shuffleArray(MIX_TEMPLATE)
       const seen = new Set<string>()
-      let attempts = 0
-      const MAX_ATTEMPTS = 48
-
-      while (results.length < TARGET_COUNT && attempts < MAX_ATTEMPTS) {
-        attempts += 1
-        try {
-          const requested = NOROSCOPE_TYPES[Math.floor(Math.random() * NOROSCOPE_TYPES.length)]
-          const response = await fetchRandom({ types: [requested] as RandomTypes, lang })
-          const candidate = response?.item ?? null
-          if (!candidate) continue
-
-          const candidateType = candidate.type as ItemType | 'encourage'
-          if (candidateType === 'encourage') continue
-          if (!NOROSCOPE_TYPES.includes(candidateType)) continue
-          if (candidateType === 'fact' && (candidate as FactItem).variant === 'quiz') continue
-          if (candidateType === 'web') {
-            const webItem = candidate as WebItem
-            if (!webItem.ogImage) continue
-          }
-
-          const key = getItemKey(candidate)
-          const allowDuplicate = attempts > 24
-          if (!allowDuplicate && key && seen.has(key)) continue
-          if (key) seen.add(key)
-
-          results.push(candidate)
-        } catch (error) {
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[noroscope] fetchRandom failed', error)
-          }
-        }
+      const results: RandomContentItem[] = []
+      for (const slot of plan) {
+        const item = await fetchPlanItem(slot, lang, seen)
+        if (item) results.push(item)
       }
 
-      const hadError = results.length < TARGET_COUNT
-      if (hadError && results.length > 0) {
+      if (!results.length) {
+        throw new Error('no results')
+      }
+
+      if (results.length < TARGET_COUNT) {
         const pool = [...results]
-        while (results.length < TARGET_COUNT) {
+        while (results.length < TARGET_COUNT && pool.length) {
           results.push(pool[results.length % pool.length])
         }
       }
@@ -750,6 +629,8 @@ const [loading, setLoading] = useState(true)
       }
 
       setEntries(results)
+      const phrase = pickFunPhraseForLang(lang)
+      setFunPhrase(phrase)
       fetchLangRef.current = lang
       setLoading(false)
       setRevealedTiles(Array(TARGET_COUNT).fill(false))
@@ -758,21 +639,13 @@ const [loading, setLoading] = useState(true)
       if (process.env.NODE_ENV === 'development') {
         console.log('[noroscope] loading -> false')
       }
-      setLoadErrorFlag(hadError)
+      setLoadErrorFlag(results.length < TARGET_COUNT)
 
-      const tone = computeExpressionTone(results)
-      const summaries = NOROSCOPE_SUMMARIES[fetchLangRef.current]?.[tone] ?? []
-      const pickedSummaryIndex = summaries.length ? Math.floor(Math.random() * summaries.length) : null
-      setSummaryIndex(pickedSummaryIndex)
-
-      const canPersist = !hadError && results.length === TARGET_COUNT
-      if (canPersist) {
-        try {
-          const payload = { timestamp: Date.now(), entries: results, revealed: Array(TARGET_COUNT).fill(0), summaryIndex: pickedSummaryIndex }
-          localStorage.setItem(storageKey, JSON.stringify(payload))
-        } catch {
-          /* ignore cache write errors */
-        }
+      try {
+        const payload = { timestamp: Date.now(), entries: results, funPhrase: phrase, lang }
+        localStorage.setItem(storageKey, JSON.stringify(payload))
+      } catch {
+        /* ignore cache write errors */
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
@@ -784,7 +657,6 @@ const [loading, setLoading] = useState(true)
       setRevealedTiles(Array(TARGET_COUNT).fill(false))
       setGlobalGlitches([])
       glitchTimeoutsRef.current = {}
-      setSummaryIndex(null)
       setLoadErrorFlag(true)
       return
     }
@@ -793,6 +665,41 @@ const [loading, setLoading] = useState(true)
   useEffect(() => {
     setFetchError(loadErrorFlag ? errorLabel : null)
   }, [errorLabel, loadErrorFlag])
+
+  const refreshLikedState = useCallback(() => {
+    const next: Record<string, boolean> = {}
+    entries.forEach((item) => {
+      const key = getItemKey(item)
+      next[key] = isLiked(item)
+    })
+    setLikedMap(next)
+  }, [entries])
+
+  useEffect(() => {
+    refreshLikedState()
+  }, [refreshLikedState])
+
+  useEffect(() => {
+    const handler = (event: StorageEvent) => {
+      if (event.key === 'likes') refreshLikedState()
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [refreshLikedState])
+
+  useEffect(() => {
+    autoRevealTimersRef.current.forEach((timer) => clearTimeout(timer))
+    autoRevealTimersRef.current = []
+    if (!entries.length || loading) return
+    setRevealedTiles(Array(TARGET_COUNT).fill(false))
+    const timers = entries.map((_, idx) =>
+      window.setTimeout(() => {
+        revealTile(idx)
+      }, idx * AUTO_REVEAL_DELAY_MS)
+    )
+    autoRevealTimersRef.current = timers
+    return () => timers.forEach((timer) => clearTimeout(timer))
+  }, [entries, loading, revealTile])
 
   useEffect(() => {
     if (!initialLoadRef.current) {
@@ -844,9 +751,95 @@ const [loading, setLoading] = useState(true)
       )
     }
 
-    if (item.type === 'image') {
+    const renderHeartButton = (item: RandomContentItem, size = 16) => {
+      const key = getItemKey(item)
+      const liked = likedMap[key] || false
       return (
-        <img src={item.thumbUrl || item.url} alt={item.title || item.provider || 'Image'} className="absolute inset-0 h-full w-full object-cover" />
+        <button
+          type="button"
+          aria-label={liked ? dislikeLabel : likeLabel}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            handleToggleLike(item)
+          }}
+          className="ml-2 rounded-full p-[2px]"
+          style={{ lineHeight: 0 }}
+        >
+          <MonoIcon src="/icons/Heart.svg" color={liked ? '#FF4D78' : theme.cream} size={size} />
+        </button>
+      )
+    }
+
+    const renderSourceBar = (item: RandomContentItem, inline = false) => {
+      const label = formatSourceLabel(item)
+      const href =
+        (item.source?.url && typeof item.source.url === 'string' && item.source.url) ||
+        (item.type !== 'quote' && 'url' in item && typeof (item as { url?: string }).url === 'string'
+          ? (item as { url?: string }).url
+          : null) ||
+        null
+
+      const labelNode = label
+        ? href
+          ? (
+            <a href={href} target="_blank" rel="noreferrer" className="underline">
+              {label}
+            </a>
+          )
+          : <span>{label}</span>
+        : href ? (
+          <a href={href} target="_blank" rel="noreferrer" className="underline">
+            {href.replace(/^https?:\/\//, '')}
+          </a>
+        ) : (
+          <span>—</span>
+        )
+
+      if (inline) {
+        return (
+          <div
+            className="mt-2 flex items-center justify-center gap-2 text-[11px] font-inter uppercase tracking-[0.2em]"
+            style={{ color: theme.cream }}
+          >
+            <span style={{ opacity: 0.6 }}>Source:</span>
+            {labelNode}
+            {renderHeartButton(item, 14)}
+          </div>
+        )
+      }
+
+      return (
+        <div
+          className="absolute left-0 right-0 bottom-0 flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.2em]"
+          style={{ backgroundColor: 'rgba(25,25,22,0.85)', color: theme.cream, fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif" }}
+        >
+          <div className="flex items-center gap-2">
+            <span style={{ opacity: 0.7 }}>Source:</span>
+            {labelNode}
+          </div>
+          {renderHeartButton(item)}
+        </div>
+      )
+    }
+
+    const renderGiphyFooter = (href: string, item: RandomContentItem) => (
+      <div className="absolute left-0 right-0 bottom-0 flex items-center justify-between bg-black px-3 py-1.5">
+        <a href={href} target="_blank" rel="noreferrer" aria-label="View on Giphy">
+          <img src={GIPHY_ATTRIBUTION_BADGE} alt="Powered by GIPHY" style={{ height: '32px', width: 'auto' }} />
+        </a>
+        {renderHeartButton(item)}
+      </div>
+    )
+
+    if (item.type === 'image') {
+      const provider = (item.provider || item.source?.name || '').toLowerCase()
+      const giphyHref = item.source?.url || item.pageUrl || item.link || item.url || null
+      return (
+        <>
+          <img src={item.thumbUrl || item.url} alt={item.title || item.provider || 'Image'} className="absolute inset-0 h-full w-full object-cover" />
+          {provider === 'giphy' && giphyHref ? renderGiphyFooter(giphyHref, item) : renderSourceBar(item)}
+        </>
       )
     }
 
@@ -872,6 +865,7 @@ const [loading, setLoading] = useState(true)
           <>
             <AutoPlayingVideo src={url} poster={item.thumbUrl} label={item.text || badgeText} />
             {badge}
+            {renderSourceBar(item)}
             {item.source?.url ? (
               <a
                 href={item.source.url}
@@ -901,7 +895,7 @@ const [loading, setLoading] = useState(true)
 
         if (embedUrl) {
           return (
-            <div className="absolute inset-0">
+            <>
               <iframe
                 src={embedUrl}
                 title={item.text || badgeText}
@@ -910,7 +904,8 @@ const [loading, setLoading] = useState(true)
                 className="absolute inset-0 h-full w-full"
               />
               {badge}
-            </div>
+              {renderSourceBar(item)}
+            </>
           )
         }
       }
@@ -920,6 +915,7 @@ const [loading, setLoading] = useState(true)
           <>
             <img src={item.thumbUrl} alt={item.text || 'Video'} className="absolute inset-0 h-full w-full object-cover" />
             {badge}
+            {renderSourceBar(item)}
           </>
         )
       }
@@ -928,6 +924,7 @@ const [loading, setLoading] = useState(true)
         <div className="absolute inset-0 flex items-center justify-center bg-black/60">
           <MonoIcon src="/icons/Video.svg" color={theme.cream} size={36} />
           {badge}
+          {renderSourceBar(item)}
         </div>
       )
     }
@@ -951,16 +948,20 @@ const [loading, setLoading] = useState(true)
         </div>
       )
 
+      const body = (
+        <>
+          {content}
+          {badge}
+          {renderSourceBar(item)}
+        </>
+      )
+
       return item.url ? (
         <a href={item.url} target="_blank" rel="noreferrer" className="absolute inset-0">
-          {content}
-          {badge}
+          {body}
         </a>
       ) : (
-        <div className="absolute inset-0">
-          {content}
-          {badge}
-        </div>
+        <div className="absolute inset-0">{body}</div>
       )
     }
 
@@ -971,7 +972,6 @@ const [loading, setLoading] = useState(true)
     }
 
     if (item.type === 'quote') {
-      const sourceLabel = formatSourceLabel(item)
       const disclaimer = item.disclaimer || formatAiDisclaimer(item.ai?.source)
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center" style={wrapperStyle}>
@@ -983,11 +983,7 @@ const [loading, setLoading] = useState(true)
               — {item.author}
             </p>
           ) : null}
-          {sourceLabel ? (
-            <p className="noroscope-tile-source" style={{ color: theme.cream }}>
-              {sourceLabel}
-            </p>
-          ) : null}
+          {renderSourceBar(item, true)}
           {disclaimer ? (
             <p className="noroscope-tile-disclaimer">{disclaimer}</p>
           ) : null}
@@ -996,19 +992,14 @@ const [loading, setLoading] = useState(true)
     }
 
     if (item.type === 'joke') {
-      const sourceLabel = formatSourceLabel(item)
       const disclaimer = item.disclaimer || formatAiDisclaimer(item.ai?.source)
       return (
-        <div className="absolute inset-0 flex items-center justify-center px-4 text-center" style={wrapperStyle}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center" style={wrapperStyle}>
           <p className="font-tomorrow text-sm sm:text-base leading-snug" style={{ fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}>
             {item.text}
           </p>
           <div className="absolute inset-x-4 bottom-4 flex flex-col items-center gap-2">
-            {sourceLabel ? (
-              <p className="noroscope-tile-source" style={{ color: theme.cream }}>
-                {sourceLabel}
-              </p>
-            ) : null}
+            {renderSourceBar(item, true)}
             {disclaimer ? <p className="noroscope-tile-disclaimer">{disclaimer}</p> : null}
           </div>
         </div>
@@ -1023,16 +1014,11 @@ const [loading, setLoading] = useState(true)
             <p className="font-tomorrow text-sm sm:text-base leading-snug" style={{ fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}>
               {fact.text}
             </p>
-            {fact.source?.name ? (
-              <p className="noroscope-tile-source" style={{ color: theme.cream }}>
-                {fact.source.name}
-              </p>
-            ) : null}
+            {renderSourceBar(fact, true)}
           </div>
         )
       }
 
-      const sourceLabel = formatSourceLabel(fact)
       const disclaimer = fact.disclaimer || formatAiDisclaimer(fact.ai?.source)
 
       return (
@@ -1040,11 +1026,7 @@ const [loading, setLoading] = useState(true)
           <p className="font-tomorrow text-sm sm:text-base leading-snug" style={{ fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}>
             {fact.text}
           </p>
-          {sourceLabel ? (
-            <p className="noroscope-tile-source" style={{ color: theme.cream }}>
-              {sourceLabel}
-            </p>
-          ) : null}
+          {renderSourceBar(fact, true)}
           {disclaimer ? <p className="noroscope-tile-disclaimer">{disclaimer}</p> : null}
         </div>
       )
@@ -1060,10 +1042,11 @@ const [loading, setLoading] = useState(true)
     }
 
     return (
-      <div className="absolute inset-0 flex items-center justify-center px-4 text-center" style={wrapperStyle}>
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center gap-2" style={wrapperStyle}>
         <p className="font-tomorrow text-sm sm:text-base leading-snug" style={{ fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700 }}>
           {fallbackText}
         </p>
+        {renderSourceBar(item, true)}
       </div>
     )
   }
@@ -1080,26 +1063,7 @@ const [loading, setLoading] = useState(true)
 
       const handleReveal = () => {
         if (!hasContent || loading || revealedTiles[index]) return
-        setRevealedTiles((prev) => {
-          if (prev[index]) return prev
-          const next = [...prev]
-          next[index] = true
-          return next
-        })
-        spawnGlobalGlitch(index, 'boost')
-        try {
-          const storageKey = CACHE_STORAGE_KEY
-          const raw = localStorage.getItem(storageKey)
-          if (raw) {
-            const parsed = JSON.parse(raw) as { timestamp?: number; entries?: RandomContentItem[]; revealed?: number[] }
-            if (Array.isArray(parsed?.revealed) && parsed.revealed.length === TARGET_COUNT) {
-              parsed.revealed[index] = 1
-              localStorage.setItem(storageKey, JSON.stringify(parsed))
-            }
-          }
-        } catch {
-          /* ignore storage errors */
-        }
+        revealTile(index)
       }
 
       return (
@@ -1192,15 +1156,7 @@ const [loading, setLoading] = useState(true)
         </button>
 
         <div className="flex-1 flex justify-center">
-          <LogoAnimated
-            trigger={1}
-            toSecond={false}
-            fitToWidth
-            vhMobile={8}
-            vhDesktop={9}
-            gapMobile={1}
-            gapDesktop={1}
-          />
+          <LogoAnimated trigger={1} toSecond={false} vhMobile={8} vhDesktop={8} gapMobile={4} gapDesktop={4} />
         </div>
 
         <button
@@ -1208,7 +1164,7 @@ const [loading, setLoading] = useState(true)
           aria-label={shareLabel}
           onClick={() => setShareOpen(true)}
           className="p-3 disabled:opacity-40 disabled:pointer-events-none"
-          disabled={!shareItem}
+          disabled={!entries.length}
         >
           <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
         </button>
@@ -1228,25 +1184,6 @@ const [loading, setLoading] = useState(true)
           >
             {titleBar}
           </div>
-        </div>
-      </div>
-
-      <div className="px-4 sm:px-6 mt-3">
-        <div className="mx-auto max-w-2xl text-center">
-          <p
-            className="font-tomorrow text-sm sm:text-base leading-relaxed"
-            style={{ fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif", fontWeight: 700, color: theme.cream }}
-          >
-            {instructionsLabel}
-          </p>
-          {progressText ? (
-            <p
-              className="mt-2 font-inter text-[11px] sm:text-xs uppercase tracking-[0.24em]"
-              style={{ color: theme.text }}
-            >
-              {progressText}
-            </p>
-          ) : null}
         </div>
       </div>
 
@@ -1288,23 +1225,21 @@ const [loading, setLoading] = useState(true)
               {loadingLabel}
             </p>
           ) : null}
-          {showSummary ? (
-            <div className="mt-6">
-              <div
-                className="mx-auto w-full px-4 py-3 text-center font-tomorrow text-base sm:text-lg leading-snug"
-                style={{
-                  border: `2px solid ${theme.text}`,
-                  borderRadius: 0,
-                  backgroundColor: 'transparent',
-                  color: theme.text,
-                  fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
-                  fontWeight: 700,
-                }}
-              >
-                {summaryText ?? summaryFallback}
-              </div>
+          <div className="mt-6">
+            <div
+              className="mx-auto w-full px-4 py-3 text-center font-tomorrow text-base sm:text-lg leading-snug"
+              style={{
+                border: `2px solid ${theme.text}`,
+                borderRadius: 0,
+                backgroundColor: 'transparent',
+                color: theme.text,
+                fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
+                fontWeight: 700,
+              }}
+            >
+              {funPhrase || summaryFallback}
             </div>
-          ) : null}
+          </div>
         </div>
       </section>
 
@@ -1350,7 +1285,7 @@ const [loading, setLoading] = useState(true)
               </Link>
 
               <Link
-                href="/noroscope"
+                href="/6random"
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream, opacity: 0.7 }}
@@ -1434,9 +1369,9 @@ const [loading, setLoading] = useState(true)
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         title={shareTitle}
-        url="/noroscope"
+        url="/6random"
         theme={theme}
-        item={shareItem ?? undefined}
+        list={shareItems}
       />
     </main>
   )

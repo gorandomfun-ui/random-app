@@ -3,6 +3,7 @@ export type LikeType = 'image' | 'video' | 'web' | 'quote' | 'joke' | 'fact'
 
 export type LikeItem = {
   id: string
+  itemId?: string
   type: LikeType
   url?: string
   text?: string
@@ -19,7 +20,7 @@ export type GlobalLikeItem = LikeItem & {
 }
 
 const KEY = 'likes'               // <- important: aligne avec l’existant
-const TTL = 24 * 60 * 60 * 1000   // 24h
+const MAX_LOCAL_LIKES = 200
 
 function safeParse<T>(s: string | null, fallback: T): T {
   if (!s) return fallback
@@ -94,11 +95,8 @@ export function buildId(payload: LikeablePayload | null | undefined): string {
 
 export function getAll(): LikeItem[] {
   try {
-    const now = Date.now()
     const arr = safeParse<LikeItem[]>(localStorage.getItem(KEY), [])
-    const fresh = arr.filter(x => now - x.likedAt < TTL)
-    if (fresh.length !== arr.length) setStore(fresh)
-    return fresh
+    return Array.isArray(arr) ? arr : []
   } catch { return [] }
 }
 
@@ -109,8 +107,10 @@ export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
     const arr = getAll()
     const id = buildId(payload)
     const idx = arr.findIndex(x => x.id === id)
+    const itemId = normaliseIdCandidate(payload._id)
     const item: LikeItem = {
       id,
+      itemId: itemId || undefined,
       type: payload.type,
       url: cleanUrl(payload.url) || undefined,
       text: payload.text || payload.author || '',
@@ -123,17 +123,39 @@ export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
     }
     if (idx >= 0) arr.splice(idx, 1)
     arr.unshift(item)
-    setStore(arr.slice(0, 200))
+    setStore(arr.slice(0, MAX_LOCAL_LIKES))
 
-    void recordGlobalLike({ id, type: payload.type, item, theme })
+    if (itemId) void syncItemLike(itemId, 'POST')
   } catch {}
 }
 
 export const addLike = saveLike
 
-export function removeLike(idOrItem: string | LikeablePayload) {
+export function removeLike(idOrItem: string | LikeablePayload | LikeItem) {
   const id = typeof idOrItem === 'string' ? idOrItem : buildId(idOrItem)
-  try { setStore(getAll().filter(x => x.id !== id)) } catch {}
+  try {
+    const arr = getAll()
+    let removed: LikeItem | undefined
+    const filtered = arr.filter((entry) => {
+      if (!removed && entry.id === id) {
+        removed = entry
+        return false
+      }
+      return true
+    })
+    setStore(filtered)
+
+    let remoteId: string | null = null
+    if (typeof idOrItem === 'string') {
+      remoteId = removed?.itemId ?? null
+    } else if ('itemId' in (idOrItem as Record<string, unknown>) && typeof (idOrItem as { itemId?: unknown }).itemId === 'string') {
+      remoteId = (idOrItem as { itemId?: unknown }).itemId as string
+    } else {
+      remoteId = normaliseIdCandidate((idOrItem as LikeablePayload | null | undefined)?._id) ?? null
+    }
+
+    if (remoteId) void syncItemLike(remoteId, 'DELETE')
+  } catch {}
 }
 
 export function isLiked(payload: LikeablePayload): boolean {
@@ -144,26 +166,13 @@ export function isLiked(payload: LikeablePayload): boolean {
 export function clearExpired() { getAll() }
 export function clearAll() { try { localStorage.setItem(KEY, '[]') } catch {} }
 
-async function recordGlobalLike(params: { id: string; type: LikeType; item: LikeItem; theme?: LikeItem['theme'] }) {
+async function syncItemLike(itemId: string, method: 'POST' | 'DELETE') {
   try {
     if (typeof fetch !== 'function') return
-    const { id, type, item, theme } = params
-    await fetch('/api/likes/global', {
-      method: 'POST',
+    await fetch('/api/feedback/like', {
+      method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id,
-        type,
-        item: {
-          url: item.url,
-          text: item.text,
-          title: item.title,
-          thumbUrl: item.thumbUrl,
-          ogImage: item.ogImage,
-          provider: item.provider,
-        },
-        theme,
-      }),
+      body: JSON.stringify({ itemId }),
     }).catch(() => undefined)
   } catch {}
 }

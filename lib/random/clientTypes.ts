@@ -8,12 +8,16 @@ type ToneAttributes = {
   toneSignals?: string[] | null
 }
 
+type Identifiable = {
+  _id?: string
+}
+
 export type SourceInfo = {
   name?: string | null
   url?: string | null
 } | null
 
-export type ImageItem = {
+export type ImageItem = Identifiable & {
   type: 'image'
   url: string
   thumbUrl?: string | null
@@ -28,7 +32,7 @@ export type ImageItem = {
   attribution?: string | null
 } & ToneAttributes
 
-export type VideoItem = {
+export type VideoItem = Identifiable & {
   type: 'video'
   url: string
   thumbUrl?: string | null
@@ -44,7 +48,7 @@ export type AiMetadata = {
   generatedAt?: string
 }
 
-export type QuoteItem = {
+export type QuoteItem = Identifiable & {
   type: 'quote'
   text: string
   author: string
@@ -56,7 +60,7 @@ export type QuoteItem = {
   disclaimer?: string
 } & ToneAttributes
 
-export type JokeItem = {
+export type JokeItem = Identifiable & {
   type: 'joke'
   text: string
   provider: string
@@ -69,7 +73,7 @@ export type JokeItem = {
 
 export type TriviaDifficulty = 'easy' | 'medium' | 'hard'
 
-export type FactTextItem = {
+export type FactTextItem = Identifiable & {
   type: 'fact'
   variant: 'text' | 'ai'
   text: string
@@ -80,7 +84,7 @@ export type FactTextItem = {
   disclaimer?: string
 }
 
-export type FactQuizItem = {
+export type FactQuizItem = Identifiable & {
   type: 'fact'
   variant: 'quiz'
   id: string
@@ -98,7 +102,7 @@ export type FactQuizItem = {
 
 export type FactItem = FactTextItem | FactQuizItem
 
-export type WebItem = {
+export type WebItem = Identifiable & {
   type: 'web'
   url: string
   text: string
@@ -119,7 +123,7 @@ export type MiniGameId =
   | 'color-off-by-one'
   | 'steady-spots'
 
-export type MiniGameItem = {
+export type MiniGameItem = Identifiable & {
   type: 'minigame'
   gameId: MiniGameId
   level: number

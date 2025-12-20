@@ -178,6 +178,9 @@ async function pickFromDb(exclude: string[], attempts = 20): Promise<QuoteRecord
 export async function selectQuote(): Promise<QuoteItem | null> {
   const exclude = recentQuotes.slice(-RECENT_LIMIT)
   const doc = await pickFromDb(exclude)
+  const itemId = doc && typeof doc === 'object' && '_id' in doc
+    ? String((doc as { _id: unknown })._id)
+    : undefined
   const record = doc ?? { text: LOCAL_QUOTES.find((q) => !exclude.includes(key(q, ''))) || LOCAL_QUOTES[0], author: '', provider: 'local' }
 
   const text = trim(typeof record.text === 'string' ? record.text : '')
@@ -214,6 +217,7 @@ export async function selectQuote(): Promise<QuoteItem | null> {
   markGlobalKeywords(keywords)
 
   return {
+    _id: itemId,
     type: 'quote',
     text,
     author,

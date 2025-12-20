@@ -230,6 +230,7 @@ export async function selectJoke(): Promise<JokeItem | null> {
   const toneSignals = Array.isArray(record.toneSignals)
     ? record.toneSignals.filter((entry): entry is string => typeof entry === 'string')
     : undefined
+  const itemId = doc && doc._id ? String(doc._id) : undefined
 
   registerRecent(text)
   await touchLastShown('joke', { text })
@@ -240,6 +241,7 @@ export async function selectJoke(): Promise<JokeItem | null> {
   markGlobalKeywords(keywords)
 
   return {
+    _id: itemId,
     type: 'joke',
     text,
     provider,

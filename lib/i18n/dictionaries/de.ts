@@ -4,14 +4,14 @@ const deDictionary = {
     "tagline2": "KEINE MISSION, KEIN ZIEL, KEIN GRUND.",
     "tagline3": "NUR NUTZLOSE ÜBERRASCHUNG.",
     "startButton": "GO RANDOM",
-    "noroscopeButton": "NOROSCOPE"
+    "noroscopeButton": "6 RANDOM"
   },
   "noroscope": {
-    "menu": "Noroscope",
-    "titleBar": "Hier ist dein Noroscope für heute.",
-    "shareTitle": "Teile dein Noroscope",
-    "shareAction": "Dieses Noroscope teilen",
-    "loading": "Wir stimmen dein Noroscope ab...",
+    "menu": "6 RANDOM",
+    "titleBar": "Dein 6 RANDOM",
+    "shareTitle": "Teile dein 6 RANDOM",
+    "shareAction": "Dieses 6 RANDOM teilen",
+    "loading": "Wir richten dein 6 RANDOM aus...",
     "error": "Nicht alles konnte geladen werden. Bitte erneut versuchen.",
     "retry": "Erneut versuchen",
     "empty": "Noch kein Inhalt verfügbar.",
@@ -58,16 +58,16 @@ const deDictionary = {
     "title": "Deine Likes",
     "empty": "Noch keine Likes",
     "maxReached": "Maximum 6 Likes erreicht!",
-    "keep24h": "24 Stunden hier gespeichert.",
+    "keep24h": "Lokal auf diesem Gerät gespeichert.",
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "Deine",
-    "youSuffix": "bleiben hier 24 h gespeichert.",
+    "youSuffix": "bleiben auf diesem Gerät gespeichert.",
     "weDescription": "Die Top",
     "weSuffix": "Inhalte der Community.",
     "banner": {
       "youPrefix": "Deine",
-      "youSuffix": "bleiben hier 24 h gespeichert.",
+      "youSuffix": "bleiben auf diesem Gerät gespeichert.",
       "wePrefix": "Top",
       "weSuffix": "Inhalte der Community."
     },
@@ -79,7 +79,8 @@ const deDictionary = {
     "close": "Schließen",
     "native": "Per Nachricht teilen",
     "copy": "Kopieren",
-    "copied": "Kopiert!"
+    "copied": "Kopiert!",
+    "itemsLabel": "Geteilte Inhalte"
   },
   "video": {
     "fullscreen": "Vollbild",

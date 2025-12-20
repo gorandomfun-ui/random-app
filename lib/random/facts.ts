@@ -423,7 +423,9 @@ function buildQuizItem(doc: FactQuizDoc): FactQuizItem | null {
   const toneSignals = Array.isArray(doc.toneSignals)
     ? doc.toneSignals.filter((entry): entry is string => typeof entry === 'string')
     : undefined
+  const itemId = doc._id ? String(doc._id) : undefined
   return {
+    _id: itemId,
     type: 'fact',
     variant: 'quiz',
     id,
@@ -914,6 +916,7 @@ export async function selectFact(): Promise<FactItem | null> {
       const provider = trim(doc.provider) || (doc.source?.name ?? 'fact')
       const sourceName = trim(doc.source?.name) || provider
       const sourceUrl = typeof doc.source?.url === 'string' ? doc.source.url : undefined
+      const itemId = doc._id ? String(doc._id) : undefined
       registerRecent(text)
       const lookupKey = doc.hash ? { hash: doc.hash } : { text }
       await touchLastShown('fact', lookupKey)
@@ -925,6 +928,7 @@ export async function selectFact(): Promise<FactItem | null> {
       lastFactWasQuiz = false
       ensureQuizPreloaded(buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))).catch(() => undefined)
       return {
+        _id: itemId,
         type: 'fact',
         variant: doc.variant === 'ai' ? 'ai' : 'text',
         text,

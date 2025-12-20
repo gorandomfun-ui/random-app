@@ -70,7 +70,7 @@ export default function LegalPage() {
   }, [menuOpen])
 
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const subtitle = useMemo(() => t('legal.subtitle', 'Transparency & accountability'), [t])
@@ -236,7 +236,7 @@ export default function LegalPage() {
               </Link>
 
               <Link
-                href="/noroscope"
+                href="/6random"
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}

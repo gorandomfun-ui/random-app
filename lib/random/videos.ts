@@ -60,6 +60,9 @@ export async function selectVideo(): Promise<VideoItem | null> {
   const doc = await pickFromDb(exclude)
   if (!doc) return null
 
+  const itemId = doc && typeof doc === 'object' && '_id' in doc
+    ? String((doc as { _id: unknown })._id)
+    : undefined
   const resolved = resolveUrl(doc)
   if (!resolved) return null
   const { url, id } = resolved
@@ -87,6 +90,7 @@ export async function selectVideo(): Promise<VideoItem | null> {
   markGlobalKeywords(keywords)
 
   return {
+    _id: itemId,
     type: 'video',
     url,
     thumbUrl: thumb || undefined,

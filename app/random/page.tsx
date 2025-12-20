@@ -45,20 +45,27 @@ const TYPE_ICONS: Record<ItemType, string> = {
 }
 const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
 
-const FIXED_SEQUENCE: ItemType[] = [
-  'image',
-  'video',
-  'joke',
-  'video',
-  'image',
-  'web',
-  'quote',
-  'image',
-  'video',
-  'fact',
-  'image',
-  'video',
-  'web',
+const TEXT_CONTENT_TYPES: ItemType[] = ['quote', 'fact', 'joke']
+
+type SequenceEntry =
+  | { kind: 'fixed'; itemType: ItemType }
+  | { kind: 'choices'; types: ItemType[] }
+  | { kind: 'quiz'; itemType: Extract<ItemType, 'fact'> }
+
+const FIXED_SEQUENCE: SequenceEntry[] = [
+  { kind: 'fixed', itemType: 'image' },
+  { kind: 'fixed', itemType: 'video' },
+  { kind: 'fixed', itemType: 'image' },
+  { kind: 'fixed', itemType: 'video' },
+  { kind: 'fixed', itemType: 'image' },
+  { kind: 'fixed', itemType: 'web' },
+  { kind: 'choices', types: TEXT_CONTENT_TYPES },
+  { kind: 'fixed', itemType: 'video' },
+  { kind: 'fixed', itemType: 'image' },
+  { kind: 'fixed', itemType: 'video' },
+  { kind: 'fixed', itemType: 'image' },
+  { kind: 'fixed', itemType: 'web' },
+  { kind: 'quiz', itemType: 'fact' },
 ]
 
 const ENCOURAGE_GROUP_SIZE = 5
@@ -127,7 +134,7 @@ function parseTypesParam(value: string | string[] | undefined): ItemType[] {
 type EncourageItem = EncourageContentItem
 
 type SequenceSlot =
-  | { kind: 'content'; itemType: ItemType }
+  | { kind: 'content'; itemType: ItemType; requireQuiz?: boolean }
   | { kind: 'encourage'; round: number; encourageIndex: number }
 
 type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
@@ -196,6 +203,9 @@ function shortenText(text: string, maxWords: number) {
   const cleaned = snippet.replace(/[.,!?;:–-]+$/, '')
   return words.length > maxWords ? `${cleaned}…` : cleaned
 }
+
+const isQuizFactItem = (item: RandomContentItem): item is FactItem =>
+  item.type === 'fact' && (item as FactItem).variant === 'quiz'
 
 function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage') return null
@@ -1236,7 +1246,7 @@ export default function RandomExperiencePage({
   const likeLabel = useMemo(() => t('modal.like', 'Like'), [t])
   const randomAgainLabel = useMemo(() => t('modal.randomAgain', 'RANDOM AGAIN'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', 'Noroscope'), [t])
+  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
@@ -1486,22 +1496,40 @@ const sequenceStateRef = useRef({
       return { kind: 'encourage', round, encourageIndex: encourage }
     }
 
+    const resolveEntry = (entry: SequenceEntry): { itemType: ItemType; requireQuiz?: boolean } | null => {
+      if (entry.kind === 'fixed') {
+        return allowedTypes.has(entry.itemType) ? { itemType: entry.itemType } : null
+      }
+      if (entry.kind === 'choices') {
+        const available = entry.types.filter((type) => allowedTypes.has(type))
+        if (!available.length) return null
+        const chosen = available[randIdx(available.length)]
+        return { itemType: chosen }
+      }
+      if (entry.kind === 'quiz') {
+        if (!allowedTypes.has(entry.itemType)) return null
+        return { itemType: entry.itemType, requireQuiz: true }
+      }
+      return null
+    }
+
     let normalizedStep = state.step % seq.length
-    let chosenType: ItemType | null = null
+    let chosenSlot: { itemType: ItemType; requireQuiz?: boolean } | null = null
     let nextStep = normalizedStep
     for (let attempt = 0; attempt < seq.length; attempt++) {
-      const candidate = seq[normalizedStep]
+      const entry = seq[normalizedStep]
       normalizedStep = (normalizedStep + 1) % seq.length
-      if (allowedTypes.has(candidate)) {
-        chosenType = candidate
+      const resolved = resolveEntry(entry)
+      if (resolved) {
+        chosenSlot = resolved
         nextStep = normalizedStep
         break
       }
     }
 
-    if (!chosenType) {
+    if (!chosenSlot) {
       const fallback = selectedTypes[0] ?? 'fact'
-      chosenType = fallback
+      chosenSlot = { itemType: fallback }
     }
 
     sequenceStateRef.current = {
@@ -1513,7 +1541,7 @@ const sequenceStateRef = useRef({
       currentInterval,
       intervalIndex: state.intervalIndex ?? 0,
     }
-    return { kind: 'content', itemType: chosenType }
+    return { kind: 'content', itemType: chosenSlot.itemType, requireQuiz: chosenSlot.requireQuiz }
   }, [allowedTypes, selectedTypes])
 
   const preloadQueuesRef = useRef<Record<ItemType, RandomContentItem[]>>({
@@ -1758,13 +1786,18 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     return createMiniGameItem({ id, level })
   }, [ensureQueue])
 
-  const takeFromQueue = useCallback((type: ItemType): RandomContentItem | null => {
+  const takeFromQueue = useCallback((type: ItemType, predicate?: (item: RandomContentItem) => boolean): RandomContentItem | null => {
     const queue = preloadQueuesRef.current[type]
-    while (queue.length) {
+    const iterations = queue.length
+    for (let index = 0; index < iterations; index++) {
       const next = queue.shift()
       if (!next) continue
       const key = getContentKey(next)
       if (key && isRecentKey(key)) continue
+      if (predicate && !predicate(next)) {
+        queue.push(next)
+        continue
+      }
       return next
     }
     return null
@@ -1793,7 +1826,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     [finalizeCandidate, selectedTypes, takeFromQueue],
   )
 
-  const acquireItem = useCallback(async (type: ItemType): Promise<RandomContentItem | null> => {
+  const acquireItem = useCallback(async (
+    type: ItemType,
+    predicate?: (item: RandomContentItem) => boolean,
+  ): Promise<RandomContentItem | null> => {
     if (type === 'joke') {
       const miniGame = spawnMiniGameIfDue()
       if (miniGame) return miniGame
@@ -1801,7 +1837,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
     await ensureQueue(type, 1)
 
-    let candidate = takeFromQueue(type)
+    let candidate = takeFromQueue(type, predicate)
 
     let fallbackAttempts = 0
     while (!candidate && fallbackAttempts < PRELOAD_TARGET_PER_TYPE * 3) {
@@ -1812,6 +1848,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (!item || item.type !== type) continue
         const key = getContentKey(item)
         if (key && isRecentKey(key)) continue
+        if (predicate && !predicate(item)) {
+          preloadQueuesRef.current[type].push(item)
+          continue
+        }
         candidate = item
         break
       } catch {
@@ -1895,17 +1935,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       } else {
         let item: RandomContentItem | null = null
         let resolvedType: ItemType | null = null
+        const requiresQuizFact = Boolean(slot.requireQuiz && slot.itemType === 'fact')
+        const factPredicate = requiresQuizFact ? isQuizFactItem : undefined
 
         if (slot.itemType === 'joke') {
           item = spawnMiniGameIfDue()
         }
 
         if (!item) {
-          item = takeFromQueue(slot.itemType)
+          item = takeFromQueue(slot.itemType, factPredicate)
           resolvedType = item ? slot.itemType : null
           if (item) {
             item = finalizeCandidate(slot.itemType, item)
-          } else {
+          } else if (!requiresQuizFact) {
             const fallback = takeAnyAvailableItem(slot.itemType)
             if (fallback) {
               item = fallback.item
@@ -1915,6 +1957,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
 
         if (!item) {
+          item = await acquireItem(slot.itemType, factPredicate)
+          resolvedType = slot.itemType
+        }
+
+        if (!item && requiresQuizFact) {
           item = await acquireItem(slot.itemType)
           resolvedType = slot.itemType
         }
@@ -2315,7 +2362,7 @@ const showXpForCategory = useMemo(() => {
               </Link>
 
               <Link
-                href="/noroscope"
+                href="/6random"
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}

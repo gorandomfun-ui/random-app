@@ -4,14 +4,14 @@ const enDictionary = {
     "tagline2": "NO MISSION, NO GOAL, NO REASON.",
     "tagline3": "ONLY USELESS SURPRISE.",
     "startButton": "GO RANDOM",
-    "noroscopeButton": "NOROSCOPE"
+    "noroscopeButton": "6 RANDOM"
   },
   "noroscope": {
-    "menu": "Noroscope",
-    "titleBar": "Here is your Noroscope for today.",
-    "shareTitle": "Share your Noroscope",
-    "shareAction": "Share this Noroscope",
-    "loading": "Aligning today's Noroscope...",
+    "menu": "6 RANDOM",
+    "titleBar": "Your 6 RANDOM",
+    "shareTitle": "Share your 6 RANDOM",
+    "shareAction": "Share this 6 RANDOM",
+    "loading": "Aligning today's 6 RANDOM...",
     "error": "Couldn't load everything. Give it another try.",
     "retry": "Try again",
     "empty": "No content available yet.",
@@ -58,16 +58,16 @@ const enDictionary = {
     "title": "Your Likes",
     "empty": "No likes yet",
     "maxReached": "Maximum 6 likes reached!",
-    "keep24h": "Saved here for 24h.",
+    "keep24h": "Stored locally on this device.",
     "youTab": "YOU",
     "weTab": "WE",
     "youDescription": "Your",
-    "youSuffix": "are stored here for 24 hours.",
+    "youSuffix": "stay on this device.",
     "weDescription": "Here is the most",
     "weSuffix": "content.",
     "banner": {
       "youPrefix": "Your",
-      "youSuffix": "are stored here for 24 hours.",
+      "youSuffix": "stay on this device.",
       "wePrefix": "Here is the most",
       "weSuffix": "content."
     },
@@ -79,7 +79,8 @@ const enDictionary = {
     "close": "Close",
     "native": "Share by message",
     "copy": "Copy",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "itemsLabel": "Shared items"
   },
   "video": {
     "fullscreen": "Fullscreen",

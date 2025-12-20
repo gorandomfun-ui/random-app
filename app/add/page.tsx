@@ -371,11 +371,10 @@ export default function AddPage() {
         <LogoAnimated
           trigger={1}
           toSecond={false}
-          fitToWidth
           vhMobile={8}
-          vhDesktop={9}
-          gapMobile={1}
-          gapDesktop={1}
+          vhDesktop={8}
+          gapMobile={4}
+          gapDesktop={4}
         />
 
         <div style={{ width: 28, height: 28 }} />

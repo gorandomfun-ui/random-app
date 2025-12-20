@@ -15,8 +15,10 @@ export async function selectImage(): Promise<ImageItem> {
   const doc = await sampleFromCache<ImageDocument>('image')
   if (doc && typeof doc.url === 'string' && doc.url.trim()) {
     const url = doc.url.trim()
+    const itemId = doc && typeof doc === 'object' && '_id' in doc ? String((doc as { _id: unknown })._id) : undefined
     await touchLastShown('image', { url })
     return {
+      _id: itemId,
       type: 'image',
       url,
       thumbUrl: typeof doc.thumb === 'string' ? doc.thumb : doc.thumbUrl ?? null,

@@ -15,6 +15,7 @@ type Props = {
   url?: string
   theme?: Theme
   item?: ShareableItem
+  list?: Array<{ title: string; url?: string }>
 }
 
 type ShareUrls = {
@@ -64,6 +65,7 @@ export default function ShareMenu({
   url,
   theme,
   item,
+  list,
 }: Props) {
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
@@ -123,18 +125,30 @@ export default function ShareMenu({
     }
   }, [item])
 
+  const shareListText = useMemo(() => {
+    if (!list?.length) return ''
+    return list
+      .map((entry, idx) => {
+        const title = entry.title || entry.text || `Item ${idx + 1}`
+        return entry.url ? `${title}\n${entry.url}` : title
+      })
+      .join('\n\n')
+  }, [list])
+
   const shareHeadline = useMemo(() => contentTitle || siteName, [contentTitle, siteName])
 
   const shareMessage = useMemo(() => {
     const snippet = contentSnippet || shareHeadline
     const parts = new Set([shareHeadline, snippet, siteName])
-    return Array.from(parts).filter(Boolean).join('\n')
-  }, [contentSnippet, shareHeadline, siteName])
+    const main = Array.from(parts).filter(Boolean).join('\n')
+    return shareListText ? `${main}\n\n${shareListText}` : main
+  }, [contentSnippet, shareHeadline, shareListText, siteName])
 
   const shareText = useMemo(() => {
     const snippet = contentSnippet || shareHeadline
-    return `${snippet}\n${siteName}`
-  }, [contentSnippet, shareHeadline, siteName])
+    const main = `${snippet}\n${siteName}`
+    return shareListText ? `${main}\n\n${shareListText}` : main
+  }, [contentSnippet, shareHeadline, shareListText, siteName])
 
   const urls = useMemo(() => buildShareUrls(shareUrl || '', shareMessage || siteName), [shareMessage, shareUrl, siteName])
 
@@ -249,6 +263,7 @@ export default function ShareMenu({
               {copied ? t('shareMenu.copied', 'Copied!') : t('shareMenu.copy', 'Copy')}
             </button>
           </div>
+
         </div>
       </div>
     </div>
