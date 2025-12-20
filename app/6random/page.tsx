@@ -70,6 +70,11 @@ type GlitchBarStyle = CSSProperties & {
   ['--glitch-bar-shift']?: string
 }
 
+type LikeableRandomItem = Exclude<RandomContentItem, { type: 'minigame' }>
+
+const isLikeableRandomItem = (item: RandomContentItem): item is LikeableRandomItem =>
+  item.type !== 'minigame'
+
 function getItemKey(item: RandomContentItem): string {
   switch (item.type) {
     case 'image':
@@ -510,13 +515,15 @@ export default function NoroscopePage() {
   }, [entries, spawnGlobalGlitch])
 
   const handleToggleLike = useCallback((item: RandomContentItem) => {
+    if (!isLikeableRandomItem(item)) return
+    const likeableItem = item
     setLikedMap((prev) => {
       const key = getItemKey(item)
       const currentlyLiked = prev[key]
       if (currentlyLiked) {
-        removeLike(item)
+        removeLike(likeableItem)
       } else {
-        addLike(item, theme)
+        addLike(likeableItem, theme)
       }
       try {
         window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
@@ -670,7 +677,7 @@ export default function NoroscopePage() {
     const next: Record<string, boolean> = {}
     entries.forEach((item) => {
       const key = getItemKey(item)
-      next[key] = isLiked(item)
+      next[key] = isLikeableRandomItem(item) ? isLiked(item) : false
     })
     setLikedMap(next)
   }, [entries])
@@ -752,6 +759,7 @@ export default function NoroscopePage() {
     }
 
     const renderHeartButton = (item: RandomContentItem, size = 16) => {
+      if (!isLikeableRandomItem(item)) return null
       const key = getItemKey(item)
       const liked = likedMap[key] || false
       return (
