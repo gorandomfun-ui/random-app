@@ -9,6 +9,7 @@ export type ImageItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  _id?: string
 }
 
 export async function selectImage(): Promise<ImageItem> {
