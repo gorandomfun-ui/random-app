@@ -27,7 +27,7 @@ import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
-import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
+import AadsFooterSlot from '@/components/AadsFooterSlot'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp'
@@ -122,11 +122,10 @@ export default function HomePage() {
   const router = useRouter()
   const { t, locale, locales, setLocale } = useI18n()
   const { addAction, maybeSpawnDiamond } = useScore()
-  useEzoicFooterAd()
 
   const HEADER_H = 56
   const FOOTER_H = 56
-  const AD_H = 108
+  const AD_H = 110
 
   const headerRef = useRef<HTMLElement | null>(null)
   const heroRef = useRef<HTMLElement | null>(null)
@@ -353,8 +352,8 @@ export default function HomePage() {
 
   const adFormat = useMemo(() => {
     const width = viewportWidth ?? 0
-    if (width && width >= 768) return { width: 728, height: 90 }
-    return { width: 320, height: 50 }
+    if (width >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
+    return { width: 320, height: 50, variant: 'mobile' as const }
   }, [viewportWidth])
 
   useEffect(() => {
@@ -613,16 +612,14 @@ export default function HomePage() {
           backgroundColor: '#ffffff',
           color: '#111',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          zIndex: 60,
+          zIndex: 120,
         }}
       >
         <div
           className="flex items-center justify-center"
           style={{ width: adFormat.width, height: adFormat.height }}
         >
-          {/* Ezoic - bottom_of_page - bottom_of_page */}
-          <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
-          {/* End Ezoic - bottom_of_page - bottom_of_page */}
+          <AadsFooterSlot variant={adFormat.variant} />
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { useCookieConsent } from '@/components/CookieConsent'
 import AadsInlineContentAd from '@/components/AadsInlineContentAd'
+import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
 import MiniGameCard from '@/components/minigames/MiniGameCard'
 import LogoAnimated from '@/components/LogoAnimated'
@@ -33,7 +34,7 @@ import type {
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { playAgain, playRandom, setMuted } from '@/utils/sound'
-import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
+import { dispatchAadsRefresh } from '@/lib/aads'
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',
@@ -1092,7 +1093,6 @@ export default function RandomExperiencePage({
     })
   }
 
-  useEzoicFooterAd(adsAllowed)
   const shouldForceMutedAutoplay = useMemo(() => {
     if (typeof window === 'undefined') return false
     const ua = (navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '').toString()
@@ -2048,12 +2048,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
   }, [currentItem])
 
-  const handleRandomAgain = useCallback(() => {
-    incrementRandomDrawCount()
-    loadNext(true).catch(() => undefined)
-    playAgain()
-  }, [incrementRandomDrawCount, loadNext])
-
   function applyLangOut(next: Lang) {
     try {
       document.documentElement.setAttribute('lang', next)
@@ -2116,10 +2110,22 @@ const showXpForCategory = useMemo(() => {
   if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
   return false
 }, [shouldShowInlineAd, viewItem])
-  const adHeight = viewportWidth && viewportWidth >= 768 ? 90 : 50
-  const adWidth = viewportWidth && viewportWidth >= 768 ? 728 : 320
+  const isDesktopAd = (viewportWidth ?? 0) >= 1024
+  const adHeight = isDesktopAd ? 90 : 50
+  const adWidth = isDesktopAd ? 728 : 320
+  const adVariant = isDesktopAd ? 'desktop' : 'mobile'
   const footerPadHeight = adsAllowed ? adHeight : 0
   const controlsDisabled = shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
+
+  const handleRandomAgain = useCallback(() => {
+    const target = shouldShowInlineAd ? 'inline' : 'footer'
+    if (adsAllowed) {
+      dispatchAadsRefresh(target)
+    }
+    incrementRandomDrawCount()
+    loadNext(true).catch(() => undefined)
+    playAgain()
+  }, [adsAllowed, incrementRandomDrawCount, loadNext, shouldShowInlineAd])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -2229,7 +2235,7 @@ const showXpForCategory = useMemo(() => {
             </div>
           ) : shouldShowInlineAd ? (
             <div className="flex items-center justify-center w-full h-full">
-              <AadsInlineContentAd />
+              <AadsInlineContentAd label={adLabel} variant={adVariant} />
             </div>
           ) : viewItem ? (
             <ContentRenderer
@@ -2514,16 +2520,11 @@ const showXpForCategory = useMemo(() => {
             backgroundColor: '#ffffff',
             color: '#111',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            zIndex: 60,
+            zIndex: 120,
           }}
         >
-          <div
-            className="flex items-center justify-center"
-            style={{ width: adWidth, height: adHeight }}
-          >
-            {/* Ezoic - bottom_of_page - bottom_of_page */}
-            <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
-            {/* End Ezoic - bottom_of_page - bottom_of_page */}
+          <div className="flex items-center justify-center" style={{ width: adWidth, height: adHeight }}>
+            <AadsFooterSlot variant={adVariant} enabled={adsAllowed} />
           </div>
         </div>
       ) : null}

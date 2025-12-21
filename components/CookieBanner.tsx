@@ -9,7 +9,7 @@ export default function CookieBanner() {
   if (!isBannerOpen) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[180]">
+    <div id="cookie-banner" className="fixed inset-x-0 bottom-0 z-[180]">
       <div className="mx-auto mb-4 w-[min(92vw,900px)] rounded-2xl bg-white/95 p-4 shadow-2xl ring-1 ring-black/10 backdrop-blur">
         <p className="text-sm text-neutral-800">
           Nous utilisons des cookies pour améliorer votre expérience. En UE, les traceurs non

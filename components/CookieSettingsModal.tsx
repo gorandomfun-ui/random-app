@@ -25,7 +25,7 @@ export default function CookieSettingsModal() {
   const onSave = () => save(local);
 
   return (
-    <div className="fixed inset-0 z-[220]">
+    <div id="cookie-settings-modal" className="fixed inset-0 z-[220]">
       <div className="absolute inset-0 bg-black/60" aria-hidden="true" onClick={closeSettings} />
       <div
         role="dialog"

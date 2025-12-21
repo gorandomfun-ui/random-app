@@ -11,7 +11,7 @@ import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
-import { useEzoicFooterAd, EZOIC_PLACEHOLDER_ID } from '@/hooks/useEzoicFooterAd'
+import AadsFooterSlot from '@/components/AadsFooterSlot'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
@@ -32,7 +32,6 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
 
 export default function LikesPage() {
   const { t, locale, locales, setLocale } = useI18n()
-  useEzoicFooterAd()
   const [items, setItems] = useState<LikeItem[]>([])
   const [globalItems, setGlobalItems] = useState<GlobalLikeItem[]>([])
   const [globalLoaded, setGlobalLoaded] = useState(false)
@@ -126,8 +125,8 @@ export default function LikesPage() {
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
   const adFormat = useMemo(() => {
-    if (vw >= 768) return { width: 728, height: 90 }
-    return { width: 320, height: 50 }
+    if (vw >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
+    return { width: 320, height: 50, variant: 'mobile' as const }
   }, [vw])
 
   useEffect(() => {
@@ -174,16 +173,14 @@ export default function LikesPage() {
         backgroundColor: '#ffffff',
         color: '#111',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        zIndex: 60,
+        zIndex: 120,
       }}
     >
       <div
         className="flex items-center justify-center"
         style={{ width: adFormat.width, height: adFormat.height }}
       >
-        {/* Ezoic - bottom_of_page - bottom_of_page */}
-        <div id={`ezoic-pub-ad-placeholder-${EZOIC_PLACEHOLDER_ID}`} />
-        {/* End Ezoic - bottom_of_page - bottom_of_page */}
+        <AadsFooterSlot variant={adFormat.variant} />
       </div>
     </div>
   )

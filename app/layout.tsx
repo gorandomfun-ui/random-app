@@ -1,11 +1,9 @@
 // app/layout.tsx
 import './globals.css';
 import { cookies, headers } from 'next/headers';
-import Script from 'next/script';
 
 import I18nProvider from '@/providers/I18nProvider'; // <- ton provider i18n (nommé "default")
 import { CookieConsentProvider, type Region } from '@/components/CookieConsent'; // <- export nommé
-import FooterAds from '@/components/FooterAds';
 import CookieBanner from '@/components/CookieBanner';
 import CookieSettingsModal from '@/components/CookieSettingsModal';
 import { ScoreProvider } from '@/providers/ScoreProvider';
@@ -53,8 +51,6 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const ezoicEnabled = process.env.NEXT_PUBLIC_EZOIC_ENABLED === 'true'
-
   const cookieStore = cookies()
   const cookieLangRaw = cookieStore.get('lang')?.value
   const headerList = headers()
@@ -69,19 +65,6 @@ export default function RootLayout({
   return (
     <html lang={lang} suppressHydrationWarning className={`${interTight.variable} ${tomorrow.variable}`}>
       <head>
-        {ezoicEnabled ? (
-          <>
-            <Script
-              id="ezoic-sa"
-              src="//www.ezojs.com/ezoic/sa.min.js"
-              strategy="beforeInteractive"
-              data-cfasync="false"
-            />
-            <Script id="ezoic-init" strategy="beforeInteractive">
-              {`window.ezstandalone=window.ezstandalone||{};window.ezstandalone.cmd=window.ezstandalone.cmd||[];`}
-            </Script>
-          </>
-        ) : null}
       </head>
       {/* ⚠️ Remets ici exactement les classes que tu avais sur <body> si besoin */}
       <body className={interTight.className}>
@@ -98,7 +81,6 @@ export default function RootLayout({
               {/* Le modal de réglages est monté globalement et sera ouvert par <CookieSettingsLink /> */}
               <CookieSettingsModal />
 
-              <FooterAds />
             </ScoreProvider>
           </CookieConsentProvider>
         </I18nProvider>
