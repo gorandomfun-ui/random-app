@@ -20,12 +20,16 @@ export default function AdsTestInfeedDesktopPage() {
           <AadsInlineContentAd label="Advertisement" variant="desktop" forceVisible refreshTarget={null} />
         </div>
       </div>
-      <style jsx global>{`
-        #cookie-banner,
-        #cookie-settings-modal {
-          display: none !important;
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            #cookie-banner,
+            #cookie-settings-modal {
+              display: none !important;
+            }
+          `,
+        }}
+      />
     </div>
   )
 }
