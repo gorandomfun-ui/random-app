@@ -83,7 +83,7 @@ export function mountAadsSlot(
             timer = null
           }
           options?.onLoad?.()
-          observer.disconnect()
+          observer?.disconnect()
         }
       })
     : null
