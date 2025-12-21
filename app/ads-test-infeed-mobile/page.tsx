@@ -20,12 +20,16 @@ export default function AdsTestInfeedMobilePage() {
           <AadsInlineContentAd label="Advertisement" variant="mobile" forceVisible refreshTarget={null} />
         </div>
       </div>
-      <style jsx global>{`
-        #cookie-banner,
-        #cookie-settings-modal {
-          display: none !important;
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            #cookie-banner,
+            #cookie-settings-modal {
+              display: none !important;
+            }
+          `,
+        }}
+      />
     </div>
   )
 }
