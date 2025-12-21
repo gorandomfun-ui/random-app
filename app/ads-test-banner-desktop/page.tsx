@@ -22,12 +22,16 @@ export default function AdsTestBannerDesktopPage() {
           </div>
         </div>
       </div>
-      <style jsx global>{`
-        #cookie-banner,
-        #cookie-settings-modal {
-          display: none !important;
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            #cookie-banner,
+            #cookie-settings-modal {
+              display: none !important;
+            }
+          `,
+        }}
+      />
     </div>
   )
 }
