@@ -21,6 +21,7 @@ import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType } from '@/lib/random/types'
+import { FIXED_SEQUENCE, type SequenceEntry } from '@/lib/random/sequence'
 import type {
   FactItem,
   FactQuizItem,
@@ -45,29 +46,6 @@ const TYPE_ICONS: Record<ItemType, string> = {
   fact: '/icons/fact.svg',
 }
 const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
-
-const TEXT_CONTENT_TYPES: ItemType[] = ['quote', 'fact', 'joke']
-
-type SequenceEntry =
-  | { kind: 'fixed'; itemType: ItemType }
-  | { kind: 'choices'; types: ItemType[] }
-  | { kind: 'quiz'; itemType: Extract<ItemType, 'fact'> }
-
-const FIXED_SEQUENCE: SequenceEntry[] = [
-  { kind: 'fixed', itemType: 'image' },
-  { kind: 'fixed', itemType: 'video' },
-  { kind: 'fixed', itemType: 'image' },
-  { kind: 'fixed', itemType: 'video' },
-  { kind: 'fixed', itemType: 'image' },
-  { kind: 'fixed', itemType: 'web' },
-  { kind: 'choices', types: TEXT_CONTENT_TYPES },
-  { kind: 'fixed', itemType: 'video' },
-  { kind: 'fixed', itemType: 'image' },
-  { kind: 'fixed', itemType: 'video' },
-  { kind: 'fixed', itemType: 'image' },
-  { kind: 'fixed', itemType: 'web' },
-  { kind: 'quiz', itemType: 'fact' },
-]
 
 const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
@@ -145,7 +123,8 @@ type Lang = 'en' | 'fr' | 'de' | 'jp'
 
 type PrefetchedBundle = {
   lang?: Lang
-  item: RandomContentItem
+  item?: RandomContentItem
+  items?: RandomContentItem[]
 }
 
 const buildPrefetchStorageKeys = (lang: Lang | null | undefined, type: ItemType) => {
@@ -159,10 +138,15 @@ const parsePrefetchEntry = (raw: string): PrefetchedBundle | null => {
   try {
     const parsed = JSON.parse(raw) as unknown
     if (parsed && typeof parsed === 'object') {
-      if ('item' in (parsed as Record<string, unknown>)) {
+      if ('items' in (parsed as Record<string, unknown>)) {
+        const bundle = parsed as { items?: RandomContentItem[]; lang?: Lang }
+        if (Array.isArray(bundle.items) && bundle.items.length) {
+          return { lang: bundle.lang, items: bundle.items }
+        }
+      } else if ('item' in (parsed as Record<string, unknown>)) {
         const bundle = parsed as { item?: RandomContentItem; lang?: Lang }
         if (bundle.item && typeof bundle.item === 'object') {
-          return { lang: bundle.lang, item: bundle.item }
+          return { lang: bundle.lang, items: [bundle.item] }
         }
       } else if ('type' in (parsed as Record<string, unknown>)) {
         return { item: parsed as RandomContentItem }
@@ -1629,8 +1613,21 @@ const sequenceStateRef = useRef({
         continue
       }
       if (bundle.lang && bundle.lang !== langKey) continue
-      const item = bundle.item
-      if (!item || item.type !== type) {
+
+      const consumeFromBundle = (): RandomContentItem | null => {
+        if (Array.isArray(bundle.items) && bundle.items.length) {
+          while (bundle.items.length) {
+            const next = bundle.items.shift()
+            if (next && next.type === type) return next
+          }
+          return null
+        }
+        if (bundle.item && bundle.item.type === type) return bundle.item
+        return null
+      }
+
+      const item = consumeFromBundle()
+      if (!item) {
         try {
           sessionStorage.removeItem(key)
         } catch {
@@ -1658,7 +1655,11 @@ const sequenceStateRef = useRef({
       }
       queue.push(item)
       try {
-        sessionStorage.removeItem(key)
+        if (Array.isArray(bundle.items) && bundle.items.length) {
+          sessionStorage.setItem(key, JSON.stringify({ lang: bundle.lang, items: bundle.items }))
+        } else {
+          sessionStorage.removeItem(key)
+        }
       } catch {
         /* ignore */
       }

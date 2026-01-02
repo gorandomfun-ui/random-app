@@ -119,7 +119,10 @@
         Auto-run 09h30 & 19h (si cette page reste ouverte)
       </label>
       <div id="autoRunStatus" style="font-size:13px; color:#555; margin-bottom:12px;"></div>
-      <button id="runMarathon" class="primary">Lancer l’ingestion complète</button>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button id="runMarathon" class="primary">Lancer l’ingestion complète</button>
+        <button id="runWebOnly" class="secondary">Lancer l’ingestion sites web</button>
+      </div>
       <button id="stopBtn">Stop</button>
     </div>
 
@@ -134,6 +137,7 @@
       const buttons = {
         marathon: document.getElementById('runMarathon'),
         feeds: document.getElementById('runFeeds'),
+        web: document.getElementById('runWebOnly'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -193,6 +197,7 @@
       function setRunning(running) {
         if (buttons.marathon) buttons.marathon.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
+        if (buttons.web) buttons.web.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -905,6 +910,7 @@
 
       if (buttons.marathon) buttons.marathon.addEventListener('click', () => runMarathon({ reason: 'manual' }))
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
+      if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
       stopBtn.addEventListener('click', () => {
         stopRequested = true
         abortActiveRequests()

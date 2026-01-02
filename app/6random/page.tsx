@@ -9,32 +9,21 @@ import MonoIcon from '@/components/MonoIcon'
 import ShareMenu from '@/components/ShareMenu'
 import { useI18n } from '@/providers/I18nProvider'
 import { THEMES, TEXT_COLORS } from '@/lib/theme'
-import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
-import type { FactItem, RandomContentItem, SourceInfo, WebItem } from '@/lib/random/clientTypes'
-import funPhrasesEn from '@/data/funPhrases/en.json'
-import funPhrasesFr from '@/data/funPhrases/fr.json'
-import funPhrasesDe from '@/data/funPhrases/de.json'
-import funPhrasesJp from '@/data/funPhrases/jp.json'
+import type { FactItem, RandomContentItem, SourceInfo } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
+import {
+  buildNoroscopeEntries,
+  CACHE_STORAGE_KEY,
+  CACHE_TTL_MS,
+  getItemKey,
+  pickFunPhraseForLang,
+  TARGET_COUNT,
+  type Lang,
+} from '@/lib/noroscope/generator'
 
-type Lang = 'en' | 'fr' | 'de' | 'jp'
-
-const CACHE_STORAGE_KEY = 'noroscope-cache-v6'
-const CACHE_TTL_MS = 60 * 60 * 1000
-
-const TARGET_COUNT = 6
 const VIDEO_FILE_REGEX = /\.(mp4|m4v|webm|mov|ogg)(\?.*)?$/i
-type PlanType = 'image' | 'video' | 'web' | 'text'
-const MIX_TEMPLATE: PlanType[] = ['image', 'image', 'video', 'video', 'web', 'text']
-const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
-const FUN_PHRASES: Record<Lang, readonly string[]> = {
-  en: funPhrasesEn,
-  fr: funPhrasesFr,
-  de: funPhrasesDe,
-  jp: funPhrasesJp,
-}
 const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
 const AUTO_REVEAL_DELAY_MS = 700
 
@@ -82,23 +71,6 @@ const hasSourceInfo = (item: RandomContentItem): item is SourcefulRandomItem =>
 const getItemSource = (item: RandomContentItem): SourceInfo | null =>
   (hasSourceInfo(item) ? item.source ?? null : null)
 
-function getItemKey(item: RandomContentItem): string {
-  switch (item.type) {
-    case 'image':
-    case 'video':
-    case 'web':
-      return `${item.type}:${'url' in item && item.url ? item.url : ''}`
-    case 'quote':
-      return `${item.type}:${item.text || ''}:${item.author || ''}`
-    case 'joke':
-      return `${item.type}:${item.text || ''}`
-    case 'fact':
-      return `${item.type}:${item.text || ''}`
-    default:
-      return `${(item as { type?: string }).type || 'unknown'}:${Math.random()}`
-  }
-}
-
 function formatSourceLabel(item: RandomContentItem): string | null {
   const source = getItemSource(item)
   if (source?.name) return source.name
@@ -121,49 +93,6 @@ function getPrimaryShareText(item: RandomContentItem): string {
     return source.name
   }
   return ''
-}
-
-function shuffleArray<T>(input: T[]): T[] {
-  const arr = input.slice()
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const temp = arr[i]
-    arr[i] = arr[j]
-    arr[j] = temp
-  }
-  return arr
-}
-
-function pickFunPhraseForLang(lang: Lang): string {
-  const list = FUN_PHRASES[lang] ?? FUN_PHRASES.en
-  if (!list.length) return ''
-  return list[Math.floor(Math.random() * list.length)] ?? ''
-}
-
-async function fetchPlanItem(planType: PlanType, lang: Lang, seen: Set<string>): Promise<RandomContentItem | null> {
-  const planTypes = planType === 'text' ? TEXT_TYPES : [planType as ItemType]
-  const maxAttempts = 14
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const requestType = planType === 'text'
-      ? planTypes[Math.floor(Math.random() * planTypes.length)]
-      : planTypes[0]
-    const response = await fetchRandom({ types: [requestType] as RandomTypes, lang })
-    const candidate = response?.item ?? null
-    if (!candidate) continue
-    if (planType === 'image' && candidate.type !== 'image') continue
-    if (planType === 'video' && candidate.type !== 'video') continue
-    if (planType === 'web') {
-      if (candidate.type !== 'web') continue
-      if (!(candidate as WebItem).ogImage) continue
-    }
-    if (candidate.type === 'fact' && (candidate as FactItem).variant === 'quiz') continue
-    if (planType === 'text' && !TEXT_TYPES.includes(candidate.type as ItemType)) continue
-    const key = getItemKey(candidate)
-    if (seen.has(key)) continue
-    seen.add(key)
-    return candidate
-  }
-  return null
 }
 
 function makeGlitchBars(mode: 'normal' | 'boost' = 'boost'): GlitchBar[] {
@@ -637,24 +566,7 @@ export default function NoroscopePage() {
     }
 
     try {
-      const plan = shuffleArray(MIX_TEMPLATE)
-      const seen = new Set<string>()
-      const results: RandomContentItem[] = []
-      for (const slot of plan) {
-        const item = await fetchPlanItem(slot, lang, seen)
-        if (item) results.push(item)
-      }
-
-      if (!results.length) {
-        throw new Error('no results')
-      }
-
-      if (results.length < TARGET_COUNT) {
-        const pool = [...results]
-        while (results.length < TARGET_COUNT && pool.length) {
-          results.push(pool[results.length % pool.length])
-        }
-      }
+      const { entries: results, funPhrase } = await buildNoroscopeEntries(lang)
 
       if (!isMountedRef.current) return
 
@@ -663,8 +575,7 @@ export default function NoroscopePage() {
       }
 
       setEntries(results)
-      const phrase = pickFunPhraseForLang(lang)
-      setFunPhrase(phrase)
+      setFunPhrase(funPhrase)
       fetchLangRef.current = lang
       setLoading(false)
       setRevealedTiles(Array(TARGET_COUNT).fill(false))
@@ -676,7 +587,7 @@ export default function NoroscopePage() {
       setLoadErrorFlag(results.length < TARGET_COUNT)
 
       try {
-        const payload = { timestamp: Date.now(), entries: results, funPhrase: phrase, lang }
+        const payload = { timestamp: Date.now(), entries: results, funPhrase, lang }
         localStorage.setItem(storageKey, JSON.stringify(payload))
       } catch {
         /* ignore cache write errors */

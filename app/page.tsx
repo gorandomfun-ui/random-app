@@ -23,11 +23,11 @@ import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
 import { XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
-import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
+import { startNoroscopePrefetch, startRandomPrefetch, startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp'
@@ -198,36 +198,18 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
     const lang = (locale || 'en') as Lang
-    const typesToPrefetch: ItemType[] = ['image', 'video', 'joke']
-    const globalWindow = window as Window & { __randomPrefetchInflight?: Set<string> }
-    if (!globalWindow.__randomPrefetchInflight) {
-      globalWindow.__randomPrefetchInflight = new Set()
-    }
-    const inFlight = globalWindow.__randomPrefetchInflight
+    startRandomPrefetch(lang, selectedTypes)
+  }, [locale, selectedTypes])
 
-    typesToPrefetch.forEach((type) => {
-      const storageKey = `random-prefetch-${lang}-${type}`
-      if (inFlight.has(storageKey)) return
-      inFlight.add(storageKey)
-      fetchRandom({ types: [type] as RandomTypes, lang })
-        .then((result) => {
-          const item = result?.item
-          if (!item || item.type !== type) return
-          try {
-            sessionStorage.setItem(storageKey, JSON.stringify({ lang, item }))
-            sessionStorage.removeItem(`random-prefetch-${type}`)
-          } catch {
-            /* ignore */
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          inFlight.delete(storageKey)
-        })
-    })
+  useEffect(() => {
+    const lang = (locale || 'en') as Lang
+    startNoroscopePrefetch(lang)
   }, [locale])
+
+  useEffect(() => {
+    startWeLikePrefetch()
+  }, [])
 
   const applyLangOut = useCallback((next: Lang) => {
     try {
