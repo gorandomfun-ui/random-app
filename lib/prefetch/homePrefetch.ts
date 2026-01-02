@@ -144,9 +144,14 @@ function readPrefetchBucket(key: string): { lang?: Lang; items: RandomContentIte
       typeof parsed === 'object' &&
       Array.isArray((parsed as { items?: unknown }).items)
     ) {
-      const bucketItems = (parsed as { items?: unknown[] }).items?.filter(
-        (entry): entry is RandomContentItem => entry && typeof entry === 'object',
-      ) ?? []
+      const bucketEntries = (parsed as { items?: unknown[] }).items ?? []
+      const bucketItems: RandomContentItem[] = []
+      bucketEntries.forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return
+        const typedEntry = entry as Partial<RandomContentItem> & { type?: ItemType }
+        if (!typedEntry.type) return
+        bucketItems.push(entry as RandomContentItem)
+      })
       const lang = (parsed as { lang?: Lang }).lang
       return { lang, items: bucketItems }
     }
