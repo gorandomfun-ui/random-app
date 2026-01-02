@@ -53,7 +53,7 @@ export default function AadsInlineContentAd({
   const [fallback, setFallback] = useState(() => !getUnitId(variant))
 
   const size = useMemo(() => {
-    if (variant === 'desktop') return { width: 336, height: 280 }
+    if (variant === 'desktop') return { width: 728, height: 90 }
     return { width: 300, height: 250 }
   }, [variant])
 
@@ -142,7 +142,7 @@ export default function AadsInlineContentAd({
     <div
       ref={wrapperRef}
       className="w-full"
-      style={{ minHeight: variant === 'desktop' ? 300 : 260 }}
+      style={{ minHeight: variant === 'desktop' ? 120 : 260 }}
     >
       <div className="flex h-full w-full flex-col items-center justify-center rounded-3xl border border-white/15 bg-white/5 px-4 py-5">
         <span className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-neutral-400">
