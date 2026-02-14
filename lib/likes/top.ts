@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb'
 import { getDb } from '@/lib/db'
 import type { LikeType } from '@/utils/likes'
 
@@ -38,6 +39,9 @@ export type LikeLeaderboardItem = {
 }
 
 const LIKEABLE_TYPES: LikeType[] = ['image', 'video', 'web', 'quote', 'joke', 'fact']
+const LEADERBOARD_COLLECTION = 'leaderboards'
+const LEADERBOARD_ID = 'likes-top'
+const LEADERBOARD_LIMIT = 200
 
 function asString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -71,11 +75,50 @@ function toStringId(value: unknown): string {
   return String(value ?? '')
 }
 
-export async function fetchTopLikedItems(limit: number): Promise<LikeLeaderboardItem[]> {
-  const db = await getDb()
-  const collection = db.collection<ItemDoc>('items')
+type LeaderboardDoc = {
+  _id: string
+  items: LikeLeaderboardItem[]
+  updatedAt: Date
+}
 
-  const docs = await collection
+function mapDocToLeaderboardItem(doc: ItemDoc): LikeLeaderboardItem {
+  return {
+    id: toStringId(doc._id),
+    type: doc.type,
+    url: asString(doc.url),
+    text: asString(doc.text),
+    title: asString(doc.title),
+    thumbUrl: asString(doc.thumb ?? doc.thumbUrl) ?? null,
+    ogImage: asString(doc.ogImage) ?? null,
+    provider: resolveProvider(doc),
+    likedAt: doc.updatedAt ? new Date(doc.updatedAt).getTime() : Date.now(),
+    count: typeof doc.likeCount === 'number' ? doc.likeCount : 0,
+  }
+}
+
+async function readLeaderboardItems() {
+  const db = await getDb()
+  const doc = await db
+    .collection<LeaderboardDoc>(LEADERBOARD_COLLECTION)
+    .findOne({ _id: LEADERBOARD_ID })
+  return doc?.items ?? null
+}
+
+async function writeLeaderboardItems(items: LikeLeaderboardItem[]) {
+  const db = await getDb()
+  await db
+    .collection<LeaderboardDoc>(LEADERBOARD_COLLECTION)
+    .updateOne(
+      { _id: LEADERBOARD_ID },
+      { $set: { items: items.slice(0, LEADERBOARD_LIMIT), updatedAt: new Date() } },
+      { upsert: true },
+    )
+}
+
+async function rebuildLeaderboard(limit: number) {
+  const db = await getDb()
+  const docs = await db
+    .collection<ItemDoc>('items')
     .find(
       { type: { $in: LIKEABLE_TYPES }, likeCount: { $gt: 0 } },
       {
@@ -99,16 +142,62 @@ export async function fetchTopLikedItems(limit: number): Promise<LikeLeaderboard
     .limit(limit)
     .toArray()
 
-  return docs.map((doc) => ({
-    id: toStringId(doc._id),
-    type: doc.type,
-    url: asString(doc.url),
-    text: asString(doc.text),
-    title: asString(doc.title),
-    thumbUrl: asString(doc.thumb ?? doc.thumbUrl) ?? null,
-    ogImage: asString(doc.ogImage) ?? null,
-    provider: resolveProvider(doc),
-    likedAt: doc.updatedAt ? new Date(doc.updatedAt).getTime() : Date.now(),
-    count: typeof doc.likeCount === 'number' ? doc.likeCount : 0,
-  }))
+  const items = docs.map(mapDocToLeaderboardItem)
+  await writeLeaderboardItems(items)
+  return items
+}
+
+export async function fetchTopLikedItems(limit: number): Promise<LikeLeaderboardItem[]> {
+  const cached = await readLeaderboardItems()
+  if (cached && cached.length) {
+    return cached.slice(0, limit)
+  }
+  const rebuilt = await rebuildLeaderboard(Math.max(limit, LEADERBOARD_LIMIT))
+  return rebuilt.slice(0, limit)
+}
+
+function sortLeaderboardItems(items: LikeLeaderboardItem[]): LikeLeaderboardItem[] {
+  return items.sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count
+    return b.likedAt - a.likedAt
+  })
+}
+
+export async function refreshTopLikesForItem(objectId: ObjectId): Promise<void> {
+  const db = await getDb()
+  const doc = await db
+    .collection<ItemDoc>('items')
+    .findOne(
+      { _id: objectId },
+      {
+        projection: {
+          _id: 1,
+          type: 1,
+          url: 1,
+          text: 1,
+          title: 1,
+          thumb: 1,
+          thumbUrl: 1,
+          ogImage: 1,
+          provider: 1,
+          source: 1,
+          likeCount: 1,
+          updatedAt: 1,
+        },
+      },
+    )
+
+  const leaderboard = (await readLeaderboardItems()) ?? []
+  const filtered = leaderboard.filter((item) => item.id !== toStringId(objectId))
+
+  const likeCount = typeof doc?.likeCount === 'number' ? doc.likeCount : 0
+  if (!doc || likeCount <= 0) {
+    await writeLeaderboardItems(filtered)
+    return
+  }
+
+  const entry = mapDocToLeaderboardItem(doc)
+  filtered.push(entry)
+  const sorted = sortLeaderboardItems(filtered).slice(0, LEADERBOARD_LIMIT)
+  await writeLeaderboardItems(sorted)
 }

@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
+import { refreshTopLikesForItem } from '@/lib/likes/top'
 
 type LikePayload = {
   itemId?: unknown
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
 
     const record = result.value
     const likeCount = typeof record.likeCount === 'number' ? record.likeCount : 0
+    await refreshTopLikesForItem(objectId)
     return NextResponse.json({ success: true, likeCount })
   } catch (error) {
     console.error('[feedback/like] Failed to increment like', error)
@@ -101,6 +103,8 @@ export async function DELETE(request: Request) {
     const likeCount = typeof updated.likeCount === 'number' && updated.likeCount > 0
       ? updated.likeCount
       : 0
+
+    await refreshTopLikesForItem(objectId)
 
     return NextResponse.json({ success: true, likeCount })
   } catch (error) {
