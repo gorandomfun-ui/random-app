@@ -86,11 +86,12 @@ async function fetchPlanItem(planType: PlanType, lang: Lang, seen: Set<string>):
 export async function buildNoroscopeEntries(lang: Lang): Promise<{ entries: RandomContentItem[]; funPhrase: string }> {
   const plan = shuffleArray(MIX_TEMPLATE)
   const seen = new Set<string>()
-  const results: RandomContentItem[] = []
-  for (const slot of plan) {
-    const item = await fetchPlanItem(slot, lang, seen)
-    if (item) results.push(item)
-  }
+  const settled = await Promise.all(
+    plan.map((slot) =>
+      fetchPlanItem(slot, lang, seen).catch(() => null),
+    ),
+  )
+  const results: RandomContentItem[] = settled.filter((item): item is RandomContentItem => Boolean(item))
 
   if (!results.length) {
     throw new Error('No noroscope entries generated')

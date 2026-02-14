@@ -59,10 +59,10 @@ function headersToObject(headers: HeadersInit | undefined): Record<string, strin
   return { ...(headers as Record<string, string>) }
 }
 
-async function fetchStatus(
+async function fetchWithTimeout(
   url: string,
   init: RequestInit & { timeoutMs?: number } = {},
-): Promise<number | null> {
+): Promise<Response | null> {
   const { timeoutMs = 6000, ...rest } = init
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -72,17 +72,24 @@ async function fetchStatus(
   }
 
   try {
-    const response = await fetch(url, {
+    return await fetch(url, {
       ...rest,
       headers: extraHeaders,
       signal: controller.signal,
     })
-    return response.status
   } catch {
     return null
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function fetchStatus(
+  url: string,
+  init: RequestInit & { timeoutMs?: number } = {},
+): Promise<number | null> {
+  const response = await fetchWithTimeout(url, init)
+  return response ? response.status : null
 }
 
 function extractYouTubeId(rawUrl: string): string | null {
@@ -163,21 +170,47 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
     const rawId = videoId || extractDailymotionId(url) || ''
     const id = sanitizeProviderId(rawId)
     if (!id) return { obsolete: true, reason: 'missing-video-id' }
-    const status = await fetchStatus(
-      `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(id)}`,
+    const response = await fetchWithTimeout(
+      `https://api.dailymotion.com/video/${encodeURIComponent(id)}?fields=availability`,
       { timeoutMs: 5000 },
     )
-    if (status === 200) return { obsolete: false, status }
+    const status = response?.status ?? null
+    if (!response) {
+      return {
+        obsolete: true,
+        status: null,
+        reason: 'network-error',
+      }
+    }
     if (status === 401 || status === 403) {
       return { obsolete: false, status, reason: 'restricted' }
     }
     if (status === 429) {
       return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
     }
+    if (!response.ok) {
+      return {
+        obsolete: true,
+        status,
+        reason: status == null ? 'network-error' : `dailymotion-${status}`,
+      }
+    }
+    let availability = ''
+    try {
+      const json = (await response.json()) as { availability?: string } | null
+      if (typeof json?.availability === 'string') {
+        availability = json.availability.trim().toLowerCase()
+      }
+    } catch {
+      availability = ''
+    }
+    if (!availability || availability === 'available') {
+      return { obsolete: false, status }
+    }
     return {
       obsolete: true,
       status,
-      reason: status == null ? 'network-error' : `dailymotion-${status}`,
+      reason: `dailymotion-availability-${availability}`,
     }
   }
 

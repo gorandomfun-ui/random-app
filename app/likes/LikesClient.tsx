@@ -37,15 +37,33 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
 
 function readWeCache(): { items: GlobalLikeItem[]; timestamp: number } | null {
   if (typeof window === 'undefined') return null
-  try {
-    const raw = sessionStorage.getItem(WE_CACHE_KEY)
+
+  const parseCache = (raw: string | null) => {
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { timestamp?: number; items?: GlobalLikeItem[] }
-    if (!parsed || typeof parsed.timestamp !== 'number' || !Array.isArray(parsed.items)) return null
-    return { items: parsed.items, timestamp: parsed.timestamp }
-  } catch {
-    return null
+    try {
+      const parsed = JSON.parse(raw) as { timestamp?: number; items?: GlobalLikeItem[] }
+      if (!parsed || typeof parsed.timestamp !== 'number' || !Array.isArray(parsed.items)) return null
+      return { items: parsed.items, timestamp: parsed.timestamp }
+    } catch {
+      return null
+    }
   }
+
+  try {
+    const sessionEntry = parseCache(sessionStorage.getItem(WE_CACHE_KEY))
+    if (sessionEntry) return sessionEntry
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const localEntry = parseCache(localStorage.getItem(WE_CACHE_KEY))
+    if (localEntry) return localEntry
+  } catch {
+    /* ignore */
+  }
+
+  return null
 }
 
 export default function LikesClient({ initialGlobalItems = [], initialFetchedAt = 0 }: LikesClientProps = {}) {
@@ -70,8 +88,14 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
 
   const cacheWeLikes = useCallback((entries: GlobalLikeItem[], timestamp: number) => {
     if (!entries.length || !timestamp) return
+    const payload = JSON.stringify({ timestamp, items: entries })
     try {
-      sessionStorage.setItem(WE_CACHE_KEY, JSON.stringify({ timestamp, items: entries }))
+      sessionStorage.setItem(WE_CACHE_KEY, payload)
+    } catch {
+      /* ignore */
+    }
+    try {
+      localStorage.setItem(WE_CACHE_KEY, payload)
     } catch {
       /* ignore */
     }
@@ -188,8 +212,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
     }
   }, [adFormat.height])
 
-  useEffect(() => {
-    if (activeTab !== 'we') return
+  const ensureGlobalLikes = useCallback(() => {
     if (globalLoading) return
     const isStale = Date.now() - lastGlobalFetchedAt > WE_CACHE_TTL_MS
     if (globalLoaded && !isStale) return
@@ -206,7 +229,16 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         if (!globalLoaded) setGlobalLoaded(true)
       })
       .finally(() => setGlobalLoading(false))
-  }, [activeTab, cacheWeLikes, globalLoaded, globalLoading, lastGlobalFetchedAt])
+  }, [cacheWeLikes, globalLoaded, globalLoading, lastGlobalFetchedAt])
+
+  useEffect(() => {
+    ensureGlobalLikes()
+  }, [ensureGlobalLikes])
+
+  useEffect(() => {
+    if (activeTab !== 'we') return
+    ensureGlobalLikes()
+  }, [activeTab, ensureGlobalLikes])
 
   const accentColor = theme.text
   const cream = theme.cream

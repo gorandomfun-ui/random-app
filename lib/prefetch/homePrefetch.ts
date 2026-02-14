@@ -217,18 +217,51 @@ async function ensureNoroscopeCache(lang: Lang) {
   }
 }
 
-async function ensureWeLikesCache() {
-  if (typeof sessionStorage === 'undefined') return
-  try {
-    const raw = sessionStorage.getItem(WE_CACHE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as { timestamp?: number }
-      if (typeof parsed?.timestamp === 'number' && Date.now() - parsed.timestamp <= WE_CACHE_TTL_MS) {
-        return
-      }
+function readWeLikesCache() {
+  if (typeof window === 'undefined') return null
+  const parse = (raw: string | null) => {
+    if (!raw) return null
+    try {
+      return JSON.parse(raw) as { timestamp?: number; items?: unknown[] }
+    } catch {
+      return null
     }
+  }
+  try {
+    const sessionEntry = parse(sessionStorage.getItem(WE_CACHE_KEY))
+    if (sessionEntry) return sessionEntry
   } catch {
     /* ignore */
+  }
+  try {
+    const localEntry = parse(localStorage.getItem(WE_CACHE_KEY))
+    if (localEntry) return localEntry
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+function writeWeLikesCache(payload: { timestamp: number; items: unknown[] }) {
+  if (typeof window === 'undefined') return
+  const serialized = JSON.stringify(payload)
+  try {
+    sessionStorage.setItem(WE_CACHE_KEY, serialized)
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(WE_CACHE_KEY, serialized)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function ensureWeLikesCache() {
+  const cacheEntry = readWeLikesCache()
+  if (cacheEntry?.timestamp) {
+    const isFresh = Date.now() - cacheEntry.timestamp <= WE_CACHE_TTL_MS
+    if (isFresh) return
   }
 
   try {
@@ -237,7 +270,7 @@ async function ensureWeLikesCache() {
     const data = await res.json().catch(() => null)
     if (!data || !Array.isArray(data.items)) return
     const payload = { timestamp: Date.now(), items: data.items }
-    sessionStorage.setItem(WE_CACHE_KEY, JSON.stringify(payload))
+    writeWeLikesCache(payload)
   } catch {
     /* ignore */
   }
