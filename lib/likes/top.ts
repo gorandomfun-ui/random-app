@@ -10,8 +10,10 @@ type ItemSource =
   | string
   | null
 
+type ItemId = ObjectId | string
+
 type ItemDoc = {
-  _id: unknown
+  _id: ItemId
   type: LikeType
   url?: string | null
   text?: string | null
@@ -168,7 +170,7 @@ export async function refreshTopLikesForItem(objectId: ObjectId): Promise<void> 
   const doc = await db
     .collection<ItemDoc>('items')
     .findOne(
-      { _id: objectId as unknown as ItemDoc['_id'] },
+      { _id: objectId },
       {
         projection: {
           _id: 1,
