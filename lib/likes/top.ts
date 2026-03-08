@@ -168,7 +168,7 @@ export async function refreshTopLikesForItem(objectId: ObjectId): Promise<void> 
   const doc = await db
     .collection<ItemDoc>('items')
     .findOne(
-      { _id: objectId },
+      { _id: objectId as unknown as ItemDoc['_id'] },
       {
         projection: {
           _id: 1,
