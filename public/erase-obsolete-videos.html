@@ -123,6 +123,9 @@
       .list-section.rate-limited h2 {
         color: #7b4c0d;
       }
+      .list-section.ambiguous h2 {
+        color: #344054;
+      }
       .badge {
         display: inline-flex;
         align-items: center;
@@ -135,6 +138,10 @@
       .list-section.rate-limited .badge {
         background: #f7e5c7;
         color: #7b4c0d;
+      }
+      .list-section.ambiguous .badge {
+        background: #e8e4f4;
+        color: #403261;
       }
       .note {
         font-size: 13px;
@@ -210,6 +217,9 @@
         .list-section.rate-limited h2 {
           color: #f3c37a;
         }
+        .list-section.ambiguous h2 {
+          color: #bcb0ff;
+        }
         .badge {
           background: #2a3140;
           color: #c5ccda;
@@ -217,6 +227,10 @@
         .list-section.rate-limited .badge {
           background: #3a2a15;
           color: #f3c37a;
+        }
+        .list-section.ambiguous .badge {
+          background: #322c4d;
+          color: #cabfff;
         }
         .note {
           color: #adb3c0;
@@ -297,6 +311,7 @@
         const counts = rawCounts && typeof rawCounts === 'object' ? rawCounts : {}
         const obsolete = counts.obsolete && typeof counts.obsolete === 'object' ? counts.obsolete : {}
         const rateLimited = counts.rateLimited && typeof counts.rateLimited === 'object' ? counts.rateLimited : {}
+        const ambiguous = counts.ambiguous && typeof counts.ambiguous === 'object' ? counts.ambiguous : {}
         return {
           total:
             typeof counts.total === 'number'
@@ -329,6 +344,13 @@
             providers:
               rateLimited.providers && typeof rateLimited.providers === 'object'
                 ? rateLimited.providers
+                : {},
+          },
+          ambiguous: {
+            total: typeof ambiguous.total === 'number' ? ambiguous.total : 0,
+            providers:
+              ambiguous.providers && typeof ambiguous.providers === 'object'
+                ? ambiguous.providers
                 : {},
           },
         }
@@ -410,12 +432,16 @@
         if (!result) return ''
         const obsoleteCount = result.obsolete?.length ?? 0
         const rateLimitedCount = result.rateLimited?.length ?? 0
+        const ambiguousCount = result.ambiguous?.length ?? 0
         let message = 'Done.'
         message += obsoleteCount
           ? ` ${obsoleteCount} obsolete video${obsoleteCount > 1 ? 's' : ''} detected.`
           : ' No confirmed obsolete videos.'
         if (rateLimitedCount) {
           message += ` ${rateLimitedCount} item${rateLimitedCount > 1 ? 's' : ''} hit HTTP 429.`
+        }
+        if (ambiguousCount) {
+          message += ` ${ambiguousCount} network issue${ambiguousCount > 1 ? 's' : ''} saved for manual review.`
         }
         return message
       }
@@ -441,6 +467,8 @@
         const obsoleteProviders = counts.obsolete.providers || {}
         const rateLimitedTotal = counts.rateLimited.total
         const rateLimitedProviders = counts.rateLimited.providers || {}
+        const ambiguousTotal = counts.ambiguous.total
+        const ambiguousProviders = counts.ambiguous.providers || {}
         const duration =
           typeof data.durationMs === 'number'
             ? (data.durationMs / 1000).toFixed(data.durationMs >= 10000 ? 0 : 1)
@@ -450,6 +478,7 @@
           data.errors ? `<strong>Errors:</strong> ${data.errors}` : null,
           `<strong>Obsolete:</strong> ${obsoleteTotal}`,
           rateLimitedTotal ? `<strong>429:</strong> ${rateLimitedTotal}` : null,
+          ambiguousTotal ? `<strong>Ambiguous:</strong> ${ambiguousTotal}` : null,
         ]
           .filter(Boolean)
           .join(' • ')
@@ -470,10 +499,23 @@
               }
             </div>`
           : ''
+        const ambiguousList = ambiguousTotal
+          ? `<div class="summary-ambiguous">
+              <div class="note">Network / ambiguous items were kept aside for another pass.</div>
+              ${
+                Object.entries(ambiguousProviders).length
+                  ? `<ul class="summary-list muted">${Object.entries(ambiguousProviders)
+                      .map(([name, value]) => `<li><strong>${name}</strong>: ${value}</li>`)
+                      .join('')}</ul>`
+                  : ''
+              }
+            </div>`
+          : ''
         summaryEl.innerHTML = `
           <div>${stats}</div>
           ${duration ? `<div><strong>Duration:</strong> ${duration}s</div>` : ''}
           ${obsoleteList}
+          ${ambiguousList}
           ${rateLimitedList}
         `
       }
@@ -481,6 +523,7 @@
       function renderList(data) {
         const obsoleteItems = Array.isArray(data?.obsolete) ? data.obsolete : []
         const rateLimitedItems = Array.isArray(data?.rateLimited) ? data.rateLimited : []
+        const ambiguousItems = Array.isArray(data?.ambiguous) ? data.ambiguous : []
         const renderItems = (items) =>
           items
             .map((item) => {
@@ -536,11 +579,23 @@
           </section>
         `
 
-        if (!obsoleteItems.length && !rateLimitedItems.length) {
+        const ambiguousSection = `
+          <section class="list-section ambiguous">
+            <h2>Ambiguous / network errors <span class="badge">${ambiguousItems.length}</span></h2>
+            <p class="note">These failed because of network errors (timeouts, 5xx). Keep them for a later scan.</p>
+            ${
+              ambiguousItems.length
+                ? `<div class="video-list">${renderItems(ambiguousItems)}</div>`
+                : ''
+            }
+          </section>
+        `
+
+        if (!obsoleteItems.length && !rateLimitedItems.length && !ambiguousItems.length) {
           listEl.innerHTML = ''
           return
         }
-        listEl.innerHTML = `${obsoleteSection}${rateLimitedSection}`
+        listEl.innerHTML = `${obsoleteSection}${ambiguousSection}${rateLimitedSection}`
       }
 
       async function scanVideos() {
@@ -595,6 +650,7 @@
                     durationMs: payload.durationMs || 0,
                     obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
                     rateLimited: Array.isArray(payload.rateLimited) ? payload.rateLimited : [],
+                    ambiguous: Array.isArray(payload.ambiguous) ? payload.ambiguous : [],
                     counts,
                   }
                   lastResult = result
@@ -627,6 +683,7 @@
                     durationMs: payload.durationMs || 0,
                     obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
                     rateLimited: Array.isArray(payload.rateLimited) ? payload.rateLimited : [],
+                    ambiguous: Array.isArray(payload.ambiguous) ? payload.ambiguous : [],
                     counts,
                   }
                   lastResult = result

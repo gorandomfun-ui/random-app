@@ -18,7 +18,7 @@ type CheckOutcome = {
   obsolete: boolean
   reason?: string
   status?: number | null
-  kind?: 'obsolete' | 'rate-limited'
+  kind?: 'obsolete' | 'rate-limited' | 'ambiguous'
 }
 
 const USER_AGENT = 'RandomAppBot/1.0 (+https://random.app)'
@@ -212,10 +212,13 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
     if (status === 429) {
       return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
     }
+    if (status === null) {
+      return { obsolete: false, status: null, reason: 'network-error', kind: 'ambiguous' }
+    }
     return {
       obsolete: true,
       status,
-      reason: status == null ? 'network-error' : `youtube-${status}`,
+      reason: `youtube-${status}`,
     }
   }
 
@@ -269,7 +272,10 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
         if (metadata.unavailable) {
           return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
         }
-        return { obsolete: false, status: availabilityResult.status ?? metadata.status ?? null }
+        if (metadata.status !== null && metadata.status >= 200 && metadata.status < 400) {
+          return { obsolete: false, status: availabilityResult.status ?? metadata.status ?? null }
+        }
+        return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
       }
       return {
         obsolete: true,
@@ -281,7 +287,7 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
     if (availabilityResult.kind === 'ambiguous' || availabilityResult.kind === 'network-error') {
       const metadata = await fetchDailymotionMetadata(id)
       if (metadata.status === null) {
-        return { obsolete: false, status: null, reason: 'ambiguous' }
+        return { obsolete: false, status: null, reason: 'ambiguous', kind: 'ambiguous' }
       }
       if (metadata.status === 429) {
         return { obsolete: false, status: metadata.status, reason: 'rate-limited', kind: 'rate-limited' }
@@ -295,7 +301,7 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
       if (metadata.status >= 200 && metadata.status < 400) {
         return { obsolete: false, status: metadata.status }
       }
-      return { obsolete: false, status: metadata.status, reason: 'dailymotion-503' }
+      return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
     }
 
     return {
@@ -320,11 +326,14 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
   if (status !== null && status >= 200 && status < 400) {
     return { obsolete: false, status }
   }
+  if (status === null) {
+    return { obsolete: false, status: null, reason: 'network-error', kind: 'ambiguous' }
+  }
 
   return {
     obsolete: true,
     status,
-    reason: status == null ? 'network-error' : `status-${status}`,
+    reason: `status-${status}`,
   }
 }
 
@@ -334,6 +343,7 @@ function delay(ms: number) {
 
 function isAmbiguousOutcome(outcome: CheckOutcome): boolean {
   const status = outcome.status ?? null
+  if (outcome.kind === 'ambiguous') return true
   if (status === 429) return true
   if (!outcome.obsolete) return false
   if (status === null) return true
@@ -372,6 +382,7 @@ export async function GET(req: NextRequest) {
         const encoder = new TextEncoder()
         const obsoleteCounts: Record<string, number> = {}
         const rateLimitedCounts: Record<string, number> = {}
+        const ambiguousCounts: Record<string, number> = {}
         const obsolete: Array<{
           id: string
           provider: string
@@ -382,6 +393,15 @@ export async function GET(req: NextRequest) {
           status: number | null
         }> = []
         const rateLimited: Array<{
+          id: string
+          provider: string
+          url: string
+          videoId?: string
+          title?: string | null
+          reason: string
+          status: number | null
+        }> = []
+        const ambiguous: Array<{
           id: string
           provider: string
           url: string
@@ -416,6 +436,17 @@ export async function GET(req: NextRequest) {
                 videoId: doc.videoId || undefined,
                 title: doc.title ?? null,
                 reason: result.reason || 'rate-limited',
+                status: result.status ?? null,
+              })
+            } else if (result.kind === 'ambiguous') {
+              ambiguousCounts[provider] = (ambiguousCounts[provider] || 0) + 1
+              ambiguous.push({
+                id: doc._id.toHexString(),
+                provider,
+                url: doc.url || '',
+                videoId: doc.videoId || undefined,
+                title: doc.title ?? null,
+                reason: result.reason || 'ambiguous',
                 status: result.status ?? null,
               })
             } else if (result.obsolete) {
@@ -484,6 +515,7 @@ export async function GET(req: NextRequest) {
                 durationMs: Date.now() - startTime,
                 obsolete,
                 rateLimited,
+                ambiguous,
                 counts: {
                   total: obsolete.length,
                   providers: obsoleteCounts,
@@ -494,6 +526,10 @@ export async function GET(req: NextRequest) {
                   rateLimited: {
                     total: rateLimited.length,
                     providers: rateLimitedCounts,
+                  },
+                  ambiguous: {
+                    total: ambiguous.length,
+                    providers: ambiguousCounts,
                   },
                 },
               }) + '\n',
@@ -557,8 +593,18 @@ export async function GET(req: NextRequest) {
     reason: string
     status: number | null
   }> = []
+  const ambiguous: Array<{
+    id: string
+    provider: string
+    url: string
+    videoId?: string
+    title?: string | null
+    reason: string
+    status: number | null
+  }> = []
   const providerCounts: Record<string, number> = {}
   const rateLimitedCounts: Record<string, number> = {}
+  const ambiguousCounts: Record<string, number> = {}
   let checked = 0
 
   for (const doc of docs) {
@@ -574,6 +620,20 @@ export async function GET(req: NextRequest) {
         videoId: doc.videoId || undefined,
         title: doc.title ?? null,
         reason: result.reason || 'rate-limited',
+        status: result.status ?? null,
+      })
+      continue
+    }
+
+    if (result.kind === 'ambiguous') {
+      ambiguousCounts[provider] = (ambiguousCounts[provider] || 0) + 1
+      ambiguous.push({
+        id: doc._id.toHexString(),
+        provider,
+        url: doc.url || '',
+        videoId: doc.videoId || undefined,
+        title: doc.title ?? null,
+        reason: result.reason || 'ambiguous',
         status: result.status ?? null,
       })
       continue
@@ -600,6 +660,7 @@ export async function GET(req: NextRequest) {
     checked,
     obsolete,
     rateLimited,
+    ambiguous,
     counts: {
       total: obsolete.length,
       providers: providerCounts,
@@ -610,6 +671,10 @@ export async function GET(req: NextRequest) {
       rateLimited: {
         total: rateLimited.length,
         providers: rateLimitedCounts,
+      },
+      ambiguous: {
+        total: ambiguous.length,
+        providers: ambiguousCounts,
       },
     },
   })

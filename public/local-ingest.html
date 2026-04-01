@@ -114,13 +114,9 @@
           <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="curated" checked /> Listes curées</label>
         </div>
       </div>
-      <label style="display:inline-flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;">
-        <input id="autoRunEnabled" type="checkbox" />
-        Auto-run 09h30 & 19h (si cette page reste ouverte)
-      </label>
-      <div id="autoRunStatus" style="font-size:13px; color:#555; margin-bottom:12px;"></div>
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button id="runMarathon" class="primary">Lancer l’ingestion complète</button>
+        <button id="runVideosOnly" class="secondary">Lancer l’ingestion vidéos</button>
         <button id="runWebOnly" class="secondary">Lancer l’ingestion sites web</button>
       </div>
       <button id="stopBtn">Stop</button>
@@ -138,6 +134,7 @@
         marathon: document.getElementById('runMarathon'),
         feeds: document.getElementById('runFeeds'),
         web: document.getElementById('runWebOnly'),
+        videos: document.getElementById('runVideosOnly'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -149,28 +146,16 @@
       const webProvidersEl = document.getElementById('webProviders')
       const regionSelectEl = document.getElementById('regionSelect')
       const fastVideoModeEl = document.getElementById('fastVideoMode')
-      const autoRunToggleEl = document.getElementById('autoRunEnabled')
-      const autoRunStatusEl = document.getElementById('autoRunStatus')
-
       let stopRequested = false
       const FAST_VIDEO_CONCURRENCY = 3
       const FAST_VIDEO_TIMEOUT_MS = 60000
-      const AUTO_RUN_WINDOWS = [
-        { hour: 9, minute: 30 },
-        { hour: 19, minute: 0 },
-      ]
-      const AUTO_RUN_KEY = 'local-ingest:last-auto-run'
-      const AUTO_RUN_PREF_KEY = 'local-ingest:auto-run-enabled'
-      const AUTO_RUN_WINDOW_KEY = 'local-ingest:last-auto-window'
       const INGEST_GOALS = Object.freeze({
         video: 20,
         image: 80,
         web: 50,
       })
-      const AUTO_RUN_VIDEO_MAX = Math.min(20, INGEST_GOALS.video)
       const activeFetchControllers = new Set()
       let marathonRunning = false
-      let currentAutoWindowIndex = null
 
       function trackController(controller) {
         activeFetchControllers.add(controller)
@@ -198,6 +183,7 @@
         if (buttons.marathon) buttons.marathon.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
         if (buttons.web) buttons.web.disabled = running
+        if (buttons.videos) buttons.videos.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -242,94 +228,6 @@
       updateGoalDisplay()
 
       const AUTO_REGION_SEQUENCE = ['global', 'north-america', 'south-america', 'europe', 'asia', 'africa']
-
-      function getTodayKey(date = new Date()) {
-        return date.toISOString().slice(0, 10)
-      }
-
-      function getWindowTime(window, reference = new Date()) {
-        const d = new Date(reference)
-        d.setHours(window.hour, window.minute, 0, 0)
-        return d
-      }
-
-      function getWindowIndexForNow(now = new Date()) {
-        let index = -1
-        AUTO_RUN_WINDOWS.forEach((window, idx) => {
-          if (now >= getWindowTime(window, now)) index = idx
-        })
-        return index >= 0 ? index : null
-      }
-
-      function hasAutoRunToday() {
-        const last = localStorage.getItem(AUTO_RUN_KEY)
-        if (!last) return false
-        const lastDate = new Date(last)
-        return lastDate.toDateString() === new Date().toDateString()
-      }
-
-      function getLastAutoWindowIndex() {
-        const raw = localStorage.getItem(AUTO_RUN_WINDOW_KEY)
-        if (!raw) return null
-        const [date, index] = raw.split(':')
-        if (date !== getTodayKey()) return null
-        if (index === 'manual') return AUTO_RUN_WINDOWS.length
-        const parsed = Number(index)
-        return Number.isFinite(parsed) ? parsed : null
-      }
-
-      function markAutoRunComplete(windowIndex = null) {
-        localStorage.setItem(AUTO_RUN_KEY, new Date().toISOString())
-        const indexValue = typeof windowIndex === 'number' ? String(windowIndex) : 'manual'
-        localStorage.setItem(AUTO_RUN_WINDOW_KEY, `${getTodayKey()}:${indexValue}`)
-        updateAutoStatus()
-      }
-
-      function updateAutoStatus() {
-        if (!autoRunStatusEl) return
-        const lastRun = localStorage.getItem(AUTO_RUN_KEY)
-        const autoEnabled = !autoRunToggleEl || autoRunToggleEl.checked
-        const windowsLabel = AUTO_RUN_WINDOWS.map((window) => `${String(window.hour).padStart(2, '0')}:${String(window.minute).padStart(2, '0')}`).join(' / ')
-        let message = lastRun ? `Dernier run: ${new Date(lastRun).toLocaleString()}` : 'Aucun run effectué pour le moment.'
-        if (autoEnabled) {
-          if (hasAutoRunToday()) {
-            message += ' • Session du jour déjà effectuée.'
-          } else {
-            const lastWindow = getLastAutoWindowIndex()
-            const nextWindow = AUTO_RUN_WINDOWS.find((_, idx) => (lastWindow ?? -1) < idx)
-            message += nextWindow
-              ? ` • Prochain auto-run vers ${String(nextWindow.hour).padStart(2, '0')}:${String(nextWindow.minute).padStart(2, '0')}.`
-              : ''
-          }
-          message += ` • Fenêtres: ${windowsLabel}.`
-        } else {
-          message += ' • Auto-run désactivé.'
-        }
-        autoRunStatusEl.textContent = message
-      }
-
-      function maybeAutoRun() {
-        if (!autoRunToggleEl || !autoRunToggleEl.checked) return
-        if (marathonRunning || stopRequested) return
-        if (hasAutoRunToday()) return
-        const now = new Date()
-        const windowIndex = getWindowIndexForNow(now)
-        if (windowIndex === null) return
-        const lastWindow = getLastAutoWindowIndex()
-        if (lastWindow !== null && lastWindow >= windowIndex) return
-        currentAutoWindowIndex = windowIndex
-        runMarathon({ reason: 'auto', windowIndex })
-      }
-
-      if (autoRunToggleEl) {
-        const storedPref = localStorage.getItem(AUTO_RUN_PREF_KEY)
-        autoRunToggleEl.checked = storedPref === null ? true : storedPref === '1'
-        autoRunToggleEl.addEventListener('change', () => {
-          localStorage.setItem(AUTO_RUN_PREF_KEY, autoRunToggleEl.checked ? '1' : '0')
-          updateAutoStatus()
-        })
-      }
-      updateAutoStatus()
 
       const manualContainer = document.getElementById('manualCombos')
       const addManualBtn = document.getElementById('addManual')
@@ -634,13 +532,12 @@
         }
       }
 
-      async function runMarathon({ reason = 'manual', windowIndex = null } = {}) {
+      async function runMarathon() {
         if (marathonRunning) return
-        currentAutoWindowIndex = windowIndex
         stopRequested = false
         marathonRunning = true
         setRunning(true)
-        appendLog(`<p><strong>Ingestion complète (${reason})</strong> — ${new Date().toLocaleTimeString()}</p>`)
+        appendLog(`<p><strong>Ingestion complète</strong> — ${new Date().toLocaleTimeString()}</p>`)
 
         const adminKey = document.body.dataset.key || ''
         const triggerVideoTask = async (endpoint, label) => {
@@ -673,19 +570,11 @@
         }
 
         const manualCombos = collectManualCombos()
-        const isAutoRun = reason === 'auto'
-        const videoGoal = isAutoRun ? Math.min(INGEST_GOALS.video, AUTO_RUN_VIDEO_MAX) : INGEST_GOALS.video
         const tasks = [
           { category: 'images', limit: INGEST_GOALS.image },
-          { category: 'videos', limit: videoGoal, forceFast: false },
+          { category: 'videos', limit: INGEST_GOALS.video, forceFast: false },
           { category: 'web', limit: INGEST_GOALS.web },
         ]
-
-        if (isAutoRun && INGEST_GOALS.video > videoGoal) {
-          appendLog(
-            `<p class="note">Auto-run limite les combos vidéos à ${videoGoal} (maximum auto ${AUTO_RUN_VIDEO_MAX}) pour protéger le quota YouTube.</p>`,
-          )
-        }
 
         for (const task of tasks) {
           if (stopRequested) break
@@ -704,7 +593,6 @@
         }
 
         if (!stopRequested) {
-          markAutoRunComplete(currentAutoWindowIndex)
           appendLog('<p class="success">Ingestion complète terminée.</p>')
         } else {
           appendLog('<p class="error">Ingestion complète interrompue.</p>')
@@ -712,7 +600,6 @@
 
         marathonRunning = false
         setRunning(false)
-        currentAutoWindowIndex = null
       }
 
       async function runCombo(combo, context) {
@@ -908,22 +795,18 @@
       scrapeButtons.jokes.addEventListener('click', () => triggerScrape('jokes'))
       scrapeButtons.all.addEventListener('click', () => triggerScrape('all'))
 
-      if (buttons.marathon) buttons.marathon.addEventListener('click', () => runMarathon({ reason: 'manual' }))
+      if (buttons.marathon) buttons.marathon.addEventListener('click', () => runMarathon())
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
+      if (buttons.videos) buttons.videos.addEventListener('click', () => run('videos'))
       stopBtn.addEventListener('click', () => {
         stopRequested = true
         abortActiveRequests()
         appendLog('<p>Arrêt demandé…</p>')
       })
 
-      setInterval(maybeAutoRun, 60000)
-      document.addEventListener('visibilitychange', maybeAutoRun)
-      window.addEventListener('focus', maybeAutoRun)
-      setTimeout(maybeAutoRun, 2000)
-
       setRunning(false)
-      appendLog('<p>Prêt. Lance l’ingestion complète ou laisse l’auto-run démarrer à 19h.</p>')
+      appendLog('<p>Prêt. Lance l’ingestion complète ou une action manuelle.</p>')
     </script>
   </body>
 </html>
