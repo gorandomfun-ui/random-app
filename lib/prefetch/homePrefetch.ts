@@ -9,6 +9,13 @@ import {
   TARGET_COUNT,
   type Lang,
 } from '@/lib/noroscope/generator'
+import {
+  readWeLikesCache,
+  WE_CACHE_TTL_MS,
+  writeWeLikesCache,
+} from '@/lib/likes/weCache'
+
+export { WE_CACHE_KEY, WE_CACHE_TTL_MS } from '@/lib/likes/weCache'
 
 const RANDOM_PREFETCH_PREFIX = 'random-prefetch-'
 const MAX_PREFETCH_ITEMS_PER_TYPE = 4
@@ -23,9 +30,6 @@ let pendingRandomRequest: { lang: Lang; types: ItemType[] } | null = null
 let noroscopeQueue: Promise<void> = Promise.resolve()
 let weQueue: Promise<void> = Promise.resolve()
 
-export const WE_CACHE_KEY = 'we-likes-cache'
-export const WE_CACHE_TTL_MS = 5 * 60 * 1000
-
 export function startRandomPrefetch(lang: Lang, selectedTypes: ItemType[]) {
   if (typeof window === 'undefined') return
   const snapshot = [...(selectedTypes?.length ? selectedTypes : DEFAULT_TYPES)]
@@ -39,7 +43,7 @@ export function startNoroscopePrefetch(lang: Lang) {
 
 export function startWeLikePrefetch() {
   if (typeof window === 'undefined') return
-  weQueue = weQueue.then(() => ensureWeLikesCache()).catch(noop)
+  weQueue = weQueue.then(() => ensureWeLikesCache(true)).catch(noop)
 }
 
 async function runRandomPrefetch(lang: Lang, selectedTypes: ItemType[]) {
@@ -217,49 +221,9 @@ async function ensureNoroscopeCache(lang: Lang) {
   }
 }
 
-function readWeLikesCache() {
-  if (typeof window === 'undefined') return null
-  const parse = (raw: string | null) => {
-    if (!raw) return null
-    try {
-      return JSON.parse(raw) as { timestamp?: number; items?: unknown[] }
-    } catch {
-      return null
-    }
-  }
-  try {
-    const sessionEntry = parse(sessionStorage.getItem(WE_CACHE_KEY))
-    if (sessionEntry) return sessionEntry
-  } catch {
-    /* ignore */
-  }
-  try {
-    const localEntry = parse(localStorage.getItem(WE_CACHE_KEY))
-    if (localEntry) return localEntry
-  } catch {
-    /* ignore */
-  }
-  return null
-}
-
-function writeWeLikesCache(payload: { timestamp: number; items: unknown[] }) {
-  if (typeof window === 'undefined') return
-  const serialized = JSON.stringify(payload)
-  try {
-    sessionStorage.setItem(WE_CACHE_KEY, serialized)
-  } catch {
-    /* ignore */
-  }
-  try {
-    localStorage.setItem(WE_CACHE_KEY, serialized)
-  } catch {
-    /* ignore */
-  }
-}
-
-async function ensureWeLikesCache() {
+async function ensureWeLikesCache(force = false) {
   const cacheEntry = readWeLikesCache()
-  if (cacheEntry?.timestamp) {
+  if (!force && cacheEntry?.timestamp) {
     const isFresh = Date.now() - cacheEntry.timestamp <= WE_CACHE_TTL_MS
     if (isFresh) return
   }

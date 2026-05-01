@@ -59,6 +59,55 @@ function headersToObject(headers: HeadersInit | undefined): Record<string, strin
   return { ...(headers as Record<string, string>) }
 }
 
+function normalizeReasonText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isExplicitDailymotionUnavailableMessage(message?: string): boolean {
+  if (!message) return false
+  const normalized = normalizeReasonText(message)
+  if (!normalized) return false
+  const unavailableFragments = [
+    'no longer available',
+    'has been deleted',
+    'was deleted',
+    'has been removed',
+    'was removed',
+    'removed because',
+    'removed due to',
+    'terms violation',
+    'terms of use',
+    'made private',
+    'is private',
+    'private by',
+    'video is private',
+    'cette video n est plus disponible',
+    'cette video a ete supprimee',
+    'cette video a ete retiree',
+    'droits d auteur',
+    'conditions d utilisation',
+    'deze video is niet meer beschikbaar',
+    'niet meer beschikbaar',
+    'is verwijderd',
+    'prive is gemaakt',
+    'inbreuk op de gebruiksvoorwaarden',
+    'este video ya no esta disponible',
+    'ha sido eliminado',
+    'se ha eliminado',
+    'questo video non e piu disponibile',
+    'e stato rimosso',
+    'dieses video ist nicht mehr verfugbar',
+    'wurde entfernt',
+  ]
+  return unavailableFragments.some((fragment) => normalized.includes(fragment))
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit & { timeoutMs?: number } = {},
@@ -95,7 +144,7 @@ async function fetchStatus(
 async function fetchDailymotionMetadata(
   id: string,
   { timeoutMs = 5000 }: { timeoutMs?: number } = {},
-): Promise<{ status: number | null; unavailable: boolean; reason?: string }> {
+): Promise<{ status: number | null; unavailable: boolean; ambiguous?: boolean; reason?: string }> {
   const metadataUrl = `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(id)}`
   const response = await fetchWithTimeout(metadataUrl, { timeoutMs })
   if (!response) {
@@ -134,12 +183,15 @@ async function fetchDailymotionMetadata(
   if (status === 404 || status === 410) {
     return { status, unavailable: true, reason: `dailymotion-${status}` }
   }
-  if (status >= 400 || errorMessage) {
-    return {
-      status,
-      unavailable: true,
-      reason: errorMessage ? `dailymotion-metadata-${errorMessage.replace(/\s+/g, '-').toLowerCase()}` : `dailymotion-${status}`,
+  if (errorMessage) {
+    const reason = `dailymotion-metadata-${errorMessage.replace(/\s+/g, '-').toLowerCase()}`
+    if (isExplicitDailymotionUnavailableMessage(errorMessage)) {
+      return { status, unavailable: true, reason }
     }
+    return { status, unavailable: false, ambiguous: true, reason }
+  }
+  if (status !== null && status >= 400) {
+    return { status, unavailable: false, ambiguous: true, reason: `dailymotion-${status}` }
   }
 
   return { status, unavailable: false }
@@ -272,6 +324,9 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
         if (metadata.unavailable) {
           return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
         }
+        if (metadata.ambiguous) {
+          return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
+        }
         if (metadata.status !== null && metadata.status >= 200 && metadata.status < 400) {
           return { obsolete: false, status: availabilityResult.status ?? metadata.status ?? null }
         }
@@ -297,6 +352,9 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
       }
       if (metadata.unavailable) {
         return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
+      }
+      if (metadata.ambiguous) {
+        return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
       }
       if (metadata.status >= 200 && metadata.status < 400) {
         return { obsolete: false, status: metadata.status }

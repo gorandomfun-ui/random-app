@@ -12,7 +12,12 @@ import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
-import { WE_CACHE_KEY, WE_CACHE_TTL_MS } from '@/lib/prefetch/homePrefetch'
+import {
+  readWeLikesCache,
+  WE_CACHE_TTL_MS,
+  WE_LIKES_INVALIDATED_EVENT,
+  writeWeLikesCache,
+} from '@/lib/likes/weCache'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 type LikesClientProps = {
@@ -21,6 +26,7 @@ type LikesClientProps = {
 }
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
+const GLOBAL_LIKES_LIMIT = 200
 
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
   return (
@@ -36,34 +42,7 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
 }
 
 function readWeCache(): { items: GlobalLikeItem[]; timestamp: number } | null {
-  if (typeof window === 'undefined') return null
-
-  const parseCache = (raw: string | null) => {
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw) as { timestamp?: number; items?: GlobalLikeItem[] }
-      if (!parsed || typeof parsed.timestamp !== 'number' || !Array.isArray(parsed.items)) return null
-      return { items: parsed.items, timestamp: parsed.timestamp }
-    } catch {
-      return null
-    }
-  }
-
-  try {
-    const sessionEntry = parseCache(sessionStorage.getItem(WE_CACHE_KEY))
-    if (sessionEntry) return sessionEntry
-  } catch {
-    /* ignore */
-  }
-
-  try {
-    const localEntry = parseCache(localStorage.getItem(WE_CACHE_KEY))
-    if (localEntry) return localEntry
-  } catch {
-    /* ignore */
-  }
-
-  return null
+  return readWeLikesCache<GlobalLikeItem>()
 }
 
 export default function LikesClient({ initialGlobalItems = [], initialFetchedAt = 0 }: LikesClientProps = {}) {
@@ -82,23 +61,16 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const [languagesOpen, setLanguagesOpen] = useState(false)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const globalLoadingRef = useRef(false)
+  const initialGlobalRefreshRef = useRef(false)
+  const previousActiveTabRef = useRef<'you' | 'we'>('you')
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
   const [filterOpen, setFilterOpen] = useState(false)
   const [filterTypes, setFilterTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
 
   const cacheWeLikes = useCallback((entries: GlobalLikeItem[], timestamp: number) => {
-    if (!entries.length || !timestamp) return
-    const payload = JSON.stringify({ timestamp, items: entries })
-    try {
-      sessionStorage.setItem(WE_CACHE_KEY, payload)
-    } catch {
-      /* ignore */
-    }
-    try {
-      localStorage.setItem(WE_CACHE_KEY, payload)
-    } catch {
-      /* ignore */
-    }
+    if (!timestamp) return
+    writeWeLikesCache({ timestamp, items: entries })
   }, [])
 
   useEffect(() => {
@@ -108,10 +80,8 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
 
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(WE_CACHE_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw) as { timestamp?: number; items?: GlobalLikeItem[] }
-      if (!parsed || typeof parsed.timestamp !== 'number' || !Array.isArray(parsed.items)) return
+      const parsed = readWeLikesCache<GlobalLikeItem>()
+      if (!parsed) return
       if (parsed.timestamp <= (seedTimestamp || 0)) return
       setGlobalItems(parsed.items)
       setGlobalLoaded(parsed.items.length > 0)
@@ -212,12 +182,13 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
     }
   }, [adFormat.height])
 
-  const ensureGlobalLikes = useCallback(() => {
-    if (globalLoading) return
-    const isStale = Date.now() - lastGlobalFetchedAt > WE_CACHE_TTL_MS
-    if (globalLoaded && !isStale) return
+  const ensureGlobalLikes = useCallback((force = false) => {
+    if (globalLoadingRef.current) return
+    const isStale = !lastGlobalFetchedAt || Date.now() - lastGlobalFetchedAt > WE_CACHE_TTL_MS
+    if (!force && globalLoaded && !isStale) return
+    globalLoadingRef.current = true
     setGlobalLoading(true)
-    fetchGlobalTop(100)
+    fetchGlobalTop(GLOBAL_LIKES_LIMIT)
       .then((result) => {
         setGlobalItems(result)
         setGlobalLoaded(true)
@@ -228,16 +199,35 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
       .catch(() => {
         if (!globalLoaded) setGlobalLoaded(true)
       })
-      .finally(() => setGlobalLoading(false))
-  }, [cacheWeLikes, globalLoaded, globalLoading, lastGlobalFetchedAt])
+      .finally(() => {
+        globalLoadingRef.current = false
+        setGlobalLoading(false)
+      })
+  }, [cacheWeLikes, globalLoaded, lastGlobalFetchedAt])
 
   useEffect(() => {
-    ensureGlobalLikes()
+    if (initialGlobalRefreshRef.current) return
+    initialGlobalRefreshRef.current = true
+    ensureGlobalLikes(true)
   }, [ensureGlobalLikes])
 
   useEffect(() => {
-    if (activeTab !== 'we') return
-    ensureGlobalLikes()
+    const previousTab = previousActiveTabRef.current
+    previousActiveTabRef.current = activeTab
+    if (activeTab !== 'we' || previousTab === 'we') return
+    ensureGlobalLikes(true)
+  }, [activeTab, ensureGlobalLikes])
+
+  useEffect(() => {
+    const onWeLikesInvalidated = () => {
+      setLastGlobalFetchedAt(0)
+      if (activeTab === 'we') {
+        ensureGlobalLikes(true)
+      }
+    }
+
+    window.addEventListener(WE_LIKES_INVALIDATED_EVENT, onWeLikesInvalidated)
+    return () => window.removeEventListener(WE_LIKES_INVALIDATED_EVENT, onWeLikesInvalidated)
   }, [activeTab, ensureGlobalLikes])
 
   const accentColor = theme.text

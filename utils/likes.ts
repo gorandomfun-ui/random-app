@@ -1,4 +1,6 @@
 // utils/likes.ts
+import { invalidateWeLikesCache } from '@/lib/likes/weCache'
+
 export type LikeType = 'image' | 'video' | 'web' | 'quote' | 'joke' | 'fact'
 
 export type LikeItem = {
@@ -125,7 +127,7 @@ export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
     arr.unshift(item)
     setStore(arr.slice(0, MAX_LOCAL_LIKES))
 
-    if (itemId) void syncItemLike(itemId, 'POST')
+    void syncItemLike(itemId, payload, 'POST')
   } catch {}
 }
 
@@ -154,7 +156,7 @@ export function removeLike(idOrItem: string | LikeablePayload | LikeItem) {
       remoteId = normaliseIdCandidate((idOrItem as LikeablePayload | null | undefined)?._id) ?? null
     }
 
-    if (remoteId) void syncItemLike(remoteId, 'DELETE')
+    void syncItemLike(remoteId, typeof idOrItem === 'string' ? removed ?? null : idOrItem, 'DELETE')
   } catch {}
 }
 
@@ -166,53 +168,81 @@ export function isLiked(payload: LikeablePayload): boolean {
 export function clearExpired() { getAll() }
 export function clearAll() { try { localStorage.setItem(KEY, '[]') } catch {} }
 
-async function syncItemLike(itemId: string, method: 'POST' | 'DELETE') {
+function buildRemoteLikeItem(value: LikeablePayload | LikeItem | null | undefined) {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const type = typeof record.type === 'string' ? record.type : null
+  if (!type) return null
+
+  const item = {
+    id: typeof record.id === 'string' ? record.id : normaliseIdCandidate(record._id as string | number | null | undefined) ?? undefined,
+    type,
+    url: typeof record.url === 'string' ? record.url : undefined,
+    text: typeof record.text === 'string' ? record.text : undefined,
+    author: typeof record.author === 'string' ? record.author : undefined,
+    title: typeof record.title === 'string' ? record.title : undefined,
+  }
+
+  if (!item.url && !item.text && !item.title && !item.id) return null
+  return item
+}
+
+async function syncItemLike(
+  itemId: string | null,
+  item: LikeablePayload | LikeItem | null | undefined,
+  method: 'POST' | 'DELETE',
+) {
   try {
     if (typeof fetch !== 'function') return
-    await fetch('/api/feedback/like', {
+    const remoteItem = buildRemoteLikeItem(item)
+    if (!itemId && !remoteItem) return
+
+    const response = await fetch('/api/feedback/like', {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itemId }),
+      body: JSON.stringify({ itemId, item: remoteItem }),
     }).catch(() => undefined)
+
+    if (response?.ok) {
+      invalidateWeLikesCache()
+    }
   } catch {}
 }
 
-export async function fetchGlobalTop(limit = 100): Promise<GlobalLikeItem[]> {
-  try {
-    const res = await fetch(`/api/likes/top?limit=${encodeURIComponent(String(limit))}`, { cache: 'no-store' })
-    if (!res.ok) return []
-    const data = await res.json().catch(() => null)
-    if (!data || !Array.isArray(data.items)) return []
-    const list = data.items as Array<Record<string, unknown>>
-    return list.map((entry) => {
-      const themeRecord = entry.theme && typeof entry.theme === 'object'
-        ? entry.theme as Record<string, unknown>
-        : null
+export async function fetchGlobalTop(limit = 200): Promise<GlobalLikeItem[]> {
+  const res = await fetch(`/api/likes/top?limit=${encodeURIComponent(String(limit))}`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to load global likes')
 
-      const theme = themeRecord
-        ? {
-            bg: typeof themeRecord.bg === 'string' ? themeRecord.bg : undefined,
-            deep: typeof themeRecord.deep === 'string' ? themeRecord.deep : undefined,
-            cream: typeof themeRecord.cream === 'string' ? themeRecord.cream : undefined,
-            text: typeof themeRecord.text === 'string' ? themeRecord.text : undefined,
-          }
-        : undefined
+  const data = await res.json().catch(() => null)
+  if (!data || !Array.isArray(data.items)) throw new Error('Invalid global likes response')
 
-      return {
-        id: typeof entry.id === 'string' ? entry.id : String(entry.id || ''),
-        type: entry.type as LikeType,
-        url: typeof entry.url === 'string' ? entry.url : undefined,
-        text: typeof entry.text === 'string' ? entry.text : undefined,
-        title: typeof entry.title === 'string' ? entry.title : undefined,
-        thumbUrl: typeof entry.thumbUrl === 'string' ? entry.thumbUrl : null,
-        ogImage: typeof entry.ogImage === 'string' ? entry.ogImage : null,
-        provider: typeof entry.provider === 'string' ? entry.provider : undefined,
-        theme,
-        likedAt: typeof entry.likedAt === 'number' ? entry.likedAt : Date.now(),
-        count: typeof entry.count === 'number' ? entry.count : 0,
-      }
-    }) as GlobalLikeItem[]
-  } catch {
-    return []
-  }
+  const list = data.items as Array<Record<string, unknown>>
+  return list.map((entry) => {
+    const themeRecord = entry.theme && typeof entry.theme === 'object'
+      ? entry.theme as Record<string, unknown>
+      : null
+
+    const theme = themeRecord
+      ? {
+          bg: typeof themeRecord.bg === 'string' ? themeRecord.bg : undefined,
+          deep: typeof themeRecord.deep === 'string' ? themeRecord.deep : undefined,
+          cream: typeof themeRecord.cream === 'string' ? themeRecord.cream : undefined,
+          text: typeof themeRecord.text === 'string' ? themeRecord.text : undefined,
+        }
+      : undefined
+
+    return {
+      id: typeof entry.id === 'string' ? entry.id : String(entry.id || ''),
+      type: entry.type as LikeType,
+      url: typeof entry.url === 'string' ? entry.url : undefined,
+      text: typeof entry.text === 'string' ? entry.text : undefined,
+      title: typeof entry.title === 'string' ? entry.title : undefined,
+      thumbUrl: typeof entry.thumbUrl === 'string' ? entry.thumbUrl : null,
+      ogImage: typeof entry.ogImage === 'string' ? entry.ogImage : null,
+      provider: typeof entry.provider === 'string' ? entry.provider : undefined,
+      theme,
+      likedAt: typeof entry.likedAt === 'number' ? entry.likedAt : Date.now(),
+      count: typeof entry.count === 'number' ? entry.count : 0,
+    }
+  }) as GlobalLikeItem[]
 }

@@ -256,7 +256,7 @@
       <div class="controls">
         <button id="scanBtn" class="primary" type="button">Scan all videos</button>
         <button id="deleteBtn" class="danger" type="button" disabled>Delete confirmed obsolete</button>
-        <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>Delete 429 items (use sparingly)</button>
+        <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>429 kept aside</button>
       </div>
 
       <label style="display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;">
@@ -359,9 +359,8 @@
       function updateActionButtons(forceDisable = false) {
         const disable = forceDisable || busy
         const obsoleteCount = lastResult?.obsolete?.length ?? 0
-        const rateLimitedCount = lastResult?.rateLimited?.length ?? 0
         deleteBtn.disabled = disable || !obsoleteCount
-        deleteRateLimitedBtn.disabled = disable || !rateLimitedCount
+        deleteRateLimitedBtn.disabled = true
       }
 
       function getTodayKey(date = new Date()) {
@@ -570,7 +569,7 @@
         const rateLimitedSection = `
           <section class="list-section rate-limited">
             <h2>HTTP 429 (rate limited) <span class="badge">${rateLimitedItems.length}</span></h2>
-            <p class="note">These URLs returned HTTP 429 (Too Many Requests). Wait before retrying or deleting them.</p>
+            <p class="note">These URLs returned HTTP 429 (Too Many Requests). They are kept aside and are not deleted by this tool.</p>
             ${
               rateLimitedItems.length
                 ? `<div class="video-list">${renderItems(rateLimitedItems)}</div>`
@@ -582,7 +581,7 @@
         const ambiguousSection = `
           <section class="list-section ambiguous">
             <h2>Ambiguous / network errors <span class="badge">${ambiguousItems.length}</span></h2>
-            <p class="note">These failed because of network errors (timeouts, 5xx). Keep them for a later scan.</p>
+            <p class="note">These failed because of network/API errors. Keep them for a later scan or manual review.</p>
             ${
               ambiguousItems.length
                 ? `<div class="video-list">${renderItems(ambiguousItems)}</div>`
@@ -753,53 +752,12 @@
         }
       }
 
-      async function deleteRateLimitedVideos() {
-        if (!lastResult?.rateLimited?.length) return
-        if (!adminKey) {
-          alert('Missing admin ingest key.')
-          return
-        }
-        const count = lastResult.rateLimited.length
-        const confirmMessage = `Delete ${count} rate-limited item${count > 1 ? 's' : ''}? They responded with HTTP 429 and may still be valid.`
-        if (!window.confirm(confirmMessage)) return
-
-        setBusy(true)
-        try {
-          const res = await fetch('/api/tools/videos/obsolete', {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-admin-ingest-key': adminKey,
-            },
-            body: JSON.stringify({ ids: lastResult.rateLimited.map((item) => item.id) }),
-          })
-          const data = await res.json()
-          if (!res.ok) {
-            throw new Error(data?.error || res.statusText)
-          }
-          const deleted = data?.deleted ?? 0
-          statusEl.textContent = `Deleted ${deleted} rate-limited item${deleted === 1 ? '' : 's'}.`
-          lastResult = null
-          summaryEl.classList.add('hidden')
-          listEl.innerHTML = ''
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          statusEl.textContent = `Delete (429) failed: ${message}`
-        } finally {
-          setBusy(false)
-        }
-      }
-
       scanBtn.addEventListener('click', () => {
         if (!busy) scanVideos()
       })
 
       deleteBtn.addEventListener('click', () => {
         if (!busy) deleteVideos()
-      })
-
-      deleteRateLimitedBtn.addEventListener('click', () => {
-        if (!busy) deleteRateLimitedVideos()
       })
 
       function scheduleAutoScan() {

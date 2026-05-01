@@ -98,11 +98,15 @@ function mapDocToLeaderboardItem(doc: ItemDoc): LikeLeaderboardItem {
   }
 }
 
-async function readLeaderboardItems() {
+async function readLeaderboardDoc() {
   const db = await getDb()
-  const doc = await db
+  return db
     .collection<LeaderboardDoc>(LEADERBOARD_COLLECTION)
     .findOne({ _id: LEADERBOARD_ID })
+}
+
+async function readLeaderboardItems() {
+  const doc = await readLeaderboardDoc()
   return doc?.items ?? null
 }
 
@@ -150,10 +154,11 @@ async function rebuildLeaderboard(limit: number) {
 }
 
 export async function fetchTopLikedItems(limit: number): Promise<LikeLeaderboardItem[]> {
-  const cached = await readLeaderboardItems()
-  if (cached && cached.length) {
-    return cached.slice(0, limit)
+  const cached = await readLeaderboardDoc()
+  if (cached?.items?.length) {
+    return cached.items.slice(0, limit)
   }
+
   const rebuilt = await rebuildLeaderboard(Math.max(limit, LEADERBOARD_LIMIT))
   return rebuilt.slice(0, limit)
 }

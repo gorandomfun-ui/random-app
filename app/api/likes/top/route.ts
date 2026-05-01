@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     const limitParam = req.nextUrl.searchParams.get('limit')
     const limit = (() => {
       const value = Number(limitParam)
-      if (!Number.isFinite(value)) return 100
+      if (!Number.isFinite(value)) return 200
       return Math.max(1, Math.min(200, Math.floor(value)))
     })()
 
@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
       theme: undefined,
     }))
 
-    return NextResponse.json({ items })
+    return NextResponse.json(
+      { items },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+    )
   } catch (error) {
     console.error('[likes/top] failed', error)
     return NextResponse.json({ error: 'Failed to load top likes' }, { status: 500 })
