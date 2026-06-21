@@ -12,6 +12,7 @@ import { THEMES, TEXT_COLORS } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
 import type { FactItem, RandomContentItem, SourceInfo } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
+import { reportImageLoadIssue } from '@/utils/imageSuspects'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import {
   buildNoroscopeEntries,
@@ -783,7 +784,12 @@ export default function NoroscopePage() {
       const giphyHref = sourceInfo?.url || item.pageUrl || item.link || item.url || null
       return (
         <>
-          <img src={item.thumbUrl || item.url} alt={item.title || item.provider || 'Image'} className="absolute inset-0 h-full w-full object-cover" />
+          <img
+            src={item.thumbUrl || item.url}
+            alt={item.title || item.provider || 'Image'}
+            className="absolute inset-0 h-full w-full object-cover"
+            onError={() => reportImageLoadIssue(item, 'image-load-error', item.thumbUrl || item.url)}
+          />
           {provider === 'giphy' && giphyHref ? renderGiphyFooter(giphyHref, item) : renderSourceBar(item)}
         </>
       )

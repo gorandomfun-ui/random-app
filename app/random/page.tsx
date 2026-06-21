@@ -34,6 +34,7 @@ import type {
   VideoItem as VideoContentItem,
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
+import { reportImageLoadIssue } from '@/utils/imageSuspects'
 import { playAgain, playRandom, setMuted } from '@/utils/sound'
 import { dispatchAadsRefresh } from '@/lib/aads'
 
@@ -279,10 +280,12 @@ function ImageBlock({
   src,
   alt,
   height,
+  onError,
 }: {
   src: string
   alt?: string
   height: string
+  onError?: () => void
 }) {
   return (
     <div
@@ -296,6 +299,7 @@ function ImageBlock({
         className="block h-full w-full object-cover select-none"
         loading="lazy"
         decoding="async"
+        onError={onError}
       />
     </div>
   )
@@ -817,7 +821,12 @@ function ContentRenderer({
 
     return (
       <div className="h-full w-full flex items-center justify-center" style={{ height: '100%' }}>
-        <ImageBlock src={src} alt={alt} height={frameHeight} />
+        <ImageBlock
+          src={src}
+          alt={alt}
+          height={frameHeight}
+          onError={() => reportImageLoadIssue(item, 'image-load-error', src)}
+        />
       </div>
     )
   }

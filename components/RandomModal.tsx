@@ -8,6 +8,7 @@ import MonoIcon from './MonoIcon'
 import LogoAnimated from './LogoAnimated'
 import { addLike, isLiked, removeLike } from '../utils/likes'
 import AnimatedButtonLabel from './AnimatedButtonLabel'
+import { reportImageLoadIssue } from '@/utils/imageSuspects'
 import type { ItemType } from '../lib/random/types'
 import type {
   DisplayItem,
@@ -64,6 +65,7 @@ function ImageBlock({
   sourceHref,
   provider,
   maxHeight,
+  onError,
 }: {
   src: string
   alt?: string
@@ -71,6 +73,7 @@ function ImageBlock({
   sourceHref?: string
   provider?: string | null
   maxHeight?: string
+  onError?: () => void
 }) {
   const normalizedProvider = (provider || sourceLabel || '').toLowerCase()
   const isGiphy = normalizedProvider === 'giphy'
@@ -86,6 +89,7 @@ function ImageBlock({
           style={{ height: maxHeight ?? 'min(60vh, 640px)' }}
           loading="lazy"
           decoding="async"
+          onError={onError}
         />
       </div>
 
@@ -331,6 +335,7 @@ function ContentRenderer({
           sourceLabel={sourceLabel}
           sourceHref={sourceHref}
           provider={item.provider}
+          onError={() => reportImageLoadIssue(item, 'image-load-error', src)}
         />
       </div>
     )

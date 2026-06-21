@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Erase Obsolete Images</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 32px;
+        background: #f6f6f6;
+        color: #111;
+      }
+      h1 {
+        margin-bottom: 8px;
+        font-size: 32px;
+      }
+      p.description {
+        max-width: 860px;
+        line-height: 1.5;
+        margin-bottom: 24px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        padding: 24px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #1f7aec;
+        color: #fff;
+      }
+      button.danger {
+        background: #e04646;
+        color: #fff;
+      }
+      button.ghost {
+        background: #fff;
+        color: #333;
+        border: 1px solid #d4d4d4;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .status {
+        font-size: 14px;
+        margin-bottom: 12px;
+        min-height: 20px;
+      }
+      .summary {
+        background: #fafafa;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid #ececec;
+      }
+      .summary-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        margin-top: 12px;
+        padding-left: 0;
+        list-style: none;
+        font-size: 14px;
+      }
+      .summary-list.muted {
+        color: #5f646c;
+      }
+      #list {
+        max-height: 60vh;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .list-section {
+        margin-bottom: 24px;
+      }
+      .list-section h2 {
+        font-size: 18px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .list-section.rate-limited h2 {
+        color: #7b4c0d;
+      }
+      .list-section.ambiguous h2 {
+        color: #344054;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        font-size: 12px;
+        border-radius: 999px;
+        background: #e6ecf4;
+        color: #2d3a4b;
+      }
+      .list-section.rate-limited .badge {
+        background: #f7e5c7;
+        color: #7b4c0d;
+      }
+      .list-section.ambiguous .badge {
+        background: #e8e4f4;
+        color: #403261;
+      }
+      .note {
+        font-size: 13px;
+        color: #5a5f66;
+        margin-bottom: 12px;
+      }
+      .image-list {
+        display: grid;
+        gap: 10px;
+      }
+      details.image-item {
+        background: #fff;
+        border-radius: 10px;
+        border: 1px solid #e3e3e3;
+        padding: 12px 14px;
+      }
+      details.image-item summary {
+        cursor: pointer;
+        font-weight: 700;
+        display: grid;
+        grid-template-columns: minmax(120px, 180px) 1fr auto;
+        align-items: center;
+        gap: 12px;
+      }
+      details.image-item summary span.meta {
+        display: inline-flex;
+        gap: 12px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #5a5a5a;
+      }
+      details.image-item .body {
+        margin-top: 10px;
+        font-size: 14px;
+        line-height: 1.45;
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 12px;
+      }
+      .thumb {
+        width: 120px;
+        height: 84px;
+        border-radius: 8px;
+        object-fit: cover;
+        background: #eee;
+      }
+      details.image-item a {
+        color: #1f7aec;
+        word-break: break-all;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 700px) {
+        body {
+          margin: 16px;
+        }
+        details.image-item summary {
+          grid-template-columns: 1fr;
+        }
+        details.image-item .body {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0f1215;
+          color: #f1f1f1;
+        }
+        .card {
+          background: #171a1f;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        }
+        button.ghost {
+          background: #15181d;
+          color: #f1f1f1;
+          border-color: #2a2d33;
+        }
+        .summary {
+          background: #161a1f;
+          border-color: #22272f;
+        }
+        .summary-list.muted {
+          color: #9da3af;
+        }
+        .list-section.rate-limited h2 {
+          color: #f3c37a;
+        }
+        .list-section.ambiguous h2 {
+          color: #bcb0ff;
+        }
+        .badge {
+          background: #2a3140;
+          color: #c5ccda;
+        }
+        .list-section.rate-limited .badge {
+          background: #3a2a15;
+          color: #f3c37a;
+        }
+        .list-section.ambiguous .badge {
+          background: #322c4d;
+          color: #cabfff;
+        }
+        .note {
+          color: #adb3c0;
+        }
+        details.image-item {
+          background: #161a1f;
+          border-color: #232831;
+        }
+        details.image-item summary span.meta {
+          color: #b7bcc5;
+        }
+        .thumb {
+          background: #22272f;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Erase Obsolete Images</h1>
+      <p class="description">
+        Scan the <code>items</code> collection for images that are unavailable, dead, or provider-confirmed removed.
+        Images that failed in the app are checked first, then the scan continues in fast maintenance chunks.
+        Fresh OK checks are stored and skipped on the next pass.
+        Confirmed obsolete images can be deleted in one click. Rate limits and ambiguous network failures are kept aside.
+      </p>
+
+      <div class="controls">
+        <button id="scanBtn" class="primary" type="button">Scan warnings + chunks</button>
+        <button id="deleteBtn" class="danger" type="button" disabled>Delete confirmed obsolete</button>
+        <button id="keptAsideBtn" class="ghost" type="button" disabled>429 / ambiguous kept aside</button>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div id="summary" class="summary hidden"></div>
+      <div id="list"></div>
+    </main>
+
+    <script type="module">
+      const API_PATH = '/api/tools/images/obsolete'
+      const CHUNK_LIMIT = 5000
+      const CHUNK_CONCURRENCY = 160
+      const CHUNK_TIMEOUT_MS = 1500
+      const STALE_HOURS = 24 * 7
+      const MAX_RENDERED_ITEMS_PER_SECTION = 300
+      const statusEl = document.getElementById('status')
+      const summaryEl = document.getElementById('summary')
+      const listEl = document.getElementById('list')
+      const scanBtn = document.getElementById('scanBtn')
+      const deleteBtn = document.getElementById('deleteBtn')
+
+      let adminKey = ''
+      let busy = false
+      let lastResult = null
+
+      const storedKey = localStorage.getItem('local-ingest-key') || ''
+      adminKey = storedKey || window.prompt('Admin ingest key', '') || ''
+      if (adminKey) {
+        localStorage.setItem('local-ingest-key', adminKey)
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+      }
+
+      function normalizeCounts(rawCounts) {
+        const counts = rawCounts && typeof rawCounts === 'object' ? rawCounts : {}
+        const obsolete = counts.obsolete && typeof counts.obsolete === 'object' ? counts.obsolete : {}
+        const rateLimited = counts.rateLimited && typeof counts.rateLimited === 'object' ? counts.rateLimited : {}
+        const ambiguous = counts.ambiguous && typeof counts.ambiguous === 'object' ? counts.ambiguous : {}
+        return {
+          obsolete: {
+            total: typeof obsolete.total === 'number' ? obsolete.total : typeof counts.total === 'number' ? counts.total : 0,
+            providers: obsolete.providers && typeof obsolete.providers === 'object' ? obsolete.providers : counts.providers || {},
+          },
+          rateLimited: {
+            total: typeof rateLimited.total === 'number' ? rateLimited.total : 0,
+            providers: rateLimited.providers && typeof rateLimited.providers === 'object' ? rateLimited.providers : {},
+          },
+          ambiguous: {
+            total: typeof ambiguous.total === 'number' ? ambiguous.total : 0,
+            providers: ambiguous.providers && typeof ambiguous.providers === 'object' ? ambiguous.providers : {},
+          },
+        }
+      }
+
+      function createEmptyResult() {
+        return {
+          checked: 0,
+          errors: 0,
+          durationMs: 0,
+          obsolete: [],
+          rateLimited: [],
+          ambiguous: [],
+          counts: normalizeCounts(null),
+        }
+      }
+
+      function mergeProviderCounts(target, source) {
+        Object.entries(source || {}).forEach(([name, value]) => {
+          const numeric = typeof value === 'number' ? value : Number(value) || 0
+          target[name] = (target[name] || 0) + numeric
+        })
+      }
+
+      function recomputeTotals(result) {
+        result.counts.obsolete.total = result.obsolete.length
+        result.counts.rateLimited.total = result.rateLimited.length
+        result.counts.ambiguous.total = result.ambiguous.length
+        return result
+      }
+
+      function mergeChunkResult(target, chunk) {
+        const counts = normalizeCounts(chunk.counts)
+        target.checked += chunk.checked || 0
+        target.errors += chunk.errors || 0
+        target.durationMs += chunk.durationMs || 0
+        target.obsolete.push(...(Array.isArray(chunk.obsolete) ? chunk.obsolete : []))
+        target.rateLimited.push(...(Array.isArray(chunk.rateLimited) ? chunk.rateLimited : []))
+        target.ambiguous.push(...(Array.isArray(chunk.ambiguous) ? chunk.ambiguous : []))
+        mergeProviderCounts(target.counts.obsolete.providers, counts.obsolete.providers)
+        mergeProviderCounts(target.counts.rateLimited.providers, counts.rateLimited.providers)
+        mergeProviderCounts(target.counts.ambiguous.providers, counts.ambiguous.providers)
+        return recomputeTotals(target)
+      }
+
+      function updateButtons(forceDisable = false) {
+        const obsoleteCount = lastResult?.obsolete?.length ?? 0
+        scanBtn.disabled = forceDisable || busy
+        deleteBtn.disabled = forceDisable || busy || !obsoleteCount
+      }
+
+      function setBusy(state) {
+        busy = state
+        updateButtons(state)
+        if (state) statusEl.textContent = 'Scanning...'
+      }
+
+      function buildCompletionMessage(result) {
+        const obsoleteCount = result?.obsolete?.length ?? 0
+        const rateLimitedCount = result?.rateLimited?.length ?? 0
+        const ambiguousCount = result?.ambiguous?.length ?? 0
+        let message = 'Done.'
+        message += obsoleteCount
+          ? ` ${obsoleteCount} obsolete image${obsoleteCount > 1 ? 's' : ''} detected.`
+          : ' No confirmed obsolete images.'
+        if (rateLimitedCount) message += ` ${rateLimitedCount} HTTP 429 item${rateLimitedCount > 1 ? 's' : ''} kept aside.`
+        if (ambiguousCount) message += ` ${ambiguousCount} ambiguous item${ambiguousCount > 1 ? 's' : ''} kept aside.`
+        return message
+      }
+
+      function providerList(providers) {
+        const entries = Object.entries(providers || {})
+        if (!entries.length) return ''
+        return `<ul class="summary-list">${entries
+          .map(([name, value]) => `<li><strong>${escapeHtml(name)}</strong>: ${escapeHtml(value)}</li>`)
+          .join('')}</ul>`
+      }
+
+      function renderSummary(data) {
+        if (!data) {
+          summaryEl.classList.add('hidden')
+          summaryEl.innerHTML = ''
+          return
+        }
+        summaryEl.classList.remove('hidden')
+        const counts = normalizeCounts(data.counts)
+        const duration =
+          typeof data.durationMs === 'number'
+            ? (data.durationMs / 1000).toFixed(data.durationMs >= 10000 ? 0 : 1)
+            : null
+        const stats = [
+          `<strong>Checked:</strong> ${escapeHtml(data.checked || 0)}`,
+          data.errors ? `<strong>Errors:</strong> ${escapeHtml(data.errors)}` : null,
+          `<strong>Obsolete:</strong> ${escapeHtml(counts.obsolete.total)}`,
+          counts.rateLimited.total ? `<strong>429:</strong> ${escapeHtml(counts.rateLimited.total)}` : null,
+          counts.ambiguous.total ? `<strong>Ambiguous:</strong> ${escapeHtml(counts.ambiguous.total)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' • ')
+
+        summaryEl.innerHTML = `
+          <div>${stats}</div>
+          ${duration ? `<div><strong>Duration:</strong> ${duration}s</div>` : ''}
+          ${
+            counts.obsolete.total
+              ? providerList(counts.obsolete.providers)
+              : '<p>No confirmed obsolete images.</p>'
+          }
+          ${
+            counts.ambiguous.total
+              ? `<div class="note">Ambiguous items were kept aside for another pass.</div>${providerList(counts.ambiguous.providers)}`
+              : ''
+          }
+          ${
+            counts.rateLimited.total
+              ? `<div class="note">HTTP 429 items were kept aside from deletion.</div>${providerList(counts.rateLimited.providers)}`
+              : ''
+          }
+        `
+      }
+
+      function renderItems(items) {
+        return items
+          .slice(0, MAX_RENDERED_ITEMS_PER_SECTION)
+          .map((item) => {
+            const reason = escapeHtml(item.reason || 'unknown')
+            const provider = escapeHtml(item.provider || 'unknown')
+            const title = item.title ? `<div>Title: ${escapeHtml(item.title)}</div>` : ''
+            const status = item.status != null ? `<div>Status: ${escapeHtml(item.status)}</div>` : ''
+            const contentType = item.contentType ? `<div>Content-Type: <code>${escapeHtml(item.contentType)}</code></div>` : ''
+            const urlLink = item.url
+              ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.url)}</a>`
+              : '<em>No URL</em>'
+            const sourceLink = item.sourceUrl
+              ? `<div>Source: <a href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.sourceUrl)}</a></div>`
+              : ''
+            const thumb = item.thumbUrl || item.url
+            const thumbImg = thumb
+              ? `<img class="thumb" src="${escapeHtml(thumb)}" alt="" loading="lazy" />`
+              : '<div class="thumb"></div>'
+            return `
+              <details class="image-item">
+                <summary>
+                  <span>${provider}</span>
+                  <span>${escapeHtml(item.title || item.url || item.id)}</span>
+                  <span class="meta">
+                    <span>${reason}</span>
+                    ${item.status != null ? `<span>${escapeHtml(item.status)}</span>` : ''}
+                  </span>
+                </summary>
+                <div class="body">
+                  <div>${thumbImg}</div>
+                  <div>
+                    <div>ID: <code>${escapeHtml(item.id)}</code></div>
+                    ${title}
+                    ${status}
+                    ${contentType}
+                    ${sourceLink}
+                    <div style="margin-top:6px;">${urlLink}</div>
+                  </div>
+                </div>
+              </details>
+            `
+          })
+          .join('')
+      }
+
+      function renderList(data) {
+        const obsoleteItems = Array.isArray(data?.obsolete) ? data.obsolete : []
+        const rateLimitedItems = Array.isArray(data?.rateLimited) ? data.rateLimited : []
+        const ambiguousItems = Array.isArray(data?.ambiguous) ? data.ambiguous : []
+        const overflowNote = (items) =>
+          items.length > MAX_RENDERED_ITEMS_PER_SECTION
+            ? `<p class="note">Showing first ${MAX_RENDERED_ITEMS_PER_SECTION} of ${items.length}. Delete still applies to all confirmed obsolete items in this scan.</p>`
+            : ''
+
+        const obsoleteSection = `
+          <section class="list-section">
+            <h2>Confirmed obsolete <span class="badge">${obsoleteItems.length}</span></h2>
+            ${
+              obsoleteItems.length
+                ? `${overflowNote(obsoleteItems)}<div class="image-list">${renderItems(obsoleteItems)}</div>`
+                : '<p class="note">No confirmed obsolete images.</p>'
+            }
+          </section>
+        `
+        const ambiguousSection = `
+          <section class="list-section ambiguous">
+            <h2>Ambiguous / network errors <span class="badge">${ambiguousItems.length}</span></h2>
+            <p class="note">These are not deleted. Run another scan later or review manually.</p>
+            ${ambiguousItems.length ? `${overflowNote(ambiguousItems)}<div class="image-list">${renderItems(ambiguousItems)}</div>` : ''}
+          </section>
+        `
+        const rateLimitedSection = `
+          <section class="list-section rate-limited">
+            <h2>HTTP 429 (rate limited) <span class="badge">${rateLimitedItems.length}</span></h2>
+            <p class="note">These are not deleted. Retry once the provider cools down.</p>
+            ${rateLimitedItems.length ? `${overflowNote(rateLimitedItems)}<div class="image-list">${renderItems(rateLimitedItems)}</div>` : ''}
+          </section>
+        `
+
+        if (!obsoleteItems.length && !rateLimitedItems.length && !ambiguousItems.length) {
+          listEl.innerHTML = ''
+          return
+        }
+        listEl.innerHTML = `${obsoleteSection}${ambiguousSection}${rateLimitedSection}`
+      }
+
+      async function scanImages() {
+        if (!adminKey) {
+          alert('Missing admin ingest key.')
+          return
+        }
+        setBusy(true)
+        lastResult = createEmptyResult()
+        summaryEl.classList.add('hidden')
+        listEl.innerHTML = ''
+        try {
+          const startedAt = Date.now()
+
+          async function scanPhase(scope, label) {
+            let cursor = null
+            let chunkIndex = 0
+
+            while (true) {
+              chunkIndex += 1
+              const params = new URLSearchParams({
+                chunk: '1',
+                scope,
+                limit: String(CHUNK_LIMIT),
+                concurrency: String(CHUNK_CONCURRENCY),
+                timeoutMs: String(CHUNK_TIMEOUT_MS),
+                staleHours: String(STALE_HOURS),
+              })
+              if (cursor) params.set('cursor', cursor)
+
+              const res = await fetch(`${API_PATH}?${params.toString()}`, {
+                method: 'GET',
+                headers: { 'x-admin-ingest-key': adminKey },
+              })
+              const payload = await res.json().catch(() => null)
+              if (!res.ok) {
+                throw new Error(payload?.error || res.statusText)
+              }
+
+              mergeChunkResult(lastResult, payload || {})
+              cursor = payload?.nextCursor || null
+              renderSummary(lastResult)
+              renderList(lastResult)
+              updateButtons()
+
+              const seconds = ((Date.now() - startedAt) / 1000).toFixed(1)
+              statusEl.textContent =
+                `${label}... ${lastResult.checked} checked in ${seconds}s` +
+                ` • obsolete: ${lastResult.obsolete.length}` +
+                ` • ambiguous: ${lastResult.ambiguous.length}` +
+                ` • 429: ${lastResult.rateLimited.length}` +
+                ` • chunk ${chunkIndex}`
+
+              if (payload?.done || !cursor) {
+                break
+              }
+            }
+          }
+
+          await scanPhase('suspect', 'Scanning app warnings first')
+          await scanPhase('normal', 'Scanning maintenance chunks')
+
+          statusEl.textContent = buildCompletionMessage(lastResult)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Error: ${message}`
+          lastResult = null
+          summaryEl.classList.add('hidden')
+          listEl.innerHTML = ''
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      async function deleteImages() {
+        if (!lastResult?.obsolete?.length) return
+        if (!adminKey) {
+          alert('Missing admin ingest key.')
+          return
+        }
+        const count = lastResult.obsolete.length
+        if (!window.confirm(`Delete ${count} image${count > 1 ? 's' : ''}? This cannot be undone.`)) return
+
+        setBusy(true)
+        try {
+          const res = await fetch(API_PATH, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-ingest-key': adminKey,
+            },
+            body: JSON.stringify({ ids: lastResult.obsolete.map((item) => item.id) }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data?.error || res.statusText)
+          const deleted = data?.deleted ?? 0
+          statusEl.textContent = `Deleted ${deleted} obsolete image${deleted === 1 ? '' : 's'}.`
+          lastResult = null
+          summaryEl.classList.add('hidden')
+          listEl.innerHTML = ''
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Delete failed: ${message}`
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      scanBtn.addEventListener('click', () => {
+        if (!busy) scanImages()
+      })
+      deleteBtn.addEventListener('click', () => {
+        if (!busy) deleteImages()
+      })
+    </script>
+  </body>
+</html>

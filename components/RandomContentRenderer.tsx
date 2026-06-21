@@ -18,6 +18,7 @@ import type {
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useScore } from '@/providers/ScoreProvider'
 import MiniGameCard from './minigames/MiniGameCard'
+import { reportImageLoadIssue } from '@/utils/imageSuspects'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
@@ -47,6 +48,7 @@ export default function RandomContentRenderer({
           alt="Random"
           className="max-h-[56vh] md:max-h-[64vh] max-w-full object-contain rounded-lg shadow-lg"
           style={{ background: '#0000' }}
+          onError={() => reportImageLoadIssue(image, 'image-load-error', image.url)}
         />
       </div>
     )
