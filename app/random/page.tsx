@@ -53,9 +53,14 @@ const ENCOURAGE_ICON_TOTAL = 30
 const ENCOURAGE_INTERVALS = [22, 24, 28, 24, 26, 28]
 
 const PRELOAD_TARGET_PER_TYPE = 4
+const VIDEO_PRELOAD_TARGET_PER_TYPE = 6
+const VIDEO_READY_TARGET = 2
 const RECENT_SESSION_LIMIT = 10
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
+
+const getPreloadTargetForType = (type: ItemType) =>
+  type === 'video' ? VIDEO_PRELOAD_TARGET_PER_TYPE : PRELOAD_TARGET_PER_TYPE
 
 const FALLBACK_ENCOURAGE_MESSAGES = [
   'Keep exploring forward.',
@@ -1676,7 +1681,7 @@ const sequenceStateRef = useRef({
     }
   }, [getContentKey, locale])
 
-  const ensureQueue = useCallback(async (type: ItemType, target = PRELOAD_TARGET_PER_TYPE) => {
+  const ensureQueue = useCallback(async (type: ItemType, target = getPreloadTargetForType(type)) => {
     const queue = preloadQueuesRef.current[type]
     if (!prefetchLoadedRef.current.has(type)) {
       prefetchLoadedRef.current.add(type)
@@ -1886,8 +1891,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   useEffect(() => {
     let cancelled = false
     const prime = async () => {
+      if (selectedTypes.includes('video')) {
+        try {
+          await ensureQueue('video', VIDEO_READY_TARGET)
+          if (!cancelled) {
+            ensureQueue('video').catch(() => undefined)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
       await Promise.all(
         selectedTypes.map(async (type) => {
+          if (type === 'video') return
           if (cancelled) return
           try {
             await ensureQueue(type, 1)
@@ -1957,7 +1973,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           resolvedType = item ? slot.itemType : null
           if (item) {
             item = finalizeCandidate(slot.itemType, item)
-          } else if (!requiresQuizFact) {
+          } else if (!requiresQuizFact && slot.itemType !== 'video') {
             const fallback = takeAnyAvailableItem(slot.itemType)
             if (fallback) {
               item = fallback.item

@@ -5,6 +5,7 @@ import type { ItemType } from './types'
 let cachedDb: Db | null = null
 let lastDbFailureAt: number | null = null
 const DB_RETRY_DELAY_MS = 60_000
+const TOUCH_UPDATE_MAX_TIME_MS = 1_500
 
 export async function getDbSafe(): Promise<Db | null> {
   try {
@@ -47,7 +48,24 @@ export async function touchLastShown(
   const db = await getDbSafe()
   if (!db) return
   try {
-    await db.collection('items').updateOne({ type, ...key }, { $set: { lastShownAt: new Date() } })
+    await db.collection('items').updateOne(
+      { type, ...key },
+      { $set: { lastShownAt: new Date() } },
+      { maxTimeMS: TOUCH_UPDATE_MAX_TIME_MS },
+    )
+  } catch {}
+}
+
+export async function touchLastShownById(id: unknown): Promise<void> {
+  if (!id) return
+  const db = await getDbSafe()
+  if (!db) return
+  try {
+    await db.collection('items').updateOne(
+      { _id: id } as Filter<Document>,
+      { $set: { lastShownAt: new Date() } },
+      { maxTimeMS: TOUCH_UPDATE_MAX_TIME_MS },
+    )
   } catch {}
 }
 

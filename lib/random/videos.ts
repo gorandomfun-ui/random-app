@@ -1,5 +1,5 @@
 import type { VideoItem } from '@/lib/random/clientTypes'
-import { sampleFromCache, touchLastShown } from '@/lib/random/data'
+import { sampleFromCache, touchLastShownById } from '@/lib/random/data'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -35,7 +35,7 @@ function registerRecent(id: string) {
   while (recentVideoIds.length > RECENT_LIMIT) recentVideoIds.shift()
 }
 
-async function pickFromDb(exclude: string[], attempts = 12): Promise<VideoRecord | null> {
+async function pickFromDb(exclude: string[], attempts = 12): Promise<(VideoRecord & { _id?: unknown }) | null> {
   for (let i = 0; i < attempts; i++) {
     const filter = exclude.length ? { videoId: { $nin: exclude } } : {}
     const doc = await sampleFromCache<VideoRecord>('video', filter)
@@ -60,8 +60,11 @@ export async function selectVideo(): Promise<VideoItem | null> {
   const doc = await pickFromDb(exclude)
   if (!doc) return null
 
-  const itemId = doc && typeof doc === 'object' && '_id' in doc
-    ? String((doc as { _id: unknown })._id)
+  const rawItemId = doc && typeof doc === 'object' && '_id' in doc
+    ? (doc as { _id: unknown })._id
+    : undefined
+  const itemId = rawItemId
+    ? String(rawItemId)
     : undefined
   const resolved = resolveUrl(doc)
   if (!resolved) return null
@@ -82,7 +85,7 @@ export async function selectVideo(): Promise<VideoItem | null> {
     : undefined
 
   registerRecent(id)
-  await touchLastShown('video', { videoId: id })
+  void touchLastShownById(rawItemId)
   markGlobalItem('video', id)
   markGlobalProvider(provider)
   markGlobalOrigin('db-random')
