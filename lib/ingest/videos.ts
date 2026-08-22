@@ -66,6 +66,7 @@ type IngestVideosOptions = {
   durations?: Array<'any' | 'short' | 'medium' | 'long'>;
   providers?: Array<'youtube' | 'dailymotion' | 'pixabay' | 'pexels'>;
   fast?: boolean;
+  skipDetails?: boolean;
 };
 
 type IngestResult = {
@@ -136,7 +137,6 @@ const RETRO_THEMES = [
 ];
 
 const YT_TRENDING_PER_REGION = 50;
-const DAILYMOTION_TRENDING_PER_REGION = 50;
 const RETRO_QUERY_COUNT = 10;
 const RETRO_RESULTS_PER_QUERY = 10;
 
@@ -940,9 +940,10 @@ export async function finalizeVideoIngest(
     sampleSize: number;
     warnings: FetchWarning[];
     providers?: string[];
+    skipDetails?: boolean;
   },
 ): Promise<IngestResult> {
-  const { dryRun, sampleSize, warnings, providers } = options;
+  const { dryRun, sampleSize, warnings, providers, skipDetails = false } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -1008,7 +1009,7 @@ export async function finalizeVideoIngest(
   summary.inserted = bulk.upsertedCount || 0;
   summary.updated = bulk.modifiedCount || 0;
 
-  if (bulk.upsertedCount && bulk.upsertedCount > 0) {
+  if (!skipDetails && bulk.upsertedCount && bulk.upsertedCount > 0) {
     const upsertedIndexes = Object.keys(bulk.upsertedIds || {}).map((key) => Number(key));
     const newVideoIds = upsertedIndexes
       .map((index) => documents[index]?.videoId)
@@ -1037,6 +1038,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     durations = ['any'],
     providers = ['youtube', 'dailymotion', 'pixabay', 'pexels'],
     fast = false,
+    skipDetails = false,
   } = options;
 
   const collected: RawVideo[] = [];
@@ -1149,6 +1151,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     sampleSize,
     warnings: fetchWarnings,
     providers: Array.from(providerSet),
+    skipDetails,
   });
 
   const sampleVideoIds = (summary.sample || []).map((doc) => doc.videoId);
@@ -1263,13 +1266,16 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
   return rows;
 }
 
-export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean } = {}): Promise<IngestResult> {
+export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean; limitPerProvider?: number; skipDetails?: boolean } = {}): Promise<IngestResult> {
   const warnings: FetchWarning[] = [];
   const collected: RawVideo[] = [];
-  for (const region of regions.slice(0, 2)) {
-    collected.push(...await fetchYouTubeTrending(region, YT_TRENDING_PER_REGION, warnings));
-    collected.push(...await fetchDailymotionTrending(region, DAILYMOTION_TRENDING_PER_REGION, warnings));
-  }
+  const limit = Math.min(50, Math.max(10, options.limitPerProvider ?? YT_TRENDING_PER_REGION));
+  const tasks = regions.slice(0, 2).flatMap((region) => [
+    fetchYouTubeTrending(region, limit, warnings),
+    fetchDailymotionTrending(region, limit, warnings),
+  ]);
+  const settled = await Promise.all(tasks);
+  for (const rows of settled) collected.push(...rows);
   if (!collected.length) {
     return {
       scanned: 0,
@@ -1286,6 +1292,7 @@ export async function ingestTrendingVideos(regions: string[], options: { dryRun?
     sampleSize: Math.min(20, collected.length),
     warnings,
     providers: ['youtube', 'dailymotion'],
+    skipDetails: options.skipDetails ?? true,
   });
 }
 
@@ -1312,17 +1319,25 @@ function buildRetroQueries(count: number, date = new Date()): string[] {
   return queries
 }
 
-export async function ingestRetroTrendingVideos(options: { dryRun?: boolean } = {}): Promise<IngestResult> {
-  const queries = buildRetroQueries(RETRO_QUERY_COUNT)
+export async function ingestRetroTrendingVideos(options: {
+  dryRun?: boolean
+  queryCount?: number
+  per?: number
+  skipDetails?: boolean
+} = {}): Promise<IngestResult> {
+  const queryCount = Math.min(RETRO_QUERY_COUNT, Math.max(2, options.queryCount ?? RETRO_QUERY_COUNT))
+  const per = Math.max(8, Math.min(RETRO_RESULTS_PER_QUERY, options.per ?? RETRO_RESULTS_PER_QUERY))
+  const queries = buildRetroQueries(queryCount)
   return ingestVideos({
     mode: 'search',
     queries,
-    per: RETRO_RESULTS_PER_QUERY,
+    per,
     pages: 1,
     days: 0,
     providers: ['youtube', 'dailymotion'],
     fast: true,
     dryRun: Boolean(options.dryRun),
     sampleSize: 12,
+    skipDetails: options.skipDetails ?? true,
   })
 }

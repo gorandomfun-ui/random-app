@@ -7,12 +7,9 @@ import { randomUUID } from 'node:crypto'
 import type { Collection, Db } from 'mongodb'
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { sendMail } from '@/lib/email/mailer'
 import { logCronRun } from '@/lib/metrics/cron'
-import { buildComboQueries } from '@/lib/ingest/keywords/combo'
-import { mixRegionalQueries } from '@/lib/ingest/keywords/regionPools'
-import { buildVideoQueries, loadVideoKeywordDictionary } from '@/lib/ingest/videoKeywords'
 import {
-  ingestRetroTrendingVideos,
   ingestTrendingVideos,
   ingestVideos,
   pickTrendingRegions,
@@ -21,7 +18,7 @@ import {
 type VideoIngestResult = Awaited<ReturnType<typeof ingestVideos>>
 
 type StepSummary = {
-  name: 'trending' | 'retro' | 'combos'
+  name: 'trending'
   ok: boolean
   skipped?: boolean
   durationMs: number
@@ -41,13 +38,17 @@ type CronLockDoc = {
   expiresAt: Date
 }
 
+type EmailDelivery = {
+  attempted: boolean
+  ok: boolean
+  skipped?: boolean
+  error?: string
+  messageId?: string
+}
+
 const LOCK_ID = 'cron:videos'
-const LOCK_TTL_MS = 30 * 60 * 1000
-const DEFAULT_DEADLINE_MS = 270 * 1000
-const DEFAULT_COMBO_COUNT = 8
-const DEFAULT_COMBO_PER = 16
-const COMBO_PROVIDERS = ['youtube', 'dailymotion'] as const
-const COMBO_DURATIONS = ['short', 'medium', 'long'] as const
+const DEFAULT_LOCK_TTL_MS = 10 * 60 * 1000
+const DEFAULT_TRENDING_LIMIT = 25
 
 function parseIntegerEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name]
@@ -56,16 +57,12 @@ function parseIntegerEnv(name: string, fallback: number, min: number, max: numbe
   return Math.max(min, Math.min(max, Math.floor(parsed)))
 }
 
-function getDeadlineMs() {
-  return parseIntegerEnv('CRON_VIDEO_DEADLINE_MS', DEFAULT_DEADLINE_MS, 60_000, 285_000)
+function getLockTtlMs() {
+  return parseIntegerEnv('CRON_VIDEO_LOCK_TTL_MS', DEFAULT_LOCK_TTL_MS, 300_000, 1_800_000)
 }
 
-function getComboCount() {
-  return parseIntegerEnv('CRON_VIDEO_COMBO_COUNT', DEFAULT_COMBO_COUNT, 1, 16)
-}
-
-function getComboPer() {
-  return parseIntegerEnv('CRON_VIDEO_COMBO_PER', DEFAULT_COMBO_PER, 8, 32)
+function getTrendingLimit() {
+  return parseIntegerEnv('CRON_VIDEO_TRENDING_LIMIT', DEFAULT_TRENDING_LIMIT, 10, 50)
 }
 
 function isVercelCron(req: Request): boolean {
@@ -111,7 +108,7 @@ async function acquireLock(): Promise<{ token: string; release: () => Promise<vo
   const collection = await getLockCollection(db)
   const now = new Date()
   const token = randomUUID()
-  const expiresAt = new Date(now.getTime() + LOCK_TTL_MS)
+  const expiresAt = new Date(now.getTime() + getLockTtlMs())
 
   try {
     const result = await collection.updateOne(
@@ -192,23 +189,94 @@ async function runStep(
   }
 }
 
-async function buildCronComboQueries(count: number): Promise<string[]> {
-  const combos = await buildComboQueries(count, { region: 'global' })
-  let queries = combos
-    .map((combo) => combo.query.trim())
-    .filter(Boolean)
-
-  if (!queries.length) {
-    const dictionary = await loadVideoKeywordDictionary()
-    queries = buildVideoQueries(dictionary, count)
-  }
-
-  return Array.from(new Set(mixRegionalQueries(queries, 'video'))).slice(0, count)
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('fr-FR').format(value)
 }
 
-function shouldSkipNextStep(startedAt: Date, deadlineMs: number, minRemainingMs: number): boolean {
-  const elapsed = Date.now() - startedAt.getTime()
-  return deadlineMs - elapsed < minRemainingMs
+function formatDate(date: Date): string {
+  const timeZone = process.env.REPORT_TIMEZONE || 'Europe/Paris'
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone,
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(date)
+}
+
+function renderStepText(step: StepSummary): string {
+  const result = step.result
+  const status = step.skipped ? 'skipped' : step.ok ? 'ok' : 'failed'
+  const stats = result
+    ? `scanned=${result.scanned}, unique=${result.unique}, inserted=${result.inserted}, updated=${result.updated}`
+    : 'no stats'
+  const error = step.error ? `, error=${step.error}` : ''
+  return `${step.name}: ${status}, ${stats}${error}`
+}
+
+function renderStepHtml(step: StepSummary): string {
+  const result = step.result
+  const status = step.skipped ? 'skipped' : step.ok ? 'ok' : 'failed'
+  const stats = result
+    ? `scanned: ${formatNumber(result.scanned || 0)}, unique: ${formatNumber(result.unique || 0)}, inserted: ${formatNumber(result.inserted || 0)}, updated: ${formatNumber(result.updated || 0)}`
+    : 'no stats'
+  const error = step.error ? `<br><span style="color:#b00020;">${step.error}</span>` : ''
+  return `<li><strong>${step.name}</strong> - ${status} - ${stats}${error}</li>`
+}
+
+async function sendVideoCronEmail(input: {
+  ok: boolean
+  dryRun: boolean
+  startedAt: Date
+  finishedAt: Date
+  durationMs: number
+  total: Required<Pick<VideoIngestResult, 'scanned' | 'unique' | 'inserted' | 'updated'>>
+  steps: StepSummary[]
+}): Promise<EmailDelivery> {
+  if ((process.env.CRON_VIDEO_EMAIL || '1').trim() === '0') {
+    return { attempted: false, ok: true, skipped: true }
+  }
+
+  const subjectStatus = input.ok ? 'OK' : 'FAILED'
+  const subjectDry = input.dryRun ? ' DRY' : ''
+  const subject = `RandomApp video cron ${subjectStatus}${subjectDry} - ${formatDate(input.finishedAt)}`
+  const text = [
+    subject,
+    '',
+    `Started: ${formatDate(input.startedAt)}`,
+    `Finished: ${formatDate(input.finishedAt)}`,
+    `Duration: ${Math.round(input.durationMs / 1000)}s`,
+    '',
+    `Total scanned: ${input.total.scanned}`,
+    `Total unique: ${input.total.unique}`,
+    `Inserted: ${input.total.inserted}`,
+    `Updated: ${input.total.updated}`,
+    '',
+    'Steps:',
+    ...input.steps.map((step) => `- ${renderStepText(step)}`),
+  ].join('\n')
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #111;">
+      <h1 style="margin-bottom: 8px;">RandomApp video cron ${subjectStatus}${subjectDry}</h1>
+      <p style="margin-top: 0; color: #555;">${formatDate(input.startedAt)} - ${formatDate(input.finishedAt)} (${Math.round(input.durationMs / 1000)}s)</p>
+      <h2>Totals</h2>
+      <ul>
+        <li>Scanned: <strong>${formatNumber(input.total.scanned)}</strong></li>
+        <li>Unique: <strong>${formatNumber(input.total.unique)}</strong></li>
+        <li>Inserted: <strong>${formatNumber(input.total.inserted)}</strong></li>
+        <li>Updated: <strong>${formatNumber(input.total.updated)}</strong></li>
+      </ul>
+      <h2>Steps</h2>
+      <ul>${input.steps.map(renderStepHtml).join('')}</ul>
+    </div>
+  `
+
+  try {
+    const info = await sendMail({ subject, html, text })
+    const messageId = (info as { messageId?: unknown } | null)?.messageId
+    return { attempted: true, ok: true, messageId: typeof messageId === 'string' ? messageId : undefined }
+  } catch (error) {
+    return { attempted: true, ok: false, error: serializeError(error) }
+  }
 }
 
 export async function GET(req: Request) {
@@ -218,75 +286,60 @@ export async function GET(req: Request) {
   }
 
   const startedAt = new Date()
-  const deadlineMs = getDeadlineMs()
-  const comboCount = getComboCount()
-  const comboPer = getComboPer()
+  const trendingLimit = getTrendingLimit()
   const dryRun = new URL(req.url).searchParams.get('dry') === '1'
   const steps: StepSummary[] = []
   const total = { scanned: 0, unique: 0, inserted: 0, updated: 0 }
 
+  console.info('[cron:videos] start', {
+    triggeredBy: auth.triggeredBy,
+    dryRun,
+    trendingLimit,
+    mode: 'trending-only',
+  })
+
   const lock = await acquireLock()
   if (!lock) {
     const finishedAt = new Date()
+    console.info('[cron:videos] skipped: already running')
     await logCronRun({
       name: 'cron:videos',
-      status: 'failure',
+      status: 'success',
       startedAt,
       finishedAt,
       triggeredBy: auth.triggeredBy,
-      error: 'cron already running',
+      details: { skipped: true, reason: 'cron already running' },
     })
-    return NextResponse.json({ ok: false, error: 'cron already running' }, { status: 409 })
+    return NextResponse.json({ ok: true, skipped: true, reason: 'cron already running' })
   }
 
   try {
     const trendingRegions = pickTrendingRegions()
     const trending = await runStep('trending', async () => {
-      const result = await ingestTrendingVideos(trendingRegions, { dryRun })
+      const result = await ingestTrendingVideos(trendingRegions, {
+        dryRun,
+        limitPerProvider: trendingLimit,
+        skipDetails: true,
+      })
       return { result, regions: trendingRegions }
     })
     steps.push(trending)
     if (trending.result) addTotals(total, trending.result as VideoIngestResult)
-
-    if (shouldSkipNextStep(startedAt, deadlineMs, 90_000)) {
-      steps.push({ name: 'retro', ok: true, skipped: true, durationMs: 0, error: 'skipped: deadline budget' })
-    } else {
-      const retro = await runStep('retro', async () => {
-        const result = await ingestRetroTrendingVideos({ dryRun })
-        return { result }
-      })
-      steps.push(retro)
-      if (retro.result) addTotals(total, retro.result as VideoIngestResult)
-    }
-
-    if (shouldSkipNextStep(startedAt, deadlineMs, 80_000)) {
-      steps.push({ name: 'combos', ok: true, skipped: true, durationMs: 0, error: 'skipped: deadline budget' })
-    } else {
-      const queries = await buildCronComboQueries(comboCount)
-      const combos = await runStep('combos', async () => {
-        const result = await ingestVideos({
-          mode: 'search',
-          queries,
-          per: comboPer,
-          pages: 1,
-          days: 365,
-          providers: [...COMBO_PROVIDERS],
-          durations: [...COMBO_DURATIONS],
-          fast: true,
-          dryRun,
-          sampleSize: 10,
-        })
-        return { result, queries }
-      })
-      steps.push(combos)
-      if (combos.result) addTotals(total, combos.result as VideoIngestResult)
-    }
 
     const finishedAt = new Date()
     const completedSteps = steps.filter((step) => step.ok && !step.skipped)
     const failedSteps = steps.filter((step) => !step.ok)
     const hasWork = total.scanned > 0 || total.unique > 0
     const success = completedSteps.length > 0 && hasWork
+    const email = await sendVideoCronEmail({
+      ok: success,
+      dryRun,
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      total,
+      steps,
+    })
 
     await logCronRun({
       name: 'cron:videos',
@@ -296,15 +349,31 @@ export async function GET(req: Request) {
       triggeredBy: auth.triggeredBy,
       details: {
         dryRun,
-        deadlineMs,
-        comboCount,
-        comboPer,
-        providers: COMBO_PROVIDERS,
-        durations: COMBO_DURATIONS,
+        trendingLimit,
+        mode: 'trending-only',
         total,
         steps,
+        email,
       },
       error: success ? undefined : failedSteps[0]?.error || 'no videos ingested',
+    })
+
+    console.info('[cron:videos] finish', {
+      ok: success,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      total,
+      email,
+      steps: steps.map((step) => ({
+        name: step.name,
+        ok: step.ok,
+        skipped: Boolean(step.skipped),
+        durationMs: step.durationMs,
+        scanned: step.result?.scanned ?? 0,
+        unique: step.result?.unique ?? 0,
+        inserted: step.result?.inserted ?? 0,
+        updated: step.result?.updated ?? 0,
+        error: step.error,
+      })),
     })
 
     return NextResponse.json({
@@ -313,6 +382,7 @@ export async function GET(req: Request) {
       triggeredAt: finishedAt.toISOString(),
       durationMs: finishedAt.getTime() - startedAt.getTime(),
       total,
+      email,
       steps,
     }, { status: success ? 200 : 500 })
   } catch (error: unknown) {
@@ -327,9 +397,8 @@ export async function GET(req: Request) {
       error: message,
       details: {
         dryRun,
-        deadlineMs,
-        comboCount,
-        comboPer,
+        mode: 'trending-only',
+        trendingLimit,
         total,
         steps,
       },
