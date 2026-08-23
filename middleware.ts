@@ -35,11 +35,9 @@ function requestHostname(request: NextRequest): string {
 }
 
 function isLocalOnlyPath(pathname: string): boolean {
-  return (
-    pathname === '/admin/ingest' ||
-    pathname.startsWith('/admin/ingest/') ||
-    LOCAL_ONLY_STATIC_PATHS.has(pathname)
-  )
+  if (LOCAL_ONLY_STATIC_PATHS.has(pathname)) return true
+  if (!pathname.startsWith('/admin')) return false
+  return pathname !== '/admin/ingest-reports' && !pathname.startsWith('/admin/ingest-reports/')
 }
 
 export function middleware(request: NextRequest) {
@@ -55,7 +53,7 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/admin/ingest/:path*',
+    '/admin/:path*',
     '/local-ingest.html',
     '/erase-obsolete-images.html',
     '/erase-obsolete-videos.html',
