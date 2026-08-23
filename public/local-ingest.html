@@ -103,7 +103,7 @@
           <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pexels" /> Pexels</label>
         </div>
         <label style="display:inline-flex; align-items:center; gap:6px; font-size:14px;">
-          <input id="fastVideoMode" type="checkbox" />
+          <input id="fastVideoMode" type="checkbox" checked />
           Mode rapide (YouTube optimisé)
         </label>
       </div>
@@ -117,6 +117,7 @@
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button id="runMarathon" class="primary">Lancer l’ingestion complète</button>
         <button id="runVideosOnly" class="secondary">Lancer l’ingestion vidéos</button>
+        <button id="runImagesOnly" class="secondary">Lancer l’ingestion images</button>
         <button id="runWebOnly" class="secondary">Lancer l’ingestion sites web</button>
       </div>
       <button id="stopBtn">Stop</button>
@@ -135,6 +136,7 @@
         feeds: document.getElementById('runFeeds'),
         web: document.getElementById('runWebOnly'),
         videos: document.getElementById('runVideosOnly'),
+        images: document.getElementById('runImagesOnly'),
       }
       const scrapeButtons = {
         quotes: document.getElementById('scrapeQuotes'),
@@ -184,6 +186,7 @@
         if (buttons.feeds) buttons.feeds.disabled = running
         if (buttons.web) buttons.web.disabled = running
         if (buttons.videos) buttons.videos.disabled = running
+        if (buttons.images) buttons.images.disabled = running
         stopBtn.disabled = !running
       }
 
@@ -627,10 +630,13 @@
           endpoint = '/api/ingest/images'
           params.set('sample', '6')
           params.set('region', runRegion)
+          params.set('insertOnly', '1')
         } else if (category === 'videos') {
           endpoint = '/api/ingest/videos'
           params.set('mode', 'search')
           params.set('durations', 'short,medium,long')
+          params.set('insertOnly', '1')
+          params.set('skipDetails', '1')
           const perValue = isFastVideos ? '16' : (runRegion === 'global' ? '32' : '48')
           const pageValue = isFastVideos ? '1' : (runRegion === 'global' ? '2' : '3')
           params.set('pages', pageValue)
@@ -650,6 +656,7 @@
           endpoint = '/api/ingest/images'
           params.set('sample', '6')
           params.set('region', runRegion)
+          params.set('insertOnly', '1')
         }
 
         params.set('q', combo.query || '')
@@ -694,13 +701,13 @@
           totals.unique += data?.unique || 0
           totals.inserted += data?.inserted || 0
           totals.updated += data?.updated || 0
-          totals.skipped += data?.skippedInvalid || 0
+          totals.skipped += (data?.skippedInvalid || 0) + (data?.existingSkipped || 0)
 
           appendLog(`
             <div class="combo">
               <h3>${label}</h3>
               <small>${combo.query}</small>
-              <div>scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${data?.skippedInvalid ? ` skipped:${data.skippedInvalid}` : ''}</div>
+              <div>scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} inserted:${data?.inserted ?? 0} updated:${data?.updated ?? 0}${data?.skippedInvalid ? ` skipped:${data.skippedInvalid}` : ''}${data?.existingSkipped ? ` already:${data.existingSkipped}` : ''}</div>
             </div>
           `)
 
@@ -799,6 +806,7 @@
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)
       if (buttons.web) buttons.web.addEventListener('click', () => run('web'))
       if (buttons.videos) buttons.videos.addEventListener('click', () => run('videos'))
+      if (buttons.images) buttons.images.addEventListener('click', () => run('images'))
       stopBtn.addEventListener('click', () => {
         stopRequested = true
         abortActiveRequests()
