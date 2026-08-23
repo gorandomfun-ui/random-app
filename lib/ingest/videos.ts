@@ -67,6 +67,7 @@ type IngestVideosOptions = {
   providers?: Array<'youtube' | 'dailymotion' | 'pixabay' | 'pexels'>;
   fast?: boolean;
   skipDetails?: boolean;
+  insertOnly?: boolean;
 };
 
 type IngestResult = {
@@ -79,6 +80,7 @@ type IngestResult = {
   providerCounts?: Record<string, number>;
   warnings?: FetchWarning[];
   skippedInvalid?: number;
+  existingSkipped?: number;
   providers?: string[];
 };
 
@@ -941,9 +943,10 @@ export async function finalizeVideoIngest(
     warnings: FetchWarning[];
     providers?: string[];
     skipDetails?: boolean;
+    insertOnly?: boolean;
   },
 ): Promise<IngestResult> {
-  const { dryRun, sampleSize, warnings, providers, skipDetails = false } = options;
+  const { dryRun, sampleSize, warnings, providers, skipDetails = false, insertOnly = false } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -983,6 +986,7 @@ export async function finalizeVideoIngest(
     sample: sampleDocuments,
     warnings,
     skippedInvalid,
+    existingSkipped: 0,
     providers: summaryProviders,
   };
 
@@ -991,14 +995,55 @@ export async function finalizeVideoIngest(
   }
 
   const collection = await getCollection();
-  const operations = documents.map((doc) => {
+  let writeDocuments = documents;
+  if (insertOnly) {
+    const ids = documents.map((doc) => doc.videoId).filter(Boolean);
+    const existing = ids.length
+      ? await collection
+          .find({ type: 'video', videoId: { $in: ids } } as Filter<VideoDocument>)
+          .project<{ videoId?: string }>({ videoId: 1 })
+          .toArray()
+      : [];
+    const existingIds = new Set(existing.map((doc) => doc.videoId).filter((id): id is string => typeof id === 'string'));
+    writeDocuments = documents.filter((doc) => !existingIds.has(doc.videoId));
+    summary.existingSkipped = documents.length - writeDocuments.length;
+  }
+
+  if (!writeDocuments.length) {
+    return summary;
+  }
+
+  const now = new Date();
+  if (insertOnly) {
+    const insertDocuments = writeDocuments.map((doc) => ({
+      ...doc,
+      createdAt: now,
+      updatedAt: now,
+      rand: Math.random(),
+    }));
+    const insertResult = await collection.insertMany(insertDocuments, { ordered: false });
+    summary.inserted = insertResult.insertedCount || 0;
+
+    if (!skipDetails && summary.inserted > 0) {
+      const newVideoIds = insertDocuments
+        .map((doc) => doc.videoId)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+      if (newVideoIds.length) {
+        await updateYouTubeDetailsForIds(newVideoIds, warnings);
+      }
+    }
+
+    return summary;
+  }
+
+  const operations = writeDocuments.map((doc) => {
     const filter: Filter<VideoDocument> = { type: 'video', videoId: doc.videoId };
     return {
       updateOne: {
         filter,
         update: {
-          $set: { ...doc, updatedAt: new Date() },
-          $setOnInsert: { createdAt: new Date(), rand: Math.random() },
+          $set: { ...doc, updatedAt: now },
+          $setOnInsert: { createdAt: now, rand: Math.random() },
         },
         upsert: true,
       },
@@ -1012,7 +1057,7 @@ export async function finalizeVideoIngest(
   if (!skipDetails && bulk.upsertedCount && bulk.upsertedCount > 0) {
     const upsertedIndexes = Object.keys(bulk.upsertedIds || {}).map((key) => Number(key));
     const newVideoIds = upsertedIndexes
-      .map((index) => documents[index]?.videoId)
+      .map((index) => writeDocuments[index]?.videoId)
       .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
     if (newVideoIds.length) {
       await updateYouTubeDetailsForIds(newVideoIds, warnings);
@@ -1039,6 +1084,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     providers = ['youtube', 'dailymotion', 'pixabay', 'pexels'],
     fast = false,
     skipDetails = false,
+    insertOnly = false,
   } = options;
 
   const collected: RawVideo[] = [];
@@ -1152,6 +1198,7 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
     warnings: fetchWarnings,
     providers: Array.from(providerSet),
     skipDetails,
+    insertOnly,
   });
 
   const sampleVideoIds = (summary.sample || []).map((doc) => doc.videoId);
@@ -1266,7 +1313,7 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
   return rows;
 }
 
-export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean; limitPerProvider?: number; skipDetails?: boolean } = {}): Promise<IngestResult> {
+export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean; limitPerProvider?: number; skipDetails?: boolean; insertOnly?: boolean } = {}): Promise<IngestResult> {
   const warnings: FetchWarning[] = [];
   const collected: RawVideo[] = [];
   const limit = Math.min(50, Math.max(10, options.limitPerProvider ?? YT_TRENDING_PER_REGION));
@@ -1293,6 +1340,7 @@ export async function ingestTrendingVideos(regions: string[], options: { dryRun?
     warnings,
     providers: ['youtube', 'dailymotion'],
     skipDetails: options.skipDetails ?? true,
+    insertOnly: options.insertOnly ?? false,
   });
 }
 

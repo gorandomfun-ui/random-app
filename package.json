@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "daily:auto": "node scripts/daily-auto-ingest.mjs"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.6.1",

@@ -1,0 +1,34 @@
+name: Daily Auto Ingest
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run without inserting content"
+        required: false
+        default: "false"
+  schedule:
+    - cron: "20 5 * * *"
+
+jobs:
+  daily-auto-ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    if: ${{ secrets.RANDOM_INGEST_HOST != '' && secrets.ADMIN_INGEST_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run daily auto ingest
+        env:
+          RANDOM_INGEST_HOST: ${{ secrets.RANDOM_INGEST_HOST }}
+          ADMIN_INGEST_KEY: ${{ secrets.ADMIN_INGEST_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          DAILY_AUTO_MIN_VIDEO_INSERTED: ${{ vars.DAILY_AUTO_MIN_VIDEO_INSERTED || '600' }}
+          DAILY_AUTO_MAX_VIDEO_CHUNKS: ${{ vars.DAILY_AUTO_MAX_VIDEO_CHUNKS || '24' }}
+          DAILY_AUTO_MAX_RUNTIME_MINUTES: ${{ vars.DAILY_AUTO_MAX_RUNTIME_MINUTES || '110' }}
+          DAILY_AUTO_CONTINUE_CHUNK_INSERTED: ${{ vars.DAILY_AUTO_CONTINUE_CHUNK_INSERTED || '20' }}
+        run: node scripts/daily-auto-ingest.mjs
