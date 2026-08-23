@@ -14,7 +14,6 @@ jobs:
   daily-auto-ingest:
     runs-on: ubuntu-latest
     timeout-minutes: 330
-    if: ${{ secrets.RANDOM_INGEST_HOST != '' && secrets.ADMIN_INGEST_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
