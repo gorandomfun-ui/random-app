@@ -108,6 +108,15 @@
         </label>
       </div>
       <div style="margin:12px 0;">
+        <strong style="display:block; margin-bottom:6px;">Images</strong>
+        <div id="imageProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; font-size:14px;">
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="giphy" checked /> Giphy</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="tenor" checked /> Tenor</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pixabay" checked /> Pixabay</label>
+          <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="pexels" checked /> Pexels</label>
+        </div>
+      </div>
+      <div style="margin:12px 0;">
         <strong style="display:block; margin-bottom:6px;">Web</strong>
         <div id="webProviders" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; font-size:14px;">
           <label style="display:inline-flex; align-items:center; gap:6px;"><input type="checkbox" value="cse" checked /> Google CSE</label>
@@ -145,6 +154,7 @@
         all: document.getElementById('scrapeAllText'),
       }
       const videoProvidersEl = document.getElementById('videoProviders')
+      const imageProvidersEl = document.getElementById('imageProviders')
       const webProvidersEl = document.getElementById('webProviders')
       const regionSelectEl = document.getElementById('regionSelect')
       const fastVideoModeEl = document.getElementById('fastVideoMode')
@@ -214,6 +224,7 @@
       }
 
       const getSelectedVideoProviders = () => getSelectedValues(videoProvidersEl, ['youtube'])
+      const getSelectedImageProviders = () => getSelectedValues(imageProvidersEl, ['giphy', 'tenor', 'pixabay', 'pexels'])
       const getSelectedWebProviders = () => getSelectedValues(webProvidersEl, ['cse', 'curated'])
       const getSelectedRegion = () => (regionSelectEl ? regionSelectEl.value : 'global')
 
@@ -342,6 +353,7 @@
           region: regionOverride = null,
           regionRotation = null,
           videoProviders: videoOverride = null,
+          imageProviders: imageOverride = null,
           webProviders: webOverride = null,
           forceFastVideos = null,
           skipExtraRegional = false,
@@ -365,6 +377,7 @@
         const sleepMs = Math.max(0, Number(sleepEl.value) || 0)
         const region = regionOverride || getSelectedRegion()
         const selectedVideoProviders = videoOverride || getSelectedVideoProviders()
+        const selectedImageProviders = imageOverride || getSelectedImageProviders()
         const selectedWebProviders = webOverride || getSelectedWebProviders()
         const adminKey = document.body.dataset.key || ''
         let executed = 0
@@ -402,6 +415,7 @@
           totals,
           providerCounts,
           selectedVideoProviders,
+          selectedImageProviders,
           selectedWebProviders,
           isFastVideos,
           fastTimeoutMs,
@@ -620,6 +634,7 @@
           totals,
           providerCounts,
           selectedVideoProviders,
+          selectedImageProviders,
           selectedWebProviders,
           isFastVideos,
           fastTimeoutMs,
@@ -637,6 +652,7 @@
           endpoint = '/api/ingest/images'
           params.set('sample', '6')
           params.set('region', runRegion)
+          params.set('providers', selectedImageProviders.join(','))
         } else if (category === 'videos') {
           endpoint = '/api/ingest/videos'
           params.set('mode', 'search')
@@ -662,6 +678,7 @@
           endpoint = '/api/ingest/images'
           params.set('sample', '6')
           params.set('region', runRegion)
+          params.set('providers', selectedImageProviders.join(','))
         }
 
         params.set('q', combo.query || '')
