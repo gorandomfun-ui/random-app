@@ -15,7 +15,7 @@ const webCount = readInt('DAILY_AUTO_WEB_COUNT', 8, 1, 20)
 const webPer = readInt('DAILY_AUTO_WEB_PER', 10, 1, 10)
 const webPages = readInt('DAILY_AUTO_WEB_PAGES', 3, 1, 10)
 const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'cse,curated,neocities'
-const enrichLimit = readInt('DAILY_AUTO_ENRICH_LIMIT', 120, 0, 500)
+const enrichLimit = readInt('DAILY_AUTO_ENRICH_LIMIT', 40, 0, 500)
 
 if (!host || !key) {
   console.error('HOST/RANDOM_INGEST_HOST et ADMIN_INGEST_KEY doivent être définis.')
@@ -81,6 +81,11 @@ function mergeCounts(target, source) {
   for (const [keyName, value] of Object.entries(source)) {
     target[keyName] = (target[keyName] || 0) + getNumber(value)
   }
+}
+
+function getErrorMessage(error) {
+  if (error instanceof Error) return error.message
+  return String(error || 'unknown error')
 }
 
 function formatDuration(ms) {
@@ -170,6 +175,7 @@ function writeGithubSummary(summary) {
     `# Daily Auto Ingest`,
     ``,
     `**Profile:** ${summary.profile}`,
+    `**Status:** ${summary.status}`,
     `**Dry run:** ${summary.dryRun ? 'yes' : 'no'}`,
     `**Duration:** ${formatDuration(summary.durationMs)}`,
     `**Target:** ${summary.videoInserted >= summary.minVideoInserted ? 'reached' : 'not reached'} (${summary.videoInserted}/${summary.minVideoInserted})`,
@@ -196,6 +202,7 @@ function writeGithubSummary(summary) {
     `| --- | ---: |`,
     providerRows || `| none | 0 |`,
     ``,
+    summary.errors?.length ? `## Errors\n\n${summary.errors.map((entry) => `- ${entry.phase}: ${entry.error}`).join('\n')}\n` : '',
   ].join('\n')
 
   fs.appendFileSync(target, markdown)
@@ -212,6 +219,7 @@ async function main() {
   let existingSkipped = 0
   const providerCounts = {}
   const phases = []
+  const errors = []
 
   const remember = (payload) => {
     const result = asResult(payload)
@@ -227,18 +235,51 @@ async function main() {
     mergeCounts(providerCounts, result.providerCounts)
   }
 
+  const rememberFailure = (params, error, durationMs) => {
+    const message = getErrorMessage(error)
+    errors.push({
+      phase: params.phase,
+      run: params.run,
+      error: message,
+    })
+    phases.push({
+      phase: params.phase,
+      durationMs,
+      queries: [],
+      providers: params.providers ? String(params.providers).split(',') : [],
+      error: message,
+      result: {},
+    })
+    console.warn(`Phase ${params.phase} failed but daily auto ingest continues: ${message}`)
+  }
+
+  const runPhase = async (params) => {
+    const phaseStarted = Date.now()
+    try {
+      const payload = await callDailyAuto(params)
+      remember(payload)
+      return payload
+    } catch (error) {
+      rememberFailure(params, error, Date.now() - phaseStarted)
+      return null
+    }
+  }
+
   const fixedPhases = [
     { phase: 'trending', limit: 50, run: `${runProfile}:trending` },
     { phase: 'retro', count: 8, per: 12, providers: 'youtube,dailymotion', run: `${runProfile}:retro` },
   ]
 
   for (const phase of fixedPhases) {
-    const payload = await callDailyAuto(phase)
-    remember(payload)
+    const payload = await runPhase(phase)
+    chunks += 1
+    if (!payload) {
+      lastVideoChunkInserted = 0
+      continue
+    }
     const inserted = videoInsertedFrom(payload)
     videoInserted += inserted
     lastVideoChunkInserted = inserted
-    chunks += 1
   }
 
   while (chunks < maxVideoChunks && Date.now() - started < maxRuntimeMs) {
@@ -250,7 +291,7 @@ async function main() {
     const youtubeOnly = runProfile === 'morning'
       ? chunks % 3 !== 2
       : chunks % 2 === 0
-    const payload = await callDailyAuto({
+    const payload = await runPhase({
       phase: 'combo-videos',
       count: youtubeOnly ? 6 : 8,
       per: youtubeOnly ? 16 : 18,
@@ -261,14 +302,17 @@ async function main() {
       run: `${runProfile}:combo:${chunks}`,
     })
 
-    remember(payload)
+    chunks += 1
+    if (!payload) {
+      lastVideoChunkInserted = 0
+      continue
+    }
     const inserted = videoInsertedFrom(payload)
     videoInserted += inserted
     lastVideoChunkInserted = inserted
-    chunks += 1
   }
 
-  const webPayload = await callDailyAuto({
+  const webPayload = await runPhase({
     phase: 'web',
     count: webCount,
     per: webPer,
@@ -277,23 +321,26 @@ async function main() {
     requireOg: '1',
     run: `${runProfile}:web`,
   })
-  remember(webPayload)
-  webInserted += webInsertedFrom(webPayload)
+  if (webPayload) {
+    webInserted += webInsertedFrom(webPayload)
+  }
 
   if (enrichLimit > 0) {
-    const enrichPayload = await callDailyAuto({
+    const enrichPayload = await runPhase({
       phase: 'enrich-videos',
       limit: enrichLimit,
       days: 2,
       run: `${runProfile}:enrich`,
     })
-    remember(enrichPayload)
-    videoEnriched += getNumber(asResult(enrichPayload).updated)
+    if (enrichPayload) {
+      videoEnriched += getNumber(asResult(enrichPayload).updated)
+    }
   }
 
   const durationMs = Date.now() - started
   const summary = {
     dryRun,
+    status: errors.length ? 'partial' : 'success',
     profile: runProfile,
     startedAt,
     finishedAt: new Date().toISOString(),
@@ -304,6 +351,7 @@ async function main() {
     videoEnriched,
     existingSkipped,
     providerCounts,
+    errors,
     minVideoInserted,
     maxVideoChunks,
     phases,
@@ -312,6 +360,10 @@ async function main() {
   console.log('Daily auto summary:', summary)
   await submitReport(summary)
   writeGithubSummary(summary)
+
+  if (!dryRun && videoInserted <= 0 && errors.length) {
+    throw new Error(`No video inserted and ${errors.length} phase(s) failed`)
+  }
 
   if (!dryRun && videoInserted < minVideoInserted) {
     console.warn(`Video target not reached: ${videoInserted}/${minVideoInserted}`)

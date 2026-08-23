@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Run daily auto ingest
         env:
@@ -43,5 +43,5 @@ jobs:
           DAILY_AUTO_WEB_COUNT: ${{ vars.DAILY_AUTO_WEB_COUNT || '8' }}
           DAILY_AUTO_WEB_PER: ${{ vars.DAILY_AUTO_WEB_PER || '10' }}
           DAILY_AUTO_WEB_PAGES: ${{ vars.DAILY_AUTO_WEB_PAGES || '3' }}
-          DAILY_AUTO_ENRICH_LIMIT: ${{ vars.DAILY_AUTO_ENRICH_LIMIT || '120' }}
+          DAILY_AUTO_ENRICH_LIMIT: ${{ vars.DAILY_AUTO_ENRICH_LIMIT || '40' }}
         run: node scripts/daily-auto-ingest.mjs
