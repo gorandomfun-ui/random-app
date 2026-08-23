@@ -321,7 +321,14 @@
           cache: 'no-store',
           headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
         })
-        if (!res.ok) throw new Error('combo fetch failed')
+        if (!res.ok) {
+          let detail = ''
+          try {
+            const data = await res.json()
+            detail = data?.error ? `: ${data.error}` : ''
+          } catch {}
+          throw new Error(`combo fetch failed (${res.status}${detail})`)
+        }
         return res.json()
       }
 
@@ -630,7 +637,6 @@
           endpoint = '/api/ingest/images'
           params.set('sample', '6')
           params.set('region', runRegion)
-          params.set('insertOnly', '1')
         } else if (category === 'videos') {
           endpoint = '/api/ingest/videos'
           params.set('mode', 'search')
@@ -656,7 +662,6 @@
           endpoint = '/api/ingest/images'
           params.set('sample', '6')
           params.set('region', runRegion)
-          params.set('insertOnly', '1')
         }
 
         params.set('q', combo.query || '')

@@ -599,7 +599,7 @@ export default function AdminIngestPage() {
     pushLog('🔍 IMAGES preview…')
     const manual = iState.manualCSV.split(',').map((s) => s.trim()).filter(Boolean)
     const providerList = selectedProviders.length ? selectedProviders : undefined
-    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, true, true)
+    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, true)
     if (res.ok) {
       setImageSummary(res)
       if (Array.isArray(res.queries)) {
@@ -620,7 +620,7 @@ export default function AdminIngestPage() {
     pushLog('▶️ IMAGES: start')
     const manual = iState.manualCSV.split(',').map((s) => s.trim()).filter(Boolean)
     const providerList = selectedProviders.length ? selectedProviders : undefined
-    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, false, true)
+    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, false)
     if (res.ok) {
       setImageSummary(res)
       pushLog(`✅ IMAGES — scanned:${res.scanned ?? 0} unique:${res.unique ?? 0} inserted:${res.inserted ?? 0} updated:${res.updated ?? 0} existing:${res.existingSkipped ?? 0}`)

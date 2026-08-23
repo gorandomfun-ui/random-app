@@ -953,7 +953,7 @@ export async function runIngest(options: RunIngestOptions = {}): Promise<RunSumm
         sample: String(getEnvNumber('LOCAL_IMAGES_SAMPLE', 6, env)),
       })
       if (providers.length) params.set('providers', Array.from(new Set(providers)).join(','))
-      if (getEnvBoolean('LOCAL_IMAGES_INSERT_ONLY', true, env)) params.set('insertOnly', '1')
+      if (getEnvBoolean('LOCAL_IMAGES_INSERT_ONLY', false, env)) params.set('insertOnly', '1')
       if (dryRun) params.set('dry', '1')
       return params
     }
