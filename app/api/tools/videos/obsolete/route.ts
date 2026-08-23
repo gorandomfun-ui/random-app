@@ -435,9 +435,33 @@ export async function GET(req: NextRequest) {
     url.searchParams.get('mode') === 'full'
 
   if (fullScan) {
+    let cancelled = false
+    let activeCursor: { close: () => Promise<void> } | null = null
+
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const encoder = new TextEncoder()
+        let closed = false
+
+        const writeLine = (payload: Record<string, unknown>) => {
+          if (cancelled || closed) return false
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify(payload) + '\n'))
+            return true
+          } catch {
+            closed = true
+            return false
+          }
+        }
+
+        const closeStream = () => {
+          if (closed) return
+          closed = true
+          try {
+            controller.close()
+          } catch {}
+        }
+
         const obsoleteCounts: Record<string, number> = {}
         const rateLimitedCounts: Record<string, number> = {}
         const ambiguousCounts: Record<string, number> = {}
@@ -478,6 +502,7 @@ export async function GET(req: NextRequest) {
           .find({ type: 'video' })
           .sort({ _id: 1 })
           .batchSize(FULL_SCAN_BATCH_SIZE)
+        activeCursor = cursor
 
         const pool: Promise<void>[] = []
 
@@ -524,21 +549,18 @@ export async function GET(req: NextRequest) {
           } finally {
             checked += 1
             if (checked % PROGRESS_INTERVAL === 0) {
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'progress',
-                    checked,
-                    errors,
-                  }) + '\n',
-                ),
-              )
+              writeLine({
+                type: 'progress',
+                checked,
+                errors,
+              })
             }
           }
         }
 
         try {
           for await (const doc of cursor) {
+            if (cancelled) break
             if (pool.length >= FULL_SCAN_CONCURRENCY) {
               await Promise.race(pool)
             }
@@ -552,61 +574,63 @@ export async function GET(req: NextRequest) {
 
           await Promise.all(pool)
 
-          if (checked % PROGRESS_INTERVAL !== 0) {
-            controller.enqueue(
-              encoder.encode(
-                JSON.stringify({
-                  type: 'progress',
-                  checked,
-                  errors,
-                }) + '\n',
-              ),
-            )
+          if (!cancelled && checked % PROGRESS_INTERVAL !== 0) {
+            writeLine({
+              type: 'progress',
+              checked,
+              errors,
+            })
           }
 
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: 'done',
-                checked,
-                errors,
-                durationMs: Date.now() - startTime,
-                obsolete,
-                rateLimited,
-                ambiguous,
-                counts: {
+          if (!cancelled) {
+            writeLine({
+              type: 'done',
+              checked,
+              errors,
+              durationMs: Date.now() - startTime,
+              obsolete,
+              rateLimited,
+              ambiguous,
+              counts: {
+                total: obsolete.length,
+                providers: obsoleteCounts,
+                obsolete: {
                   total: obsolete.length,
                   providers: obsoleteCounts,
-                  obsolete: {
-                    total: obsolete.length,
-                    providers: obsoleteCounts,
-                  },
-                  rateLimited: {
-                    total: rateLimited.length,
-                    providers: rateLimitedCounts,
-                  },
-                  ambiguous: {
-                    total: ambiguous.length,
-                    providers: ambiguousCounts,
-                  },
                 },
-              }) + '\n',
-            ),
-          )
+                rateLimited: {
+                  total: rateLimited.length,
+                  providers: rateLimitedCounts,
+                },
+                ambiguous: {
+                  total: ambiguous.length,
+                  providers: ambiguousCounts,
+                },
+              },
+            })
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: 'error',
-                message,
-                checked,
-                errors,
-              }) + '\n',
-            ),
-          )
+          if (!cancelled) {
+            writeLine({
+              type: 'error',
+              message,
+              checked,
+              errors,
+            })
+          }
         } finally {
-          controller.close()
+          if (activeCursor) {
+            await activeCursor.close().catch(() => {})
+            activeCursor = null
+          }
+          closeStream()
+        }
+      },
+      cancel() {
+        cancelled = true
+        if (activeCursor) {
+          void activeCursor.close().catch(() => {})
         }
       },
     })
