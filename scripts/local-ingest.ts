@@ -18,6 +18,7 @@ type IngestResult = {
   providerCounts?: Record<string, number>
   warnings?: unknown
   skippedInvalid?: number
+  existingSkipped?: number
 }
 
 export type Category = 'videos' | 'video-feeds' | 'images' | 'web' | 'facts' | 'jokes' | 'quotes'
@@ -118,6 +119,15 @@ function getEnvNumber(name: string, fallback: number, env: NodeJS.ProcessEnv = p
   const value = Number(raw)
   if (!Number.isFinite(value) || value <= 0) return fallback
   return value
+}
+
+function getEnvBoolean(name: string, fallback: boolean, env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env[name]
+  if (!raw) return fallback
+  const normalized = raw.trim().toLowerCase()
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false
+  return fallback
 }
 
 class IngestClient {
@@ -299,6 +309,9 @@ class VideoIngestor {
     const pages = Math.max(1, Math.min(5, getEnvNumber('LOCAL_VIDEOS_PAGES', 2, this.options.env)))
     const days = getEnvNumber('LOCAL_VIDEOS_DAYS', 365, this.options.env)
     const sampleSize = getEnvNumber('LOCAL_VIDEOS_SAMPLE', 6, this.options.env)
+    const fast = getEnvBoolean('LOCAL_VIDEOS_FAST', true, this.options.env)
+    const insertOnly = getEnvBoolean('LOCAL_VIDEOS_INSERT_ONLY', true, this.options.env)
+    const skipDetails = getEnvBoolean('LOCAL_VIDEOS_SKIP_DETAILS', true, this.options.env)
 
     try {
       while (!this.options.cli.maxCombos || combosRun < (this.options.cli.maxCombos ?? 0)) {
@@ -344,6 +357,9 @@ class VideoIngestor {
           sample: String(sampleSize),
           dry: this.options.cli.dryRun ? '1' : '0',
           q: query,
+          fast: fast ? '1' : '0',
+          insertOnly: insertOnly ? '1' : '0',
+          skipDetails: skipDetails ? '1' : '0',
         })
         if (providerContext.providers.length) {
           params.set('providers', providerContext.providers.join(','))
@@ -356,15 +372,16 @@ class VideoIngestor {
           const unique = result?.unique ?? 0
           const scanned = result?.scanned ?? 0
           const skippedInvalid = result?.skippedInvalid ?? 0
+          const existingSkipped = result?.existingSkipped ?? 0
 
           totals.inserted += inserted
           totals.updated += updated
           totals.unique += unique
           totals.scanned += scanned
-          totals.skipped += skippedInvalid
+          totals.skipped += skippedInvalid + existingSkipped
 
           this.comboHistory.push({ label, query, components: combo.components, inserted, updated, unique, scanned })
-          const skipped = skippedInvalid ? ` skipped:${skippedInvalid}` : ''
+          const skipped = skippedInvalid || existingSkipped ? ` skipped:${skippedInvalid} existing:${existingSkipped}` : ''
           this.emit('info', `   → scanned:${scanned} unique:${unique} inserted:${inserted} updated:${updated}${skipped}`)
         } catch (error) {
           this.emit('error', `❌  Videos → ingest failed for ${label}`, error instanceof Error ? error.message : error)
@@ -936,6 +953,7 @@ export async function runIngest(options: RunIngestOptions = {}): Promise<RunSumm
         sample: String(getEnvNumber('LOCAL_IMAGES_SAMPLE', 6, env)),
       })
       if (providers.length) params.set('providers', Array.from(new Set(providers)).join(','))
+      if (getEnvBoolean('LOCAL_IMAGES_INSERT_ONLY', true, env)) params.set('insertOnly', '1')
       if (dryRun) params.set('dry', '1')
       return params
     }

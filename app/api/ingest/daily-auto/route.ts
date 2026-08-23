@@ -5,11 +5,11 @@ export const maxDuration = 300
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { ingestTrendingVideos, ingestVideos, pickTrendingRegions } from '@/lib/ingest/videos'
+import { enrichRecentYouTubeVideos, ingestTrendingVideos, ingestVideos, pickTrendingRegions } from '@/lib/ingest/videos'
 import { buildDailyRetroQueries, buildDailyVideoQueries, buildDailyWebQueries } from '@/lib/ingest/daily-auto/queries'
 import { logCronRun, type CronTrigger } from '@/lib/metrics/cron'
 
-const PHASES = ['trending', 'retro', 'combo-videos', 'web'] as const
+const PHASES = ['trending', 'retro', 'combo-videos', 'web', 'enrich-videos'] as const
 type DailyAutoPhase = (typeof PHASES)[number]
 
 type SearchProvider = 'youtube' | 'dailymotion' | 'pixabay' | 'pexels'
@@ -106,6 +106,7 @@ function compactResult(value: unknown): Record<string, unknown> {
     providers: raw.providers ?? [],
     warnings: Array.isArray(raw.warnings) ? raw.warnings.slice(0, 10) : [],
     dryRun: Boolean(raw.dryRun),
+    checked: raw.checked ?? undefined,
   }
 }
 
@@ -117,10 +118,11 @@ async function runWebPhase(req: NextRequest, input: {
   pages: number
   requireOg: boolean
   providers: string[]
+  runKey: string
 }) {
   const queries = await buildDailyWebQueries({
     count: input.queryCount,
-    seed: `web:${new Date().toISOString().slice(0, 10)}:${input.queryCount}`,
+    seed: `web:${new Date().toISOString().slice(0, 10)}:${input.runKey}:${input.queryCount}`,
   })
   const target = new URL('/api/ingest/web', req.url)
   target.searchParams.set('q', queries.join(','))
@@ -158,6 +160,10 @@ export async function GET(req: NextRequest) {
   const phase = parsePhase(req.nextUrl.searchParams.get('phase'))
   const dryRun = parseBoolean(req.nextUrl.searchParams.get('dry') || req.nextUrl.searchParams.get('preview'))
   const sampleSize = parseInteger(req.nextUrl.searchParams.get('sample'), 8, 1, 20)
+  const runKey = (req.nextUrl.searchParams.get('run') || req.nextUrl.searchParams.get('profile') || 'default')
+    .trim()
+    .replace(/[^\w:-]+/g, '-')
+    .slice(0, 80) || 'default'
 
   try {
     let payload: PhasePayload
@@ -185,7 +191,7 @@ export async function GET(req: NextRequest) {
       const per = parseInteger(req.nextUrl.searchParams.get('per'), 12, 5, 30)
       const queries = await buildDailyRetroQueries({
         count: queryCount,
-        seed: `retro:${new Date().toISOString().slice(0, 10)}:${queryCount}`,
+        seed: `retro:${new Date().toISOString().slice(0, 10)}:${runKey}:${queryCount}`,
       })
       const result = await ingestVideos({
         mode: 'search',
@@ -219,7 +225,7 @@ export async function GET(req: NextRequest) {
       const durations = parseDurations(req.nextUrl.searchParams.get('durations') || req.nextUrl.searchParams.get('duration'))
       const queries = await buildDailyVideoQueries({
         count: queryCount,
-        seed: `combo:${new Date().toISOString().slice(0, 10)}:${providers.join('-')}:${queryCount}`,
+        seed: `combo:${new Date().toISOString().slice(0, 10)}:${runKey}:${providers.join('-')}:${queryCount}`,
       })
       const result = await ingestVideos({
         mode: 'search',
@@ -244,7 +250,7 @@ export async function GET(req: NextRequest) {
         durationMs: Date.now() - startedAt.getTime(),
         result: compactResult(result),
       }
-    } else {
+    } else if (phase === 'web') {
       const queryCount = parseInteger(req.nextUrl.searchParams.get('count'), 4, 1, 20)
       const per = parseInteger(req.nextUrl.searchParams.get('per'), 8, 1, 10)
       const pages = parseInteger(req.nextUrl.searchParams.get('pages'), 2, 1, 10)
@@ -260,6 +266,7 @@ export async function GET(req: NextRequest) {
         pages,
         requireOg,
         providers: webProviders.length ? webProviders : ['cse', 'curated'],
+        runKey,
       })
       payload = {
         ok: true,
@@ -269,6 +276,18 @@ export async function GET(req: NextRequest) {
         providers: webProviders,
         durationMs: Date.now() - startedAt.getTime(),
         result,
+      }
+    } else {
+      const limit = parseInteger(req.nextUrl.searchParams.get('limit'), 120, 1, 500)
+      const days = parseInteger(req.nextUrl.searchParams.get('days'), 2, 1, 30)
+      const result = await enrichRecentYouTubeVideos({ dryRun, limit, days })
+      payload = {
+        ok: true,
+        phase,
+        dryRun,
+        durationMs: Date.now() - startedAt.getTime(),
+        providers: ['youtube'],
+        result: compactResult(result),
       }
     }
 

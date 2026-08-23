@@ -59,6 +59,14 @@ function normalizeProviders(raw: string[]): ImageProvider[] | undefined {
   return list.length ? list : undefined;
 }
 
+function parseBoolean(value: string | null, fallback = false): boolean {
+  if (value == null) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
+  return fallback;
+}
+
 export async function GET(req: Request) {
   const authKey = req.headers.get('x-admin-ingest-key') || '';
   const expectedKey = process.env.ADMIN_INGEST_KEY || '';
@@ -75,6 +83,7 @@ export async function GET(req: Request) {
     const providers = normalizeProviders(providersRaw);
     const dry = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dry === '1' || dry === 'true';
+    const insertOnly = parseBoolean(url.searchParams.get('insertOnly') || url.searchParams.get('insert_only'), false);
 
     let finalQueries = queries;
     if (!finalQueries.length) {
@@ -107,6 +116,7 @@ export async function GET(req: Request) {
       providers: finalProviders,
       dryRun,
       sampleSize: 6,
+      insertOnly,
     });
 
     return NextResponse.json({
@@ -115,6 +125,7 @@ export async function GET(req: Request) {
       providers: finalProviders,
       region,
       dryRun,
+      insertOnly,
       ...result,
     });
   } catch (error: unknown) {

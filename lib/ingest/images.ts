@@ -115,6 +115,7 @@ type IngestImagesOptions = {
   providers?: ImageProvider[];
   dryRun?: boolean;
   sampleSize?: number;
+  insertOnly?: boolean;
 };
 
 type ProviderCounts = Record<string, number>;
@@ -128,6 +129,7 @@ type IngestResult = {
   sample?: ImageDocument[];
   providerCounts?: ProviderCounts;
   skippedInvalid?: number;
+  existingSkipped?: number;
 };
 
 type Fetcher = (query: string, per: number) => Promise<ImageSource[]>;
@@ -395,6 +397,7 @@ export async function ingestImages({
   providers,
   dryRun = false,
   sampleSize = 6,
+  insertOnly = false,
 }: IngestImagesOptions): Promise<IngestResult> {
   if (!queries.length) {
     return { scanned: 0, unique: 0, inserted: 0, updated: 0 };
@@ -456,6 +459,7 @@ export async function ingestImages({
     providerCounts,
     sample: uniqueDocs.slice(0, Math.max(0, sampleSize)),
     skippedInvalid,
+    existingSkipped: 0,
   };
 
   if (dryRun || !uniqueDocs.length) {
@@ -463,6 +467,39 @@ export async function ingestImages({
   }
 
   const coll = await getCollection();
+  let writeDocs = uniqueDocs;
+  if (insertOnly) {
+    const urls = uniqueDocs.map((doc) => doc.url).filter(Boolean);
+    const existing = urls.length
+      ? await coll
+          .find({ type: 'image', url: { $in: urls } } as Filter<ImageDocument>)
+          .project<{ url?: string }>({ url: 1 })
+          .toArray()
+      : [];
+    const existingUrls = new Set(existing.map((doc) => doc.url).filter((url): url is string => typeof url === 'string'));
+    writeDocs = uniqueDocs.filter((doc) => !existingUrls.has(doc.url));
+    summary.existingSkipped = uniqueDocs.length - writeDocs.length;
+  }
+
+  if (!writeDocs.length) {
+    return summary;
+  }
+
+  if (insertOnly) {
+    const now = new Date();
+    const result = await coll.insertMany(
+      writeDocs.map((doc) => ({
+        ...doc,
+        createdAt: now,
+        updatedAt: now,
+        rand: Math.random(),
+      })),
+      { ordered: false },
+    );
+    summary.inserted = result.insertedCount || 0;
+    return summary;
+  }
+
   const operations = uniqueDocs.map((doc) => {
     const filter: Filter<ImageDocument> = { type: 'image', url: doc.url };
     return {

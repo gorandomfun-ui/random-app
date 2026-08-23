@@ -755,10 +755,12 @@ async function channelUploadsYouTube(channelId: string, per: number, warnings?: 
 async function updateYouTubeDetailsForIds(
   videoIds: string[],
   warnings?: FetchWarning[],
-): Promise<void> {
+): Promise<{ checked: number; updated: number }> {
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key || !videoIds.length) return;
+  if (!key || !videoIds.length) return { checked: 0, updated: 0 };
   const collection = await getCollection();
+  let checked = 0;
+  let updated = 0;
   for (let i = 0; i < videoIds.length; i += 50) {
     const chunk = videoIds.slice(i, i + 50);
     const params = new URLSearchParams({ key, part: 'snippet,contentDetails', id: chunk.join(',') });
@@ -770,6 +772,7 @@ async function updateYouTubeDetailsForIds(
     );
     const items = data?.items ?? [];
     if (!items.length) continue;
+    checked += items.length;
     for (const item of items) {
       if (!item?.id) continue;
       const update: Record<string, unknown> = {};
@@ -786,12 +789,84 @@ async function updateYouTubeDetailsForIds(
       if (high) update.thumb = high;
       if (item.contentDetails?.duration) update.duration = item.contentDetails.duration;
       if (!Object.keys(update).length) continue;
-      await collection.updateOne(
+      update.updatedAt = new Date();
+      const result = await collection.updateOne(
         { type: 'video', videoId: item.id },
         { $set: update },
       );
+      updated += result.matchedCount || 0;
     }
   }
+  return { checked, updated };
+}
+
+export async function enrichRecentYouTubeVideos(options: {
+  dryRun?: boolean;
+  limit?: number;
+  days?: number;
+  sampleSize?: number;
+} = {}): Promise<IngestResult & { checked?: number }> {
+  const collection = await getCollection();
+  const limit = Math.max(1, Math.min(500, options.limit ?? 120));
+  const days = Math.max(1, Math.min(30, options.days ?? 2));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const sampleSize = Math.max(0, Math.min(20, options.sampleSize ?? 8));
+  const baseQuery: Filter<VideoDocument> = {
+    type: 'video',
+    provider: 'youtube',
+    videoId: { $type: 'string' },
+    createdAt: { $gte: since },
+  } as Filter<VideoDocument>;
+  const missingDetailsQuery: Filter<VideoDocument> = {
+    ...baseQuery,
+    $or: [
+      { duration: { $exists: false } },
+      { description: { $exists: false } },
+      { channelId: { $exists: false } },
+      { channelTitle: { $exists: false } },
+      { thumb: { $exists: false } },
+    ],
+  } as Filter<VideoDocument>;
+
+  let candidates = await collection
+    .find(missingDetailsQuery)
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+
+  if (!candidates.length) {
+    candidates = await collection
+      .find(baseQuery)
+      .sort({ createdAt: -1 })
+      .limit(Math.min(limit, 50))
+      .toArray();
+  }
+
+  const ids = candidates
+    .map((doc) => doc.videoId)
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+  const uniqueIds = Array.from(new Set(ids));
+  const summary: IngestResult & { checked?: number } = {
+    scanned: candidates.length,
+    unique: uniqueIds.length,
+    inserted: 0,
+    updated: 0,
+    dryRun: Boolean(options.dryRun),
+    providerCounts: { youtube: uniqueIds.length },
+    sample: candidates.slice(0, sampleSize),
+    warnings: [],
+    skippedInvalid: candidates.length - uniqueIds.length,
+    existingSkipped: 0,
+    providers: ['youtube'],
+    checked: 0,
+  };
+
+  if (options.dryRun || !uniqueIds.length) return summary;
+
+  const result = await updateYouTubeDetailsForIds(uniqueIds, summary.warnings);
+  summary.checked = result.checked;
+  summary.updated = result.updated;
+  return summary;
 }
 
 export async function redditYouTube(

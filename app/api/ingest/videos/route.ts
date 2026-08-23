@@ -24,6 +24,14 @@ function parseInteger(value: string | null, fallback: number, min: number, max: 
   return Math.max(min, Math.min(max, parsed));
 }
 
+function parseBoolean(value: string | null, fallback = false): boolean {
+  if (value == null) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
+  return fallback;
+}
+
 function normalizeDurations(tokens: string[]): Array<'any' | 'short' | 'medium' | 'long'> {
   if (!tokens.length) return ['any'];
   const result = new Set<'any' | 'short' | 'medium' | 'long'>();
@@ -93,7 +101,9 @@ export async function GET(req: NextRequest) {
     const pages = parseInteger(url.searchParams.get('pages'), 2, 1, 5);
     const days = parseInteger(url.searchParams.get('days'), 120, 1, 365);
     const durationsRaw = parseList(url.searchParams.get('durations') || url.searchParams.get('duration'));
-    const fast = (url.searchParams.get('fast') || '0') === '1';
+    const fast = parseBoolean(url.searchParams.get('fast'), false);
+    const insertOnly = parseBoolean(url.searchParams.get('insertOnly') || url.searchParams.get('insert_only'), false);
+    const skipDetails = parseBoolean(url.searchParams.get('skipDetails') || url.searchParams.get('skip_details'), false);
     const dryParam = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dryParam === '1' || dryParam === 'true';
     const sampleSize = parseInteger(url.searchParams.get('sample'), 6, 1, 20);
@@ -152,6 +162,8 @@ export async function GET(req: NextRequest) {
       durations,
       providers: finalProviders,
       fast,
+      skipDetails,
+      insertOnly,
     });
 
     return NextResponse.json({
@@ -168,6 +180,8 @@ export async function GET(req: NextRequest) {
       durations,
       providers: finalProviders,
       fast,
+      skipDetails,
+      insertOnly,
       ...result,
     });
   } catch (error: unknown) {

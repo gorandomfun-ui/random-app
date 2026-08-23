@@ -64,6 +64,8 @@ type IngestResult = {
   providers?: string[]
   dryRun?: boolean
   providerCounts?: Record<string, number>
+  existingSkipped?: number
+  checked?: number
   _rawStatus?: number
   _rawText?: string
   warnings?: Array<{
@@ -76,6 +78,25 @@ type IngestResult = {
 }
 
 const IMAGE_PROVIDERS = ['giphy', 'pixabay', 'tenor', 'pexels'] as const
+
+type CronRun = {
+  id?: string
+  name?: string
+  status?: string
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
+  details?: Record<string, unknown>
+  error?: string
+}
+
+type CronStatusResponse = {
+  ok?: boolean
+  error?: string
+  runs?: CronRun[]
+  _rawStatus?: number
+  _rawText?: string
+}
 
 type ImageProviderState = { id: string; enabled: boolean }
 type ImageState = { per: number; manualCSV: string; providers: ImageProviderState[] }
@@ -171,6 +192,9 @@ async function callVideosGET(
     reddit: reddit ? 1 : undefined,
     dry: dryRun ? '1' : undefined,
     count: count && count > 0 ? Math.max(3, Math.min(60, count)) : undefined,
+    fast: '1',
+    insertOnly: '1',
+    skipDetails: '1',
   }
   const headers = buildAuthHeaders(trimmedKey)
   let res = await fetch(`/api/ingest/videos?${qs(modern)}`, headers ? { headers } : undefined)
@@ -188,6 +212,9 @@ async function callVideosGET(
     fallbackReddit: reddit ? 1 : undefined,
     dry: dryRun ? '1' : undefined,
     count: count && count > 0 ? Math.max(3, Math.min(60, count)) : undefined,
+    fast: '1',
+    insertOnly: '1',
+    skipDetails: '1',
   }
   res = await fetch(`/api/ingest/videos?${qs(legacy)}`, headers ? { headers } : undefined)
   parsed = await parseResponse(res)
@@ -200,6 +227,7 @@ async function callImagesGET(
   per: number,
   providers: string[] | undefined,
   dryRun: boolean,
+  insertOnly = false,
 ): Promise<IngestResult> {
   const trimmedKey = key.trim()
   const params: Record<string, string | number | boolean | undefined> = {
@@ -208,10 +236,19 @@ async function callImagesGET(
     q: queriesCSV,
     providers: providers?.join(','),
     dry: dryRun ? '1' : undefined,
+    insertOnly: insertOnly ? '1' : undefined,
   }
   const headers = buildAuthHeaders(trimmedKey)
   const res = await fetch(`/api/ingest/images?${qs(params)}`, headers ? { headers } : undefined)
   return parseResponse(res)
+}
+
+async function callCronStatusGET(key: string): Promise<CronStatusResponse> {
+  const trimmedKey = key.trim()
+  const headers = buildAuthHeaders(trimmedKey)
+  const res = await fetch('/api/admin/cron/status?target=daily-auto-summary&limit=10', headers ? { headers } : undefined)
+  const parsed = await parseResponse(res)
+  return parsed as CronStatusResponse
 }
 
 async function callWebGET(
@@ -265,6 +302,8 @@ async function callQuotesGET(
 /* ---------- Composant ---------- */
 export default function AdminIngestPage() {
   const [key, setKey] = useState('')
+  const [automationRuns, setAutomationRuns] = useState<CronRun[]>([])
+  const [automationLoading, setAutomationLoading] = useState(false)
 
   const [iState, setIState] = useState<ImageState>(DEFAULT_IMAGE_STATE)
   const [imageSummary, setImageSummary] = useState<IngestResult | null>(null)
@@ -371,6 +410,44 @@ export default function AdminIngestPage() {
     })
   }
 
+  const asNumber = (value: unknown) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  const formatDuration = (ms: unknown) => {
+    const totalSeconds = Math.max(0, Math.round(asNumber(ms) / 1000))
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return minutes ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`
+  }
+
+  const formatDate = (value: unknown) => {
+    if (typeof value !== 'string') return '—'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '—'
+    return date.toLocaleString()
+  }
+
+  async function loadAutomationReports() {
+    const authKey = key.trim()
+    if (!authKey) return pushLog('⚠️ Renseigne ADMIN_INGEST_KEY')
+    setAutomationLoading(true)
+    try {
+      const res = await callCronStatusGET(authKey)
+      if (res.ok) {
+        setAutomationRuns(Array.isArray(res.runs) ? res.runs : [])
+        pushLog(`✅ Rapports auto chargés: ${Array.isArray(res.runs) ? res.runs.length : 0}`)
+      } else if (res._rawStatus || res._rawText) {
+        pushLog(`❌ Rapports auto — raw(${res._rawStatus}): ${String(res._rawText).slice(0,240)}`)
+      } else {
+        pushLog(`❌ Rapports auto — ${res.error || 'Erreur inconnue'}`)
+      }
+    } finally {
+      setAutomationLoading(false)
+    }
+  }
+
   // Persist confort
   useEffect(() => {
     try {
@@ -439,7 +516,7 @@ export default function AdminIngestPage() {
     const res = await callVideosGET(authKey, csv, vState.per, vState.pages, vState.days, vState.reddit, false, vState.count)
     if (res.ok) {
       setVideoSummary(res)
-      pushLog(`✅ VIDEOS — scanned:${res.scanned??0} unique:${res.unique??0} inserted:${res.inserted??0} updated:${res.updated??0}`)
+      pushLog(`✅ VIDEOS — scanned:${res.scanned??0} unique:${res.unique??0} inserted:${res.inserted??0} updated:${res.updated??0} existing:${res.existingSkipped??0}`)
       if (res.queries?.length) {
         pushLog(`🔁 VIDEOS requêtes — ${res.queries.join(' | ')}`)
       }
@@ -522,7 +599,7 @@ export default function AdminIngestPage() {
     pushLog('🔍 IMAGES preview…')
     const manual = iState.manualCSV.split(',').map((s) => s.trim()).filter(Boolean)
     const providerList = selectedProviders.length ? selectedProviders : undefined
-    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, true)
+    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, true, true)
     if (res.ok) {
       setImageSummary(res)
       if (Array.isArray(res.queries)) {
@@ -543,10 +620,10 @@ export default function AdminIngestPage() {
     pushLog('▶️ IMAGES: start')
     const manual = iState.manualCSV.split(',').map((s) => s.trim()).filter(Boolean)
     const providerList = selectedProviders.length ? selectedProviders : undefined
-    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, false)
+    const res = await callImagesGET(authKey, manual.length ? manual.join(',') : undefined, iState.per, providerList, false, true)
     if (res.ok) {
       setImageSummary(res)
-      pushLog(`✅ IMAGES — scanned:${res.scanned ?? 0} unique:${res.unique ?? 0} inserted:${res.inserted ?? 0} updated:${res.updated ?? 0}`)
+      pushLog(`✅ IMAGES — scanned:${res.scanned ?? 0} unique:${res.unique ?? 0} inserted:${res.inserted ?? 0} updated:${res.updated ?? 0} existing:${res.existingSkipped ?? 0}`)
       if (res.queries?.length) pushLog(`🔁 IMAGES requêtes — ${res.queries.join(' | ')}`)
     } else if (res._rawStatus || res._rawText) {
       pushLog(`❌ IMAGES — raw(${res._rawStatus}): ${String(res._rawText).slice(0,240)}`)
@@ -569,6 +646,54 @@ export default function AdminIngestPage() {
           onChange={e=>setKey(e.target.value)}
           style={{ width:'100%', marginTop:6, padding:8 }}
         />
+      </section>
+
+      {/* AUTOMATION */}
+      <section style={{ marginTop: 16, padding: 16, border: '1px solid #eee', borderRadius: 12 }}>
+        <h2>Automatisation</h2>
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          <button onClick={loadAutomationReports} disabled={automationLoading} style={{ padding:'10px 16px', borderRadius:10, border:'1px solid #ddd' }}>
+            {automationLoading ? 'Chargement…' : 'Charger les rapports auto'}
+          </button>
+          <button onClick={ingestImages} style={{ padding:'10px 16px', borderRadius:10, border:'1px solid #ddd' }}>
+            Lancer Images only
+          </button>
+        </div>
+
+        {automationRuns.length ? (
+          <div style={{ marginTop:12, display:'grid', gap:10 }}>
+            {automationRuns.map((run, idx) => {
+              const details = run.details || {}
+              const providerCounts = details.providerCounts && typeof details.providerCounts === 'object'
+                ? details.providerCounts as Record<string, unknown>
+                : {}
+              return (
+                <div key={run.id || `${run.startedAt}-${idx}`} style={{ padding:12, border:'1px solid #eee', borderRadius:10, background:'#fafafa' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
+                    <strong>{String(details.profile || 'auto')}</strong>
+                    <span>{formatDate(run.startedAt)} · {run.status || 'unknown'} · {formatDuration(run.durationMs || details.durationMs)}</span>
+                  </div>
+                  <div style={{ marginTop:8, display:'grid', gridTemplateColumns:'repeat(5, minmax(0,1fr))', gap:8, fontSize:13 }}>
+                    <div>Vidéos<br /><strong>{asNumber(details.videoInserted)}</strong></div>
+                    <div>Web<br /><strong>{asNumber(details.webInserted)}</strong></div>
+                    <div>Enrichies<br /><strong>{asNumber(details.videoEnriched)}</strong></div>
+                    <div>Doublons<br /><strong>{asNumber(details.existingSkipped)}</strong></div>
+                    <div>Chunks<br /><strong>{asNumber(details.chunks)}</strong></div>
+                  </div>
+                  {Object.keys(providerCounts).length ? (
+                    <div style={{ marginTop:8, fontSize:12 }}>
+                      {Object.entries(providerCounts).map(([provider, count]) => `${provider}:${asNumber(count)}`).join(' · ')}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ marginTop:10, fontSize:13, color:'#666' }}>
+            Charge les rapports pour voir les derniers runs GitHub stockés dans MongoDB.
+          </div>
+        )}
       </section>
 
       {/* IMAGES */}
@@ -614,12 +739,22 @@ export default function AdminIngestPage() {
             Prévisualiser les requêtes
           </button>
           <button onClick={ingestImages} style={{ padding:'10px 16px', borderRadius:10, border:'1px solid #ddd' }}>
-            Lancer l’ingestion Images
+            Lancer l’ingestion Images only
           </button>
         </div>
 
         {imageSummary?.providerCounts || imageSummary?.sample?.length ? (
           <div style={{ marginTop:12, background:'#fafafa', padding:12, borderRadius:10 }}>
+            <div style={{ fontWeight:600, marginBottom:6 }}>Statistiques</div>
+            <ul style={{ margin:0, paddingLeft:16 }}>
+              <li>Scannées: {imageSummary.scanned ?? 0}</li>
+              <li>Uniq.: {imageSummary.unique ?? 0}</li>
+              <li>Insérées: {imageSummary.inserted ?? 0}</li>
+              <li>Mis à jour: {imageSummary.updated ?? 0}</li>
+              <li>Déjà présentes: {imageSummary.existingSkipped ?? 0}</li>
+              <li>Mode dry-run: {imageSummary.dryRun ? 'oui' : 'non'}</li>
+            </ul>
+
             {imageSummary?.queries?.length ? (
               <>
                 <div style={{ fontWeight:600, marginBottom:6 }}>Requêtes générées</div>
@@ -820,6 +955,7 @@ export default function AdminIngestPage() {
               <li>Uniq.: {videoSummary.unique ?? 0}</li>
               <li>Insérés: {videoSummary.inserted ?? 0}</li>
               <li>Mis à jour: {videoSummary.updated ?? 0}</li>
+              <li>Déjà présentes: {videoSummary.existingSkipped ?? 0}</li>
               <li>Mode dry-run: {videoSummary.dryRun ? 'oui' : 'non'}</li>
             </ul>
 

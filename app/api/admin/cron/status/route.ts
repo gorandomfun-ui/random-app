@@ -9,6 +9,7 @@ const MAX_LIMIT = 50
 
 const TARGET_TO_NAME: Record<string, string> = {
   videos: 'cron:videos',
+  'daily-auto-summary': 'cron:daily-auto:summary',
   'daily-auto': 'cron:daily-auto:combo-videos',
   'daily-auto-trending': 'cron:daily-auto:trending',
   'daily-auto-retro': 'cron:daily-auto:retro',
