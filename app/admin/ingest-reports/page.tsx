@@ -28,6 +28,7 @@ type PhaseReport = {
   existingSkipped?: number
   checked?: number
   providerCounts?: Record<string, number>
+  result?: Record<string, unknown>
   error?: string
 }
 
@@ -78,6 +79,12 @@ function providerSummary(value: unknown): string {
 function normalizePhases(value: unknown): PhaseReport[] {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is PhaseReport => Boolean(entry) && typeof entry === 'object')
+}
+
+function phaseNumber(phase: PhaseReport, key: string): number {
+  const flat = asNumber((phase as Record<string, unknown>)[key])
+  if (flat) return flat
+  return asNumber(phase.result?.[key])
 }
 
 const STYLES: Record<string, React.CSSProperties> = {
@@ -356,14 +363,19 @@ export default function IngestReportsPage() {
                       {phases.length ? (
                         <tr>
                           <td colSpan={9} style={STYLES.phaseTd}>
-                            {phases.map((phase) => (
-                              <span key={`${run.id}-${phase.phase}`} style={STYLES.phase}>
-                                {phase.phase || 'phase'}: {phase.ok === false ? 'erreur' : 'ok'}
-                                {' '}· {formatDuration(phase.durationMs)}
-                                {' '}· insérées {asNumber(phase.inserted)}
-                                {phase.checked ? ` · enrichies ${asNumber(phase.updated) || asNumber(phase.checked)}` : ''}
-                              </span>
-                            ))}
+                            {phases.map((phase, phaseIndex) => {
+                              const inserted = phaseNumber(phase, 'inserted')
+                              const updated = phaseNumber(phase, 'updated')
+                              const checked = phaseNumber(phase, 'checked')
+                              return (
+                                <span key={`${run.id}-${phase.phase}-${phaseIndex}`} style={STYLES.phase}>
+                                  {phase.phase || 'phase'}: {phase.error || phase.ok === false ? 'erreur' : 'ok'}
+                                  {' '}· {formatDuration(phase.durationMs)}
+                                  {' '}· insérées {inserted}
+                                  {checked ? ` · enrichies ${updated || checked}` : ''}
+                                </span>
+                              )
+                            })}
                           </td>
                         </tr>
                       ) : null}
