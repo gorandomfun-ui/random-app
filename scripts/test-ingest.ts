@@ -7,7 +7,7 @@ import { GET as quotesGET } from '@/app/api/ingest/quotes/route'
 type TestResult = { name: string; status: number; body: unknown }
 
 async function main() {
-  const key = (process.env.ADMIN_INGEST_KEY || 'RANDOMAPPADMINKEY2024').trim()
+  const key = (process.env.ADMIN_INGEST_KEY?.trim() || `test-admin-${Date.now()}`)
   process.env.ADMIN_INGEST_KEY = key
   process.env.YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'dummy'
   process.env.GOOGLE_CSE_KEY = process.env.GOOGLE_CSE_KEY || 'dummy'
