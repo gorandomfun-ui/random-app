@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db';
-import type { Collection, Db, Filter } from 'mongodb';
+import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
 import { deriveToneAugmentation, flattenToneSegments } from './tone';
 
@@ -49,6 +49,7 @@ export type VideoDocument = {
   toneConfidence?: number;
   toneSignals?: string[];
   rand?: number;
+  enrichedAt?: Date;
 };
 
 type IngestVideosOptions = {
@@ -82,6 +83,7 @@ type IngestResult = {
   skippedInvalid?: number;
   existingSkipped?: number;
   providers?: string[];
+  remaining?: number;
 };
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
@@ -773,6 +775,8 @@ async function updateYouTubeDetailsForIds(
     const items = data?.items ?? [];
     if (!items.length) continue;
     checked += items.length;
+    const operations: AnyBulkWriteOperation<VideoDocument>[] = [];
+    const now = new Date();
     for (const item of items) {
       if (!item?.id) continue;
       const update: Record<string, unknown> = {};
@@ -789,15 +793,33 @@ async function updateYouTubeDetailsForIds(
       if (high) update.thumb = high;
       if (item.contentDetails?.duration) update.duration = item.contentDetails.duration;
       if (!Object.keys(update).length) continue;
-      update.updatedAt = new Date();
-      const result = await collection.updateOne(
-        { type: 'video', videoId: item.id },
-        { $set: update },
-      );
-      updated += result.matchedCount || 0;
+      update.updatedAt = now;
+      update.enrichedAt = now;
+      operations.push({
+        updateOne: {
+          filter: { type: 'video', provider: 'youtube', videoId: item.id },
+          update: { $set: update },
+        },
+      });
+    }
+    if (operations.length) {
+      const result = await collection.bulkWrite(operations, { ordered: false });
+      updated += result.modifiedCount || 0;
     }
   }
   return { checked, updated };
+}
+
+function hasUsefulValue(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function needsYouTubeDetails(doc: VideoDocument): boolean {
+  return !hasUsefulValue(doc.duration)
+    || !hasUsefulValue(doc.description)
+    || !hasUsefulValue(doc.channelId)
+    || !hasUsefulValue(doc.channelTitle)
+    || !hasUsefulValue(doc.thumb);
 }
 
 export async function enrichRecentYouTubeVideos(options: {
@@ -807,40 +829,33 @@ export async function enrichRecentYouTubeVideos(options: {
   sampleSize?: number;
 } = {}): Promise<IngestResult & { checked?: number }> {
   const collection = await getCollection();
-  const limit = Math.max(1, Math.min(500, options.limit ?? 120));
+  const limit = Math.max(1, Math.min(120, options.limit ?? 25));
   const days = Math.max(1, Math.min(30, options.days ?? 2));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const sampleSize = Math.max(0, Math.min(20, options.sampleSize ?? 8));
+  collection.createIndex(
+    { type: 1, provider: 1, createdAt: -1 },
+    { name: 'video_provider_createdAt_lookup', partialFilterExpression: { type: 'video' } },
+  ).catch((error) => {
+    console.warn('[ingest:videos] failed to ensure enrichment index', error);
+  });
   const baseQuery: Filter<VideoDocument> = {
     type: 'video',
     provider: 'youtube',
     videoId: { $type: 'string' },
     createdAt: { $gte: since },
   } as Filter<VideoDocument>;
-  const missingDetailsQuery: Filter<VideoDocument> = {
-    ...baseQuery,
-    $or: [
-      { duration: { $exists: false } },
-      { description: { $exists: false } },
-      { channelId: { $exists: false } },
-      { channelTitle: { $exists: false } },
-      { thumb: { $exists: false } },
-    ],
-  } as Filter<VideoDocument>;
 
-  let candidates = await collection
-    .find(missingDetailsQuery)
+  const scanLimit = Math.min(600, Math.max(limit * 6, limit));
+  const recentCandidates = await collection
+    .find(baseQuery)
     .sort({ createdAt: -1 })
-    .limit(limit)
+    .limit(scanLimit)
     .toArray();
 
-  if (!candidates.length) {
-    candidates = await collection
-      .find(baseQuery)
-      .sort({ createdAt: -1 })
-      .limit(Math.min(limit, 50))
-      .toArray();
-  }
+  const missingCandidates = recentCandidates.filter(needsYouTubeDetails);
+  const candidates = missingCandidates.slice(0, limit);
+  const remaining = Math.max(0, missingCandidates.length - candidates.length);
 
   const ids = candidates
     .map((doc) => doc.videoId)
@@ -859,6 +874,7 @@ export async function enrichRecentYouTubeVideos(options: {
     existingSkipped: 0,
     providers: ['youtube'],
     checked: 0,
+    remaining,
   };
 
   if (options.dryRun || !uniqueIds.length) return summary;

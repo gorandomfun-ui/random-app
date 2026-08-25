@@ -27,6 +27,7 @@ type PhaseReport = {
   updated?: number
   existingSkipped?: number
   checked?: number
+  remaining?: number
   providerCounts?: Record<string, number>
   result?: Record<string, unknown>
   error?: string
@@ -250,7 +251,7 @@ export default function IngestReportsPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/cron/status?target=daily-auto-summary&limit=20', {
+      const res = await fetch('/api/admin/cron/status?target=daily-auto-summary&target=daily-auto-enrich-summary&limit=30', {
         cache: 'no-store',
         headers: { 'x-admin-ingest-key': authKey },
       })
@@ -270,6 +271,10 @@ export default function IngestReportsPage() {
 
   const totalInserted = useMemo(() => {
     return runs.reduce((sum, run) => sum + asNumber(run.details?.videoInserted), 0)
+  }, [runs])
+
+  const totalEnriched = useMemo(() => {
+    return runs.reduce((sum, run) => sum + asNumber(run.details?.videoEnriched), 0)
   }, [runs])
 
   return (
@@ -307,6 +312,10 @@ export default function IngestReportsPage() {
             <div style={STYLES.metric}>
               <div style={STYLES.metricLabel}>Vidéos insérées</div>
               <div style={STYLES.metricValue}>{totalInserted}</div>
+            </div>
+            <div style={STYLES.metric}>
+              <div style={STYLES.metricLabel}>Vidéos enrichies</div>
+              <div style={STYLES.metricValue}>{totalEnriched}</div>
             </div>
             <div style={STYLES.metric}>
               <div style={STYLES.metricLabel}>Dernier run</div>
@@ -367,12 +376,15 @@ export default function IngestReportsPage() {
                               const inserted = phaseNumber(phase, 'inserted')
                               const updated = phaseNumber(phase, 'updated')
                               const checked = phaseNumber(phase, 'checked')
+                              const remaining = phaseNumber(phase, 'remaining')
                               return (
                                 <span key={`${run.id}-${phase.phase}-${phaseIndex}`} style={STYLES.phase}>
                                   {phase.phase || 'phase'}: {phase.error || phase.ok === false ? 'erreur' : 'ok'}
                                   {' '}· {formatDuration(phase.durationMs)}
                                   {' '}· insérées {inserted}
-                                  {checked ? ` · enrichies ${updated || checked}` : ''}
+                                  {checked ? ` · vérifiées ${checked}` : ''}
+                                  {updated ? ` · enrichies ${updated}` : ''}
+                                  {remaining ? ` · restantes ${remaining}` : ''}
                                 </span>
                               )
                             })}

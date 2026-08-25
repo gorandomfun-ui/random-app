@@ -107,6 +107,7 @@ function compactResult(value: unknown): Record<string, unknown> {
     warnings: Array.isArray(raw.warnings) ? raw.warnings.slice(0, 10) : [],
     dryRun: Boolean(raw.dryRun),
     checked: raw.checked ?? undefined,
+    remaining: raw.remaining ?? undefined,
   }
 }
 

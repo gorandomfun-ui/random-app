@@ -18,19 +18,30 @@ function compactSummary(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object') return {}
   const raw = value as Record<string, unknown>
   return {
+    reportKind: raw.reportKind,
     dryRun: Boolean(raw.dryRun),
+    status: raw.status,
     profile: raw.profile,
     durationMs: raw.durationMs,
     chunks: raw.chunks,
     videoInserted: raw.videoInserted,
     webInserted: raw.webInserted,
+    videoChecked: raw.videoChecked,
     videoEnriched: raw.videoEnriched,
+    enrichRemaining: raw.enrichRemaining,
     existingSkipped: raw.existingSkipped,
     providerCounts: raw.providerCounts,
     minVideoInserted: raw.minVideoInserted,
     maxVideoChunks: raw.maxVideoChunks,
+    errors: Array.isArray(raw.errors) ? raw.errors.slice(0, 20) : [],
     phases: Array.isArray(raw.phases) ? raw.phases.slice(0, 40) : [],
   }
+}
+
+function reportNameFor(details: Record<string, unknown>): string {
+  return details.reportKind === 'enrich'
+    ? 'cron:daily-auto:enrich-summary'
+    : 'cron:daily-auto:summary'
 }
 
 export async function POST(req: NextRequest) {
@@ -50,10 +61,11 @@ export async function POST(req: NextRequest) {
     const durationMs = typeof details.durationMs === 'number'
       ? details.durationMs
       : Math.max(0, finishedAt.getTime() - startedAt.getTime())
+    const status = details.status === 'failure' ? 'failure' : 'success'
 
     await logCronRun({
-      name: 'cron:daily-auto:summary',
-      status: 'success',
+      name: reportNameFor(details),
+      status,
       startedAt,
       finishedAt,
       durationMs,

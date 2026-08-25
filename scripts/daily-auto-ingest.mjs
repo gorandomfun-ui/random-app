@@ -15,7 +15,7 @@ const webCount = readInt('DAILY_AUTO_WEB_COUNT', 8, 1, 20)
 const webPer = readInt('DAILY_AUTO_WEB_PER', 10, 1, 10)
 const webPages = readInt('DAILY_AUTO_WEB_PAGES', 3, 1, 10)
 const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'cse,curated,neocities'
-const enrichLimit = readInt('DAILY_AUTO_ENRICH_LIMIT', 40, 0, 60)
+const enrichLimit = readInt('DAILY_AUTO_ENRICH_LIMIT', 0, 0, 60)
 
 if (!host || !key) {
   console.error('HOST/RANDOM_INGEST_HOST et ADMIN_INGEST_KEY doivent être définis.')
