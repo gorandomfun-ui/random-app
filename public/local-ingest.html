@@ -191,6 +191,43 @@
         logEl.prepend(wrapper)
       }
 
+      function setAdminKey(value) {
+        const nextKey = String(value || '').trim()
+        document.body.dataset.key = nextKey
+        if (nextKey) {
+          localStorage.setItem('local-ingest-key', nextKey)
+        } else {
+          localStorage.removeItem('local-ingest-key')
+        }
+        return nextKey
+      }
+
+      function getAdminKey(promptIfMissing = true) {
+        const current = document.body.dataset.key || ''
+        if (current) return current
+        const stored = localStorage.getItem('local-ingest-key') || ''
+        if (stored) return setAdminKey(stored)
+        if (!promptIfMissing) return ''
+        return setAdminKey(window.prompt('Admin ingest key', '') || '')
+      }
+
+      async function adminFetch(url, options = {}) {
+        const firstHeaders = new Headers(options.headers || {})
+        firstHeaders.set('x-admin-ingest-key', getAdminKey(true))
+        let response = await fetch(url, { ...options, headers: firstHeaders })
+        if (response.status !== 401 && response.status !== 403) return response
+
+        setAdminKey('')
+        appendLog('<p class="error">Clé admin locale refusée. Ancienne clé effacée.</p>')
+        const nextKey = getAdminKey(true)
+        if (!nextKey) return response
+
+        const retryHeaders = new Headers(options.headers || {})
+        retryHeaders.set('x-admin-ingest-key', nextKey)
+        response = await fetch(url, { ...options, headers: retryHeaders })
+        return response
+      }
+
       function setRunning(running) {
         if (buttons.marathon) buttons.marathon.disabled = running
         if (buttons.feeds) buttons.feeds.disabled = running
@@ -328,9 +365,8 @@
 
       async function fetchCombo(regionOverride) {
         const params = new URLSearchParams({ region: regionOverride || getSelectedRegion() })
-        const res = await fetch(`/api/ingest/keywords/combo?${params.toString()}`, {
+        const res = await adminFetch(`/api/ingest/keywords/combo?${params.toString()}`, {
           cache: 'no-store',
-          headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
         })
         if (!res.ok) {
           let detail = ''
@@ -379,7 +415,6 @@
         const selectedVideoProviders = videoOverride || getSelectedVideoProviders()
         const selectedImageProviders = imageOverride || getSelectedImageProviders()
         const selectedWebProviders = webOverride || getSelectedWebProviders()
-        const adminKey = document.body.dataset.key || ''
         let executed = 0
         let failures = 0
         let combosInFlight = 0
@@ -419,7 +454,6 @@
           selectedWebProviders,
           isFastVideos,
           fastTimeoutMs,
-          key: adminKey,
           maxCombos: targetCombos,
         }
 
@@ -531,9 +565,8 @@
               staleHours: String(24 * 7),
             })
             if (cursor) params.set('cursor', cursor)
-            const res = await fetch(`/api/tools/videos/obsolete?${params.toString()}`, {
+            const res = await adminFetch(`/api/tools/videos/obsolete?${params.toString()}`, {
               method: 'GET',
-              headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
               signal: controller.signal,
             })
             const data = await res.json().catch(() => ({}))
@@ -579,7 +612,7 @@
           if (!adminKey) return
           try {
             appendLog(`<p>${label} → start ${new Date().toLocaleTimeString()}</p>`)
-            const res = await fetch(endpoint, { headers: { 'x-admin-ingest-key': adminKey } })
+            const res = await adminFetch(endpoint)
             const data = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(data?.error || 'failed')
             appendLog(
@@ -649,7 +682,6 @@
           selectedWebProviders,
           isFastVideos,
           fastTimeoutMs,
-          key,
           maxCombos,
         } = context
 
@@ -707,9 +739,8 @@
         }
 
         try {
-          const res = await fetch(url, {
+          const res = await adminFetch(url, {
             method: 'GET',
-            headers: { 'x-admin-ingest-key': key },
             signal: controller.signal,
           })
           let data = null
@@ -769,13 +800,11 @@
         appendLog(`<p><strong>Sources curées</strong> — ${new Date().toLocaleTimeString()}</p>`)
 
         try {
-          const key = document.body.dataset.key || ''
           const params = new URLSearchParams()
           if (dryRunEl.checked) params.set('dry', '1')
 
-          const res = await fetch(`/api/ingest/video-feeds?${params.toString()}`, {
+          const res = await adminFetch(`/api/ingest/video-feeds?${params.toString()}`, {
             method: 'GET',
-            headers: { 'x-admin-ingest-key': key },
           })
           const data = await res.json()
           if (!res.ok) throw new Error(data?.error || 'Ingest failed')
@@ -793,13 +822,9 @@
         }
       }
 
-      const storedKey = localStorage.getItem('local-ingest-key') || ''
-      const key = storedKey || window.prompt('Admin ingest key', '') || ''
-      document.body.dataset.key = key
-      if (key) localStorage.setItem('local-ingest-key', key)
+      getAdminKey(true)
 
       async function triggerScrape(type) {
-        const key = document.body.dataset.key || ''
         const endpointMap = {
           quotes: '/api/ingest/quotes?pages=20&sites=toscrape,typefit,passiton,zenquotes,github-db,github-programming,github-famous',
           facts: '/api/ingest/facts?sites=numbers,useless,awesomefacts,factslides,interestingfacts,thefactsite',
@@ -814,7 +839,7 @@
           const button = scrapeButtons[entry]
           if (button) button.disabled = true
           try {
-            const res = await fetch(endpointMap[entry], { headers: { 'x-admin-ingest-key': key } })
+            const res = await adminFetch(endpointMap[entry])
             const data = await res.json()
             if (!res.ok) {
               appendLog(`<p class="error">${entry} → ${data?.error || res.statusText}</p>`)

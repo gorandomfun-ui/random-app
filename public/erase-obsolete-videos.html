@@ -296,12 +296,43 @@
       const SCAN_TIMEOUT_MS = 4000
       const SCAN_STALE_HOURS = 24 * 7
 
-      const storedKey = localStorage.getItem('local-ingest-key') || ''
-      adminKey = storedKey || window.prompt('Admin ingest key', '') || ''
-      if (adminKey) {
-        localStorage.setItem('local-ingest-key', adminKey)
+      function setAdminKey(value) {
+        adminKey = String(value || '').trim()
+        document.body.dataset.key = adminKey
+        if (adminKey) {
+          localStorage.setItem('local-ingest-key', adminKey)
+        } else {
+          localStorage.removeItem('local-ingest-key')
+        }
+        return adminKey
       }
-      document.body.dataset.key = adminKey
+
+      function getAdminKey(promptIfMissing = true) {
+        if (adminKey) return adminKey
+        const storedKey = localStorage.getItem('local-ingest-key') || ''
+        if (storedKey) return setAdminKey(storedKey)
+        if (!promptIfMissing) return ''
+        return setAdminKey(window.prompt('Admin ingest key', '') || '')
+      }
+
+      async function adminFetch(url, options = {}) {
+        const firstHeaders = new Headers(options.headers || {})
+        firstHeaders.set('x-admin-ingest-key', getAdminKey(true))
+        let response = await fetch(url, { ...options, headers: firstHeaders })
+        if (response.status !== 401 && response.status !== 403) return response
+
+        setAdminKey('')
+        statusEl.textContent = 'Clé admin locale refusée. Ancienne clé effacée.'
+        const nextKey = getAdminKey(true)
+        if (!nextKey) return response
+
+        const retryHeaders = new Headers(options.headers || {})
+        retryHeaders.set('x-admin-ingest-key', nextKey)
+        response = await fetch(url, { ...options, headers: retryHeaders })
+        return response
+      }
+
+      getAdminKey(true)
 
       if (autoScanToggle) {
         const stored = localStorage.getItem(AUTO_SCAN_PREF_KEY)
@@ -684,9 +715,8 @@
             if (cursor) params.set('cursor', cursor)
             statusEl.textContent = `Scanning batch ${batchIndex + 1}/${SCAN_MAX_BATCHES}… ${aggregate.checked} checked`
 
-            const res = await fetch(`/api/tools/videos/obsolete?${params.toString()}`, {
+            const res = await adminFetch(`/api/tools/videos/obsolete?${params.toString()}`, {
               method: 'GET',
-              headers: { 'x-admin-ingest-key': adminKey },
             })
             const batch = await res.json().catch(() => ({}))
             if (!res.ok) {
@@ -738,11 +768,10 @@
 
         setBusy(true)
         try {
-          const res = await fetch('/api/tools/videos/obsolete', {
+          const res = await adminFetch('/api/tools/videos/obsolete', {
             method: 'DELETE',
             headers: {
               'Content-Type': 'application/json',
-              'x-admin-ingest-key': adminKey,
             },
             body: JSON.stringify({ ids: lastResult.obsolete.map((item) => item.id) }),
           })
