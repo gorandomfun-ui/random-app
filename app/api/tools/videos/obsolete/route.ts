@@ -1,7 +1,7 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { ObjectId } from 'mongodb'
+import { ObjectId, type Db } from 'mongodb'
 import { getDbSafe } from '@/lib/random/data'
 
 type VideoDoc = {
@@ -12,6 +12,8 @@ type VideoDoc = {
   title?: string | null
   thumb?: string | null
   thumbUrl?: string | null
+  obsoleteVideoCheckedAt?: Date | null
+  obsoleteVideoStatus?: 'ok' | 'obsolete' | 'rate-limited' | 'ambiguous' | null
 }
 
 type CheckOutcome = {
@@ -21,11 +23,48 @@ type CheckOutcome = {
   kind?: 'obsolete' | 'rate-limited' | 'ambiguous'
 }
 
+type VideoResult = {
+  id: string
+  provider: string
+  url: string
+  videoId?: string
+  title?: string | null
+  reason: string
+  status: number | null
+}
+
+type ScanResult = {
+  checked: number
+  errors: number
+  obsolete: VideoResult[]
+  rateLimited: VideoResult[]
+  ambiguous: VideoResult[]
+  counts: {
+    total: number
+    providers: Record<string, number>
+    obsolete: { total: number; providers: Record<string, number> }
+    rateLimited: { total: number; providers: Record<string, number> }
+    ambiguous: { total: number; providers: Record<string, number> }
+  }
+}
+
+type PersistedOutcome = {
+  doc: VideoDoc
+  outcome: CheckOutcome
+}
+
 const USER_AGENT = 'RandomAppBot/1.0 (+https://random.app)'
-const FULL_SCAN_CONCURRENCY = 10
-const FULL_SCAN_BATCH_SIZE = 200
-const PROGRESS_INTERVAL = 50
+const DEFAULT_SCAN_LIMIT = 300
+const MAX_SCAN_LIMIT = 1000
+const DEFAULT_SCAN_CONCURRENCY = 24
+const MAX_SCAN_CONCURRENCY = 48
+const DEFAULT_SCAN_TIMEOUT_MS = 4000
+const DEFAULT_STALE_HOURS = 24 * 7
+const DEFAULT_STREAM_BATCHES = 8
+const MAX_STREAM_BATCHES = 40
+const DELETE_CONFIRMATION_MAX_AGE_HOURS = 24 * 14
 const RETRY_DELAY_MS = 200
+let videoScanIndexPromise: Promise<void> | null = null
 
 function isAuthorized(req: NextRequest): boolean {
   const expected = (process.env.ADMIN_INGEST_KEY || '').trim()
@@ -108,11 +147,20 @@ function isExplicitDailymotionUnavailableMessage(message?: string): boolean {
   return unavailableFragments.some((fragment) => normalized.includes(fragment))
 }
 
+function closeResponse(response: Response | null) {
+  try {
+    const cancellation = response?.body?.cancel()
+    cancellation?.catch(() => undefined)
+  } catch {
+    /* ignore */
+  }
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit & { timeoutMs?: number } = {},
 ): Promise<Response | null> {
-  const { timeoutMs = 6000, ...rest } = init
+  const { timeoutMs = DEFAULT_SCAN_TIMEOUT_MS, ...rest } = init
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const extraHeaders = headersToObject(rest.headers)
@@ -124,6 +172,7 @@ async function fetchWithTimeout(
     return await fetch(url, {
       ...rest,
       headers: extraHeaders,
+      redirect: rest.redirect ?? 'follow',
       signal: controller.signal,
     })
   } catch {
@@ -138,23 +187,48 @@ async function fetchStatus(
   init: RequestInit & { timeoutMs?: number } = {},
 ): Promise<number | null> {
   const response = await fetchWithTimeout(url, init)
-  return response ? response.status : null
+  const status = response ? response.status : null
+  closeResponse(response)
+  return status
+}
+
+function classifyHttpStatus(status: number | null, reasonPrefix: string): CheckOutcome {
+  if (status === 429) {
+    return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
+  }
+  if (status === null) {
+    return { obsolete: false, status: null, reason: 'network-error', kind: 'ambiguous' }
+  }
+  if (status === 404 || status === 410 || status === 451) {
+    return { obsolete: true, status, reason: `${reasonPrefix}-${status}` }
+  }
+  if (status >= 200 && status < 400) {
+    return { obsolete: false, status }
+  }
+  if (status === 401 || status === 403) {
+    return { obsolete: false, status, reason: 'restricted', kind: 'ambiguous' }
+  }
+  return { obsolete: false, status, reason: `${reasonPrefix}-${status}`, kind: 'ambiguous' }
 }
 
 async function fetchDailymotionMetadata(
   id: string,
-  { timeoutMs = 5000 }: { timeoutMs?: number } = {},
+  { timeoutMs = DEFAULT_SCAN_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<{ status: number | null; unavailable: boolean; ambiguous?: boolean; reason?: string }> {
   const metadataUrl = `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(id)}`
   const response = await fetchWithTimeout(metadataUrl, { timeoutMs })
   if (!response) {
-    return { status: null, unavailable: false }
+    return { status: null, unavailable: false, ambiguous: true, reason: 'network-error' }
   }
   const status = response.status ?? null
   let payload: unknown
   try {
     payload = await response.json()
-  } catch {}
+  } catch {
+    payload = null
+  } finally {
+    closeResponse(response)
+  }
 
   const extractError = (): string | undefined => {
     if (!payload || typeof payload !== 'object') return undefined
@@ -183,6 +257,12 @@ async function fetchDailymotionMetadata(
   if (status === 404 || status === 410) {
     return { status, unavailable: true, reason: `dailymotion-${status}` }
   }
+  if (status === 429) {
+    return { status, unavailable: false, ambiguous: true, reason: 'rate-limited' }
+  }
+  if (status === 401 || status === 403 || status >= 500) {
+    return { status, unavailable: false, ambiguous: true, reason: `dailymotion-${status}` }
+  }
   if (errorMessage) {
     const reason = `dailymotion-metadata-${errorMessage.replace(/\s+/g, '-').toLowerCase()}`
     if (isExplicitDailymotionUnavailableMessage(errorMessage)) {
@@ -190,7 +270,7 @@ async function fetchDailymotionMetadata(
     }
     return { status, unavailable: false, ambiguous: true, reason }
   }
-  if (status !== null && status >= 400) {
+  if (status >= 400) {
     return { status, unavailable: false, ambiguous: true, reason: `dailymotion-${status}` }
   }
 
@@ -240,115 +320,83 @@ function normalizeProvider(value?: string | null): string {
   return value.toLowerCase().trim() || 'unknown'
 }
 
-async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+async function checkVideo(
+  doc: VideoDoc,
+  { timeoutMs = DEFAULT_SCAN_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<CheckOutcome> {
   const provider = normalizeProvider(doc.provider)
   const url = doc.url?.trim() || ''
   const videoId = doc.videoId?.trim() || ''
 
   if (!url && !videoId) {
-    return { obsolete: true, reason: 'missing-url' }
+    return { obsolete: false, reason: 'missing-url-or-id', kind: 'ambiguous' }
   }
 
   if (provider.includes('youtube')) {
     const rawId = videoId || extractYouTubeId(url) || ''
     const id = sanitizeProviderId(rawId)
-    if (!id) return { obsolete: true, reason: 'missing-video-id' }
+    if (!id) {
+      return { obsolete: false, reason: 'missing-video-id', kind: 'ambiguous' }
+    }
     const status = await fetchStatus(
       `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}`,
-      { timeoutMs: 5000 },
+      { timeoutMs },
     )
-    if (status === 200) return { obsolete: false, status }
-    if (status === 401 || status === 403) {
-      return { obsolete: false, status, reason: 'restricted' }
-    }
-    if (status === 429) {
-      return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
-    }
-    if (status === null) {
-      return { obsolete: false, status: null, reason: 'network-error', kind: 'ambiguous' }
-    }
-    return {
-      obsolete: true,
-      status,
-      reason: `youtube-${status}`,
-    }
+    return classifyHttpStatus(status, 'youtube')
   }
 
   if (provider.includes('dailymotion')) {
     const rawId = videoId || extractDailymotionId(url) || ''
     const id = sanitizeProviderId(rawId)
-    if (!id) return { obsolete: true, reason: 'missing-video-id' }
+    if (!id) {
+      return { obsolete: false, reason: 'missing-video-id', kind: 'ambiguous' }
+    }
 
-    const checkAvailability = async () => {
-      const response = await fetchWithTimeout(
-        `https://api.dailymotion.com/video/${encodeURIComponent(id)}?fields=availability`,
-        { timeoutMs: 5000 },
-      )
-      const status = response?.status ?? null
-      if (!response) {
-        return { kind: 'network-error' as const, status }
-      }
-      if (status === 401 || status === 403) {
-        return { kind: 'restricted' as const, status }
-      }
-      if (status === 429) {
-        return { kind: 'rate-limited' as const, status }
-      }
-      if (status === 400) {
-        return { kind: 'ambiguous' as const, status }
-      }
-      if (!response.ok) {
-        return { kind: 'error' as const, status }
-      }
-      let availability = ''
-      try {
+    const response = await fetchWithTimeout(
+      `https://api.dailymotion.com/video/${encodeURIComponent(id)}?fields=availability`,
+      { timeoutMs },
+    )
+    const availabilityStatus = response?.status ?? null
+    let availability = ''
+    try {
+      if (response?.ok) {
         const json = (await response.json()) as { availability?: string } | null
         if (typeof json?.availability === 'string') {
           availability = json.availability.trim().toLowerCase()
         }
-      } catch {}
-      return { kind: 'ok' as const, status, availability }
+      }
+    } catch {
+      availability = ''
+    } finally {
+      closeResponse(response)
     }
 
-    const availabilityResult = await checkAvailability()
-    if (availabilityResult.kind === 'rate-limited') {
-      return { obsolete: false, status: availabilityResult.status ?? null, reason: 'rate-limited', kind: 'rate-limited' }
+    if (availabilityStatus === 429) {
+      return { obsolete: false, status: availabilityStatus, reason: 'rate-limited', kind: 'rate-limited' }
     }
-    if (availabilityResult.kind === 'restricted') {
-      return { obsolete: false, status: availabilityResult.status ?? null, reason: 'restricted' }
+    if (availabilityStatus === 401 || availabilityStatus === 403 || (availabilityStatus !== null && availabilityStatus >= 500)) {
+      return { obsolete: false, status: availabilityStatus, reason: `dailymotion-${availabilityStatus}`, kind: 'ambiguous' }
     }
-    if (availabilityResult.kind === 'ok') {
-      const availability = availabilityResult.availability || ''
-      if (!availability || availability === 'available' || availability === 'allowed') {
-        const metadata = await fetchDailymotionMetadata(id)
-        if (metadata.unavailable) {
-          return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
-        }
-        if (metadata.ambiguous) {
-          return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
-        }
-        if (metadata.status !== null && metadata.status >= 200 && metadata.status < 400) {
-          return { obsolete: false, status: availabilityResult.status ?? metadata.status ?? null }
-        }
-        return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
-      }
-      return {
-        obsolete: true,
-        status: availabilityResult.status ?? null,
-        reason: `dailymotion-availability-${availability}`,
-      }
+    if (availabilityStatus === 404 || availabilityStatus === 410) {
+      return { obsolete: true, status: availabilityStatus, reason: `dailymotion-${availabilityStatus}` }
     }
 
-    if (availabilityResult.kind === 'ambiguous' || availabilityResult.kind === 'network-error') {
-      const metadata = await fetchDailymotionMetadata(id)
-      if (metadata.status === null) {
-        return { obsolete: false, status: null, reason: 'ambiguous', kind: 'ambiguous' }
+    if (availabilityStatus !== null && availabilityStatus >= 200 && availabilityStatus < 300) {
+      if (availability && availability !== 'available' && availability !== 'allowed') {
+        return {
+          obsolete: true,
+          status: availabilityStatus,
+          reason: `dailymotion-availability-${availability}`,
+        }
       }
-      if (metadata.status === 429) {
+
+      const metadata = await fetchDailymotionMetadata(id, { timeoutMs })
+      if (metadata.reason === 'rate-limited') {
         return { obsolete: false, status: metadata.status, reason: 'rate-limited', kind: 'rate-limited' }
-      }
-      if (metadata.status === 401 || metadata.status === 403) {
-        return { obsolete: false, status: metadata.status, reason: 'restricted' }
       }
       if (metadata.unavailable) {
         return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
@@ -356,43 +404,34 @@ async function checkVideo(doc: VideoDoc): Promise<CheckOutcome> {
       if (metadata.ambiguous) {
         return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
       }
-      if (metadata.status >= 200 && metadata.status < 400) {
-        return { obsolete: false, status: metadata.status }
-      }
-      return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
+      return { obsolete: false, status: availabilityStatus ?? metadata.status ?? null }
     }
 
-    return {
-      obsolete: true,
-      status: availabilityResult.status ?? null,
-      reason: availabilityResult.kind === 'error' ? `dailymotion-${availabilityResult.status ?? 'error'}` : 'network-error',
+    const metadata = await fetchDailymotionMetadata(id, { timeoutMs })
+    if (metadata.reason === 'rate-limited') {
+      return { obsolete: false, status: metadata.status, reason: 'rate-limited', kind: 'rate-limited' }
     }
+    if (metadata.unavailable) {
+      return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
+    }
+    if (metadata.status !== null && metadata.status >= 200 && metadata.status < 400) {
+      return { obsolete: false, status: metadata.status }
+    }
+    return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-ambiguous', kind: 'ambiguous' }
   }
 
   const fallbackId = videoId ? sanitizeProviderId(videoId) : ''
   const targetUrl = url || (fallbackId ? `https://youtu.be/${fallbackId}` : '')
-  if (!targetUrl) return { obsolete: true, reason: 'missing-url' }
+  if (!targetUrl) {
+    return { obsolete: false, reason: 'missing-url', kind: 'ambiguous' }
+  }
 
-  let status = await fetchStatus(targetUrl, { method: 'HEAD', timeoutMs: 5000 })
+  let status = await fetchStatus(targetUrl, { method: 'HEAD', timeoutMs })
   if (status === null || status === 405) {
-    status = await fetchStatus(targetUrl, { method: 'GET', timeoutMs: 5000 })
+    status = await fetchStatus(targetUrl, { method: 'GET', timeoutMs })
   }
 
-  if (status === 429) {
-    return { obsolete: false, status, reason: 'rate-limited', kind: 'rate-limited' }
-  }
-  if (status !== null && status >= 200 && status < 400) {
-    return { obsolete: false, status }
-  }
-  if (status === null) {
-    return { obsolete: false, status: null, reason: 'network-error', kind: 'ambiguous' }
-  }
-
-  return {
-    obsolete: true,
-    status,
-    reason: `status-${status}`,
-  }
+  return classifyHttpStatus(status, 'status')
 }
 
 function delay(ms: number) {
@@ -402,22 +441,347 @@ function delay(ms: number) {
 function isAmbiguousOutcome(outcome: CheckOutcome): boolean {
   const status = outcome.status ?? null
   if (outcome.kind === 'ambiguous') return true
-  if (status === 429) return true
+  if (outcome.kind === 'rate-limited') return true
   if (!outcome.obsolete) return false
   if (status === null) return true
   if (status >= 500) return true
   return false
 }
 
-async function checkVideoWithRetry(doc: VideoDoc, retries = 1): Promise<CheckOutcome> {
+async function checkVideoWithRetry(
+  doc: VideoDoc,
+  retries = 1,
+  options: { timeoutMs?: number } = {},
+): Promise<CheckOutcome> {
   let attempt = 0
-  let result = await checkVideo(doc)
+  let result = await checkVideo(doc, options)
   while (attempt < retries && isAmbiguousOutcome(result)) {
     attempt += 1
     await delay(RETRY_DELAY_MS)
-    result = await checkVideo(doc)
+    result = await checkVideo(doc, options)
   }
   return result
+}
+
+function buildResult(doc: VideoDoc, outcome: CheckOutcome): VideoResult {
+  return {
+    id: doc._id.toHexString(),
+    provider: normalizeProvider(doc.provider),
+    url: doc.url || '',
+    videoId: doc.videoId || undefined,
+    title: doc.title ?? null,
+    reason: outcome.reason || 'unknown',
+    status: outcome.status ?? null,
+  }
+}
+
+function pushCount(counts: Record<string, number>, provider: string) {
+  counts[provider] = (counts[provider] || 0) + 1
+}
+
+function getOutcomeStatus(outcome: CheckOutcome): 'ok' | 'obsolete' | 'rate-limited' | 'ambiguous' {
+  if (outcome.kind === 'rate-limited') return 'rate-limited'
+  if (outcome.kind === 'ambiguous') return 'ambiguous'
+  if (outcome.obsolete) return 'obsolete'
+  return 'ok'
+}
+
+function addScanOutcome(
+  doc: VideoDoc,
+  outcome: CheckOutcome,
+  target: {
+    obsolete: VideoResult[]
+    rateLimited: VideoResult[]
+    ambiguous: VideoResult[]
+    obsoleteCounts: Record<string, number>
+    rateLimitedCounts: Record<string, number>
+    ambiguousCounts: Record<string, number>
+  },
+) {
+  const provider = normalizeProvider(doc.provider)
+  if (outcome.status === 429 || outcome.kind === 'rate-limited') {
+    pushCount(target.rateLimitedCounts, provider)
+    target.rateLimited.push(buildResult(doc, outcome))
+    return
+  }
+  if (outcome.kind === 'ambiguous') {
+    pushCount(target.ambiguousCounts, provider)
+    target.ambiguous.push(buildResult(doc, outcome))
+    return
+  }
+  if (outcome.obsolete) {
+    pushCount(target.obsoleteCounts, provider)
+    target.obsolete.push(buildResult(doc, outcome))
+  }
+}
+
+async function persistScanOutcomes(db: Db, outcomes: PersistedOutcome[]) {
+  if (!outcomes.length) return
+  const checkedAt = new Date()
+  const operations = outcomes.map(({ doc, outcome }) => ({
+    updateOne: {
+      filter: { _id: doc._id, type: 'video' },
+      update: {
+        $set: {
+          obsoleteVideoCheckedAt: checkedAt,
+          obsoleteVideoStatus: getOutcomeStatus(outcome),
+          obsoleteVideoReason: outcome.reason || null,
+          obsoleteVideoHttpStatus: outcome.status ?? null,
+        },
+      },
+    },
+  }))
+
+  try {
+    await db.collection('items').bulkWrite(operations, { ordered: false })
+  } catch {
+    /* A scan result is still useful if status persistence fails. */
+  }
+}
+
+function ensureVideoScanIndexes(db: Db) {
+  if (!videoScanIndexPromise) {
+    videoScanIndexPromise = Promise.all([
+      db.collection('items').createIndex(
+        { type: 1, obsoleteVideoCheckedAt: 1, _id: 1 },
+        {
+          name: 'idx_video_obsolete_checked',
+          partialFilterExpression: { type: 'video' },
+        },
+      ),
+      db.collection('items').createIndex(
+        { type: 1, obsoleteVideoStatus: 1, obsoleteVideoCheckedAt: 1 },
+        {
+          name: 'idx_video_obsolete_status',
+          partialFilterExpression: { type: 'video' },
+        },
+      ),
+    ])
+      .then(() => undefined)
+      .catch((error) => {
+        videoScanIndexPromise = null
+        console.warn('[tools/videos/obsolete] Failed to ensure indexes', error)
+      })
+  }
+  return videoScanIndexPromise
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+) {
+  let index = 0
+  const runners = Array.from({ length: Math.max(1, concurrency) }, async () => {
+    while (index < items.length) {
+      const current = items[index]
+      index += 1
+      await worker(current)
+    }
+  })
+  await Promise.all(runners)
+}
+
+async function scanVideoDocs(
+  db: Db,
+  docs: VideoDoc[],
+  {
+    concurrency = DEFAULT_SCAN_CONCURRENCY,
+    retries = 0,
+    timeoutMs = DEFAULT_SCAN_TIMEOUT_MS,
+    persist = true,
+  }: {
+    concurrency?: number
+    retries?: number
+    timeoutMs?: number
+    persist?: boolean
+  } = {},
+): Promise<ScanResult> {
+  const obsolete: VideoResult[] = []
+  const rateLimited: VideoResult[] = []
+  const ambiguous: VideoResult[] = []
+  const obsoleteCounts: Record<string, number> = {}
+  const rateLimitedCounts: Record<string, number> = {}
+  const ambiguousCounts: Record<string, number> = {}
+  const outcomes: PersistedOutcome[] = []
+  let errors = 0
+
+  await runWithConcurrency(docs, concurrency, async (doc) => {
+    try {
+      const outcome = await checkVideoWithRetry(doc, retries, { timeoutMs })
+      outcomes.push({ doc, outcome })
+      addScanOutcome(doc, outcome, {
+        obsolete,
+        rateLimited,
+        ambiguous,
+        obsoleteCounts,
+        rateLimitedCounts,
+        ambiguousCounts,
+      })
+    } catch {
+      errors += 1
+    }
+  })
+
+  if (persist) {
+    await persistScanOutcomes(db, outcomes)
+  }
+
+  return {
+    checked: docs.length,
+    errors,
+    obsolete,
+    rateLimited,
+    ambiguous,
+    counts: {
+      total: obsolete.length,
+      providers: obsoleteCounts,
+      obsolete: { total: obsolete.length, providers: obsoleteCounts },
+      rateLimited: { total: rateLimited.length, providers: rateLimitedCounts },
+      ambiguous: { total: ambiguous.length, providers: ambiguousCounts },
+    },
+  }
+}
+
+function parseNumberParam(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number(value || String(fallback))
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.floor(parsed)))
+}
+
+function buildChunkFilter({
+  cursorParam,
+  provider,
+  force,
+  staleHours,
+}: {
+  cursorParam: string | null
+  provider: string
+  force: boolean
+  staleHours: number
+}): Record<string, unknown> {
+  const filter: Record<string, unknown> = { type: 'video' }
+
+  if (cursorParam) {
+    filter._id = { $gt: new ObjectId(cursorParam) }
+  }
+  if (provider !== 'unknown' && provider !== 'all') {
+    filter.provider = { $regex: escapeRegExp(provider), $options: 'i' }
+  }
+
+  if (!force) {
+    const staleBefore = new Date(Date.now() - staleHours * 60 * 60 * 1000)
+    filter.$or = [
+      { obsoleteVideoCheckedAt: { $exists: false } },
+      { obsoleteVideoCheckedAt: null },
+      { obsoleteVideoCheckedAt: { $lt: staleBefore } },
+      { obsoleteVideoStatus: { $in: ['obsolete', 'rate-limited', 'ambiguous'] } },
+    ]
+  }
+
+  return filter
+}
+
+async function runChunkScan(
+  db: Db,
+  url: URL,
+  cursorOverride?: string | null,
+): Promise<ScanResult & {
+  ok: true
+  mode: 'chunk'
+  limit: number
+  done: boolean
+  nextCursor: string | null
+  durationMs: number
+}> {
+  await ensureVideoScanIndexes(db)
+
+  const limit = parseNumberParam(url.searchParams.get('limit'), DEFAULT_SCAN_LIMIT, 1, MAX_SCAN_LIMIT)
+  const concurrency = parseNumberParam(
+    url.searchParams.get('concurrency'),
+    DEFAULT_SCAN_CONCURRENCY,
+    1,
+    MAX_SCAN_CONCURRENCY,
+  )
+  const timeoutMs = parseNumberParam(
+    url.searchParams.get('timeoutMs'),
+    DEFAULT_SCAN_TIMEOUT_MS,
+    1000,
+    10000,
+  )
+  const staleHours = parseNumberParam(
+    url.searchParams.get('staleHours'),
+    DEFAULT_STALE_HOURS,
+    1,
+    24 * 365,
+  )
+  const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true'
+  const provider = normalizeProvider(url.searchParams.get('provider'))
+  const cursorParam = cursorOverride ?? url.searchParams.get('cursor')
+  const filter = buildChunkFilter({ cursorParam, provider, force, staleHours })
+
+  const docs = await db
+    .collection<VideoDoc>('items')
+    .find(filter, {
+      projection: {
+        _id: 1,
+        provider: 1,
+        url: 1,
+        videoId: 1,
+        title: 1,
+        thumb: 1,
+        thumbUrl: 1,
+      },
+    })
+    .sort({ _id: 1 })
+    .limit(limit)
+    .toArray()
+
+  const startedAt = Date.now()
+  const result = await scanVideoDocs(db, docs, {
+    concurrency,
+    retries: 0,
+    timeoutMs,
+    persist: true,
+  })
+  const lastDoc = docs[docs.length - 1]
+
+  return {
+    ok: true,
+    mode: 'chunk',
+    limit,
+    checked: result.checked,
+    errors: result.errors,
+    durationMs: Date.now() - startedAt,
+    done: docs.length < limit,
+    nextCursor: lastDoc ? lastDoc._id.toHexString() : null,
+    obsolete: result.obsolete,
+    rateLimited: result.rateLimited,
+    ambiguous: result.ambiguous,
+    counts: result.counts,
+  }
+}
+
+function mergeCounts(target: ScanResult['counts'], source: ScanResult['counts']) {
+  const mergeProviderCounts = (into: Record<string, number>, from: Record<string, number>) => {
+    for (const [provider, value] of Object.entries(from || {})) {
+      into[provider] = (into[provider] || 0) + value
+    }
+  }
+
+  target.total += source.total
+  target.obsolete.total += source.obsolete.total
+  target.rateLimited.total += source.rateLimited.total
+  target.ambiguous.total += source.ambiguous.total
+  mergeProviderCounts(target.providers, source.providers)
+  mergeProviderCounts(target.obsolete.providers, source.obsolete.providers)
+  mergeProviderCounts(target.rateLimited.providers, source.rateLimited.providers)
+  mergeProviderCounts(target.ambiguous.providers, source.ambiguous.providers)
 }
 
 export async function GET(req: NextRequest) {
@@ -433,186 +797,114 @@ export async function GET(req: NextRequest) {
     url.searchParams.get('full') === '1' ||
     url.searchParams.get('full') === 'true' ||
     url.searchParams.get('mode') === 'full'
+  const chunkScan =
+    url.searchParams.get('chunk') === '1' ||
+    url.searchParams.get('chunk') === 'true' ||
+    url.searchParams.get('mode') === 'chunk'
+
+  if (chunkScan) {
+    try {
+      const result = await runChunkScan(db, url)
+      return NextResponse.json(result, {
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('ObjectId')) {
+        return NextResponse.json({ error: 'Invalid cursor' }, { status: 400 })
+      }
+      return NextResponse.json({ error: message || 'Scan failed' }, { status: 500 })
+    }
+  }
 
   if (fullScan) {
-    let cancelled = false
-    let activeCursor: { close: () => Promise<void> } | null = null
-
+    let streamClosed = false
     const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        streamClosed = true
+      },
       async start(controller) {
         const encoder = new TextEncoder()
-        let closed = false
-
-        const writeLine = (payload: Record<string, unknown>) => {
-          if (cancelled || closed) return false
+        const enqueuePayload = (payload: Record<string, unknown>) => {
+          if (streamClosed) return false
           try {
             controller.enqueue(encoder.encode(JSON.stringify(payload) + '\n'))
             return true
           } catch {
-            closed = true
+            streamClosed = true
             return false
           }
         }
 
-        const closeStream = () => {
-          if (closed) return
-          closed = true
-          try {
-            controller.close()
-          } catch {}
+        const maxBatches = parseNumberParam(
+          url.searchParams.get('maxBatches'),
+          DEFAULT_STREAM_BATCHES,
+          1,
+          MAX_STREAM_BATCHES,
+        )
+        const obsolete: VideoResult[] = []
+        const rateLimited: VideoResult[] = []
+        const ambiguous: VideoResult[] = []
+        const counts: ScanResult['counts'] = {
+          total: 0,
+          providers: {},
+          obsolete: { total: 0, providers: {} },
+          rateLimited: { total: 0, providers: {} },
+          ambiguous: { total: 0, providers: {} },
         }
-
-        const obsoleteCounts: Record<string, number> = {}
-        const rateLimitedCounts: Record<string, number> = {}
-        const ambiguousCounts: Record<string, number> = {}
-        const obsolete: Array<{
-          id: string
-          provider: string
-          url: string
-          videoId?: string
-          title?: string | null
-          reason: string
-          status: number | null
-        }> = []
-        const rateLimited: Array<{
-          id: string
-          provider: string
-          url: string
-          videoId?: string
-          title?: string | null
-          reason: string
-          status: number | null
-        }> = []
-        const ambiguous: Array<{
-          id: string
-          provider: string
-          url: string
-          videoId?: string
-          title?: string | null
-          reason: string
-          status: number | null
-        }> = []
         const startTime = Date.now()
-
         let checked = 0
         let errors = 0
-
-        const cursor = db
-          .collection<VideoDoc>('items')
-          .find({ type: 'video' })
-          .sort({ _id: 1 })
-          .batchSize(FULL_SCAN_BATCH_SIZE)
-        activeCursor = cursor
-
-        const pool: Promise<void>[] = []
-
-        const processDoc = async (doc: VideoDoc) => {
-          const provider = normalizeProvider(doc.provider)
-          try {
-            const result = await checkVideoWithRetry(doc, 1)
-            if (result.status === 429 || result.reason === 'rate-limited' || result.kind === 'rate-limited') {
-              rateLimitedCounts[provider] = (rateLimitedCounts[provider] || 0) + 1
-              rateLimited.push({
-                id: doc._id.toHexString(),
-                provider,
-                url: doc.url || '',
-                videoId: doc.videoId || undefined,
-                title: doc.title ?? null,
-                reason: result.reason || 'rate-limited',
-                status: result.status ?? null,
-              })
-            } else if (result.kind === 'ambiguous') {
-              ambiguousCounts[provider] = (ambiguousCounts[provider] || 0) + 1
-              ambiguous.push({
-                id: doc._id.toHexString(),
-                provider,
-                url: doc.url || '',
-                videoId: doc.videoId || undefined,
-                title: doc.title ?? null,
-                reason: result.reason || 'ambiguous',
-                status: result.status ?? null,
-              })
-            } else if (result.obsolete) {
-              obsoleteCounts[provider] = (obsoleteCounts[provider] || 0) + 1
-              obsolete.push({
-                id: doc._id.toHexString(),
-                provider,
-                url: doc.url || '',
-                videoId: doc.videoId || undefined,
-                title: doc.title ?? null,
-                reason: result.reason || 'unknown',
-                status: result.status ?? null,
-              })
-            }
-          } catch {
-            errors += 1
-          } finally {
-            checked += 1
-            if (checked % PROGRESS_INTERVAL === 0) {
-              writeLine({
-                type: 'progress',
-                checked,
-                errors,
-              })
-            }
-          }
-        }
+        let cursor: string | null = url.searchParams.get('cursor')
+        let done = false
+        let batches = 0
 
         try {
-          for await (const doc of cursor) {
-            if (cancelled) break
-            if (pool.length >= FULL_SCAN_CONCURRENCY) {
-              await Promise.race(pool)
-            }
-            const task = processDoc(doc)
-            pool.push(task)
-            task.finally(() => {
-              const idx = pool.indexOf(task)
-              if (idx >= 0) pool.splice(idx, 1)
-            })
-          }
+          while (!streamClosed && batches < maxBatches) {
+            const chunk = await runChunkScan(db, url, cursor)
+            batches += 1
+            checked += chunk.checked
+            errors += chunk.errors
+            obsolete.push(...chunk.obsolete)
+            rateLimited.push(...chunk.rateLimited)
+            ambiguous.push(...chunk.ambiguous)
+            mergeCounts(counts, chunk.counts)
+            cursor = chunk.nextCursor
+            done = chunk.done || !chunk.nextCursor || chunk.checked === 0
 
-          await Promise.all(pool)
-
-          if (!cancelled && checked % PROGRESS_INTERVAL !== 0) {
-            writeLine({
+            enqueuePayload({
               type: 'progress',
+              mode: 'chunked',
+              batch: batches,
               checked,
               errors,
+              done,
+              nextCursor: cursor,
             })
+
+            if (done) break
           }
 
-          if (!cancelled) {
-            writeLine({
+          if (!streamClosed) {
+            enqueuePayload({
               type: 'done',
+              mode: 'chunked',
               checked,
               errors,
+              batches,
+              done,
+              nextCursor: cursor,
               durationMs: Date.now() - startTime,
               obsolete,
               rateLimited,
               ambiguous,
-              counts: {
-                total: obsolete.length,
-                providers: obsoleteCounts,
-                obsolete: {
-                  total: obsolete.length,
-                  providers: obsoleteCounts,
-                },
-                rateLimited: {
-                  total: rateLimited.length,
-                  providers: rateLimitedCounts,
-                },
-                ambiguous: {
-                  total: ambiguous.length,
-                  providers: ambiguousCounts,
-                },
-              },
+              counts,
             })
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          if (!cancelled) {
-            writeLine({
+          if (!streamClosed) {
+            enqueuePayload({
               type: 'error',
               message,
               checked,
@@ -620,17 +912,12 @@ export async function GET(req: NextRequest) {
             })
           }
         } finally {
-          if (activeCursor) {
-            await activeCursor.close().catch(() => {})
-            activeCursor = null
+          streamClosed = true
+          try {
+            controller.close()
+          } catch {
+            /* already closed */
           }
-          closeStream()
-        }
-      },
-      cancel() {
-        cancelled = true
-        if (activeCursor) {
-          void activeCursor.close().catch(() => {})
         }
       },
     })
@@ -645,120 +932,44 @@ export async function GET(req: NextRequest) {
 
   const rawLimit = Number(url.searchParams.get('limit') || '60')
   const rawSkip = Number(url.searchParams.get('skip') || '0')
-  const MAX_LIMIT = 2000
-  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(MAX_LIMIT, Math.floor(rawLimit))) : 60
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(MAX_SCAN_LIMIT, Math.floor(rawLimit))) : 60
   const skip = Number.isFinite(rawSkip) ? Math.max(0, Math.floor(rawSkip)) : 0
 
-  const cursor = db
+  const docs = await db
     .collection<VideoDoc>('items')
-    .find({ type: 'video' })
+    .find({ type: 'video' }, {
+      projection: {
+        _id: 1,
+        provider: 1,
+        url: 1,
+        videoId: 1,
+        title: 1,
+        thumb: 1,
+        thumbUrl: 1,
+      },
+    })
     .sort({ updatedAt: 1 })
     .skip(skip)
     .limit(limit)
+    .toArray()
 
-  const docs = await cursor.toArray()
-  const obsolete: Array<{
-    id: string
-    provider: string
-    url: string
-    videoId?: string
-    title?: string | null
-    reason: string
-    status: number | null
-  }> = []
-  const rateLimited: Array<{
-    id: string
-    provider: string
-    url: string
-    videoId?: string
-    title?: string | null
-    reason: string
-    status: number | null
-  }> = []
-  const ambiguous: Array<{
-    id: string
-    provider: string
-    url: string
-    videoId?: string
-    title?: string | null
-    reason: string
-    status: number | null
-  }> = []
-  const providerCounts: Record<string, number> = {}
-  const rateLimitedCounts: Record<string, number> = {}
-  const ambiguousCounts: Record<string, number> = {}
-  let checked = 0
-
-  for (const doc of docs) {
-    checked += 1
-    const provider = normalizeProvider(doc.provider)
-    const result = await checkVideo(doc)
-    if (result.status === 429 || result.reason === 'rate-limited' || result.kind === 'rate-limited') {
-      rateLimitedCounts[provider] = (rateLimitedCounts[provider] || 0) + 1
-      rateLimited.push({
-        id: doc._id.toHexString(),
-        provider,
-        url: doc.url || '',
-        videoId: doc.videoId || undefined,
-        title: doc.title ?? null,
-        reason: result.reason || 'rate-limited',
-        status: result.status ?? null,
-      })
-      continue
-    }
-
-    if (result.kind === 'ambiguous') {
-      ambiguousCounts[provider] = (ambiguousCounts[provider] || 0) + 1
-      ambiguous.push({
-        id: doc._id.toHexString(),
-        provider,
-        url: doc.url || '',
-        videoId: doc.videoId || undefined,
-        title: doc.title ?? null,
-        reason: result.reason || 'ambiguous',
-        status: result.status ?? null,
-      })
-      continue
-    }
-
-    if (!result.obsolete) continue
-
-    providerCounts[provider] = (providerCounts[provider] || 0) + 1
-    obsolete.push({
-      id: doc._id.toHexString(),
-      provider,
-      url: doc.url || '',
-      videoId: doc.videoId || undefined,
-      title: doc.title ?? null,
-      reason: result.reason || 'unknown',
-      status: result.status ?? null,
-    })
-  }
+  const result = await scanVideoDocs(db, docs, {
+    concurrency: Math.min(DEFAULT_SCAN_CONCURRENCY, limit),
+    retries: 0,
+    timeoutMs: DEFAULT_SCAN_TIMEOUT_MS,
+    persist: true,
+  })
 
   return NextResponse.json({
     ok: true,
     limit,
     skip,
-    checked,
-    obsolete,
-    rateLimited,
-    ambiguous,
-    counts: {
-      total: obsolete.length,
-      providers: providerCounts,
-      obsolete: {
-        total: obsolete.length,
-        providers: providerCounts,
-      },
-      rateLimited: {
-        total: rateLimited.length,
-        providers: rateLimitedCounts,
-      },
-      ambiguous: {
-        total: ambiguous.length,
-        providers: ambiguousCounts,
-      },
-    },
+    checked: result.checked,
+    errors: result.errors,
+    obsolete: result.obsolete,
+    rateLimited: result.rateLimited,
+    ambiguous: result.ambiguous,
+    counts: result.counts,
   })
 }
 
@@ -782,7 +993,7 @@ export async function DELETE(req: NextRequest) {
     : []
 
   if (!ids.length) {
-    return NextResponse.json({ deleted: 0 })
+    return NextResponse.json({ deleted: 0, requested: 0, eligible: 0, verified: 0 })
   }
 
   const objectIds: ObjectId[] = []
@@ -790,16 +1001,78 @@ export async function DELETE(req: NextRequest) {
     if (typeof raw !== 'string') continue
     try {
       objectIds.push(new ObjectId(raw))
-    } catch {}
+    } catch {
+      /* ignore invalid ids */
+    }
   }
 
   if (!objectIds.length) {
-    return NextResponse.json({ deleted: 0 })
+    return NextResponse.json({ deleted: 0, requested: ids.length, eligible: 0, verified: 0 })
+  }
+
+  const freshAfter = new Date(Date.now() - DELETE_CONFIRMATION_MAX_AGE_HOURS * 60 * 60 * 1000)
+  const eligibleDocs = await db
+    .collection<VideoDoc>('items')
+    .find({
+      _id: { $in: objectIds },
+      type: 'video',
+      obsoleteVideoStatus: 'obsolete',
+      obsoleteVideoCheckedAt: { $gte: freshAfter },
+    }, {
+      projection: {
+        _id: 1,
+        provider: 1,
+        url: 1,
+        videoId: 1,
+        title: 1,
+        thumb: 1,
+        thumbUrl: 1,
+      },
+    })
+    .toArray()
+
+  if (!eligibleDocs.length) {
+    return NextResponse.json({
+      deleted: 0,
+      requested: objectIds.length,
+      eligible: 0,
+      verified: 0,
+      skipped: objectIds.length,
+      message: 'No recently confirmed obsolete videos to delete.',
+    })
+  }
+
+  const verification = await scanVideoDocs(db, eligibleDocs, {
+    concurrency: Math.min(8, eligibleDocs.length),
+    retries: 1,
+    timeoutMs: DEFAULT_SCAN_TIMEOUT_MS,
+    persist: true,
+  })
+  const verifiedIds = verification.obsolete.map((item) => new ObjectId(item.id))
+
+  if (!verifiedIds.length) {
+    return NextResponse.json({
+      deleted: 0,
+      requested: objectIds.length,
+      eligible: eligibleDocs.length,
+      verified: 0,
+      skipped: objectIds.length,
+      message: 'Deletion skipped because verification did not reconfirm obsolete videos.',
+    })
   }
 
   const res = await db
     .collection('items')
-    .deleteMany({ _id: { $in: objectIds }, type: 'video' })
+    .deleteMany({
+      _id: { $in: verifiedIds },
+      type: 'video',
+      obsoleteVideoStatus: 'obsolete',
+    })
 
-  return NextResponse.json({ deleted: res.deletedCount ?? 0 })
+  return NextResponse.json({
+    deleted: res.deletedCount ?? 0,
+    requested: objectIds.length,
+    eligible: eligibleDocs.length,
+    verified: verifiedIds.length,
+  })
 }

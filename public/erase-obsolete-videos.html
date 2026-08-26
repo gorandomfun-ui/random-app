@@ -250,18 +250,18 @@
       <h1>Erase Obsolete Videos</h1>
       <p class="description">
         Scan the <code>items</code> collection for videos that look unavailable (404, removed, dead links).
-        The tool now sweeps the full catalog in one go so you always get an up-to-date obsolete list.
+        The tool scans short resumable batches, stores the last check status, and keeps temporary failures away from deletion.
       </p>
 
       <div class="controls">
-        <button id="scanBtn" class="primary" type="button">Scan all videos</button>
+        <button id="scanBtn" class="primary" type="button">Scan video batches</button>
         <button id="deleteBtn" class="danger" type="button" disabled>Delete confirmed obsolete</button>
         <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>429 kept aside</button>
       </div>
 
       <label style="display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;">
         <input id="autoScanToggle" type="checkbox" />
-        Auto-scan quotidien (19h)
+        Auto-scan quotidien par lots
       </label>
       <p id="autoScanStatus" class="note"></p>
 
@@ -290,6 +290,11 @@
       const AUTO_SCAN_KEY = 'erase-obsolete:last-auto-scan'
       const AUTO_SCAN_PREF_KEY = 'erase-obsolete:auto-enabled'
       const AUTO_SCAN_WINDOW_KEY = 'erase-obsolete:last-window'
+      const SCAN_BATCH_LIMIT = 300
+      const SCAN_MAX_BATCHES = 8
+      const SCAN_CONCURRENCY = 24
+      const SCAN_TIMEOUT_MS = 4000
+      const SCAN_STALE_HOURS = 24 * 7
 
       const storedKey = localStorage.getItem('local-ingest-key') || ''
       adminKey = storedKey || window.prompt('Admin ingest key', '') || ''
@@ -354,6 +359,47 @@
                 : {},
           },
         }
+      }
+
+      function emptyCounts() {
+        return {
+          total: 0,
+          providers: {},
+          obsolete: { total: 0, providers: {} },
+          rateLimited: { total: 0, providers: {} },
+          ambiguous: { total: 0, providers: {} },
+        }
+      }
+
+      function mergeProviderCounts(target, source) {
+        Object.entries(source || {}).forEach(([name, value]) => {
+          target[name] = (target[name] || 0) + (Number(value) || 0)
+        })
+      }
+
+      function mergeCounts(target, rawSource) {
+        const source = normalizeCounts(rawSource)
+        target.total += source.total
+        target.obsolete.total += source.obsolete.total
+        target.rateLimited.total += source.rateLimited.total
+        target.ambiguous.total += source.ambiguous.total
+        mergeProviderCounts(target.providers, source.providers)
+        mergeProviderCounts(target.obsolete.providers, source.obsolete.providers)
+        mergeProviderCounts(target.rateLimited.providers, source.rateLimited.providers)
+        mergeProviderCounts(target.ambiguous.providers, source.ambiguous.providers)
+      }
+
+      function mergeBatchResult(target, batch) {
+        target.checked += batch.checked || 0
+        target.errors += batch.errors || 0
+        target.durationMs += batch.durationMs || 0
+        target.batches += 1
+        target.done = Boolean(batch.done)
+        target.nextCursor = batch.nextCursor || null
+        target.obsolete.push(...(Array.isArray(batch.obsolete) ? batch.obsolete : []))
+        target.rateLimited.push(...(Array.isArray(batch.rateLimited) ? batch.rateLimited : []))
+        target.ambiguous.push(...(Array.isArray(batch.ambiguous) ? batch.ambiguous : []))
+        mergeCounts(target.counts, batch.counts)
       }
 
       function updateActionButtons(forceDisable = false) {
@@ -432,7 +478,11 @@
         const obsoleteCount = result.obsolete?.length ?? 0
         const rateLimitedCount = result.rateLimited?.length ?? 0
         const ambiguousCount = result.ambiguous?.length ?? 0
+        const batches = result.batches || 0
         let message = 'Done.'
+        if (batches) {
+          message += ` ${batches} batch${batches > 1 ? 'es' : ''}, ${result.checked || 0} checked.`
+        }
         message += obsoleteCount
           ? ` ${obsoleteCount} obsolete video${obsoleteCount > 1 ? 's' : ''} detected.`
           : ' No confirmed obsolete videos.'
@@ -441,6 +491,9 @@
         }
         if (ambiguousCount) {
           message += ` ${ambiguousCount} network issue${ambiguousCount > 1 ? 's' : ''} saved for manual review.`
+        }
+        if (result.nextCursor && !result.done) {
+          message += ' Run again to continue from the next unchecked batch.'
         }
         return message
       }
@@ -606,102 +659,60 @@
         lastResult = null
         summaryEl.classList.add('hidden')
         listEl.innerHTML = ''
+        const aggregate = {
+          checked: 0,
+          errors: 0,
+          durationMs: 0,
+          batches: 0,
+          done: false,
+          nextCursor: null,
+          obsolete: [],
+          rateLimited: [],
+          ambiguous: [],
+          counts: emptyCounts(),
+        }
         try {
-          const res = await fetch(`/api/tools/videos/obsolete?full=1`, {
-            method: 'GET',
-            headers: { 'x-admin-ingest-key': adminKey },
-          })
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            throw new Error(data?.error || res.statusText)
-          }
-          if (!res.body) {
-            throw new Error('Streaming response not available.')
-          }
+          let cursor = null
+          for (let batchIndex = 0; batchIndex < SCAN_MAX_BATCHES; batchIndex += 1) {
+            const params = new URLSearchParams({
+              mode: 'chunk',
+              limit: String(SCAN_BATCH_LIMIT),
+              concurrency: String(SCAN_CONCURRENCY),
+              timeoutMs: String(SCAN_TIMEOUT_MS),
+              staleHours: String(SCAN_STALE_HOURS),
+            })
+            if (cursor) params.set('cursor', cursor)
+            statusEl.textContent = `Scanning batch ${batchIndex + 1}/${SCAN_MAX_BATCHES}… ${aggregate.checked} checked`
 
-          const reader = res.body.getReader()
-          const decoder = new TextDecoder()
-          let buffer = ''
-          let completed = false
-
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buffer += decoder.decode(value, { stream: true })
-            let newlineIndex = buffer.indexOf('\n')
-            while (newlineIndex !== -1) {
-              const line = buffer.slice(0, newlineIndex).trim()
-              buffer = buffer.slice(newlineIndex + 1)
-              if (line) {
-                const payload = JSON.parse(line)
-                if (payload.type === 'progress') {
-                  const progressMessage =
-                    payload.errors && payload.errors > 0
-                      ? `Scanning… ${payload.checked} checked (${payload.errors} errors)`
-                      : `Scanning… ${payload.checked} checked`
-                  statusEl.textContent = progressMessage
-                } else if (payload.type === 'done') {
-                  completed = true
-                  const counts = normalizeCounts(payload.counts)
-                  const result = {
-                    checked: payload.checked || 0,
-                    errors: payload.errors || 0,
-                    durationMs: payload.durationMs || 0,
-                    obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
-                    rateLimited: Array.isArray(payload.rateLimited) ? payload.rateLimited : [],
-                    ambiguous: Array.isArray(payload.ambiguous) ? payload.ambiguous : [],
-                    counts,
-                  }
-                  lastResult = result
-                  renderSummary(result)
-                  renderList(result)
-                  updateActionButtons()
-                  statusEl.textContent = buildCompletionMessage(result)
-                  await reader.cancel()
-                  break
-                } else if (payload.type === 'error') {
-                  throw new Error(payload.message || 'Scan failed.')
-                }
-              }
-              newlineIndex = buffer.indexOf('\n')
+            const res = await fetch(`/api/tools/videos/obsolete?${params.toString()}`, {
+              method: 'GET',
+              headers: { 'x-admin-ingest-key': adminKey },
+            })
+            const batch = await res.json().catch(() => ({}))
+            if (!res.ok) {
+              throw new Error(batch?.error || res.statusText)
             }
-            if (completed) break
-          }
 
-          if (!completed) {
-            const remainder = buffer + decoder.decode()
-            const trimmed = remainder.trim()
-            if (trimmed) {
-              try {
-                const payload = JSON.parse(trimmed)
-                if (payload.type === 'done') {
-                  const counts = normalizeCounts(payload.counts)
-                  const result = {
-                    checked: payload.checked || 0,
-                    errors: payload.errors || 0,
-                    durationMs: payload.durationMs || 0,
-                    obsolete: Array.isArray(payload.obsolete) ? payload.obsolete : [],
-                    rateLimited: Array.isArray(payload.rateLimited) ? payload.rateLimited : [],
-                    ambiguous: Array.isArray(payload.ambiguous) ? payload.ambiguous : [],
-                    counts,
-                  }
-                  lastResult = result
-                  renderSummary(result)
-                  renderList(result)
-                  updateActionButtons()
-                  statusEl.textContent = buildCompletionMessage(result)
-                } else if (payload.type === 'error') {
-                  throw new Error(payload.message || 'Scan failed.')
-                }
-              } catch (error) {
-                console.warn('Failed to parse trailing payload', error)
-              }
+            mergeBatchResult(aggregate, batch)
+            cursor = batch.nextCursor || null
+            lastResult = aggregate
+            renderSummary(aggregate)
+            renderList(aggregate)
+            updateActionButtons()
+
+            const errorsLabel = aggregate.errors ? ` (${aggregate.errors} errors)` : ''
+            statusEl.textContent = `Scanning… ${aggregate.checked} checked in ${aggregate.batches} batch${aggregate.batches > 1 ? 'es' : ''}${errorsLabel}`
+
+            if (batch.done || !cursor || !batch.checked) {
+              aggregate.done = true
+              break
             }
+
+            await new Promise((resolve) => setTimeout(resolve, 150))
           }
 
-          if (!lastResult) {
-            throw new Error('Scan finished without a result.')
-          }
+          lastResult = aggregate
+          statusEl.textContent = buildCompletionMessage(aggregate)
           return true
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
@@ -740,7 +751,9 @@
             throw new Error(data?.error || res.statusText)
           }
           const deleted = data?.deleted ?? 0
-          statusEl.textContent = `Deleted ${deleted} obsolete video${deleted === 1 ? '' : 's'}.`
+          const verified = typeof data?.verified === 'number' ? ` ${data.verified} rechecked.` : ''
+          const serverMessage = data?.message ? ` ${data.message}` : ''
+          statusEl.textContent = `Deleted ${deleted} obsolete video${deleted === 1 ? '' : 's'}.${verified}${serverMessage}`
           lastResult = null
           summaryEl.classList.add('hidden')
           listEl.innerHTML = ''

@@ -503,48 +503,59 @@
         const controller = new AbortController()
         const cleanup = trackController(controller)
         try {
-          const res = await fetch(`/api/tools/videos/obsolete?full=1`, {
-            method: 'GET',
-            headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
-            signal: controller.signal,
-          })
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            throw new Error(data?.error || res.statusText)
+          const summary = {
+            checked: 0,
+            errors: 0,
+            obsolete: [],
+            rateLimited: [],
+            ambiguous: [],
+            counts: {
+              obsolete: { total: 0 },
+              rateLimited: { total: 0 },
+              ambiguous: { total: 0 },
+            },
           }
-          if (!res.body) throw new Error('Streaming response unavailable')
-          const reader = res.body.getReader()
-          const decoder = new TextDecoder()
-          let buffer = ''
-          let summary = null
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buffer += decoder.decode(value, { stream: true })
-            let newlineIndex = buffer.indexOf('\n')
-            while (newlineIndex !== -1) {
-              const line = buffer.slice(0, newlineIndex).trim()
-              buffer = buffer.slice(newlineIndex + 1)
-              if (line) {
-                const payload = JSON.parse(line)
-                if (payload.type === 'done') {
-                  summary = payload
-                } else if (payload.type === 'error') {
-                  throw new Error(payload.message || 'Scan failed')
-                }
-              }
-              newlineIndex = buffer.indexOf('\n')
-            }
+          let cursor = null
+          const maxBatches = 3
+          for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
             if (stopRequested) {
               controller.abort()
               appendLog('<p class="error">Scan obsolètes interrompu.</p>')
               return null
             }
+            const params = new URLSearchParams({
+              mode: 'chunk',
+              limit: '300',
+              concurrency: '24',
+              timeoutMs: '4000',
+              staleHours: String(24 * 7),
+            })
+            if (cursor) params.set('cursor', cursor)
+            const res = await fetch(`/api/tools/videos/obsolete?${params.toString()}`, {
+              method: 'GET',
+              headers: { 'x-admin-ingest-key': document.body.dataset.key || '' },
+              signal: controller.signal,
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) {
+              throw new Error(data?.error || res.statusText)
+            }
+            summary.checked += data.checked || 0
+            summary.errors += data.errors || 0
+            summary.obsolete.push(...(Array.isArray(data.obsolete) ? data.obsolete : []))
+            summary.rateLimited.push(...(Array.isArray(data.rateLimited) ? data.rateLimited : []))
+            summary.ambiguous.push(...(Array.isArray(data.ambiguous) ? data.ambiguous : []))
+            summary.counts.obsolete.total += data.counts?.obsolete?.total || 0
+            summary.counts.rateLimited.total += data.counts?.rateLimited?.total || 0
+            summary.counts.ambiguous.total += data.counts?.ambiguous?.total || 0
+            cursor = data.nextCursor || null
+            appendLog(`<p>Scan obsolètes → lot ${batchIndex + 1}/${maxBatches}, ${summary.checked} vérifiées.</p>`)
+            if (data.done || !cursor || !data.checked) break
           }
-          if (!summary) return null
           const obsoleteTotal = summary.counts?.obsolete?.total ?? (Array.isArray(summary.obsolete) ? summary.obsolete.length : 0)
           const rateLimitedTotal = summary.counts?.rateLimited?.total ?? (Array.isArray(summary.rateLimited) ? summary.rateLimited.length : 0)
-          appendLog(`<p class="summary">Scan obsolètes → ${obsoleteTotal} obsolètes / ${rateLimitedTotal} rate-limités.</p>`)
+          const ambiguousTotal = summary.counts?.ambiguous?.total ?? (Array.isArray(summary.ambiguous) ? summary.ambiguous.length : 0)
+          appendLog(`<p class="summary">Scan obsolètes → ${obsoleteTotal} obsolètes / ${rateLimitedTotal} rate-limités / ${ambiguousTotal} ambigus.</p>`)
           appendLog('<p style="font-size:12px; color:#555;">Ouvre <a href="/erase-obsolete-videos.html" target="_blank">erase-obsolete-videos.html</a> pour valider la suppression manuelle.</p>')
           return summary
         } catch (error) {
