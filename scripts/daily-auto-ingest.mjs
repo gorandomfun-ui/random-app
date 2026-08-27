@@ -5,7 +5,11 @@ import fs from 'node:fs'
 let host = process.env.HOST || process.env.RANDOM_INGEST_HOST || ''
 const key = process.env.ADMIN_INGEST_KEY || process.env.KEY || ''
 const dryRun = ['1', 'true', 'yes'].includes(String(process.env.DRY_RUN || '').toLowerCase())
-const runProfile = resolveProfile(process.env.DAILY_AUTO_PROFILE || 'auto')
+const runProfile = resolveProfile(process.env.DAILY_AUTO_PROFILE || 'auto', process.env.GITHUB_EVENT_SCHEDULE || '')
+const skipCompleted = readBool(
+  'DAILY_AUTO_SKIP_COMPLETED',
+  process.env.GITHUB_EVENT_NAME === 'schedule',
+)
 
 const minVideoInserted = readInt('DAILY_AUTO_MIN_VIDEO_INSERTED', 600, 0, 5000)
 const maxVideoChunks = readInt('DAILY_AUTO_MAX_VIDEO_CHUNKS', 24, 1, 120)
@@ -46,11 +50,67 @@ function localHour(timeZone) {
   }
 }
 
-function resolveProfile(value) {
+function resolveProfile(value, schedule = '') {
   const normalized = String(value || 'auto').trim().toLowerCase()
   if (normalized === 'morning' || normalized === 'evening') return normalized
+
+  const scheduledHour = scheduledUtcHour(schedule)
+  if (scheduledHour >= 6 && scheduledHour <= 10) return 'morning'
+  if (scheduledHour >= 18 && scheduledHour <= 22) return 'evening'
+
   const hour = localHour('Europe/Amsterdam')
   return hour >= 12 ? 'evening' : 'morning'
+}
+
+function readBool(name, fallback = false) {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase())
+}
+
+function scheduledUtcHour(schedule) {
+  const fields = String(schedule || '').trim().split(/\s+/)
+  if (fields.length < 2) return -1
+  const parsed = Number(fields[1])
+  return Number.isFinite(parsed) ? parsed : -1
+}
+
+function localDateKey(value, timeZone = 'Europe/Amsterdam') {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(value))
+    const year = parts.find((part) => part.type === 'year')?.value
+    const month = parts.find((part) => part.type === 'month')?.value
+    const day = parts.find((part) => part.type === 'day')?.value
+    if (year && month && day) return `${year}-${month}-${day}`
+  } catch {
+    // Fall through to UTC key.
+  }
+  return new Date(value).toISOString().slice(0, 10)
+}
+
+function localHourOf(value, timeZone = 'Europe/Amsterdam') {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(value))
+    const parsed = Number(parts.find((part) => part.type === 'hour')?.value)
+    return Number.isFinite(parsed) ? parsed : new Date(value).getUTCHours()
+  } catch {
+    return new Date(value).getUTCHours()
+  }
+}
+
+function isInCurrentProfileWindow(value) {
+  const hour = localHourOf(value)
+  if (runProfile === 'morning') return hour >= 4 && hour < 14
+  return hour >= 16
 }
 
 function getNumber(value, fallback = 0) {
@@ -157,9 +217,62 @@ async function submitReport(summary) {
   }
 }
 
+async function fetchRecentReports() {
+  const url = new URL('/api/admin/cron/status', host)
+  url.searchParams.set('target', 'daily-auto-summary')
+  url.searchParams.set('limit', '30')
+
+  const response = await fetch(url, {
+    cache: 'no-store',
+    headers: { 'x-admin-ingest-key': key },
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok || body.ok === false) {
+    throw new Error(body.error || `cron status failed with HTTP ${response.status}`)
+  }
+  return Array.isArray(body.runs) ? body.runs : []
+}
+
+async function hasCompletedProfileToday() {
+  if (!skipCompleted || dryRun) return false
+
+  try {
+    const today = localDateKey(Date.now())
+    const reports = await fetchRecentReports()
+    return reports.some((report) => {
+      const details = report && typeof report === 'object' ? report.details || {} : {}
+      if (report?.status !== 'success') return false
+      if (details.dryRun) return false
+      if (details.profile !== runProfile) return false
+      if (details.status === 'failure') return false
+      if (getNumber(details.videoInserted) < minVideoInserted) return false
+      const startedAtValue = report.startedAt || details.startedAt || Date.now()
+      return localDateKey(startedAtValue) === today && isInCurrentProfileWindow(startedAtValue)
+    })
+  } catch (error) {
+    console.warn('Could not check previous daily auto reports; running ingest anyway:', getErrorMessage(error))
+    return false
+  }
+}
+
 function writeGithubSummary(summary) {
   const target = process.env.GITHUB_STEP_SUMMARY
   if (!target) return
+
+  if (summary.status === 'skipped') {
+    const markdown = [
+      `# Daily Auto Ingest`,
+      ``,
+      `**Profile:** ${summary.profile}`,
+      `**Status:** skipped`,
+      ``,
+      `A successful ${summary.profile} run already reached today's target, so this catch-up run did not ingest anything.`,
+      ``,
+    ].join('\n')
+
+    fs.appendFileSync(target, markdown)
+    return
+  }
 
   const rows = summary.phases.map((phase) => {
     const result = phase.result || {}
@@ -211,6 +324,31 @@ function writeGithubSummary(summary) {
 async function main() {
   const started = Date.now()
   const startedAt = new Date(started).toISOString()
+
+  if (await hasCompletedProfileToday()) {
+    const summary = {
+      dryRun,
+      status: 'skipped',
+      profile: runProfile,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - started,
+      chunks: 0,
+      videoInserted: 0,
+      webInserted: 0,
+      videoEnriched: 0,
+      existingSkipped: 0,
+      providerCounts: {},
+      errors: [],
+      minVideoInserted,
+      maxVideoChunks,
+      phases: [],
+    }
+    console.log(`Daily auto ingest skipped: ${runProfile} already reached today's target.`)
+    writeGithubSummary(summary)
+    return
+  }
+
   let videoInserted = 0
   let webInserted = 0
   let videoEnriched = 0

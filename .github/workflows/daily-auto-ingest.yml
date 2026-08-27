@@ -13,11 +13,16 @@ on:
         default: "auto"
   schedule:
     # Europe/Amsterdam rough local times: 09:10 and 21:10.
+    # Catch-up runs at 10:40 and 22:40 skip themselves when the same profile already succeeded today.
     # YouTube quota resets at midnight Pacific, around 09:00 in France/Amsterdam.
     - cron: "10 7 * 4-10 *"
+    - cron: "40 8 * 4-10 *"
     - cron: "10 8 * 1-3,11-12 *"
+    - cron: "40 9 * 1-3,11-12 *"
     - cron: "10 19 * 4-10 *"
+    - cron: "40 20 * 4-10 *"
     - cron: "10 20 * 1-3,11-12 *"
+    - cron: "40 21 * 1-3,11-12 *"
 
 jobs:
   daily-auto-ingest:
@@ -36,6 +41,8 @@ jobs:
           ADMIN_INGEST_KEY: ${{ secrets.ADMIN_INGEST_KEY }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           DAILY_AUTO_PROFILE: ${{ github.event.inputs.profile || 'auto' }}
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
+          DAILY_AUTO_SKIP_COMPLETED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           DAILY_AUTO_MIN_VIDEO_INSERTED: ${{ vars.DAILY_AUTO_MIN_VIDEO_INSERTED || '600' }}
           DAILY_AUTO_MAX_VIDEO_CHUNKS: ${{ vars.DAILY_AUTO_MAX_VIDEO_CHUNKS || '24' }}
           DAILY_AUTO_MAX_RUNTIME_MINUTES: ${{ vars.DAILY_AUTO_MAX_RUNTIME_MINUTES || '110' }}
