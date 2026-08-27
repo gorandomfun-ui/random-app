@@ -57,7 +57,7 @@ const USER_AGENT = 'RandomAppBot/1.0 (+https://random.app)'
 const DEFAULT_SCAN_LIMIT = 300
 const MAX_SCAN_LIMIT = 1000
 const DEFAULT_SCAN_CONCURRENCY = 24
-const MAX_SCAN_CONCURRENCY = 48
+const MAX_SCAN_CONCURRENCY = 80
 const DEFAULT_SCAN_TIMEOUT_MS = 4000
 const DEFAULT_STALE_HOURS = 24 * 7
 const DEFAULT_STREAM_BATCHES = 8
@@ -767,6 +767,40 @@ async function runChunkScan(
   }
 }
 
+async function runScanStats(db: Db, url: URL) {
+  await ensureVideoScanIndexes(db)
+
+  const staleHours = parseNumberParam(
+    url.searchParams.get('staleHours'),
+    DEFAULT_STALE_HOURS,
+    1,
+    24 * 365,
+  )
+  const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true'
+  const provider = normalizeProvider(url.searchParams.get('provider'))
+  const providerFilter =
+    provider !== 'unknown' && provider !== 'all'
+      ? { provider: { $regex: escapeRegExp(provider), $options: 'i' } }
+      : {}
+  const baseFilter = { type: 'video', ...providerFilter }
+  const candidateFilter = buildChunkFilter({ cursorParam: null, provider, force, staleHours })
+  const [total, candidates] = await Promise.all([
+    db.collection('items').countDocuments(baseFilter),
+    db.collection('items').countDocuments(candidateFilter),
+  ])
+
+  return {
+    ok: true,
+    mode: 'stats',
+    total,
+    candidates,
+    alreadyFresh: Math.max(0, total - candidates),
+    force,
+    staleHours,
+    provider,
+  }
+}
+
 function mergeCounts(target: ScanResult['counts'], source: ScanResult['counts']) {
   const mergeProviderCounts = (into: Record<string, number>, from: Record<string, number>) => {
     for (const [provider, value] of Object.entries(from || {})) {
@@ -801,6 +835,19 @@ export async function GET(req: NextRequest) {
     url.searchParams.get('chunk') === '1' ||
     url.searchParams.get('chunk') === 'true' ||
     url.searchParams.get('mode') === 'chunk'
+  const statsScan = url.searchParams.get('mode') === 'stats'
+
+  if (statsScan) {
+    try {
+      const result = await runScanStats(db, url)
+      return NextResponse.json(result, {
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return NextResponse.json({ error: message || 'Stats failed' }, { status: 500 })
+    }
+  }
 
   if (chunkScan) {
     try {

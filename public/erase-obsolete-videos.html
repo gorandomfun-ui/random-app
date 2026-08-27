@@ -34,6 +34,17 @@
         gap: 12px;
         margin-bottom: 16px;
       }
+      .scan-options {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 18px;
+        padding: 12px;
+        margin-bottom: 14px;
+        border: 1px solid #ececec;
+        border-radius: 10px;
+        background: #fafafa;
+      }
       label.input {
         display: inline-flex;
         align-items: center;
@@ -42,6 +53,11 @@
       }
       label.input input {
         width: 80px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+      }
+      label.input select {
         padding: 6px 8px;
         border-radius: 6px;
         border: 1px solid #ccc;
@@ -79,6 +95,22 @@
         font-size: 14px;
         margin-bottom: 12px;
         min-height: 20px;
+      }
+      .progress {
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #e8e8e8;
+        margin-bottom: 14px;
+      }
+      .progress.hidden {
+        display: none;
+      }
+      .progress-bar {
+        width: 0%;
+        height: 100%;
+        background: #1f7aec;
+        transition: width 0.2s ease;
       }
       .summary {
         background: #fafafa;
@@ -199,6 +231,12 @@
           color: #f1f1f1;
           border-color: #2a2d33;
         }
+        label.input select,
+        .scan-options {
+          background: #15181d;
+          color: #f1f1f1;
+          border-color: #2a2d33;
+        }
         button.ghost {
           background: #15181d;
           color: #f1f1f1;
@@ -210,6 +248,9 @@
         .summary {
           background: #161a1f;
           border-color: #22272f;
+        }
+        .progress {
+          background: #252a33;
         }
         .summary-list.muted {
           color: #9da3af;
@@ -250,22 +291,51 @@
       <h1>Erase Obsolete Videos</h1>
       <p class="description">
         Scan the <code>items</code> collection for videos that look unavailable (404, removed, dead links).
-        The tool scans short resumable batches, stores the last check status, and keeps temporary failures away from deletion.
+        The tool runs a full local maintenance scan, stores every checked status, and keeps temporary failures away from deletion.
       </p>
 
       <div class="controls">
-        <button id="scanBtn" class="primary" type="button">Scan video batches</button>
+        <button id="scanBtn" class="primary" type="button">Scan all videos</button>
+        <button id="stopBtn" class="ghost" type="button" disabled>Stop scan</button>
         <button id="deleteBtn" class="danger" type="button" disabled>Delete confirmed obsolete</button>
         <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>429 kept aside</button>
       </div>
 
-      <label style="display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:8px;">
-        <input id="autoScanToggle" type="checkbox" />
-        Auto-scan quotidien par lots
-      </label>
-      <p id="autoScanStatus" class="note"></p>
+      <div class="scan-options">
+        <label class="input">
+          Lot
+          <input id="batchLimit" type="number" min="100" max="1000" step="100" value="1000" />
+        </label>
+        <label class="input">
+          Concurrence
+          <select id="scanConcurrency">
+            <option value="24">24 stable</option>
+            <option value="48" selected>48 rapide</option>
+            <option value="80">80 agressif</option>
+          </select>
+        </label>
+        <label class="input">
+          Timeout
+          <input id="timeoutMs" type="number" min="1000" max="10000" step="500" value="4000" />
+          ms
+        </label>
+        <label class="input">
+          Provider
+          <select id="providerFilter">
+            <option value="all" selected>all</option>
+            <option value="youtube">youtube</option>
+            <option value="dailymotion">dailymotion</option>
+          </select>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+          <input id="forceScan" type="checkbox" checked />
+          Forcer recheck complet
+        </label>
+      </div>
+      <p class="note">Le scan peut durer plusieurs heures. La suppression reste separee et ne touche que les obsoletes confirmees.</p>
 
       <div id="status" class="status"></div>
+      <div id="progress" class="progress hidden"><div id="progressBar" class="progress-bar"></div></div>
       <div id="summary" class="summary hidden"></div>
       <div id="list"></div>
     </main>
@@ -275,25 +345,23 @@
       const summaryEl = document.getElementById('summary')
       const listEl = document.getElementById('list')
       const scanBtn = document.getElementById('scanBtn')
+      const stopBtn = document.getElementById('stopBtn')
       const deleteBtn = document.getElementById('deleteBtn')
       const deleteRateLimitedBtn = document.getElementById('deleteRateLimitedBtn')
-      const autoScanToggle = document.getElementById('autoScanToggle')
-      const autoScanStatus = document.getElementById('autoScanStatus')
+      const batchLimitEl = document.getElementById('batchLimit')
+      const scanConcurrencyEl = document.getElementById('scanConcurrency')
+      const timeoutMsEl = document.getElementById('timeoutMs')
+      const providerFilterEl = document.getElementById('providerFilter')
+      const forceScanEl = document.getElementById('forceScan')
+      const progressEl = document.getElementById('progress')
+      const progressBarEl = document.getElementById('progressBar')
 
       let adminKey = ''
       let busy = false
       let lastResult = null
-      const AUTO_SCAN_WINDOWS = [
-        { hour: 9, minute: 30 },
-        { hour: 19, minute: 0 },
-      ]
-      const AUTO_SCAN_KEY = 'erase-obsolete:last-auto-scan'
-      const AUTO_SCAN_PREF_KEY = 'erase-obsolete:auto-enabled'
-      const AUTO_SCAN_WINDOW_KEY = 'erase-obsolete:last-window'
-      const SCAN_BATCH_LIMIT = 300
-      const SCAN_MAX_BATCHES = 8
-      const SCAN_CONCURRENCY = 24
-      const SCAN_TIMEOUT_MS = 4000
+      let scanController = null
+      let stopRequested = false
+      const MAX_REVIEW_ITEMS = 300
       const SCAN_STALE_HOURS = 24 * 7
 
       function setAdminKey(value) {
@@ -333,15 +401,6 @@
       }
 
       getAdminKey(true)
-
-      if (autoScanToggle) {
-        const stored = localStorage.getItem(AUTO_SCAN_PREF_KEY)
-        autoScanToggle.checked = stored === null ? true : stored === '1'
-        autoScanToggle.addEventListener('change', () => {
-          localStorage.setItem(AUTO_SCAN_PREF_KEY, autoScanToggle.checked ? '1' : '0')
-          updateAutoStatus()
-        })
-      }
 
       function normalizeCounts(rawCounts) {
         const counts = rawCounts && typeof rawCounts === 'object' ? rawCounts : {}
@@ -428,9 +487,15 @@
         target.done = Boolean(batch.done)
         target.nextCursor = batch.nextCursor || null
         target.obsolete.push(...(Array.isArray(batch.obsolete) ? batch.obsolete : []))
-        target.rateLimited.push(...(Array.isArray(batch.rateLimited) ? batch.rateLimited : []))
-        target.ambiguous.push(...(Array.isArray(batch.ambiguous) ? batch.ambiguous : []))
+        pushLimited(target.rateLimited, batch.rateLimited)
+        pushLimited(target.ambiguous, batch.ambiguous)
         mergeCounts(target.counts, batch.counts)
+      }
+
+      function pushLimited(target, source) {
+        if (!Array.isArray(source) || target.length >= MAX_REVIEW_ITEMS) return
+        const available = MAX_REVIEW_ITEMS - target.length
+        target.push(...source.slice(0, available))
       }
 
       function updateActionButtons(forceDisable = false) {
@@ -440,77 +505,13 @@
         deleteRateLimitedBtn.disabled = true
       }
 
-      function getTodayKey(date = new Date()) {
-        return date.toISOString().slice(0, 10)
-      }
-
-      function getAutoWindowTime(window, reference = new Date()) {
-        const d = new Date(reference)
-        d.setHours(window.hour, window.minute, 0, 0)
-        return d
-      }
-
-      function getAutoWindowIndex(now = new Date()) {
-        let index = -1
-        AUTO_SCAN_WINDOWS.forEach((window, idx) => {
-          if (now >= getAutoWindowTime(window, now)) index = idx
-        })
-        return index >= 0 ? index : null
-      }
-
-      function hasAutoScanToday() {
-        const lastRun = localStorage.getItem(AUTO_SCAN_KEY)
-        if (!lastRun) return false
-        return new Date(lastRun).toDateString() === new Date().toDateString()
-      }
-
-      function getLastAutoScanWindow() {
-        const raw = localStorage.getItem(AUTO_SCAN_WINDOW_KEY)
-        if (!raw) return null
-        const [date, index] = raw.split(':')
-        if (date !== getTodayKey()) return null
-        if (index === 'manual') return AUTO_SCAN_WINDOWS.length
-        const parsed = Number(index)
-        return Number.isFinite(parsed) ? parsed : null
-      }
-
-      function markAutoScan(windowIndex = null) {
-        localStorage.setItem(AUTO_SCAN_KEY, new Date().toISOString())
-        const value = typeof windowIndex === 'number' ? String(windowIndex) : 'manual'
-        localStorage.setItem(AUTO_SCAN_WINDOW_KEY, `${getTodayKey()}:${value}`)
-        updateAutoStatus()
-      }
-
-      function updateAutoStatus() {
-        if (!autoScanStatus) return
-        const lastRun = localStorage.getItem(AUTO_SCAN_KEY)
-        const enabled = autoScanToggle ? autoScanToggle.checked : true
-        const windowsLabel = AUTO_SCAN_WINDOWS.map((window) => `${String(window.hour).padStart(2, '0')}:${String(window.minute).padStart(2, '0')}`).join(' / ')
-        let message = lastRun ? `Dernier scan auto: ${new Date(lastRun).toLocaleString()}` : 'Aucun scan auto effectué.'
-        if (enabled) {
-          if (hasAutoScanToday()) {
-            message += ' • Scan du jour effectué.'
-          } else {
-            const lastWindow = getLastAutoScanWindow()
-            const nextWindow = AUTO_SCAN_WINDOWS.find((_, idx) => (lastWindow ?? -1) < idx)
-            if (nextWindow) {
-              message += ` • Prochain auto-scan vers ${String(nextWindow.hour).padStart(2, '0')}:${String(nextWindow.minute).padStart(2, '0')}.`
-            }
-          }
-          message += ` • Fenêtres: ${windowsLabel}.`
-        } else {
-          message += ' • Auto-scan désactivé.'
-        }
-        autoScanStatus.textContent = message
-      }
-
       function buildCompletionMessage(result) {
         if (!result) return ''
         const obsoleteCount = result.obsolete?.length ?? 0
-        const rateLimitedCount = result.rateLimited?.length ?? 0
-        const ambiguousCount = result.ambiguous?.length ?? 0
+        const rateLimitedCount = result.counts?.rateLimited?.total ?? result.rateLimited?.length ?? 0
+        const ambiguousCount = result.counts?.ambiguous?.total ?? result.ambiguous?.length ?? 0
         const batches = result.batches || 0
-        let message = 'Done.'
+        let message = result.stopped ? 'Stopped.' : 'Done.'
         if (batches) {
           message += ` ${batches} batch${batches > 1 ? 'es' : ''}, ${result.checked || 0} checked.`
         }
@@ -523,18 +524,88 @@
         if (ambiguousCount) {
           message += ` ${ambiguousCount} network issue${ambiguousCount > 1 ? 's' : ''} saved for manual review.`
         }
-        if (result.nextCursor && !result.done) {
-          message += ' Run again to continue from the next unchecked batch.'
+        if (result.expectedTotal && result.checked < result.expectedTotal) {
+          message += ` ${Math.max(0, result.expectedTotal - result.checked)} left.`
         }
         return message
+      }
+
+      function getScanOptions() {
+        const batchLimit = Math.max(100, Math.min(1000, Number(batchLimitEl?.value || 1000) || 1000))
+        const concurrency = Math.max(1, Math.min(80, Number(scanConcurrencyEl?.value || 48) || 48))
+        const timeoutMs = Math.max(1000, Math.min(10000, Number(timeoutMsEl?.value || 4000) || 4000))
+        const provider = providerFilterEl?.value || 'all'
+        const force = Boolean(forceScanEl?.checked)
+        return { batchLimit, concurrency, timeoutMs, provider, force }
+      }
+
+      function buildScanParams(options, cursor = null) {
+        const params = new URLSearchParams({
+          mode: 'chunk',
+          limit: String(options.batchLimit),
+          concurrency: String(options.concurrency),
+          timeoutMs: String(options.timeoutMs),
+          staleHours: String(SCAN_STALE_HOURS),
+          provider: options.provider,
+        })
+        if (options.force) params.set('force', '1')
+        if (cursor) params.set('cursor', cursor)
+        return params
+      }
+
+      async function fetchScanStats(options) {
+        const params = new URLSearchParams({
+          mode: 'stats',
+          staleHours: String(SCAN_STALE_HOURS),
+          provider: options.provider,
+        })
+        if (options.force) params.set('force', '1')
+        const res = await adminFetch(`/api/tools/videos/obsolete?${params.toString()}`, { method: 'GET' })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(data?.error || res.statusText)
+        }
+        return data
+      }
+
+      function formatDuration(ms) {
+        if (!ms || ms < 1000) return '0s'
+        const seconds = Math.floor(ms / 1000)
+        const hours = Math.floor(seconds / 3600)
+        const minutes = Math.floor((seconds % 3600) / 60)
+        const rest = seconds % 60
+        if (hours) return `${hours}h ${String(minutes).padStart(2, '0')}m`
+        if (minutes) return `${minutes}m ${String(rest).padStart(2, '0')}s`
+        return `${rest}s`
+      }
+
+      function updateProgress(result) {
+        if (!progressEl || !progressBarEl) return
+        const total = result?.expectedTotal || 0
+        if (!total) {
+          progressEl.classList.add('hidden')
+          progressBarEl.style.width = '0%'
+          return
+        }
+        progressEl.classList.remove('hidden')
+        const pct = Math.max(0, Math.min(100, (result.checked / total) * 100))
+        progressBarEl.style.width = `${pct.toFixed(1)}%`
       }
 
       function setBusy(state) {
         busy = state
         scanBtn.disabled = state
+        if (stopBtn) stopBtn.disabled = !state
+        if (batchLimitEl) batchLimitEl.disabled = state
+        if (scanConcurrencyEl) scanConcurrencyEl.disabled = state
+        if (timeoutMsEl) timeoutMsEl.disabled = state
+        if (providerFilterEl) providerFilterEl.disabled = state
+        if (forceScanEl) forceScanEl.disabled = state
         updateActionButtons(state)
         if (state) {
           statusEl.textContent = 'Scanning…'
+        } else {
+          scanController = null
         }
       }
 
@@ -556,8 +627,14 @@
           typeof data.durationMs === 'number'
             ? (data.durationMs / 1000).toFixed(data.durationMs >= 10000 ? 0 : 1)
             : null
+        const expectedTotal = Number(data.expectedTotal || 0)
+        const catalogTotal = Number(data.catalogTotal || 0)
+        const remaining = expectedTotal ? Math.max(0, expectedTotal - data.checked) : 0
         const stats = [
-          `<strong>Checked:</strong> ${data.checked}`,
+          `<strong>Checked:</strong> ${data.checked}${expectedTotal ? ` / ${expectedTotal}` : ''}`,
+          remaining ? `<strong>Left:</strong> ${remaining}` : null,
+          catalogTotal ? `<strong>Catalog:</strong> ${catalogTotal}` : null,
+          data.batches ? `<strong>Batches:</strong> ${data.batches}` : null,
           data.errors ? `<strong>Errors:</strong> ${data.errors}` : null,
           `<strong>Obsolete:</strong> ${obsoleteTotal}`,
           rateLimitedTotal ? `<strong>429:</strong> ${rateLimitedTotal}` : null,
@@ -598,6 +675,8 @@
           <div>${stats}</div>
           ${duration ? `<div><strong>Duration:</strong> ${duration}s</div>` : ''}
           ${obsoleteList}
+          ${ambiguousTotal > data.ambiguous.length ? `<p class="note">Showing ${data.ambiguous.length} ambiguous examples out of ${ambiguousTotal}.</p>` : ''}
+          ${rateLimitedTotal > data.rateLimited.length ? `<p class="note">Showing ${data.rateLimited.length} rate-limited examples out of ${rateLimitedTotal}.</p>` : ''}
           ${ambiguousList}
           ${rateLimitedList}
         `
@@ -607,6 +686,9 @@
         const obsoleteItems = Array.isArray(data?.obsolete) ? data.obsolete : []
         const rateLimitedItems = Array.isArray(data?.rateLimited) ? data.rateLimited : []
         const ambiguousItems = Array.isArray(data?.ambiguous) ? data.ambiguous : []
+        const counts = normalizeCounts(data?.counts)
+        const rateLimitedTotal = counts.rateLimited.total || rateLimitedItems.length
+        const ambiguousTotal = counts.ambiguous.total || ambiguousItems.length
         const renderItems = (items) =>
           items
             .map((item) => {
@@ -652,7 +734,7 @@
 
         const rateLimitedSection = `
           <section class="list-section rate-limited">
-            <h2>HTTP 429 (rate limited) <span class="badge">${rateLimitedItems.length}</span></h2>
+            <h2>HTTP 429 (rate limited) <span class="badge">${rateLimitedTotal}</span></h2>
             <p class="note">These URLs returned HTTP 429 (Too Many Requests). They are kept aside and are not deleted by this tool.</p>
             ${
               rateLimitedItems.length
@@ -664,7 +746,7 @@
 
         const ambiguousSection = `
           <section class="list-section ambiguous">
-            <h2>Ambiguous / network errors <span class="badge">${ambiguousItems.length}</span></h2>
+            <h2>Ambiguous / network errors <span class="badge">${ambiguousTotal}</span></h2>
             <p class="note">These failed because of network/API errors. Keep them for a later scan or manual review.</p>
             ${
               ambiguousItems.length
@@ -682,41 +764,62 @@
       }
 
       async function scanVideos() {
-        if (!adminKey) {
+        if (!getAdminKey(true)) {
           alert('Missing admin ingest key.')
           return false
         }
         setBusy(true)
+        stopRequested = false
+        scanController = new AbortController()
         lastResult = null
         summaryEl.classList.add('hidden')
+        updateProgress(null)
         listEl.innerHTML = ''
+        const options = getScanOptions()
         const aggregate = {
           checked: 0,
           errors: 0,
           durationMs: 0,
           batches: 0,
           done: false,
+          stopped: false,
           nextCursor: null,
+          expectedTotal: 0,
+          catalogTotal: 0,
           obsolete: [],
           rateLimited: [],
           ambiguous: [],
           counts: emptyCounts(),
         }
         try {
+          const stats = await fetchScanStats(options)
+          aggregate.expectedTotal = Number(stats.candidates || 0)
+          aggregate.catalogTotal = Number(stats.total || 0)
+          lastResult = aggregate
+          renderSummary(aggregate)
+          updateProgress(aggregate)
+
+          if (!aggregate.expectedTotal) {
+            aggregate.done = true
+            statusEl.textContent = options.force
+              ? 'No videos found for this provider.'
+              : 'No videos need checking right now. Enable force recheck for a full audit.'
+            return true
+          }
+
           let cursor = null
-          for (let batchIndex = 0; batchIndex < SCAN_MAX_BATCHES; batchIndex += 1) {
-            const params = new URLSearchParams({
-              mode: 'chunk',
-              limit: String(SCAN_BATCH_LIMIT),
-              concurrency: String(SCAN_CONCURRENCY),
-              timeoutMs: String(SCAN_TIMEOUT_MS),
-              staleHours: String(SCAN_STALE_HOURS),
-            })
-            if (cursor) params.set('cursor', cursor)
-            statusEl.textContent = `Scanning batch ${batchIndex + 1}/${SCAN_MAX_BATCHES}… ${aggregate.checked} checked`
+          const startedAt = Date.now()
+
+          while (!stopRequested) {
+            const params = buildScanParams(options, cursor)
+            const percent = aggregate.expectedTotal
+              ? Math.min(100, (aggregate.checked / aggregate.expectedTotal) * 100).toFixed(1)
+              : '0.0'
+            statusEl.textContent = `Scanning batch ${aggregate.batches + 1}… ${aggregate.checked}/${aggregate.expectedTotal} checked (${percent}%). Elapsed ${formatDuration(Date.now() - startedAt)}.`
 
             const res = await adminFetch(`/api/tools/videos/obsolete?${params.toString()}`, {
               method: 'GET',
+              signal: scanController.signal,
             })
             const batch = await res.json().catch(() => ({}))
             if (!res.ok) {
@@ -729,26 +832,45 @@
             renderSummary(aggregate)
             renderList(aggregate)
             updateActionButtons()
+            updateProgress(aggregate)
 
             const errorsLabel = aggregate.errors ? ` (${aggregate.errors} errors)` : ''
-            statusEl.textContent = `Scanning… ${aggregate.checked} checked in ${aggregate.batches} batch${aggregate.batches > 1 ? 'es' : ''}${errorsLabel}`
+            const left = aggregate.expectedTotal ? Math.max(0, aggregate.expectedTotal - aggregate.checked) : 0
+            const progressPercent = aggregate.expectedTotal
+              ? Math.min(100, (aggregate.checked / aggregate.expectedTotal) * 100).toFixed(1)
+              : '0.0'
+            statusEl.textContent = `Scanning… ${aggregate.checked}/${aggregate.expectedTotal} checked (${progressPercent}%), ${left} left, ${aggregate.batches} batch${aggregate.batches > 1 ? 'es' : ''}${errorsLabel}.`
 
             if (batch.done || !cursor || !batch.checked) {
               aggregate.done = true
               break
             }
 
-            await new Promise((resolve) => setTimeout(resolve, 150))
+            await new Promise((resolve) => setTimeout(resolve, 120))
           }
 
+          if (stopRequested) {
+            aggregate.stopped = true
+          }
+          aggregate.durationMs = Date.now() - startedAt
           lastResult = aggregate
           statusEl.textContent = buildCompletionMessage(aggregate)
           return true
         } catch (error) {
+          if (stopRequested || error?.name === 'AbortError') {
+            aggregate.stopped = true
+            lastResult = aggregate
+            renderSummary(aggregate)
+            renderList(aggregate)
+            updateProgress(aggregate)
+            statusEl.textContent = buildCompletionMessage(aggregate)
+            return false
+          }
           const message = error instanceof Error ? error.message : String(error)
           statusEl.textContent = `Error: ${message}`
           lastResult = null
           summaryEl.classList.add('hidden')
+          updateProgress(null)
           listEl.innerHTML = ''
           return false
         } finally {
@@ -798,34 +920,20 @@
         if (!busy) scanVideos()
       })
 
+      stopBtn.addEventListener('click', () => {
+        if (!busy) return
+        stopRequested = true
+        statusEl.textContent = 'Stopping after current request…'
+        try {
+          scanController?.abort()
+        } catch {
+          /* ignore */
+        }
+      })
+
       deleteBtn.addEventListener('click', () => {
         if (!busy) deleteVideos()
       })
-
-      function scheduleAutoScan() {
-        setTimeout(() => maybeAutoScan(false), 2000)
-        setInterval(() => maybeAutoScan(false), 60000)
-        document.addEventListener('visibilitychange', () => {
-          if (!document.hidden) maybeAutoScan(true)
-        })
-        window.addEventListener('focus', () => maybeAutoScan(true))
-      }
-
-      async function maybeAutoScan(triggeredByVisibility) {
-        if (!autoScanToggle || !autoScanToggle.checked) return
-        if (busy) return
-        if (hasAutoScanToday()) return
-        const now = new Date()
-        const windowIndex = getAutoWindowIndex(now)
-        if (windowIndex === null) return
-        const lastWindow = getLastAutoScanWindow()
-        if (lastWindow !== null && lastWindow >= windowIndex) return
-        const ok = await scanVideos()
-        if (ok) markAutoScan(windowIndex)
-      }
-
-      updateAutoStatus()
-      scheduleAutoScan()
     </script>
   </body>
 </html>
