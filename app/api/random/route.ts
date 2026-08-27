@@ -2,7 +2,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { recordDailyUsage } from '@/lib/metrics/usage'
-import type { ItemType } from '@/lib/random/types'
+import type { ItemType, RandomSelectOptions } from '@/lib/random/types'
 import { selectImage } from '@/lib/random/images'
 import { selectVideo } from '@/lib/random/videos'
 import { selectQuote } from '@/lib/random/quotes'
@@ -42,20 +42,26 @@ function parseTypes(param: string | null): ItemType[] {
   return filtered.length ? filtered : DEFAULT_TYPES.slice()
 }
 
-async function getItemForType(type: ItemType): Promise<RandomItem | null> {
+function parseStrongPool(searchParams: URLSearchParams): boolean {
+  const pool = searchParams.get('pool')?.trim().toLowerCase()
+  const strong = searchParams.get('strong')?.trim().toLowerCase()
+  return pool === 'strong' || strong === '1' || strong === 'true'
+}
+
+async function getItemForType(type: ItemType, options: RandomSelectOptions = {}): Promise<RandomItem | null> {
   switch (type) {
     case 'image':
-      return await selectImage()
+      return await selectImage(options)
     case 'video':
-      return (await selectVideo()) ?? null
+      return (await selectVideo(options)) ?? null
     case 'quote':
-      return (await selectQuote()) ?? null
+      return (await selectQuote(options)) ?? null
     case 'fact':
-      return (await selectFact()) ?? null
+      return (await selectFact(options)) ?? null
     case 'joke':
-      return (await selectJoke()) ?? null
+      return (await selectJoke(options)) ?? null
     case 'web':
-      return (await selectWeb()) ?? null
+      return (await selectWeb(options)) ?? null
     default:
       return null
   }
@@ -85,9 +91,10 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const lang = parseLang(searchParams.get('lang'))
     const types = parseTypes(searchParams.get('types'))
+    const options: RandomSelectOptions = { strong: parseStrongPool(searchParams) }
 
     for (const type of types) {
-      const item = await getItemForType(type)
+      const item = await getItemForType(type, options)
       if (item) {
         return await respondWithItem(item, lang)
       }

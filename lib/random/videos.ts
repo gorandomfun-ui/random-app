@@ -1,5 +1,8 @@
 import type { VideoItem } from '@/lib/random/clientTypes'
 import { sampleFromCache, touchLastShownById } from '@/lib/random/data'
+import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
+import type { RandomSelectOptions } from '@/lib/random/types'
+import type { Filter } from 'mongodb'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -22,6 +25,11 @@ type VideoRecord = {
   source?: { name?: string | null; url?: string | null } | null
   tags?: string[]
   keywords?: string[]
+  likeCount?: number | null
+  quality?: number | null
+  showWeight?: number | null
+  dislikeCount?: number | null
+  isSuppressed?: boolean | null
   tone?: 'positive' | 'neutral' | 'negative' | null
   toneConfidence?: number | null
   toneSignals?: string[] | null
@@ -35,10 +43,19 @@ function registerRecent(id: string) {
   while (recentVideoIds.length > RECENT_LIMIT) recentVideoIds.shift()
 }
 
-async function pickFromDb(exclude: string[], attempts = 12): Promise<(VideoRecord & { _id?: unknown }) | null> {
+async function pickFromDb(
+  exclude: string[],
+  attempts = 12,
+  extraMatch: Filter<VideoRecord> = {},
+): Promise<(VideoRecord & { _id?: unknown }) | null> {
   for (let i = 0; i < attempts; i++) {
-    const filter = exclude.length ? { videoId: { $nin: exclude } } : {}
-    const doc = await sampleFromCache<VideoRecord>('video', filter)
+    const filter = {
+      ...(exclude.length ? { videoId: { $nin: exclude } } : {}),
+      ...extraMatch,
+    } as Filter<VideoRecord>
+    const doc = await sampleFromCache<VideoRecord>('video', filter, {
+      maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
+    })
     if (!doc) return null
     const resolved = resolveUrl(doc)
     if (!resolved) continue
@@ -55,9 +72,12 @@ function resolveUrl(doc: VideoRecord): { url: string; id: string } | null {
   return { url, id: videoId || url }
 }
 
-export async function selectVideo(): Promise<VideoItem | null> {
+export async function selectVideo(options: RandomSelectOptions = {}): Promise<VideoItem | null> {
   const exclude = recentVideoIds.slice(-RECENT_LIMIT)
-  const doc = await pickFromDb(exclude)
+  const strongMatch = options.strong ? buildStrongPoolMatch<VideoRecord>() : null
+  const doc = strongMatch
+    ? (await pickFromDb(exclude, 24, strongMatch)) ?? (await pickFromDb(exclude))
+    : await pickFromDb(exclude)
   if (!doc) return null
 
   const rawItemId = doc && typeof doc === 'object' && '_id' in doc

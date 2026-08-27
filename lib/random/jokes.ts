@@ -1,5 +1,8 @@
 import { sampleFromCache, touchLastShown, getDbSafe } from '@/lib/random/data'
 import { ObjectId } from 'mongodb'
+import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
+import type { RandomSelectOptions } from '@/lib/random/types'
+import type { Filter } from 'mongodb'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -95,6 +98,11 @@ type JokeRecord = {
   tone?: 'positive' | 'neutral' | 'negative' | null
   toneConfidence?: number | null
   toneSignals?: string[] | null
+  likeCount?: number | null
+  quality?: number | null
+  showWeight?: number | null
+  dislikeCount?: number | null
+  isSuppressed?: boolean | null
 }
 
 const trim = (value?: string | null) => (value || '').trim()
@@ -167,9 +175,17 @@ function registerRecent(text: string) {
 
 type JokeDbRecord = JokeRecord & { _id?: unknown }
 
-async function pickFromDb(exclude: string[]): Promise<JokeDbRecord | null> {
-  const filter = exclude.length ? { text: { $nin: exclude } } : {}
-  const doc = await sampleFromCache<JokeDbRecord>('joke', filter)
+async function pickFromDb(
+  exclude: string[],
+  extraMatch: Filter<JokeDbRecord> = {},
+): Promise<JokeDbRecord | null> {
+  const filter = {
+    ...(exclude.length ? { text: { $nin: exclude } } : {}),
+    ...extraMatch,
+  } as Filter<JokeDbRecord>
+  const doc = await sampleFromCache<JokeDbRecord>('joke', filter, {
+    maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
+  })
   if (doc) return doc
   if (exclude.length) return sampleFromCache<JokeDbRecord>('joke')
   return null
@@ -181,15 +197,18 @@ const LOCAL_JOKES = [
   'I would tell you a UDP joke, but you might not get it.',
 ]
 
-export async function selectJoke(): Promise<JokeItem | null> {
+export async function selectJoke(options: RandomSelectOptions = {}): Promise<JokeItem | null> {
   const exclude = recentJokes.slice(-RECENT_LIMIT)
+  const strongMatch = options.strong ? buildStrongPoolMatch<JokeDbRecord>() : null
   let attempts = 0
   let doc: JokeDbRecord | null = null
   let record: JokeDbRecord | { text: string; provider: string } | null = null
   let text = ''
 
   while (attempts < MAX_ATTEMPTS) {
-    doc = await pickFromDb(exclude)
+    doc = strongMatch
+      ? (await pickFromDb(exclude, strongMatch)) ?? (await pickFromDb(exclude))
+      : await pickFromDb(exclude)
     record = doc ?? { text: LOCAL_JOKES.find((j) => !exclude.includes(j.toLowerCase())) || LOCAL_JOKES[0], provider: 'local' }
 
     text = typeof record?.text === 'string' ? record.text.trim() : ''

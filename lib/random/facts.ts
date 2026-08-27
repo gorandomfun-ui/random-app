@@ -2,6 +2,9 @@ import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
 
 import { sampleFromCache, touchLastShown, upsertCache } from '@/lib/random/data'
+import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
+import type { RandomSelectOptions } from '@/lib/random/types'
+import type { Filter } from 'mongodb'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -113,6 +116,11 @@ export type FactDocument = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  likeCount?: number
+  quality?: number
+  showWeight?: number
+  dislikeCount?: number
+  isSuppressed?: boolean
   rand?: number
 }
 
@@ -872,10 +880,15 @@ function registerRecent(text: string) {
   while (recentFacts.length > RECENT_LIMIT) recentFacts.shift()
 }
 
-async function pickFromDb(exclude: string[]): Promise<FactRecord | null> {
-  const baseFilter: Record<string, unknown> = { variant: { $ne: 'quiz' } }
+async function pickFromDb(
+  exclude: string[],
+  extraMatch: Filter<FactRecord> = {},
+): Promise<FactRecord | null> {
+  const baseFilter = { variant: { $ne: 'quiz' }, ...extraMatch } as Filter<FactRecord>
   if (exclude.length) baseFilter.text = { $nin: exclude }
-  const doc = await sampleFromCache<FactRecord>('fact', baseFilter)
+  const doc = await sampleFromCache<FactRecord>('fact', baseFilter, {
+    maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
+  })
   if (doc && doc.variant !== 'quiz') return doc
   if (exclude.length) {
     const fallback = await sampleFromCache<FactRecord>('fact', { variant: { $ne: 'quiz' } })
@@ -884,34 +897,43 @@ async function pickFromDb(exclude: string[]): Promise<FactRecord | null> {
   return null
 }
 
-export async function selectFact(): Promise<FactItem | null> {
+export async function selectFact(options: RandomSelectOptions = {}): Promise<FactItem | null> {
   const exclude = recentFacts.slice(-RECENT_LIMIT)
-  const quizExclusion = buildQuizExclusion(exclude)
+  const strongMatch = options.strong ? buildStrongPoolMatch<FactRecord>() : null
+  let doc: FactRecord | null = null
 
-  if (!lastFactWasQuiz) {
-    const quizEntry = await getNextQuizEntry(quizExclusion)
-    if (quizEntry) {
-      const { item, doc } = quizEntry
-      registerRecent(item.text)
-      const updatedExclusion = buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))
-      await touchLastShown('fact', doc.hash ? { hash: doc.hash } : { text: doc.text })
-      markGlobalItem('fact', item.text)
-      markGlobalProvider(item.provider)
-      markGlobalOrigin(doc._id ? 'db-random' : 'network')
-      markGlobalTopics(Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [])
-      markGlobalKeywords(Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [])
-      servedQuizHistory.add(item.id)
-      if (servedQuizHistory.size > QUIZ_HISTORY_LIMIT) {
-        const oldest = servedQuizHistory.values().next()
-        if (!oldest.done) servedQuizHistory.delete(oldest.value)
-      }
-      lastFactWasQuiz = true
-      ensureQuizPreloaded(updatedExclusion).catch(() => undefined)
-      return item
-    }
+  if (strongMatch) {
+    doc = (await pickFromDb(exclude, strongMatch)) ?? (await pickFromDb(exclude))
   }
 
-  const doc = await pickFromDb(exclude)
+  if (!doc) {
+    const quizExclusion = buildQuizExclusion(exclude)
+
+    if (!lastFactWasQuiz) {
+      const quizEntry = await getNextQuizEntry(quizExclusion)
+      if (quizEntry) {
+        const { item, doc } = quizEntry
+        registerRecent(item.text)
+        const updatedExclusion = buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))
+        await touchLastShown('fact', doc.hash ? { hash: doc.hash } : { text: doc.text })
+        markGlobalItem('fact', item.text)
+        markGlobalProvider(item.provider)
+        markGlobalOrigin(doc._id ? 'db-random' : 'network')
+        markGlobalTopics(Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [])
+        markGlobalKeywords(Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [])
+        servedQuizHistory.add(item.id)
+        if (servedQuizHistory.size > QUIZ_HISTORY_LIMIT) {
+          const oldest = servedQuizHistory.values().next()
+          if (!oldest.done) servedQuizHistory.delete(oldest.value)
+        }
+        lastFactWasQuiz = true
+        ensureQuizPreloaded(updatedExclusion).catch(() => undefined)
+        return item
+      }
+    }
+
+    doc = await pickFromDb(exclude)
+  }
   if (doc) {
     const text = trim(doc.text)
     if (text) {

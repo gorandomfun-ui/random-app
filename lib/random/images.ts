@@ -1,5 +1,7 @@
 import { sampleFromCache, touchLastShown } from '@/lib/random/data'
 import type { ImageDocument } from '@/lib/ingest/images'
+import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
+import type { RandomSelectOptions } from '@/lib/random/types'
 
 export type ImageItem = {
   type: 'image'
@@ -12,8 +14,12 @@ export type ImageItem = {
   _id?: string
 }
 
-export async function selectImage(): Promise<ImageItem> {
-  const doc = await sampleFromCache<ImageDocument>('image')
+export async function selectImage(options: RandomSelectOptions = {}): Promise<ImageItem> {
+  const strongMatch = options.strong ? buildStrongPoolMatch<ImageDocument>() : null
+  const doc = strongMatch
+    ? (await sampleFromCache<ImageDocument>('image', strongMatch, { maxTimeMS: STRONG_POOL_MAX_TIME_MS }))
+      ?? (await sampleFromCache<ImageDocument>('image'))
+    : await sampleFromCache<ImageDocument>('image')
   if (doc && typeof doc.url === 'string' && doc.url.trim()) {
     const url = doc.url.trim()
     const itemId = doc && typeof doc === 'object' && '_id' in doc ? String((doc as { _id: unknown })._id) : undefined

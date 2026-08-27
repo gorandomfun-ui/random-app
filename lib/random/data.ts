@@ -72,22 +72,24 @@ export async function touchLastShownById(id: unknown): Promise<void> {
 export async function sampleFromCache<T extends Document>(
   type: ItemType,
   extraMatch: Filter<T> = {},
+  options: { maxTimeMS?: number } = {},
 ): Promise<WithId<T> | null> {
   const db = await getDbSafe()
   if (!db) return null
   try {
     const collection = db.collection<T>('items')
+    const findOptions = options.maxTimeMS ? { maxTimeMS: options.maxTimeMS } : undefined
     const rand = Math.random()
     const firstFilter: Filter<T> = { type, rand: { $gte: rand }, ...extraMatch }
     const first = await collection
-      .find(firstFilter)
+      .find(firstFilter, findOptions)
       .sort({ rand: 1 })
       .limit(1)
       .toArray()
     if (first.length) return first[0]
     const wrapFilter: Filter<T> = { type, rand: { $lt: rand }, ...extraMatch }
     const wrap = await collection
-      .find(wrapFilter)
+      .find(wrapFilter, findOptions)
       .sort({ rand: 1 })
       .limit(1)
       .toArray()

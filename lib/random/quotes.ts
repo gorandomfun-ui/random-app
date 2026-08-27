@@ -1,4 +1,7 @@
 import { sampleFromCache, touchLastShown } from '@/lib/random/data'
+import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
+import type { RandomSelectOptions } from '@/lib/random/types'
+import type { Filter } from 'mongodb'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -80,6 +83,11 @@ type QuoteRecord = {
   tone?: 'positive' | 'neutral' | 'negative' | null
   toneConfidence?: number | null
   toneSignals?: string[] | null
+  likeCount?: number | null
+  quality?: number | null
+  showWeight?: number | null
+  dislikeCount?: number | null
+  isSuppressed?: boolean | null
 }
 
 const LOCAL_QUOTES = [
@@ -163,9 +171,19 @@ export function createQuoteDocument(doc: Record<string, unknown>): QuoteDocument
   }
 }
 
-async function pickFromDb(exclude: string[], attempts = 20): Promise<QuoteRecord | null> {
+async function pickFromDb(
+  exclude: string[],
+  attempts = 20,
+  extraMatch: Filter<QuoteRecord> = {},
+): Promise<QuoteRecord | null> {
   for (let i = 0; i < attempts; i++) {
-    const doc = await sampleFromCache<QuoteRecord>('quote')
+    const filter = {
+      ...(exclude.length ? { text: { $nin: exclude } } : {}),
+      ...extraMatch,
+    } as Filter<QuoteRecord>
+    const doc = await sampleFromCache<QuoteRecord>('quote', filter, {
+      maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
+    })
     if (!doc) return null
     const text = typeof doc.text === 'string' ? doc.text : ''
     const author = typeof doc.author === 'string' ? doc.author : ''
@@ -176,9 +194,12 @@ async function pickFromDb(exclude: string[], attempts = 20): Promise<QuoteRecord
   return null
 }
 
-export async function selectQuote(): Promise<QuoteItem | null> {
+export async function selectQuote(options: RandomSelectOptions = {}): Promise<QuoteItem | null> {
   const exclude = recentQuotes.slice(-RECENT_LIMIT)
-  const doc = await pickFromDb(exclude)
+  const strongMatch = options.strong ? buildStrongPoolMatch<QuoteRecord>() : null
+  const doc = strongMatch
+    ? (await pickFromDb(exclude, 28, strongMatch)) ?? (await pickFromDb(exclude))
+    : await pickFromDb(exclude)
   const itemId = doc && typeof doc === 'object' && '_id' in doc
     ? String((doc as { _id: unknown })._id)
     : undefined

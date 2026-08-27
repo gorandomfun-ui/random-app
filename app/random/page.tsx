@@ -16,7 +16,7 @@ import ShareMenu from '@/components/ShareMenu'
 import ShufflePicker from '@/components/ShufflePicker'
 import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
-import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
+import { ENCOURAGE_PAGES_ENABLED, MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
@@ -55,7 +55,8 @@ const ENCOURAGE_INTERVALS = [22, 24, 28, 24, 26, 28]
 const PRELOAD_TARGET_PER_TYPE = 4
 const VIDEO_PRELOAD_TARGET_PER_TYPE = 6
 const VIDEO_READY_TARGET = 2
-const RECENT_SESSION_LIMIT = 10
+const RECENT_SESSION_LIMIT = 40
+const STRONG_POOL_INITIAL_DRAWS = 20
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
 
@@ -119,7 +120,7 @@ function parseTypesParam(value: string | string[] | undefined): ItemType[] {
 type EncourageItem = EncourageContentItem
 
 type SequenceSlot =
-  | { kind: 'content'; itemType: ItemType; requireQuiz?: boolean }
+  | { kind: 'content'; itemType: ItemType; requireQuiz?: boolean; strong?: boolean }
   | { kind: 'encourage'; round: number; encourageIndex: number }
 
 type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
@@ -1472,7 +1473,7 @@ const sequenceStateRef = useRef({
     const currentInterval = state.currentInterval ?? (ENCOURAGE_INTERVALS[0] ?? 15)
     const progress = state.sinceEncourage ?? 0
     const currentDraws = state.draws ?? 0
-    const shouldEncourage = progress >= currentInterval
+    const shouldEncourage = ENCOURAGE_PAGES_ENABLED && progress >= currentInterval
 
     if (shouldEncourage) {
       const round = state.round + 1
@@ -1502,7 +1503,10 @@ const sequenceStateRef = useRef({
         const available = entry.types.filter((type) => allowedTypes.has(type))
         if (!available.length) return null
         const chosen = available[randIdx(available.length)]
-        return { itemType: chosen }
+        return {
+          itemType: chosen,
+          requireQuiz: Boolean(entry.preferQuizFact && chosen === 'fact'),
+        }
       }
       if (entry.kind === 'quiz') {
         if (!allowedTypes.has(entry.itemType)) return null
@@ -1539,7 +1543,12 @@ const sequenceStateRef = useRef({
       currentInterval,
       intervalIndex: state.intervalIndex ?? 0,
     }
-    return { kind: 'content', itemType: chosenSlot.itemType, requireQuiz: chosenSlot.requireQuiz }
+    return {
+      kind: 'content',
+      itemType: chosenSlot.itemType,
+      requireQuiz: chosenSlot.requireQuiz,
+      strong: currentDraws < STRONG_POOL_INITIAL_DRAWS,
+    }
   }, [allowedTypes, selectedTypes])
 
   const preloadQueuesRef = useRef<Record<ItemType, RandomContentItem[]>>({
@@ -1844,10 +1853,34 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const acquireItem = useCallback(async (
     type: ItemType,
     predicate?: (item: RandomContentItem) => boolean,
+    options: { strong?: boolean } = {},
   ): Promise<RandomContentItem | null> => {
-    if (type === 'joke') {
+    if (type === 'joke' && !options.strong) {
       const miniGame = spawnMiniGameIfDue()
       if (miniGame) return miniGame
+    }
+
+    if (options.strong) {
+      let strongAttempts = 0
+      const maxStrongAttempts = predicate ? 5 : 3
+      while (strongAttempts < maxStrongAttempts) {
+        strongAttempts += 1
+        try {
+          const res = await fetchRandom({
+            types: [type] as RandomTypes,
+            lang: (locale || 'en') as Lang,
+            strong: true,
+          })
+          const item = res?.item
+          if (!item || item.type !== type) continue
+          const key = getContentKey(item)
+          if (key && isRecentKey(key)) continue
+          if (predicate && !predicate(item)) continue
+          return finalizeCandidate(type, item)
+        } catch {
+          /* fallback to normal selection */
+        }
+      }
     }
 
     await ensureQueue(type, 1)
@@ -1962,13 +1995,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         let item: RandomContentItem | null = null
         let resolvedType: ItemType | null = null
         const requiresQuizFact = Boolean(slot.requireQuiz && slot.itemType === 'fact')
+        const useStrongPool = Boolean(slot.strong)
         const factPredicate = requiresQuizFact ? isQuizFactItem : undefined
 
-        if (slot.itemType === 'joke') {
+        if (slot.itemType === 'joke' && !useStrongPool) {
           item = spawnMiniGameIfDue()
         }
 
-        if (!item) {
+        if (!item && !useStrongPool) {
           item = takeFromQueue(slot.itemType, factPredicate)
           resolvedType = item ? slot.itemType : null
           if (item) {
@@ -1983,7 +2017,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
 
         if (!item) {
-          item = await acquireItem(slot.itemType, factPredicate)
+          item = await acquireItem(slot.itemType, factPredicate, { strong: useStrongPool })
           resolvedType = slot.itemType
         }
 

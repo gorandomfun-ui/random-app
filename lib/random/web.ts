@@ -1,4 +1,7 @@
 import { sampleFromCache, touchLastShown } from '@/lib/random/data'
+import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
+import type { RandomSelectOptions } from '@/lib/random/types'
+import type { Filter } from 'mongodb'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -56,9 +59,19 @@ function computeKeywords(text: string, limit = 10): string[] {
   return unique
 }
 
-async function pickFromDb(exclude: string[], attempts = 15): Promise<Record<string, unknown> | null> {
+async function pickFromDb(
+  exclude: string[],
+  attempts = 15,
+  extraMatch: Filter<Record<string, unknown>> = {},
+): Promise<Record<string, unknown> | null> {
   for (let i = 0; i < attempts; i++) {
-    const doc = await sampleFromCache<Record<string, unknown>>('web')
+    const filter = {
+      ...(exclude.length ? { url: { $nin: exclude } } : {}),
+      ...extraMatch,
+    } as Filter<Record<string, unknown>>
+    const doc = await sampleFromCache<Record<string, unknown>>('web', filter, {
+      maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
+    })
     if (!doc) return null
     const url = typeof doc.url === 'string' ? doc.url.trim().toLowerCase() : ''
     if (!url) continue
@@ -68,9 +81,12 @@ async function pickFromDb(exclude: string[], attempts = 15): Promise<Record<stri
   return null
 }
 
-export async function selectWeb(): Promise<WebItem | null> {
+export async function selectWeb(options: RandomSelectOptions = {}): Promise<WebItem | null> {
   const exclude = recentWebUrls.slice(-RECENT_LIMIT)
-  const doc = await pickFromDb(exclude)
+  const strongMatch = options.strong ? buildStrongPoolMatch<Record<string, unknown>>() : null
+  const doc = strongMatch
+    ? (await pickFromDb(exclude, 24, strongMatch)) ?? (await pickFromDb(exclude))
+    : await pickFromDb(exclude)
   if (!doc) return null
 
   const itemId = doc && typeof doc === 'object' && '_id' in doc
