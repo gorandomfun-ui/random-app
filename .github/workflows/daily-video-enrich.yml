@@ -10,11 +10,11 @@ on:
       rounds:
         description: "Number of small enrich batches"
         required: false
-        default: "6"
+        default: "10"
       limit:
         description: "Videos per batch"
         required: false
-        default: "25"
+        default: "50"
   schedule:
     # Europe/Amsterdam rough local times: 09:55 and 21:55, after daily ingest.
     - cron: "55 7 * 4-10 *"
@@ -38,8 +38,8 @@ jobs:
           RANDOM_INGEST_HOST: ${{ secrets.RANDOM_INGEST_HOST }}
           ADMIN_INGEST_KEY: ${{ secrets.ADMIN_INGEST_KEY }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          DAILY_ENRICH_ROUNDS: ${{ github.event.inputs.rounds || vars.DAILY_ENRICH_ROUNDS || '6' }}
-          DAILY_ENRICH_LIMIT: ${{ github.event.inputs.limit || vars.DAILY_ENRICH_LIMIT || '25' }}
+          DAILY_ENRICH_ROUNDS: ${{ github.event.inputs.rounds || vars.DAILY_ENRICH_ROUNDS || '10' }}
+          DAILY_ENRICH_LIMIT: ${{ github.event.inputs.limit || vars.DAILY_ENRICH_LIMIT || '50' }}
           DAILY_ENRICH_DAYS: ${{ vars.DAILY_ENRICH_DAYS || '3' }}
-          DAILY_ENRICH_PAUSE_MS: ${{ vars.DAILY_ENRICH_PAUSE_MS || '1500' }}
+          DAILY_ENRICH_PAUSE_MS: ${{ vars.DAILY_ENRICH_PAUSE_MS || '1000' }}
         run: node scripts/daily-video-enrich.mjs

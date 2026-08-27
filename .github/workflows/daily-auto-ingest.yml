@@ -43,11 +43,11 @@ jobs:
           DAILY_AUTO_PROFILE: ${{ github.event.inputs.profile || 'auto' }}
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
           DAILY_AUTO_SKIP_COMPLETED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
-          DAILY_AUTO_MIN_VIDEO_INSERTED: ${{ vars.DAILY_AUTO_MIN_VIDEO_INSERTED || '600' }}
-          DAILY_AUTO_MAX_VIDEO_CHUNKS: ${{ vars.DAILY_AUTO_MAX_VIDEO_CHUNKS || '24' }}
-          DAILY_AUTO_MAX_RUNTIME_MINUTES: ${{ vars.DAILY_AUTO_MAX_RUNTIME_MINUTES || '110' }}
-          DAILY_AUTO_CONTINUE_CHUNK_INSERTED: ${{ vars.DAILY_AUTO_CONTINUE_CHUNK_INSERTED || '20' }}
-          DAILY_AUTO_WEB_COUNT: ${{ vars.DAILY_AUTO_WEB_COUNT || '8' }}
+          DAILY_AUTO_MIN_VIDEO_INSERTED: ${{ vars.DAILY_AUTO_MIN_VIDEO_INSERTED || '1200' }}
+          DAILY_AUTO_MAX_VIDEO_CHUNKS: ${{ vars.DAILY_AUTO_MAX_VIDEO_CHUNKS || '40' }}
+          DAILY_AUTO_MAX_RUNTIME_MINUTES: ${{ vars.DAILY_AUTO_MAX_RUNTIME_MINUTES || '150' }}
+          DAILY_AUTO_CONTINUE_CHUNK_INSERTED: ${{ vars.DAILY_AUTO_CONTINUE_CHUNK_INSERTED || '15' }}
+          DAILY_AUTO_WEB_COUNT: ${{ vars.DAILY_AUTO_WEB_COUNT || '12' }}
           DAILY_AUTO_WEB_PER: ${{ vars.DAILY_AUTO_WEB_PER || '10' }}
           DAILY_AUTO_WEB_PAGES: ${{ vars.DAILY_AUTO_WEB_PAGES || '3' }}
           DAILY_AUTO_ENRICH_LIMIT: "0"

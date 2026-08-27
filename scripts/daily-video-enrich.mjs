@@ -5,10 +5,10 @@ import fs from 'node:fs'
 let host = process.env.HOST || process.env.RANDOM_INGEST_HOST || ''
 const key = process.env.ADMIN_INGEST_KEY || process.env.KEY || ''
 const dryRun = ['1', 'true', 'yes'].includes(String(process.env.DRY_RUN || '').toLowerCase())
-const rounds = readInt('DAILY_ENRICH_ROUNDS', 6, 1, 30)
-const limit = readInt('DAILY_ENRICH_LIMIT', 25, 1, 120)
+const rounds = readInt('DAILY_ENRICH_ROUNDS', 10, 1, 30)
+const limit = readInt('DAILY_ENRICH_LIMIT', 50, 1, 120)
 const days = readInt('DAILY_ENRICH_DAYS', 3, 1, 30)
-const pauseMs = readInt('DAILY_ENRICH_PAUSE_MS', 1500, 0, 30000)
+const pauseMs = readInt('DAILY_ENRICH_PAUSE_MS', 1000, 0, 30000)
 
 if (!host || !key) {
   console.error('HOST/RANDOM_INGEST_HOST et ADMIN_INGEST_KEY doivent être définis.')

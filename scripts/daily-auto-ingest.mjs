@@ -11,11 +11,11 @@ const skipCompleted = readBool(
   process.env.GITHUB_EVENT_NAME === 'schedule',
 )
 
-const minVideoInserted = readInt('DAILY_AUTO_MIN_VIDEO_INSERTED', 600, 0, 5000)
-const maxVideoChunks = readInt('DAILY_AUTO_MAX_VIDEO_CHUNKS', 24, 1, 120)
-const maxRuntimeMs = readInt('DAILY_AUTO_MAX_RUNTIME_MINUTES', 110, 10, 330) * 60 * 1000
-const continueChunkThreshold = readInt('DAILY_AUTO_CONTINUE_CHUNK_INSERTED', 20, 0, 500)
-const webCount = readInt('DAILY_AUTO_WEB_COUNT', 8, 1, 20)
+const minVideoInserted = readInt('DAILY_AUTO_MIN_VIDEO_INSERTED', 1200, 0, 5000)
+const maxVideoChunks = readInt('DAILY_AUTO_MAX_VIDEO_CHUNKS', 40, 1, 120)
+const maxRuntimeMs = readInt('DAILY_AUTO_MAX_RUNTIME_MINUTES', 150, 10, 330) * 60 * 1000
+const continueChunkThreshold = readInt('DAILY_AUTO_CONTINUE_CHUNK_INSERTED', 15, 0, 500)
+const webCount = readInt('DAILY_AUTO_WEB_COUNT', 12, 1, 20)
 const webPer = readInt('DAILY_AUTO_WEB_PER', 10, 1, 10)
 const webPages = readInt('DAILY_AUTO_WEB_PAGES', 3, 1, 10)
 const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'cse,curated,neocities'
@@ -405,7 +405,7 @@ async function main() {
 
   const fixedPhases = [
     { phase: 'trending', limit: 50, run: `${runProfile}:trending` },
-    { phase: 'retro', count: 8, per: 12, providers: 'youtube,dailymotion', run: `${runProfile}:retro` },
+    { phase: 'retro', count: 12, per: 16, providers: 'youtube,dailymotion', run: `${runProfile}:retro` },
   ]
 
   for (const phase of fixedPhases) {
@@ -431,8 +431,8 @@ async function main() {
       : chunks % 2 === 0
     const payload = await runPhase({
       phase: 'combo-videos',
-      count: youtubeOnly ? 6 : 8,
-      per: youtubeOnly ? 16 : 18,
+      count: youtubeOnly ? 8 : 10,
+      per: youtubeOnly ? 20 : 22,
       pages: 1,
       days: 365,
       durations: 'any',

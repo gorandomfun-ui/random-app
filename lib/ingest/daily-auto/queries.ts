@@ -24,6 +24,16 @@ const DAILY_ANCHORS = [
   'community tv',
   'late night',
   'deep cut',
+  'street footage',
+  'regional tv',
+  'local commercial',
+  'city archive',
+  'full movie',
+  'public domain film',
+  'regional music',
+  'music video',
+  'camcorder',
+  'travelogue',
 ]
 
 const DAILY_RETRO_ANCHORS = [
@@ -42,6 +52,14 @@ const DAILY_RETRO_ANCHORS = [
   'cable access',
   'home video',
   'archive footage',
+  'street footage',
+  'city report',
+  'tourism film',
+  'local commercial',
+  'regional music',
+  'public domain movie',
+  'full movie',
+  'camcorder footage',
 ]
 
 const DAILY_WEB_ANCHORS = [
@@ -59,6 +77,112 @@ const DAILY_WEB_ANCHORS = [
   'lost media',
   'experimental web',
   'outsider art',
+  'local archive',
+  'city archive',
+  'public domain',
+  'regional culture',
+  'independent film',
+]
+
+const CULTURAL_PLACE_TERMS = [
+  'Uzbekistan',
+  'Kazakhstan',
+  'Kyrgyzstan',
+  'Tajikistan',
+  'Azerbaijan',
+  'Armenia',
+  'Georgia',
+  'Moldova',
+  'Albania',
+  'Bulgaria',
+  'Romania',
+  'Serbia',
+  'Bosnia',
+  'Mongolia',
+  'Laos',
+  'Cambodia',
+  'Vietnam',
+  'Ghana',
+  'Senegal',
+  'Peru',
+  'Bolivia',
+  'Appalachia',
+  'Midwest',
+  'rural America',
+  'small town USA',
+  'Rust Belt',
+  'Siberia',
+  'Balkans',
+  'Caucasus',
+  'Central Asia',
+]
+
+const LOCAL_ARCHIVE_SUBJECTS = [
+  'small town',
+  'village',
+  'main street',
+  'street market',
+  'local festival',
+  'county fair',
+  'parade',
+  'factory',
+  'train station',
+  'bus station',
+  'mall',
+  'arcade',
+  'roadside attraction',
+  'local news',
+  'community theater',
+  'school play',
+  'wedding',
+  'tourism board',
+  'city report',
+  'neighborhood',
+  'public access show',
+  'regional commercial',
+]
+
+const MUSIC_ARCHIVE_SUBJECTS = [
+  'regional music',
+  'folk music',
+  'local band',
+  'music video',
+  'karaoke',
+  'wedding band',
+  'street performance',
+  'festival performance',
+  'TV music show',
+  'dance contest',
+  'regional pop',
+  'synth pop',
+]
+
+const CINEMA_ARCHIVE_SUBJECTS = [
+  'full movie',
+  'short film',
+  'public domain movie',
+  'student film',
+  'industrial film',
+  'tourism film',
+  'local documentary',
+  'amateur film',
+  'low budget movie',
+  'cult movie',
+]
+
+const PLACE_CONTEXTS = [
+  'rural',
+  'provincial',
+  'local',
+  'regional',
+  'forgotten town',
+  'small city',
+  'remote village',
+  'old downtown',
+  'back road',
+  'border town',
+  'suburban',
+  'industrial district',
 ]
 
 const GENERIC_SUBJECTS = new Set([
@@ -103,6 +227,12 @@ const GENERIC_SUBJECTS = new Set([
   'cold shower',
   'ice bath',
   'dopamine detox',
+  'ai',
+  'dubai',
+  'food review',
+  'elon musk',
+  'tesla',
+  'iphone',
 ])
 
 const SUBJECT_ALLOWLIST = [
@@ -148,6 +278,45 @@ const SUBJECT_ALLOWLIST = [
   'burning man',
   'rave',
   'street culture',
+  'small town',
+  'village',
+  'main street',
+  'street market',
+  'local festival',
+  'county fair',
+  'parade',
+  'factory',
+  'train station',
+  'bus station',
+  'mall',
+  'arcade',
+  'roadside attraction',
+  'community theater',
+  'school play',
+  'wedding',
+  'tourism board',
+  'city report',
+  'neighborhood',
+  'regional commercial',
+  'regional music',
+  'folk music',
+  'local band',
+  'karaoke',
+  'wedding band',
+  'street performance',
+  'festival performance',
+  'TV music show',
+  'dance contest',
+  'regional pop',
+  'synth pop',
+  'full movie',
+  'student film',
+  'industrial film',
+  'tourism film',
+  'local documentary',
+  'amateur film',
+  'low budget movie',
+  'cult movie',
 ]
 
 const RETRO_THEMES = [
@@ -171,6 +340,34 @@ const RETRO_THEMES = [
   'talk show',
   'training',
   'festival',
+  'small town',
+  'village',
+  'main street',
+  'street market',
+  'county fair',
+  'parade',
+  'factory',
+  'train station',
+  'bus station',
+  'mall',
+  'arcade',
+  'roadside attraction',
+  'tourism board',
+  'city report',
+  'regional commercial',
+  'regional music',
+  'folk music',
+  'local band',
+  'music video',
+  'wedding band',
+  'street performance',
+  'TV music show',
+  'full movie',
+  'short film',
+  'public domain movie',
+  'student film',
+  'amateur film',
+  'low budget movie',
 ]
 
 const RETRO_FORMATS = [
@@ -184,6 +381,18 @@ const RETRO_FORMATS = [
   'highlight',
   'segment',
   'full episode',
+  'full movie',
+  'music video',
+  'street footage',
+  'city report',
+  'local commercial',
+  'public domain film',
+  'home movie',
+  'camcorder footage',
+  'vhs rip',
+  'tv archive',
+  'tourism film',
+  'concert',
 ]
 
 const EXTRA_CONTEXTS = [
@@ -199,6 +408,16 @@ const EXTRA_CONTEXTS = [
   'hidden',
   'before and after',
   'first time',
+  'local',
+  'regional',
+  'small town',
+  'provincial',
+  'amateur',
+  'low budget',
+  'public domain',
+  'camcorder',
+  'rare recording',
+  'uncut',
 ]
 
 const LOW_VALUE_EXTRAS = new Set([
@@ -265,6 +484,13 @@ const WEB_CONTEXTS = [
   'project',
   'lab',
   'blog',
+  'archive list',
+  'public domain collection',
+  'local history',
+  'city database',
+  'fan archive',
+  'tape archive',
+  'scan collection',
 ]
 
 function makeSeededRng(seed: string): Rng {
@@ -308,12 +534,20 @@ function unique(values: string[]): string[] {
   return out
 }
 
+function archiveSubjects(): string[] {
+  return unique([
+    ...LOCAL_ARCHIVE_SUBJECTS,
+    ...MUSIC_ARCHIVE_SUBJECTS,
+    ...CINEMA_ARCHIVE_SUBJECTS,
+  ])
+}
+
 function interestingSubjects(dict: Required<VideoKeywordDictionary>): string[] {
   const fromDict = dict.subjects.filter((subject) => {
     const key = subject.toLowerCase()
     return SUBJECT_ALLOWLIST.includes(key) || !GENERIC_SUBJECTS.has(key)
   })
-  return unique([...SUBJECT_ALLOWLIST, ...fromDict])
+  return unique([...SUBJECT_ALLOWLIST, ...archiveSubjects(), ...fromDict])
 }
 
 function fallbackFormats(dict: Required<VideoKeywordDictionary>): string[] {
@@ -328,6 +562,16 @@ function fallbackFormats(dict: Required<VideoKeywordDictionary>): string[] {
     'rehearsal',
     'session',
     'montage',
+    'full movie',
+    'music video',
+    'street footage',
+    'local commercial',
+    'public domain film',
+    'home movie',
+    'camcorder footage',
+    'vhs rip',
+    'city report',
+    'tourism film',
     ...dict.formats,
   ])
 }
@@ -351,6 +595,7 @@ export async function buildDailyVideoQueries(options: DailyQueryOptions = {}): P
   const rng = makeSeededRng(options.seed || `daily-video:${new Date().toISOString().slice(0, 10)}`)
   const dict = await loadVideoKeywordDictionary()
   const subjects = interestingSubjects(dict)
+  const archivePool = archiveSubjects()
   const formats = fallbackFormats(dict)
   const eras = fallbackEras(dict)
   const extras = fallbackExtras(dict)
@@ -360,12 +605,19 @@ export async function buildDailyVideoQueries(options: DailyQueryOptions = {}): P
   while (queries.length < count && attempts < count * 20) {
     attempts += 1
     const anchor = pickOne(DAILY_ANCHORS, rng)
-    const subject = pickOne(subjects, rng)
+    const subject = rng() < 0.42 ? pickOne(archivePool, rng) : pickOne(subjects, rng)
     const format = rng() < 0.85 ? pickOne(formats, rng) : undefined
     const era = rng() < 0.65 ? pickOne(eras, rng) : undefined
     const extra = rng() < 0.45 ? pickOne(extras, rng) : undefined
+    const place = rng() < 0.55 ? pickOne(CULTURAL_PLACE_TERMS, rng) : undefined
+    const placeContext = rng() < 0.35 ? pickOne(PLACE_CONTEXTS, rng) : undefined
 
-    const query = compactQuery([anchor, era, subject, format, extra])
+    const pattern = rng()
+    const query = pattern < 0.34
+      ? compactQuery([anchor, place, era, subject, format])
+      : pattern < 0.58
+        ? compactQuery([place, placeContext, era, subject, format, extra])
+        : compactQuery([anchor, era, subject, format, extra])
     if (query) queries.push(query)
   }
 
@@ -384,7 +636,11 @@ export async function buildDailyRetroQueries(options: DailyQueryOptions = {}): P
     const theme = pickOne(RETRO_THEMES, rng)
     const format = pickOne(RETRO_FORMATS, rng)
     const year = rng() < 0.75 ? 1965 + Math.floor(rng() * 40) : undefined
-    const query = compactQuery([anchor, theme, year, format])
+    const place = rng() < 0.65 ? pickOne(CULTURAL_PLACE_TERMS, rng) : undefined
+    const placeContext = rng() < 0.45 ? pickOne(PLACE_CONTEXTS, rng) : undefined
+    const query = rng() < 0.58
+      ? compactQuery([anchor, place, theme, year, format])
+      : compactQuery([place, placeContext, theme, year, format])
     if (query) queries.push(query)
   }
 
@@ -400,9 +656,10 @@ export async function buildDailyWebQueries(options: DailyQueryOptions = {}): Pro
   while (queries.length < count && attempts < count * 20) {
     attempts += 1
     const anchor = pickOne(DAILY_WEB_ANCHORS, rng)
-    const subject = pickOne([...SUBJECT_ALLOWLIST, ...RETRO_THEMES], rng)
+    const subject = pickOne([...SUBJECT_ALLOWLIST, ...RETRO_THEMES, ...archiveSubjects()], rng)
     const context = pickOne(WEB_CONTEXTS, rng)
-    const query = compactQuery([anchor, subject, context])
+    const place = rng() < 0.35 ? pickOne(CULTURAL_PLACE_TERMS, rng) : undefined
+    const query = compactQuery([anchor, place, subject, context])
     if (query) queries.push(query)
   }
 
