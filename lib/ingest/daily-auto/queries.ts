@@ -157,6 +157,54 @@ const MUSIC_ARCHIVE_SUBJECTS = [
   'synth pop',
 ]
 
+const SAFE_GLAMOUR_SUBJECTS = [
+  'vintage glamour',
+  'retro cabaret',
+  'classic burlesque',
+  'pin up fashion',
+  'pin-up style',
+  'showgirl dance',
+  'swimwear fashion show',
+  'beach fashion show',
+  'fashion week runway',
+  'red carpet fashion',
+  'latin dance',
+  'salsa dance',
+  'tango performance',
+  'belly dance performance',
+  'go-go dance vintage',
+  'nightclub dance',
+  'music video glamour',
+  'sexy music video',
+]
+
+const SAFE_GLAMOUR_FORMATS = [
+  'performance',
+  'clip',
+  'music video',
+  'fashion show',
+  'runway show',
+  'tv segment',
+  'broadcast',
+  'archive footage',
+  'behind the scenes',
+]
+
+const SAFE_GLAMOUR_CONTEXTS = [
+  'vintage',
+  'retro',
+  'late night',
+  'after dark',
+  'stage',
+  'festival',
+  'local tv',
+  'regional tv',
+  'rare',
+  'public access',
+]
+
+const SAFE_GLAMOUR_ERAS = ['1960s', '1970s', '1980s', '1990s', '2000s', 'y2k']
+
 const CINEMA_ARCHIVE_SUBJECTS = [
   'full movie',
   'short film',
@@ -246,6 +294,23 @@ const SUBJECT_ALLOWLIST = [
   'street',
   'comedy',
   'dance',
+  'cabaret',
+  'burlesque',
+  'pin up',
+  'pin-up style',
+  'vintage glamour',
+  'swimwear fashion',
+  'beach fashion',
+  'runway show',
+  'fashion week',
+  'red carpet',
+  'latin dance',
+  'salsa dance',
+  'tango performance',
+  'belly dance',
+  'showgirl dance',
+  'music video glamour',
+  'sexy music video',
   'radio',
   'animation',
   'shortfilm',
@@ -327,6 +392,13 @@ const RETRO_THEMES = [
   'science',
   'dance',
   'music',
+  'cabaret',
+  'burlesque',
+  'pin up',
+  'vintage glamour',
+  'beauty pageant',
+  'showgirl',
+  'go-go dance',
   'commercial',
   'local news',
   'school',
@@ -539,7 +611,21 @@ function archiveSubjects(): string[] {
     ...LOCAL_ARCHIVE_SUBJECTS,
     ...MUSIC_ARCHIVE_SUBJECTS,
     ...CINEMA_ARCHIVE_SUBJECTS,
+    ...SAFE_GLAMOUR_SUBJECTS,
   ])
+}
+
+function buildSafeGlamourQuery(rng: Rng, eras: string[] = SAFE_GLAMOUR_ERAS): string {
+  const subject = pickOne(SAFE_GLAMOUR_SUBJECTS, rng)
+  const format = rng() < 0.85 ? pickOne(SAFE_GLAMOUR_FORMATS, rng) : undefined
+  const context = rng() < 0.7 ? pickOne(SAFE_GLAMOUR_CONTEXTS, rng) : undefined
+  const era = rng() < 0.55 ? pickOne(eras.length ? eras : SAFE_GLAMOUR_ERAS, rng) : undefined
+  const place = rng() < 0.35 ? pickOne(CULTURAL_PLACE_TERMS, rng) : undefined
+  const pattern = rng()
+
+  if (pattern < 0.34) return compactQuery([context, era, subject, format])
+  if (pattern < 0.67) return compactQuery([place, era, subject, format])
+  return compactQuery([subject, context, format])
 }
 
 function interestingSubjects(dict: Required<VideoKeywordDictionary>): string[] {
@@ -604,6 +690,12 @@ export async function buildDailyVideoQueries(options: DailyQueryOptions = {}): P
   let attempts = 0
   while (queries.length < count && attempts < count * 20) {
     attempts += 1
+    if (rng() < 0.16) {
+      const query = buildSafeGlamourQuery(rng, eras)
+      if (query) queries.push(query)
+      continue
+    }
+
     const anchor = pickOne(DAILY_ANCHORS, rng)
     const subject = rng() < 0.42 ? pickOne(archivePool, rng) : pickOne(subjects, rng)
     const format = rng() < 0.85 ? pickOne(formats, rng) : undefined
@@ -632,6 +724,12 @@ export async function buildDailyRetroQueries(options: DailyQueryOptions = {}): P
   let attempts = 0
   while (queries.length < count && attempts < count * 20) {
     attempts += 1
+    if (rng() < 0.18) {
+      const query = buildSafeGlamourQuery(rng)
+      if (query) queries.push(query)
+      continue
+    }
+
     const anchor = pickOne(DAILY_RETRO_ANCHORS, rng)
     const theme = pickOne(RETRO_THEMES, rng)
     const format = pickOne(RETRO_FORMATS, rng)
