@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useI18n } from '../providers/I18nProvider'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
@@ -14,6 +15,7 @@ declare global {
 export default function LanguageSwitcher() {
   const { locale, setLocale, locales } = useI18n()
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
@@ -38,6 +40,7 @@ export default function LanguageSwitcher() {
   }
 
   useEffect(() => {
+    setMounted(true)
     refreshColors()
   }, [])
 
@@ -99,7 +102,7 @@ export default function LanguageSwitcher() {
         {(locale || 'en').toUpperCase()}
       </button>
 
-      {open && (
+      {open && mounted && createPortal((
         <div
           ref={panelRef}
           className="fixed z-[2200] w-[180px] rounded-2xl shadow-2xl border backdrop-blur"
@@ -148,7 +151,7 @@ export default function LanguageSwitcher() {
             </ul>
           </div>
         </div>
-      )}
+      ), document.body)}
     </>
   )
 }

@@ -1048,9 +1048,9 @@ export default function HomePage() {
           background-image: var(--home-glitch-image);
           background-position: center;
           background-size: cover;
-          filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28);
+          filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.39);
           transform: scale(1.12);
-          opacity: calc(var(--home-glitch-strength, 1) * 0.4);
+          opacity: 0;
           animation: home-glitch-media-cycle 10s steps(1, end) infinite;
         }
 
@@ -1153,15 +1153,15 @@ export default function HomePage() {
         @keyframes home-glitch-media-cycle {
           0%,
           29.99% {
-            opacity: calc(var(--home-glitch-strength, 1) * 0.38);
+            opacity: 0;
             transform: scale(1.12) translate3d(0, 0, 0);
-            filter: blur(5px) saturate(2.1) contrast(1.7) brightness(0.26);
+            filter: blur(5px) saturate(2.1) contrast(1.7) brightness(0.36);
           }
           30%,
           100% {
-            opacity: calc(var(--home-glitch-strength, 1) * 0.72);
+            opacity: calc(var(--home-glitch-strength, 1) * 0.92);
             transform: scale(1.15) translate3d(-0.8%, 0.4%, 0);
-            filter: blur(4px) saturate(2.75) contrast(2.1) brightness(0.25);
+            filter: blur(4px) saturate(2.75) contrast(2.1) brightness(0.35);
           }
         }
 
@@ -1213,7 +1213,7 @@ export default function HomePage() {
           }
 
           .home-glitch-bg__media {
-            opacity: calc(var(--home-glitch-strength, 1) * 0.29);
+            opacity: 0;
           }
 
           .home-glitch-bg__fragments {
