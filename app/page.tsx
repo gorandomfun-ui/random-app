@@ -21,8 +21,10 @@ import ScoreCounter from '@/components/ScoreCounter'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
+import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
+import type { RandomContentItem } from '@/lib/random/clientTypes'
 import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
@@ -40,6 +42,194 @@ const randDiffIdx = (max: number, not: number) => {
   let i = randIdx(max)
   if (i === not) i = (i + 1 + randIdx(max - 1)) % max
   return i
+}
+
+const HOME_GLITCH_TYPES: RandomTypes = ['video', 'image', 'web']
+
+type HomeGlitchFragmentKind = 'line' | 'media-line' | 'tear' | 'block' | 'void'
+
+type HomeGlitchFragmentStyle = CSSProperties & {
+  ['--home-fragment-x']?: string
+  ['--home-fragment-y']?: string
+  ['--home-fragment-w']?: string
+  ['--home-fragment-h']?: string
+  ['--home-fragment-opacity']?: number
+  ['--home-fragment-color']?: string
+  ['--home-fragment-accent']?: string
+  ['--home-fragment-bg-position']?: string
+  ['--home-fragment-bg-size']?: string
+  ['--home-fragment-delay']?: string
+  ['--home-fragment-drift']?: string
+  ['--home-fragment-drift-back']?: string
+  ['--home-fragment-pop']?: number
+}
+
+type HomeGlitchFragment = {
+  id: string
+  kind: HomeGlitchFragmentKind
+  style: HomeGlitchFragmentStyle
+}
+
+type HomeGlitchBgStyle = CSSProperties & {
+  ['--home-glitch-image']?: string
+  ['--home-glitch-tone']?: string
+  ['--home-glitch-accent']?: string
+  ['--home-glitch-strength']?: number
+}
+
+function cssImageUrl(value: string | null): string {
+  if (!value) return 'none'
+  return `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function createSeededRandom(seed: string) {
+  let state = hashString(seed) || 1
+  return () => {
+    state = Math.imul(state ^ (state >>> 15), 1 | state)
+    state ^= state + Math.imul(state ^ (state >>> 7), 61 | state)
+    return ((state ^ (state >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function getYouTubeThumb(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.replace(/^www\./, '')
+    if (host === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0]
+      return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
+    }
+    if (host.includes('youtube.com')) {
+      const fromParam = parsed.searchParams.get('v')
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      const fromPath = parts[0] === 'shorts' || parts[0] === 'embed' ? parts[1] : null
+      const id = fromParam || fromPath
+      return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null
+    }
+  } catch {
+    const match = url.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([A-Za-z0-9_-]{6,})/)
+    return match?.[1] ? `https://i.ytimg.com/vi/${match[1]}/hqdefault.jpg` : null
+  }
+  return null
+}
+
+function getDailymotionThumb(url: string): string | null {
+  const match = url.match(/dailymotion\.com\/video\/([^_/?#]+)|dai\.ly\/([^_/?#]+)/i)
+  const id = match?.[1] || match?.[2]
+  return id ? `https://www.dailymotion.com/thumbnail/video/${id}` : null
+}
+
+function getHomeGlitchImage(item: RandomContentItem | null): string | null {
+  if (!item) return null
+  if (item.type === 'image') return item.thumbUrl || item.url || null
+  if (item.type === 'video') return item.thumbUrl || getYouTubeThumb(item.url) || getDailymotionThumb(item.url)
+  if (item.type === 'web') return item.ogImage || null
+  return null
+}
+
+function buildHomeGlitchFragments(image: string | null, seed: string, viewportWidth: number | null): HomeGlitchFragment[] {
+  const rng = createSeededRandom(`${seed}:${viewportWidth ?? 0}`)
+  const compact = viewportWidth != null && viewportWidth < 720
+  const hasImage = Boolean(image)
+  const lineCount = hasImage ? (compact ? 170 : 260) : (compact ? 52 : 72)
+  const tearCount = hasImage ? (compact ? 26 : 40) : compact ? 5 : 8
+  const blockCount = hasImage ? (compact ? 16 : 24) : compact ? 4 : 6
+  const fragments: HomeGlitchFragment[] = []
+  const palette = [
+    'rgba(0, 255, 238, 0.72)',
+    'rgba(255, 0, 168, 0.66)',
+    'rgba(63, 86, 255, 0.58)',
+    'rgba(255, 245, 198, 0.55)',
+    'rgba(31, 255, 104, 0.48)',
+    'rgba(255, 72, 42, 0.52)',
+  ]
+
+  const color = () => palette[Math.floor(rng() * palette.length)] ?? palette[0]
+  const unit = (value: number) => `${Math.round(value * 10) / 10}%`
+  const px = (value: number) => `${Math.max(1, Math.round(value))}px`
+
+  for (let i = 0; i < lineCount; i += 1) {
+    const mediaLine = hasImage && rng() > 0.54
+    const y = rng() * 100
+    const drift = Math.round(-18 + rng() * 36)
+    fragments.push({
+      id: `line-${i}`,
+      kind: mediaLine ? 'media-line' : 'line',
+      style: {
+        '--home-fragment-x': unit(-10 + rng() * 120),
+        '--home-fragment-y': unit(y),
+        '--home-fragment-w': unit(5 + rng() * (compact ? 62 : 78)),
+        '--home-fragment-h': rng() > 0.8 ? px(2 + rng() * 2) : `${0.55 + rng() * 1.35}px`,
+        '--home-fragment-opacity': mediaLine ? 0.18 + rng() * 0.38 : 0.12 + rng() * 0.34,
+        '--home-fragment-color': color(),
+        '--home-fragment-accent': color(),
+        '--home-fragment-bg-position': `${unit(rng() * 100)} ${unit(rng() * 100)}`,
+        '--home-fragment-bg-size': `${140 + Math.round(rng() * 280)}% auto`,
+        '--home-fragment-delay': `${Math.round(rng() * 3000)}ms`,
+        '--home-fragment-drift': `${drift}px`,
+        '--home-fragment-drift-back': `${Math.round(drift * -0.45)}px`,
+        '--home-fragment-pop': rng() > 0.78 ? 1 : 0,
+      },
+    })
+  }
+
+  for (let i = 0; i < tearCount; i += 1) {
+    const drift = Math.round(-24 + rng() * 48)
+    fragments.push({
+      id: `tear-${i}`,
+      kind: 'tear',
+      style: {
+        '--home-fragment-x': unit(-8 + rng() * 110),
+        '--home-fragment-y': unit(rng() * 100),
+        '--home-fragment-w': unit(15 + rng() * (compact ? 54 : 72)),
+        '--home-fragment-h': px(4 + rng() * (compact ? 12 : 18)),
+        '--home-fragment-opacity': 0.14 + rng() * 0.34,
+        '--home-fragment-color': color(),
+        '--home-fragment-accent': color(),
+        '--home-fragment-bg-position': `${unit(rng() * 100)} ${unit(rng() * 100)}`,
+        '--home-fragment-bg-size': `${120 + Math.round(rng() * 260)}% auto`,
+        '--home-fragment-delay': `${Math.round(rng() * 3000)}ms`,
+        '--home-fragment-drift': `${drift}px`,
+        '--home-fragment-drift-back': `${Math.round(drift * -0.45)}px`,
+        '--home-fragment-pop': rng() > 0.55 ? 1 : 0,
+      },
+    })
+  }
+
+  for (let i = 0; i < blockCount; i += 1) {
+    const isVoid = rng() > 0.72
+    const drift = Math.round(-28 + rng() * 56)
+    fragments.push({
+      id: `block-${i}`,
+      kind: isVoid ? 'void' : 'block',
+      style: {
+        '--home-fragment-x': unit(-3 + rng() * 104),
+        '--home-fragment-y': unit(rng() * 100),
+        '--home-fragment-w': unit(5 + rng() * (compact ? 22 : 34)),
+        '--home-fragment-h': px(14 + rng() * (compact ? 42 : 64)),
+        '--home-fragment-opacity': isVoid ? 0.42 + rng() * 0.28 : 0.2 + rng() * 0.36,
+        '--home-fragment-color': color(),
+        '--home-fragment-accent': color(),
+        '--home-fragment-bg-position': `${unit(rng() * 100)} ${unit(rng() * 100)}`,
+        '--home-fragment-bg-size': `${160 + Math.round(rng() * 340)}% auto`,
+        '--home-fragment-delay': `${Math.round(rng() * 3000)}ms`,
+        '--home-fragment-drift': `${drift}px`,
+        '--home-fragment-drift-back': `${Math.round(drift * -0.45)}px`,
+        '--home-fragment-pop': rng() > 0.42 ? 1 : 0,
+      },
+    })
+  }
+
+  return fragments
 }
 
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
@@ -147,6 +337,9 @@ export default function HomePage() {
   const [languagesOpen, setLanguagesOpen] = useState(false)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [soundMuted, setSoundMuted] = useState(false)
+  const [homeGlitchImage, setHomeGlitchImage] = useState<string | null>(null)
+  const [homeGlitchSeed, setHomeGlitchSeed] = useState('home-empty')
+  const [homeGlitchPatternTick, setHomeGlitchPatternTick] = useState(0)
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const theme = THEMES[themeIdx]
@@ -211,6 +404,64 @@ export default function HomePage() {
     startWeLikePrefetch()
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const timer = window.setInterval(() => {
+      setHomeGlitchPatternTick((value) => value + 1)
+    }, 10000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    const lang = (locale || 'en') as Lang
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const schedule = (delay: number) => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(load, delay)
+    }
+
+    const load = async () => {
+      try {
+        let picked: RandomContentItem | null = null
+        let pickedImage: string | null = null
+
+        for (let attempt = 0; attempt < 4 && !pickedImage; attempt += 1) {
+          const response = await fetchRandom({
+            types: HOME_GLITCH_TYPES,
+            lang,
+            strong: attempt < 2,
+            preview: true,
+          })
+          const item = response.item
+          const image = getHomeGlitchImage(item)
+          if (image) {
+            picked = item
+            pickedImage = image
+          }
+        }
+
+        if (!stopped && pickedImage) {
+          const id = picked?._id || pickedImage
+          setHomeGlitchImage(pickedImage)
+          setHomeGlitchSeed(`${id}:${Date.now()}`)
+        }
+      } catch {
+        /* keep the calm fallback */
+      } finally {
+        if (!stopped) schedule(60000)
+      }
+    }
+
+    schedule(900)
+
+    return () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [locale])
+
   const applyLangOut = useCallback((next: Lang) => {
     try {
       document.documentElement.setAttribute('lang', next)
@@ -273,6 +524,18 @@ export default function HomePage() {
     color: theme.cream,
     '--theme-cream': theme.cream,
   }), [theme.bg, theme.cream])
+
+  const homeGlitchFragments = useMemo(
+    () => buildHomeGlitchFragments(homeGlitchImage, `${homeGlitchSeed}:${homeGlitchPatternTick}`, viewportWidth),
+    [homeGlitchImage, homeGlitchPatternTick, homeGlitchSeed, viewportWidth]
+  )
+
+  const homeGlitchStyle = useMemo<HomeGlitchBgStyle>(() => ({
+    '--home-glitch-image': cssImageUrl(homeGlitchImage),
+    '--home-glitch-tone': theme.bg,
+    '--home-glitch-accent': theme.text,
+    '--home-glitch-strength': homeGlitchImage ? 1 : 0.38,
+  }), [homeGlitchImage, theme.bg, theme.text])
 
   useEffect(() => {
     const onResize = () => {
@@ -411,10 +674,25 @@ export default function HomePage() {
   }, [router])
 
   return (
-    <main className="min-h-screen flex flex-col" style={mainStyle}>
+    <main className="home-page min-h-screen flex flex-col" style={mainStyle}>
+      <div className="home-glitch-bg" style={homeGlitchStyle} aria-hidden="true">
+        <div className="home-glitch-bg__media" />
+        <div className="home-glitch-bg__fragments">
+          {homeGlitchFragments.map((fragment) => (
+            <span
+              key={fragment.id}
+              className={`home-glitch-fragment home-glitch-fragment--${fragment.kind}`}
+              style={fragment.style}
+            />
+          ))}
+        </div>
+        <div className="home-glitch-bg__tone" />
+        <div className="home-glitch-bg__scan" />
+      </div>
+
       <header
         ref={headerRef}
-        className="relative flex items-center justify-between px-4 pt-4 pb-2"
+        className="relative z-10 flex items-center justify-between px-4 pt-4 pb-2"
         style={{ height: HEADER_H }}
       >
         <div className="flex items-center gap-3">
@@ -454,7 +732,7 @@ export default function HomePage() {
 
       <section
         ref={heroRef}
-        className="flex flex-col items-center px-4 flex-1 justify-center text-center"
+        className="relative z-10 flex flex-col items-center px-4 flex-1 justify-center text-center"
         style={{
           minHeight: heroMinHeight,
           paddingTop: 'calc(max(12px, env(safe-area-inset-top, 0px)) + 12px)',
@@ -748,6 +1026,205 @@ export default function HomePage() {
       ) : null}
 
       <style jsx global>{`
+        .home-page {
+          position: relative;
+          isolation: isolate;
+          overflow: hidden;
+          background: #050505;
+        }
+
+        .home-glitch-bg {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+          pointer-events: none;
+          overflow: hidden;
+          background: #020202;
+        }
+
+        .home-glitch-bg__media {
+          position: absolute;
+          inset: -8%;
+          background-image: var(--home-glitch-image);
+          background-position: center;
+          background-size: cover;
+          filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28);
+          transform: scale(1.12);
+          opacity: calc(var(--home-glitch-strength, 1) * 0.4);
+          animation: home-glitch-media-cycle 10s steps(1, end) infinite;
+        }
+
+        .home-glitch-bg__fragments {
+          position: absolute;
+          inset: 0;
+          opacity: 0;
+          animation: home-glitch-fragments-cycle 10s steps(1, end) infinite;
+        }
+
+        .home-glitch-bg__tone {
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(180deg, rgba(0, 0, 0, 0.24), rgba(0, 0, 0, 0.58) 46%, rgba(0, 0, 0, 0.9)),
+            linear-gradient(90deg, rgba(0, 0, 0, 0.18), transparent 18%, transparent 82%, rgba(0, 0, 0, 0.18));
+        }
+
+        .home-glitch-bg__scan {
+          position: absolute;
+          inset: 0;
+          opacity: 0;
+          mix-blend-mode: screen;
+          background:
+            repeating-linear-gradient(
+              to bottom,
+              rgba(178, 227, 255, 0.13) 0,
+              rgba(178, 227, 255, 0.13) 1px,
+              transparent 1px,
+              transparent 3px
+            );
+          animation: home-glitch-scan-cycle 10s steps(1, end) infinite;
+        }
+
+        .home-glitch-fragment {
+          position: absolute;
+          left: var(--home-fragment-x);
+          top: var(--home-fragment-y);
+          width: var(--home-fragment-w);
+          height: var(--home-fragment-h);
+          opacity: calc(var(--home-fragment-opacity) * var(--home-glitch-strength, 1));
+          transform: translate3d(0, 0, 0);
+          animation: home-glitch-fragment-jump 10s steps(1, end) infinite;
+          animation-delay: var(--home-fragment-delay);
+          will-change: transform, opacity;
+        }
+
+        .home-glitch-fragment--line {
+          background:
+            linear-gradient(
+              90deg,
+              transparent 0%,
+              var(--home-fragment-color) 14%,
+              rgba(255, 255, 255, 0.64) 44%,
+              var(--home-fragment-accent) 66%,
+              transparent 100%
+            );
+          box-shadow:
+            0 0 8px color-mix(in srgb, var(--home-fragment-color) 52%, transparent),
+            2px 0 0 rgba(0, 255, 242, 0.22),
+            -2px 0 0 rgba(255, 0, 168, 0.18);
+        }
+
+        .home-glitch-fragment--media-line,
+        .home-glitch-fragment--tear,
+        .home-glitch-fragment--block {
+          background-image: var(--home-glitch-image);
+          background-position: var(--home-fragment-bg-position);
+          background-size: var(--home-fragment-bg-size);
+          filter: saturate(2.7) contrast(1.8) brightness(1.05);
+          mix-blend-mode: screen;
+          box-shadow:
+            2px 0 0 rgba(0, 255, 242, 0.34),
+            -2px 0 0 rgba(255, 0, 168, 0.28),
+            0 0 12px rgba(255, 255, 255, 0.06);
+        }
+
+        .home-glitch-fragment--media-line {
+          min-height: 1px;
+        }
+
+        .home-glitch-fragment--tear {
+          background-color: var(--home-fragment-color);
+          border-left: 2px solid rgba(255, 255, 255, 0.38);
+          border-right: 1px solid rgba(0, 255, 242, 0.28);
+        }
+
+        .home-glitch-fragment--block {
+          background-color: var(--home-fragment-color);
+        }
+
+        .home-glitch-fragment--void {
+          background:
+            linear-gradient(90deg, rgba(0, 0, 0, 0.92), rgba(4, 4, 4, 0.7)),
+            linear-gradient(180deg, var(--home-fragment-color), transparent);
+          border-left: 1px solid rgba(0, 255, 242, 0.24);
+          border-bottom: 1px solid rgba(255, 0, 168, 0.18);
+        }
+
+        @keyframes home-glitch-media-cycle {
+          0%,
+          29.99% {
+            opacity: calc(var(--home-glitch-strength, 1) * 0.38);
+            transform: scale(1.12) translate3d(0, 0, 0);
+            filter: blur(5px) saturate(2.1) contrast(1.7) brightness(0.26);
+          }
+          30%,
+          100% {
+            opacity: calc(var(--home-glitch-strength, 1) * 0.72);
+            transform: scale(1.15) translate3d(-0.8%, 0.4%, 0);
+            filter: blur(4px) saturate(2.75) contrast(2.1) brightness(0.25);
+          }
+        }
+
+        @keyframes home-glitch-fragments-cycle {
+          0%,
+          29.99% {
+            opacity: 0;
+          }
+          30%,
+          100% {
+            opacity: 1;
+          }
+        }
+
+        @keyframes home-glitch-scan-cycle {
+          0%,
+          29.99% {
+            opacity: 0.06;
+          }
+          30%,
+          100% {
+            opacity: 0.32;
+          }
+        }
+
+        @keyframes home-glitch-fragment-jump {
+          0%,
+          34% {
+            transform: translate3d(0, 0, 0);
+          }
+          39% {
+            transform: translate3d(var(--home-fragment-drift), 0, 0);
+          }
+          44% {
+            transform: translate3d(var(--home-fragment-drift-back), 0, 0);
+          }
+          53%,
+          100% {
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .home-glitch-bg__media,
+          .home-glitch-bg__fragments,
+          .home-glitch-bg__scan,
+          .home-glitch-fragment {
+            animation: none;
+          }
+
+          .home-glitch-bg__media {
+            opacity: calc(var(--home-glitch-strength, 1) * 0.29);
+          }
+
+          .home-glitch-bg__fragments {
+            opacity: 0.22;
+          }
+
+          .home-glitch-bg__scan {
+            opacity: 0.12;
+          }
+        }
+
         .burger-icon {
           position: relative;
         }

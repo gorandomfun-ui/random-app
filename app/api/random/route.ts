@@ -48,6 +48,11 @@ function parseStrongPool(searchParams: URLSearchParams): boolean {
   return pool === 'strong' || strong === '1' || strong === 'true'
 }
 
+function parsePreview(searchParams: URLSearchParams): boolean {
+  const preview = searchParams.get('preview')?.trim().toLowerCase()
+  return preview === '1' || preview === 'true'
+}
+
 async function getItemForType(type: ItemType, options: RandomSelectOptions = {}): Promise<RandomItem | null> {
   switch (type) {
     case 'image':
@@ -81,8 +86,10 @@ function resolveProvider(item: RandomItem): string | undefined {
   return undefined
 }
 
-async function respondWithItem(item: RandomItem, lang: UsageLang) {
-  await recordDailyUsage({ type: item.type, lang, provider: resolveProvider(item) })
+async function respondWithItem(item: RandomItem, lang: UsageLang, { preview = false }: { preview?: boolean } = {}) {
+  if (!preview) {
+    await recordDailyUsage({ type: item.type, lang, provider: resolveProvider(item) })
+  }
   return NextResponse.json({ item })
 }
 
@@ -92,16 +99,17 @@ export async function GET(req: Request) {
     const lang = parseLang(searchParams.get('lang'))
     const types = parseTypes(searchParams.get('types'))
     const options: RandomSelectOptions = { strong: parseStrongPool(searchParams) }
+    const preview = parsePreview(searchParams)
 
     for (const type of types) {
       const item = await getItemForType(type, options)
       if (item) {
-        return await respondWithItem(item, lang)
+        return await respondWithItem(item, lang, { preview })
       }
     }
 
     const fallback = await selectImage()
-    return await respondWithItem(fallback, lang)
+    return await respondWithItem(fallback, lang, { preview })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })

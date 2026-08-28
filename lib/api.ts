@@ -7,10 +7,12 @@ export async function fetchRandom({
   types,
   lang,
   strong = false,
+  preview = false,
 }: {
   types: RandomTypes
   lang: 'en' | 'fr' | 'de' | 'jp'
   strong?: boolean
+  preview?: boolean
 }): Promise<RandomApiResponse> {
   const qs = new URLSearchParams({
     types: types.join(','),
@@ -19,6 +21,7 @@ export async function fetchRandom({
     t: String(Date.now()),
   })
   if (strong) qs.set('pool', 'strong')
+  if (preview) qs.set('preview', '1')
   const res = await fetch(`/api/random?${qs.toString()}`, {
     cache: 'no-store', // Next 14: désactive le cache fetch côté client
   })

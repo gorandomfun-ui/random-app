@@ -99,6 +99,7 @@ const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
 
 type GlitchBar = {
   id: string
+  variant: 'line' | 'signal' | 'block' | 'void'
   top: string
   width: string
   left: string
@@ -107,11 +108,19 @@ type GlitchBar = {
   delay: number
   duration: number
   shift: string
+  yShift: string
   opacity: number
+  popOpacity: number
 }
 
 type GlitchBarStyle = CSSProperties & {
   ['--glitch-bar-shift']?: string
+  ['--glitch-bar-start-x']?: string
+  ['--glitch-bar-mid-x']?: string
+  ['--glitch-bar-tail-x']?: string
+  ['--glitch-bar-y-shift']?: string
+  ['--glitch-bar-y-reverse']?: string
+  ['--glitch-bar-pop-opacity']?: number
 }
 
 type FullscreenVideoPayload = {
@@ -1689,50 +1698,81 @@ const sequenceStateRef = useRef({
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
-    const count = mode === 'boost' ? randomInt(18, 28) : randomInt(5, 9)
+    const count = mode === 'boost' ? randomInt(62, 84) : randomInt(34, 48)
     const stamp = Date.now()
 
-    const gradientForSet = (colors: [string, string, string]) => {
+    const gradientForSet = (colors: [string, string, string], variant: GlitchBar['variant']) => {
       const [c1, c2, c3] = colors
-      const stopA = randomBetween(22, 38)
-      const stopB = randomBetween(stopA + 8, 88)
-      return `linear-gradient(90deg, ${c1} 0% ${stopA.toFixed(0)}%, ${c2} ${stopA.toFixed(0)}% ${stopB.toFixed(0)}%, ${c3} ${stopB.toFixed(0)}% 100%)`
+      if (variant === 'void') return 'linear-gradient(90deg, #020202 0% 100%)'
+      if (variant === 'signal') {
+        const stopA = randomBetween(14, 30)
+        const stopB = randomBetween(stopA + 8, 54)
+        const stopC = randomBetween(stopB + 4, 76)
+        return `linear-gradient(90deg, transparent 0% ${stopA.toFixed(0)}%, ${c1} ${stopA.toFixed(0)}% ${stopB.toFixed(0)}%, #fff ${stopB.toFixed(0)}% ${(stopB + 3).toFixed(0)}%, #050505 ${(stopB + 3).toFixed(0)}% ${stopC.toFixed(0)}%, ${c2} ${stopC.toFixed(0)}% 100%)`
+      }
+      if (variant === 'block') {
+        const stopA = randomBetween(18, 42)
+        const stopB = randomBetween(stopA + 12, 82)
+        return `linear-gradient(90deg, ${c1} 0% ${stopA.toFixed(0)}%, #030303 ${stopA.toFixed(0)}% ${(stopA + 5).toFixed(0)}%, ${c2} ${(stopA + 5).toFixed(0)}% ${stopB.toFixed(0)}%, ${c3} ${stopB.toFixed(0)}% 100%)`
+      }
+      const stopA = randomBetween(18, 46)
+      const stopB = randomBetween(stopA + 5, 92)
+      return `linear-gradient(90deg, transparent 0% 2%, ${c1} 2% ${stopA.toFixed(0)}%, ${c2} ${stopA.toFixed(0)}% ${stopB.toFixed(0)}%, transparent ${stopB.toFixed(0)}% 100%)`
     }
 
     return Array.from({ length: count }, (_, index) => {
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
-      const wideThreshold = mode === 'boost' ? 4 : 2
-      const wideChance = mode === 'boost' ? 0.7 : 0.45
+      const roll = Math.random()
+      const variant: GlitchBar['variant'] =
+        roll > 0.88 ? 'block' : roll > 0.76 ? 'signal' : roll > 0.66 ? 'void' : 'line'
+      const wideThreshold = mode === 'boost' ? 7 : 4
+      const wideChance = variant === 'line' ? 0.38 : variant === 'signal' ? 0.58 : 0.26
       const wide = index < wideThreshold || Math.random() < wideChance
-      const widthValue = wide
-        ? randomBetween(mode === 'boost' ? 64 : 58, mode === 'boost' ? 112 : 98)
-        : randomBetween(14, mode === 'boost' ? 58 : 46)
+      const widthValue = variant === 'block'
+        ? randomBetween(3, mode === 'boost' ? 20 : 15)
+        : wide
+          ? randomBetween(mode === 'boost' ? 42 : 30, mode === 'boost' ? 118 : 106)
+          : randomBetween(4, mode === 'boost' ? 34 : 28)
       const maxLeft = Math.max(-6, 100 - widthValue)
-      const leftValue = randomBetween(-6, maxLeft)
-      const topValue = randomBetween(4, 94)
-      const heightValue = wide
-        ? randomBetween(mode === 'boost' ? 8 : 6, mode === 'boost' ? 12 : 9)
-        : randomBetween(1.6, mode === 'boost' ? 5.2 : 4.4)
-      const delay = Math.round(randomBetween(0, mode === 'boost' ? 160 : 120))
-      const duration = Math.round(randomBetween(mode === 'boost' ? 260 : 220, mode === 'boost' ? 380 : 340))
+      const leftValue = randomBetween(variant === 'block' ? -2 : -9, maxLeft)
+      const topValue = randomBetween(1, 98)
+      const heightValue = variant === 'block'
+        ? randomBetween(mode === 'boost' ? 5 : 3, mode === 'boost' ? 18 : 12)
+        : variant === 'signal'
+          ? randomBetween(1.2, mode === 'boost' ? 3.8 : 3)
+          : variant === 'void'
+            ? randomBetween(1.4, mode === 'boost' ? 7 : 5)
+            : randomBetween(0.45, mode === 'boost' ? 1.5 : 1.2)
+      const delay = Math.round(randomBetween(0, mode === 'boost' ? 190 : 135))
+      const duration = Math.round(randomBetween(mode === 'boost' ? 180 : 150, mode === 'boost' ? 360 : 300))
       const shiftValue = mode === 'boost'
-        ? randomBetween(wide ? 18 : 10, wide ? 30 : 18)
-        : randomBetween(wide ? 12 : 6, wide ? 20 : 14)
+        ? randomBetween(wide ? 22 : 9, wide ? 46 : 22)
+        : randomBetween(wide ? 14 : 5, wide ? 30 : 16)
+      const yShiftValue = variant === 'block'
+        ? randomBetween(-3.5, 3.5)
+        : randomBetween(-1.2, 1.2)
       const opacity = parseFloat(
-        randomBetween(wide ? 0.82 : 0.58, mode === 'boost' ? 0.97 : 0.92).toFixed(2)
+        randomBetween(
+          variant === 'line' ? 0.42 : variant === 'void' ? 0.64 : 0.62,
+          mode === 'boost' ? 0.96 : 0.9
+        ).toFixed(2)
       )
+      const popOpacity = parseFloat(Math.min(1, opacity + randomBetween(0.08, 0.28)).toFixed(2))
 
       return {
         id: `${stamp}-${index}-${Math.random().toString(16).slice(2, 6)}`,
+        variant,
         top: `${topValue.toFixed(2)}%`,
         width: `${widthValue.toFixed(2)}%`,
         left: `${leftValue.toFixed(2)}%`,
-        height: `${heightValue.toFixed(1)}px`,
-        background: gradientForSet(palette),
+        height: `${heightValue.toFixed(2)}px`,
+        background: gradientForSet(palette, variant),
         delay,
         duration,
         shift: `${shiftValue.toFixed(1)}px`,
+        yShift: `${yShiftValue.toFixed(1)}px`,
         opacity,
+        popOpacity,
       }
     })
   }, [])
@@ -2648,6 +2688,8 @@ const showXpForCategory = useMemo(() => {
       >
         <div className="page-glitch-overlay__bars">
           {pageGlitchBars.map((bar) => {
+            const shiftValue = parseFloat(bar.shift) || 12
+            const yShiftValue = parseFloat(bar.yShift) || 0
             const style: GlitchBarStyle = {
               top: bar.top,
               height: bar.height,
@@ -2657,10 +2699,22 @@ const showXpForCategory = useMemo(() => {
               animationDelay: `${bar.delay}ms`,
               animationDuration: `${bar.duration}ms`,
               '--glitch-bar-shift': bar.shift,
+              '--glitch-bar-start-x': `${(-0.7 * shiftValue).toFixed(1)}px`,
+              '--glitch-bar-mid-x': `${(-0.35 * shiftValue).toFixed(1)}px`,
+              '--glitch-bar-tail-x': `${(-0.18 * shiftValue).toFixed(1)}px`,
+              '--glitch-bar-y-shift': bar.yShift,
+              '--glitch-bar-y-reverse': `${(-1 * yShiftValue).toFixed(1)}px`,
+              '--glitch-bar-pop-opacity': bar.popOpacity,
               opacity: bar.opacity,
             }
 
-            return <span key={bar.id} className="page-glitch-overlay__bar" style={style} />
+            return (
+              <span
+                key={bar.id}
+                className={`page-glitch-overlay__bar page-glitch-overlay__bar--${bar.variant}`}
+                style={style}
+              />
+            )
           })}
         </div>
       </div>
@@ -3227,7 +3281,7 @@ const showXpForCategory = useMemo(() => {
           background-position: center;
           background-size: cover;
           filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28);
-          opacity: var(--random-bg-strength, 0);
+          opacity: min(1, calc(var(--random-bg-strength, 0) * 1.2));
           transform: scale(1.12);
           transition: opacity 120ms ease, background-image 120ms ease, filter 120ms ease;
           animation: random-bg-drift 18s steps(8, end) infinite alternate;
@@ -3446,9 +3500,30 @@ const showXpForCategory = useMemo(() => {
           background-color: transparent;
           overflow: hidden;
         }
+        .page-glitch-overlay::before,
+        .page-glitch-overlay::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          opacity: 0;
+        }
+        .page-glitch-overlay::before {
+          background:
+            repeating-linear-gradient(180deg, rgba(0, 255, 255, 0.18) 0 0.28px, rgba(0, 0, 0, 0.32) 0.28px 0.56px, transparent 0.56px 1.12px),
+            repeating-linear-gradient(180deg, transparent 0 3px, rgba(255, 0, 130, 0.12) 3px 3.24px, transparent 3.24px 5.2px, rgba(255, 255, 255, 0.08) 5.2px 5.42px, transparent 5.42px 7.4px);
+          mix-blend-mode: screen;
+        }
+        .page-glitch-overlay::after {
+          background:
+            linear-gradient(180deg, transparent 0 7%, rgba(0, 255, 255, 0.38) 7.05% 7.18%, transparent 7.24% 19%, rgba(255, 0, 130, 0.34) 19.06% 19.18%, transparent 19.26% 47%, rgba(255, 255, 255, 0.22) 47.04% 47.12%, transparent 47.18% 73%, rgba(255, 255, 0, 0.26) 73.06% 73.2%, transparent 73.28%),
+            linear-gradient(180deg, transparent 0 31%, rgba(0, 0, 0, 0.52) 31.1% 31.58%, transparent 31.72% 64%, rgba(0, 0, 0, 0.46) 64.12% 64.42%, transparent 64.58%);
+          mix-blend-mode: hard-light;
+        }
         .page-glitch-overlay__bars {
           position: absolute;
           inset: 0;
+          z-index: 2;
         }
         .page-glitch-overlay__bar {
           position: absolute;
@@ -3456,6 +3531,41 @@ const showXpForCategory = useMemo(() => {
           border-radius: 0;
           will-change: transform, opacity;
           --glitch-bar-shift: 12px;
+          --glitch-bar-y-shift: 0px;
+          --glitch-bar-pop-opacity: 1;
+          box-shadow:
+            2px 0 0 rgba(0, 255, 255, 0.2),
+            -2px 0 0 rgba(255, 0, 130, 0.18);
+          transform: translate3d(0, 0, 0);
+        }
+        .page-glitch-overlay__bar--line {
+          min-height: 0.35px;
+          mix-blend-mode: screen;
+          box-shadow:
+            3px 0 0 rgba(0, 255, 255, 0.14),
+            -3px 0 0 rgba(255, 0, 130, 0.12);
+        }
+        .page-glitch-overlay__bar--signal {
+          mix-blend-mode: screen;
+          filter: saturate(1.8) contrast(1.5);
+          box-shadow:
+            4px 0 0 rgba(0, 255, 255, 0.24),
+            -4px 0 0 rgba(255, 0, 130, 0.22),
+            0 0 10px rgba(255, 255, 255, 0.08);
+        }
+        .page-glitch-overlay__bar--block {
+          mix-blend-mode: hard-light;
+          filter: saturate(2.2) contrast(1.9);
+          box-shadow:
+            3px 0 0 rgba(0, 255, 255, 0.3),
+            -3px 0 0 rgba(255, 0, 130, 0.28),
+            0 4px 0 rgba(0, 0, 0, 0.38);
+        }
+        .page-glitch-overlay__bar--void {
+          mix-blend-mode: normal;
+          box-shadow:
+            5px 0 0 rgba(0, 255, 255, 0.08),
+            -5px 0 0 rgba(255, 0, 130, 0.08);
         }
         .video-fullscreen-overlay {
           position: fixed;
@@ -3525,31 +3635,108 @@ const showXpForCategory = useMemo(() => {
           }
         }
         .page-glitch-overlay--active {
-          animation: page-glitch-fade 320ms ease-out forwards;
+          animation: page-glitch-fade 360ms steps(1, end) forwards;
+        }
+        .page-glitch-overlay--active::before {
+          animation: page-glitch-scan 360ms steps(1, end) forwards;
+        }
+        .page-glitch-overlay--active::after {
+          animation: page-glitch-signal 360ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active .page-glitch-overlay__bar {
           animation-name: page-glitch-bar;
-          animation-timing-function: steps(4, jump-start);
+          animation-timing-function: steps(1, end);
           animation-fill-mode: forwards;
         }
         @keyframes page-glitch-fade {
           0% { opacity: 0; }
-          15% { opacity: 0.92; }
-          55% { opacity: 0.64; }
+          8% { opacity: 0.96; }
+          16% { opacity: 0.38; }
+          24% { opacity: 0.9; }
+          36% { opacity: 0.26; }
+          56% { opacity: 0.78; }
+          76% { opacity: 0.22; }
           100% { opacity: 0; }
+        }
+        @keyframes page-glitch-scan {
+          0% {
+            opacity: 0;
+            transform: translate3d(0, 0, 0);
+          }
+          8% {
+            opacity: 0.72;
+            transform: translate3d(7px, 0, 0);
+          }
+          15% {
+            opacity: 0.28;
+            transform: translate3d(-5px, 0, 0);
+          }
+          28% {
+            opacity: 0.64;
+            transform: translate3d(3px, 0, 0);
+          }
+          52% {
+            opacity: 0.36;
+            transform: translate3d(-2px, 0, 0);
+          }
+          100% {
+            opacity: 0;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        @keyframes page-glitch-signal {
+          0%, 100% {
+            opacity: 0;
+            transform: translate3d(0, 0, 0);
+          }
+          9% {
+            opacity: 0.72;
+            transform: translate3d(-12px, 0, 0);
+          }
+          10% {
+            opacity: 0;
+          }
+          31% {
+            opacity: 0.5;
+            transform: translate3d(9px, 0, 0);
+          }
+          33% {
+            opacity: 0;
+          }
+          58% {
+            opacity: 0.42;
+            transform: translate3d(-6px, 0, 0);
+          }
+          60% {
+            opacity: 0;
+          }
         }
         @keyframes page-glitch-bar {
           0% {
             opacity: 0;
-            transform: translate3d(calc(-0.6 * var(--glitch-bar-shift, 12px)), 0, 0);
+            transform: translate3d(var(--glitch-bar-start-x, -8px), var(--glitch-bar-y-shift, 0px), 0);
           }
-          25% {
-            opacity: 1;
+          12% {
+            opacity: var(--glitch-bar-pop-opacity, 1);
+            transform: translate3d(var(--glitch-bar-shift, 12px), var(--glitch-bar-y-reverse, 0px), 0);
+          }
+          16% {
+            opacity: 0;
+          }
+          34% {
+            opacity: var(--glitch-bar-pop-opacity, 1);
+            transform: translate3d(var(--glitch-bar-mid-x, -4px), var(--glitch-bar-y-shift, 0px), 0);
+          }
+          44% {
+            opacity: 0;
+          }
+          63% {
+            opacity: var(--glitch-bar-pop-opacity, 1);
             transform: translate3d(calc(0.45 * var(--glitch-bar-shift, 12px)), 0, 0);
           }
-          55% {
-            opacity: 0.8;
-            transform: translate3d(calc(-0.3 * var(--glitch-bar-shift, 12px)), 0, 0);
+          71% {
+            opacity: 0.28;
+            transform: translate3d(var(--glitch-bar-tail-x, -2px), 0, 0);
           }
           100% {
             opacity: 0;
