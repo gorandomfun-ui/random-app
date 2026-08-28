@@ -80,6 +80,19 @@ const GLITCH_COLOR_SETS: Array<[string, string, string]> = [
   ['#ADFF00', '#00FFE3', '#FFFC00'],
 ]
 
+const IMMERSIVE_ACCENTS: Record<string, string> = {
+  video: '#13D8FF',
+  image: '#FF35C7',
+  web: '#FF8A00',
+  quote: '#B7FF4A',
+  joke: '#FF005C',
+  fact: '#8D6CFF',
+  minigame: '#23FF9A',
+  encourage: '#FF6A00',
+  ad: '#FF005C',
+  empty: '#B13CFF',
+}
+
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
@@ -125,6 +138,31 @@ type SequenceSlot =
 
 type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
 type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
+type ImmersiveBackgroundStyle = CSSProperties & {
+  ['--random-bg-image']?: string
+  ['--random-bg-tone']?: string
+  ['--random-bg-accent']?: string
+  ['--random-bg-strength']?: number
+  ['--random-bg-noise-strength']?: number
+}
+type ImmersiveFragmentStyle = CSSProperties & {
+  ['--fragment-opacity']?: number
+  ['--fragment-pop-opacity']?: number
+  ['--fragment-transform']?: string
+  ['--fragment-jump-x']?: string
+  ['--fragment-reverse-x']?: string
+  ['--fragment-jump-y']?: string
+  ['--fragment-duration']?: string
+  ['--fragment-delay']?: string
+  ['--fragment-color']?: string
+  ['--fragment-alt-color']?: string
+}
+
+type ImmersiveFragment = {
+  id: string
+  className: string
+  style: ImmersiveFragmentStyle
+}
 
 type Lang = 'en' | 'fr' | 'de' | 'jp'
 
@@ -177,6 +215,372 @@ const shuffleArray = <T,>(arr: T[]): T[] => {
 }
 
 const randIdx = (max: number) => Math.floor(Math.random() * max)
+
+const cssImageUrl = (value?: string | null) => {
+  if (!value) return undefined
+  return `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+}
+
+const extractYouTubeIdForThumb = (url: string) => {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.includes('youtu.be')) return parsed.pathname.split('/').filter(Boolean)[0] || null
+    if (parsed.hostname.includes('youtube.com')) {
+      if (parsed.pathname.startsWith('/shorts/')) return parsed.pathname.split('/').filter(Boolean)[1] || null
+      if (parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/').filter(Boolean)[1] || null
+      return parsed.searchParams.get('v')
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+const extractDailymotionIdForThumb = (url: string) => {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname.includes('dai.ly')) return parsed.pathname.split('/').filter(Boolean)[0] || null
+    if (parsed.hostname.includes('dailymotion.com')) {
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      const videoIndex = parts.indexOf('video')
+      return videoIndex >= 0 ? parts[videoIndex + 1] || null : parts[0] || null
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function getImmersiveBackgroundImage(item: DisplayItem | null): string | null {
+  if (!item) return null
+  if (item.type === 'image') return item.thumbUrl || item.url || null
+  if (item.type === 'video') {
+    if (item.thumbUrl) return item.thumbUrl
+    const provider = (item.provider || '').toLowerCase()
+    const youtubeId = provider.includes('youtube') || /youtu\.?be|youtube\.com/.test(item.url)
+      ? extractYouTubeIdForThumb(item.url)
+      : null
+    if (youtubeId) return `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`
+    const dailymotionId = provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(item.url)
+      ? extractDailymotionIdForThumb(item.url)
+      : null
+    if (dailymotionId) return `https://www.dailymotion.com/thumbnail/video/${dailymotionId}`
+    return null
+  }
+  if (item.type === 'web') return item.ogImage || null
+  if (item.type === 'encourage') return item.icon || null
+  return null
+}
+
+function getImmersiveBackgroundData(
+  item: DisplayItem | null,
+  theme: { bg: string; text: string },
+  isInlineAd: boolean,
+  isPriming: boolean,
+  fallbackImage?: string | null
+) {
+  const kind = isInlineAd ? 'ad' : isPriming || !item ? 'empty' : item.type
+  const ownImage = isInlineAd || isPriming ? null : getImmersiveBackgroundImage(item)
+  const image = ownImage || fallbackImage || null
+  const accent = IMMERSIVE_ACCENTS[kind] || theme.text
+  const strength = image
+    ? ownImage
+      ? kind === 'image'
+        ? 0.76
+        : kind === 'video'
+          ? 0.66
+          : 0.56
+      : 0.5
+    : 0
+
+  return {
+    image,
+    tone: theme.bg,
+    accent,
+    strength,
+  }
+}
+
+function hashString(value: string) {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function createSeededRandom(seed: number) {
+  let state = seed || 1
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 4294967296
+  }
+}
+
+function getImmersiveSeed(item: DisplayItem | null, image?: string | null) {
+  if (!item) return image || 'empty'
+  if ('_id' in item && item._id) return `${item.type}:${item._id}:${image || ''}`
+  if ('url' in item && item.url) return `${item.type}:${item.url}:${image || ''}`
+  if (item.type === 'encourage') return `encourage:${item.text}:${image || ''}`
+  return `${item.type}:${image || ''}`
+}
+
+function buildImmersiveFragments(image: string | null, seedValue: string, viewportWidth: number | null): ImmersiveFragment[] {
+  if (!image) return []
+
+  const isCompact = viewportWidth != null && viewportWidth < 720
+  const fineLineCount = isCompact ? 430 : 700
+  const lowerFineLineCount = isCompact ? 520 : 820
+  const tearCount = isCompact ? 130 : 190
+  const clusterCount = isCompact ? 5 : 7
+  const voidCount = isCompact ? 16 : 22
+  const signalCount = isCompact ? 18 : 26
+  const contentZoneTop = isCompact ? 18 : 16
+  const contentZoneBottom = isCompact ? 70 : 84
+  const sourceZoneTop = isCompact ? 62 : 77
+  const sourceZoneBottom = isCompact ? 73 : 87
+  const lowerChaosTop = isCompact ? 70 : 84
+  const lowerChaosBottom = isCompact ? 98 : 99
+  const lowerLineTop = sourceZoneBottom + (isCompact ? 0.8 : 0.6)
+  const lowerBlockTop = isCompact ? 74 : 88
+  const lowerBlockBottom = isCompact ? 92 : 98
+  const rng = createSeededRandom(hashString(seedValue))
+  const fragments: ImmersiveFragment[] = []
+
+  const between = (min: number, max: number) => min + rng() * (max - min)
+  const intBetween = (min: number, max: number) => Math.floor(between(min, max + 1))
+  const fixed = (value: number, precision = 2) => Number(value.toFixed(precision))
+  const inContentZone = (top: number) => top >= contentZoneTop && top <= contentZoneBottom
+  const inSourceZone = (top: number) => top >= sourceZoneTop && top <= sourceZoneBottom
+  const quietFactor = (top: number) => {
+    if (inSourceZone(top)) return 0.06
+    if (inContentZone(top)) return 0.1
+    return 1
+  }
+  const backdropTop = (insideChance = 0.04) => {
+    const roll = rng()
+    if (roll < insideChance) return between(contentZoneTop, contentZoneBottom)
+    if (roll < 0.5) return between(-2, contentZoneTop - 2)
+    return between(lowerChaosTop, lowerChaosBottom)
+  }
+  const blends: Array<CSSProperties['mixBlendMode']> = ['screen', 'hard-light', 'color-dodge', 'normal', 'difference']
+  const signalColors = ['#00fff0', '#ff007a', '#f4ff00', '#19ff5f', '#2458ff', '#ffffff', '#ff5a00']
+  const softLineColors = [
+    'rgba(255, 255, 255, 0.2)',
+    'rgba(0, 255, 240, 0.24)',
+    'rgba(255, 0, 122, 0.22)',
+    'rgba(25, 255, 95, 0.2)',
+    'rgba(36, 88, 255, 0.22)',
+    'rgba(3, 3, 3, 0.76)',
+  ]
+  const motion = (jumpRangeX: number, jumpRangeY: number, minDuration: number, maxDuration: number) => {
+    const jumpX = fixed(between(-jumpRangeX, jumpRangeX), 1)
+    return {
+      '--fragment-jump-x': `${jumpX}px`,
+      '--fragment-reverse-x': `${fixed(jumpX * -0.54, 1)}px`,
+      '--fragment-jump-y': `${fixed(between(-jumpRangeY, jumpRangeY), 1)}px`,
+      '--fragment-duration': `${intBetween(minDuration, maxDuration)}ms`,
+      '--fragment-delay': `-${intBetween(0, maxDuration)}ms`,
+    } satisfies ImmersiveFragmentStyle
+  }
+
+  for (let i = 0; i < fineLineCount; i += 1) {
+    const top = backdropTop(0.025)
+    const protectedZone = inContentZone(top)
+    const sourceZone = inSourceZone(top)
+    const edgeOnly = protectedZone && !sourceZone && rng() > 0.08
+    const quiet = sourceZone ? 0.04 : edgeOnly ? 0.42 : quietFactor(top)
+    const mediaLine = rng() > 0.58
+    const hot = !protectedZone && rng() > 0.9
+    const long = rng() > 0.78
+    const height = rng() > 0.93 ? between(0.42, 0.82) : between(0.1, 0.32)
+    const width = long ? between(isCompact ? 26 : 38, isCompact ? 88 : 118) : between(3, isCompact ? 36 : 58)
+    const left = edgeOnly
+      ? rng() > 0.5
+        ? between(-30, 8)
+        : between(82, 116)
+      : between(-28, 116)
+    const lineWidth = edgeOnly ? Math.min(width, between(12, isCompact ? 32 : 44)) : width
+
+    fragments.push({
+      id: `fine-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--fine',
+      style: {
+        left: `${fixed(left)}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(lineWidth)}vw`,
+        height: `${fixed(height, 2)}px`,
+        backgroundImage: mediaLine ? undefined : 'none',
+        backgroundColor: mediaLine ? undefined : softLineColors[intBetween(0, softLineColors.length - 1)],
+        backgroundPosition: `${fixed(between(-28, 126))}% ${fixed(top + between(-16, 16))}%`,
+        backgroundSize: `${intBetween(100, 240)}vw ${intBetween(96, 220)}vh`,
+        filter: mediaLine
+          ? `saturate(${fixed(between(1.05, hot ? 2.8 : 1.7), 2)}) contrast(${fixed(between(1.02, 1.55), 2)}) brightness(${fixed(hot ? between(0.58, 1.02) : between(0.14, 0.5), 2)}) hue-rotate(${intBetween(-42, 46)}deg)`
+          : undefined,
+        mixBlendMode: hot ? 'screen' : mediaLine ? 'hard-light' : rng() > 0.7 ? 'screen' : 'normal',
+        '--fragment-opacity': fixed(between(hot ? 0.2 : 0.08, hot ? 0.48 : 0.3) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.22, 0.42) * quiet, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-8, 8), 1)}px, 0, 0)`,
+      },
+    })
+  }
+
+  for (let i = 0; i < lowerFineLineCount; i += 1) {
+    const top = between(lowerLineTop, lowerChaosBottom)
+    const mediaLine = rng() > 0.72
+    const long = rng() > 0.66
+    const bright = rng() > 0.88
+    const height = rng() > 0.96 ? between(0.42, 0.72) : between(0.12, 0.34)
+    const width = long ? between(isCompact ? 22 : 30, isCompact ? 92 : 122) : between(5, isCompact ? 46 : 66)
+    const opacity = mediaLine ? between(0.16, bright ? 0.48 : 0.32) : between(0.14, bright ? 0.44 : 0.3)
+
+    fragments.push({
+      id: `lower-fine-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--fine random-immersive-fragment--lower-fine',
+      style: {
+        left: `${fixed(between(-30, 118))}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(width)}vw`,
+        height: `${fixed(height, 2)}px`,
+        backgroundImage: mediaLine ? undefined : 'none',
+        backgroundColor: mediaLine ? undefined : softLineColors[intBetween(0, softLineColors.length - 1)],
+        backgroundPosition: `${fixed(between(-34, 132))}% ${fixed(top + between(-9, 9))}%`,
+        backgroundSize: `${intBetween(104, 220)}vw ${intBetween(96, 190)}vh`,
+        filter: mediaLine
+          ? `saturate(${fixed(between(1.25, bright ? 2.65 : 1.85), 2)}) contrast(${fixed(between(1.08, 1.75), 2)}) brightness(${fixed(bright ? between(0.62, 1.05) : between(0.22, 0.62), 2)}) hue-rotate(${intBetween(-48, 52)}deg)`
+          : undefined,
+        mixBlendMode: mediaLine || bright ? 'screen' : rng() > 0.72 ? 'hard-light' : 'normal',
+        '--fragment-opacity': fixed(opacity, 2),
+        '--fragment-pop-opacity': fixed(opacity, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-7, 7), 1)}px, 0, 0)`,
+      },
+    })
+  }
+
+  for (let i = 0; i < tearCount; i += 1) {
+    const hot = rng() > 0.82
+    const smear = rng() > 0.9
+    const width = isCompact ? between(12, 96) : between(8, 82)
+    const height = smear ? between(1.8, 5.6) : between(0.35, 1.75)
+    const top = backdropTop(0.02)
+    const quiet = quietFactor(top)
+    const left = between(-26, 112)
+    const hue = hot ? intBetween(-92, 86) : intBetween(-30, 32)
+    const transform = `translate3d(${fixed(between(-18, 18), 1)}px, ${fixed(between(-1.5, 1.5), 1)}px, 0)`
+
+    fragments.push({
+      id: `tear-${i}`,
+      className: `random-immersive-fragment random-immersive-fragment--tear${hot ? ' random-immersive-fragment--hot' : ''}${smear ? ' random-immersive-fragment--smear' : ''}`,
+      style: {
+        left: `${fixed(left)}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(width)}vw`,
+        height: `${fixed(height, 2)}px`,
+        backgroundPosition: `${fixed(between(-20, 120))}% ${fixed(top + between(-24, 24))}%`,
+        backgroundSize: `${intBetween(86, 210)}vw ${intBetween(92, 210)}vh`,
+        filter: `saturate(${fixed(between(1.7, 4.1), 2)}) contrast(${fixed(between(1.25, 2.2), 2)}) brightness(${fixed(hot ? between(0.98, 1.48) : between(0.36, 0.86), 2)}) hue-rotate(${hue}deg)`,
+        mixBlendMode: hot ? blends[intBetween(0, blends.length - 2)] : 'screen',
+        '--fragment-opacity': fixed(between(0.12, hot ? 0.64 : 0.42) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.5, 0.78) * quiet, 2),
+        '--fragment-transform': transform,
+        ...motion(18, 3, 8200, 22000),
+      },
+    })
+  }
+
+  for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+    const clusterTop = rng() > 0.52 ? between(-2, contentZoneTop - 4) : between(lowerBlockTop, lowerBlockBottom)
+    const clusterLeft = between(-3, 92)
+    const parts = intBetween(isCompact ? 7 : 9, isCompact ? 12 : 15)
+    const clusterWidth = between(isCompact ? 20 : 28, isCompact ? 72 : 108)
+    const clusterHeight = between(20, isCompact ? 78 : 108)
+
+    for (let part = 0; part < parts; part += 1) {
+      const bright = rng() > 0.48
+      const wide = rng() > 0.38
+      const width = wide ? between(38, isCompact ? 150 : 260) : between(9, isCompact ? 56 : 86)
+      const height = rng() > 0.68 ? between(12, 42) : between(3, 16)
+      const localLeft = between(0, clusterWidth)
+      const localTop = between(0, clusterHeight)
+      const transform = `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-4, 4), 1)}px, 0)`
+
+      fragments.push({
+        id: `cluster-${cluster}-${part}`,
+        className: `random-immersive-fragment random-immersive-fragment--block random-immersive-fragment--cluster-block${bright ? ' random-immersive-fragment--hot' : ''}`,
+        style: {
+          left: `calc(${fixed(clusterLeft)}% + ${fixed(localLeft, 1)}px)`,
+          top: `calc(${fixed(clusterTop)}% + ${fixed(localTop, 1)}px)`,
+          width: `${fixed(width, 1)}px`,
+          height: `${fixed(height, 1)}px`,
+          backgroundPosition: `${fixed(clusterLeft + between(-16, 16))}% ${fixed(clusterTop + between(-12, 12))}%`,
+          backgroundSize: `${intBetween(88, 146)}vw ${intBetween(88, 146)}vh`,
+          filter: `saturate(${fixed(between(2.1, 4.7), 2)}) contrast(${fixed(between(1.35, 2.45), 2)}) brightness(${fixed(bright ? between(1.02, 1.62) : between(0.52, 1), 2)}) hue-rotate(${intBetween(-104, 112)}deg)`,
+          mixBlendMode: bright ? 'screen' : 'hard-light',
+          '--fragment-opacity': fixed(between(0.58, bright ? 0.98 : 0.86), 2),
+          '--fragment-pop-opacity': fixed(between(0.74, 1), 2),
+          '--fragment-transform': transform,
+          ...motion(20, 5, 6200, 18000),
+        },
+      })
+    }
+  }
+
+  for (let i = 0; i < voidCount; i += 1) {
+    const strip = rng() > 0.08
+    const top = backdropTop(0.015)
+    const quiet = quietFactor(top)
+    const left = between(-20, 105)
+    const width = strip ? between(18, 92) : between(8, 32)
+    const height = strip ? between(1, 8) : between(5, 18)
+
+    fragments.push({
+      id: `void-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--void',
+      style: {
+        left: `${fixed(left)}%`,
+        top: `${fixed(top)}%`,
+        width: strip ? `${fixed(width)}vw` : `${fixed(width, 1)}vw`,
+        height: strip ? `${fixed(height, 1)}px` : `${fixed(height, 1)}px`,
+        backgroundImage: 'none',
+        backgroundColor: rng() > 0.18 ? '#030303' : '#101010',
+        mixBlendMode: 'normal',
+        '--fragment-opacity': fixed(between(0.52, 0.9) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.62, 0.96) * quiet, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-2, 2), 1)}px, 0)`,
+        ...motion(18, 3, 9000, 24000),
+      },
+    })
+  }
+
+  for (let i = 0; i < signalCount; i += 1) {
+    const color = signalColors[intBetween(0, signalColors.length - 1)]
+    const altColor = signalColors[intBetween(0, signalColors.length - 1)]
+    const top = backdropTop(0.015)
+    const quiet = quietFactor(top)
+
+    fragments.push({
+      id: `signal-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--signal random-immersive-fragment--signal-bar',
+      style: {
+        left: `${fixed(between(-4, 102))}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(between(8, isCompact ? 62 : 78))}vw`,
+        height: `${fixed(between(0.7, 3.6), 2)}px`,
+        backgroundImage: 'none',
+        mixBlendMode: rng() > 0.36 ? 'screen' : 'normal',
+        '--fragment-color': color,
+        '--fragment-alt-color': altColor,
+        '--fragment-opacity': fixed(between(0.26, 0.7) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.54, 0.88) * quiet, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-2, 2), 1)}px, 0)`,
+        ...motion(16, 3, 7600, 21000),
+      },
+    })
+  }
+
+  return fragments
+}
 
 function randDiffIdx(max: number, not: number) {
   if (max <= 1) return 0
@@ -1187,11 +1591,11 @@ export default function RandomExperiencePage({
     height: contentHeight,
     borderRadius: 0,
     overflow: 'visible',
-    backgroundColor: theme.bg,
+    backgroundColor: 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-  }), [contentHeight, theme.bg])
+  }), [contentHeight])
 
   useEffect(() => {
     setDisableFullscreenButton(shouldBypassNativeFullscreen())
@@ -2135,6 +2539,36 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const viewItem = currentItem
   const isPriming = !viewItem && loading
   const shouldShowInlineAd = adsAllowed && inlineAdActive && !isPriming
+  const currentImmersiveImage = useMemo(
+    () => (shouldShowInlineAd || isPriming ? null : getImmersiveBackgroundImage(viewItem)),
+    [isPriming, shouldShowInlineAd, viewItem]
+  )
+  const lastImmersiveImageRef = useRef<string | null>(currentImmersiveImage)
+
+  useEffect(() => {
+    if (currentImmersiveImage) lastImmersiveImageRef.current = currentImmersiveImage
+  }, [currentImmersiveImage])
+
+  const fallbackImmersiveImage = currentImmersiveImage ? null : lastImmersiveImageRef.current
+  const immersiveBackground = useMemo(
+    () => getImmersiveBackgroundData(viewItem, theme, shouldShowInlineAd, isPriming, fallbackImmersiveImage),
+    [fallbackImmersiveImage, isPriming, shouldShowInlineAd, theme, viewItem]
+  )
+  const immersiveBackgroundStyle = useMemo<ImmersiveBackgroundStyle>(() => ({
+    '--random-bg-image': cssImageUrl(immersiveBackground.image),
+    '--random-bg-tone': immersiveBackground.tone,
+    '--random-bg-accent': immersiveBackground.accent,
+    '--random-bg-strength': immersiveBackground.strength,
+    '--random-bg-noise-strength': Number((immersiveBackground.strength * 0.34).toFixed(2)),
+  }), [immersiveBackground])
+  const immersiveSeed = useMemo(
+    () => getImmersiveSeed(viewItem, immersiveBackground.image),
+    [immersiveBackground.image, viewItem]
+  )
+  const immersiveFragments = useMemo(
+    () => buildImmersiveFragments(immersiveBackground.image, immersiveSeed, viewportWidth),
+    [immersiveBackground.image, immersiveSeed, viewportWidth]
+  )
   const isEncourage = !shouldShowInlineAd && viewItem?.type === 'encourage'
   const categoryType: ItemType | null = useMemo(() => {
     if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage') return null
@@ -2197,7 +2631,17 @@ const showXpForCategory = useMemo(() => {
   }, [menuOpen])
 
   return (
-    <main className="min-h-screen flex flex-col" style={mainStyle}>
+    <main className="random-page min-h-screen flex flex-col" style={mainStyle}>
+      <div className="random-immersive-bg" style={immersiveBackgroundStyle} aria-hidden="true">
+        <div className="random-immersive-bg__media" />
+        <div className="random-immersive-bg__fragments">
+          {immersiveFragments.map((fragment) => (
+            <span key={fragment.id} className={fragment.className} style={fragment.style} />
+          ))}
+        </div>
+        <div className="random-immersive-bg__tone" />
+        <div className="random-immersive-bg__noise" />
+      </div>
       <div
         className={`page-glitch-overlay${pageGlitchActive ? ' page-glitch-overlay--active' : ''}`}
         aria-hidden="true"
@@ -2220,7 +2664,7 @@ const showXpForCategory = useMemo(() => {
           })}
         </div>
       </div>
-      <header className="flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
+      <header className="relative z-10 flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
         <button
           type="button"
           aria-label="Menu"
@@ -2254,7 +2698,7 @@ const showXpForCategory = useMemo(() => {
         </button>
       </header>
 
-      <div className="px-4 sm:px-6" style={{ marginBottom: '10px' }}>
+      <div className="relative z-10 px-4 sm:px-6" style={{ marginBottom: '10px' }}>
         {categoryLabel ? (
           <div className="flex gap-[2px]" style={{ height: '40px' }}>
             <div
@@ -2287,7 +2731,7 @@ const showXpForCategory = useMemo(() => {
         )}
       </div>
 
-      <section className="flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
+      <section className="relative z-10 flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
         <div className="w-full" style={contentFrameStyle}>
           {isPriming ? (
             <div className="flex items-center justify-center w-full h-full">
@@ -2322,7 +2766,7 @@ const showXpForCategory = useMemo(() => {
         ) : null}
       </section>
 
-      <section className="px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: footerPadHeight + 16 }}>
+      <section className="relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: footerPadHeight + 16 }}>
         <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -2746,6 +3190,253 @@ const showXpForCategory = useMemo(() => {
       `}</style>
 
       <style jsx global>{`
+        .random-page {
+          position: relative;
+          isolation: isolate;
+          overflow: hidden;
+        }
+        .random-immersive-bg {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+          pointer-events: none;
+          overflow: hidden;
+          background: #020202;
+          transition: background 300ms ease;
+        }
+        .random-immersive-bg::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          z-index: 3;
+          pointer-events: none;
+          background:
+            repeating-linear-gradient(180deg, rgba(90, 140, 255, 0.15) 0 0.34px, rgba(0, 0, 0, 0.28) 0.34px 0.68px, transparent 0.68px 1.02px),
+            repeating-linear-gradient(180deg, transparent 0 1.7px, rgba(0, 255, 255, 0.08) 1.7px 1.95px, transparent 1.95px 3.15px, rgba(255, 0, 130, 0.055) 3.15px 3.4px, transparent 3.4px 4.9px),
+            repeating-linear-gradient(180deg, transparent 0 5px, rgba(255, 255, 255, 0.035) 5px 5.18px, transparent 5.18px 7px),
+            linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 18%, rgba(0, 0, 0, 0.22) 54%, transparent 72%, rgba(0, 0, 0, 0.18));
+          mix-blend-mode: screen;
+          opacity: calc(var(--random-bg-strength, 0) * 0.92);
+          transform: translateZ(0);
+        }
+        .random-immersive-bg__media {
+          position: absolute;
+          inset: -8%;
+          z-index: 0;
+          background-image: var(--random-bg-image, none);
+          background-position: center;
+          background-size: cover;
+          filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28);
+          opacity: var(--random-bg-strength, 0);
+          transform: scale(1.12);
+          transition: opacity 120ms ease, background-image 120ms ease, filter 120ms ease;
+          animation: random-bg-drift 18s steps(8, end) infinite alternate;
+          will-change: opacity, background-image, transform;
+        }
+        .random-immersive-bg__fragments {
+          position: absolute;
+          inset: 0;
+          z-index: 2;
+          overflow: hidden;
+          opacity: var(--random-bg-strength, 0);
+          transition: opacity 120ms ease;
+        }
+        .random-immersive-fragment {
+          position: absolute;
+          display: block;
+          border-radius: 0;
+          background-image: var(--random-bg-image, none);
+          background-repeat: no-repeat;
+          background-color: transparent;
+          opacity: var(--fragment-opacity, 0.48);
+          transform: var(--fragment-transform, translate3d(0, 0, 0));
+          transform-origin: left center;
+          animation: random-fragment-corrupt var(--fragment-duration, 5200ms) steps(1, end) infinite;
+          animation-delay: var(--fragment-delay, 0ms);
+          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035);
+          transition: background-image 120ms ease;
+          contain: layout paint;
+          will-change: auto;
+        }
+        .random-immersive-fragment--tear {
+          min-height: 0.35px;
+          animation-name: random-line-corrupt;
+          will-change: opacity, transform;
+          box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--random-bg-accent, #b13cff) 12%, transparent),
+            4px 0 0 rgba(0, 255, 255, 0.08),
+            -3px 0 0 rgba(255, 0, 130, 0.08);
+        }
+        .random-immersive-fragment--fine {
+          min-height: 0.12px;
+          animation: none;
+          box-shadow: none;
+          will-change: auto;
+        }
+        .random-immersive-fragment--smear {
+          box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.03),
+            8px 0 0 rgba(0, 255, 255, 0.14),
+            -7px 0 0 rgba(255, 0, 130, 0.14),
+            15px 1px 0 rgba(255, 255, 255, 0.06);
+        }
+        .random-immersive-fragment--block {
+          will-change: opacity, transform;
+          box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.06),
+            2px 0 0 rgba(0, 255, 255, 0.2),
+            -2px 0 0 rgba(255, 0, 130, 0.18);
+        }
+        .random-immersive-fragment--cluster-block {
+          animation-name: random-block-corrupt;
+          box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.07),
+            3px 0 0 rgba(0, 255, 255, 0.24),
+            -3px 0 0 rgba(255, 0, 130, 0.22),
+            0 4px 0 rgba(0, 0, 0, 0.34);
+        }
+        .random-immersive-fragment--void {
+          background-image: none !important;
+          animation-name: random-line-corrupt;
+          will-change: opacity, transform;
+          box-shadow:
+            0 0 0 1px rgba(0, 0, 0, 0.95),
+            6px 0 0 rgba(0, 255, 255, 0.05),
+            -5px 0 0 rgba(255, 0, 120, 0.05);
+        }
+        .random-immersive-fragment--signal {
+          animation-name: random-line-corrupt;
+          will-change: opacity, transform;
+          background-image:
+            linear-gradient(90deg,
+              var(--fragment-color, #00fff0) 0 42%,
+              #ffffff 42% 48%,
+              #030303 48% 52%,
+              var(--fragment-alt-color, #ff007a) 52% 78%,
+              transparent 78% 100%) !important;
+          filter: saturate(1.8) contrast(1.8);
+          box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.12),
+            4px 0 0 rgba(0, 255, 255, 0.22),
+            -4px 0 0 rgba(255, 0, 130, 0.22);
+        }
+        .random-immersive-fragment--signal-bar {
+          background-image:
+            linear-gradient(90deg,
+              var(--fragment-color, #00fff0) 0 28%,
+              #030303 28% 33%,
+              var(--fragment-alt-color, #ff007a) 33% 48%,
+              transparent 48% 55%,
+              #ffffff 55% 58%,
+              var(--fragment-color, #00fff0) 58% 100%) !important;
+        }
+        .random-immersive-fragment--hot {
+          filter: saturate(3.2) contrast(2.1) brightness(1.12);
+        }
+        .random-immersive-bg__tone {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          background:
+            linear-gradient(180deg, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.62) 42%, rgba(0, 0, 0, 0.92)),
+            radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--random-bg-accent, #b13cff) 10%, transparent), transparent 50%);
+          opacity: 1;
+        }
+        .random-immersive-bg__noise {
+          position: absolute;
+          inset: 0;
+          z-index: 4;
+          background:
+            repeating-linear-gradient(180deg, rgba(32, 58, 160, 0.11) 0 0.42px, rgba(0, 0, 0, 0.1) 0.42px 0.84px, transparent 0.84px 1.4px),
+            repeating-linear-gradient(180deg, transparent 0 3.5px, rgba(0, 255, 255, 0.06) 3.5px 3.75px, transparent 3.75px 6.5px, rgba(255, 0, 130, 0.045) 6.5px 6.75px, transparent 6.75px 9.5px),
+            linear-gradient(180deg, transparent 0 7%, rgba(0, 255, 255, 0.12) 7.05% 7.14%, transparent 7.2% 13%, rgba(255, 0, 130, 0.1) 13.1% 13.24%, transparent 13.32% 24%, rgba(255, 255, 255, 0.06) 24.08% 24.16%, transparent 24.24% 38%, rgba(19, 255, 95, 0.09) 38.04% 38.14%, transparent 38.22% 61%, rgba(0, 255, 255, 0.12) 61.05% 61.2%, transparent 61.28% 72%, rgba(255, 0, 130, 0.09) 72.08% 72.18%, transparent 72.28% 87%, rgba(244, 255, 0, 0.08) 87.15% 87.3%, transparent 87.42%),
+            linear-gradient(180deg, transparent 0 4%, rgba(0, 0, 0, 0.5) 4.08% 4.32%, transparent 4.48% 52%, rgba(0, 0, 0, 0.45) 52.1% 52.48%, transparent 52.64% 92%, rgba(0, 0, 0, 0.4) 92.05% 92.35%, transparent 92.52%);
+          mix-blend-mode: screen;
+          opacity: var(--random-bg-noise-strength, 0);
+          animation: random-bg-noise-pop 18000ms steps(1, end) infinite;
+        }
+        @keyframes random-bg-drift {
+          0% { transform: translate3d(-0.6%, -0.4%, 0) scale(1.12); filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28); }
+          20% { transform: translate3d(0.8%, -0.2%, 0) scale(1.14); filter: blur(4px) saturate(2.8) contrast(2.2) brightness(0.24); }
+          43% { transform: translate3d(-0.2%, 0.8%, 0) scale(1.13); filter: blur(6px) saturate(2.1) contrast(1.9) brightness(0.3); }
+          71% { transform: translate3d(1.1%, 0.1%, 0) scale(1.15); filter: blur(4px) saturate(3) contrast(2.15) brightness(0.25); }
+          100% { transform: translate3d(0.4%, 0.7%, 0) scale(1.13); filter: blur(5px) saturate(2.35) contrast(1.95) brightness(0.28); }
+        }
+        @keyframes random-fragment-corrupt {
+          0%, 91%, 100% {
+            opacity: var(--fragment-opacity, 0.48);
+            transform: var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          92% {
+            opacity: var(--fragment-pop-opacity, 0.92);
+            transform: translate3d(var(--fragment-jump-x, 12px), var(--fragment-jump-y, 0), 0) var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          93% {
+            opacity: var(--fragment-opacity, 0.48);
+            transform: translate3d(var(--fragment-reverse-x, -6px), 0, 0) var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          94% {
+            opacity: var(--fragment-pop-opacity, 0.92);
+          }
+        }
+        @keyframes random-line-corrupt {
+          0%, 100% {
+            opacity: var(--fragment-opacity, 0.38);
+            transform: var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          44% {
+            transform: translate3d(var(--fragment-jump-x, 8px), 0, 0) var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          45% {
+            opacity: var(--fragment-pop-opacity, 0.56);
+            transform: translate3d(var(--fragment-reverse-x, -4px), 0, 0) var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          46% {
+            opacity: var(--fragment-opacity, 0.38);
+          }
+        }
+        @keyframes random-block-corrupt {
+          0%, 88%, 100% {
+            opacity: var(--fragment-opacity, 0.72);
+            transform: var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          89% {
+            opacity: var(--fragment-pop-opacity, 0.98);
+            transform: translate3d(var(--fragment-jump-x, 12px), var(--fragment-jump-y, 0), 0) var(--fragment-transform, translate3d(0, 0, 0));
+          }
+          90% {
+            opacity: var(--fragment-opacity, 0.72);
+            transform: translate3d(var(--fragment-reverse-x, -6px), 0, 0) var(--fragment-transform, translate3d(0, 0, 0));
+          }
+        }
+        @keyframes random-bg-noise-pop {
+          0%, 100% { transform: translate3d(0, 0, 0); filter: saturate(1.2); }
+          49% { transform: translate3d(6px, 0, 0); filter: saturate(1.5); }
+          50% { transform: translate3d(-4px, 0, 0); filter: saturate(1.15); }
+        }
+        @supports not (color: color-mix(in srgb, red 50%, transparent)) {
+          .random-immersive-bg__tone {
+            background:
+              linear-gradient(180deg, rgba(12, 12, 10, 0.1), rgba(12, 12, 10, 0.48) 46%, rgba(12, 12, 10, 0.86)),
+              radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.1), transparent 54%);
+          }
+          .random-immersive-fragment--tear {
+            box-shadow:
+              0 0 0 1px rgba(255, 255, 255, 0.04),
+              8px 0 0 rgba(0, 255, 255, 0.12),
+              -6px 0 0 rgba(255, 0, 130, 0.12);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .random-immersive-bg,
+          .random-immersive-bg__media,
+          .random-immersive-bg__fragments,
+          .random-immersive-fragment,
+          .random-immersive-bg__noise {
+            transition: none;
+            animation: none;
+          }
+        }
         .page-glitch-overlay {
           position: fixed;
           inset: 0;
