@@ -1150,20 +1150,14 @@ function YouTubeEmbed({
   }
 
   const handleFullscreen = async () => {
+    if (!isMuted) requestSound()
+    if (!disableFullscreen && !shouldBypassNativeFullscreen()) {
+      await attemptFullscreen(shellRef.current)
+    }
     if (onFullscreenFallback) {
-      if (!isMuted) requestSound()
-      if (!disableFullscreen && !shouldBypassNativeFullscreen()) {
-        void attemptFullscreen(shellRef.current)
-      }
       onFullscreenFallback({ kind: 'youtube', src, title: text })
       return
     }
-    const bypassNative = disableFullscreen || shouldBypassNativeFullscreen()
-    let ok = false
-    if (!bypassNative) {
-      ok = await attemptFullscreen(iframeRef.current)
-    }
-    if (ok) return
     openProviderUrl(item.url)
   }
 
@@ -1300,17 +1294,13 @@ function DailymotionEmbed({
       params.set('ui-start-screen-controls', 'true')
       params.set('quality', '480')
       params.set('playsinline', '1')
-      if (disableFullscreen) {
-        params.set('fullscreen-enable', '0')
-        params.set('fullscreen-action', 'app')
-      }
       return videoId
         ? `https://www.dailymotion.com/embed/video/${videoId}?${params.toString()}`
         : url
     } catch {
       return url
     }
-  }, [disableFullscreen, embedMuted, url])
+  }, [embedMuted, url])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
 
@@ -1329,21 +1319,14 @@ function DailymotionEmbed({
   }, [isFullscreenActive, isMuted, requestSound])
 
   const handleFullscreen = async () => {
+    if (!isMuted) requestSound()
+    if (!disableFullscreen && !shouldBypassNativeFullscreen()) {
+      await attemptFullscreen(shellRef.current)
+    }
     if (onFullscreenFallback) {
-      if (!isMuted) requestSound()
-      if (!disableFullscreen && !shouldBypassNativeFullscreen()) {
-        void attemptFullscreen(shellRef.current)
-      }
       onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: text })
       return
     }
-    const bypassNative = disableFullscreen || shouldBypassNativeFullscreen()
-    let ok = false
-    if (!bypassNative) {
-      const iframe = iframeRef.current
-      ok = (await attemptFullscreen(iframe)) || (await attemptFullscreen(iframe?.parentElement ?? null))
-    }
-    if (ok) return
     openProviderUrl(item.url)
   }
 
@@ -1490,13 +1473,14 @@ function HtmlVideoEmbed({
       const playPromise = video?.play()
       if (playPromise) playPromise.catch(() => undefined)
     }
+    if (!shouldBypassNativeFullscreen()) {
+      await attemptFullscreen(shellRef.current)
+    }
     if (onOpenFullscreen) {
-      void attemptFullscreen(shellRef.current)
       onOpenFullscreen({ kind: 'html', src: item.url || '', title: item.text })
       return
     }
-    const ok = await attemptFullscreen(video)
-    if (!ok) openProviderUrl(item.url)
+    openProviderUrl(item.url)
   }
 
   return (
@@ -3092,7 +3076,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           })}
         </div>
       </div>
-      <header className="relative z-10 flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
+      <header className="random-main-header relative z-10 flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
         <button
           type="button"
           aria-label="Menu"
@@ -3126,7 +3110,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         </button>
       </header>
 
-      <div className="relative z-10 px-4 sm:px-6" style={{ marginBottom: '10px' }}>
+      <div className="random-category-row relative z-10 px-4 sm:px-6" style={{ marginBottom: '10px' }}>
         {categoryLabel ? (
           <div className="flex gap-[2px]" style={{ height: '40px' }}>
             <div
@@ -3159,8 +3143,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         )}
       </div>
 
-      <section className="relative z-10 flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
-        <div className="w-full" style={contentFrameStyle}>
+      <section className="random-content-section relative z-10 flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
+        <div className="random-content-frame w-full" style={contentFrameStyle}>
           {isPriming ? (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
@@ -3188,13 +3172,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         </div>
 
         {viewItem && viewItem.type !== 'encourage' ? (
-          <div className="w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
+          <div className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
         ) : null}
       </section>
 
-      <section className="relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: footerPadHeight + 16 }}>
+      <section className="random-action-section relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: footerPadHeight + 16 }}>
         <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -3972,21 +3956,27 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .video-embed-shell--fullscreen {
           position: fixed !important;
           inset: 0 !important;
-          z-index: 90;
+          z-index: 1000;
           width: 100vw !important;
+          height: 100vh !important;
           height: 100svh !important;
+          height: 100dvh !important;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: clamp(10px, 2vw, 28px);
-          background: rgba(0, 0, 0, 0.34);
-          pointer-events: none;
+          padding: 0;
+          background: rgba(0, 0, 0, 0.18);
+          pointer-events: auto;
+          overscroll-behavior: contain;
+          touch-action: manipulation;
+          isolation: isolate;
+          transform: translateZ(0);
         }
         .video-embed-shell--fullscreen::before {
           content: '';
           position: absolute;
           inset: 0;
-          z-index: 1;
+          z-index: 3;
           pointer-events: none;
           background:
             repeating-linear-gradient(
@@ -4000,16 +3990,20 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             ),
             linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.55));
           mix-blend-mode: screen;
-          opacity: 0.55;
+          opacity: 0.18;
         }
         .video-embed-shell--fullscreen .video-embed-player {
           position: relative;
           z-index: 2;
-          width: min(1280px, 96vw) !important;
-          height: min(86svh, calc(96vw * 0.5625)) !important;
-          max-width: 96vw;
-          max-height: 86svh;
-          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+          width: 100vw !important;
+          height: 100vh !important;
+          height: 100svh !important;
+          height: 100dvh !important;
+          max-width: 100vw;
+          max-height: 100vh;
+          max-height: 100svh;
+          max-height: 100dvh;
+          box-shadow: none;
           pointer-events: auto;
         }
         .video-embed-shell--fullscreen iframe,
@@ -4021,10 +4015,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .video-fullscreen-overlay {
           position: fixed;
           inset: 0;
-          z-index: 80;
+          z-index: 900;
           display: block;
           background: rgba(0, 0, 0, 0.52);
           overflow: hidden;
+          pointer-events: none;
         }
         .video-fullscreen-glitch-bg {
           position: absolute;
@@ -4055,6 +4050,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           z-index: 1;
           background: rgba(0, 0, 0, 0.24);
           cursor: zoom-out;
+          pointer-events: none;
         }
         .video-fullscreen-close {
           position: absolute;
@@ -4077,15 +4073,50 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           opacity: 0;
           pointer-events: none;
         }
+        .random-page--video-fullscreen {
+          min-height: 100vh;
+          min-height: 100dvh;
+          overflow: hidden;
+          overscroll-behavior: contain;
+        }
+        .random-page--video-fullscreen .random-main-header,
+        .random-page--video-fullscreen .random-category-row,
+        .random-page--video-fullscreen .random-action-section {
+          opacity: 0;
+          pointer-events: none;
+        }
+        .random-page--video-fullscreen .random-content-section {
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 1000 !important;
+          padding: 0 !important;
+          gap: 0 !important;
+          pointer-events: none;
+        }
+        .random-page--video-fullscreen .random-content-frame {
+          width: 100vw !important;
+          height: 100vh !important;
+          height: 100svh !important;
+          height: 100dvh !important;
+          pointer-events: none;
+        }
+        .random-page--video-fullscreen .random-source-line {
+          opacity: 0;
+          pointer-events: none;
+        }
         @media (max-width: 768px) {
           .video-embed-shell--fullscreen {
             padding: 0;
           }
           .video-embed-shell--fullscreen .video-embed-player {
-            width: 100vw;
+            width: 100vw !important;
+            height: 100vh !important;
             height: 100svh !important;
+            height: 100dvh !important;
             max-width: 100vw;
             max-height: 100svh;
+            max-height: 100dvh;
+            box-shadow: none;
           }
           .video-fullscreen-close {
             top: 16px;
@@ -4096,12 +4127,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         @media (orientation: landscape) and (max-height: 520px) {
           .video-embed-shell--fullscreen {
             padding: 0;
+            height: 100dvh !important;
           }
           .video-embed-shell--fullscreen .video-embed-player {
             width: 100vw !important;
-            height: 100svh !important;
+            height: 100vh !important;
+            height: 100dvh !important;
             max-width: 100vw;
-            max-height: 100svh;
+            max-height: 100dvh;
           }
         }
         .page-glitch-overlay--active {
