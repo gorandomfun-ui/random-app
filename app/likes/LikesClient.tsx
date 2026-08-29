@@ -45,6 +45,159 @@ function readWeCache(): { items: GlobalLikeItem[]; timestamp: number } | null {
   return readWeLikesCache<GlobalLikeItem>()
 }
 
+type LikesGlitchBgStyle = CSSProperties & {
+  ['--likes-bg-image']?: string
+  ['--likes-bg-accent']?: string
+  ['--likes-bg-media-opacity']?: number
+}
+
+type LikesGlitchFragmentStyle = CSSProperties & {
+  ['--likes-fragment-x']?: string
+  ['--likes-fragment-y']?: string
+  ['--likes-fragment-w']?: string
+  ['--likes-fragment-h']?: string
+  ['--likes-fragment-dx']?: string
+  ['--likes-fragment-color']?: string
+  ['--likes-fragment-opacity']?: number
+  ['--likes-fragment-bg-x']?: string
+  ['--likes-fragment-bg-y']?: string
+  ['--likes-fragment-bg-size']?: string
+}
+
+type LikesGlitchFragment = {
+  id: string
+  kind: 'line' | 'block' | 'media'
+  style: LikesGlitchFragmentStyle
+}
+
+type LikesGlitchSource = Pick<LikeItem, 'id' | 'likedAt' | 'ogImage' | 'provider' | 'thumbUrl' | 'type' | 'url'>
+
+const LIKES_GLITCH_COLORS = ['#18f06a', '#b833ff', '#00e8ff', '#ff2a6d', '#f3ef7d', '#ffffff']
+
+function toKnownItemType(type: string): ItemType {
+  return ALL_ITEM_TYPES.includes(type as ItemType) ? (type as ItemType) : 'video'
+}
+
+function cssImageUrl(value?: string | null) {
+  if (!value) return 'none'
+  return `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+}
+
+function looksLikeGifUrl(value: string) {
+  return /\.gif(?:$|[?#])/i.test(value)
+}
+
+function toStaticGifPreview(value: string) {
+  if (value.includes('giphy.com')) {
+    return value.replace(/\/giphy\.gif(?:[?#].*)?$/i, '/200_s.gif')
+  }
+  return null
+}
+
+function getLikesGlitchImage(item: LikesGlitchSource | null | undefined) {
+  if (!item) return null
+  const raw =
+    item.type === 'image'
+      ? item.thumbUrl || item.url
+      : item.type === 'video'
+        ? item.thumbUrl
+        : item.type === 'web'
+          ? item.ogImage || item.thumbUrl
+          : item.thumbUrl || item.ogImage
+
+  if (!raw) return null
+  if (!looksLikeGifUrl(raw)) return raw
+  return toStaticGifPreview(raw)
+}
+
+function hashString(value: string) {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function seededRandom(seed: number) {
+  let value = seed % 2147483647
+  if (value <= 0) value += 2147483646
+  return () => {
+    value = (value * 16807) % 2147483647
+    return (value - 1) / 2147483646
+  }
+}
+
+function pickLikesGlitchImage(items: LikesGlitchSource[], seed: string) {
+  const images = items.map(getLikesGlitchImage).filter((value): value is string => Boolean(value))
+  if (!images.length) return null
+  return images[hashString(seed) % images.length]
+}
+
+function buildLikesGlitchFragments(image: string | null, seed: string, viewportWidth: number) {
+  const random = seededRandom(hashString(seed) || 1)
+  const compact = viewportWidth < 720
+  const lines = compact ? 72 : 120
+  const blocks = compact ? 10 : 16
+  const mediaBlocks = image ? (compact ? 8 : 12) : 0
+  const fragments: LikesGlitchFragment[] = []
+
+  for (let i = 0; i < lines; i += 1) {
+    const color = LIKES_GLITCH_COLORS[Math.floor(random() * LIKES_GLITCH_COLORS.length)]
+    const longLine = random() > 0.7
+    fragments.push({
+      id: `line-${i}`,
+      kind: 'line',
+      style: {
+        '--likes-fragment-x': `${Math.round(random() * 1000) / 10}%`,
+        '--likes-fragment-y': `${Math.round(random() * 350) / 10}%`,
+        '--likes-fragment-w': `${Math.round((longLine ? 22 + random() * 58 : 5 + random() * 28) * 10) / 10}vw`,
+        '--likes-fragment-h': `${Math.round((1 + random() * (compact ? 2 : 3)) * 10) / 10}px`,
+        '--likes-fragment-dx': `${Math.round((random() * 18 - 9) * 10) / 10}px`,
+        '--likes-fragment-color': color,
+        '--likes-fragment-opacity': Math.round((0.08 + random() * 0.34) * 100) / 100,
+      },
+    })
+  }
+
+  for (let i = 0; i < blocks; i += 1) {
+    const color = LIKES_GLITCH_COLORS[Math.floor(random() * LIKES_GLITCH_COLORS.length)]
+    fragments.push({
+      id: `block-${i}`,
+      kind: 'block',
+      style: {
+        '--likes-fragment-x': `${Math.round(random() * 920) / 10}%`,
+        '--likes-fragment-y': `${Math.round((3 + random() * 28) * 10) / 10}%`,
+        '--likes-fragment-w': `${Math.round((20 + random() * 150) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((4 + random() * 28) * 10) / 10}px`,
+        '--likes-fragment-dx': `${Math.round((random() * 32 - 16) * 10) / 10}px`,
+        '--likes-fragment-color': color,
+        '--likes-fragment-opacity': Math.round((0.16 + random() * 0.36) * 100) / 100,
+      },
+    })
+  }
+
+  for (let i = 0; i < mediaBlocks; i += 1) {
+    fragments.push({
+      id: `media-${i}`,
+      kind: 'media',
+      style: {
+        '--likes-fragment-x': `${Math.round(random() * 900) / 10}%`,
+        '--likes-fragment-y': `${Math.round((2 + random() * 30) * 10) / 10}%`,
+        '--likes-fragment-w': `${Math.round((34 + random() * 170) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((8 + random() * 42) * 10) / 10}px`,
+        '--likes-fragment-dx': `${Math.round((random() * 42 - 21) * 10) / 10}px`,
+        '--likes-fragment-opacity': Math.round((0.18 + random() * 0.34) * 100) / 100,
+        '--likes-fragment-bg-x': `${Math.round(random() * 1000) / 10}%`,
+        '--likes-fragment-bg-y': `${Math.round(random() * 420) / 10}%`,
+        '--likes-fragment-bg-size': `${Math.round((150 + random() * 180) * 10) / 10}%`,
+      },
+    })
+  }
+
+  return fragments
+}
+
 export default function LikesClient({ initialGlobalItems = [], initialFetchedAt = 0 }: LikesClientProps = {}) {
   const { t, locale, locales, setLocale } = useI18n()
   const cached = typeof window !== 'undefined' ? readWeCache() : null
@@ -166,7 +319,6 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   }), [theme.bg, theme.cream])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
   const adFormat = useMemo(() => {
@@ -244,6 +396,32 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
       }
 
   const filterSet = useMemo(() => new Set(filterTypes), [filterTypes])
+  const likesGlitchPool = useMemo<LikesGlitchSource[]>(() => {
+    const activeSource: LikesGlitchSource[] = activeTab === 'you' ? items : globalItems
+    const activeItems = activeSource.filter((item) => filterSet.has(toKnownItemType(item.type)))
+    if (activeItems.length) return activeItems
+    return [...items, ...globalItems].filter((item) => filterSet.has(toKnownItemType(item.type)))
+  }, [activeTab, filterSet, globalItems, items])
+  const likesGlitchSeed = useMemo(() => {
+    const sample = likesGlitchPool
+      .slice(0, 24)
+      .map((item) => `${item.id}:${item.likedAt || ''}:${item.provider || ''}`)
+      .join('|')
+    return `${activeTab}:${accentColor}:${likesGlitchPool.length}:${sample}`
+  }, [accentColor, activeTab, likesGlitchPool])
+  const likesGlitchImage = useMemo(
+    () => pickLikesGlitchImage(likesGlitchPool, likesGlitchSeed),
+    [likesGlitchPool, likesGlitchSeed],
+  )
+  const likesGlitchFragments = useMemo(
+    () => buildLikesGlitchFragments(likesGlitchImage, likesGlitchSeed, vw),
+    [likesGlitchImage, likesGlitchSeed, vw],
+  )
+  const likesGlitchStyle = useMemo<LikesGlitchBgStyle>(() => ({
+    '--likes-bg-image': cssImageUrl(likesGlitchImage),
+    '--likes-bg-accent': accentColor,
+    '--likes-bg-media-opacity': likesGlitchImage ? 0.28 : 0,
+  }), [accentColor, likesGlitchImage])
 
   const adBar = (
     <div
@@ -320,10 +498,25 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
 
   return (
     <main
-      className="min-h-screen pb-[calc(var(--ad-bar-height,0px)+24px)]"
+      className="relative min-h-screen overflow-hidden pb-[calc(var(--ad-bar-height,0px)+24px)]"
       style={mainStyle}
     >
-      <header className="px-6 pt-4 pb-2 flex items-center justify-between">
+      <div className="likes-immersive-bg" style={likesGlitchStyle} aria-hidden="true">
+        <div className="likes-immersive-bg__media" />
+        <div className="likes-immersive-bg__fragments">
+          {likesGlitchFragments.map((fragment) => (
+            <i
+              key={fragment.id}
+              className={`likes-glitch-fragment likes-glitch-fragment--${fragment.kind}`}
+              style={fragment.style}
+            />
+          ))}
+        </div>
+        <div className="likes-immersive-bg__tone" />
+        <div className="likes-immersive-bg__scan" />
+      </div>
+
+      <header className="relative z-10 px-6 pt-4 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -350,7 +543,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         </button>
       </header>
 
-      <div className="mt-4 mx-4 flex items-center justify-center gap-2">
+      <div className="relative z-10 mt-4 mx-4 flex items-center justify-center gap-2">
         <LikeTab
           label={t('likes.youTab', 'YOU')}
           active={activeTab === 'you'}
@@ -367,7 +560,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         />
       </div>
 
-      <div className="mt-4 px-4 sm:px-6">
+      <div className="relative z-10 mt-4 px-4 sm:px-6">
         <div
           className="px-4 py-2 text-center flex items-center justify-center gap-2 rounded-none text-xl sm:text-3xl"
           style={{
@@ -383,7 +576,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         </div>
       </div>
 
-      <section className="mt-4 pb-12">
+      <section className="relative z-10 mt-4 pb-12">
         <div className="px-4 sm:px-6">
           {renderGrid()}
         </div>
@@ -428,15 +621,6 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-              </Link>
-
-              <Link
-                href="/6random"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center"
-                style={{ color: theme.cream }}
-              >
-                <span>{noroscopeLabel}</span>
               </Link>
 
               <Link
@@ -520,6 +704,102 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
       />
 
       <style jsx global>{`
+        .likes-immersive-bg {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+          overflow: hidden;
+          pointer-events: none;
+          background:
+            radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--likes-bg-accent) 20%, transparent), transparent 38%),
+            #050505;
+          contain: paint;
+        }
+
+        .likes-immersive-bg__media {
+          position: absolute;
+          inset: -12%;
+          background-image: var(--likes-bg-image);
+          background-size: cover;
+          background-position: center 18%;
+          opacity: var(--likes-bg-media-opacity);
+          filter: blur(24px) saturate(2) contrast(1.45) brightness(0.35);
+          transform: scale(1.12);
+        }
+
+        .likes-immersive-bg__media::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(180deg, rgba(5, 5, 5, 0.14), rgba(5, 5, 5, 0.72) 52%, rgba(5, 5, 5, 0.9)),
+            linear-gradient(90deg, rgba(0, 0, 0, 0.52), transparent 32%, transparent 68%, rgba(0, 0, 0, 0.52));
+        }
+
+        .likes-immersive-bg__fragments {
+          position: absolute;
+          inset: 0;
+          -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 35%, rgba(0, 0, 0, 0.35) 48%, transparent 66%);
+          mask-image: linear-gradient(to bottom, #000 0%, #000 35%, rgba(0, 0, 0, 0.35) 48%, transparent 66%);
+        }
+
+        .likes-glitch-fragment {
+          position: absolute;
+          left: var(--likes-fragment-x);
+          top: var(--likes-fragment-y);
+          width: var(--likes-fragment-w);
+          height: var(--likes-fragment-h);
+          opacity: var(--likes-fragment-opacity);
+          transform: translate3d(var(--likes-fragment-dx), 0, 0);
+          display: block;
+        }
+
+        .likes-glitch-fragment--line {
+          background: linear-gradient(90deg, transparent, var(--likes-fragment-color), rgba(255, 255, 255, 0.7), var(--likes-fragment-color), transparent);
+          box-shadow: 0 0 10px color-mix(in srgb, var(--likes-fragment-color) 78%, transparent);
+        }
+
+        .likes-glitch-fragment--block {
+          background:
+            linear-gradient(90deg, color-mix(in srgb, var(--likes-fragment-color) 68%, transparent), rgba(255, 255, 255, 0.22), transparent),
+            var(--likes-fragment-color);
+          mix-blend-mode: screen;
+          box-shadow: 0 0 14px color-mix(in srgb, var(--likes-fragment-color) 66%, transparent);
+        }
+
+        .likes-glitch-fragment--media {
+          background-image: var(--likes-bg-image);
+          background-size: var(--likes-fragment-bg-size);
+          background-position: var(--likes-fragment-bg-x) var(--likes-fragment-bg-y);
+          filter: saturate(2.4) contrast(1.8) brightness(0.82);
+          mix-blend-mode: screen;
+          box-shadow: 0 0 18px color-mix(in srgb, var(--likes-bg-accent) 55%, transparent);
+        }
+
+        .likes-immersive-bg__tone {
+          position: absolute;
+          inset: 0;
+          background:
+            linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.58) 46%, rgba(0, 0, 0, 0.78)),
+            radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--likes-bg-accent) 18%, transparent), transparent 46%);
+        }
+
+        .likes-immersive-bg__scan {
+          position: absolute;
+          inset: 0;
+          background:
+            repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 4px),
+            repeating-linear-gradient(180deg, transparent 0 13px, rgba(0, 232, 255, 0.05) 13px 14px, transparent 14px 19px);
+          opacity: 0.32;
+          mix-blend-mode: screen;
+        }
+
+        @media (min-width: 768px) {
+          .likes-immersive-bg__scan {
+            opacity: 0.22;
+          }
+        }
+
         .burger-icon {
           position: relative;
         }

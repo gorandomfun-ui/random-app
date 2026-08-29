@@ -29,7 +29,7 @@ import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
-import { startNoroscopePrefetch, startRandomPrefetch, startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
+import { startRandomPrefetch, startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp'
@@ -396,11 +396,6 @@ export default function HomePage() {
   }, [locale, selectedTypes])
 
   useEffect(() => {
-    const lang = (locale || 'en') as Lang
-    startNoroscopePrefetch(lang)
-  }, [locale])
-
-  useEffect(() => {
     startWeLikePrefetch()
   }, [])
 
@@ -490,7 +485,6 @@ export default function HomePage() {
 
   const heroCopy = useMemo(() => ({
     startButton: t('hero.startButton', 'GO RANDOM'),
-    noroscopeButton: t('hero.noroscopeButton', '6 RANDOM'),
     tagline1: t('hero.tagline1', 'EXPLORE RANDOM CONTENTS.'),
     tagline2: t('hero.tagline2', 'NO MISSION, NO GOAL, NO REASON.'),
     tagline3: t('hero.tagline3', 'ONLY USELESS SURPRISE.'),
@@ -507,7 +501,6 @@ export default function HomePage() {
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
 
@@ -621,7 +614,7 @@ export default function HomePage() {
     return targetBtnW
   }, [targetBtnW, viewportWidth])
 
-  const noroscopeButtonWidth = useMemo(() => {
+  const likesButtonWidth = useMemo(() => {
     if (!targetBtnW) return undefined
     const width = viewportWidth ?? 0
     if (width >= 768) {
@@ -668,10 +661,6 @@ export default function HomePage() {
       router.push('/random')
     }
   }, [addAction, isSecond, maybeSpawnDiamond, router, selectedTypes])
-
-  const handleNoroscope = useCallback(() => {
-    router.push('/6random')
-  }, [router])
 
   return (
     <main className="home-page min-h-screen flex flex-col" style={mainStyle}>
@@ -780,20 +769,20 @@ export default function HomePage() {
                 />
               </button>
 
-              <button
-                type="button"
-                onClick={handleNoroscope}
+              <Link
+                href="/likes"
+                aria-label={likesLabel}
                 className="w-full px-10 py-3 rounded-[28px] shadow-md hover:scale-[1.03] transition uppercase flex items-center justify-center"
                 style={{
                   backgroundColor: theme.cream,
                   color: theme.text,
                   fontFamily: "var(--font-tomorrow), 'Tomorrow', sans-serif",
                   fontWeight: 700,
-                  width: viewportWidth && viewportWidth >= 768 && noroscopeButtonWidth ? `${noroscopeButtonWidth}px` : undefined,
+                  width: viewportWidth && viewportWidth >= 768 && likesButtonWidth ? `${likesButtonWidth}px` : undefined,
                 }}
               >
-                <span>{heroCopy.noroscopeButton}</span>
-              </button>
+                <span>{likesLabel}</span>
+              </Link>
             </div>
           </div>
 
@@ -932,15 +921,6 @@ export default function HomePage() {
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-              </Link>
-
-              <Link
-                href="/6random"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center"
-                style={{ color: theme.cream }}
-              >
-                <span>{noroscopeLabel}</span>
               </Link>
 
               <Link

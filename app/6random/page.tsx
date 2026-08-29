@@ -413,7 +413,6 @@ export default function NoroscopePage() {
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeMenuLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const shareLabel = useMemo(() => t('noroscope.shareAction', 'Share this 6 RANDOM'), [t])
   const shareTitle = useMemo(() => t('noroscope.shareTitle', 'Share your 6 RANDOM'), [t])
@@ -1235,15 +1234,6 @@ export default function NoroscopePage() {
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-              </Link>
-
-              <Link
-                href="/6random"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center"
-                style={{ color: theme.cream, opacity: 0.7 }}
-              >
-                <span>{noroscopeMenuLabel}</span>
               </Link>
 
               <Link

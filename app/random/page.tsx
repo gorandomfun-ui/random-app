@@ -129,6 +129,8 @@ type FullscreenVideoPayload = {
   title?: string | null
 }
 
+type PlaybackIssueReason = 'video-load-timeout' | 'video-error'
+type PlaybackIssueHandler = (item: VideoContentItem, reason: PlaybackIssueReason) => void
 
 function parseTypesParam(value: string | string[] | undefined): ItemType[] {
   if (!value) return []
@@ -230,41 +232,93 @@ const cssImageUrl = (value?: string | null) => {
   return `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
 }
 
-const extractYouTubeIdForThumb = (url: string) => {
+const isGifUrl = (value?: string | null) => Boolean(value && /\.gif(?:[?#]|$)/i.test(value))
+
+const isSmallAnimatedGifUrl = (value: string) =>
+  /(?:preview|downsized_small|fixed_(?:width|height)_small|100w|100\.gif|tinygif|nanogif)/i.test(value)
+
+const toStaticGifUrl = (value: string) => {
+  if (!isGifUrl(value)) return value
+  if (!/giphy/i.test(value)) return null
+  const still = value
+    .replace(/\/giphy\.gif([?#].*)?$/i, '/giphy_s.gif$1')
+    .replace(/\/(\d+w?)\.gif([?#].*)?$/i, '/$1_s.gif$2')
+  return still !== value ? still : null
+}
+
+const getSafeBackgroundImage = (value?: string | null, viewportWidth?: number | null) => {
+  if (!value) return null
+  if (!isGifUrl(value)) return value
+
+  const staticGif = toStaticGifUrl(value)
+  if (staticGif) return staticGif
+
+  const compact = viewportWidth != null && viewportWidth < 720
+  if (!compact && isSmallAnimatedGifUrl(value)) return value
+  return null
+}
+
+const cleanProviderVideoId = (value?: string | null) => {
+  if (!value) return null
+  let raw = value
+  try {
+    raw = decodeURIComponent(value)
+  } catch {
+    raw = value
+  }
+  const cleaned = raw
+    .split('?')[0]
+    .split('#')[0]
+    .split('_')[0]
+    .trim()
+  return cleaned || null
+}
+
+const extractYouTubeVideoId = (url: string) => {
   try {
     const parsed = new URL(url)
-    if (parsed.hostname.includes('youtu.be')) return parsed.pathname.split('/').filter(Boolean)[0] || null
+    if (parsed.hostname.includes('youtu.be')) return cleanProviderVideoId(parsed.pathname.split('/').filter(Boolean)[0])
     if (parsed.hostname.includes('youtube.com')) {
-      if (parsed.pathname.startsWith('/shorts/')) return parsed.pathname.split('/').filter(Boolean)[1] || null
-      if (parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/').filter(Boolean)[1] || null
-      return parsed.searchParams.get('v')
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      if (parsed.searchParams.get('v')) return cleanProviderVideoId(parsed.searchParams.get('v'))
+      if (parts[0] === 'shorts' || parts[0] === 'embed' || parts[0] === 'live') return cleanProviderVideoId(parts[1])
+      return cleanProviderVideoId(parts[0])
     }
   } catch {
-    return null
+    return cleanProviderVideoId(url.split('/').pop())
   }
   return null
 }
 
-const extractDailymotionIdForThumb = (url: string) => {
+const extractYouTubeIdForThumb = extractYouTubeVideoId
+
+const extractDailymotionVideoId = (url: string) => {
   try {
     const parsed = new URL(url)
-    if (parsed.hostname.includes('dai.ly')) return parsed.pathname.split('/').filter(Boolean)[0] || null
+    const queryVideo = parsed.searchParams.get('video')
+    if (queryVideo) return cleanProviderVideoId(queryVideo)
+    if (parsed.hostname.includes('dai.ly')) return cleanProviderVideoId(parsed.pathname.split('/').filter(Boolean)[0])
     if (parsed.hostname.includes('dailymotion.com')) {
       const parts = parsed.pathname.split('/').filter(Boolean)
       const videoIndex = parts.indexOf('video')
-      return videoIndex >= 0 ? parts[videoIndex + 1] || null : parts[0] || null
+      return videoIndex >= 0 ? cleanProviderVideoId(parts[videoIndex + 1]) : cleanProviderVideoId(parts[0])
     }
   } catch {
-    return null
+    return cleanProviderVideoId(url.split('/').pop())
   }
   return null
 }
 
-function getImmersiveBackgroundImage(item: DisplayItem | null): string | null {
+const extractDailymotionIdForThumb = extractDailymotionVideoId
+
+function getImmersiveBackgroundImage(item: DisplayItem | null, viewportWidth?: number | null): string | null {
   if (!item) return null
-  if (item.type === 'image') return item.thumbUrl || item.url || null
+  if (item.type === 'image') {
+    return getSafeBackgroundImage(item.thumbUrl, viewportWidth) || getSafeBackgroundImage(item.url, viewportWidth)
+  }
   if (item.type === 'video') {
-    if (item.thumbUrl) return item.thumbUrl
+    const safeThumb = getSafeBackgroundImage(item.thumbUrl, viewportWidth)
+    if (safeThumb) return safeThumb
     const provider = (item.provider || '').toLowerCase()
     const youtubeId = provider.includes('youtube') || /youtu\.?be|youtube\.com/.test(item.url)
       ? extractYouTubeIdForThumb(item.url)
@@ -276,8 +330,8 @@ function getImmersiveBackgroundImage(item: DisplayItem | null): string | null {
     if (dailymotionId) return `https://www.dailymotion.com/thumbnail/video/${dailymotionId}`
     return null
   }
-  if (item.type === 'web') return item.ogImage || null
-  if (item.type === 'encourage') return item.icon || null
+  if (item.type === 'web') return getSafeBackgroundImage(item.ogImage, viewportWidth)
+  if (item.type === 'encourage') return getSafeBackgroundImage(item.icon, viewportWidth)
   return null
 }
 
@@ -286,10 +340,11 @@ function getImmersiveBackgroundData(
   theme: { bg: string; text: string },
   isInlineAd: boolean,
   isPriming: boolean,
-  fallbackImage?: string | null
+  fallbackImage?: string | null,
+  viewportWidth?: number | null
 ) {
   const kind = isInlineAd ? 'ad' : isPriming || !item ? 'empty' : item.type
-  const ownImage = isInlineAd || isPriming ? null : getImmersiveBackgroundImage(item)
+  const ownImage = isInlineAd || isPriming ? null : getImmersiveBackgroundImage(item, viewportWidth)
   const image = ownImage || fallbackImage || null
   const accent = IMMERSIVE_ACCENTS[kind] || theme.text
   const strength = image
@@ -339,12 +394,12 @@ function buildImmersiveFragments(image: string | null, seedValue: string, viewpo
   if (!image) return []
 
   const isCompact = viewportWidth != null && viewportWidth < 720
-  const fineLineCount = isCompact ? 430 : 700
-  const lowerFineLineCount = isCompact ? 520 : 820
-  const tearCount = isCompact ? 130 : 190
-  const clusterCount = isCompact ? 5 : 7
-  const voidCount = isCompact ? 16 : 22
-  const signalCount = isCompact ? 18 : 26
+  const fineLineCount = isCompact ? 300 : 700
+  const lowerFineLineCount = isCompact ? 380 : 820
+  const tearCount = isCompact ? 82 : 190
+  const clusterCount = isCompact ? 4 : 7
+  const voidCount = isCompact ? 10 : 22
+  const signalCount = isCompact ? 12 : 26
   const contentZoneTop = isCompact ? 18 : 16
   const contentZoneBottom = isCompact ? 70 : 84
   const sourceZoneTop = isCompact ? 62 : 77
@@ -716,7 +771,7 @@ function ImageBlock({
         src={src}
         alt={alt || 'image'}
         className="block h-full w-full object-cover select-none"
-        loading="lazy"
+        loading="eager"
         decoding="async"
         onError={onError}
       />
@@ -789,6 +844,42 @@ const shouldBypassNativeFullscreen = () => {
   return isiOS || isIpadOnMac
 }
 
+function useVideoEmbedWatchdog(
+  embedKey: string,
+  item: VideoContentItem,
+  onPlaybackIssue?: PlaybackIssueHandler,
+) {
+  const [loaded, setLoaded] = useState(false)
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const reportedRef = useRef(false)
+
+  useEffect(() => {
+    setLoaded(false)
+    setReloadNonce(0)
+    reportedRef.current = false
+  }, [embedKey])
+
+  useEffect(() => {
+    if (loaded) return undefined
+    const timeout = setTimeout(() => {
+      if (reloadNonce === 0) {
+        setReloadNonce(1)
+        return
+      }
+      if (!reportedRef.current) {
+        reportedRef.current = true
+        onPlaybackIssue?.(item, 'video-load-timeout')
+      }
+    }, reloadNonce === 0 ? 5000 : 7000)
+
+    return () => clearTimeout(timeout)
+  }, [embedKey, item, loaded, onPlaybackIssue, reloadNonce])
+
+  const markLoaded = useCallback(() => setLoaded(true), [])
+
+  return { loaded, markLoaded, reloadNonce }
+}
+
 function VideoEmbed({
   item,
   frameHeight,
@@ -796,6 +887,7 @@ function VideoEmbed({
   openExternallyLabel,
   disableFullscreen,
   onOpenFullscreen,
+  onPlaybackIssue,
 }: {
   item: VideoContentItem
   frameHeight: string
@@ -803,6 +895,7 @@ function VideoEmbed({
   openExternallyLabel: string
   disableFullscreen: boolean
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
+  onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const provider = (item.provider || '').toLowerCase()
   const url = item.url
@@ -820,6 +913,7 @@ function VideoEmbed({
         openExternallyLabel={openExternallyLabel}
         disableFullscreen={disableFullscreen}
         onFullscreenFallback={onOpenFullscreen}
+        onPlaybackIssue={onPlaybackIssue}
       />
     )
   }
@@ -833,11 +927,12 @@ function VideoEmbed({
         openExternallyLabel={openExternallyLabel}
         disableFullscreen={disableFullscreen}
         onFullscreenFallback={onOpenFullscreen}
+        onPlaybackIssue={onPlaybackIssue}
       />
     )
   }
 
-  return <HtmlVideoEmbed item={item} frameHeight={frameHeight} />
+  return <HtmlVideoEmbed item={item} frameHeight={frameHeight} onPlaybackIssue={onPlaybackIssue} />
 }
 
 function YouTubeEmbed({
@@ -847,6 +942,7 @@ function YouTubeEmbed({
   openExternallyLabel,
   disableFullscreen,
   onFullscreenFallback,
+  onPlaybackIssue,
 }: {
   item: VideoContentItem
   frameHeight: string
@@ -854,6 +950,7 @@ function YouTubeEmbed({
   openExternallyLabel: string
   disableFullscreen: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
+  onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -871,13 +968,7 @@ function YouTubeEmbed({
   }, [url])
 
   const videoId = useMemo(() => {
-    try {
-      const u = new URL(url)
-      if (u.hostname.includes('youtu')) {
-        return u.searchParams.get('v') || u.pathname.split('/').pop() || ''
-      }
-    } catch {}
-    return url.split('/').pop() || ''
+    return extractYouTubeVideoId(url) || ''
   }, [url])
 
   const src = useMemo(() => {
@@ -894,6 +985,8 @@ function YouTubeEmbed({
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
   }, [videoId, originParam])
+  const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(src, item, onPlaybackIssue)
+  const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
 
   const unmute = () => {
     const iframe = iframeRef.current
@@ -939,9 +1032,20 @@ function YouTubeEmbed({
           height: frameHeight,
         }}
       >
+        {posterUrl ? (
+          <div
+            className="video-embed-poster"
+            style={{
+              backgroundImage: cssImageUrl(posterUrl),
+              opacity: iframeLoaded ? 0 : 1,
+            }}
+          />
+        ) : null}
         <iframe
+          key={`${src}-${reloadNonce}`}
           ref={iframeRef}
           src={src}
+          onLoad={markLoaded}
           className="absolute top-1/2 left-1/2"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowFullScreen
@@ -951,6 +1055,7 @@ function YouTubeEmbed({
             width: '177.8%',
             height: '100%',
             transform: 'translate(-50%, -50%)',
+            zIndex: 1,
           }}
         />
         {!disableFullscreen ? (
@@ -995,6 +1100,7 @@ function DailymotionEmbed({
   openExternallyLabel,
   disableFullscreen,
   onFullscreenFallback,
+  onPlaybackIssue,
 }: {
   item: VideoContentItem
   frameHeight: string
@@ -1002,16 +1108,13 @@ function DailymotionEmbed({
   openExternallyLabel: string
   disableFullscreen: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
+  onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const embedUrl = useMemo(() => {
     try {
-      const u = new URL(url)
-      let videoId = u.pathname.split('/').pop() || ''
-      if (!videoId && u.hostname === 'dai.ly') {
-        videoId = u.pathname.replace('/', '')
-      }
+      const videoId = extractDailymotionVideoId(url) || ''
       const params = new URLSearchParams()
       params.set('autoplay', '1')
       params.set('mute', '1')
@@ -1034,6 +1137,8 @@ function DailymotionEmbed({
       return url
     }
   }, [disableFullscreen, url])
+  const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
+  const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
 
   const handleFullscreen = async () => {
     if (disableFullscreen) {
@@ -1064,9 +1169,20 @@ function DailymotionEmbed({
           height: frameHeight,
         }}
       >
+        {posterUrl ? (
+          <div
+            className="video-embed-poster"
+            style={{
+              backgroundImage: cssImageUrl(posterUrl),
+              opacity: iframeLoaded ? 0 : 1,
+            }}
+          />
+        ) : null}
         <iframe
+          key={`${embedUrl}-${reloadNonce}`}
           ref={iframeRef}
           src={embedUrl}
+          onLoad={markLoaded}
           className="absolute top-1/2 left-1/2"
           allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
@@ -1076,6 +1192,7 @@ function DailymotionEmbed({
             width: '177.8%',
             height: '100%',
             transform: 'translate(-50%, -50%)',
+            zIndex: 1,
           }}
         />
         {!disableFullscreen ? (
@@ -1103,7 +1220,15 @@ function DailymotionEmbed({
   )
 }
 
-function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHeight: string }) {
+function HtmlVideoEmbed({
+  item,
+  frameHeight,
+  onPlaybackIssue,
+}: {
+  item: VideoContentItem
+  frameHeight: string
+  onPlaybackIssue?: PlaybackIssueHandler
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const shouldAutoPlay = useMemo(() => {
     const provider = (item.provider || '').toLowerCase()
@@ -1151,6 +1276,7 @@ function HtmlVideoEmbed({ item, frameHeight }: { item: VideoContentItem; frameHe
           poster={item.thumbUrl ?? undefined}
           controlsList="nodownload"
           disablePictureInPicture
+          onError={() => onPlaybackIssue?.(item, 'video-error')}
         >
           <source src={item.url} />
         </video>
@@ -1168,6 +1294,7 @@ function ContentRenderer({
   openExternallyLabel,
   disableFullscreen,
   onOpenFullscreen,
+  onPlaybackIssue,
 }: {
   item: DisplayItem
   theme: { cream: string; text: string; deep: string; bg: string }
@@ -1177,6 +1304,7 @@ function ContentRenderer({
   openExternallyLabel: string
   disableFullscreen: boolean
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
+  onPlaybackIssue?: PlaybackIssueHandler
 }) {
   if (item.type === 'encourage') {
     const encourageStyle: EncourageStyle = {
@@ -1397,6 +1525,7 @@ function ContentRenderer({
         openExternallyLabel={openExternallyLabel}
         disableFullscreen={disableFullscreen}
         onOpenFullscreen={onOpenFullscreen}
+        onPlaybackIssue={onPlaybackIssue}
       />
     )
   }
@@ -1445,8 +1574,10 @@ export default function RandomExperiencePage({
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [transitionLocked, setTransitionLocked] = useState(false)
   const loadPendingRef = useRef(false)
   const queuedLoadRef = useRef<boolean | null>(null)
+  const playbackIssueCountsRef = useRef<Record<string, number>>({})
   const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
@@ -1658,7 +1789,6 @@ export default function RandomExperiencePage({
   const likeLabel = useMemo(() => t('modal.like', 'Like'), [t])
   const randomAgainLabel = useMemo(() => t('modal.randomAgain', 'RANDOM AGAIN'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
-  const noroscopeLabel = useMemo(() => t('noroscope.menu', '6 RANDOM'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
@@ -1696,6 +1826,7 @@ const sequenceStateRef = useRef({
   const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const transitionUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
     const count = mode === 'boost' ? randomInt(62, 84) : randomInt(34, 48)
@@ -1817,6 +1948,7 @@ const sequenceStateRef = useRef({
       if (burgerGlitchTimeoutRef.current) clearTimeout(burgerGlitchTimeoutRef.current)
       if (heartGlitchTimeoutRef.current) clearTimeout(heartGlitchTimeoutRef.current)
       if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
+      if (transitionUnlockTimeoutRef.current) clearTimeout(transitionUnlockTimeoutRef.current)
     }
   }, [])
 
@@ -2537,6 +2669,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
   }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, spawnMiniGameIfDue, takeAnyAvailableItem, takeFromQueue, triggerPageGlitch, updateTheme])
 
+  const handlePlaybackIssue = useCallback((item: VideoContentItem) => {
+    const current = currentItemRef.current
+    if (!current || current.type !== 'video') return
+
+    const key = getContentKey(item)
+    const currentKey = getContentKey(current)
+    if (!key || key !== currentKey) return
+
+    const attempts = playbackIssueCountsRef.current[key] ?? 0
+    if (attempts >= 1) return
+
+    playbackIssueCountsRef.current[key] = attempts + 1
+    loadNext(false).catch(() => undefined)
+  }, [getContentKey, loadNext])
+
   useEffect(() => {
     if (initialLoadTriggeredRef.current) return
     initialLoadTriggeredRef.current = true
@@ -2580,8 +2727,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const isPriming = !viewItem && loading
   const shouldShowInlineAd = adsAllowed && inlineAdActive && !isPriming
   const currentImmersiveImage = useMemo(
-    () => (shouldShowInlineAd || isPriming ? null : getImmersiveBackgroundImage(viewItem)),
-    [isPriming, shouldShowInlineAd, viewItem]
+    () => (shouldShowInlineAd || isPriming ? null : getImmersiveBackgroundImage(viewItem, viewportWidth)),
+    [isPriming, shouldShowInlineAd, viewItem, viewportWidth]
   )
   const lastImmersiveImageRef = useRef<string | null>(currentImmersiveImage)
 
@@ -2591,8 +2738,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const fallbackImmersiveImage = currentImmersiveImage ? null : lastImmersiveImageRef.current
   const immersiveBackground = useMemo(
-    () => getImmersiveBackgroundData(viewItem, theme, shouldShowInlineAd, isPriming, fallbackImmersiveImage),
-    [fallbackImmersiveImage, isPriming, shouldShowInlineAd, theme, viewItem]
+    () => getImmersiveBackgroundData(viewItem, theme, shouldShowInlineAd, isPriming, fallbackImmersiveImage, viewportWidth),
+    [fallbackImmersiveImage, isPriming, shouldShowInlineAd, theme, viewItem, viewportWidth]
   )
   const immersiveBackgroundStyle = useMemo<ImmersiveBackgroundStyle>(() => ({
     '--random-bg-image': cssImageUrl(immersiveBackground.image),
@@ -2650,16 +2797,31 @@ const showXpForCategory = useMemo(() => {
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
   const footerPadHeight = adsAllowed ? adHeight : 0
   const controlsDisabled = shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
+  const randomAgainDisabled = transitionLocked || loading
+
+  const unlockTransitionAfter = useCallback((delay = 250) => {
+    if (transitionUnlockTimeoutRef.current) clearTimeout(transitionUnlockTimeoutRef.current)
+    transitionUnlockTimeoutRef.current = setTimeout(() => {
+      setTransitionLocked(false)
+      transitionUnlockTimeoutRef.current = null
+    }, delay)
+  }, [])
 
   const handleRandomAgain = useCallback(() => {
+    if (transitionLocked || loadPendingRef.current) return
+    setTransitionLocked(true)
+    unlockTransitionAfter(12000)
+
     const target = shouldShowInlineAd ? 'inline' : 'footer'
     if (adsAllowed) {
       dispatchAadsRefresh(target)
     }
     incrementRandomDrawCount()
-    loadNext(true).catch(() => undefined)
+    loadNext(true)
+      .catch(() => undefined)
+      .finally(() => unlockTransitionAfter(260))
     playAgain()
-  }, [adsAllowed, incrementRandomDrawCount, loadNext, shouldShowInlineAd])
+  }, [adsAllowed, incrementRandomDrawCount, loadNext, shouldShowInlineAd, transitionLocked, unlockTransitionAfter])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -2805,6 +2967,7 @@ const showXpForCategory = useMemo(() => {
               openExternallyLabel={openExternallyLabel}
               disableFullscreen={disableFullscreenButton}
               onOpenFullscreen={openFullscreen}
+              onPlaybackIssue={handlePlaybackIssue}
             />
           ) : (
             <div className="flex items-center justify-center w-full h-full">
@@ -2856,11 +3019,14 @@ const showXpForCategory = useMemo(() => {
             <button
               type="button"
               onClick={handleRandomAgain}
-              className="w-full px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold"
+              disabled={randomAgainDisabled}
+              aria-busy={randomAgainDisabled}
+              className={`w-full px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold ${randomAgainDisabled ? 'cursor-wait' : 'hover:scale-[1.02]'}`}
               style={{
                 backgroundColor: theme.text,
                 color: theme.cream,
                 fontWeight: 700,
+                opacity: randomAgainDisabled ? 0.92 : 1,
               }}
             >
               <AnimatedButtonLabel text={randomAgainLabel} color={theme.cream} trigger={trigger} toSecond={isSecond} />
@@ -2923,15 +3089,6 @@ const showXpForCategory = useMemo(() => {
                 style={{ color: theme.cream }}
               >
                 <span>Random</span>
-              </Link>
-
-              <Link
-                href="/6random"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center"
-                style={{ color: theme.cream }}
-              >
-                <span>{noroscopeLabel}</span>
               </Link>
 
               <Link
@@ -3294,6 +3451,8 @@ const showXpForCategory = useMemo(() => {
           overflow: hidden;
           opacity: var(--random-bg-strength, 0);
           transition: opacity 120ms ease;
+          contain: strict;
+          transform: translateZ(0);
         }
         .random-immersive-fragment {
           position: absolute;
@@ -3408,6 +3567,22 @@ const showXpForCategory = useMemo(() => {
           mix-blend-mode: screen;
           opacity: var(--random-bg-noise-strength, 0);
           animation: random-bg-noise-pop 18000ms steps(1, end) infinite;
+        }
+        .video-embed-poster {
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          pointer-events: none;
+          background-position: center;
+          background-size: cover;
+          filter: saturate(1.4) contrast(1.15) brightness(0.62);
+          transition: opacity 180ms ease;
+        }
+        .video-embed-poster::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.38);
         }
         @keyframes random-bg-drift {
           0% { transform: translate3d(-0.6%, -0.4%, 0) scale(1.12); filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28); }
