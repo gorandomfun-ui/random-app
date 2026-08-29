@@ -849,7 +849,11 @@ function VideoFullscreenIconButton({
       type="button"
       aria-label={label}
       title={label}
-      onClick={onClick}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onClick()
+      }}
       className="rounded-full bg-black/60 text-white shadow-lg hover:bg-black/75"
       style={{
         position: 'absolute',
@@ -857,6 +861,7 @@ function VideoFullscreenIconButton({
         right: offsetForSound ? '148px' : '16px',
         zIndex: 4,
         pointerEvents: 'auto',
+        touchAction: 'manipulation',
         width: '44px',
         height: '40px',
         display: 'inline-flex',
@@ -876,6 +881,41 @@ const shouldBypassNativeFullscreen = () => {
   const isiOS = /iP(ad|hone|od)/.test(ua)
   const isIpadOnMac = /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1
   return isiOS || isIpadOnMac
+}
+
+const VIDEO_SOUND_WAKE_DELAYS = [80, 320, 900, 1600]
+
+function postEmbedMessage(iframe: HTMLIFrameElement | null, payload: unknown) {
+  try {
+    iframe?.contentWindow?.postMessage(JSON.stringify(payload), '*')
+  } catch {
+    /* ignore */
+  }
+}
+
+function wakeYouTubeSound(iframe: HTMLIFrameElement | null) {
+  postEmbedMessage(iframe, { event: 'command', func: 'unMute', args: [] })
+  postEmbedMessage(iframe, { event: 'command', func: 'setVolume', args: [100] })
+  postEmbedMessage(iframe, { event: 'command', func: 'playVideo', args: [] })
+}
+
+function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
+  postEmbedMessage(iframe, { command: 'setMuted', parameters: [false] })
+  postEmbedMessage(iframe, { command: 'setVolume', parameters: [1] })
+  postEmbedMessage(iframe, { command: 'play' })
+}
+
+function wakeEmbeddedVideoSound(kind: FullscreenVideoPayload['kind'], iframe: HTMLIFrameElement | null) {
+  if (kind === 'youtube') wakeYouTubeSound(iframe)
+  if (kind === 'dailymotion') wakeDailymotionSound(iframe)
+}
+
+function scheduleVideoSoundWake(wake: () => void) {
+  if (typeof window === 'undefined') return () => undefined
+  const timers = VIDEO_SOUND_WAKE_DELAYS.map((delay) => window.setTimeout(wake, delay))
+  return () => {
+    timers.forEach((timer) => window.clearTimeout(timer))
+  }
 }
 
 function useVideoEmbedWatchdog(
@@ -921,6 +961,7 @@ function VideoEmbed({
   fullscreenLabel,
   disableFullscreen,
   onOpenFullscreen,
+  onVideoSoundUnlocked,
   onPlaybackIssue,
 }: {
   item: VideoContentItem
@@ -929,6 +970,7 @@ function VideoEmbed({
   fullscreenLabel: string
   disableFullscreen: boolean
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
+  onVideoSoundUnlocked?: () => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const provider = (item.provider || '').toLowerCase()
@@ -947,6 +989,7 @@ function VideoEmbed({
         fullscreenLabel={fullscreenLabel}
         disableFullscreen={disableFullscreen}
         onFullscreenFallback={onOpenFullscreen}
+        onVideoSoundUnlocked={onVideoSoundUnlocked}
         onPlaybackIssue={onPlaybackIssue}
       />
     )
@@ -961,6 +1004,7 @@ function VideoEmbed({
         fullscreenLabel={fullscreenLabel}
         disableFullscreen={disableFullscreen}
         onFullscreenFallback={onOpenFullscreen}
+        onVideoSoundUnlocked={onVideoSoundUnlocked}
         onPlaybackIssue={onPlaybackIssue}
       />
     )
@@ -971,6 +1015,7 @@ function VideoEmbed({
       item={item}
       frameHeight={frameHeight}
       soundMuted={soundMuted}
+      onVideoSoundUnlocked={onVideoSoundUnlocked}
       onPlaybackIssue={onPlaybackIssue}
     />
   )
@@ -983,6 +1028,7 @@ function YouTubeEmbed({
   fullscreenLabel,
   disableFullscreen,
   onFullscreenFallback,
+  onVideoSoundUnlocked,
   onPlaybackIssue,
 }: {
   item: VideoContentItem
@@ -991,12 +1037,16 @@ function YouTubeEmbed({
   fullscreenLabel: string
   disableFullscreen: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
+  onVideoSoundUnlocked?: () => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const preservePlayerOnUnmuteRef = useRef(false)
+  const soundMutedRef = useRef(soundMuted)
   const [originParam, setOriginParam] = useState('')
   const [isMuted, setIsMuted] = useState(soundMuted)
+  const [embedMuted, setEmbedMuted] = useState(soundMuted)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1005,8 +1055,21 @@ function YouTubeEmbed({
   }, [])
 
   useEffect(() => {
+    soundMutedRef.current = soundMuted
     setIsMuted(soundMuted)
-  }, [soundMuted, url])
+    if (preservePlayerOnUnmuteRef.current && !soundMuted) {
+      preservePlayerOnUnmuteRef.current = false
+      return
+    }
+    setEmbedMuted(soundMuted)
+  }, [soundMuted])
+
+  useEffect(() => {
+    const nextMuted = soundMutedRef.current
+    setIsMuted(nextMuted)
+    setEmbedMuted(nextMuted)
+    preservePlayerOnUnmuteRef.current = false
+  }, [url])
 
   const videoId = useMemo(() => {
     return extractYouTubeVideoId(url) || ''
@@ -1016,7 +1079,7 @@ function YouTubeEmbed({
     const params = new URLSearchParams({
       rel: '0',
       autoplay: '1',
-      mute: isMuted ? '1' : '0',
+      mute: embedMuted ? '1' : '0',
       controls: '1',
       fs: '1',
       playsinline: '1',
@@ -1025,38 +1088,38 @@ function YouTubeEmbed({
     })
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
-  }, [videoId, isMuted, originParam])
+  }, [videoId, embedMuted, originParam])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(src, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
 
+  const requestSound = useCallback(() => {
+    wakeYouTubeSound(iframeRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (isMuted) return undefined
+    return scheduleVideoSoundWake(requestSound)
+  }, [isMuted, requestSound, src])
+
   const unmute = () => {
-    const iframe = iframeRef.current
-    if (!iframe?.contentWindow) return
-    try {
-      iframe.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
-        '*'
-      )
-      iframe.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
-        '*'
-      )
-      setIsMuted(false)
-    } catch {}
+    preservePlayerOnUnmuteRef.current = true
+    requestSound()
+    onVideoSoundUnlocked?.()
+    setIsMuted(false)
   }
 
   const handleFullscreen = async () => {
+    if (onFullscreenFallback) {
+      onFullscreenFallback({ kind: 'youtube', src, title: text })
+      return
+    }
     const bypassNative = disableFullscreen || shouldBypassNativeFullscreen()
     let ok = false
     if (!bypassNative) {
       ok = await attemptFullscreen(iframeRef.current)
     }
     if (ok) return
-    if (onFullscreenFallback) {
-      onFullscreenFallback({ kind: 'youtube', src, title: text })
-    } else {
-      openProviderUrl(item.url)
-    }
+    openProviderUrl(item.url)
   }
 
   return (
@@ -1122,6 +1185,7 @@ function DailymotionEmbed({
   fullscreenLabel,
   disableFullscreen,
   onFullscreenFallback,
+  onVideoSoundUnlocked,
   onPlaybackIssue,
 }: {
   item: VideoContentItem
@@ -1130,22 +1194,39 @@ function DailymotionEmbed({
   fullscreenLabel: string
   disableFullscreen: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
+  onVideoSoundUnlocked?: () => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const { url, text } = item
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const preservePlayerOnUnmuteRef = useRef(false)
+  const soundMutedRef = useRef(soundMuted)
   const [isMuted, setIsMuted] = useState(soundMuted)
+  const [embedMuted, setEmbedMuted] = useState(soundMuted)
 
   useEffect(() => {
+    soundMutedRef.current = soundMuted
     setIsMuted(soundMuted)
-  }, [soundMuted, url])
+    if (preservePlayerOnUnmuteRef.current && !soundMuted) {
+      preservePlayerOnUnmuteRef.current = false
+      return
+    }
+    setEmbedMuted(soundMuted)
+  }, [soundMuted])
+
+  useEffect(() => {
+    const nextMuted = soundMutedRef.current
+    setIsMuted(nextMuted)
+    setEmbedMuted(nextMuted)
+    preservePlayerOnUnmuteRef.current = false
+  }, [url])
 
   const embedUrl = useMemo(() => {
     try {
       const videoId = extractDailymotionVideoId(url) || ''
       const params = new URLSearchParams()
       params.set('autoplay', '1')
-      params.set('mute', isMuted ? '1' : '0')
+      params.set('mute', embedMuted ? '1' : '0')
       params.set('controls', '1')
       params.set('queue-enable', '0')
       params.set('sharing-enable', '0')
@@ -1164,11 +1245,24 @@ function DailymotionEmbed({
     } catch {
       return url
     }
-  }, [disableFullscreen, isMuted, url])
+  }, [disableFullscreen, embedMuted, url])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
 
+  const requestSound = useCallback(() => {
+    wakeDailymotionSound(iframeRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (isMuted) return undefined
+    return scheduleVideoSoundWake(requestSound)
+  }, [embedUrl, isMuted, requestSound])
+
   const handleFullscreen = async () => {
+    if (onFullscreenFallback) {
+      onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: text })
+      return
+    }
     const bypassNative = disableFullscreen || shouldBypassNativeFullscreen()
     let ok = false
     if (!bypassNative) {
@@ -1176,14 +1270,13 @@ function DailymotionEmbed({
       ok = (await attemptFullscreen(iframe)) || (await attemptFullscreen(iframe?.parentElement ?? null))
     }
     if (ok) return
-    if (onFullscreenFallback) {
-      onFullscreenFallback({ kind: 'dailymotion', src: embedUrl, title: text })
-    } else {
-      openProviderUrl(item.url)
-    }
+    openProviderUrl(item.url)
   }
 
   const unmute = () => {
+    preservePlayerOnUnmuteRef.current = true
+    requestSound()
+    onVideoSoundUnlocked?.()
     setIsMuted(false)
   }
 
@@ -1247,11 +1340,13 @@ function HtmlVideoEmbed({
   item,
   frameHeight,
   soundMuted,
+  onVideoSoundUnlocked,
   onPlaybackIssue,
 }: {
   item: VideoContentItem
   frameHeight: string
   soundMuted: boolean
+  onVideoSoundUnlocked?: () => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -1287,6 +1382,7 @@ function HtmlVideoEmbed({
       const playPromise = video.play()
       if (playPromise) playPromise.catch(() => undefined)
     }
+    onVideoSoundUnlocked?.()
     setIsMuted(false)
   }
 
@@ -1344,6 +1440,7 @@ function ContentRenderer({
   fullscreenLabel,
   disableFullscreen,
   onOpenFullscreen,
+  onVideoSoundUnlocked,
   onPlaybackIssue,
 }: {
   item: DisplayItem
@@ -1354,6 +1451,7 @@ function ContentRenderer({
   fullscreenLabel: string
   disableFullscreen: boolean
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
+  onVideoSoundUnlocked?: () => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
   if (item.type === 'encourage') {
@@ -1575,6 +1673,7 @@ function ContentRenderer({
         fullscreenLabel={fullscreenLabel}
         disableFullscreen={disableFullscreen}
         onOpenFullscreen={onOpenFullscreen}
+        onVideoSoundUnlocked={onVideoSoundUnlocked}
         onPlaybackIssue={onPlaybackIssue}
       />
     )
@@ -1634,8 +1733,11 @@ export default function RandomExperiencePage({
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
-  const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
   const [soundMuted, setSoundMuted] = useState(false)
+  const fullscreenIframeRef = useRef<HTMLIFrameElement | null>(null)
+  const fullscreenTriggerRef = useRef(trigger)
+  const [fullscreenEmbedMuted, setFullscreenEmbedMuted] = useState(soundMuted)
+  const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
   const adsAllowed = consent?.ads === true
 
   useEffect(() => {
@@ -1685,9 +1787,19 @@ export default function RandomExperiencePage({
     })
   }
 
+  const unlockVideoSound = useCallback(() => {
+    setSoundMuted(false)
+    setMuted(false)
+    try {
+      localStorage.setItem(SOUND_STORAGE_KEY, 'false')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
   const fullscreenSrc = useMemo(() => {
     if (!fullscreenVideo) return ''
-    const muteValue = soundMuted ? '1' : '0'
+    const muteValue = fullscreenEmbedMuted ? '1' : '0'
     try {
       const base = fullscreenVideo.src.startsWith('http')
         ? fullscreenVideo.src
@@ -1715,7 +1827,7 @@ export default function RandomExperiencePage({
         if (!/playsinline=/.test(src)) {
           src = src.includes('?') ? `${src}&playsinline=1` : `${src}?playsinline=1`
         }
-        if (soundMuted) {
+        if (fullscreenEmbedMuted) {
           if (/mute=0/.test(src)) src = src.replace('mute=0', 'mute=1')
           else if (!/mute=/.test(src)) src = `${src}&mute=1`
         } else {
@@ -1728,7 +1840,7 @@ export default function RandomExperiencePage({
         let src = fullscreenVideo.src
         if (!/autoplay=/.test(src)) src = src.includes('?') ? `${src}&autoplay=1` : `${src}?autoplay=1`
         if (!/playsinline=/.test(src)) src = src.includes('?') ? `${src}&playsinline=1` : `${src}?playsinline=1`
-        if (soundMuted) {
+        if (fullscreenEmbedMuted) {
           if (/mute=0/.test(src)) src = src.replace('mute=0', 'mute=1')
           else if (!/mute=/.test(src)) src = `${src}&mute=1`
         } else {
@@ -1739,7 +1851,12 @@ export default function RandomExperiencePage({
       }
       return fullscreenVideo.src
     }
-  }, [fullscreenVideo, soundMuted])
+  }, [fullscreenEmbedMuted, fullscreenVideo])
+
+  const requestFullscreenSound = useCallback(() => {
+    if (!fullscreenVideo) return
+    wakeEmbeddedVideoSound(fullscreenVideo.kind, fullscreenIframeRef.current)
+  }, [fullscreenVideo])
 
   const theme = THEMES[themeIdx]
   const contentHeight = useMemo(() => {
@@ -1956,8 +2073,9 @@ const sequenceStateRef = useRef({
   }, [makePageGlitchBars])
 
   const openFullscreen = useCallback((payload: FullscreenVideoPayload) => {
+    setFullscreenEmbedMuted(soundMuted)
     setFullscreenVideo(payload)
-  }, [])
+  }, [soundMuted])
 
   const closeFullscreen = useCallback(() => setFullscreenVideo(null), [])
 
@@ -2007,6 +2125,13 @@ const sequenceStateRef = useRef({
   }, [closeFullscreen, fullscreenVideo])
 
   useEffect(() => {
+    if (!fullscreenVideo || soundMuted) return undefined
+    return scheduleVideoSoundWake(requestFullscreenSound)
+  }, [fullscreenSrc, fullscreenVideo, requestFullscreenSound, soundMuted])
+
+  useEffect(() => {
+    if (fullscreenTriggerRef.current === trigger) return
+    fullscreenTriggerRef.current = trigger
     if (fullscreenVideo) closeFullscreen()
   }, [closeFullscreen, fullscreenVideo, trigger])
 
@@ -2967,6 +3092,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               fullscreenLabel={fullscreenLabel}
               disableFullscreen={disableFullscreenButton}
               onOpenFullscreen={openFullscreen}
+              onVideoSoundUnlocked={unlockVideoSound}
               onPlaybackIssue={handlePlaybackIssue}
             />
           ) : (
@@ -3211,10 +3337,25 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             >
               ×
             </button>
+            {soundMuted ? (
+              <button
+                type="button"
+                className="video-fullscreen-sound"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  requestFullscreenSound()
+                  unlockVideoSound()
+                }}
+              >
+                Tap to unmute
+              </button>
+            ) : null}
             <div className="video-fullscreen-player">
               {fullscreenVideo.kind === 'youtube' ? (
                 <iframe
                   key={`yt-${fullscreenSrc}`}
+                  ref={fullscreenIframeRef}
                   src={fullscreenSrc || fullscreenVideo.src}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                   allowFullScreen
@@ -3223,6 +3364,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               ) : (
                 <iframe
                   key={`dm-${fullscreenSrc}`}
+                  ref={fullscreenIframeRef}
                   src={fullscreenSrc || fullscreenVideo.src}
                   allow="autoplay; fullscreen"
                   allowFullScreen
@@ -3849,6 +3991,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           align-items: center;
           justify-content: center;
           z-index: 2;
+        }
+        .video-fullscreen-sound {
+          position: absolute;
+          top: 12px;
+          left: 16px;
+          z-index: 2;
+          min-width: 126px;
+          border-radius: 999px;
+          background: rgba(0, 0, 0, 0.68);
+          color: #fff;
+          padding: 10px 16px;
+          font-family: var(--font-inter-tight), 'Inter Tight', sans-serif;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+          touch-action: manipulation;
         }
         @media (max-width: 768px) {
           .video-fullscreen-frame {
