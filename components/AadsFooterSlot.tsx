@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import HouseAd from './HouseAd'
 import {
   AADS_REFRESH_EVENT,
   type AadsRefreshEvent,
   type AadsRefreshTarget,
+  type AadsSlotStatus,
   mountAadsSlot,
 } from '@/lib/aads'
+import { useCookieConsent } from './CookieConsent'
 
 const FOOTER_DESKTOP_ID = process.env.NEXT_PUBLIC_AADS_BANNER_DESKTOP_ID
 const FOOTER_MOBILE_ID = process.env.NEXT_PUBLIC_AADS_BANNER_MOBILE_ID
@@ -21,6 +22,7 @@ type Props = {
   enabled?: boolean
   label?: string | null
   refreshTarget?: AadsRefreshTarget | null
+  onVisibleChange?: (visible: boolean) => void
 }
 
 export default function AadsFooterSlot({
@@ -28,60 +30,77 @@ export default function AadsFooterSlot({
   enabled = true,
   label = null,
   refreshTarget = 'footer',
+  onVisibleChange,
 }: Props) {
+  const { consent } = useCookieConsent()
   const unitId = variant === 'desktop' ? FOOTER_DESKTOP_ID : FOOTER_MOBILE_ID
+  const size = variant === 'desktop' ? '728x90' : '320x50'
+  const effectiveEnabled = enabled && consent?.ads === true
   const containerRef = useRef<HTMLDivElement | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const lastRefreshRef = useRef(0)
-  const [fallback, setFallback] = useState(() => !enabled || !unitId)
+  const [status, setStatus] = useState<AadsSlotStatus>(() => (effectiveEnabled && unitId ? 'idle' : 'empty'))
+  const visible = status === 'visible'
+
+  useEffect(() => {
+    onVisibleChange?.(visible)
+  }, [onVisibleChange, visible])
 
   const requestAd = useCallback(() => {
     cleanupRef.current?.()
     const container = containerRef.current
-    if (!container || !enabled || !unitId) {
-      setFallback(true)
+    if (!container || !effectiveEnabled || !unitId) {
+      setStatus('empty')
       return
     }
-    setFallback(false)
+    setStatus('loading')
     cleanupRef.current = mountAadsSlot(container, unitId, {
-      onLoad: () => setFallback(false),
-      onFallback: () => setFallback(true),
+      onLoad: () => setStatus('visible'),
+      onFallback: () => setStatus('empty'),
+      size,
     })
     lastRefreshRef.current = Date.now()
-  }, [enabled, unitId])
+  }, [effectiveEnabled, size, unitId])
 
   useEffect(() => {
     if (!unitId) {
-      setFallback(true)
+      setStatus('empty')
     }
   }, [unitId])
 
   useEffect(() => {
-    if (!enabled) {
-      setFallback(true)
+    if (!effectiveEnabled) {
+      setStatus('empty')
       cleanupRef.current?.()
       return
     }
     requestAd()
     return () => cleanupRef.current?.()
-  }, [enabled, requestAd])
+  }, [effectiveEnabled, requestAd])
 
   useEffect(() => {
     if (!refreshTarget) return
     const handler = (event: Event) => {
       const custom = event as AadsRefreshEvent
-      if (!enabled) return
+      if (!effectiveEnabled) return
       if (custom.detail?.slot !== refreshTarget) return
       if (Date.now() - lastRefreshRef.current < MIN_REFRESH_MS) return
       requestAd()
     }
     window.addEventListener(AADS_REFRESH_EVENT, handler)
     return () => window.removeEventListener(AADS_REFRESH_EVENT, handler)
-  }, [enabled, refreshTarget, requestAd])
+  }, [effectiveEnabled, refreshTarget, requestAd])
 
   return (
-    <div className="relative flex h-full w-full flex-col items-center justify-center">
-      {label ? (
+    <div
+      className="relative flex h-full w-full flex-col items-center justify-center"
+      aria-hidden={!visible}
+      style={{
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+      }}
+    >
+      {label && visible ? (
         <span className="mb-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-500">
           {label}
         </span>
@@ -90,9 +109,7 @@ export default function AadsFooterSlot({
         <div
           ref={containerRef}
           className="h-full w-full"
-          style={{ display: fallback ? 'none' : 'block' }}
         />
-        {fallback ? <HouseAd orientation="horizontal" /> : null}
       </div>
     </div>
   )

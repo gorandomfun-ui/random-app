@@ -8,6 +8,7 @@ import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeIte
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
 import HeartIcon from '../../components/HeartIcon'
+import { useCookieConsent } from '@/components/CookieConsent'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
@@ -200,6 +201,7 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
 
 export default function LikesClient({ initialGlobalItems = [], initialFetchedAt = 0 }: LikesClientProps = {}) {
   const { t, locale, locales, setLocale } = useI18n()
+  const { consent } = useCookieConsent()
   const cached = typeof window !== 'undefined' ? readWeCache() : null
   const [seedItems] = useState<GlobalLikeItem[]>(() => cached?.items ?? initialGlobalItems)
   const [seedTimestamp] = useState<number>(() => cached?.timestamp ?? initialFetchedAt)
@@ -220,6 +222,8 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
   const [filterOpen, setFilterOpen] = useState(false)
   const [filterTypes, setFilterTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
+  const [footerAdVisible, setFooterAdVisible] = useState(false)
+  const adsAllowed = consent?.ads === true
 
   const cacheWeLikes = useCallback((entries: GlobalLikeItem[], timestamp: number) => {
     if (!timestamp) return
@@ -325,14 +329,19 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
     if (vw >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
     return { width: 320, height: 50, variant: 'mobile' as const }
   }, [vw])
+  const visibleAdHeight = adsAllowed && footerAdVisible ? adFormat.height : 0
+
+  useEffect(() => {
+    if (!adsAllowed) setFooterAdVisible(false)
+  }, [adsAllowed])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
-    document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
+    document.documentElement.style.setProperty('--ad-bar-height', `${visibleAdHeight}px`)
     return () => {
       document.documentElement.style.removeProperty('--ad-bar-height')
     }
-  }, [adFormat.height])
+  }, [visibleAdHeight])
 
   const ensureGlobalLikes = useCallback((force = false) => {
     if (globalLoadingRef.current) return
@@ -423,26 +432,37 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
     '--likes-bg-media-opacity': likesGlitchImage ? 0.28 : 0,
   }), [accentColor, likesGlitchImage])
 
-  const adBar = (
+  const adBar = adsAllowed ? (
     <div
       id="ad-bar"
       className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
       style={{
-        height: adFormat.height,
-        backgroundColor: '#ffffff',
+        height: visibleAdHeight,
+        backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
         color: '#111',
+        overflow: 'visible',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        pointerEvents: footerAdVisible ? 'auto' : 'none',
         zIndex: 120,
       }}
     >
       <div
         className="flex items-center justify-center"
-        style={{ width: adFormat.width, height: adFormat.height }}
+        style={{
+          width: adFormat.width,
+          height: adFormat.height,
+          position: footerAdVisible ? 'static' : 'absolute',
+          bottom: 0,
+        }}
       >
-        <AadsFooterSlot variant={adFormat.variant} />
+        <AadsFooterSlot
+          variant={adFormat.variant}
+          enabled={adsAllowed}
+          onVisibleChange={setFooterAdVisible}
+        />
       </div>
     </div>
-  )
+  ) : null
 
   const renderGrid = () => {
     if (activeTab === 'you') {

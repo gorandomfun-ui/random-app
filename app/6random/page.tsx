@@ -7,6 +7,7 @@ import Link from 'next/link'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ShareMenu from '@/components/ShareMenu'
+import { useCookieConsent } from '@/components/CookieConsent'
 import { useI18n } from '@/providers/I18nProvider'
 import { THEMES, TEXT_COLORS } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
@@ -264,6 +265,7 @@ function AutoPlayingVideo({ src, poster, label }: { src: string; poster?: string
 
 export default function NoroscopePage() {
   const { t, locale, locales, setLocale } = useI18n()
+  const { consent } = useCookieConsent()
 
   const [themeIdx] = useState(() => Math.floor(Math.random() * THEMES.length))
   const theme = THEMES[themeIdx]
@@ -288,6 +290,8 @@ export default function NoroscopePage() {
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const [footerAdVisible, setFooterAdVisible] = useState(false)
+  const adsAllowed = consent?.ads === true
 
   useEffect(() => {
     isMountedRef.current = true
@@ -356,14 +360,19 @@ export default function NoroscopePage() {
     if (vw >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
     return { width: 320, height: 50, variant: 'mobile' as const }
   }, [vw])
+  const visibleAdHeight = adsAllowed && footerAdVisible ? adFormat.height : 0
+
+  useEffect(() => {
+    if (!adsAllowed) setFooterAdVisible(false)
+  }, [adsAllowed])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
-    document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
+    document.documentElement.style.setProperty('--ad-bar-height', `${visibleAdHeight}px`)
     return () => {
       document.documentElement.style.removeProperty('--ad-bar-height')
     }
-  }, [adFormat.height])
+  }, [visibleAdHeight])
 
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
 
@@ -659,25 +668,36 @@ export default function NoroscopePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const adBar = (
+  const adBar = adsAllowed ? (
     <div
       className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
       style={{
-        height: adFormat.height,
-        backgroundColor: '#ffffff',
+        height: visibleAdHeight,
+        backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
         color: '#111',
+        overflow: 'visible',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        pointerEvents: footerAdVisible ? 'auto' : 'none',
         zIndex: 120,
       }}
     >
       <div
         className="flex items-center justify-center"
-        style={{ width: adFormat.width, height: adFormat.height }}
+        style={{
+          width: adFormat.width,
+          height: adFormat.height,
+          position: footerAdVisible ? 'static' : 'absolute',
+          bottom: 0,
+        }}
       >
-        <AadsFooterSlot variant={adFormat.variant} />
+        <AadsFooterSlot
+          variant={adFormat.variant}
+          enabled={adsAllowed}
+          onVisibleChange={setFooterAdVisible}
+        />
       </div>
     </div>
-  )
+  ) : null
 
   const TEXT_TILE_VARIANTS: Array<(theme: typeof THEMES[number]) => { backgroundColor: string; color: string }> = [
     (theme) => ({ backgroundColor: theme.deep, color: theme.cream }),
@@ -1166,7 +1186,7 @@ export default function NoroscopePage() {
 
       <section
         className="flex-1"
-        style={{ paddingBottom: `calc(${adFormat.height}px + 72px + env(safe-area-inset-bottom, 0px))` }}
+        style={{ paddingBottom: `calc(${visibleAdHeight}px + 72px + env(safe-area-inset-bottom, 0px))` }}
       >
         <div className="px-3 sm:px-5 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6 gap-[3px] sm:gap-[3px] mx-auto w-full">

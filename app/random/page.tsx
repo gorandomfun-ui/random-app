@@ -5,7 +5,6 @@ import Link from 'next/link'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { useCookieConsent } from '@/components/CookieConsent'
-import AadsInlineContentAd from '@/components/AadsInlineContentAd'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
 import MiniGameCard from '@/components/minigames/MiniGameCard'
@@ -653,7 +652,6 @@ function randDiffIdx(max: number, not: number) {
   return i
 }
 
-const RANDOM_INLINE_AD_KEY = 'random.inline.count'
 const PREFETCH_STORAGE_PREFIX = 'random-prefetch-'
 
 function shortenText(text: string, maxWords: number) {
@@ -1567,9 +1565,8 @@ export default function RandomExperiencePage({
   const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
   const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
   const currentItemRef = useRef<DisplayItem | null>(null)
-  const randomDrawCountRef = useRef(0)
-  const [inlineAdActive, setInlineAdActive] = useState(false)
   const footerAdCounterRef = useRef(0)
+  const [footerAdVisible, setFooterAdVisible] = useState(false)
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
@@ -1591,7 +1588,7 @@ export default function RandomExperiencePage({
 
   useEffect(() => {
     if (!adsAllowed) {
-      setInlineAdActive(false)
+      setFooterAdVisible(false)
       footerAdCounterRef.current = 0
     }
   }, [adsAllowed])
@@ -1645,21 +1642,6 @@ export default function RandomExperiencePage({
     return isIOS || isAndroid
   }, [])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const stored = window.localStorage.getItem(RANDOM_INLINE_AD_KEY)
-      if (!stored) return
-      const parsed = Number.parseInt(stored, 10)
-      if (Number.isFinite(parsed)) {
-        const normalized = ((parsed % 30) + 30) % 30
-        randomDrawCountRef.current = normalized
-        setInlineAdActive(false)
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [])
   const fullscreenSrc = useMemo(() => {
     if (!fullscreenVideo) return ''
     const muteValue = shouldForceMutedAutoplay ? '1' : '0'
@@ -1986,20 +1968,6 @@ const sequenceStateRef = useRef({
   useEffect(() => {
     if (fullscreenVideo) closeFullscreen()
   }, [closeFullscreen, fullscreenVideo, trigger])
-
-  const incrementRandomDrawCount = useCallback(() => {
-    if (!adsAllowed) return
-    const next = (randomDrawCountRef.current + 1) % 30
-    randomDrawCountRef.current = next
-    setInlineAdActive(next === 0)
-    if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(RANDOM_INLINE_AD_KEY, String(next))
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [adsAllowed])
 
   const pickEncourageMessage = useCallback(() => {
     if (!encourageQueueRef.current.length) {
@@ -2725,10 +2693,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const viewItem = currentItem
   const isPriming = !viewItem && loading
-  const shouldShowInlineAd = adsAllowed && inlineAdActive && !isPriming
+
   const currentImmersiveImage = useMemo(
-    () => (shouldShowInlineAd || isPriming ? null : getImmersiveBackgroundImage(viewItem, viewportWidth)),
-    [isPriming, shouldShowInlineAd, viewItem, viewportWidth]
+    () => (isPriming ? null : getImmersiveBackgroundImage(viewItem, viewportWidth)),
+    [isPriming, viewItem, viewportWidth]
   )
   const lastImmersiveImageRef = useRef<string | null>(currentImmersiveImage)
 
@@ -2738,8 +2706,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const fallbackImmersiveImage = currentImmersiveImage ? null : lastImmersiveImageRef.current
   const immersiveBackground = useMemo(
-    () => getImmersiveBackgroundData(viewItem, theme, shouldShowInlineAd, isPriming, fallbackImmersiveImage, viewportWidth),
-    [fallbackImmersiveImage, isPriming, shouldShowInlineAd, theme, viewItem, viewportWidth]
+    () => getImmersiveBackgroundData(viewItem, theme, false, isPriming, fallbackImmersiveImage, viewportWidth),
+    [fallbackImmersiveImage, isPriming, theme, viewItem, viewportWidth]
   )
   const immersiveBackgroundStyle = useMemo<ImmersiveBackgroundStyle>(() => ({
     '--random-bg-image': cssImageUrl(immersiveBackground.image),
@@ -2756,21 +2724,18 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     () => buildImmersiveFragments(immersiveBackground.image, immersiveSeed, viewportWidth),
     [immersiveBackground.image, immersiveSeed, viewportWidth]
   )
-  const isEncourage = !shouldShowInlineAd && viewItem?.type === 'encourage'
+  const isEncourage = viewItem?.type === 'encourage'
   const categoryType: ItemType | null = useMemo(() => {
-    if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage') return null
+    if (!viewItem || viewItem.type === 'encourage') return null
     if (viewItem.type === 'minigame') return 'joke'
     return viewItem.type
-  }, [shouldShowInlineAd, viewItem])
+  }, [viewItem])
 
   useEffect(() => {
-    if ((isEncourage || shouldShowInlineAd) && shareOpen) setShareOpen(false)
-  }, [isEncourage, shareOpen, shouldShowInlineAd])
-
-  const adLabel = useMemo(() => t('ads.sponsored', 'Sponsored'), [t])
+    if (isEncourage && shareOpen) setShareOpen(false)
+  }, [isEncourage, shareOpen])
 
   const categoryLabel = useMemo(() => {
-    if (shouldShowInlineAd) return adLabel
     if (!categoryType) return null
     const labelMap: Record<ItemType, string> = {
       image: navLabels.images,
@@ -2781,22 +2746,22 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       fact: navLabels.facts,
     }
     return labelMap[categoryType]
-  }, [adLabel, categoryType, navLabels, shouldShowInlineAd])
+  }, [categoryType, navLabels])
 
-  const categoryIcon = shouldShowInlineAd || !categoryType ? null : TYPE_ICONS[categoryType]
-const showXpForCategory = useMemo(() => {
-  if (!XP_UI_ENABLED) return false
-  if (shouldShowInlineAd || !viewItem) return false
-  if (viewItem.type === 'minigame') return true
-  if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
-  return false
-}, [shouldShowInlineAd, viewItem])
+  const categoryIcon = !categoryType ? null : TYPE_ICONS[categoryType]
+  const showXpForCategory = useMemo(() => {
+    if (!XP_UI_ENABLED) return false
+    if (!viewItem) return false
+    if (viewItem.type === 'minigame') return true
+    if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
+    return false
+  }, [viewItem])
   const isDesktopAd = (viewportWidth ?? 0) >= 1024
   const adHeight = isDesktopAd ? 90 : 50
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
-  const footerPadHeight = adsAllowed ? adHeight : 0
-  const controlsDisabled = shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
+  const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
+  const controlsDisabled = !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
   const randomAgainDisabled = transitionLocked || loading
 
   const unlockTransitionAfter = useCallback((delay = 250) => {
@@ -2812,16 +2777,14 @@ const showXpForCategory = useMemo(() => {
     setTransitionLocked(true)
     unlockTransitionAfter(12000)
 
-    const target = shouldShowInlineAd ? 'inline' : 'footer'
     if (adsAllowed) {
-      dispatchAadsRefresh(target)
+      dispatchAadsRefresh('footer')
     }
-    incrementRandomDrawCount()
     loadNext(true)
       .catch(() => undefined)
       .finally(() => unlockTransitionAfter(260))
     playAgain()
-  }, [adsAllowed, incrementRandomDrawCount, loadNext, shouldShowInlineAd, transitionLocked, unlockTransitionAfter])
+  }, [adsAllowed, loadNext, transitionLocked, unlockTransitionAfter])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -2953,10 +2916,6 @@ const showXpForCategory = useMemo(() => {
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
             </div>
-          ) : shouldShowInlineAd ? (
-            <div className="flex items-center justify-center w-full h-full">
-              <AadsInlineContentAd label={adLabel} variant={adVariant} />
-            </div>
           ) : viewItem ? (
             <ContentRenderer
               item={viewItem}
@@ -2976,7 +2935,7 @@ const showXpForCategory = useMemo(() => {
           )}
         </div>
 
-        {!shouldShowInlineAd && viewItem && viewItem.type !== 'encourage' ? (
+        {viewItem && viewItem.type !== 'encourage' ? (
           <div className="w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
@@ -2989,7 +2948,7 @@ const showXpForCategory = useMemo(() => {
             type="button"
             aria-label={likeLabel}
             onClick={() => {
-              if (shouldShowInlineAd || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return
+              if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return
               if (liked) {
                 removeLike(viewItem)
                 setLiked(false)
@@ -3231,15 +3190,29 @@ const showXpForCategory = useMemo(() => {
         <div
           className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
           style={{
-            height: adHeight,
-            backgroundColor: '#ffffff',
+            height: footerAdVisible ? adHeight : 0,
+            backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
             color: '#111',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            overflow: 'visible',
+            pointerEvents: footerAdVisible ? 'auto' : 'none',
             zIndex: 120,
           }}
         >
-          <div className="flex items-center justify-center" style={{ width: adWidth, height: adHeight }}>
-            <AadsFooterSlot variant={adVariant} enabled={adsAllowed} />
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: adWidth,
+              height: adHeight,
+              position: footerAdVisible ? 'static' : 'absolute',
+              bottom: 0,
+            }}
+          >
+            <AadsFooterSlot
+              variant={adVariant}
+              enabled={adsAllowed}
+              onVisibleChange={setFooterAdVisible}
+            />
           </div>
         </div>
       ) : null}

@@ -21,6 +21,7 @@ import ScoreCounter from '@/components/ScoreCounter'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
+import { useCookieConsent } from '@/components/CookieConsent'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
@@ -311,11 +312,11 @@ function useButtonWidth(
 export default function HomePage() {
   const router = useRouter()
   const { t, locale, locales, setLocale } = useI18n()
+  const { consent } = useCookieConsent()
   const { addAction, maybeSpawnDiamond } = useScore()
 
   const HEADER_H = 56
   const FOOTER_H = 56
-  const AD_H = 110
 
   const headerRef = useRef<HTMLElement | null>(null)
   const heroRef = useRef<HTMLElement | null>(null)
@@ -330,8 +331,8 @@ export default function HomePage() {
   const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
-  const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H + AD_H)
-  const [adHeight, setAdHeight] = useState(AD_H)
+  const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H)
+  const [footerAdVisible, setFooterAdVisible] = useState(false)
   const [isButtonBursting, setIsButtonBursting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
@@ -340,6 +341,7 @@ export default function HomePage() {
   const [homeGlitchImage, setHomeGlitchImage] = useState<string | null>(null)
   const [homeGlitchSeed, setHomeGlitchSeed] = useState('home-empty')
   const [homeGlitchPatternTick, setHomeGlitchPatternTick] = useState(0)
+  const adsAllowed = consent?.ads === true
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const theme = THEMES[themeIdx]
@@ -558,14 +560,20 @@ export default function HomePage() {
     if (!menuOpen) setLanguagesOpen(false)
   }, [menuOpen])
 
+  const adFormat = useMemo(() => {
+    const width = viewportWidth ?? 0
+    if (width >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
+    return { width: 320, height: 50, variant: 'mobile' as const }
+  }, [viewportWidth])
+  const visibleAdHeight = adsAllowed && footerAdVisible ? adFormat.height : 0
+
   useEffect(() => {
     const observers: Array<{ el: HTMLElement | null; handler: () => void }> = []
     const handle = () => {
       const headerH = headerRef.current?.offsetHeight ?? HEADER_H
       const footerH = footerRef.current?.offsetHeight ?? FOOTER_H
-      const adH = adRef.current?.offsetHeight ?? AD_H
+      const adH = adRef.current?.offsetHeight ?? 0
       setReservedHeight(headerH + footerH + adH)
-      setAdHeight(adH)
     }
     observers.push({ el: headerRef.current, handler: handle })
     observers.push({ el: footerRef.current, handler: handle })
@@ -581,26 +589,24 @@ export default function HomePage() {
     })
 
     return () => ro?.disconnect()
-  }, [])
+  }, [visibleAdHeight])
 
   const heroAvailable = viewportHeight != null ? viewportHeight - reservedHeight : null
   const heroMinHeight: number | string = heroAvailable != null
     ? Math.max(heroAvailable, 360)
     : `calc(100dvh - ${reservedHeight}px)`
 
-  const adFormat = useMemo(() => {
-    const width = viewportWidth ?? 0
-    if (width >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
-    return { width: 320, height: 50, variant: 'mobile' as const }
-  }, [viewportWidth])
+  useEffect(() => {
+    if (!adsAllowed) setFooterAdVisible(false)
+  }, [adsAllowed])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
-    document.documentElement.style.setProperty('--ad-bar-height', `${adFormat.height}px`)
+    document.documentElement.style.setProperty('--ad-bar-height', `${visibleAdHeight}px`)
     return () => {
       document.documentElement.style.removeProperty('--ad-bar-height')
     }
-  }, [adFormat.height])
+  }, [visibleAdHeight])
 
   const targetBtnW = useButtonWidth(heroRef, logoRef)
 
@@ -832,7 +838,7 @@ export default function HomePage() {
       <footer
         ref={footerRef}
         className="fixed left-0 right-0 z-20"
-        style={{ bottom: `calc(${adHeight}px + env(safe-area-inset-bottom, 0px))`, height: FOOTER_H }}
+        style={{ bottom: `calc(${visibleAdHeight}px + env(safe-area-inset-bottom, 0px))`, height: FOOTER_H }}
       >
         <div className="w-full px-4 h-full flex items-center justify-between" style={{ color: theme.text }}>
           <SocialPopover theme={theme} />
@@ -852,25 +858,38 @@ export default function HomePage() {
         </div>
       </footer>
 
-      <div
-        ref={adRef}
-        id="ad-bar"
-        className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
-        style={{
-          height: adFormat.height,
-          backgroundColor: '#ffffff',
-          color: '#111',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          zIndex: 120,
-        }}
-      >
+      {adsAllowed ? (
         <div
-          className="flex items-center justify-center"
-          style={{ width: adFormat.width, height: adFormat.height }}
+          ref={adRef}
+          id="ad-bar"
+          className="fixed bottom-0 left-0 right-0 flex items-center justify-center"
+          style={{
+            height: visibleAdHeight,
+            backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
+            color: '#111',
+            overflow: 'visible',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            pointerEvents: footerAdVisible ? 'auto' : 'none',
+            zIndex: 120,
+          }}
         >
-          <AadsFooterSlot variant={adFormat.variant} />
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: adFormat.width,
+              height: adFormat.height,
+              position: footerAdVisible ? 'static' : 'absolute',
+              bottom: 0,
+            }}
+          >
+            <AadsFooterSlot
+              variant={adFormat.variant}
+              enabled={adsAllowed}
+              onVisibleChange={setFooterAdVisible}
+            />
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <ShufflePicker
         open={isShuffleOpen}

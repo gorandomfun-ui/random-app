@@ -1,42 +1,13 @@
 'use client'
 
-const SCRIPT_ID = 'aads-script'
-const SCRIPT_SRC = 'https://static.a-ads.com/js/show_ads.js'
-
 export const AADS_REFRESH_EVENT = 'aads:refresh-slot'
 export type AadsRefreshTarget = 'footer' | 'inline'
-
-declare global {
-  interface Window {
-    __aadsScriptPromise?: Promise<void>
-  }
-}
-
-export function ensureAadsScript(): Promise<void> {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return Promise.resolve()
-  }
-
-  const globalWindow = window as Window & { __aadsScriptPromise?: Promise<void> }
-  if (globalWindow.__aadsScriptPromise) return globalWindow.__aadsScriptPromise
-  if (document.getElementById(SCRIPT_ID)) return Promise.resolve()
-
-  globalWindow.__aadsScriptPromise = new Promise((resolve) => {
-    const script = document.createElement('script')
-    script.id = SCRIPT_ID
-    script.src = SCRIPT_SRC
-    script.async = true
-    script.addEventListener('load', () => resolve())
-    script.addEventListener('error', () => resolve())
-    document.body.appendChild(script)
-  })
-
-  return globalWindow.__aadsScriptPromise
-}
+export type AadsSlotStatus = 'idle' | 'loading' | 'visible' | 'empty'
 
 type MountOptions = {
   onLoad?: () => void
   onFallback?: () => void
+  size?: string
   timeoutMs?: number
 }
 
@@ -50,17 +21,24 @@ export function mountAadsSlot(
     return () => undefined
   }
 
-  ensureAadsScript().catch(() => {
-    options?.onFallback?.()
-  })
-
   container.replaceChildren()
-  const slot = document.createElement('div')
-  slot.dataset.aa = unitId
-  slot.style.width = '100%'
-  slot.style.height = '100%'
-  slot.style.display = 'block'
-  container.appendChild(slot)
+  const iframe = document.createElement('iframe')
+  const size = options?.size ?? 'Adaptive'
+  iframe.dataset.aa = unitId
+  iframe.src = `https://ad.a-ads.com/${encodeURIComponent(unitId)}?size=${encodeURIComponent(size)}`
+  iframe.width = '100%'
+  iframe.height = '100%'
+  iframe.scrolling = 'no'
+  iframe.frameBorder = '0'
+  iframe.style.border = '0'
+  iframe.style.padding = '0'
+  iframe.style.width = '100%'
+  iframe.style.height = '100%'
+  iframe.style.display = 'block'
+  iframe.style.margin = '0 auto'
+  iframe.style.overflow = 'hidden'
+  iframe.style.background = 'transparent'
+  container.appendChild(iframe)
 
   let timer: number | null = null
   let settled = false
@@ -74,24 +52,22 @@ export function mountAadsSlot(
     }, options?.timeoutMs ?? 6000)
   }
 
-  const observer = typeof MutationObserver !== 'undefined'
-    ? new MutationObserver(() => {
-        if (slot.childElementCount > 0 && !settled) {
-          settled = true
-          if (timer !== null) {
-            window.clearTimeout(timer)
-            timer = null
-          }
-          options?.onLoad?.()
-          observer?.disconnect()
-        }
-      })
-    : null
+  const settle = (status: 'load' | 'error') => {
+    if (settled) return
+    settled = true
+    if (timer !== null) {
+      window.clearTimeout(timer)
+      timer = null
+    }
+    if (status === 'load') options?.onLoad?.()
+    else options?.onFallback?.()
+  }
 
-  observer?.observe(slot, { childList: true })
+  iframe.addEventListener('load', () => settle('load'))
+  iframe.addEventListener('error', () => settle('error'))
 
   return () => {
-    observer?.disconnect()
+    iframe.remove()
     if (timer !== null) {
       window.clearTimeout(timer)
       timer = null

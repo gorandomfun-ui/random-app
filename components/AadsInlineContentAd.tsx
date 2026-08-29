@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import HouseAd from './HouseAd'
 import {
   AADS_REFRESH_EVENT,
   type AadsRefreshEvent,
   type AadsRefreshTarget,
+  type AadsSlotStatus,
   mountAadsSlot,
 } from '@/lib/aads'
+import { useCookieConsent } from './CookieConsent'
 
 const INLINE_DESKTOP_ID = process.env.NEXT_PUBLIC_AADS_INFEED_DESKTOP_ID
 const INLINE_MOBILE_ID = process.env.NEXT_PUBLIC_AADS_INFEED_MOBILE_ID
@@ -35,6 +36,7 @@ type Props = {
   variant: Variant
   forceVisible?: boolean
   refreshTarget?: AadsRefreshTarget | null
+  onStatusChange?: (status: AadsSlotStatus) => void
 }
 
 export default function AadsInlineContentAd({
@@ -42,7 +44,9 @@ export default function AadsInlineContentAd({
   variant,
   forceVisible = false,
   refreshTarget = 'inline',
+  onStatusChange,
 }: Props) {
+  const { consent } = useCookieConsent()
   const slotIdRef = useRef(`inline-${Math.random().toString(36).slice(2)}`)
   const [intersecting, setIntersecting] = useState(forceVisible)
   const [active, setActive] = useState(forceVisible)
@@ -50,7 +54,9 @@ export default function AadsInlineContentAd({
   const slotRef = useRef<HTMLDivElement | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const lastRefreshRef = useRef(0)
-  const [fallback, setFallback] = useState(() => !getUnitId(variant))
+  const unitId = getUnitId(variant)
+  const effectiveEnabled = consent?.ads === true
+  const [status, setStatus] = useState<AadsSlotStatus>(() => (effectiveEnabled && unitId ? 'idle' : 'empty'))
 
   const size = useMemo(() => {
     if (variant === 'desktop') return { width: 728, height: 90 }
@@ -94,67 +100,91 @@ export default function AadsInlineContentAd({
     return () => releaseInlineSlot(slotId)
   }, [forceVisible, intersecting])
 
-  const unitId = getUnitId(variant)
+  const visible = status === 'visible'
+  const reserved = status === 'loading' || visible
 
   useEffect(() => {
-    if (!unitId) setFallback(true)
+    onStatusChange?.(status)
+  }, [onStatusChange, status])
+
+  useEffect(() => {
+    if (!unitId) setStatus('empty')
   }, [unitId])
 
   const requestAd = useCallback(() => {
     cleanupRef.current?.()
-    if (!active || !unitId) {
-      setFallback(true)
+    if (!active || !effectiveEnabled || !unitId) {
+      setStatus('empty')
       return
     }
     const container = slotRef.current
     if (!container) return
-    setFallback(false)
+    setStatus('loading')
     cleanupRef.current = mountAadsSlot(container, unitId, {
-      onLoad: () => setFallback(false),
-      onFallback: () => setFallback(true),
+      onLoad: () => setStatus('visible'),
+      onFallback: () => setStatus('empty'),
+      size: `${size.width}x${size.height}`,
+      timeoutMs: 2500,
     })
     lastRefreshRef.current = Date.now()
-  }, [active, unitId])
+  }, [active, effectiveEnabled, size.height, size.width, unitId])
 
   useEffect(() => {
+    if (!effectiveEnabled) {
+      setStatus('empty')
+      cleanupRef.current?.()
+      return
+    }
     if (!active) {
+      setStatus(unitId ? 'idle' : 'empty')
       cleanupRef.current?.()
       return
     }
     requestAd()
     return () => cleanupRef.current?.()
-  }, [active, requestAd])
+  }, [active, effectiveEnabled, requestAd, unitId])
 
   useEffect(() => {
     if (!refreshTarget) return
     const handler = (event: Event) => {
       const custom = event as AadsRefreshEvent
-      if (!active) return
+      if (!active || !effectiveEnabled) return
       if (custom.detail?.slot !== refreshTarget) return
       if (Date.now() - lastRefreshRef.current < MIN_REFRESH_MS) return
       requestAd()
     }
     window.addEventListener(AADS_REFRESH_EVENT, handler)
     return () => window.removeEventListener(AADS_REFRESH_EVENT, handler)
-  }, [active, refreshTarget, requestAd])
+  }, [active, effectiveEnabled, refreshTarget, requestAd])
 
   return (
     <div
       ref={wrapperRef}
       className="w-full"
-      style={{ minHeight: variant === 'desktop' ? 120 : 260 }}
+      style={{
+        minHeight: reserved ? (variant === 'desktop' ? 120 : 260) : 0,
+        height: reserved ? undefined : 0,
+        overflow: reserved ? 'visible' : 'hidden',
+      }}
     >
-      <div className="flex h-full w-full flex-col items-center justify-center rounded-3xl border border-white/15 bg-white/5 px-4 py-5">
-        <span className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-neutral-400">
-          {label}
-        </span>
+      <div
+        className="flex h-full w-full flex-col items-center justify-center rounded-3xl border border-white/15 bg-white/5 px-4 py-5"
+        aria-hidden={!visible}
+        style={{
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? 'auto' : 'none',
+        }}
+      >
+        {visible ? (
+          <span className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-neutral-400">
+            {label}
+          </span>
+        ) : null}
         <div className="flex items-center justify-center" style={{ width: size.width, maxWidth: '100%', height: size.height }}>
           <div
             ref={slotRef}
             className="h-full w-full"
-            style={{ display: fallback ? 'none' : 'block' }}
           />
-          {fallback ? <HouseAd orientation="vertical" /> : null}
         </div>
       </div>
     </div>

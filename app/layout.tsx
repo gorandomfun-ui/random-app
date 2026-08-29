@@ -39,7 +39,7 @@ const EU_COUNTRY_CODES = new Set([
 ])
 
 const detectRegion = (country?: string | null): Region => {
-  if (!country) return 'other'
+  if (!country) return 'eu'
   const code = country.toUpperCase()
   if (code === 'US') return 'us'
   if (EU_COUNTRY_CODES.has(code)) return 'eu'
