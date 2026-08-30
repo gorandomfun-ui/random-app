@@ -6,6 +6,7 @@ import Link from 'next/link'
 
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
+import QuizScoreText from '@/components/QuizScoreText'
 import ShareMenu from '@/components/ShareMenu'
 import { useCookieConsent } from '@/components/CookieConsent'
 import { useI18n } from '@/providers/I18nProvider'
@@ -185,6 +186,14 @@ const TILE_LABELS: Record<Lang, Record<TileKey, string>> = {
     randomVibe: '\u30d2\u30f3\u30c8\u3082\u3046\u3072\u3068\u3064',
     lostThought: '\u3064\u3065\u3051\u3088\u3046',
     secretUselessness: '\u3044\u307e\u958b\u304f',
+  },
+  es: {
+    weirdDrop: 'Abre este',
+    luckyMess: 'Echa un vistazo',
+    dumbSpark: 'Pequena sorpresa',
+    randomVibe: 'Otra pista',
+    lostThought: 'Sigue',
+    secretUselessness: 'Revelar ahora',
   },
 }
 
@@ -374,7 +383,7 @@ export default function NoroscopePage() {
     }
   }, [visibleAdHeight])
 
-  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
+  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
   const mainStyle = useMemo<ThemeStyle>(() => ({
@@ -387,9 +396,9 @@ export default function NoroscopePage() {
     () => ({
       image: t('nav.images', 'images'),
       video: t('nav.videos', 'videos'),
-      quote: t('nav.quotes', 'quotes'),
-      joke: t('nav.jokes', 'funny jokes'),
-      fact: t('nav.facts', 'facts'),
+      quote: t('nav.other', 'other'),
+      joke: t('nav.other', 'other'),
+      fact: t('nav.other', 'other'),
       web: t('nav.web', 'web'),
     }),
     [t]
@@ -1228,7 +1237,8 @@ export default function NoroscopePage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between">
+              <QuizScoreText style={{ color: theme.cream }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

@@ -1,7 +1,7 @@
 // lib/fetchers.ts
 export type ContentItem = {
   type: 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'
-  lang?: 'en' | 'fr' | 'de' | 'jp'
+  lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
   text?: string
   author?: string
   url?: string
@@ -93,7 +93,7 @@ type FactLang = 'en' | 'fr' | 'de'
 const FACT_LANGS: FactLang[] = ['en', 'fr', 'de']
 const isFactLang = (value: string): value is FactLang => FACT_LANGS.includes(value as FactLang)
 
-export async function fetchFact(lang: 'en' | 'fr' | 'de' | 'jp' = 'en'): Promise<ContentItem | null> {
+export async function fetchFact(lang: 'en' | 'fr' | 'de' | 'jp' | 'es' = 'en'): Promise<ContentItem | null> {
   // API supporte surtout EN; pour d'autres langues on retombe sur EN
   const factLang: FactLang = isFactLang(lang) ? lang : 'en'
   const url = `https://uselessfacts.jsph.pl/api/v2/facts/random?language=${factLang}`

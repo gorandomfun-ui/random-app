@@ -17,13 +17,12 @@ import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import ScoreCounter from '@/components/ScoreCounter'
+import QuizScoreText from '@/components/QuizScoreText'
 import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
 import { useCookieConsent } from '@/components/CookieConsent'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
-import { XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
 import type { ItemType } from '@/lib/random/types'
@@ -33,7 +32,7 @@ import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { startRandomPrefetch, startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
 
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
-type Lang = 'en' | 'fr' | 'de' | 'jp'
+type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
 
@@ -499,12 +498,13 @@ export default function HomePage() {
     quotes: t('nav.quotes', 'quotes'),
     jokes: t('nav.jokes', 'funny jokes'),
     facts: t('nav.facts', 'facts'),
+    other: t('nav.other', 'other'),
   }), [t])
 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
-  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
+  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   const footerCopy = useMemo(() => ({
     legal: t('footer.legal', 'Legal notice.'),
@@ -819,16 +819,7 @@ export default function HomePage() {
               </span>
               <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
               <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/quote.svg" color={theme.cream} size={20} /> {navLabels.quotes}
-              </span>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5 md:gap-x-1.5">
-              <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/joke.svg" color={theme.cream} size={20} /> {navLabels.jokes}
-              </span>
-              <span className="opacity-70 select-none text-base md:text-lg leading-none" style={{ margin: '0 1px' }}>/</span>
-              <span className="flex items-center gap-1 leading-tight">
-                <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {navLabels.facts}
+                <MonoIcon src="/icons/fact.svg" color={theme.cream} size={20} /> {navLabels.other}
               </span>
             </div>
           </div>
@@ -911,10 +902,10 @@ export default function HomePage() {
             }}
           >
             <div
-              className={`flex items-center ${XP_UI_ENABLED ? 'justify-between' : 'justify-end'}`}
+              className="flex items-center justify-between"
               style={{ color: theme.cream }}
             >
-              {XP_UI_ENABLED ? <ScoreCounter /> : null}
+              <QuizScoreText style={{ color: theme.cream }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

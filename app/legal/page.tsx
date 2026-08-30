@@ -2,12 +2,13 @@
 
 import CookieSettingsLink from '@/components/CookieSettingsLink'
 import MonoIcon from '@/components/MonoIcon'
+import QuizScoreText from '@/components/QuizScoreText'
 import { THEMES } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-type Lang = 'en' | 'fr' | 'de' | 'jp'
+type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
   return (
@@ -76,7 +77,7 @@ export default function LegalPage() {
   const disclaimerTitle = useMemo(() => t('legal.disclaimer.title', 'Disclaimer'), [t])
   const disclaimerBody = useMemo(() => t('legal.disclaimer.body'), [t])
 
-  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
+  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   return (
     <main
@@ -206,7 +207,8 @@ export default function LegalPage() {
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between">
+              <QuizScoreText style={{ color: theme.cream }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

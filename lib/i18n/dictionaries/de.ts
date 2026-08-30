@@ -41,7 +41,8 @@ const deDictionary = {
     "web": "Web",
     "quotes": "Zitate",
     "jokes": "Witze",
-    "facts": "Fakten"
+    "facts": "Fakten",
+    "other": "Anderes"
   },
   "footer": {
     "social": "Sozial",
@@ -53,6 +54,15 @@ const deDictionary = {
     "like": "Gefällt mir",
     "dislike": "Gefällt nicht",
     "share": "Teilen"
+  },
+  "language": {
+    "title": "Sprache"
+  },
+  "quiz": {
+    "score": "Quiz",
+    "points": "Pkt",
+    "correct": "Richtig!",
+    "wrong": "Falsch"
   },
   "likes": {
     "title": "Deine Likes",
@@ -90,7 +100,8 @@ const deDictionary = {
     "title": "Inhalt filtern",
     "all": "Alles",
     "imagesVideos": "Bilder & Videos",
-    "imagesOnly": "Nur Bilder"
+    "imagesOnly": "Nur Bilder",
+    "other": "Anderes"
   },
   "minigames": {
     "card": {

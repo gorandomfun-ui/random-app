@@ -7,7 +7,7 @@ type Theme = { bg: string; deep: string; cream: string; text: string }
 
 type Item = {
   type: 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'
-  lang?: 'en' | 'fr' | 'de' | 'jp'
+  lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
   text?: string
   author?: string
   url?: string
@@ -26,9 +26,10 @@ export default function RandomItem({ item, theme }: { item: Item; theme: Theme }
       case 'image': return 'nav.images'
       case 'video': return 'nav.videos'
       case 'web':   return 'nav.web'
-      case 'quote': return 'nav.quotes'
-      case 'joke':  return 'nav.jokes'
-      case 'fact':  return 'nav.facts'
+      case 'quote':
+      case 'joke':
+      case 'fact':
+        return 'nav.other'
       default:      return 'nav.web'
     }
   })()
@@ -40,6 +41,7 @@ export default function RandomItem({ item, theme }: { item: Item; theme: Theme }
     'nav.quotes':'quotes',
     'nav.jokes':'funny jokes',
     'nav.facts':'facts',
+    'nav.other':'other',
   }
 
   // t(key) -> si non trouvé, on tombe sur la clé ; on remplace par fallback simple

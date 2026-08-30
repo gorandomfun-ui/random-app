@@ -41,7 +41,8 @@ const jpDictionary = {
     "web": "ウェブ",
     "quotes": "引用",
     "jokes": "ジョーク",
-    "facts": "事実"
+    "facts": "事実",
+    "other": "その他"
   },
   "footer": {
     "social": "ソーシャル",
@@ -53,6 +54,15 @@ const jpDictionary = {
     "like": "いいね",
     "dislike": "よくない",
     "share": "共有"
+  },
+  "language": {
+    "title": "言語"
+  },
+  "quiz": {
+    "score": "クイズ",
+    "points": "pt",
+    "correct": "正解！",
+    "wrong": "不正解"
   },
   "likes": {
     "title": "あなたのいいね",
@@ -90,7 +100,8 @@ const jpDictionary = {
     "title": "コンテンツをフィルター",
     "all": "すべて",
     "imagesVideos": "画像と動画",
-    "imagesOnly": "画像のみ"
+    "imagesOnly": "画像のみ",
+    "other": "その他"
   },
   "minigames": {
     "card": {

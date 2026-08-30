@@ -24,7 +24,7 @@ export type ImageItem = Identifiable & {
   width?: number
   height?: number
   title?: string | null
-  lang?: 'en' | 'fr' | 'de' | 'jp'
+  lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
   provider?: string | null
   source?: SourceInfo
   pageUrl?: string | null
@@ -37,7 +37,7 @@ export type VideoItem = Identifiable & {
   url: string
   thumbUrl?: string | null
   text?: string | null
-  lang?: 'en' | 'fr' | 'de' | 'jp'
+  lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
   provider?: string | null
   source?: SourceInfo
 } & ToneAttributes

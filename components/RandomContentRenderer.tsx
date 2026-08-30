@@ -17,6 +17,7 @@ import type {
 } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useScore } from '@/providers/ScoreProvider'
+import { useI18n } from '@/providers/I18nProvider'
 import MiniGameCard from './minigames/MiniGameCard'
 import { reportImageLoadIssue } from '@/utils/imageSuspects'
 
@@ -173,7 +174,8 @@ function AiAttribution({ item, theme }: { item: QuoteItem | JokeItem | FactTextI
 export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme }) {
   const [selected, setSelected] = useState<number | null>(null)
   const [revealed, setRevealed] = useState(false)
-  const { addAction, addPoints } = useScore()
+  const { addQuizPoints } = useScore()
+  const { t } = useI18n()
 
   const allCorrectIndices = useMemo(() => {
     if (Array.isArray(item.correctIndices) && item.correctIndices.length) {
@@ -183,11 +185,6 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     return [item.correctIndex]
   }, [item.correctIndices, item.correctIndex, item.options.length])
 
-
-  const quizReward = useMemo(() => {
-    const map: Record<string, number> = { easy: 2, medium: 4, hard: 6 }
-    return map[item.difficulty ?? ''] ?? 2
-  }, [item.difficulty])
 
   useEffect(() => {
     setSelected(null)
@@ -200,8 +197,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     setSelected(index)
     setRevealed(true)
     if (correct) {
-      addAction('quizSuccess')
-      addPoints(quizReward)
+      addQuizPoints(1)
     }
   }
 
@@ -251,7 +247,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
             className="mt-4 px-1 font-inter text-sm md:text-base text-center"
             style={{ color: isCorrect ? '#0FC55D' : '#D90845' }}
           >
-            {isCorrect ? 'Bonne réponse ! ✅' : 'Mauvaise réponse ❌'}
+            {isCorrect ? t('quiz.correct', 'Correct!') : t('quiz.wrong', 'Wrong')}
           </div>
         ) : null}
       </div>

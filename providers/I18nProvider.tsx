@@ -7,6 +7,7 @@ import enDictionary from '../lib/i18n/dictionaries/en'
 import frDictionary from '../lib/i18n/dictionaries/fr'
 import deDictionary from '../lib/i18n/dictionaries/de'
 import jpDictionary from '../lib/i18n/dictionaries/jp'
+import esDictionary from '../lib/i18n/dictionaries/es'
 
 type Dictionary = Record<string, unknown>
 
@@ -15,6 +16,7 @@ const DICTS = {
   fr: frDictionary,
   de: deDictionary,
   jp: jpDictionary,
+  es: esDictionary,
 } satisfies Record<string, Dictionary>
 
 type Locale = keyof typeof DICTS
@@ -49,6 +51,7 @@ const normalize = (l: string): Locale => {
   const primary = raw.split(/[-_]/)[0]
   if (primary === 'fr') return 'fr'
   if (primary === 'de') return 'de'
+  if (primary === 'es') return 'es'
   if (primary === 'ja' || primary === 'jp') return 'jp'
   return 'en'
 }

@@ -10,7 +10,7 @@ import { selectFact } from '@/lib/random/facts'
 import { selectJoke } from '@/lib/random/jokes'
 import { selectWeb } from '@/lib/random/web'
 
-type UsageLang = 'en' | 'fr' | 'de' | 'jp' | 'unknown'
+type UsageLang = 'en' | 'fr' | 'de' | 'jp' | 'es' | 'unknown'
 
 type ImageResult = Awaited<ReturnType<typeof selectImage>>
 type VideoResult = Exclude<Awaited<ReturnType<typeof selectVideo>>, null>
@@ -22,7 +22,7 @@ type WebResult = Exclude<Awaited<ReturnType<typeof selectWeb>>, null>
 type RandomItem = ImageResult | VideoResult | QuoteResult | FactResult | JokeResult | WebResult
 
 const DEFAULT_TYPES: ItemType[] = ['image', 'quote', 'fact', 'joke', 'video', 'web']
-const SUPPORTED_LANGS = new Set<UsageLang>(['en', 'fr', 'de', 'jp'])
+const SUPPORTED_LANGS = new Set<UsageLang>(['en', 'fr', 'de', 'jp', 'es'])
 
 function parseLang(raw: string | null): UsageLang {
   if (!raw) return 'en'

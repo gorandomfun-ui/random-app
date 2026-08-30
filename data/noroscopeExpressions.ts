@@ -1,5 +1,5 @@
 export type ExpressionTone = 'positive' | 'positiveMedium' | 'negativeMedium' | 'negative'
-export type ExpressionLocale = 'en' | 'fr' | 'de' | 'jp'
+export type ExpressionLocale = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 export type NoroscopeExpressions = Record<ExpressionTone, Partial<Record<ExpressionLocale, string[]>>>
 
@@ -13,23 +13,27 @@ export const NOROSCOPE_EXPRESSIONS: NoroscopeExpressions = {
     fr: [],
     de: [],
     jp: [],
+    es: [],
   },
   positiveMedium: {
     en: [],
     fr: [],
     de: [],
     jp: [],
+    es: [],
   },
   negativeMedium: {
     en: [],
     fr: [],
     de: [],
     jp: [],
+    es: [],
   },
   negative: {
     en: [],
     fr: [],
     de: [],
     jp: [],
+    es: [],
   },
 }

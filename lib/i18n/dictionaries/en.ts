@@ -41,7 +41,8 @@ const enDictionary = {
     "web": "web",
     "quotes": "quotes",
     "jokes": "funny jokes",
-    "facts": "facts"
+    "facts": "facts",
+    "other": "other"
   },
   "footer": {
     "social": "social",
@@ -53,6 +54,15 @@ const enDictionary = {
     "like": "Like",
     "dislike": "Dislike",
     "share": "Share"
+  },
+  "language": {
+    "title": "Language"
+  },
+  "quiz": {
+    "score": "Quiz",
+    "points": "pts",
+    "correct": "Correct!",
+    "wrong": "Wrong"
   },
   "likes": {
     "title": "Your Likes",
@@ -90,7 +100,8 @@ const enDictionary = {
     "title": "Filter content",
     "all": "Everything",
     "imagesVideos": "Images & Videos",
-    "imagesOnly": "Images only"
+    "imagesOnly": "Images only",
+    "other": "Other"
   },
   "minigames": {
     "card": {

@@ -21,7 +21,7 @@ const ItemSchema = new mongoose.Schema({
   lang: {
     type: String,
     default: 'unknown',
-    enum: ['en', 'fr', 'de', 'jp', 'unknown']
+    enum: ['en', 'fr', 'de', 'jp', 'es', 'unknown']
   },
   tags: [String],
   isSafe: {

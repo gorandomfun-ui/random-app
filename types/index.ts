@@ -7,7 +7,7 @@ export interface Item {
   text?: string;
   url?: string;
   thumb?: string;
-  lang: 'en' | 'fr' | 'de' | 'jp' | 'unknown';
+  lang: 'en' | 'fr' | 'de' | 'jp' | 'es' | 'unknown';
   tags: string[];
   isSafe: boolean;
   createdAt: string;
@@ -31,7 +31,7 @@ export interface Theme {
   name: string;
 }
 
-export type Language = 'en' | 'fr' | 'de' | 'jp';
+export type Language = 'en' | 'fr' | 'de' | 'jp' | 'es';
 
 export interface Dictionary {
   hero: {
@@ -47,6 +47,7 @@ export interface Dictionary {
     quotes: string;
     jokes: string;
     facts: string;
+    other: string;
   };
   footer: {
     social: string;
@@ -58,6 +59,15 @@ export interface Dictionary {
     like: string;
     dislike: string;
     share: string;
+  };
+  language: {
+    title: string;
+  };
+  quiz: {
+    score: string;
+    points: string;
+    correct: string;
+    wrong: string;
   };
   likes: {
     title: string;
@@ -77,6 +87,7 @@ export interface Dictionary {
     all: string;
     imagesVideos: string;
     imagesOnly: string;
+    other: string;
   };
   legal: {
     title: string;

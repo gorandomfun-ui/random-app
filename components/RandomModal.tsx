@@ -45,7 +45,7 @@ type Props = {
   trigger?: number
   isSecond?: boolean
   types?: ItemType[]
-  lang?: 'en' | 'fr' | 'de' | 'jp'
+  lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
   theme: Theme
   children?: ReactNode
   forceItem?: DisplayItem | null

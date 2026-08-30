@@ -175,7 +175,7 @@ type ImmersiveFragment = {
   style: ImmersiveFragmentStyle
 }
 
-type Lang = 'en' | 'fr' | 'de' | 'jp'
+type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 type PrefetchedBundle = {
   lang?: Lang
@@ -1824,7 +1824,7 @@ export default function RandomExperiencePage({
   searchParams?: Record<string, string | string[] | undefined>
 }) {
   const { dict, locale, locales, setLocale, t } = useI18n()
-  const { addAction, maybeSpawnDiamond } = useScore()
+  const { addAction, maybeSpawnDiamond, quizScore } = useScore()
   const { consent } = useCookieConsent()
 
   const [menuOpen, setMenuOpen] = useState(false)
@@ -1984,6 +1984,7 @@ export default function RandomExperiencePage({
     quotes: t('nav.quotes', 'quotes'),
     jokes: t('nav.jokes', 'funny jokes'),
     facts: t('nav.facts', 'facts'),
+    other: t('nav.other', 'other'),
     encourage: t('nav.encourage', 'keep going'),
   }), [t])
 
@@ -1994,6 +1995,7 @@ export default function RandomExperiencePage({
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
+  const quizScoreText = useMemo(() => `${quizScore} PTS`, [quizScore])
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
   const miniGameStateRef = useRef<{
@@ -2912,7 +2914,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const langs = (Array.isArray(locales) && locales.length
     ? locales
-    : ['en', 'fr', 'de', 'jp']) as Lang[]
+    : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   const mainStyle = useMemo<ThemeStyle>(() => ({
     backgroundColor: theme.bg,
@@ -2960,6 +2962,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (viewItem.type === 'minigame') return 'joke'
     return viewItem.type
   }, [viewItem])
+  const isQuizView = Boolean(viewItem && viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz')
 
   useEffect(() => {
     if (isEncourage && shareOpen) setShareOpen(false)
@@ -2971,9 +2974,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       image: navLabels.images,
       video: navLabels.videos,
       web: navLabels.web,
-      quote: navLabels.quotes,
-      joke: navLabels.jokes,
-      fact: navLabels.facts,
+      quote: navLabels.other,
+      joke: navLabels.other,
+      fact: navLabels.other,
     }
     return labelMap[categoryType]
   }, [categoryType, navLabels])
@@ -2983,9 +2986,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (!XP_UI_ENABLED) return false
     if (!viewItem) return false
     if (viewItem.type === 'minigame') return true
-    if (viewItem.type === 'fact' && (viewItem as FactItem).variant === 'quiz') return true
+    if (isQuizView) return false
     return false
-  }, [viewItem])
+  }, [isQuizView, viewItem])
   const isDesktopAd = (viewportWidth ?? 0) >= 1024
   const adHeight = isDesktopAd ? 90 : 50
   const adWidth = isDesktopAd ? 728 : 320
@@ -3124,7 +3127,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               {categoryIcon ? <MonoIcon src={categoryIcon} color={theme.cream} size={20} /> : null}
               <span>{categoryLabel}</span>
             </div>
-            {showXpForCategory ? (
+            {isQuizView ? (
+              <div
+                className="px-4 flex items-center justify-center text-xs font-semibold uppercase"
+                style={{
+                  backgroundColor: theme.cream,
+                  color: '#191916',
+                  minWidth: '86px',
+                  fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
+                }}
+              >
+                <span>{quizScoreText}</span>
+              </div>
+            ) : showXpForCategory ? (
               <div
                 className="px-4 flex items-center justify-center"
                 style={{
@@ -3255,10 +3270,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             }}
           >
             <div
-              className={`flex items-center ${XP_UI_ENABLED ? 'justify-between' : 'justify-end'}`}
+              className="flex items-center justify-between"
               style={{ color: theme.cream }}
             >
-              {XP_UI_ENABLED ? <ScoreCounter /> : null}
+              <span
+                className="text-lg font-semibold uppercase"
+                style={{ color: theme.cream }}
+              >
+                {quizScoreText}
+              </span>
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

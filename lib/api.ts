@@ -10,7 +10,7 @@ export async function fetchRandom({
   preview = false,
 }: {
   types: RandomTypes
-  lang: 'en' | 'fr' | 'de' | 'jp'
+  lang: 'en' | 'fr' | 'de' | 'jp' | 'es'
   strong?: boolean
   preview?: boolean
 }): Promise<RandomApiResponse> {

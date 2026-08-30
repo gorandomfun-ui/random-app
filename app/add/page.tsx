@@ -8,10 +8,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import HeartIcon from '@/components/HeartIcon'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
+import QuizScoreText from '@/components/QuizScoreText'
 import { THEMES } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 
-type Lang = 'en' | 'fr' | 'de' | 'jp'
+type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 type SubmissionKind = 'image' | 'text' | 'web' | 'video'
 
 const FILE_LIMIT_BYTES = 1_048_576
@@ -147,7 +148,7 @@ export default function AddPage() {
     '--theme-cream': theme.cream,
   }), [theme.bg, theme.cream])
 
-  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
+  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   const bannerText = t('add.banner', 'Add the content you')
   const tabLabels = {
@@ -754,7 +755,8 @@ function MenuOverlay({ close, languagesOpen, setLanguagesOpen, langs, locale, se
           fontFamily: 'var(--font-inter-tight), sans-serif',
         }}
       >
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between">
+          <QuizScoreText style={{ color: theme.cream }} />
           <button type="button" aria-label="Close" onClick={close} className="text-2xl" style={{ color: theme.cream }}>
             ×
           </button>

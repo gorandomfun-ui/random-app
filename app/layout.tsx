@@ -14,21 +14,23 @@ export const metadata = {
   description: 'Explore random contents.',
 };
 
-const mapLocale = (value?: string | null): 'en' | 'fr' | 'de' | 'jp' => {
+const mapLocale = (value?: string | null): 'en' | 'fr' | 'de' | 'jp' | 'es' => {
   if (!value) return 'en'
   const lower = value.toLowerCase().trim()
   const primary = lower.split(/[-_]/)[0]
   if (primary === 'fr') return 'fr'
   if (primary === 'de') return 'de'
+  if (primary === 'es') return 'es'
   if (primary === 'ja' || primary === 'jp') return 'jp'
   return 'en'
 }
 
-const mapCountry = (country?: string | null): 'en' | 'fr' | 'de' | 'jp' | null => {
+const mapCountry = (country?: string | null): 'en' | 'fr' | 'de' | 'jp' | 'es' | null => {
   if (!country) return null
   const code = country.toUpperCase()
   if (code === 'FR') return 'fr'
   if (code === 'DE') return 'de'
+  if (code === 'ES') return 'es'
   if (code === 'JP') return 'jp'
   return null
 }

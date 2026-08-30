@@ -6,7 +6,7 @@ import funPhrasesFr from '@/data/funPhrases/fr.json'
 import funPhrasesDe from '@/data/funPhrases/de.json'
 import funPhrasesJp from '@/data/funPhrases/jp.json'
 
-export type Lang = 'en' | 'fr' | 'de' | 'jp'
+export type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 export type PlanType = 'image' | 'video' | 'web' | 'text'
 
 const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
@@ -21,6 +21,7 @@ const FUN_PHRASES: Record<Lang, readonly string[]> = {
   fr: funPhrasesFr,
   de: funPhrasesDe,
   jp: funPhrasesJp,
+  es: funPhrasesEn,
 }
 
 export function getItemKey(item: RandomContentItem): string {

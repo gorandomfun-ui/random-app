@@ -12,9 +12,7 @@ export default function IconBar({ dict }: IconBarProps) {
     { icon: '/icons/image.svg', emoji: '📷', label: dict.nav.images },
     { icon: '/icons/video.svg', emoji: '🎬', label: dict.nav.videos },
     { icon: '/icons/web.svg', emoji: '🌐', label: dict.nav.web },
-    { icon: '/icons/quote.svg', emoji: '💭', label: dict.nav.quotes },
-    { icon: '/icons/joke.svg', emoji: '😂', label: dict.nav.jokes },
-    { icon: '/icons/fact.svg', emoji: '💡', label: dict.nav.facts },
+    { icon: '/icons/fact.svg', emoji: '💡', label: dict.nav.other },
   ]
   
   // Vérifier si les SVG sont disponibles

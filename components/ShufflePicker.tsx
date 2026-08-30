@@ -1,6 +1,7 @@
 'use client'
 
 import type { ItemType } from '../lib/random/types'
+import { useI18n } from '../providers/I18nProvider'
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
 type Props = {
@@ -12,6 +13,9 @@ type Props = {
 }
 
 const ALL: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
+const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
+type PickerOption = 'all' | 'image' | 'video' | 'web' | 'other'
+const OPTIONS: PickerOption[] = ['all', 'image', 'video', 'web', 'other']
 
 export default function ShufflePicker({
   open,
@@ -20,10 +24,17 @@ export default function ShufflePicker({
   onChange = () => {},
   theme,
 }: Props) {
+  const { t } = useI18n()
+
   if (!open) return null
 
   const selSet = new Set(selected)
   const allSelected = selSet.size === ALL.length
+
+  function optionTypes(value: Exclude<PickerOption, 'all'>): ItemType[] {
+    if (value === 'other') return TEXT_TYPES
+    return [value]
+  }
 
   function commit(nextSet: Set<ItemType>) {
     if (typeof onChange === 'function') {
@@ -32,33 +43,44 @@ export default function ShufflePicker({
     }
   }
 
-  function handleToggle(value: ItemType | 'all', checked: boolean) {
+  function handleToggle(value: PickerOption, checked: boolean) {
     if (value === 'all') {
       if (!checked) return
       commit(new Set(ALL))
       return
     }
 
+    const values = optionTypes(value)
+
     if (allSelected) {
-      commit(new Set([value]))
+      commit(new Set(values))
       return
     }
 
     const next = new Set(selSet)
     if (checked) {
-      next.add(value)
+      values.forEach((type) => next.add(type))
     } else {
-      next.delete(value)
+      values.forEach((type) => next.delete(type))
     }
     if (!next.size) {
-      next.add(value)
+      values.forEach((type) => next.add(type))
     }
     commit(next)
   }
 
-  function isChecked(value: ItemType | 'all') {
+  function isChecked(value: PickerOption) {
     if (value === 'all') return allSelected
+    if (value === 'other') return TEXT_TYPES.some((type) => selSet.has(type))
     return selSet.has(value)
+  }
+
+  function optionLabel(value: PickerOption): string {
+    if (value === 'all') return t('shuffle.all', 'All')
+    if (value === 'image') return t('nav.images', 'Images')
+    if (value === 'video') return t('nav.videos', 'Videos')
+    if (value === 'web') return t('nav.web', 'Web')
+    return t('nav.other', 'Other')
   }
 
   return (
@@ -76,10 +98,9 @@ export default function ShufflePicker({
         </div>
 
         <div className="p-5 flex flex-col gap-3">
-          {['all', ...ALL].map((option) => {
-            const label = option === 'all' ? 'All' : option
-            const capitalized = label.charAt(0).toUpperCase() + label.slice(1)
-            const checked = isChecked(option as ItemType | 'all')
+          {OPTIONS.map((option) => {
+            const label = optionLabel(option)
+            const checked = isChecked(option)
             const controlBorder = checked ? theme.cream : 'rgba(255,255,255,0.55)'
             return (
               <label
@@ -94,10 +115,10 @@ export default function ShufflePicker({
                   type="checkbox"
                   className="sr-only"
                   checked={checked}
-                  onChange={(event) => handleToggle(option as ItemType | 'all', event.target.checked)}
+                  onChange={(event) => handleToggle(option, event.target.checked)}
                 />
 
-                <span style={{ textTransform: 'capitalize', color: theme.cream }}>{capitalized}</span>
+                <span style={{ textTransform: 'capitalize', color: theme.cream }}>{label}</span>
 
                 <span
                   aria-hidden

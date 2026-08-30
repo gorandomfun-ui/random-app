@@ -7,6 +7,7 @@ import ShufflePicker from '@/components/ShufflePicker'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
+import QuizScoreText from '@/components/QuizScoreText'
 import HeartIcon from '../../components/HeartIcon'
 import { useCookieConsent } from '@/components/CookieConsent'
 import { useI18n } from '../../providers/I18nProvider'
@@ -20,7 +21,7 @@ import {
   writeWeLikesCache,
 } from '@/lib/likes/weCache'
 
-type Lang = 'en' | 'fr' | 'de' | 'jp'
+type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 type LikesClientProps = {
   initialGlobalItems?: GlobalLikeItem[]
   initialFetchedAt?: number
@@ -324,7 +325,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
-  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp']) as Lang[]
+  const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
   const adFormat = useMemo(() => {
     if (vw >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
     return { width: 320, height: 50, variant: 'mobile' as const }
@@ -615,7 +616,8 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between">
+              <QuizScoreText style={{ color: theme.cream }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>

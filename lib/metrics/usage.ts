@@ -1,10 +1,10 @@
 import { getDb } from '@/lib/db'
 
 export type ItemType = 'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'
-export type Lang = 'en' | 'fr' | 'de' | 'jp' | 'unknown'
+export type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es' | 'unknown'
 
 const ALLOWED_TYPES = new Set<ItemType>(['image', 'quote', 'fact', 'joke', 'video', 'web'])
-const ALLOWED_LANGS = new Set<Lang>(['en', 'fr', 'de', 'jp', 'unknown'])
+const ALLOWED_LANGS = new Set<Lang>(['en', 'fr', 'de', 'jp', 'es', 'unknown'])
 const USAGE_COLLECTION = process.env.REPORT_USAGE_COLLECTION || 'daily_usage'
 export const DEFAULT_USAGE_TZ = process.env.REPORT_TIMEZONE || 'Europe/Paris'
 

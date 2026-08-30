@@ -16,18 +16,22 @@ type DiamondEvent = { id: string; amount: number; timestamp: number }
 
 type ScoreContextValue = {
   score: number
+  quizScore: number
   addAction: (action: ScoreAction) => void
   addPoints: (amount: number) => void
+  addQuizPoints: (amount: number) => void
   maybeSpawnDiamond: () => boolean
   diamonds: DiamondEvent[]
 }
 
 const STORAGE_KEY = 'xp-session-total'
+const QUIZ_STORAGE_KEY = 'random-quiz-score-total'
 
 const ScoreContext = createContext<ScoreContextValue | undefined>(undefined)
 
 export function ScoreProvider({ children }: { children: ReactNode }) {
   const [score, setScore] = useState(0)
+  const [quizScore, setQuizScore] = useState(0)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -37,6 +41,17 @@ export function ScoreProvider({ children }: { children: ReactNode }) {
         const parsed = parseInt(stored, 10)
         if (!Number.isNaN(parsed)) {
           setScore(parsed)
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      const storedQuiz = localStorage.getItem(QUIZ_STORAGE_KEY)
+      if (storedQuiz != null) {
+        const parsedQuiz = parseInt(storedQuiz, 10)
+        if (!Number.isNaN(parsedQuiz)) {
+          setQuizScore(parsedQuiz)
         }
       }
     } catch {
@@ -65,6 +80,19 @@ export function ScoreProvider({ children }: { children: ReactNode }) {
     [persistScore],
   )
 
+  const addQuizPoints = useCallback((amount: number) => {
+    if (!amount || Number.isNaN(amount)) return
+    setQuizScore((prev) => {
+      const next = Math.max(0, Math.round(prev + amount))
+      try {
+        localStorage.setItem(QUIZ_STORAGE_KEY, String(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
   const noopAddAction = useCallback((action: ScoreAction) => {
     void action
   }, [])
@@ -76,12 +104,14 @@ export function ScoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ScoreContextValue>(
     () => ({
       score,
+      quizScore,
       addAction: noopAddAction,
       addPoints,
+      addQuizPoints,
       maybeSpawnDiamond: noopMaybeSpawnDiamond,
       diamonds,
     }),
-    [addPoints, diamonds, noopAddAction, noopMaybeSpawnDiamond, score],
+    [addPoints, addQuizPoints, diamonds, noopAddAction, noopMaybeSpawnDiamond, quizScore, score],
   )
 
   return <ScoreContext.Provider value={value}>{children}</ScoreContext.Provider>

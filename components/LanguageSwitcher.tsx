@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../providers/I18nProvider'
 
-type Lang = 'en' | 'fr' | 'de' | 'jp'
+type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 declare global {
   interface Window {
@@ -13,7 +13,7 @@ declare global {
 }
 
 export default function LanguageSwitcher() {
-  const { locale, setLocale, locales } = useI18n()
+  const { locale, setLocale, locales, t } = useI18n()
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const btnRef = useRef<HTMLButtonElement | null>(null)
@@ -70,7 +70,7 @@ export default function LanguageSwitcher() {
 
   const langs = (Array.isArray(locales) && locales.length
     ? locales
-    : ['en', 'fr', 'de', 'jp']) as Lang[]
+    : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   // -- helper: applique la langue "vers l'extérieur" pour les composants qui écoutent
   const applyLangOut = (next: Lang) => {
@@ -116,7 +116,7 @@ export default function LanguageSwitcher() {
         >
           <div className="p-2">
             <div className="px-2 py-1 text-[11px] uppercase tracking-wide" style={{ color: fg, opacity: 0.75 }}>
-              Language
+              {t('language.title', 'Language')}
             </div>
             <ul className="mt-1">
               {langs.map(l => {
