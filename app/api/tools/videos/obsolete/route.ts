@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { ObjectId, type Db } from 'mongodb'
 import { getDbSafe } from '@/lib/random/data'
 
@@ -14,6 +15,9 @@ type VideoDoc = {
   thumbUrl?: string | null
   obsoleteVideoCheckedAt?: Date | null
   obsoleteVideoStatus?: 'ok' | 'obsolete' | 'rate-limited' | 'ambiguous' | null
+  obsoleteVideoReason?: string | null
+  obsoleteVideoHttpStatus?: number | null
+  obsoleteVideoScanId?: string | null
 }
 
 type CheckOutcome = {
@@ -53,6 +57,25 @@ type PersistedOutcome = {
   outcome: CheckOutcome
 }
 
+type VideoScanJob = {
+  _id: 'obsolete-videos'
+  scanId: string
+  status: 'running' | 'completed'
+  total: number
+  checked: number
+  errors: number
+  batches: number
+  deleted: number
+  cursor: string | null
+  upperBoundId: ObjectId | null
+  counts: ScanResult['counts']
+  startedAt: Date
+  updatedAt: Date
+  completedAt?: Date | null
+  leaseToken?: string | null
+  leaseUntil?: Date | null
+}
+
 const USER_AGENT = 'RandomAppBot/1.0 (+https://random.app)'
 const DEFAULT_SCAN_LIMIT = 300
 const MAX_SCAN_LIMIT = 1000
@@ -64,6 +87,12 @@ const DEFAULT_STREAM_BATCHES = 8
 const MAX_STREAM_BATCHES = 40
 const DELETE_CONFIRMATION_MAX_AGE_HOURS = 24 * 14
 const RETRY_DELAY_MS = 200
+const PERSISTED_JOB_ID = 'obsolete-videos' as const
+const PERSISTED_SCAN_BATCH_SIZE = 25
+const PERSISTED_SCAN_CONCURRENCY = 4
+const PERSISTED_SCAN_TIMEOUT_MS = 6000
+const PERSISTED_SCAN_LEASE_MS = 2 * 60 * 1000
+const PERSISTED_DELETE_BATCH_SIZE = 25
 let videoScanIndexPromise: Promise<void> | null = null
 
 function isAuthorized(req: NextRequest): boolean {
@@ -143,6 +172,10 @@ function isExplicitDailymotionUnavailableMessage(message?: string): boolean {
     'e stato rimosso',
     'dieses video ist nicht mehr verfugbar',
     'wurde entfernt',
+    'dm002',
+    'dm005',
+    'dm010',
+    'dm020',
   ]
   return unavailableFragments.some((fragment) => normalized.includes(fragment))
 }
@@ -386,11 +419,27 @@ async function checkVideo(
     }
 
     if (availabilityStatus !== null && availabilityStatus >= 200 && availabilityStatus < 300) {
-      if (availability && availability !== 'available' && availability !== 'allowed') {
+      const explicitlyUnavailable = new Set([
+        'blocked',
+        'deleted',
+        'private',
+        'rejected',
+        'removed',
+        'unavailable',
+      ])
+      if (explicitlyUnavailable.has(availability)) {
         return {
           obsolete: true,
           status: availabilityStatus,
           reason: `dailymotion-availability-${availability}`,
+        }
+      }
+      if (availability && availability !== 'available' && availability !== 'allowed') {
+        return {
+          obsolete: false,
+          status: availabilityStatus,
+          reason: `dailymotion-availability-${availability}`,
+          kind: 'ambiguous',
         }
       }
 
@@ -432,6 +481,116 @@ async function checkVideo(
   }
 
   return classifyHttpStatus(status, 'status')
+}
+
+async function checkYouTubeBatch(
+  docs: VideoDoc[],
+  { timeoutMs = PERSISTED_SCAN_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<Map<string, CheckOutcome>> {
+  const outcomes = new Map<string, CheckOutcome>()
+  const key = (process.env.YOUTUBE_API_KEY || '').trim()
+  if (!key) return outcomes
+
+  const candidates = docs
+    .map((doc) => ({
+      doc,
+      id: sanitizeProviderId(doc.videoId?.trim() || extractYouTubeId(doc.url?.trim() || '') || ''),
+    }))
+    .filter((candidate) => candidate.id)
+
+  for (let offset = 0; offset < candidates.length; offset += 50) {
+    const chunk = candidates.slice(offset, offset + 50)
+    const params = new URLSearchParams({
+      key,
+      part: 'status',
+      id: chunk.map((candidate) => candidate.id).join(','),
+    })
+    const response = await fetchWithTimeout(
+      `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`,
+      { timeoutMs },
+    )
+    const status = response?.status ?? null
+
+    if (!response || !response.ok) {
+      const outcome = classifyHttpStatus(status, 'youtube-api')
+      const safeOutcome = outcome.obsolete
+        ? { obsolete: false, status, reason: outcome.reason, kind: 'ambiguous' as const }
+        : outcome
+      for (const candidate of chunk) {
+        outcomes.set(candidate.doc._id.toHexString(), safeOutcome)
+      }
+      closeResponse(response)
+      continue
+    }
+
+    let payload: unknown
+    try {
+      payload = await response.json()
+    } catch {
+      payload = null
+    } finally {
+      closeResponse(response)
+    }
+
+    const items =
+      payload && typeof payload === 'object' && Array.isArray((payload as { items?: unknown }).items)
+        ? ((payload as { items: unknown[] }).items as Array<{
+            id?: string
+            status?: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string }
+          }>)
+        : null
+
+    if (!items) {
+      for (const candidate of chunk) {
+        outcomes.set(candidate.doc._id.toHexString(), {
+          obsolete: false,
+          status,
+          reason: 'youtube-api-invalid-response',
+          kind: 'ambiguous',
+        })
+      }
+      continue
+    }
+
+    const returned = new Map(items.filter((item) => item.id).map((item) => [item.id as string, item]))
+    for (const candidate of chunk) {
+      const item = returned.get(candidate.id)
+      if (!item) {
+        outcomes.set(candidate.doc._id.toHexString(), {
+          obsolete: true,
+          status,
+          reason: 'youtube-api-not-returned',
+        })
+        continue
+      }
+
+      const uploadStatus = item.status?.uploadStatus || ''
+      const privacyStatus = item.status?.privacyStatus || ''
+      if (['deleted', 'failed', 'rejected'].includes(uploadStatus)) {
+        outcomes.set(candidate.doc._id.toHexString(), {
+          obsolete: true,
+          status,
+          reason: `youtube-upload-${uploadStatus}`,
+        })
+      } else if (privacyStatus && privacyStatus !== 'public') {
+        outcomes.set(candidate.doc._id.toHexString(), {
+          obsolete: true,
+          status,
+          reason: `youtube-privacy-${privacyStatus}`,
+        })
+      } else if (item.status?.embeddable === false) {
+        outcomes.set(candidate.doc._id.toHexString(), {
+          obsolete: true,
+          status,
+          reason: 'youtube-not-embeddable',
+        })
+      } else {
+        outcomes.set(candidate.doc._id.toHexString(), { obsolete: false, status })
+      }
+    }
+  }
+
+  return outcomes
 }
 
 function delay(ms: number) {
@@ -515,7 +674,7 @@ function addScanOutcome(
   }
 }
 
-async function persistScanOutcomes(db: Db, outcomes: PersistedOutcome[]) {
+async function persistScanOutcomes(db: Db, outcomes: PersistedOutcome[], scanId?: string) {
   if (!outcomes.length) return
   const checkedAt = new Date()
   const operations = outcomes.map(({ doc, outcome }) => ({
@@ -527,6 +686,7 @@ async function persistScanOutcomes(db: Db, outcomes: PersistedOutcome[]) {
           obsoleteVideoStatus: getOutcomeStatus(outcome),
           obsoleteVideoReason: outcome.reason || null,
           obsoleteVideoHttpStatus: outcome.status ?? null,
+          ...(scanId ? { obsoleteVideoScanId: scanId } : {}),
         },
       },
     },
@@ -590,11 +750,13 @@ async function scanVideoDocs(
     retries = 0,
     timeoutMs = DEFAULT_SCAN_TIMEOUT_MS,
     persist = true,
+    scanId,
   }: {
     concurrency?: number
     retries?: number
     timeoutMs?: number
     persist?: boolean
+    scanId?: string
   } = {},
 ): Promise<ScanResult> {
   const obsolete: VideoResult[] = []
@@ -606,9 +768,14 @@ async function scanVideoDocs(
   const outcomes: PersistedOutcome[] = []
   let errors = 0
 
+  const youtubeDocs = docs.filter((doc) => normalizeProvider(doc.provider).includes('youtube'))
+  const youtubeOutcomes = await checkYouTubeBatch(youtubeDocs, { timeoutMs })
+
   await runWithConcurrency(docs, concurrency, async (doc) => {
     try {
-      const outcome = await checkVideoWithRetry(doc, retries, { timeoutMs })
+      const outcome =
+        youtubeOutcomes.get(doc._id.toHexString()) ||
+        (await checkVideoWithRetry(doc, retries, { timeoutMs }))
       outcomes.push({ doc, outcome })
       addScanOutcome(doc, outcome, {
         obsolete,
@@ -624,7 +791,7 @@ async function scanVideoDocs(
   })
 
   if (persist) {
-    await persistScanOutcomes(db, outcomes)
+    await persistScanOutcomes(db, outcomes, scanId)
   }
 
   return {
@@ -818,6 +985,261 @@ function mergeCounts(target: ScanResult['counts'], source: ScanResult['counts'])
   mergeProviderCounts(target.ambiguous.providers, source.ambiguous.providers)
 }
 
+function emptyScanCounts(): ScanResult['counts'] {
+  return {
+    total: 0,
+    providers: {},
+    obsolete: { total: 0, providers: {} },
+    rateLimited: { total: 0, providers: {} },
+    ambiguous: { total: 0, providers: {} },
+  }
+}
+
+function persistedResultFromDoc(doc: VideoDoc): VideoResult {
+  return {
+    id: doc._id.toHexString(),
+    provider: normalizeProvider(doc.provider),
+    url: doc.url || '',
+    videoId: doc.videoId || undefined,
+    title: doc.title ?? null,
+    reason: doc.obsoleteVideoReason || 'unknown',
+    status: doc.obsoleteVideoHttpStatus ?? null,
+  }
+}
+
+async function rebuildPersistedCounts(db: Db, scanId: string): Promise<ScanResult['counts']> {
+  const rows = await db.collection('items').aggregate<{
+    _id: { provider: string; status: string }
+    count: number
+  }>([
+    { $match: { type: 'video', obsoleteVideoScanId: scanId } },
+    {
+      $group: {
+        _id: {
+          provider: { $ifNull: ['$provider', 'unknown'] },
+          status: { $ifNull: ['$obsoleteVideoStatus', 'ambiguous'] },
+        },
+        count: { $sum: 1 },
+      },
+    },
+  ]).toArray()
+  const counts = emptyScanCounts()
+  for (const row of rows) {
+    const provider = normalizeProvider(row._id.provider)
+    if (row._id.status === 'obsolete') {
+      counts.total += row.count
+      counts.providers[provider] = (counts.providers[provider] || 0) + row.count
+      counts.obsolete.total += row.count
+      counts.obsolete.providers[provider] = (counts.obsolete.providers[provider] || 0) + row.count
+    } else if (row._id.status === 'rate-limited') {
+      counts.rateLimited.total += row.count
+      counts.rateLimited.providers[provider] = (counts.rateLimited.providers[provider] || 0) + row.count
+    } else if (row._id.status === 'ambiguous') {
+      counts.ambiguous.total += row.count
+      counts.ambiguous.providers[provider] = (counts.ambiguous.providers[provider] || 0) + row.count
+    }
+  }
+  return counts
+}
+
+async function serializePersistedJob(db: Db, job: VideoScanJob | null, busy = false) {
+  if (!job) {
+    return { ok: true, mode: 'job', exists: false, busy: false }
+  }
+
+  const items = db.collection<VideoDoc>('items')
+  const base = { type: 'video', obsoleteVideoScanId: job.scanId }
+  const [obsoleteDocs, rateLimitedDocs, ambiguousDocs] = await Promise.all([
+    items.find({ ...base, obsoleteVideoStatus: 'obsolete' }).limit(300).toArray(),
+    items.find({ ...base, obsoleteVideoStatus: 'rate-limited' }).limit(100).toArray(),
+    items.find({ ...base, obsoleteVideoStatus: 'ambiguous' }).limit(100).toArray(),
+  ])
+
+  return {
+    ok: true,
+    mode: 'job',
+    exists: true,
+    busy,
+    scanId: job.scanId,
+    status: job.status,
+    checked: job.checked,
+    errors: job.errors,
+    batches: job.batches,
+    deleted: job.deleted || 0,
+    expectedTotal: job.total,
+    catalogTotal: job.total,
+    done: job.status === 'completed',
+    durationMs: Math.max(0, job.updatedAt.getTime() - job.startedAt.getTime()),
+    obsolete: obsoleteDocs.map(persistedResultFromDoc),
+    rateLimited: rateLimitedDocs.map(persistedResultFromDoc),
+    ambiguous: ambiguousDocs.map(persistedResultFromDoc),
+    counts: job.counts || emptyScanCounts(),
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt || null,
+  }
+}
+
+async function startOrResumePersistedJob(db: Db) {
+  const jobs = db.collection<VideoScanJob>('maintenance_jobs')
+  const existing = await jobs.findOne({ _id: PERSISTED_JOB_ID })
+  if (existing?.status === 'running') {
+    return serializePersistedJob(db, existing)
+  }
+
+  const latest = await db
+    .collection<VideoDoc>('items')
+    .find({ type: 'video' }, { projection: { _id: 1 } })
+    .sort({ _id: -1 })
+    .limit(1)
+    .next()
+  const upperBoundId = latest?._id || null
+  const total = upperBoundId
+    ? await db.collection('items').countDocuments({ type: 'video', _id: { $lte: upperBoundId } })
+    : 0
+  const now = new Date()
+  const job: VideoScanJob = {
+    _id: PERSISTED_JOB_ID,
+    scanId: randomUUID(),
+    status: total ? 'running' : 'completed',
+    total,
+    checked: 0,
+    errors: 0,
+    batches: 0,
+    deleted: 0,
+    cursor: null,
+    upperBoundId,
+    counts: emptyScanCounts(),
+    startedAt: now,
+    updatedAt: now,
+    completedAt: total ? null : now,
+    leaseToken: null,
+    leaseUntil: null,
+  }
+  await jobs.replaceOne({ _id: PERSISTED_JOB_ID }, job, { upsert: true })
+  return serializePersistedJob(db, job)
+}
+
+async function runPersistedJobStep(db: Db) {
+  const jobs = db.collection<VideoScanJob>('maintenance_jobs')
+  const now = new Date()
+  const leaseToken = randomUUID()
+  const lease = await jobs.updateOne(
+    {
+      _id: PERSISTED_JOB_ID,
+      status: 'running',
+      $or: [
+        { leaseUntil: { $exists: false } },
+        { leaseUntil: null },
+        { leaseUntil: { $lte: now } },
+      ],
+    },
+    {
+      $set: {
+        leaseToken,
+        leaseUntil: new Date(now.getTime() + PERSISTED_SCAN_LEASE_MS),
+        updatedAt: now,
+      },
+    },
+  )
+
+  if (!lease.modifiedCount) {
+    const current = await jobs.findOne({ _id: PERSISTED_JOB_ID })
+    return serializePersistedJob(db, current, current?.status === 'running')
+  }
+
+  const job = await jobs.findOne({ _id: PERSISTED_JOB_ID, leaseToken })
+  if (!job) {
+    return serializePersistedJob(db, await jobs.findOne({ _id: PERSISTED_JOB_ID }), true)
+  }
+
+  try {
+    if (!job.upperBoundId) {
+      const completedAt = new Date()
+      await jobs.updateOne(
+        { _id: PERSISTED_JOB_ID, leaseToken },
+        {
+          $set: { status: 'completed', completedAt, updatedAt: completedAt },
+          $unset: { leaseToken: '', leaseUntil: '' },
+        },
+      )
+      return serializePersistedJob(db, await jobs.findOne({ _id: PERSISTED_JOB_ID }))
+    }
+
+    const idFilter: { $gt?: ObjectId; $lte: ObjectId } = { $lte: job.upperBoundId }
+    if (job.cursor) idFilter.$gt = new ObjectId(job.cursor)
+    const docs = await db
+      .collection<VideoDoc>('items')
+      .find(
+        { type: 'video', _id: idFilter },
+        {
+          projection: {
+            _id: 1,
+            provider: 1,
+            url: 1,
+            videoId: 1,
+            title: 1,
+            thumb: 1,
+            thumbUrl: 1,
+          },
+        },
+      )
+      .sort({ _id: 1 })
+      .limit(PERSISTED_SCAN_BATCH_SIZE)
+      .toArray()
+
+    if (!docs.length) {
+      const completedAt = new Date()
+      await jobs.updateOne(
+        { _id: PERSISTED_JOB_ID, leaseToken },
+        {
+          $set: { status: 'completed', completedAt, updatedAt: completedAt },
+          $unset: { leaseToken: '', leaseUntil: '' },
+        },
+      )
+      return serializePersistedJob(db, await jobs.findOne({ _id: PERSISTED_JOB_ID }))
+    }
+
+    const result = await scanVideoDocs(db, docs, {
+      concurrency: PERSISTED_SCAN_CONCURRENCY,
+      retries: 0,
+      timeoutMs: PERSISTED_SCAN_TIMEOUT_MS,
+      persist: true,
+      scanId: job.scanId,
+    })
+    const counts = structuredClone(job.counts || emptyScanCounts())
+    mergeCounts(counts, result.counts)
+    const lastId = docs[docs.length - 1]._id
+    const done = docs.length < PERSISTED_SCAN_BATCH_SIZE || lastId.equals(job.upperBoundId)
+    const updatedAt = new Date()
+    await jobs.updateOne(
+      { _id: PERSISTED_JOB_ID, leaseToken },
+      {
+        $set: {
+          cursor: lastId.toHexString(),
+          counts,
+          status: done ? 'completed' : 'running',
+          completedAt: done ? updatedAt : null,
+          updatedAt,
+        },
+        $inc: {
+          checked: docs.length,
+          errors: result.errors,
+          batches: 1,
+        },
+        $unset: { leaseToken: '', leaseUntil: '' },
+      },
+    )
+    return serializePersistedJob(db, await jobs.findOne({ _id: PERSISTED_JOB_ID }))
+  } catch (error) {
+    await jobs.updateOne(
+      { _id: PERSISTED_JOB_ID, leaseToken },
+      { $unset: { leaseToken: '', leaseUntil: '' }, $set: { updatedAt: new Date() } },
+    )
+    throw error
+  }
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return unauthorized()
 
@@ -827,6 +1249,12 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl
+  if (url.searchParams.get('mode') === 'job') {
+    const job = await db.collection<VideoScanJob>('maintenance_jobs').findOne({ _id: PERSISTED_JOB_ID })
+    return NextResponse.json(await serializePersistedJob(db, job), {
+      headers: { 'Cache-Control': 'no-store' },
+    })
+  }
   const fullScan =
     url.searchParams.get('full') === '1' ||
     url.searchParams.get('full') === 'true' ||
@@ -1020,6 +1448,39 @@ export async function GET(req: NextRequest) {
   })
 }
 
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) return unauthorized()
+
+  const db = await getDbSafe()
+  if (!db) {
+    return NextResponse.json({ error: 'Database unavailable' }, { status: 500 })
+  }
+
+  let payload: { action?: string } = {}
+  try {
+    payload = (await req.json()) as { action?: string }
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  try {
+    if (payload.action === 'start') {
+      return NextResponse.json(await startOrResumePersistedJob(db), {
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    }
+    if (payload.action === 'step') {
+      return NextResponse.json(await runPersistedJobStep(db), {
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    }
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: message || 'Persistent scan failed' }, { status: 500 })
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   if (!isAuthorized(req)) return unauthorized()
 
@@ -1033,6 +1494,81 @@ export async function DELETE(req: NextRequest) {
     payload = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const scanId =
+    payload && typeof payload === 'object' && typeof (payload as { scanId?: unknown }).scanId === 'string'
+      ? (payload as { scanId: string }).scanId.trim()
+      : ''
+
+  if (scanId) {
+    const jobs = db.collection<VideoScanJob>('maintenance_jobs')
+    const job = await jobs.findOne({ _id: PERSISTED_JOB_ID, scanId })
+    if (!job || job.status !== 'completed') {
+      return NextResponse.json({ error: 'This scan is not complete or no longer active.' }, { status: 409 })
+    }
+
+    const eligibleDocs = await db
+      .collection<VideoDoc>('items')
+      .find(
+        { type: 'video', obsoleteVideoScanId: scanId, obsoleteVideoStatus: 'obsolete' },
+        {
+          projection: {
+            _id: 1,
+            provider: 1,
+            url: 1,
+            videoId: 1,
+            title: 1,
+            thumb: 1,
+            thumbUrl: 1,
+          },
+        },
+      )
+      .limit(PERSISTED_DELETE_BATCH_SIZE)
+      .toArray()
+
+    if (!eligibleDocs.length) {
+      return NextResponse.json({ deleted: 0, requested: 0, eligible: 0, verified: 0, remaining: 0, done: true })
+    }
+
+    const verification = await scanVideoDocs(db, eligibleDocs, {
+      concurrency: Math.min(PERSISTED_SCAN_CONCURRENCY, eligibleDocs.length),
+      retries: 0,
+      timeoutMs: PERSISTED_SCAN_TIMEOUT_MS,
+      persist: true,
+      scanId,
+    })
+    const verifiedIds = verification.obsolete.map((item) => new ObjectId(item.id))
+    const deletion = verifiedIds.length
+      ? await db.collection('items').deleteMany({
+          _id: { $in: verifiedIds },
+          type: 'video',
+          obsoleteVideoScanId: scanId,
+          obsoleteVideoStatus: 'obsolete',
+        })
+      : { deletedCount: 0 }
+    const remaining = await db.collection('items').countDocuments({
+      type: 'video',
+      obsoleteVideoScanId: scanId,
+      obsoleteVideoStatus: 'obsolete',
+    })
+    const counts = await rebuildPersistedCounts(db, scanId)
+    await jobs.updateOne(
+      { _id: PERSISTED_JOB_ID, scanId },
+      {
+        $set: { counts, updatedAt: new Date() },
+        $inc: { deleted: deletion.deletedCount ?? 0 },
+      },
+    )
+
+    return NextResponse.json({
+      deleted: deletion.deletedCount ?? 0,
+      requested: eligibleDocs.length,
+      eligible: eligibleDocs.length,
+      verified: verifiedIds.length,
+      remaining,
+      done: remaining === 0,
+    })
   }
 
   const ids = Array.isArray((payload as { ids?: unknown })?.ids)

@@ -2,7 +2,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { recordDailyUsage } from '@/lib/metrics/usage'
-import type { ItemType, RandomSelectOptions } from '@/lib/random/types'
+import type { ItemType, RandomSelectOptions, VideoPool } from '@/lib/random/types'
 import { selectImage } from '@/lib/random/images'
 import { selectVideo } from '@/lib/random/videos'
 import { selectQuote } from '@/lib/random/quotes'
@@ -46,6 +46,14 @@ function parseStrongPool(searchParams: URLSearchParams): boolean {
   const pool = searchParams.get('pool')?.trim().toLowerCase()
   const strong = searchParams.get('strong')?.trim().toLowerCase()
   return pool === 'strong' || strong === '1' || strong === 'true'
+}
+
+function parseVideoPool(searchParams: URLSearchParams): VideoPool | undefined {
+  const pool = searchParams.get('videoPool')?.trim().toLowerCase()
+  if (pool === 'trending' || pool === 'fresh' || pool === 'retro' || pool === 'retro-ad') {
+    return pool
+  }
+  return undefined
 }
 
 function parsePreview(searchParams: URLSearchParams): boolean {
@@ -98,7 +106,10 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const lang = parseLang(searchParams.get('lang'))
     const types = parseTypes(searchParams.get('types'))
-    const options: RandomSelectOptions = { strong: parseStrongPool(searchParams) }
+    const options: RandomSelectOptions = {
+      strong: parseStrongPool(searchParams),
+      videoPool: parseVideoPool(searchParams),
+    }
     const preview = parsePreview(searchParams)
 
     for (const type of types) {

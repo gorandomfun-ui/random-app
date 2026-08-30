@@ -616,8 +616,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
               fontFamily: 'var(--font-inter-tight), sans-serif',
             }}
           >
-            <div className="flex items-center justify-between">
-              <QuizScoreText style={{ color: theme.cream }} />
+            <div className="flex items-center justify-end">
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -712,6 +711,8 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
                 <span>Add</span>
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
+
+              <QuizScoreText style={{ color: '#191916' }} />
             </nav>
           </div>
         </div>

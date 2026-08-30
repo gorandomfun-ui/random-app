@@ -1,8 +1,13 @@
 import type { VideoItem } from '@/lib/random/clientTypes'
 import { sampleFromCache, touchLastShownById } from '@/lib/random/data'
 import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
-import type { RandomSelectOptions } from '@/lib/random/types'
+import type { RandomSelectOptions, VideoPool } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
+import {
+  FUN_TREND_REGEX,
+  ROUTINE_NEWS_RADIO_REGEX,
+  YOUTUBE_NEWS_CATEGORY_ID,
+} from '@/lib/random/videoEditorial'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -33,6 +38,95 @@ type VideoRecord = {
   tone?: 'positive' | 'neutral' | 'negative' | null
   toneConfidence?: number | null
   toneSignals?: string[] | null
+  updatedAt?: Date | null
+  categoryId?: string | null
+  liveBroadcastContent?: string | null
+}
+
+const VIDEO_TEXT_FIELDS = ['title', 'text', 'description', 'channelTitle', 'tags', 'keywords'] as const
+const RETRO_VIDEO_REGEX = /\b(retro|vintage|archive|archival|public access|found footage|lost tape|old tv|classic tv|nostalgia|y2k|[5-9]0s|19[5-9]\d|200\d)\b/i
+const OLD_AD_REGEX = /\b(advertisements?|advertising|commercials?|infomercials?|adverts?|promo spot|tv ads?|publicit[eé]|anuncios?|publicidad|werbung|reklame|pubblicit[aà]|reclame)\b/i
+const TRENDING_TAG_REGEX = /(^|-)trending(-|$)/i
+const TRENDING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+function matchVideoText(regex: RegExp): Filter<VideoRecord> {
+  return { $or: VIDEO_TEXT_FIELDS.map((field) => ({ [field]: regex })) } as Filter<VideoRecord>
+}
+
+function excludeVideoText(...regexes: RegExp[]): Filter<VideoRecord> {
+  return {
+    $nor: VIDEO_TEXT_FIELDS.flatMap((field) => regexes.map((regex) => ({ [field]: regex }))),
+  } as Filter<VideoRecord>
+}
+
+function stockVideoQualityMatch(): Filter<VideoRecord> {
+  return {
+    $or: [
+      { provider: { $nin: ['pexels', 'pixabay'] } },
+      { likeCount: { $gte: 1 } },
+      { quality: { $gte: 2 } },
+      { showWeight: { $gte: 1.2 } },
+    ],
+  } as Filter<VideoRecord>
+}
+
+function coolToneMatch(): Filter<VideoRecord> {
+  return {
+    $nor: [{ tone: 'negative', toneConfidence: { $gte: 0.75 } }],
+  } as Filter<VideoRecord>
+}
+
+function coolEditorialMatch(): Filter<VideoRecord> {
+  const routineFree = {
+    $and: [
+      excludeVideoText(ROUTINE_NEWS_RADIO_REGEX),
+      { categoryId: { $ne: YOUTUBE_NEWS_CATEGORY_ID } },
+      { liveBroadcastContent: { $nin: ['live', 'upcoming'] } },
+    ],
+  } as Filter<VideoRecord>
+  return {
+    $or: [routineFree, matchVideoText(FUN_TREND_REGEX)],
+  } as Filter<VideoRecord>
+}
+
+function buildVideoPoolMatches(pool: VideoPool): Filter<VideoRecord>[] {
+  const strong = buildStrongPoolMatch<VideoRecord>()
+  const nonRetro = excludeVideoText(RETRO_VIDEO_REGEX, OLD_AD_REGEX)
+  const safeFresh = {
+    $and: [nonRetro, stockVideoQualityMatch(), coolToneMatch(), coolEditorialMatch()],
+  } as Filter<VideoRecord>
+  const strongFresh = { $and: [strong, safeFresh] } as Filter<VideoRecord>
+  const anyFresh = safeFresh
+
+  if (pool === 'trending') {
+    const trending = {
+      $and: [
+        strong,
+        nonRetro,
+        coolToneMatch(),
+        coolEditorialMatch(),
+        { tags: TRENDING_TAG_REGEX },
+        { updatedAt: { $gte: new Date(Date.now() - TRENDING_MAX_AGE_MS) } },
+      ],
+    } as Filter<VideoRecord>
+    return [trending, strongFresh, anyFresh]
+  }
+  if (pool === 'retro-ad') {
+    const retroAd = {
+      $and: [strong, coolToneMatch(), coolEditorialMatch(), matchVideoText(RETRO_VIDEO_REGEX), matchVideoText(OLD_AD_REGEX)],
+    } as Filter<VideoRecord>
+    const retroWithoutAds = {
+      $and: [strong, coolToneMatch(), coolEditorialMatch(), matchVideoText(RETRO_VIDEO_REGEX), excludeVideoText(OLD_AD_REGEX)],
+    } as Filter<VideoRecord>
+    return [retroAd, retroWithoutAds, strongFresh, anyFresh]
+  }
+  if (pool === 'retro') {
+    const retroWithoutAds = {
+      $and: [strong, coolToneMatch(), coolEditorialMatch(), matchVideoText(RETRO_VIDEO_REGEX), excludeVideoText(OLD_AD_REGEX)],
+    } as Filter<VideoRecord>
+    return [retroWithoutAds, strongFresh, anyFresh]
+  }
+  return [strongFresh, anyFresh]
 }
 
 function registerRecent(id: string) {
@@ -75,9 +169,26 @@ function resolveUrl(doc: VideoRecord): { url: string; id: string } | null {
 export async function selectVideo(options: RandomSelectOptions = {}): Promise<VideoItem | null> {
   const exclude = recentVideoIds.slice(-RECENT_LIMIT)
   const strongMatch = options.strong ? buildStrongPoolMatch<VideoRecord>() : null
-  const doc = strongMatch
-    ? (await pickFromDb(exclude, 24, strongMatch)) ?? (await pickFromDb(exclude))
-    : await pickFromDb(exclude)
+  let doc: (VideoRecord & { _id?: unknown }) | null = null
+  if (options.videoPool) {
+    for (const match of buildVideoPoolMatches(options.videoPool)) {
+      doc = await pickFromDb(exclude, 24, match)
+      if (doc) break
+    }
+  } else if (strongMatch) {
+    doc = (await pickFromDb(exclude, 24, strongMatch)) ?? (await pickFromDb(exclude))
+  } else {
+    doc = await pickFromDb(exclude)
+  }
+  if (!doc && options.videoPool) {
+    const editorialFallback = coolEditorialMatch()
+    const strongEditorialFallback = strongMatch
+      ? ({ $and: [strongMatch, editorialFallback] } as Filter<VideoRecord>)
+      : editorialFallback
+    doc =
+      (await pickFromDb(exclude, 24, strongEditorialFallback)) ??
+      (await pickFromDb(exclude, 24, editorialFallback))
+  }
   if (!doc) return null
 
   const rawItemId = doc && typeof doc === 'object' && '_id' in doc

@@ -290,49 +290,14 @@
     <main class="card">
       <h1>Erase Obsolete Videos</h1>
       <p class="description">
-        Scan the <code>items</code> collection for videos that look unavailable (404, removed, dead links).
-        The tool runs a full local maintenance scan, stores every checked status, and keeps temporary failures away from deletion.
+        Scan all videos, safely resume after a network interruption, then delete only confirmed unavailable videos.
       </p>
 
       <div class="controls">
         <button id="scanBtn" class="primary" type="button">Scan all videos</button>
-        <button id="stopBtn" class="ghost" type="button" disabled>Stop scan</button>
         <button id="deleteBtn" class="danger" type="button" disabled>Delete confirmed obsolete</button>
-        <button id="deleteRateLimitedBtn" class="ghost" type="button" disabled>429 kept aside</button>
       </div>
-
-      <div class="scan-options">
-        <label class="input">
-          Lot
-          <input id="batchLimit" type="number" min="100" max="1000" step="100" value="1000" />
-        </label>
-        <label class="input">
-          Concurrence
-          <select id="scanConcurrency">
-            <option value="24">24 stable</option>
-            <option value="48" selected>48 rapide</option>
-            <option value="80">80 agressif</option>
-          </select>
-        </label>
-        <label class="input">
-          Timeout
-          <input id="timeoutMs" type="number" min="1000" max="10000" step="500" value="4000" />
-          ms
-        </label>
-        <label class="input">
-          Provider
-          <select id="providerFilter">
-            <option value="all" selected>all</option>
-            <option value="youtube">youtube</option>
-            <option value="dailymotion">dailymotion</option>
-          </select>
-        </label>
-        <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
-          <input id="forceScan" type="checkbox" checked />
-          Forcer recheck complet
-        </label>
-      </div>
-      <p class="note">Le scan peut durer plusieurs heures. La suppression reste separee et ne touche que les obsoletes confirmees.</p>
+      <p class="note">Progress is saved after every batch. Temporary network and provider errors are never deleted.</p>
 
       <div id="status" class="status"></div>
       <div id="progress" class="progress hidden"><div id="progressBar" class="progress-bar"></div></div>
@@ -500,14 +465,14 @@
 
       function updateActionButtons(forceDisable = false) {
         const disable = forceDisable || busy
-        const obsoleteCount = lastResult?.obsolete?.length ?? 0
+        const obsoleteCount = lastResult?.counts?.obsolete?.total ?? lastResult?.obsolete?.length ?? 0
         deleteBtn.disabled = disable || !obsoleteCount
-        deleteRateLimitedBtn.disabled = true
+        if (deleteRateLimitedBtn) deleteRateLimitedBtn.disabled = true
       }
 
       function buildCompletionMessage(result) {
         if (!result) return ''
-        const obsoleteCount = result.obsolete?.length ?? 0
+        const obsoleteCount = result.counts?.obsolete?.total ?? result.obsolete?.length ?? 0
         const rateLimitedCount = result.counts?.rateLimited?.total ?? result.rateLimited?.length ?? 0
         const ambiguousCount = result.counts?.ambiguous?.total ?? result.ambiguous?.length ?? 0
         const batches = result.batches || 0
@@ -763,7 +728,7 @@
         listEl.innerHTML = `${obsoleteSection}${ambiguousSection}${rateLimitedSection}`
       }
 
-      async function scanVideos() {
+      async function scanVideosLegacy() {
         if (!getAdminKey(true)) {
           alert('Missing admin ingest key.')
           return false
@@ -878,41 +843,116 @@
         }
       }
 
-      async function deleteVideos() {
-        if (!lastResult?.obsolete?.length) return
-        if (!adminKey) {
+      async function requestJobAction(action) {
+        const res = await adminFetch('/api/tools/videos/obsolete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || res.statusText)
+        return data
+      }
+
+      function renderPersistedJob(data) {
+        if (!data?.exists) return
+        lastResult = data
+        renderSummary(data)
+        renderList(data)
+        updateProgress(data)
+        updateActionButtons()
+        if (!busy) {
+          scanBtn.textContent = data.status === 'running' ? 'Resume scan' : 'Scan all videos'
+        }
+      }
+
+      async function loadPersistedJob() {
+        if (!getAdminKey(false)) return
+        try {
+          const res = await adminFetch('/api/tools/videos/obsolete?mode=job', { method: 'GET' })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data?.error || res.statusText)
+          if (!data?.exists) return
+          renderPersistedJob(data)
+          if (data.status === 'running') {
+            statusEl.textContent = `Scan paused safely at ${data.checked}/${data.expectedTotal}. Click Resume scan.`
+          } else {
+            statusEl.textContent = buildCompletionMessage(data)
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Unable to restore scan status: ${message}`
+        }
+      }
+
+      async function scanVideos() {
+        if (!getAdminKey(true)) {
           alert('Missing admin ingest key.')
           return
         }
-        const count = lastResult.obsolete.length
-        const confirmMessage = `Delete ${count} video${count > 1 ? 's' : ''}? This cannot be undone.`
-        if (!window.confirm(confirmMessage)) return
-
         setBusy(true)
+        scanBtn.textContent = 'Scanning…'
         try {
-          const res = await adminFetch('/api/tools/videos/obsolete', {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ ids: lastResult.obsolete.map((item) => item.id) }),
-          })
-          const data = await res.json()
-          if (!res.ok) {
-            throw new Error(data?.error || res.statusText)
+          let data = await requestJobAction('start')
+          renderPersistedJob(data)
+          while (data.status === 'running') {
+            const percent = data.expectedTotal
+              ? Math.min(100, (data.checked / data.expectedTotal) * 100).toFixed(1)
+              : '0.0'
+            statusEl.textContent = `Scanning… ${data.checked}/${data.expectedTotal} checked (${percent}%). Progress is saved.`
+            if (data.busy) {
+              await new Promise((resolve) => setTimeout(resolve, 1000))
+            }
+            data = await requestJobAction('step')
+            renderPersistedJob(data)
+            await new Promise((resolve) => setTimeout(resolve, 300))
           }
-          const deleted = data?.deleted ?? 0
-          const verified = typeof data?.verified === 'number' ? ` ${data.verified} rechecked.` : ''
-          const serverMessage = data?.message ? ` ${data.message}` : ''
-          statusEl.textContent = `Deleted ${deleted} obsolete video${deleted === 1 ? '' : 's'}.${verified}${serverMessage}`
-          lastResult = null
-          summaryEl.classList.add('hidden')
-          listEl.innerHTML = ''
+          statusEl.textContent = buildCompletionMessage(data)
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          statusEl.textContent = `Delete failed: ${message}`
+          statusEl.textContent = `Connection interrupted. Progress is saved. Click Resume scan. (${message})`
         } finally {
           setBusy(false)
+          scanBtn.textContent = lastResult?.status === 'running' ? 'Resume scan' : 'Scan all videos'
+          updateActionButtons()
+        }
+      }
+
+      async function deleteVideos() {
+        const count = lastResult?.counts?.obsolete?.total ?? 0
+        const scanId = lastResult?.scanId || ''
+        if (!count || !scanId) return
+        if (!window.confirm(`Delete ${count} confirmed obsolete video${count > 1 ? 's' : ''}? This cannot be undone.`)) return
+
+        setBusy(true)
+        let totalDeleted = 0
+        let previousRemaining = count
+        try {
+          let done = false
+          while (!done) {
+            const res = await adminFetch('/api/tools/videos/obsolete', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ scanId }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || res.statusText)
+            totalDeleted += Number(data.deleted || 0)
+            done = Boolean(data.done)
+            if (!done && Number(data.remaining) >= previousRemaining && !Number(data.deleted || 0)) {
+              throw new Error('No deletion progress; remaining candidates were kept safely.')
+            }
+            previousRemaining = Number(data.remaining || 0)
+            statusEl.textContent = `Deleting confirmed obsolete videos… ${totalDeleted} deleted, ${data.remaining || 0} left.`
+          }
+          await loadPersistedJob()
+          statusEl.textContent = `Deleted ${totalDeleted} confirmed obsolete video${totalDeleted === 1 ? '' : 's'}. Ambiguous items were kept.`
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          statusEl.textContent = `Deletion interrupted. Completed deletions are saved; click Delete again to resume. (${message})`
+        } finally {
+          setBusy(false)
+          updateActionButtons()
         }
       }
 
@@ -920,7 +960,7 @@
         if (!busy) scanVideos()
       })
 
-      stopBtn.addEventListener('click', () => {
+      stopBtn?.addEventListener('click', () => {
         if (!busy) return
         stopRequested = true
         statusEl.textContent = 'Stopping after current request…'
@@ -934,6 +974,9 @@
       deleteBtn.addEventListener('click', () => {
         if (!busy) deleteVideos()
       })
+
+      window.addEventListener('online', loadPersistedJob)
+      loadPersistedJob()
     </script>
   </body>
 </html>

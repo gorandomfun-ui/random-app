@@ -34,6 +34,7 @@ const STRONG_TERMS = [
   'swimwear',
   'surreal',
   'tango',
+  'trending',
   'uncanny',
   'unexpected',
   'unusual',

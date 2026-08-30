@@ -902,10 +902,9 @@ export default function HomePage() {
             }}
           >
             <div
-              className="flex items-center justify-between"
+              className="flex items-center justify-end"
               style={{ color: theme.cream }}
             >
-              <QuizScoreText style={{ color: theme.cream }} />
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -1000,6 +999,8 @@ export default function HomePage() {
                 <span>Add</span>
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
+
+              <QuizScoreText style={{ color: '#191916' }} />
 
               <button
                 type="button"

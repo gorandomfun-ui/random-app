@@ -2,6 +2,7 @@ import { getDb } from '@/lib/db';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
 import { deriveToneAugmentation, flattenToneSegments } from './tone';
+import { isFunTrend, isRoutineTrend } from '@/lib/random/videoEditorial';
 
 export type VideoProvider =
   | 'youtube'
@@ -27,6 +28,10 @@ export type RawVideo = {
   channelId?: string;
   channelTitle?: string;
   duration?: string;
+  categoryId?: string;
+  liveBroadcastContent?: string;
+  editorialRoutine?: boolean;
+  editorialRoutineIngestedAt?: Date;
 };
 
 export type VideoDocument = {
@@ -43,6 +48,10 @@ export type VideoDocument = {
   channelId?: string;
   channelTitle?: string;
   duration?: string;
+  categoryId?: string;
+  liveBroadcastContent?: string;
+  editorialRoutine?: boolean;
+  editorialRoutineIngestedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
   tone?: 'positive' | 'neutral' | 'negative';
@@ -157,6 +166,8 @@ type YoutubeSnippet = {
   channelTitle?: string;
   tags?: string[];
   thumbnails?: YoutubeThumbnails;
+  categoryId?: string;
+  liveBroadcastContent?: string;
 };
 
 type YoutubeSearchItem = {
@@ -996,6 +1007,10 @@ function buildVideoDocument(raw: RawVideo): VideoDocument | null {
     channelId: raw.channelId,
     channelTitle: raw.channelTitle,
     duration: raw.duration,
+    categoryId: raw.categoryId,
+    liveBroadcastContent: raw.liveBroadcastContent,
+    editorialRoutine: raw.editorialRoutine,
+    editorialRoutineIngestedAt: raw.editorialRoutineIngestedAt,
     tags,
     keywords,
     tone: tone?.tone,
@@ -1354,6 +1369,8 @@ async function fetchYouTubeTrending(region: string, limit: number, warnings: Fet
       channelId: snippet.channelId,
       channelTitle: snippet.channelTitle,
       duration: item?.contentDetails?.duration,
+      categoryId: snippet.categoryId,
+      liveBroadcastContent: snippet.liveBroadcastContent,
       source: { name: snippet.channelTitle || 'YouTube', url: watchUrl },
       contextQueries: [`youtube:trending:${region.toLowerCase()}`],
     });
@@ -1414,7 +1431,31 @@ export async function ingestTrendingVideos(regions: string[], options: { dryRun?
   ]);
   const settled = await Promise.all(tasks);
   for (const rows of settled) collected.push(...rows);
-  if (!collected.length) {
+  const regular = collected.filter((video) => !isRoutineTrend(video) || isFunTrend(video));
+  const routine = collected.filter((video) => isRoutineTrend(video) && !isFunTrend(video));
+  const now = new Date();
+  const routineWindowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const collection = await getCollection();
+  const routineAlreadyIngested = await collection.countDocuments({
+    type: 'video',
+    editorialRoutine: true,
+    editorialRoutineIngestedAt: { $gte: routineWindowStart },
+  } as Filter<VideoDocument>);
+  const routineAllowance = Math.max(0, 2 - routineAlreadyIngested);
+  const admittedRoutine = routine.slice(0, routineAllowance).map((video) => ({
+    ...video,
+    editorialRoutine: true,
+    editorialRoutineIngestedAt: now,
+  }));
+  const selected = [...regular, ...admittedRoutine];
+  const filteredCount = routine.length - admittedRoutine.length;
+  if (filteredCount) {
+    warnings.push({
+      label: 'trending:editorial-quota',
+      message: `${filteredCount} routine news, radio, podcast, or live video${filteredCount === 1 ? '' : 's'} filtered; ${Math.min(2, routineAlreadyIngested + admittedRoutine.length)}/2 admitted in the last 24 hours`,
+    });
+  }
+  if (!selected.length) {
     return {
       scanned: 0,
       unique: 0,
@@ -1425,9 +1466,9 @@ export async function ingestTrendingVideos(regions: string[], options: { dryRun?
       providers: ['youtube', 'dailymotion'],
     };
   }
-  return finalizeVideoIngest(collected, {
+  return finalizeVideoIngest(selected, {
     dryRun: Boolean(options.dryRun),
-    sampleSize: Math.min(20, collected.length),
+    sampleSize: Math.min(20, selected.length),
     warnings,
     providers: ['youtube', 'dailymotion'],
     skipDetails: options.skipDetails ?? true,

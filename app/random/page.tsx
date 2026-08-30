@@ -19,7 +19,7 @@ import { ENCOURAGE_PAGES_ENABLED, MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
-import type { ItemType } from '@/lib/random/types'
+import type { ItemType, VideoPool } from '@/lib/random/types'
 import { FIXED_SEQUENCE, type SequenceEntry } from '@/lib/random/sequence'
 import type {
   FactItem,
@@ -57,6 +57,19 @@ const VIDEO_PRELOAD_TARGET_PER_TYPE = 6
 const VIDEO_READY_TARGET = 2
 const RECENT_SESSION_LIMIT = 40
 const STRONG_POOL_INITIAL_DRAWS = 20
+const INITIAL_VIDEO_POOLS: Partial<Record<number, VideoPool>> = {
+  0: 'trending',
+  1: 'fresh',
+  3: 'trending',
+  5: 'retro-ad',
+  7: 'trending',
+  10: 'fresh',
+  12: 'trending',
+  13: 'retro',
+  15: 'trending',
+  17: 'fresh',
+  19: 'trending',
+}
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
 
@@ -144,7 +157,7 @@ function parseTypesParam(value: string | string[] | undefined): ItemType[] {
 type EncourageItem = EncourageContentItem
 
 type SequenceSlot =
-  | { kind: 'content'; itemType: ItemType; requireQuiz?: boolean; strong?: boolean }
+  | { kind: 'content'; itemType: ItemType; requireQuiz?: boolean; strong?: boolean; videoPool?: VideoPool }
   | { kind: 'encourage'; round: number; encourageIndex: number }
 
 type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
@@ -2324,6 +2337,10 @@ const sequenceStateRef = useRef({
       itemType: chosenSlot.itemType,
       requireQuiz: chosenSlot.requireQuiz,
       strong: currentDraws < STRONG_POOL_INITIAL_DRAWS,
+      videoPool:
+        chosenSlot.itemType === 'video' && currentDraws < STRONG_POOL_INITIAL_DRAWS
+          ? INITIAL_VIDEO_POOLS[currentDraws] ?? 'fresh'
+          : undefined,
     }
   }, [allowedTypes, selectedTypes])
 
@@ -2629,7 +2646,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const acquireItem = useCallback(async (
     type: ItemType,
     predicate?: (item: RandomContentItem) => boolean,
-    options: { strong?: boolean } = {},
+    options: { strong?: boolean; videoPool?: VideoPool } = {},
   ): Promise<RandomContentItem | null> => {
     if (type === 'joke' && !options.strong) {
       const miniGame = spawnMiniGameIfDue()
@@ -2646,6 +2663,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             types: [type] as RandomTypes,
             lang: (locale || 'en') as Lang,
             strong: true,
+            videoPool: options.videoPool,
           })
           const item = res?.item
           if (!item || item.type !== type) continue
@@ -2793,7 +2811,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
 
         if (!item) {
-          item = await acquireItem(slot.itemType, factPredicate, { strong: useStrongPool })
+          item = await acquireItem(slot.itemType, factPredicate, {
+            strong: useStrongPool,
+            videoPool: slot.videoPool,
+          })
           resolvedType = slot.itemType
         }
 
@@ -3270,15 +3291,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             }}
           >
             <div
-              className="flex items-center justify-between"
+              className="flex items-center justify-end"
               style={{ color: theme.cream }}
             >
-              <span
-                className="text-lg font-semibold uppercase"
-                style={{ color: theme.cream }}
-              >
-                {quizScoreText}
-              </span>
               <button type="button" aria-label="Close" onClick={() => setMenuOpen(false)} className="text-2xl" style={{ color: theme.cream }}>
                 ×
               </button>
@@ -3373,6 +3388,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
                 <span>Add</span>
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
+
+              <span
+                className="text-lg font-semibold uppercase"
+                style={{ color: '#191916' }}
+              >
+                {quizScoreText}
+              </span>
 
               <button
                 type="button"

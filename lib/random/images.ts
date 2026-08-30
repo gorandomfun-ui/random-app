@@ -2,6 +2,7 @@ import { sampleFromCache, touchLastShown } from '@/lib/random/data'
 import type { ImageDocument } from '@/lib/ingest/images'
 import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
 import type { RandomSelectOptions } from '@/lib/random/types'
+import type { Filter } from 'mongodb'
 
 export type ImageItem = {
   type: 'image'
@@ -16,8 +17,24 @@ export type ImageItem = {
 
 export async function selectImage(options: RandomSelectOptions = {}): Promise<ImageItem> {
   const strongMatch = options.strong ? buildStrongPoolMatch<ImageDocument>() : null
+  const preferredStrongMatch = strongMatch
+    ? ({
+        $and: [
+          strongMatch,
+          {
+            $or: [
+              { provider: { $nin: ['pexels', 'pixabay', 'unsplash'] } },
+              { likeCount: { $gte: 1 } },
+              { quality: { $gte: 2 } },
+              { showWeight: { $gte: 1.2 } },
+            ],
+          },
+        ],
+      } as unknown as Filter<ImageDocument>)
+    : null
   const doc = strongMatch
-    ? (await sampleFromCache<ImageDocument>('image', strongMatch, { maxTimeMS: STRONG_POOL_MAX_TIME_MS }))
+    ? (await sampleFromCache<ImageDocument>('image', preferredStrongMatch || strongMatch, { maxTimeMS: STRONG_POOL_MAX_TIME_MS }))
+      ?? (await sampleFromCache<ImageDocument>('image', strongMatch, { maxTimeMS: STRONG_POOL_MAX_TIME_MS }))
       ?? (await sampleFromCache<ImageDocument>('image'))
     : await sampleFromCache<ImageDocument>('image')
   if (doc && typeof doc.url === 'string' && doc.url.trim()) {
