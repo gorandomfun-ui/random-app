@@ -47,6 +47,7 @@ const TYPE_ICONS: Record<ItemType, string> = {
 }
 const FULLSCREEN_ICON = '/icons/fullscreen.svg'
 const GIPHY_ATTRIBUTION_BADGE = '/PoweredBy_640_Horizontal_Light-Backgrounds_With_Logo.gif'
+const VIDEO_FULLSCREEN_LOGO_LETTERS = ['R', 'A', 'N', 'D', 'O', 'M'] as const
 
 const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
@@ -912,6 +913,19 @@ function VideoFullscreenIconButton({
   )
 }
 
+function VideoFullscreenBrand({ visible }: { visible: boolean }) {
+  if (!visible) return null
+
+  return (
+    <div className="video-fullscreen-brand" aria-hidden="true">
+      {VIDEO_FULLSCREEN_LOGO_LETTERS.map((letter) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={letter} src={`/logo/${letter}1.svg`} alt="" draggable={false} />
+      ))}
+    </div>
+  )
+}
+
 const shouldBypassNativeFullscreen = () => {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent || navigator.vendor || ''
@@ -1241,6 +1255,7 @@ function YouTubeEmbed({
           </button>
         ) : null}
       </div>
+      <VideoFullscreenBrand visible={isFullscreenActive} />
     </div>
   )
 }
@@ -1417,6 +1432,7 @@ function DailymotionEmbed({
           </button>
         ) : null}
       </div>
+      <VideoFullscreenBrand visible={isFullscreenActive} />
     </div>
   )
 }
@@ -1557,6 +1573,7 @@ function HtmlVideoEmbed({
           </button>
         ) : null}
       </div>
+      <VideoFullscreenBrand visible={isFullscreenActive} />
     </div>
   )
 }
@@ -4110,6 +4127,28 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           justify-content: center;
           z-index: 5;
           touch-action: manipulation;
+        }
+        .video-fullscreen-brand {
+          position: absolute;
+          top: max(14px, calc(env(safe-area-inset-top) + 8px));
+          left: 50%;
+          z-index: 4;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          gap: 2px;
+          height: clamp(18px, 3.2vh, 28px);
+          max-width: calc(100vw - 140px);
+          transform: translateX(-50%);
+          opacity: 0.68;
+          pointer-events: none;
+          user-select: none;
+          filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.72));
+        }
+        .video-fullscreen-brand img {
+          display: block;
+          width: auto;
+          height: 100%;
         }
         .random-page--video-fullscreen .random-footer-ad {
           opacity: 0;

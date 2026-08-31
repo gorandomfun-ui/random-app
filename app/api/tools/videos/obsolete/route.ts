@@ -1083,8 +1083,10 @@ async function serializePersistedJob(db: Db, job: VideoScanJob | null, busy = fa
 async function startOrResumePersistedJob(db: Db) {
   const jobs = db.collection<VideoScanJob>('maintenance_jobs')
   const existing = await jobs.findOne({ _id: PERSISTED_JOB_ID })
-  if (existing?.status === 'running') {
-    return serializePersistedJob(db, existing)
+  const now = new Date()
+  const existingLeaseIsActive = Boolean(existing?.leaseUntil && existing.leaseUntil > now)
+  if (existing && (existing.status === 'running' || existingLeaseIsActive)) {
+    return serializePersistedJob(db, existing, existingLeaseIsActive)
   }
 
   const latest = await db
@@ -1097,7 +1099,6 @@ async function startOrResumePersistedJob(db: Db) {
   const total = upperBoundId
     ? await db.collection('items').countDocuments({ type: 'video', _id: { $lte: upperBoundId } })
     : 0
-  const now = new Date()
   const job: VideoScanJob = {
     _id: PERSISTED_JOB_ID,
     scanId: randomUUID(),
@@ -1503,72 +1504,124 @@ export async function DELETE(req: NextRequest) {
 
   if (scanId) {
     const jobs = db.collection<VideoScanJob>('maintenance_jobs')
-    const job = await jobs.findOne({ _id: PERSISTED_JOB_ID, scanId })
-    if (!job || job.status !== 'completed') {
-      return NextResponse.json({ error: 'This scan is not complete or no longer active.' }, { status: 409 })
+    const confirmedBeforeRaw =
+      payload &&
+      typeof payload === 'object' &&
+      typeof (payload as { confirmedBefore?: unknown }).confirmedBefore === 'string'
+        ? (payload as { confirmedBefore: string }).confirmedBefore
+        : ''
+    const confirmedBefore = confirmedBeforeRaw ? new Date(confirmedBeforeRaw) : new Date()
+    if (Number.isNaN(confirmedBefore.getTime())) {
+      return NextResponse.json({ error: 'Invalid confirmation cutoff.' }, { status: 400 })
     }
 
-    const eligibleDocs = await db
-      .collection<VideoDoc>('items')
-      .find(
-        { type: 'video', obsoleteVideoScanId: scanId, obsoleteVideoStatus: 'obsolete' },
-        {
-          projection: {
-            _id: 1,
-            provider: 1,
-            url: 1,
-            videoId: 1,
-            title: 1,
-            thumb: 1,
-            thumbUrl: 1,
-          },
-        },
-      )
-      .limit(PERSISTED_DELETE_BATCH_SIZE)
-      .toArray()
-
-    if (!eligibleDocs.length) {
-      return NextResponse.json({ deleted: 0, requested: 0, eligible: 0, verified: 0, remaining: 0, done: true })
-    }
-
-    const verification = await scanVideoDocs(db, eligibleDocs, {
-      concurrency: Math.min(PERSISTED_SCAN_CONCURRENCY, eligibleDocs.length),
-      retries: 0,
-      timeoutMs: PERSISTED_SCAN_TIMEOUT_MS,
-      persist: true,
-      scanId,
-    })
-    const verifiedIds = verification.obsolete.map((item) => new ObjectId(item.id))
-    const deletion = verifiedIds.length
-      ? await db.collection('items').deleteMany({
-          _id: { $in: verifiedIds },
-          type: 'video',
-          obsoleteVideoScanId: scanId,
-          obsoleteVideoStatus: 'obsolete',
-        })
-      : { deletedCount: 0 }
-    const remaining = await db.collection('items').countDocuments({
-      type: 'video',
-      obsoleteVideoScanId: scanId,
-      obsoleteVideoStatus: 'obsolete',
-    })
-    const counts = await rebuildPersistedCounts(db, scanId)
-    await jobs.updateOne(
-      { _id: PERSISTED_JOB_ID, scanId },
+    // Share the same short lease as the scanner. This lets deletion run while a
+    // job is active without allowing the two operations to overwrite counts or
+    // statuses at the same time.
+    const now = new Date()
+    const leaseToken = randomUUID()
+    const lease = await jobs.updateOne(
       {
-        $set: { counts, updatedAt: new Date() },
-        $inc: { deleted: deletion.deletedCount ?? 0 },
+        _id: PERSISTED_JOB_ID,
+        scanId,
+        status: { $in: ['running', 'completed'] },
+        $or: [
+          { leaseUntil: { $exists: false } },
+          { leaseUntil: null },
+          { leaseUntil: { $lte: now } },
+        ],
+      },
+      {
+        $set: {
+          leaseToken,
+          leaseUntil: new Date(now.getTime() + PERSISTED_SCAN_LEASE_MS),
+          updatedAt: now,
+        },
       },
     )
 
-    return NextResponse.json({
-      deleted: deletion.deletedCount ?? 0,
-      requested: eligibleDocs.length,
-      eligible: eligibleDocs.length,
-      verified: verifiedIds.length,
-      remaining,
-      done: remaining === 0,
-    })
+    if (!lease.modifiedCount) {
+      const current = await jobs.findOne({ _id: PERSISTED_JOB_ID, scanId })
+      if (!current) {
+        return NextResponse.json({ error: 'This scan is no longer active.' }, { status: 409 })
+      }
+      return NextResponse.json(
+        { error: 'A scan batch is finishing. Deletion can retry safely.', busy: true },
+        { status: 409, headers: { 'Retry-After': '1' } },
+      )
+    }
+
+    try {
+      const candidateFilter = {
+        type: 'video',
+        obsoleteVideoScanId: scanId,
+        obsoleteVideoStatus: 'obsolete' as const,
+        obsoleteVideoCheckedAt: { $lte: confirmedBefore },
+      }
+      const eligibleDocs = await db
+        .collection<VideoDoc>('items')
+        .find(
+          candidateFilter,
+          {
+            projection: {
+              _id: 1,
+              provider: 1,
+              url: 1,
+              videoId: 1,
+              title: 1,
+              thumb: 1,
+              thumbUrl: 1,
+            },
+          },
+        )
+        .limit(PERSISTED_DELETE_BATCH_SIZE)
+        .toArray()
+
+      if (!eligibleDocs.length) {
+        return NextResponse.json({ deleted: 0, requested: 0, eligible: 0, verified: 0, remaining: 0, done: true })
+      }
+
+      const verification = await scanVideoDocs(db, eligibleDocs, {
+        concurrency: Math.min(PERSISTED_SCAN_CONCURRENCY, eligibleDocs.length),
+        retries: 0,
+        timeoutMs: PERSISTED_SCAN_TIMEOUT_MS,
+        persist: true,
+        scanId,
+      })
+      const verifiedIds = verification.obsolete.map((item) => new ObjectId(item.id))
+      const deletion = verifiedIds.length
+        ? await db.collection('items').deleteMany({
+            _id: { $in: verifiedIds },
+            type: 'video',
+            obsoleteVideoScanId: scanId,
+            obsoleteVideoStatus: 'obsolete',
+          })
+        : { deletedCount: 0 }
+      const remaining = await db.collection('items').countDocuments(candidateFilter)
+      const counts = await rebuildPersistedCounts(db, scanId)
+      await jobs.updateOne(
+        { _id: PERSISTED_JOB_ID, scanId, leaseToken },
+        {
+          $set: { counts, updatedAt: new Date() },
+          $inc: { deleted: deletion.deletedCount ?? 0 },
+          $unset: { leaseToken: '', leaseUntil: '' },
+        },
+      )
+
+      return NextResponse.json({
+        deleted: deletion.deletedCount ?? 0,
+        requested: eligibleDocs.length,
+        eligible: eligibleDocs.length,
+        verified: verifiedIds.length,
+        remaining,
+        done: remaining === 0,
+      })
+    } finally {
+      await jobs.updateOne(
+        { _id: PERSISTED_JOB_ID, scanId, leaseToken },
+        { $unset: { leaseToken: '', leaseUntil: '' } },
+      )
+    }
   }
 
   const ids = Array.isArray((payload as { ids?: unknown })?.ids)
