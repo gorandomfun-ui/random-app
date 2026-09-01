@@ -161,6 +161,17 @@ type SequenceSlot =
   | { kind: 'content'; itemType: ItemType; requireQuiz?: boolean; strong?: boolean; videoPool?: VideoPool }
   | { kind: 'encourage'; round: number; encourageIndex: number }
 
+type VideoPreparationSpec = {
+  strong: boolean
+  videoPool?: VideoPool
+}
+
+type PreparedVideo = {
+  key: string
+  generation: number
+  promise: Promise<VideoContentItem | null>
+}
+
 type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
 type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
 type ImmersiveBackgroundStyle = CSSProperties & {
@@ -1106,10 +1117,11 @@ function YouTubeEmbed({
   const shellRef = useRef<HTMLDivElement | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const preservePlayerOnUnmuteRef = useRef(false)
+  const muteOnIOSPlaybackStart = shouldBypassNativeFullscreen()
   const soundMutedRef = useRef(soundMuted)
   const [originParam, setOriginParam] = useState('')
-  const [isMuted, setIsMuted] = useState(soundMuted)
-  const [embedMuted, setEmbedMuted] = useState(soundMuted)
+  const [isMuted, setIsMuted] = useState(soundMuted || muteOnIOSPlaybackStart)
+  const [embedMuted, setEmbedMuted] = useState(soundMuted || muteOnIOSPlaybackStart)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1119,20 +1131,21 @@ function YouTubeEmbed({
 
   useEffect(() => {
     soundMutedRef.current = soundMuted
-    setIsMuted(soundMuted)
     if (preservePlayerOnUnmuteRef.current && !soundMuted) {
       preservePlayerOnUnmuteRef.current = false
       return
     }
-    setEmbedMuted(soundMuted)
-  }, [soundMuted])
+    const nextMuted = soundMuted || muteOnIOSPlaybackStart
+    setIsMuted(nextMuted)
+    setEmbedMuted(nextMuted)
+  }, [muteOnIOSPlaybackStart, soundMuted])
 
   useEffect(() => {
-    const nextMuted = soundMutedRef.current
+    const nextMuted = soundMutedRef.current || muteOnIOSPlaybackStart
     setIsMuted(nextMuted)
     setEmbedMuted(nextMuted)
     preservePlayerOnUnmuteRef.current = false
-  }, [url])
+  }, [muteOnIOSPlaybackStart, url])
 
   const videoId = useMemo(() => {
     return extractYouTubeVideoId(url) || ''
@@ -1878,6 +1891,8 @@ export default function RandomExperiencePage({
   const [transitionLocked, setTransitionLocked] = useState(false)
   const loadPendingRef = useRef(false)
   const queuedLoadRef = useRef<boolean | null>(null)
+  const preparedVideoRef = useRef<PreparedVideo | null>(null)
+  const preparedVideoGenerationRef = useRef(0)
   const playbackIssueCountsRef = useRef<Record<string, number>>({})
   const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
@@ -2258,7 +2273,13 @@ const sequenceStateRef = useRef({
     return set
   }, [selectedTypes])
 
+  const clearPreparedVideo = useCallback(() => {
+    preparedVideoGenerationRef.current += 1
+    preparedVideoRef.current = null
+  }, [])
+
   const resetSequence = useCallback(() => {
+    clearPreparedVideo()
     sequenceStateRef.current = {
       step: 0,
       round: 0,
@@ -2269,7 +2290,7 @@ const sequenceStateRef = useRef({
       intervalIndex: 0,
     }
     setSequenceVersion((v) => v + 1)
-  }, [])
+  }, [clearPreparedVideo])
 
   const getNextSlot = useCallback((): SequenceSlot | null => {
     const seq = FIXED_SEQUENCE
@@ -2361,6 +2382,59 @@ const sequenceStateRef = useRef({
     }
   }, [allowedTypes, selectedTypes])
 
+  const getUpcomingVideoSpec = useCallback((): VideoPreparationSpec | null => {
+    const seq = FIXED_SEQUENCE
+    if (!seq.length) return null
+
+    const state = sequenceStateRef.current
+    const currentInterval = state.currentInterval ?? (ENCOURAGE_INTERVALS[0] ?? 15)
+    const progress = state.sinceEncourage ?? 0
+    const currentDraws = state.draws ?? 0
+    if (ENCOURAGE_PAGES_ENABLED && progress >= currentInterval) return null
+
+    let normalizedStep = state.step % seq.length
+    for (let attempt = 0; attempt < seq.length; attempt++) {
+      const entry = seq[normalizedStep]
+      normalizedStep = (normalizedStep + 1) % seq.length
+      if (entry.kind === 'fixed') {
+        if (!allowedTypes.has(entry.itemType)) continue
+        if (entry.itemType !== 'video') return null
+        return {
+          strong: currentDraws < STRONG_POOL_INITIAL_DRAWS,
+          videoPool:
+            currentDraws < STRONG_POOL_INITIAL_DRAWS
+              ? INITIAL_VIDEO_POOLS[currentDraws] ?? 'fresh'
+              : undefined,
+        }
+      }
+      if (entry.kind === 'choices') {
+        const available = entry.types.filter((type) => allowedTypes.has(type))
+        if (!available.length) continue
+        if (available.length === 1 && available[0] === 'video') {
+          return {
+            strong: currentDraws < STRONG_POOL_INITIAL_DRAWS,
+            videoPool:
+              currentDraws < STRONG_POOL_INITIAL_DRAWS
+                ? INITIAL_VIDEO_POOLS[currentDraws] ?? 'fresh'
+                : undefined,
+          }
+        }
+        return null
+      }
+      if (entry.kind === 'quiz' && allowedTypes.has(entry.itemType)) return null
+    }
+
+    const fallback = selectedTypes[0]
+    if (fallback !== 'video') return null
+    return {
+      strong: currentDraws < STRONG_POOL_INITIAL_DRAWS,
+      videoPool:
+        currentDraws < STRONG_POOL_INITIAL_DRAWS
+          ? INITIAL_VIDEO_POOLS[currentDraws] ?? 'fresh'
+          : undefined,
+    }
+  }, [allowedTypes, selectedTypes])
+
   const preloadQueuesRef = useRef<Record<ItemType, RandomContentItem[]>>({
     image: [],
     video: [],
@@ -2422,6 +2496,60 @@ const sequenceStateRef = useRef({
     if (!key) return false
     return recentKeySetRef.current.has(key)
   }, [])
+
+  const getPreparedVideoKey = useCallback((spec: VideoPreparationSpec) => {
+    return `${locale || 'en'}|${spec.strong ? 'strong' : 'normal'}|${spec.videoPool || 'default'}`
+  }, [locale])
+
+  const warmVideoPoster = useCallback((item: VideoContentItem) => {
+    if (typeof window === 'undefined') return
+    const posterUrl = getImmersiveBackgroundImage(item, null)
+    if (!posterUrl) return
+    const image = new window.Image()
+    image.decoding = 'async'
+    image.src = posterUrl
+    if (typeof image.decode === 'function') {
+      image.decode().catch(() => undefined)
+    }
+  }, [])
+
+  const prepareUpcomingVideo = useCallback(() => {
+    const spec = getUpcomingVideoSpec()
+    if (!spec) {
+      clearPreparedVideo()
+      return
+    }
+
+    const key = getPreparedVideoKey(spec)
+    if (preparedVideoRef.current?.key === key) return
+
+    const generation = preparedVideoGenerationRef.current + 1
+    preparedVideoGenerationRef.current = generation
+    const promise = (async (): Promise<VideoContentItem | null> => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const res = await fetchRandom({
+            types: ['video'],
+            lang: (locale || 'en') as Lang,
+            strong: spec.strong,
+            videoPool: spec.videoPool,
+          })
+          const item = res?.item
+          if (!item || item.type !== 'video') continue
+          const itemKey = getContentKey(item)
+          if (!itemKey || isRecentKey(itemKey)) continue
+          if (generation !== preparedVideoGenerationRef.current) return null
+          warmVideoPoster(item)
+          return item
+        } catch {
+          /* try the next video candidate */
+        }
+      }
+      return null
+    })()
+
+    preparedVideoRef.current = { key, generation, promise }
+  }, [clearPreparedVideo, getContentKey, getPreparedVideoKey, getUpcomingVideoSpec, isRecentKey, locale, warmVideoPoster])
 
   const drainPrefetchedItems = useCallback((type: ItemType) => {
     if (typeof window === 'undefined') return
@@ -2644,6 +2772,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     return candidate
   }, [ensureQueue, getContentKey, registerRecentKey])
 
+  const takePreparedVideo = useCallback(async (
+    slot: Extract<SequenceSlot, { kind: 'content' }>,
+  ): Promise<VideoContentItem | null> => {
+    if (slot.itemType !== 'video') return null
+    const spec: VideoPreparationSpec = {
+      strong: Boolean(slot.strong),
+      videoPool: slot.videoPool,
+    }
+    const prepared = preparedVideoRef.current
+    if (!prepared || prepared.key !== getPreparedVideoKey(spec)) return null
+    preparedVideoRef.current = null
+    const item = await prepared.promise
+    if (!item || item.type !== 'video') return null
+    const key = getContentKey(item)
+    if (!key || isRecentKey(key)) return null
+    return finalizeCandidate('video', item) as VideoContentItem
+  }, [finalizeCandidate, getContentKey, getPreparedVideoKey, isRecentKey])
+
   const takeAnyAvailableItem = useCallback(
     (preferred?: ItemType): { item: RandomContentItem; type: ItemType } | null => {
       const typesToCheck = preferred
@@ -2725,8 +2871,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   useEffect(() => {
     langVersionRef.current += 1
+    clearPreparedVideo()
     clearPreloadedCaches()
-  }, [clearPreloadedCaches, locale])
+  }, [clearPreparedVideo, clearPreloadedCaches, locale])
 
   useEffect(() => {
     selectedTypes.forEach((type) => drainPrefetchedItems(type))
@@ -2765,6 +2912,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       cancelled = true
     }
   }, [ensureQueue, selectedTypes])
+
+  useEffect(() => {
+    prepareUpcomingVideo()
+  }, [prepareUpcomingVideo])
 
   const updateTheme = useCallback(() => {
     setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))
@@ -2809,6 +2960,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         const useStrongPool = Boolean(slot.strong)
         const factPredicate = requiresQuizFact ? isQuizFactItem : undefined
 
+        if (slot.itemType === 'video') {
+          item = await takePreparedVideo(slot)
+          resolvedType = item ? 'video' : null
+        }
+
         if (slot.itemType === 'joke' && !useStrongPool) {
           item = spawnMiniGameIfDue()
         }
@@ -2839,11 +2995,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           item = await acquireItem(slot.itemType)
           resolvedType = slot.itemType
         }
+        if (slot.itemType === 'video' && item?.type !== 'video') {
+          item = null
+          resolvedType = null
+        }
         if (!item) {
           if (prevState) sequenceStateRef.current = prevState
-          currentItemRef.current = null
-          setCurrentItem(null)
-          setLiked(false)
           return
         }
         if (resolvedType && resolvedType !== slot.itemType && prevState) {
@@ -2894,18 +3051,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (slot?.kind === 'content' && prevState) {
         sequenceStateRef.current = prevState
       }
-      currentItemRef.current = null
-      setCurrentItem(null)
     } finally {
       loadPendingRef.current = false
       setLoading(false)
+      prepareUpcomingVideo()
       const queued = queuedLoadRef.current
       queuedLoadRef.current = null
       if (queued != null) {
         void loadNext(queued)
       }
     }
-  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, spawnMiniGameIfDue, takeAnyAvailableItem, takeFromQueue, triggerPageGlitch, updateTheme])
+  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, prepareUpcomingVideo, spawnMiniGameIfDue, takeAnyAvailableItem, takeFromQueue, takePreparedVideo, triggerPageGlitch, updateTheme])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem) => {
     const current = currentItemRef.current
