@@ -3624,6 +3624,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         theme={theme}
+        themeIndex={themeIdx}
         item={viewItem}
       />
 

@@ -87,8 +87,9 @@ const frDictionary = {
     "siteName": "Random",
     "title": "Partager",
     "close": "Fermer",
-    "native": "Partager par message",
-    "copy": "Copier",
+    "foundOn": "Regarde ce que j’ai trouvé sur goRANDOM.fun",
+    "instagram": "Instagram",
+    "copy": "Copier le lien",
     "copied": "Copié !",
     "itemsLabel": "Éléments partagés"
   },

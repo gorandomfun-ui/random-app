@@ -87,8 +87,9 @@ const jpDictionary = {
     "siteName": "Random",
     "title": "共有",
     "close": "閉じる",
-    "native": "メッセージで共有",
-    "copy": "コピー",
+    "foundOn": "goRANDOM.funでこんなのを見つけたよ",
+    "instagram": "Instagram",
+    "copy": "リンクをコピー",
     "copied": "コピーしました！",
     "itemsLabel": "共有アイテム"
   },

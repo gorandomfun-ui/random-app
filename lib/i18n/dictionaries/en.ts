@@ -87,8 +87,9 @@ const enDictionary = {
     "siteName": "Random",
     "title": "Share",
     "close": "Close",
-    "native": "Share by message",
-    "copy": "Copy",
+    "foundOn": "Look what I found on goRANDOM.fun",
+    "instagram": "Instagram",
+    "copy": "Copy link",
     "copied": "Copied!",
     "itemsLabel": "Shared items"
   },

@@ -87,8 +87,9 @@ const deDictionary = {
     "siteName": "Random",
     "title": "Teilen",
     "close": "Schließen",
-    "native": "Per Nachricht teilen",
-    "copy": "Kopieren",
+    "foundOn": "Schau, was ich auf goRANDOM.fun gefunden habe",
+    "instagram": "Instagram",
+    "copy": "Link kopieren",
     "copied": "Kopiert!",
     "itemsLabel": "Geteilte Inhalte"
   },

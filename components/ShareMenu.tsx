@@ -1,11 +1,16 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import type { DisplayItem } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useI18n } from '@/providers/I18nProvider'
+import {
+  SHARE_PRESENTATION,
+  normalizeShareLocale,
+  type ShareLocale,
+} from '@/lib/share/presentation'
 
-type Theme = { deep: string; cream: string; text: string }
+type Theme = { bg?: string; deep: string; cream: string; text: string }
 type ShareableItem = DisplayItem | null | undefined
 
 type ShareListEntry = {
@@ -20,16 +25,11 @@ type Props = {
   title?: string
   url?: string
   theme?: Theme
+  themeIndex?: number
+  localeOverride?: ShareLocale
   item?: ShareableItem
+  itemId?: string
   list?: ShareListEntry[]
-}
-
-type ShareUrls = {
-  twitter: string
-  facebook: string
-  reddit: string
-  whatsapp: string
-  telegram: string
 }
 
 const truncate = (text: string, maxLength: number) => {
@@ -37,30 +37,14 @@ const truncate = (text: string, maxLength: number) => {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
-let cachedShareLogo: File | null = null
-
-async function getShareLogoFile(): Promise<File | null> {
-  if (cachedShareLogo) return cachedShareLogo
-  try {
-    const response = await fetch('/elements/logo_black.png')
-    if (!response.ok) return null
-    const blob = await response.blob()
-    cachedShareLogo = new File([blob], 'random-logo.png', { type: blob.type || 'image/png' })
-    return cachedShareLogo
-  } catch {
-    return null
-  }
-}
-
-function buildShareUrls(url: string, text: string): ShareUrls {
-  const u = encodeURIComponent(url)
-  const t = encodeURIComponent(text)
+function buildShareUrls(url: string, text: string) {
+  const encodedUrl = encodeURIComponent(url)
+  const encodedText = encodeURIComponent(text)
   return {
-    twitter: `https://twitter.com/intent/tweet?url=${u}&text=${t}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${u}`,
-    reddit: `https://www.reddit.com/submit?url=${u}&title=${t}`,
-    whatsapp: `https://api.whatsapp.com/send?text=${t}%20${u}`,
-    telegram: `https://t.me/share/url?url=${u}&text=${t}`,
+    x: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+    reddit: `https://www.reddit.com/submit?url=${encodedUrl}&title=${encodedText}`,
+    whatsapp: `https://api.whatsapp.com/send?text=${encodedText}%20${encodedUrl}`,
   }
 }
 
@@ -70,37 +54,63 @@ export default function ShareMenu({
   title,
   url,
   theme,
+  themeIndex,
+  localeOverride,
   item,
+  itemId,
   list,
 }: Props) {
-  const { t } = useI18n()
+  const { locale: appLocale } = useI18n()
   const [copied, setCopied] = useState(false)
+  const locale = localeOverride ?? normalizeShareLocale(appLocale)
+  const translated = SHARE_PRESENTATION[locale]
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose, open])
+
   const siteOrigin = useMemo(() => {
     if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
-    return process.env.NEXT_PUBLIC_BASE_URL || 'https://random.app'
+    return process.env.NEXT_PUBLIC_BASE_URL || 'https://gorandom.fun'
   }, [])
 
-  const directItemUrl = useMemo(() => {
-    if (!item || item.type === 'encourage') return null
-    const linkable = item as Parameters<typeof getSourceHref>[0]
-    const href = getSourceHref(linkable, item.type === 'web' ? item.url : undefined)
-    if (!href) return null
-    return /^https?:\/\//i.test(href) ? href : null
+  const resolvedItemId = useMemo(() => {
+    if (itemId && /^[a-f0-9]{24}$/i.test(itemId.trim())) return itemId.trim()
+    if (!item || item.type === 'encourage' || !('_id' in item) || typeof item._id !== 'string') return ''
+    return /^[a-f0-9]{24}$/i.test(item._id.trim()) ? item._id.trim() : ''
+  }, [item, itemId])
+
+  const originalItemUrl = useMemo(() => {
+    if (!item || item.type === 'encourage' || item.type === 'minigame') return null
+    const href = getSourceHref(item)
+    return href && /^https?:\/\//i.test(href) ? href : null
   }, [item])
 
   const shareUrl = useMemo(() => {
-    if (directItemUrl) return directItemUrl
-    const base = (siteOrigin || '').replace(/\/$/, '')
-    if (!url) return `${base || 'https://random.app'}/random`
-    if (/^https?:\/\//i.test(url)) return url
-    const trimmed = url.startsWith('/') ? url.slice(1) : url
-    return base ? `${base}/${trimmed}` : url
-  }, [directItemUrl, siteOrigin, url])
-
-  const siteName = useMemo(() => t('shareMenu.siteName', 'Random'), [t])
+    const base = (siteOrigin || 'https://gorandom.fun').replace(/\/$/, '')
+    if (resolvedItemId) {
+      const params = new URLSearchParams({ lang: locale })
+      if (typeof themeIndex === 'number' && Number.isInteger(themeIndex)) params.set('theme', String(themeIndex))
+      return `${base}/share/${encodeURIComponent(resolvedItemId)}?${params.toString()}`
+    }
+    if (originalItemUrl) return originalItemUrl
+    if (!url) return `${base}/random`
+    try {
+      const resolved = new URL(url, `${base}/`)
+      resolved.searchParams.set('lang', locale)
+      return resolved.toString()
+    } catch {
+      return url
+    }
+  }, [locale, originalItemUrl, resolvedItemId, siteOrigin, themeIndex, url])
 
   const contentTitle = useMemo(() => {
-    if (title && title.trim()) return title
+    if (title?.trim()) return title.trim()
     if (!item) return 'Random'
     if (item.type === 'image') return item.title || getSourceLabel(item.source, item.provider) || 'Random image'
     if (item.type === 'video') return item.text || getSourceLabel(item.source, item.provider) || 'Random video'
@@ -114,162 +124,106 @@ export default function ShareMenu({
 
   const contentSnippet = useMemo(() => {
     if (!item) return ''
-    switch (item.type) {
-      case 'image':
-        return item.title || getSourceLabel(item.source, item.provider) || ''
-      case 'video':
-      case 'web':
-        return item.text ? truncate(item.text, 200) : item.url || getSourceLabel(item.source, item.provider) || ''
-      case 'quote':
-        return item.text ? truncate(item.text, 200) : ''
-      case 'fact':
-      case 'joke':
-      case 'encourage':
-        return item.text ? truncate(item.text, 220) : ''
-      default:
-        return ''
+    if (item.type === 'image') return item.title || ''
+    if (item.type === 'video' || item.type === 'web') return item.text ? truncate(item.text, 150) : ''
+    if (item.type === 'quote' || item.type === 'fact' || item.type === 'joke' || item.type === 'encourage') {
+      return item.text ? truncate(item.text, 170) : ''
     }
+    return ''
   }, [item])
 
   const shareListText = useMemo(() => {
     if (!list?.length) return ''
     return list
-      .map((entry, idx) => {
-        const title = entry.title || entry.text || `Item ${idx + 1}`
-        return entry.url ? `${title}\n${entry.url}` : title
+      .map((entry, index) => {
+        const entryTitle = entry.title || entry.text || `Item ${index + 1}`
+        return entry.url ? `${entryTitle}\n${entry.url}` : entryTitle
       })
       .join('\n\n')
   }, [list])
 
-  const shareHeadline = useMemo(() => contentTitle || siteName, [contentTitle, siteName])
-
   const shareMessage = useMemo(() => {
-    const snippet = contentSnippet || shareHeadline
-    const parts = new Set([shareHeadline, snippet, siteName])
-    const main = Array.from(parts).filter(Boolean).join('\n')
-    return shareListText ? `${main}\n\n${shareListText}` : main
-  }, [contentSnippet, shareHeadline, shareListText, siteName])
+    const detail = contentSnippet || contentTitle
+    const body = detail && detail !== 'Random' ? `${translated.foundOn}\n${detail}` : translated.foundOn
+    return shareListText ? `${body}\n\n${shareListText}` : body
+  }, [contentSnippet, contentTitle, shareListText, translated.foundOn])
 
-  const shareText = useMemo(() => {
-    const snippet = contentSnippet || shareHeadline
-    const main = `${snippet}\n${siteName}`
-    return shareListText ? `${main}\n\n${shareListText}` : main
-  }, [contentSnippet, shareHeadline, shareListText, siteName])
-
-  const urls = useMemo(() => buildShareUrls(shareUrl || '', shareMessage || siteName), [shareMessage, shareUrl, siteName])
+  const urls = useMemo(() => buildShareUrls(shareUrl, shareMessage), [shareMessage, shareUrl])
+  const cardUrl = useMemo(() => {
+    if (!resolvedItemId) return null
+    const params = new URLSearchParams({ id: resolvedItemId, lang: locale })
+    if (typeof themeIndex === 'number' && Number.isInteger(themeIndex)) params.set('theme', String(themeIndex))
+    return `${siteOrigin.replace(/\/$/, '')}/api/share/og?${params.toString()}`
+  }, [locale, resolvedItemId, siteOrigin, themeIndex])
 
   if (!open) return null
 
-  const bg = theme?.deep ?? '#111'
-  const fg = theme?.cream ?? '#fff'
-  const text = theme?.text ?? '#fff'
-  const soft = 'rgba(255,255,255,0.12)'
-  const softer = 'rgba(255,255,255,0.08)'
+  const bg = theme?.deep ?? '#121210'
+  const fg = theme?.cream ?? '#F8F5E6'
+  const accent = theme?.text ?? '#0FC55D'
 
-  const canNativeShare =
-    typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-
-  async function nativeShare() {
-    try {
-      const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean }
-      const baseData: ShareData = {
-        title: shareHeadline,
-        text: shareText,
-        url: shareUrl,
-      }
-      const logoFile = typeof nav.canShare === 'function' ? await getShareLogoFile() : null
-      if (logoFile) {
-        const withFile = { ...baseData, files: [logoFile] }
-        if (nav.canShare?.(withFile)) {
-          await nav.share(withFile)
-          onClose()
-          return
-        }
-      }
-      await nav.share(baseData)
-      onClose()
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function copy() {
+  async function copyLink() {
     try {
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
-      setTimeout(() => setCopied(false), 900)
+      window.setTimeout(() => setCopied(false), 1200)
     } catch {
-      /* ignore */
+      /* Clipboard access can be refused by the browser. */
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center" aria-modal="true" role="dialog">
-      {/* Backdrop */}
-      <div className="absolute inset-0" onClick={onClose} style={{ background: 'rgba(0,0,0,0.5)' }} />
+  async function shareToInstagram() {
+    const text = `${shareMessage}\n${shareUrl}`
+    try {
+      if (typeof navigator.share === 'function') {
+        if (cardUrl && typeof navigator.canShare === 'function') {
+          try {
+            const response = await fetch(cardUrl)
+            if (response.ok) {
+              const file = new File([await response.blob()], 'gorandom-share.png', { type: 'image/png' })
+              if (navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: contentTitle, text })
+                onClose()
+                return
+              }
+            }
+          } catch {
+            /* Fall back to the regular native share below. */
+          }
+        }
+        await navigator.share({ title: contentTitle, text: shareMessage, url: shareUrl })
+        onClose()
+        return
+      }
+      try { await navigator.clipboard.writeText(text) } catch { /* Continue to Instagram. */ }
+      window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer')
+    } catch {
+      /* A cancelled native share is not an error for the interface. */
+    }
+  }
 
-      {/* Panel */}
-      <div
-        className="relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl p-5"
-        style={{ background: bg, color: fg }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold tracking-wide">{t('shareMenu.title', 'Share')}</h3>
-          <button
-            className="rounded-full px-3 py-1 text-sm"
-            onClick={onClose}
-            style={{ background: softer }}
-            aria-label={t('shareMenu.close', 'Close')}
-          >
-            ✕
-          </button>
+  const buttonClass = 'flex min-h-[58px] items-center justify-center rounded-full px-4 py-3 text-center font-tomorrow text-sm font-bold uppercase tracking-[0.08em] transition-transform active:scale-[0.98]'
+  const buttonStyle = { background: accent, color: fg }
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center" aria-modal="true" role="dialog" aria-label={translated.share}>
+      <button className="absolute inset-0 cursor-default" onClick={onClose} style={{ background: 'rgba(0,0,0,0.62)' }} aria-label={translated.close} />
+
+      <div className="relative w-[92vw] max-w-[560px] border border-white/10 p-5 shadow-2xl sm:p-7" style={{ background: bg, color: fg, borderRadius: 0 }}>
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h3 className="font-tomorrow text-xl font-bold uppercase tracking-[0.08em]">{translated.share}</h3>
+          <button className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-2xl" onClick={onClose} style={{ background: accent, color: fg }} aria-label={translated.close}>×</button>
         </div>
 
-        <div className="space-y-3">
-          {canNativeShare && (
-            <button
-              onClick={nativeShare}
-              className="w-full rounded-xl py-3 font-semibold"
-              style={{ background: soft }}
-            >
-              {t('shareMenu.native', 'Share by message')}
-            </button>
-          )}
-
-          <div className="grid grid-cols-3 gap-3">
-            <a className="rounded-xl py-2 text-center font-medium" href={urls.twitter} target="_blank" rel="noreferrer" style={{ background: soft, color: text }}>
-              Twitter/X
-            </a>
-            <a className="rounded-xl py-2 text-center font-medium" href={urls.facebook} target="_blank" rel="noreferrer" style={{ background: soft, color: text }}>
-              Facebook
-            </a>
-            <a className="rounded-xl py-2 text-center font-medium" href={urls.reddit} target="_blank" rel="noreferrer" style={{ background: soft, color: text }}>
-              Reddit
-            </a>
-            <a className="rounded-xl py-2 text-center font-medium" href={urls.whatsapp} target="_blank" rel="noreferrer" style={{ background: soft, color: text }}>
-              WhatsApp
-            </a>
-            <a className="rounded-xl py-2 text-center font-medium" href={urls.telegram} target="_blank" rel="noreferrer" style={{ background: soft, color: text }}>
-              Telegram
-            </a>
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              className="flex-1 rounded-xl px-3 py-2 text-sm"
-              value={shareUrl}
-              readOnly
-              style={{ background: softer, color: fg, outline: 'none' }}
-            />
-            <button
-              onClick={copy}
-              className="rounded-xl px-4 text-sm font-semibold"
-              style={{ background: soft }}
-            >
-              {copied ? t('shareMenu.copied', 'Copied!') : t('shareMenu.copy', 'Copy')}
-            </button>
-          </div>
-
+        <div className="grid grid-cols-2 gap-3">
+          <button className={buttonClass} style={buttonStyle} onClick={shareToInstagram}>Instagram</button>
+          <a className={buttonClass} style={buttonStyle} href={urls.x} target="_blank" rel="noreferrer">X</a>
+          <a className={buttonClass} style={buttonStyle} href={urls.facebook} target="_blank" rel="noreferrer">Facebook</a>
+          <a className={buttonClass} style={buttonStyle} href={urls.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
+          <a className={buttonClass} style={buttonStyle} href={urls.reddit} target="_blank" rel="noreferrer">Reddit</a>
+          <button className={buttonClass} style={buttonStyle} onClick={copyLink}>
+            {copied ? translated.copied : translated.copyLink}
+          </button>
         </div>
       </div>
     </div>
