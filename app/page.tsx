@@ -18,7 +18,6 @@ import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import QuizScoreText from '@/components/QuizScoreText'
-import ShufflePicker from '@/components/ShufflePicker'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
 import { useCookieConsent } from '@/components/CookieConsent'
@@ -323,11 +322,9 @@ export default function HomePage() {
   const footerRef = useRef<HTMLElement | null>(null)
   const adRef = useRef<HTMLDivElement | null>(null)
 
-  const [isShuffleOpen, setIsShuffleOpen] = useState(false)
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
-  const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H)
@@ -393,8 +390,8 @@ export default function HomePage() {
 
   useEffect(() => {
     const lang = (locale || 'en') as Lang
-    startRandomPrefetch(lang, selectedTypes)
-  }, [locale, selectedTypes])
+    startRandomPrefetch(lang, ALL_ITEM_TYPES)
+  }, [locale])
 
   useEffect(() => {
     startWeLikePrefetch()
@@ -473,12 +470,7 @@ export default function HomePage() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('random:selectedTypes')
-      if (!stored) return
-      const parsed = JSON.parse(stored)
-      if (!Array.isArray(parsed)) return
-      const filtered = parsed.filter((entry): entry is ItemType => ALL_ITEM_TYPES.includes(entry as ItemType))
-      if (filtered.length) setSelectedTypes(filtered)
+      localStorage.removeItem('random:selectedTypes')
     } catch {
       /* ignore */
     }
@@ -510,8 +502,6 @@ export default function HomePage() {
     legal: t('footer.legal', 'Legal notice.'),
     share: t('footer.share', 'share'),
   }), [t])
-
-  const shuffleLabel = useMemo(() => t('shuffle.title', 'Shuffle'), [t])
 
   type ThemeStyle = CSSProperties & { ['--theme-cream']?: string }
   const mainStyle = useMemo<ThemeStyle>(() => ({
@@ -650,23 +640,10 @@ export default function HomePage() {
     setIsButtonBursting(true)
     setTimeout(() => setIsButtonBursting(false), 520)
 
-    try {
-      localStorage.setItem('random:selectedTypes', JSON.stringify(selectedTypes))
-    } catch {
-      /* ignore */
-    }
-
-    const typesParam = selectedTypes.join(',')
-
     addAction('random')
     maybeSpawnDiamond()
-
-    if (typesParam.length) {
-      router.push(`/random?types=${encodeURIComponent(typesParam)}`)
-    } else {
-      router.push('/random')
-    }
-  }, [addAction, isSecond, maybeSpawnDiamond, router, selectedTypes])
+    router.push('/random')
+  }, [addAction, isSecond, maybeSpawnDiamond, router])
 
   return (
     <main className="home-page min-h-screen flex flex-col" style={mainStyle}>
@@ -713,8 +690,18 @@ export default function HomePage() {
         </div>
 
         <div className="flex-1 flex justify-center">
-          <button onClick={() => setIsShuffleOpen(true)} aria-label={shuffleLabel} className="flex items-center">
-            <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
+          <button
+            type="button"
+            onClick={toggleSound}
+            aria-label={soundMuted ? 'Enable sound' : 'Disable sound'}
+            aria-pressed={!soundMuted}
+            className="flex items-center p-2"
+          >
+            <MonoIcon
+              src={soundMuted ? '/icons/hautparleur_off.svg' : '/icons/hautparleur.svg'}
+              color={theme.cream}
+              size={28}
+            />
           </button>
         </div>
 
@@ -881,14 +868,6 @@ export default function HomePage() {
           </div>
         </div>
       ) : null}
-
-      <ShufflePicker
-        open={isShuffleOpen}
-        onClose={() => setIsShuffleOpen(false)}
-        selected={selectedTypes}
-        onChange={(next) => setSelectedTypes(next)}
-        theme={theme}
-      />
 
       {menuOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>

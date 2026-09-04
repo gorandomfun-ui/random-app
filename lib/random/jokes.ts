@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb'
 import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
 import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
+import { buildContentLanguageMatch, combineContentMatches } from './language'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -81,6 +82,8 @@ export type JokeItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  tags?: string[]
+  keywords?: string[]
   _id?: string
 }
 
@@ -92,6 +95,7 @@ type JokeRecord = {
   keywords?: string[]
   variant?: 'text' | 'ai'
   lang?: string | null
+  languageScope?: 'universal' | 'localized' | null
   ai?: JokeAIMetadata | null
   disclaimer?: string | null
   hash?: string | null
@@ -187,7 +191,7 @@ async function pickFromDb(
     maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
   })
   if (doc) return doc
-  if (exclude.length) return sampleFromCache<JokeDbRecord>('joke')
+  if (exclude.length) return sampleFromCache<JokeDbRecord>('joke', extraMatch)
   return null
 }
 
@@ -200,6 +204,7 @@ const LOCAL_JOKES = [
 export async function selectJoke(options: RandomSelectOptions = {}): Promise<JokeItem | null> {
   const exclude = recentJokes.slice(-RECENT_LIMIT)
   const strongMatch = options.strong ? buildStrongPoolMatch<JokeDbRecord>() : null
+  const languageMatch = buildContentLanguageMatch<JokeDbRecord>(options.lang)
   let attempts = 0
   let doc: JokeDbRecord | null = null
   let record: JokeDbRecord | { text: string; provider: string } | null = null
@@ -207,8 +212,9 @@ export async function selectJoke(options: RandomSelectOptions = {}): Promise<Jok
 
   while (attempts < MAX_ATTEMPTS) {
     doc = strongMatch
-      ? (await pickFromDb(exclude, strongMatch)) ?? (await pickFromDb(exclude))
-      : await pickFromDb(exclude)
+      ? (await pickFromDb(exclude, combineContentMatches(strongMatch, languageMatch)))
+        ?? (await pickFromDb(exclude, languageMatch))
+      : await pickFromDb(exclude, languageMatch)
     record = doc ?? { text: LOCAL_JOKES.find((j) => !exclude.includes(j.toLowerCase())) || LOCAL_JOKES[0], provider: 'local' }
 
     text = typeof record?.text === 'string' ? record.text.trim() : ''
@@ -270,6 +276,8 @@ export async function selectJoke(options: RandomSelectOptions = {}): Promise<Jok
     lang,
     ai: aiMeta,
     disclaimer,
+    tags,
+    keywords,
     tone,
     toneConfidence,
     toneSignals,

@@ -677,20 +677,26 @@ function addScanOutcome(
 async function persistScanOutcomes(db: Db, outcomes: PersistedOutcome[], scanId?: string) {
   if (!outcomes.length) return
   const checkedAt = new Date()
-  const operations = outcomes.map(({ doc, outcome }) => ({
-    updateOne: {
-      filter: { _id: doc._id, type: 'video' },
-      update: {
-        $set: {
-          obsoleteVideoCheckedAt: checkedAt,
-          obsoleteVideoStatus: getOutcomeStatus(outcome),
-          obsoleteVideoReason: outcome.reason || null,
-          obsoleteVideoHttpStatus: outcome.status ?? null,
-          ...(scanId ? { obsoleteVideoScanId: scanId } : {}),
+  const operations = outcomes.map(({ doc, outcome }) => {
+    const status = getOutcomeStatus(outcome)
+    return {
+      updateOne: {
+        filter: { _id: doc._id, type: 'video' },
+        update: {
+          $set: {
+            obsoleteVideoCheckedAt: checkedAt,
+            obsoleteVideoStatus: status,
+            obsoleteVideoReason: outcome.reason || null,
+            obsoleteVideoHttpStatus: outcome.status ?? null,
+            ...(scanId ? { obsoleteVideoScanId: scanId } : {}),
+          },
+          ...(status === 'ok' || status === 'obsolete'
+            ? { $unset: { obsoleteVideoRuntimeSuspect: '' } }
+            : {}),
         },
       },
-    },
-  }))
+    }
+  })
 
   try {
     await db.collection('items').bulkWrite(operations, { ordered: false })
@@ -844,6 +850,7 @@ function buildChunkFilter({
   if (!force) {
     const staleBefore = new Date(Date.now() - staleHours * 60 * 60 * 1000)
     filter.$or = [
+      { obsoleteVideoRuntimeSuspect: true },
       { obsoleteVideoCheckedAt: { $exists: false } },
       { obsoleteVideoCheckedAt: null },
       { obsoleteVideoCheckedAt: { $lt: staleBefore } },

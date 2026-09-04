@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
+import { X } from 'lucide-react'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { useCookieConsent } from '@/components/CookieConsent'
@@ -12,15 +13,20 @@ import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ScoreCounter from '@/components/ScoreCounter'
 import ShareMenu from '@/components/ShareMenu'
-import ShufflePicker from '@/components/ShufflePicker'
 import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
 import { ENCOURAGE_PAGES_ENABLED, MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
-import { fetchRandom, type RandomTypes } from '@/lib/api'
+import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType, VideoPool } from '@/lib/random/types'
-import { FIXED_SEQUENCE, type SequenceEntry } from '@/lib/random/sequence'
+import {
+  createWaveHint,
+  hasWaveSignal,
+  isStrongWaveMatch,
+  type WaveSimilarityHint,
+} from '@/lib/random/wave'
+import { createRandomSequence, type SequenceEntry } from '@/lib/random/sequence'
 import type {
   FactItem,
   FactQuizItem,
@@ -34,7 +40,8 @@ import type {
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { reportImageLoadIssue } from '@/utils/imageSuspects'
-import { playAgain, playRandom, setMuted } from '@/utils/sound'
+import { reportVideoPlaybackIssue, type VideoPlaybackIssue } from '@/utils/videoSuspects'
+import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
 import { dispatchAadsRefresh } from '@/lib/aads'
 
 const TYPE_ICONS: Record<ItemType, string> = {
@@ -72,6 +79,9 @@ const INITIAL_VIDEO_POOLS: Partial<Record<number, VideoPool>> = {
   19: 'trending',
 }
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
+const TEXT_ITEM_TYPES: ItemType[] = ['fact', 'joke', 'quote']
+const WAVE_TOTAL_STEPS = 3
+const WAVE_RESERVE_STEPS = 2
 const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
 
 const getPreloadTargetForType = (type: ItemType) =>
@@ -143,17 +153,7 @@ type FullscreenVideoPayload = {
   title?: string | null
 }
 
-type PlaybackIssueReason = 'video-load-timeout' | 'video-error'
-type PlaybackIssueHandler = (item: VideoContentItem, reason: PlaybackIssueReason) => void
-
-function parseTypesParam(value: string | string[] | undefined): ItemType[] {
-  if (!value) return []
-  const raw = Array.isArray(value) ? value.join(',') : value
-  return raw
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry): entry is ItemType => ALL_ITEM_TYPES.includes(entry as ItemType))
-}
+type PlaybackIssueHandler = (item: VideoContentItem, issue: VideoPlaybackIssue) => void
 
 type EncourageItem = EncourageContentItem
 
@@ -690,6 +690,8 @@ function shortenText(text: string, maxWords: number) {
 
 const isQuizFactItem = (item: RandomContentItem): item is FactItem =>
   item.type === 'fact' && (item as FactItem).variant === 'quiz'
+const isTextFactItem = (item: RandomContentItem): item is FactItem =>
+  item.type === 'fact' && (item as FactItem).variant !== 'quiz'
 
 function SourceLine({ item }: { item: DisplayItem }) {
   if (item.type === 'encourage') return null
@@ -955,6 +957,27 @@ function postEmbedMessage(iframe: HTMLIFrameElement | null, payload: unknown) {
   }
 }
 
+function parseEmbedMessage(value: unknown): Record<string, unknown> | null {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
+    } catch {
+      return null
+    }
+  }
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function isYouTubeMessageOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase()
+    return host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com')
+  } catch {
+    return false
+  }
+}
+
 function wakeYouTubeSound(iframe: HTMLIFrameElement | null) {
   postEmbedMessage(iframe, { event: 'command', func: 'unMute', args: [] })
   postEmbedMessage(iframe, { event: 'command', func: 'setVolume', args: [100] })
@@ -999,7 +1022,7 @@ function useVideoEmbedWatchdog(
       }
       if (!reportedRef.current) {
         reportedRef.current = true
-        onPlaybackIssue?.(item, 'video-load-timeout')
+        onPlaybackIssue?.(item, { reason: 'video-load-timeout' })
       }
     }, reloadNonce === 0 ? 5000 : 7000)
 
@@ -1116,6 +1139,8 @@ function YouTubeEmbed({
   const { url, text } = item
   const shellRef = useRef<HTMLDivElement | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const reactPlayerId = useId()
+  const playerId = useMemo(() => `random-youtube-${reactPlayerId.replace(/[^a-zA-Z0-9_-]/g, '')}`, [reactPlayerId])
   const preservePlayerOnUnmuteRef = useRef(false)
   const muteOnIOSPlaybackStart = shouldBypassNativeFullscreen()
   const soundMutedRef = useRef(soundMuted)
@@ -1167,6 +1192,41 @@ function YouTubeEmbed({
   }, [videoId, embedMuted, originParam])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(src, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
+
+  const announcePlayer = useCallback(() => {
+    markLoaded()
+    postEmbedMessage(iframeRef.current, { event: 'listening', id: playerId })
+  }, [markLoaded, playerId])
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const iframeWindow = iframeRef.current?.contentWindow
+      if (!iframeWindow || event.source !== iframeWindow || !isYouTubeMessageOrigin(event.origin)) return
+      const payload = parseEmbedMessage(event.data)
+      if (!payload || (payload.id && payload.id !== playerId)) return
+
+      if (payload.event === 'onReady' || payload.event === 'onStateChange') {
+        markLoaded()
+      }
+      if (payload.event !== 'onError') return
+
+      const rawCode = payload.info ?? payload.data
+      const playerCode = typeof rawCode === 'number' ? rawCode : Number(rawCode)
+      onPlaybackIssue?.(item, {
+        reason: 'youtube-player-error',
+        ...(Number.isFinite(playerCode) ? { playerCode } : {}),
+      })
+    }
+
+    window.addEventListener('message', handleMessage)
+    const timers = [0, 250, 900].map((delay) => window.setTimeout(() => {
+      postEmbedMessage(iframeRef.current, { event: 'listening', id: playerId })
+    }, delay))
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [item, markLoaded, onPlaybackIssue, playerId, src])
 
   const requestSound = useCallback(() => {
     wakeYouTubeSound(iframeRef.current)
@@ -1226,12 +1286,14 @@ function YouTubeEmbed({
         ) : null}
         <iframe
           key={`${src}-${reloadNonce}`}
+          id={playerId}
           ref={iframeRef}
           src={src}
-          onLoad={markLoaded}
+          onLoad={announcePlayer}
           className="absolute top-1/2 left-1/2"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
           title={text || 'Video'}
           style={{
             border: 'none',
@@ -1555,7 +1617,7 @@ function HtmlVideoEmbed({
           poster={item.thumbUrl ?? undefined}
           controlsList="nodownload"
           disablePictureInPicture
-          onError={() => onPlaybackIssue?.(item, 'video-error')}
+          onError={() => onPlaybackIssue?.(item, { reason: 'video-error' })}
         >
           <source src={item.url} />
         </video>
@@ -1861,24 +1923,15 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
   )
 }
 
-export default function RandomExperiencePage({
-  searchParams,
-}: {
-  searchParams?: Record<string, string | string[] | undefined>
-}) {
+export default function RandomExperiencePage() {
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, maybeSpawnDiamond, quizScore } = useScore()
   const { consent } = useCookieConsent()
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
-  const [shuffleOpen, setShuffleOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const typesFromParams = parseTypesParam(searchParams?.types)
-  const [selectedTypes, setSelectedTypes] = useState<ItemType[]>(
-    typesFromParams.length ? typesFromParams : ALL_ITEM_TYPES
-  )
-  const [sequenceVersion, setSequenceVersion] = useState(0)
+  const selectedTypes = ALL_ITEM_TYPES
   const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
   const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
   const currentItemRef = useRef<DisplayItem | null>(null)
@@ -1898,6 +1951,16 @@ export default function RandomExperiencePage({
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [heartGlitch, setHeartGlitch] = useState(false)
+  const [waveMode, setWaveMode] = useState(false)
+  const [waveRemaining, setWaveRemaining] = useState(0)
+  const [waveReady, setWaveReady] = useState(false)
+  const [waveTransitionActive, setWaveTransitionActive] = useState(false)
+  const waveAnchorRef = useRef<WaveSimilarityHint | null>(null)
+  const waveQueueRef = useRef<RandomContentItem[]>([])
+  const wavePreparationGenerationRef = useRef(0)
+  const wavePreparationAbortRef = useRef<AbortController | null>(null)
+  const waveHistoryKeysRef = useRef<Set<string>>(new Set())
+  const waveHistoryIdsRef = useRef<Set<string>>(new Set())
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
@@ -2001,26 +2064,12 @@ export default function RandomExperiencePage({
   }, [])
 
   useEffect(() => {
-    if (typesFromParams.length) return
     try {
-      const stored = localStorage.getItem('random:selectedTypes')
-      if (!stored) return
-      const parsed = JSON.parse(stored)
-      if (!Array.isArray(parsed)) return
-      const filtered = parsed.filter((entry: unknown): entry is ItemType => ALL_ITEM_TYPES.includes(entry as ItemType))
-      if (filtered.length) setSelectedTypes(filtered)
+      localStorage.removeItem('random:selectedTypes')
     } catch {
       /* ignore */
     }
-  }, [typesFromParams.length])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('random:selectedTypes', JSON.stringify(selectedTypes))
-    } catch {
-      /* ignore */
-    }
-  }, [selectedTypes])
+  }, [])
 
   const navLabels = useMemo(() => ({
     images: t('nav.images', 'images'),
@@ -2035,6 +2084,7 @@ export default function RandomExperiencePage({
 
   const shareLabel = useMemo(() => t('modal.share', 'Share'), [t])
   const likeLabel = useMemo(() => t('modal.like', 'Like'), [t])
+  const waveLabel = useMemo(() => t('modal.wave', 'Wave'), [t])
   const randomAgainLabel = useMemo(() => t('modal.randomAgain', 'RANDOM AGAIN'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
@@ -2062,6 +2112,7 @@ export default function RandomExperiencePage({
   })
 
 const sequenceStateRef = useRef({
+  cycle: createRandomSequence(),
   step: 0,
   round: 0,
   encourage: 0,
@@ -2074,6 +2125,7 @@ const sequenceStateRef = useRef({
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const transitionUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const waveTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
     const count = mode === 'boost' ? randomInt(62, 84) : randomInt(34, 48)
@@ -2179,6 +2231,18 @@ const sequenceStateRef = useRef({
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
   }, [makePageGlitchBars])
 
+  const triggerWaveTransition = useCallback(() => {
+    if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
+    setWaveTransitionActive(false)
+    window.requestAnimationFrame(() => {
+      setWaveTransitionActive(true)
+      waveTransitionTimeoutRef.current = setTimeout(() => {
+        setWaveTransitionActive(false)
+        waveTransitionTimeoutRef.current = null
+      }, 840)
+    })
+  }, [])
+
   const openFullscreen = useCallback((payload: FullscreenVideoPayload) => {
     setFullscreenVideo(payload)
   }, [])
@@ -2199,6 +2263,8 @@ const sequenceStateRef = useRef({
       if (heartGlitchTimeoutRef.current) clearTimeout(heartGlitchTimeoutRef.current)
       if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
       if (transitionUnlockTimeoutRef.current) clearTimeout(transitionUnlockTimeoutRef.current)
+      if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
+      wavePreparationAbortRef.current?.abort()
     }
   }, [])
 
@@ -2278,80 +2344,68 @@ const sequenceStateRef = useRef({
     preparedVideoRef.current = null
   }, [])
 
-  const resetSequence = useCallback(() => {
-    clearPreparedVideo()
-    sequenceStateRef.current = {
-      step: 0,
-      round: 0,
-      encourage: 0,
-      draws: 0,
-      sinceEncourage: 0,
-      currentInterval: ENCOURAGE_INTERVALS[0] ?? 15,
-      intervalIndex: 0,
-    }
-    setSequenceVersion((v) => v + 1)
-  }, [clearPreparedVideo])
-
   const getNextSlot = useCallback((): SequenceSlot | null => {
-    const seq = FIXED_SEQUENCE
+    const state = sequenceStateRef.current
+    let seq = state.cycle
     if (!seq.length) return { kind: 'content', itemType: 'image' }
 
-    const state = sequenceStateRef.current
+    let step = state.step
+    let round = state.round
+    if (step >= seq.length) {
+      seq = createRandomSequence()
+      step = 0
+      round += 1
+    }
     const currentInterval = state.currentInterval ?? (ENCOURAGE_INTERVALS[0] ?? 15)
     const progress = state.sinceEncourage ?? 0
     const currentDraws = state.draws ?? 0
     const shouldEncourage = ENCOURAGE_PAGES_ENABLED && progress >= currentInterval
 
     if (shouldEncourage) {
-      const round = state.round + 1
+      const encourageRound = round + 1
       const encourage = state.encourage + 1
-      const normalizedStep = state.step % seq.length
+      const normalizedStep = step % seq.length
 
       const nextIndex = state.intervalIndex != null ? state.intervalIndex + 1 : 1
       const nextInterval = ENCOURAGE_INTERVALS[nextIndex % ENCOURAGE_INTERVALS.length] ?? currentInterval
 
       sequenceStateRef.current = {
+        cycle: seq,
         step: normalizedStep,
-        round,
+        round: encourageRound,
         encourage,
-        draws: 0,
+        draws: currentDraws,
         sinceEncourage: 0,
         currentInterval: nextInterval,
         intervalIndex: nextIndex,
       }
-      return { kind: 'encourage', round, encourageIndex: encourage }
+      return { kind: 'encourage', round: encourageRound, encourageIndex: encourage }
     }
 
     const resolveEntry = (entry: SequenceEntry): { itemType: ItemType; requireQuiz?: boolean } | null => {
       if (entry.kind === 'fixed') {
         return allowedTypes.has(entry.itemType) ? { itemType: entry.itemType } : null
       }
-      if (entry.kind === 'choices') {
-        const available = entry.types.filter((type) => allowedTypes.has(type))
-        if (!available.length) return null
-        const chosen = available[randIdx(available.length)]
-        return {
-          itemType: chosen,
-          requireQuiz: Boolean(entry.preferQuizFact && chosen === 'fact'),
-        }
-      }
       if (entry.kind === 'quiz') {
         if (!allowedTypes.has(entry.itemType)) return null
         return { itemType: entry.itemType, requireQuiz: true }
       }
+      if (entry.kind === 'text') {
+        const available = TEXT_ITEM_TYPES.filter((type) => allowedTypes.has(type))
+        if (!available.length) return null
+        return { itemType: available[randIdx(available.length)] }
+      }
       return null
     }
 
-    let normalizedStep = state.step % seq.length
     let chosenSlot: { itemType: ItemType; requireQuiz?: boolean } | null = null
-    let nextStep = normalizedStep
+    let nextStep = step
     for (let attempt = 0; attempt < seq.length; attempt++) {
-      const entry = seq[normalizedStep]
-      normalizedStep = (normalizedStep + 1) % seq.length
+      const entry = seq[nextStep % seq.length]
+      nextStep += 1
       const resolved = resolveEntry(entry)
       if (resolved) {
         chosenSlot = resolved
-        nextStep = normalizedStep
         break
       }
     }
@@ -2362,8 +2416,9 @@ const sequenceStateRef = useRef({
     }
 
     sequenceStateRef.current = {
+      cycle: seq,
       step: nextStep,
-      round: state.round,
+      round,
       encourage: state.encourage,
       draws: currentDraws + 1,
       sinceEncourage: progress + 1,
@@ -2383,16 +2438,22 @@ const sequenceStateRef = useRef({
   }, [allowedTypes, selectedTypes])
 
   const getUpcomingVideoSpec = useCallback((): VideoPreparationSpec | null => {
-    const seq = FIXED_SEQUENCE
+    const state = sequenceStateRef.current
+    let seq = state.cycle
     if (!seq.length) return null
 
-    const state = sequenceStateRef.current
+    let step = state.step
+    if (step >= seq.length) {
+      seq = createRandomSequence()
+      step = 0
+      sequenceStateRef.current = { ...state, cycle: seq, step, round: state.round + 1 }
+    }
     const currentInterval = state.currentInterval ?? (ENCOURAGE_INTERVALS[0] ?? 15)
     const progress = state.sinceEncourage ?? 0
     const currentDraws = state.draws ?? 0
     if (ENCOURAGE_PAGES_ENABLED && progress >= currentInterval) return null
 
-    let normalizedStep = state.step % seq.length
+    let normalizedStep = step % seq.length
     for (let attempt = 0; attempt < seq.length; attempt++) {
       const entry = seq[normalizedStep]
       normalizedStep = (normalizedStep + 1) % seq.length
@@ -2407,21 +2468,8 @@ const sequenceStateRef = useRef({
               : undefined,
         }
       }
-      if (entry.kind === 'choices') {
-        const available = entry.types.filter((type) => allowedTypes.has(type))
-        if (!available.length) continue
-        if (available.length === 1 && available[0] === 'video') {
-          return {
-            strong: currentDraws < STRONG_POOL_INITIAL_DRAWS,
-            videoPool:
-              currentDraws < STRONG_POOL_INITIAL_DRAWS
-                ? INITIAL_VIDEO_POOLS[currentDraws] ?? 'fresh'
-                : undefined,
-          }
-        }
-        return null
-      }
       if (entry.kind === 'quiz' && allowedTypes.has(entry.itemType)) return null
+      if (entry.kind === 'text') return null
     }
 
     const fallback = selectedTypes[0]
@@ -2772,6 +2820,97 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     return candidate
   }, [ensureQueue, getContentKey, registerRecentKey])
 
+  const takePreparedWaveCandidate = useCallback((): Exclude<RandomContentItem, MiniGameItem> | null => {
+    while (waveQueueRef.current.length) {
+      const candidate = waveQueueRef.current.shift()
+      if (!candidate || candidate.type === 'minigame') continue
+      const key = getContentKey(candidate)
+      if (!key || isRecentKey(key) || waveHistoryKeysRef.current.has(key)) continue
+      waveHistoryKeysRef.current.add(key)
+      if (typeof candidate._id === 'string') waveHistoryIdsRef.current.add(candidate._id)
+      return finalizeCandidate(candidate.type, candidate) as Exclude<RandomContentItem, MiniGameItem>
+    }
+    return null
+  }, [finalizeCandidate, getContentKey, isRecentKey])
+
+  const prepareWaveTrail = useCallback(async (anchorItem: DisplayItem) => {
+    wavePreparationAbortRef.current?.abort()
+    const controller = new AbortController()
+    wavePreparationAbortRef.current = controller
+    const generation = wavePreparationGenerationRef.current + 1
+    wavePreparationGenerationRef.current = generation
+    setWaveReady(false)
+    waveQueueRef.current = []
+    waveHistoryKeysRef.current.clear()
+    waveHistoryIdsRef.current.clear()
+
+    if (anchorItem.type === 'encourage' || anchorItem.type === 'minigame') {
+      waveAnchorRef.current = null
+      return
+    }
+
+    const anchor = createWaveHint(anchorItem)
+    if (!hasWaveSignal(anchor)) {
+      waveAnchorRef.current = null
+      return
+    }
+
+    const anchorKey = getContentKey(anchorItem)
+    const excludeIds = typeof anchorItem._id === 'string' ? [anchorItem._id] : []
+    const requestTimeout = window.setTimeout(() => controller.abort(), 2500)
+    try {
+      const response = await fetchWave({
+        anchor,
+        lang: (locale || 'en') as Lang,
+        excludeIds,
+        limit: WAVE_TOTAL_STEPS + WAVE_RESERVE_STEPS,
+        types: ALL_ITEM_TYPES,
+        signal: controller.signal,
+      })
+      if (generation !== wavePreparationGenerationRef.current) return
+
+      const keys = new Set<string>()
+      const candidates = response.items.filter((candidate) => {
+        if (!candidate || candidate.type === 'minigame') return false
+        const key = getContentKey(candidate)
+        if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) return false
+        if (!isStrongWaveMatch(anchor, createWaveHint(candidate))) return false
+        keys.add(key)
+        if (candidate.type === 'video') warmVideoPoster(candidate)
+        return true
+      })
+
+      if (candidates.length < WAVE_TOTAL_STEPS) {
+        waveAnchorRef.current = null
+        waveQueueRef.current = []
+        return
+      }
+
+      waveAnchorRef.current = anchor
+      waveQueueRef.current = candidates.slice(0, WAVE_TOTAL_STEPS + WAVE_RESERVE_STEPS)
+      if (anchorKey) waveHistoryKeysRef.current.add(anchorKey)
+      if (typeof anchorItem._id === 'string') waveHistoryIdsRef.current.add(anchorItem._id)
+      setWaveReady(true)
+    } catch {
+      if (generation !== wavePreparationGenerationRef.current) return
+      waveAnchorRef.current = null
+      waveQueueRef.current = []
+    } finally {
+      window.clearTimeout(requestTimeout)
+      if (wavePreparationAbortRef.current === controller) {
+        wavePreparationAbortRef.current = null
+      }
+    }
+  }, [getContentKey, isRecentKey, locale, warmVideoPoster])
+
+  useEffect(() => {
+    if (!currentItem || waveMode || loading) return undefined
+    const timer = window.setTimeout(() => {
+      void prepareWaveTrail(currentItem)
+    }, 60)
+    return () => window.clearTimeout(timer)
+  }, [currentItem, loading, prepareWaveTrail, waveMode])
+
   const takePreparedVideo = useCallback(async (
     slot: Extract<SequenceSlot, { kind: 'content' }>,
   ): Promise<VideoContentItem | null> => {
@@ -2789,22 +2928,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (!key || isRecentKey(key)) return null
     return finalizeCandidate('video', item) as VideoContentItem
   }, [finalizeCandidate, getContentKey, getPreparedVideoKey, isRecentKey])
-
-  const takeAnyAvailableItem = useCallback(
-    (preferred?: ItemType): { item: RandomContentItem; type: ItemType } | null => {
-      const typesToCheck = preferred
-        ? [preferred, ...selectedTypes.filter((type) => type !== preferred)]
-        : selectedTypes
-      for (const type of typesToCheck) {
-        const candidate = takeFromQueue(type)
-        if (candidate) {
-          return { item: finalizeCandidate(type, candidate), type }
-        }
-      }
-      return null
-    },
-    [finalizeCandidate, selectedTypes, takeFromQueue],
-  )
 
   const acquireItem = useCallback(async (
     type: ItemType,
@@ -2958,7 +3081,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         let resolvedType: ItemType | null = null
         const requiresQuizFact = Boolean(slot.requireQuiz && slot.itemType === 'fact')
         const useStrongPool = Boolean(slot.strong)
-        const factPredicate = requiresQuizFact ? isQuizFactItem : undefined
+        const factPredicate = slot.itemType === 'fact'
+          ? (requiresQuizFact ? isQuizFactItem : isTextFactItem)
+          : undefined
 
         if (slot.itemType === 'video') {
           item = await takePreparedVideo(slot)
@@ -2974,12 +3099,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           resolvedType = item ? slot.itemType : null
           if (item) {
             item = finalizeCandidate(slot.itemType, item)
-          } else if (!requiresQuizFact && slot.itemType !== 'video') {
-            const fallback = takeAnyAvailableItem(slot.itemType)
-            if (fallback) {
-              item = fallback.item
-              resolvedType = fallback.type
-            }
           }
         }
 
@@ -2998,6 +3117,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (slot.itemType === 'video' && item?.type !== 'video') {
           item = null
           resolvedType = null
+        }
+        if (!item) {
+          try {
+            const fallbackResponse = await fetchRandom({
+              types: selectedTypes as RandomTypes,
+              lang: (locale || 'en') as Lang,
+            })
+            const fallbackItem = fallbackResponse?.item
+            if (fallbackItem && fallbackItem.type !== 'minigame') {
+              const fallbackKey = getContentKey(fallbackItem)
+              if (fallbackKey && !isRecentKey(fallbackKey)) {
+                item = finalizeCandidate(fallbackItem.type, fallbackItem)
+                resolvedType = fallbackItem.type
+              }
+            }
+          } catch {
+            /* keep the current content when every source is temporarily unavailable */
+          }
         }
         if (!item) {
           if (prevState) sequenceStateRef.current = prevState
@@ -3061,9 +3198,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         void loadNext(queued)
       }
     }
-  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getNextSlot, maybeSpawnDiamond, prepareUpcomingVideo, spawnMiniGameIfDue, takeAnyAvailableItem, takeFromQueue, takePreparedVideo, triggerPageGlitch, updateTheme])
+  }, [acquireItem, addAction, adsAllowed, buildEncourageItem, finalizeCandidate, getContentKey, getNextSlot, isRecentKey, locale, maybeSpawnDiamond, prepareUpcomingVideo, selectedTypes, spawnMiniGameIfDue, takeFromQueue, takePreparedVideo, triggerPageGlitch, updateTheme])
 
-  const handlePlaybackIssue = useCallback((item: VideoContentItem) => {
+  const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     const current = currentItemRef.current
     if (!current || current.type !== 'video') return
 
@@ -3075,8 +3212,25 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (attempts >= 1) return
 
     playbackIssueCountsRef.current[key] = attempts + 1
+    reportVideoPlaybackIssue(item, issue)
+    if (waveMode) {
+      const replacement = takePreparedWaveCandidate()
+      if (replacement) {
+        triggerWaveTransition()
+        currentItemRef.current = replacement
+        setCurrentItem(replacement)
+        setLiked(isLiked(replacement))
+        updateTheme()
+        return
+      }
+      setWaveMode(false)
+      setWaveRemaining(0)
+      setWaveReady(false)
+      waveAnchorRef.current = null
+      waveQueueRef.current = []
+    }
     loadNext(false).catch(() => undefined)
-  }, [getContentKey, loadNext])
+  }, [getContentKey, loadNext, takePreparedWaveCandidate, triggerWaveTransition, updateTheme, waveMode])
 
   useEffect(() => {
     if (initialLoadTriggeredRef.current) return
@@ -3190,6 +3344,25 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
   const controlsDisabled = !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
   const randomAgainDisabled = transitionLocked || loading
+  const waveDisabled = controlsDisabled || transitionLocked || loading || (!waveMode && !waveReady)
+
+  const handleLike = useCallback(() => {
+    const item = currentItemRef.current
+    if (!item || item.type === 'encourage' || item.type === 'minigame') return
+    if (liked) {
+      removeLike(item)
+      setLiked(false)
+    } else {
+      addLike(item, theme)
+      setLiked(true)
+      triggerHeartGlitch()
+    }
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
+    } catch {
+      /* ignore */
+    }
+  }, [liked, theme, triggerHeartGlitch])
 
   const unlockTransitionAfter = useCallback((delay = 250) => {
     if (transitionUnlockTimeoutRef.current) clearTimeout(transitionUnlockTimeoutRef.current)
@@ -3201,6 +3374,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const handleRandomAgain = useCallback(() => {
     if (transitionLocked || loadPendingRef.current) return
+    wavePreparationAbortRef.current?.abort()
+    wavePreparationAbortRef.current = null
+    wavePreparationGenerationRef.current += 1
+    setWaveMode(false)
+    setWaveRemaining(0)
+    setWaveReady(false)
+    setWaveTransitionActive(false)
+    waveAnchorRef.current = null
+    waveQueueRef.current = []
+    waveHistoryKeysRef.current.clear()
+    waveHistoryIdsRef.current.clear()
     setTransitionLocked(true)
     unlockTransitionAfter(12000)
 
@@ -3213,6 +3397,42 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     playAgain()
   }, [adsAllowed, loadNext, transitionLocked, unlockTransitionAfter])
 
+  const handleWave = useCallback(() => {
+    const current = currentItemRef.current
+    if (!current || current.type === 'encourage' || current.type === 'minigame') return
+    if (transitionLocked || loadPendingRef.current) return
+
+    const enteringWave = !waveMode
+    if (enteringWave && (!waveReady || !waveAnchorRef.current)) return
+    const next = takePreparedWaveCandidate()
+    if (!next) {
+      setWaveReady(false)
+      if (waveMode) handleRandomAgain()
+      return
+    }
+
+    setTransitionLocked(true)
+    setWaveMode(true)
+    setWaveReady(false)
+    setWaveRemaining((remaining) => enteringWave ? WAVE_TOTAL_STEPS : Math.max(1, remaining - 1))
+    if (enteringWave) playWaveEnter()
+    else playWaveStep()
+    triggerWaveTransition()
+    currentItemRef.current = next
+    setCurrentItem(next)
+    setLiked(isLiked(next))
+    updateTheme()
+    unlockTransitionAfter(260)
+  }, [handleRandomAgain, takePreparedWaveCandidate, transitionLocked, triggerWaveTransition, unlockTransitionAfter, updateTheme, waveMode, waveReady])
+
+  const handlePrimaryAction = useCallback(() => {
+    if (!waveMode || waveRemaining <= 1) {
+      handleRandomAgain()
+      return
+    }
+    handleWave()
+  }, [handleRandomAgain, handleWave, waveMode, waveRemaining])
+
   useEffect(() => {
     if (!menuOpen) return
     const onKey = (event: KeyboardEvent) => {
@@ -3224,7 +3444,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${fullscreenVideo ? ' random-page--video-fullscreen' : ''}`}
+      className={`random-page min-h-screen flex flex-col${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
       <div className="random-immersive-bg" style={immersiveBackgroundStyle} aria-hidden="true">
@@ -3299,11 +3519,31 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         <button
           type="button"
-          aria-label="Shuffle"
-          onClick={() => setShuffleOpen(true)}
-          className="p-2"
+          aria-label={waveMode ? 'Close Wave' : waveLabel}
+          title={waveMode ? 'Close Wave' : waveLabel}
+          onClick={() => {
+            if (waveMode) {
+              handleRandomAgain()
+              return
+            }
+            void handleWave()
+          }}
+          className="wave-action flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-wait"
+          disabled={waveDisabled}
+          aria-pressed={waveMode}
+          style={{
+            backgroundColor: 'transparent',
+            border: `2px solid ${theme.text}`,
+            color: theme.text,
+            opacity: waveDisabled ? 0.72 : 1,
+          }}
         >
-          <MonoIcon src="/icons/Shuffle.svg" color={theme.cream} size={28} />
+          <span className="wave-action__echo wave-action__echo--one" aria-hidden="true" />
+          <span className="wave-action__echo wave-action__echo--two" aria-hidden="true" />
+          <span className="wave-action__echo wave-action__echo--three" aria-hidden="true" />
+          <span className="wave-action__icon" aria-hidden="true">
+            {waveMode ? <X size={27} strokeWidth={2.25} /> : <MonoIcon src="/icons/wave.svg" color="#ffffff" size={27} />}
+          </span>
         </button>
       </header>
 
@@ -3392,22 +3632,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           <button
             type="button"
             aria-label={likeLabel}
-            onClick={() => {
-              if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return
-              if (liked) {
-                removeLike(viewItem)
-                setLiked(false)
-              } else {
-                addLike(viewItem, theme)
-                setLiked(true)
-                triggerHeartGlitch()
-              }
-              try {
-                window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
-              } catch {
-                /* ignore */
-              }
-            }}
+            onClick={handleLike}
             className="p-3"
             disabled={controlsDisabled}
           >
@@ -3422,7 +3647,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
             <button
               type="button"
-              onClick={handleRandomAgain}
+              onClick={handlePrimaryAction}
               disabled={randomAgainDisabled}
               aria-busy={randomAgainDisabled}
               className={`w-full px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold ${randomAgainDisabled ? 'cursor-wait' : 'hover:scale-[1.02]'}`}
@@ -3433,7 +3658,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
                 opacity: randomAgainDisabled ? 0.92 : 1,
               }}
             >
-              <AnimatedButtonLabel text={randomAgainLabel} color={theme.cream} trigger={trigger} toSecond={isSecond} />
+              <AnimatedButtonLabel
+                text={waveMode ? `${randomAgainLabel} : ${waveRemaining}` : randomAgainLabel}
+                color={theme.cream}
+                trigger={trigger}
+                toSecond={isSecond}
+              />
             </button>
           </div>
 
@@ -3582,18 +3812,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           </div>
         </div>
       ) : null}
-
-      <ShufflePicker
-        open={shuffleOpen}
-        onClose={() => setShuffleOpen(false)}
-        selected={selectedTypes}
-        onChange={(next) => {
-          setSelectedTypes(next)
-          resetSequence()
-        }}
-        theme={theme}
-        key={sequenceVersion}
-      />
 
       {fullscreenVideo ? (
         <div
@@ -4080,6 +4298,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             transition: none;
             animation: none;
           }
+          .random-page--wave .wave-action,
+          .random-page--wave .wave-action__icon,
+          .random-page--wave .wave-action__echo,
+          .random-page--wave::before,
+          .random-page--wave .random-immersive-bg__media,
+          .random-page--wave .random-immersive-bg__tone,
+          .random-page--wave-transition .random-content-frame {
+            animation: none !important;
+          }
         }
         .page-glitch-overlay {
           position: fixed;
@@ -4536,6 +4763,134 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         .heart-icon {
           transition: transform 200ms ease, filter 200ms ease;
+        }
+        .wave-action {
+          position: relative;
+          isolation: isolate;
+          overflow: visible;
+          transition: transform 180ms ease, opacity 180ms ease;
+        }
+        .random-page--wave .wave-action {
+          animation: wave-button-pulse 1.28s cubic-bezier(0.42, 0, 0.25, 1) infinite;
+        }
+        .wave-action__icon {
+          position: relative;
+          z-index: 2;
+          display: inline-flex;
+          transform-origin: center;
+        }
+        .random-page--wave .wave-action__icon {
+          animation: wave-icon-flow 0.72s ease-in-out infinite;
+        }
+        .wave-action__echo {
+          position: absolute;
+          inset: 0;
+          z-index: -1;
+          border: 2px solid #00eaff;
+          border-radius: 50%;
+          opacity: 0;
+          pointer-events: none;
+        }
+        .wave-action__echo--two {
+          border-color: #ff1678;
+        }
+        .wave-action__echo--three {
+          border-color: #d8ff00;
+        }
+        .random-page--wave .wave-action__echo {
+          animation: wave-echo 1.72s cubic-bezier(0.2, 0.62, 0.3, 1) infinite;
+        }
+        .random-page--wave .wave-action__echo--two {
+          animation-delay: 0.36s;
+        }
+        .random-page--wave .wave-action__echo--three {
+          animation-delay: 0.72s;
+        }
+        .random-page::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          z-index: 7;
+          pointer-events: none;
+          opacity: 0;
+          box-shadow:
+            inset 22px 0 54px rgba(0, 234, 255, 0.42),
+            inset -22px 0 54px rgba(255, 22, 120, 0.38),
+            inset 0 18px 42px rgba(216, 255, 0, 0.12),
+            inset 0 -26px 58px rgba(104, 54, 255, 0.3);
+          transition: opacity 440ms ease;
+        }
+        .random-page--wave::before {
+          opacity: 0.72;
+          animation: wave-perimeter 3.4s ease-in-out infinite;
+        }
+        .random-page--wave .random-immersive-bg__media {
+          filter: blur(15px) saturate(2.75) contrast(1.35) brightness(0.48);
+          opacity: min(1, calc(var(--random-bg-strength, 0) * 1.6));
+          transform: scale(1.2);
+          animation: wave-background-breathe 5.2s ease-in-out infinite alternate;
+        }
+        .random-page--wave .random-immersive-bg__fragments {
+          filter: blur(2.4px) saturate(1.8);
+          opacity: min(1, calc(var(--random-bg-strength, 0) * 0.46));
+        }
+        .random-page--wave .random-immersive-bg__tone {
+          filter: saturate(1.8) hue-rotate(8deg);
+          animation: wave-tone-breathe 3.8s ease-in-out infinite alternate;
+        }
+        .random-page--wave .random-content-frame {
+          filter:
+            drop-shadow(10px 0 18px rgba(0, 234, 255, 0.2))
+            drop-shadow(-10px 0 18px rgba(255, 22, 120, 0.18));
+          transition: filter 440ms ease, transform 440ms ease;
+        }
+        .random-page--wave-transition .random-content-frame {
+          animation: wave-content-surge 820ms cubic-bezier(0.18, 0.72, 0.22, 1) both;
+        }
+        .random-page--wave-transition::before {
+          animation: wave-entry-flash 960ms ease-out both;
+        }
+        @keyframes wave-button-pulse {
+          0%, 100% { transform: scale(1); }
+          40% { transform: scale(1.13); }
+          58% { transform: scale(0.97); }
+          72% { transform: scale(1.055); }
+        }
+        @keyframes wave-icon-flow {
+          0%, 100% { transform: translateX(-3px) skewX(-7deg) scaleX(0.9); }
+          50% { transform: translateX(3px) skewX(7deg) scaleX(1.12); }
+        }
+        @keyframes wave-echo {
+          0% { transform: scale(0.88); opacity: 0; filter: blur(0); }
+          14% { opacity: 0.76; }
+          72% { opacity: 0.12; }
+          100% { transform: scale(2.35); opacity: 0; filter: blur(1.5px); }
+        }
+        @keyframes wave-perimeter {
+          0%, 100% { opacity: 0.54; filter: saturate(1); }
+          50% { opacity: 0.86; filter: saturate(1.7); }
+        }
+        @keyframes wave-background-breathe {
+          0% { transform: translate3d(-1.2%, 0, 0) scale(1.18); }
+          100% { transform: translate3d(1.2%, -0.7%, 0) scale(1.23); }
+        }
+        @keyframes wave-tone-breathe {
+          0% { opacity: 0.72; transform: scale(1); }
+          100% { opacity: 1; transform: scale(1.035); }
+        }
+        @keyframes wave-content-surge {
+          0% { transform: scale(1); filter: blur(0) saturate(1); }
+          34% { transform: scale(0.94) translateX(-12px); filter: blur(8px) saturate(1.8); }
+          58% { transform: scale(1.035) translateX(8px); filter: blur(2px) saturate(1.5); }
+          100% {
+            transform: scale(1);
+            filter: drop-shadow(10px 0 18px rgba(0, 234, 255, 0.2)) drop-shadow(-10px 0 18px rgba(255, 22, 120, 0.18));
+          }
+        }
+        @keyframes wave-entry-flash {
+          0% { opacity: 0; }
+          28% { opacity: 1; }
+          100% { opacity: 0.66; }
         }
         .heart-icon--liked {
           transform: scale(1.05);

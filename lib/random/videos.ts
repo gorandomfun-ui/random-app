@@ -35,6 +35,7 @@ type VideoRecord = {
   showWeight?: number | null
   dislikeCount?: number | null
   isSuppressed?: boolean | null
+  obsoleteVideoStatus?: string | null
   tone?: 'positive' | 'neutral' | 'negative' | null
   toneConfidence?: number | null
   toneSignals?: string[] | null
@@ -144,8 +145,12 @@ async function pickFromDb(
 ): Promise<(VideoRecord & { _id?: unknown }) | null> {
   for (let i = 0; i < attempts; i++) {
     const filter = {
-      ...(exclude.length ? { videoId: { $nin: exclude } } : {}),
-      ...extraMatch,
+      $and: [
+        { isSuppressed: { $ne: true } },
+        { obsoleteVideoStatus: { $ne: 'obsolete' } },
+        ...(exclude.length ? [{ videoId: { $nin: exclude } }] : []),
+        ...(Object.keys(extraMatch).length ? [extraMatch] : []),
+      ],
     } as Filter<VideoRecord>
     const doc = await sampleFromCache<VideoRecord>('video', filter, {
       maxTimeMS: Object.keys(extraMatch).length ? STRONG_POOL_MAX_TIME_MS : undefined,
@@ -231,6 +236,8 @@ export async function selectVideo(options: RandomSelectOptions = {}): Promise<Vi
     text: title,
     provider,
     source: { name: sourceName, url: sourceUrl },
+    tags,
+    keywords,
     tone,
     toneConfidence,
     toneSignals,

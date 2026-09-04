@@ -1,6 +1,8 @@
 // lib/api.ts
-import type { RandomApiResponse } from './random/clientTypes'
+import type { RandomApiResponse, RandomContentItem } from './random/clientTypes'
 import type { VideoPool } from './random/types'
+import type { ItemType } from './random/types'
+import type { WaveSimilarityHint } from './random/wave'
 
 export type RandomTypes = Array<'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'>
 
@@ -32,4 +34,32 @@ export async function fetchRandom({
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   // l’API renvoie { item: {...} } — on renvoie tel quel pour que page.tsx fasse res.item
   return (await res.json()) as RandomApiResponse
+}
+
+export async function fetchWave({
+  anchor,
+  lang,
+  excludeIds = [],
+  limit = 10,
+  types,
+  factVariant,
+  signal,
+}: {
+  anchor: WaveSimilarityHint
+  lang: 'en' | 'fr' | 'de' | 'jp' | 'es'
+  excludeIds?: string[]
+  limit?: number
+  types?: ItemType[]
+  factVariant?: 'quiz' | 'text'
+  signal?: AbortSignal
+}): Promise<{ items: RandomContentItem[] }> {
+  const res = await fetch('/api/wave', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ anchor, lang, excludeIds, limit, types, factVariant }),
+    signal,
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return await res.json() as { items: RandomContentItem[] }
 }

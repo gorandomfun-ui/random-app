@@ -5,6 +5,7 @@ import { sampleFromCache, touchLastShown, upsertCache } from '@/lib/random/data'
 import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
 import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
+import { buildContentLanguageMatch, combineContentMatches } from '@/lib/random/language'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -63,6 +64,7 @@ export type FactDocument = {
   variant: 'text' | 'quiz' | 'ai'
   quiz?: FactQuizPayload
   lang?: string
+  languageScope?: 'universal' | 'localized'
   hash?: string
   ai?: {
     source?: string
@@ -97,6 +99,8 @@ export type FactTextItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  tags?: string[]
+  keywords?: string[]
   _id?: string
 }
 
@@ -116,6 +120,8 @@ export type FactQuizItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  tags?: string[]
+  keywords?: string[]
   _id?: string
 }
 
@@ -369,6 +375,8 @@ function buildQuizItem(doc: FactQuizDoc): FactQuizItem | null {
     source: { name: sourceName, url: sourceUrl },
     category: doc.quiz.category,
     difficulty: doc.quiz.difficulty,
+    tags: Array.isArray(doc.tags) ? doc.tags : [],
+    keywords: Array.isArray(doc.keywords) ? doc.keywords : [],
     tone,
     toneConfidence,
     toneSignals,
@@ -784,7 +792,7 @@ async function pickFromDb(
   })
   if (doc && doc.variant !== 'quiz') return doc
   if (exclude.length) {
-    const fallback = await sampleFromCache<FactRecord>('fact', { variant: { $ne: 'quiz' } })
+    const fallback = await sampleFromCache<FactRecord>('fact', { variant: { $ne: 'quiz' }, ...extraMatch })
     if (fallback && fallback.variant !== 'quiz') return fallback
   }
   return null
@@ -793,10 +801,12 @@ async function pickFromDb(
 export async function selectFact(options: RandomSelectOptions = {}): Promise<FactItem | null> {
   const exclude = recentFacts.slice(-RECENT_LIMIT)
   const strongMatch = options.strong ? buildStrongPoolMatch<FactRecord>() : null
+  const languageMatch = buildContentLanguageMatch<FactRecord>(options.lang)
   let doc: FactRecord | null = null
 
   if (strongMatch) {
-    doc = (await pickFromDb(exclude, strongMatch)) ?? (await pickFromDb(exclude))
+    doc = (await pickFromDb(exclude, combineContentMatches(strongMatch, languageMatch)))
+      ?? (await pickFromDb(exclude, languageMatch))
   }
 
   if (!doc) {
@@ -825,7 +835,7 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
       }
     }
 
-    doc = await pickFromDb(exclude)
+    doc = await pickFromDb(exclude, languageMatch)
   }
   if (doc) {
     const text = trim(doc.text)
@@ -860,6 +870,8 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
             }
           : null,
         disclaimer: typeof doc.disclaimer === 'string' && doc.disclaimer.trim() ? doc.disclaimer.trim() : undefined,
+        tags: Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+        keywords: Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [],
         tone: typeof doc.tone === 'string' ? doc.tone : undefined,
         toneConfidence: typeof doc.toneConfidence === 'number' ? doc.toneConfidence : undefined,
         toneSignals: Array.isArray(doc.toneSignals)
@@ -873,12 +885,16 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
   registerRecent(fallback)
   lastFactWasQuiz = false
   const fallbackTone = deriveToneAugmentation(flattenToneSegments(['fact', fallback]))
+  const fallbackTags = computeTags(fallback)
+  const fallbackKeywords = computeKeywords(fallback)
   return {
     type: 'fact',
     variant: 'text',
     text: fallback,
     provider: 'local',
     source: { name: 'Local' },
+    tags: fallbackTags,
+    keywords: fallbackKeywords,
     tone: fallbackTone?.tone,
     toneConfidence: fallbackTone?.toneConfidence,
     toneSignals: fallbackTone?.toneSignals,

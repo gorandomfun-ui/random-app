@@ -2,6 +2,7 @@ import { sampleFromCache, touchLastShown } from '@/lib/random/data'
 import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
 import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
+import { buildContentLanguageMatch, combineContentMatches } from './language'
 import {
   markGlobalItem,
   markGlobalKeywords,
@@ -65,6 +66,8 @@ export type QuoteItem = {
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
+  tags?: string[]
+  keywords?: string[]
   _id?: string
 }
 
@@ -77,6 +80,7 @@ type QuoteRecord = {
   keywords?: string[]
   variant?: 'text' | 'ai'
   lang?: string | null
+  languageScope?: 'universal' | 'localized' | null
   ai?: QuoteAIMetadata | null
   disclaimer?: string | null
   hash?: string | null
@@ -197,9 +201,11 @@ async function pickFromDb(
 export async function selectQuote(options: RandomSelectOptions = {}): Promise<QuoteItem | null> {
   const exclude = recentQuotes.slice(-RECENT_LIMIT)
   const strongMatch = options.strong ? buildStrongPoolMatch<QuoteRecord>() : null
+  const languageMatch = buildContentLanguageMatch<QuoteRecord>(options.lang)
   const doc = strongMatch
-    ? (await pickFromDb(exclude, 28, strongMatch)) ?? (await pickFromDb(exclude))
-    : await pickFromDb(exclude)
+    ? (await pickFromDb(exclude, 28, combineContentMatches(strongMatch, languageMatch)))
+      ?? (await pickFromDb(exclude, 20, languageMatch))
+    : await pickFromDb(exclude, 20, languageMatch)
   const itemId = doc && typeof doc === 'object' && '_id' in doc
     ? String((doc as { _id: unknown })._id)
     : undefined
@@ -249,6 +255,8 @@ export async function selectQuote(options: RandomSelectOptions = {}): Promise<Qu
     lang,
     ai: aiMeta,
     disclaimer,
+    tags,
+    keywords,
     tone,
     toneConfidence,
     toneSignals,

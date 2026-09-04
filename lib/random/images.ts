@@ -9,6 +9,10 @@ export type ImageItem = {
   url: string
   thumbUrl: string | null
   source: { name: string; url?: string | null }
+  title?: string
+  provider?: string
+  tags?: string[]
+  keywords?: string[]
   tone?: 'positive' | 'neutral' | 'negative'
   toneConfidence?: number
   toneSignals?: string[]
@@ -46,6 +50,10 @@ export async function selectImage(options: RandomSelectOptions = {}): Promise<Im
       type: 'image',
       url,
       thumbUrl: typeof doc.thumb === 'string' ? doc.thumb : doc.thumbUrl ?? null,
+      title: typeof doc.title === 'string' ? doc.title : undefined,
+      provider: doc.provider,
+      tags: Array.isArray(doc.tags) ? doc.tags : [],
+      keywords: Array.isArray(doc.keywords) ? doc.keywords : [],
       source: {
         name: doc.source?.name || doc.provider || 'image',
         url: doc.source?.url || doc.pageUrl || doc.url,

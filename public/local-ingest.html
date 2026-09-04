@@ -34,6 +34,35 @@
       <button type="button" class="secondary" id="scrapeAllText">Scrape Tout</button>
     </div>
 
+    <div style="margin-bottom: 24px; padding:16px; background:#fff; border:1px solid #ddd; border-radius:8px;">
+      <h2 style="margin-top:0;">Sources texte contrôlées</h2>
+      <p style="margin: 6px 0 12px; font-size: 14px;">
+        Imports traçables par petits lots. Les contenus anglais sans traduction restent universels ; les versions localisées sont réservées à leur langue.
+      </p>
+      <div id="trustedTextLangs" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; font-size:14px;">
+        <label><input type="checkbox" value="en" checked /> EN</label>
+        <label><input type="checkbox" value="fr" checked /> FR</label>
+        <label><input type="checkbox" value="de" checked /> DE</label>
+        <label><input type="checkbox" value="es" checked /> ES</label>
+        <label><input type="checkbox" value="jp" checked /> JP</label>
+      </div>
+      <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+        <label>
+          Éléments max / langue
+          <input id="trustedTextLimit" type="number" min="1" max="100" value="20" />
+        </label>
+        <span id="wikidataCursor" style="font-size:12px; color:#666;"></span>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="secondary" id="ingestWikidata">Importer Wikidata Facts</button>
+        <button type="button" class="secondary" id="ingestWikiquote">Importer Wikiquote</button>
+        <button type="button" class="secondary" id="ingestJokeApi">Importer JokeAPI sécurisé</button>
+      </div>
+      <p style="margin:12px 0 0; font-size:12px; color:#666;">
+        La case « Dry run (preview) » plus bas permet de contrôler les exemples sans rien enregistrer. JokeAPI ne fournit pas de catalogue japonais.
+      </p>
+    </div>
+
     <div style="margin-bottom: 24px;">
       <h2>Combinaisons personnalisées (prioritaires)</h2>
       <p style="margin: 6px 0 12px; font-size: 14px;">Remplis une ou plusieurs lignes (mot 1 / mot 2 / pays / année). Ces combos seront exécutés avant les combos aléatoires. Jusqu’à 10 lignes.</p>
@@ -153,6 +182,14 @@
         jokes: document.getElementById('scrapeJokes'),
         all: document.getElementById('scrapeAllText'),
       }
+      const trustedTextButtons = {
+        wikidata: document.getElementById('ingestWikidata'),
+        wikiquote: document.getElementById('ingestWikiquote'),
+        jokeapi: document.getElementById('ingestJokeApi'),
+      }
+      const trustedTextLangsEl = document.getElementById('trustedTextLangs')
+      const trustedTextLimitEl = document.getElementById('trustedTextLimit')
+      const wikidataCursorEl = document.getElementById('wikidataCursor')
       const videoProvidersEl = document.getElementById('videoProviders')
       const imageProvidersEl = document.getElementById('imageProviders')
       const webProvidersEl = document.getElementById('webProviders')
@@ -189,6 +226,15 @@
         const wrapper = document.createElement('div')
         wrapper.innerHTML = html
         logEl.prepend(wrapper)
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;')
       }
 
       function setAdminKey(value) {
@@ -234,6 +280,9 @@
         if (buttons.web) buttons.web.disabled = running
         if (buttons.videos) buttons.videos.disabled = running
         if (buttons.images) buttons.images.disabled = running
+        Object.values(trustedTextButtons).forEach((button) => {
+          if (button) button.disabled = running
+        })
         stopBtn.disabled = !running
       }
 
@@ -855,10 +904,99 @@
         appendLog(`<p class="summary">Scrape ${type} terminé</p>`)
       }
 
+      function getTrustedTextLangs() {
+        if (!trustedTextLangsEl) return ['en']
+        const langs = Array.from(trustedTextLangsEl.querySelectorAll('input[type="checkbox"]'))
+          .filter((input) => input.checked)
+          .map((input) => input.value)
+        return langs.length ? langs : ['en']
+      }
+
+      function getTrustedTextLimit() {
+        const parsed = Number(trustedTextLimitEl?.value || 20)
+        return Number.isFinite(parsed) ? Math.max(1, Math.min(100, Math.floor(parsed))) : 20
+      }
+
+      function getWikidataOffset() {
+        const parsed = Number(localStorage.getItem('local-ingest-wikidata-offset') || 0)
+        return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+      }
+
+      function updateWikidataCursor() {
+        if (wikidataCursorEl) wikidataCursorEl.textContent = `Lot Wikidata : position ${getWikidataOffset()}`
+      }
+
+      function formatTrustedSample(sample) {
+        if (!Array.isArray(sample) || !sample.length) return ''
+        const rows = sample.map((entry) => {
+          const author = entry?.author ? ` — ${entry.author}` : ''
+          return `<li><strong>${escapeHtml(String(entry?.lang || '').toUpperCase())}</strong> ${escapeHtml(entry?.text || '')}${escapeHtml(author)}</li>`
+        }).join('')
+        return `<details><summary>Aperçu (${sample.length})</summary><ul>${rows}</ul></details>`
+      }
+
+      async function triggerTrustedText(source) {
+        const button = trustedTextButtons[source]
+        const langs = getTrustedTextLangs()
+        const limit = getTrustedTextLimit()
+        const dryRun = Boolean(dryRunEl?.checked)
+        const params = new URLSearchParams({
+          source,
+          langs: langs.join(','),
+          limit: String(limit),
+        })
+        if (dryRun) params.set('dryRun', '1')
+        if (source === 'wikidata') params.set('offset', String(getWikidataOffset()))
+
+        const controller = new AbortController()
+        const untrack = trackController(controller)
+        if (button) button.disabled = true
+        stopBtn.disabled = false
+        stopRequested = false
+        appendLog(`<p>${escapeHtml(source)} → ${dryRun ? 'preview' : 'import'} start ${new Date().toLocaleTimeString()}</p>`)
+        try {
+          const response = await adminFetch(`/api/ingest/text-sources?${params.toString()}`, { signal: controller.signal })
+          const data = await response.json()
+          if (!response.ok) throw new Error(data?.error || response.statusText)
+
+          const languageSummary = Object.entries(data?.perLanguage || {})
+            .map(([lang, count]) => `${String(lang).toUpperCase()}:${count}`)
+            .join(' • ')
+          const unsupported = Array.isArray(data?.unsupportedLangs) && data.unsupportedLangs.length
+            ? `<br/>Non disponible : ${data.unsupportedLangs.map((lang) => escapeHtml(String(lang).toUpperCase())).join(', ')}`
+            : ''
+          const writeSummary = dryRun
+            ? `nouveaux:${data?.wouldInsert ?? 0} mises-à-jour:${data?.wouldUpdate ?? 0}`
+            : `insérés:${data?.inserted ?? 0} mis-à-jour:${data?.updated ?? 0}`
+          appendLog(
+            `<p class="success">${escapeHtml(source)} → scanned:${data?.scanned ?? 0} unique:${data?.unique ?? 0} ${writeSummary} doublons:${data?.duplicates ?? 0}<br/>${escapeHtml(languageSummary)}${unsupported}</p>${formatTrustedSample(data?.sample)}`,
+          )
+
+          if (source === 'wikidata' && !dryRun && Number.isFinite(Number(data?.nextOffset))) {
+            localStorage.setItem('local-ingest-wikidata-offset', String(data.nextOffset))
+            updateWikidataCursor()
+          }
+        } catch (error) {
+          const message = error?.name === 'AbortError'
+            ? 'arrêté'
+            : (error instanceof Error ? error.message : String(error))
+          appendLog(`<p class="error">${escapeHtml(source)} → ${escapeHtml(message)}</p>`)
+        } finally {
+          untrack()
+          if (button) button.disabled = false
+          if (!activeFetchControllers.size) stopBtn.disabled = true
+        }
+      }
+
+      updateWikidataCursor()
+
       scrapeButtons.quotes.addEventListener('click', () => triggerScrape('quotes'))
       scrapeButtons.facts.addEventListener('click', () => triggerScrape('facts'))
       scrapeButtons.jokes.addEventListener('click', () => triggerScrape('jokes'))
       scrapeButtons.all.addEventListener('click', () => triggerScrape('all'))
+      trustedTextButtons.wikidata.addEventListener('click', () => triggerTrustedText('wikidata'))
+      trustedTextButtons.wikiquote.addEventListener('click', () => triggerTrustedText('wikiquote'))
+      trustedTextButtons.jokeapi.addEventListener('click', () => triggerTrustedText('jokeapi'))
 
       if (buttons.marathon) buttons.marathon.addEventListener('click', () => runMarathon())
       if (buttons.feeds) buttons.feeds.addEventListener('click', runFeeds)

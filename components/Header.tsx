@@ -1,10 +1,9 @@
 'use client'
 
-import { Heart, Shuffle } from 'lucide-react'
+import { Heart } from 'lucide-react'
 
 interface HeaderProps {
   onHeartClick: () => void
-  onShuffleClick: () => void
   onLanguageChange: (lang: string) => void
   currentLang: string
   accentColor: string
@@ -12,7 +11,6 @@ interface HeaderProps {
 
 export default function Header({ 
   onHeartClick, 
-  onShuffleClick, 
   onLanguageChange,
   currentLang,
   accentColor 
@@ -24,13 +22,6 @@ export default function Header({
         className="p-2 bg-white rounded-lg hover:scale-110 transition-transform"
       >
         <Heart size={24} fill={accentColor} color={accentColor} />
-      </button>
-      
-      <button 
-        onClick={onShuffleClick} 
-        className="p-2 bg-white rounded-lg hover:scale-110 transition-transform"
-      >
-        <Shuffle size={24} color="black" />
       </button>
       
       <div className="flex items-center gap-2">

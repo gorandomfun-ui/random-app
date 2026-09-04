@@ -8,6 +8,11 @@ type ToneAttributes = {
   toneSignals?: string[] | null
 }
 
+type DiscoveryMetadata = {
+  tags?: string[]
+  keywords?: string[]
+}
+
 type Identifiable = {
   _id?: string
 }
@@ -30,7 +35,7 @@ export type ImageItem = Identifiable & {
   pageUrl?: string | null
   link?: string | null
   attribution?: string | null
-} & ToneAttributes
+} & ToneAttributes & DiscoveryMetadata
 
 export type VideoItem = Identifiable & {
   type: 'video'
@@ -40,7 +45,7 @@ export type VideoItem = Identifiable & {
   lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
   provider?: string | null
   source?: SourceInfo
-} & ToneAttributes
+} & ToneAttributes & DiscoveryMetadata
 
 export type AiMetadata = {
   source?: string
@@ -58,7 +63,7 @@ export type QuoteItem = Identifiable & {
   lang?: string
   ai?: AiMetadata | null
   disclaimer?: string
-} & ToneAttributes
+} & ToneAttributes & DiscoveryMetadata
 
 export type JokeItem = Identifiable & {
   type: 'joke'
@@ -69,7 +74,7 @@ export type JokeItem = Identifiable & {
   lang?: string
   ai?: AiMetadata | null
   disclaimer?: string
-} & ToneAttributes
+} & ToneAttributes & DiscoveryMetadata
 
 export type TriviaDifficulty = 'easy' | 'medium' | 'hard'
 
@@ -82,7 +87,7 @@ export type FactTextItem = Identifiable & {
   lang?: string
   ai?: AiMetadata | null
   disclaimer?: string
-}
+} & ToneAttributes & DiscoveryMetadata
 
 export type FactQuizItem = Identifiable & {
   type: 'fact'
@@ -98,7 +103,7 @@ export type FactQuizItem = Identifiable & {
   source: { name: string; url?: string }
   category?: string
   difficulty?: TriviaDifficulty
-} & ToneAttributes
+} & ToneAttributes & DiscoveryMetadata
 
 export type FactItem = FactTextItem | FactQuizItem
 
@@ -112,7 +117,7 @@ export type WebItem = Identifiable & {
   tags?: string[]
   keywords?: string[]
   host?: string | null
-} & ToneAttributes
+} & ToneAttributes & DiscoveryMetadata
 
 export type MiniGameId =
   | 'tap-to-not-tap'

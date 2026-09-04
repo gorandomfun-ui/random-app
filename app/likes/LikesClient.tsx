@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import LikesGrid from '../../components/LikesGrid'
-import ShufflePicker from '@/components/ShufflePicker'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
@@ -12,7 +11,6 @@ import HeartIcon from '../../components/HeartIcon'
 import { useCookieConsent } from '@/components/CookieConsent'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
-import type { ItemType } from '@/lib/random/types'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import {
   readWeLikesCache,
@@ -27,7 +25,6 @@ type LikesClientProps = {
   initialFetchedAt?: number
 }
 
-const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 const GLOBAL_LIKES_LIMIT = 200
 
 function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean }) {
@@ -75,10 +72,6 @@ type LikesGlitchFragment = {
 type LikesGlitchSource = Pick<LikeItem, 'id' | 'likedAt' | 'ogImage' | 'provider' | 'thumbUrl' | 'type' | 'url'>
 
 const LIKES_GLITCH_COLORS = ['#18f06a', '#b833ff', '#00e8ff', '#ff2a6d', '#f3ef7d', '#ffffff']
-
-function toKnownItemType(type: string): ItemType {
-  return ALL_ITEM_TYPES.includes(type as ItemType) ? (type as ItemType) : 'video'
-}
 
 function cssImageUrl(value?: string | null) {
   if (!value) return 'none'
@@ -221,8 +214,6 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const initialGlobalRefreshRef = useRef(false)
   const previousActiveTabRef = useRef<'you' | 'we'>('you')
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
-  const [filterOpen, setFilterOpen] = useState(false)
-  const [filterTypes, setFilterTypes] = useState<ItemType[]>(ALL_ITEM_TYPES)
   const [footerAdVisible, setFooterAdVisible] = useState(false)
   const adsAllowed = consent?.ads === true
 
@@ -405,13 +396,11 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         suffix: t('likes.banner.weSuffix', 'contents.'),
       }
 
-  const filterSet = useMemo(() => new Set(filterTypes), [filterTypes])
   const likesGlitchPool = useMemo<LikesGlitchSource[]>(() => {
     const activeSource: LikesGlitchSource[] = activeTab === 'you' ? items : globalItems
-    const activeItems = activeSource.filter((item) => filterSet.has(toKnownItemType(item.type)))
-    if (activeItems.length) return activeItems
-    return [...items, ...globalItems].filter((item) => filterSet.has(toKnownItemType(item.type)))
-  }, [activeTab, filterSet, globalItems, items])
+    if (activeSource.length) return activeSource
+    return [...items, ...globalItems]
+  }, [activeTab, globalItems, items])
   const likesGlitchSeed = useMemo(() => {
     const sample = likesGlitchPool
       .slice(0, 24)
@@ -475,17 +464,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         )
       }
 
-      const filtered = items.filter((entry) => filterSet.has(entry.type as ItemType))
-
-      if (!filtered.length) {
-        return (
-          <div className="opacity-85 text-center mt-10 px-4 font-inter">
-            {t('likes.filteredEmpty', 'Nothing matches the current filter yet.')}
-          </div>
-        )
-      }
-
-      return <LikesGrid items={filtered} onDelete={load} />
+      return <LikesGrid items={items} onDelete={load} />
     }
 
     if (globalLoading && !globalLoaded) {
@@ -504,17 +483,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
       )
     }
 
-    const filtered = globalItems.filter((entry) => filterSet.has(entry.type as ItemType))
-
-    if (!filtered.length) {
-      return (
-        <div className="opacity-85 text-center mt-10 px-4 font-inter">
-          {t('likes.filteredEmpty', 'Nothing matches the current filter yet.')}
-        </div>
-      )
-    }
-
-    return <LikesGrid items={filtered} readOnly />
+    return <LikesGrid items={globalItems} readOnly />
   }
 
   return (
@@ -554,14 +523,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
 
         <LogoAnimated trigger={1} toSecond={false} vhMobile={8} vhDesktop={8} gapMobile={4} gapDesktop={4} />
 
-        <button
-          type="button"
-          aria-label="Filter likes"
-          onClick={() => setFilterOpen(true)}
-          className="flex items-center p-2"
-        >
-          <MonoIcon src="/icons/Shuffle.svg" color={cream} size={28} />
-        </button>
+        <span className="block h-5 w-7" aria-hidden="true" />
       </header>
 
       <div className="relative z-10 mt-4 mx-4 flex items-center justify-center gap-2">
@@ -717,14 +679,6 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
           </div>
         </div>
       ) : null}
-
-      <ShufflePicker
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        selected={filterTypes}
-        onChange={(next) => setFilterTypes(next.length ? next : ALL_ITEM_TYPES)}
-        theme={theme}
-      />
 
       <style jsx global>{`
         .likes-immersive-bg {

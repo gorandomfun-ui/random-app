@@ -1,7 +1,7 @@
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import type { ItemType } from '@/lib/random/types'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
-import { FIXED_SEQUENCE, type SequenceEntry } from '@/lib/random/sequence'
+import { createRandomSequence, type SequenceEntry } from '@/lib/random/sequence'
 import {
   buildNoroscopeEntries,
   CACHE_STORAGE_KEY,
@@ -19,7 +19,6 @@ export { WE_CACHE_KEY, WE_CACHE_TTL_MS } from '@/lib/likes/weCache'
 
 const RANDOM_PREFETCH_PREFIX = 'random-prefetch-'
 const MAX_PREFETCH_ITEMS_PER_TYPE = 4
-const PREFETCH_CYCLES = 2
 
 const DEFAULT_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 
@@ -51,10 +50,11 @@ async function runRandomPrefetch(lang: Lang, selectedTypes: ItemType[]) {
   const sequence = resolveSequence(allowed)
   if (!sequence.length) return
 
-  for (let cycle = 0; cycle < PREFETCH_CYCLES; cycle++) {
-    for (const slot of sequence) {
-      await attemptPrefetchSlot(lang, slot)
-    }
+  for (const slot of sequence) {
+    const key = `${RANDOM_PREFETCH_PREFIX}${lang}-${slot.itemType}`
+    const existingCount = readPrefetchBucket(key)?.items.length ?? 0
+    if (existingCount >= MAX_PREFETCH_ITEMS_PER_TYPE) continue
+    await attemptPrefetchSlot(lang, slot)
   }
 }
 
@@ -84,7 +84,7 @@ type SequenceSlot = { itemType: ItemType; requireQuiz?: boolean }
 
 function resolveSequence(allowed: Set<ItemType>): SequenceSlot[] {
   const slots: SequenceSlot[] = []
-  for (const entry of FIXED_SEQUENCE) {
+  for (const entry of createRandomSequence()) {
     const resolved = resolveEntry(entry, allowed)
     if (resolved) slots.push(resolved)
   }
@@ -100,15 +100,14 @@ function resolveEntry(entry: SequenceEntry, allowed: Set<ItemType>): SequenceSlo
     if (!allowed.has(entry.itemType)) return null
     return { itemType: entry.itemType }
   }
-  if (entry.kind === 'choices') {
-    const available = entry.types.filter((type) => allowed.has(type))
-    if (!available.length) return null
-    const chosen = available[Math.floor(Math.random() * available.length)]
-    return { itemType: chosen }
-  }
   if (entry.kind === 'quiz') {
     if (!allowed.has(entry.itemType)) return null
     return { itemType: entry.itemType, requireQuiz: true }
+  }
+  if (entry.kind === 'text') {
+    const available = (['fact', 'joke', 'quote'] as ItemType[]).filter((type) => allowed.has(type))
+    if (!available.length) return null
+    return { itemType: available[Math.floor(Math.random() * available.length)] }
   }
   return null
 }

@@ -12,7 +12,7 @@ import { selectWeb } from '@/lib/random/web'
 
 type UsageLang = 'en' | 'fr' | 'de' | 'jp' | 'es' | 'unknown'
 
-type ImageResult = Awaited<ReturnType<typeof selectImage>>
+type ImageResult = Exclude<Awaited<ReturnType<typeof selectImage>>, null>
 type VideoResult = Exclude<Awaited<ReturnType<typeof selectVideo>>, null>
 type QuoteResult = Exclude<Awaited<ReturnType<typeof selectQuote>>, null>
 type FactResult = Exclude<Awaited<ReturnType<typeof selectFact>>, null>
@@ -109,6 +109,7 @@ export async function GET(req: Request) {
     const options: RandomSelectOptions = {
       strong: parseStrongPool(searchParams),
       videoPool: parseVideoPool(searchParams),
+      lang,
     }
     const preview = parsePreview(searchParams)
 
@@ -120,6 +121,9 @@ export async function GET(req: Request) {
     }
 
     const fallback = await selectImage()
+    if (!fallback) {
+      return NextResponse.json({ error: 'No content available' }, { status: 404 })
+    }
     return await respondWithItem(fallback, lang, { preview })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error'
