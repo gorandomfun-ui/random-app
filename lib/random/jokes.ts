@@ -259,7 +259,7 @@ export async function selectJoke(options: RandomSelectOptions = {}): Promise<Jok
   const itemId = doc && doc._id ? String(doc._id) : undefined
 
   registerRecent(text)
-  await touchLastShown('joke', { text })
+  void touchLastShown('joke', { text })
   markGlobalItem('joke', text)
   markGlobalProvider(provider)
   markGlobalOrigin(doc ? 'db-random' : 'fallback')

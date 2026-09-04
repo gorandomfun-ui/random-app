@@ -18,7 +18,7 @@ import {
 export { WE_CACHE_KEY, WE_CACHE_TTL_MS } from '@/lib/likes/weCache'
 
 const RANDOM_PREFETCH_PREFIX = 'random-prefetch-'
-const MAX_PREFETCH_ITEMS_PER_TYPE = 4
+const MAX_PREFETCH_ITEMS_PER_TYPE = 1
 
 const DEFAULT_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 
@@ -51,6 +51,7 @@ async function runRandomPrefetch(lang: Lang, selectedTypes: ItemType[]) {
   if (!sequence.length) return
 
   for (const slot of sequence) {
+    if (window.location.pathname.startsWith('/random')) return
     const key = `${RANDOM_PREFETCH_PREFIX}${lang}-${slot.itemType}`
     const existingCount = readPrefetchBucket(key)?.items.length ?? 0
     if (existingCount >= MAX_PREFETCH_ITEMS_PER_TYPE) continue

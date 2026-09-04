@@ -274,6 +274,23 @@ function itemKey(item: RandomContentItem): string {
   return item._id || ''
 }
 
+function itemProvider(item: RandomContentItem): string {
+  if ('provider' in item && typeof item.provider === 'string' && item.provider.trim()) {
+    return item.provider.trim().toLowerCase()
+  }
+  if ('source' in item && item.source?.name) return item.source.name.trim().toLowerCase()
+  return ''
+}
+
+function itemLabelKey(item: RandomContentItem): string {
+  const label = 'title' in item && typeof item.title === 'string'
+    ? item.title
+    : 'text' in item && typeof item.text === 'string'
+      ? item.text
+      : ''
+  return label.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 export async function findWaveTrail({
   anchor: rawAnchor,
   lang,
@@ -372,6 +389,8 @@ export async function findWaveTrail({
 
   const trail: RandomContentItem[] = []
   const usedKeys = new Set<string>()
+  const usedLabels = new Set<string>()
+  const providerCounts = new Map<string, number>()
   const remaining = [...ranked]
   const target = Math.max(1, Math.min(8, limit))
   let previousHint: WaveSimilarityHint | null = null
@@ -384,12 +403,22 @@ export async function findWaveTrail({
       const rightFlow = scoreWaveSimilarity(flowAnchor, createWaveHint(right.item))
       return rightFlow - leftFlow || right.score - left.score || right.quality - left.quality || left.tie - right.tie
     })
-    const next = remaining.shift()
+    const diverseIndex = remaining.findIndex(({ item }) => {
+      const provider = itemProvider(item)
+      return !provider || (providerCounts.get(provider) ?? 0) < 2
+    })
+    if (diverseIndex < 0) break
+    const [next] = remaining.splice(diverseIndex, 1)
     if (!next) break
     const key = itemKey(next.item)
     if (!key || usedKeys.has(key)) continue
+    const labelKey = itemLabelKey(next.item)
+    if (labelKey && usedLabels.has(labelKey)) continue
     usedKeys.add(key)
+    if (labelKey) usedLabels.add(labelKey)
     trail.push(next.item)
+    const provider = itemProvider(next.item)
+    if (provider) providerCounts.set(provider, (providerCounts.get(provider) ?? 0) + 1)
     previousHint = createWaveHint(next.item)
   }
   return trail

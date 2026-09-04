@@ -818,7 +818,7 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
         const { item, doc } = quizEntry
         registerRecent(item.text)
         const updatedExclusion = buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))
-        await touchLastShown('fact', doc.hash ? { hash: doc.hash } : { text: doc.text })
+        void touchLastShown('fact', doc.hash ? { hash: doc.hash } : { text: doc.text })
         markGlobalItem('fact', item.text)
         markGlobalProvider(item.provider)
         markGlobalOrigin(doc._id ? 'db-random' : 'network')
@@ -846,7 +846,7 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
       const itemId = doc._id ? String(doc._id) : undefined
       registerRecent(text)
       const lookupKey = doc.hash ? { hash: doc.hash } : { text }
-      await touchLastShown('fact', lookupKey)
+      void touchLastShown('fact', lookupKey)
       markGlobalItem('fact', text)
       markGlobalProvider(provider)
       markGlobalOrigin(doc._id ? 'db-random' : 'network')

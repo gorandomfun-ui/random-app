@@ -136,7 +136,7 @@ export async function selectWeb(options: RandomSelectOptions = {}): Promise<WebI
   }
 
   registerRecent(urlRaw)
-  await touchLastShown('web', { url: urlRaw })
+  void touchLastShown('web', { url: urlRaw })
   markGlobalItem('web', urlRaw)
   markGlobalProvider(provider)
   markGlobalOrigin('db-random')

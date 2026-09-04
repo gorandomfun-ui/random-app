@@ -237,7 +237,7 @@ export async function selectQuote(options: RandomSelectOptions = {}): Promise<Qu
     : undefined
 
   registerRecent(text, author)
-  await touchLastShown('quote', { text, author })
+  void touchLastShown('quote', { text, author })
   markGlobalItem('quote', key(text, author))
   markGlobalProvider(provider)
   markGlobalOrigin(doc ? 'db-random' : 'fallback')

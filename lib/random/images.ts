@@ -44,7 +44,7 @@ export async function selectImage(options: RandomSelectOptions = {}): Promise<Im
   if (doc && typeof doc.url === 'string' && doc.url.trim()) {
     const url = doc.url.trim()
     const itemId = doc && typeof doc === 'object' && '_id' in doc ? String((doc as { _id: unknown })._id) : undefined
-    await touchLastShown('image', { url })
+    void touchLastShown('image', { url })
     return {
       _id: itemId,
       type: 'image',

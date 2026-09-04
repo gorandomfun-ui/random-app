@@ -12,12 +12,14 @@ export async function fetchRandom({
   strong = false,
   videoPool,
   preview = false,
+  timeoutMs = 2500,
 }: {
   types: RandomTypes
   lang: 'en' | 'fr' | 'de' | 'jp' | 'es'
   strong?: boolean
   videoPool?: VideoPool
   preview?: boolean
+  timeoutMs?: number
 }): Promise<RandomApiResponse> {
   const qs = new URLSearchParams({
     types: types.join(','),
@@ -28,12 +30,19 @@ export async function fetchRandom({
   if (strong) qs.set('pool', 'strong')
   if (videoPool) qs.set('videoPool', videoPool)
   if (preview) qs.set('preview', '1')
-  const res = await fetch(`/api/random?${qs.toString()}`, {
-    cache: 'no-store', // Next 14: désactive le cache fetch côté client
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  // l’API renvoie { item: {...} } — on renvoie tel quel pour que page.tsx fasse res.item
-  return (await res.json()) as RandomApiResponse
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), Math.max(250, timeoutMs))
+  try {
+    const res = await fetch(`/api/random?${qs.toString()}`, {
+      cache: 'no-store', // Next 14: désactive le cache fetch côté client
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    // l’API renvoie { item: {...} } — on renvoie tel quel pour que page.tsx fasse res.item
+    return (await res.json()) as RandomApiResponse
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 export async function fetchWave({
