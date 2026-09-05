@@ -34,15 +34,33 @@ function env({ freq=440, attack=0.005, decay=0.06, sustain=0.04, release=0.08, t
   o.connect(g).connect(c.destination); o.start(t); o.stop(t+attack+decay+sustain+release+0.02)
 }
 
-export function playRandom() {
-  const base = 280 + Math.random()*80
-  env({ freq: base, type:'square', gain:0.18, attack:0.005, decay:0.05, sustain:0.03, release:0.08 })
-  setTimeout(()=>env({ freq: base*1.5, type:'triangle', gain:0.14, attack:0.003, decay:0.04, sustain:0.02, release:0.07 }), 30)
+function soundProgress(value: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
 }
-export function playAgain() {
-  const base = 220 + Math.random()*50
-  env({ freq: base, type:'sawtooth', gain:0.12, attack:0.003, decay:0.03, sustain:0.02, release:0.06 })
-  setTimeout(()=>env({ freq: base*0.8, type:'square', gain:0.10, attack:0.002, decay:0.03, sustain:0.02, release:0.05 }), 40)
+
+export function playRandom(progress = 0) {
+  const energy = soundProgress(progress)
+  const base = 280 + Math.random() * (80 + energy * 90)
+  env({ freq: base, type:'square', gain:0.18 + energy * 0.035, attack:0.005, decay:0.05, sustain:0.03, release:0.08 })
+  setTimeout(()=>env({ freq: base*(1.5 + energy * 0.22), type:'triangle', gain:0.14 + energy * 0.025, attack:0.003, decay:0.04, sustain:0.02, release:0.07 }), 30)
+  if (energy > 0.3) {
+    setTimeout(() => env({
+      freq: base * (2.05 + Math.random() * 0.55),
+      type: energy > 0.72 ? 'sawtooth' : 'square',
+      gain: 0.015 + energy * 0.045,
+      attack: 0.002,
+      decay: 0.025,
+      sustain: 0.01,
+      release: 0.04,
+    }), Math.round(58 - energy * 20))
+  }
+}
+
+export function playAgain(progress = 0) {
+  const energy = soundProgress(progress)
+  const base = 220 + Math.random() * (50 + energy * 55)
+  env({ freq: base, type:'sawtooth', gain:0.12 + energy * 0.025, attack:0.003, decay:0.03, sustain:0.02, release:0.06 })
+  setTimeout(()=>env({ freq: base*(0.8 + energy * 0.12), type:'square', gain:0.10 + energy * 0.02, attack:0.002, decay:0.03, sustain:0.02, release:0.05 }), 40)
 }
 
 async function swoosh(duration: number, gainValue: number, startFrequency: number, endFrequency: number) {
