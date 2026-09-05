@@ -8,6 +8,7 @@ export type WaveSimilarityHint = {
   keywords: string[]
   terms: string[]
   facets: string[]
+  identityKeys: string[]
   provider?: string
   tone?: 'positive' | 'neutral' | 'negative'
 }
@@ -24,7 +25,14 @@ export type WaveSimilarityDetails = {
 }
 
 type WaveSourceItem = {
+  _id?: string | null
+  id?: string | null
   type?: string
+  variant?: string | null
+  url?: string | null
+  thumbUrl?: string | null
+  pageUrl?: string | null
+  link?: string | null
   text?: string | null
   title?: string | null
   description?: string | null
@@ -32,7 +40,7 @@ type WaveSourceItem = {
   category?: string | null
   host?: string | null
   provider?: string | null
-  source?: { name?: string | null } | null
+  source?: { name?: string | null; url?: string | null } | null
   tags?: string[] | null
   keywords?: string[] | null
   tone?: 'positive' | 'neutral' | 'negative' | null
@@ -63,6 +71,11 @@ const LOW_SIGNAL_TERMS = new Set([
   'uma', 'dos', 'das', 'com', 'sem', 'mais', 'muito', 'muita', 'pelo', 'pela', 'para', 'star', 'stars',
   'project', 'stock', 'bizarre', 'weird', 'strange', 'absurd', 'absurdity',
   'answer', 'answers', 'fact', 'facts', 'knowledge', 'question', 'questions', 'quiz', 'quizzes', 'test', 'trivia',
+  'animal', 'animals', 'creature', 'creatures', 'wildlife',
+  'background', 'black', 'blue', 'brown', 'camera', 'close', 'closeup', 'foreground', 'front', 'golden', 'gray',
+  'green', 'grey', 'happy', 'holding', 'its', 'looking', 'orange', 'pink', 'pictured', 'purple', 'rear', 'red',
+  'shot', 'showing', 'shows', 'side', 'sitting', 'standing', 'white', 'words', 'yellow',
+  'animal-funny', 'cute-animal', 'cute-animals', 'funny-animal', 'funny-animals',
 ])
 
 const FACET_PATTERNS: Array<[RegExp, string]> = [
@@ -126,6 +139,116 @@ function extractFacets(values: string[]): string[] {
   return FACET_PATTERNS.filter(([pattern]) => pattern.test(source)).map(([, facet]) => facet)
 }
 
+function normalizeIdentityValue(value: string): string {
+  return normalize(value).replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '')
+}
+
+function pushUnique(values: string[], value?: string | null) {
+  if (value && !values.includes(value)) values.push(value)
+}
+
+function getUrlIdentityKeys(rawUrl?: string | null): string[] {
+  if (!rawUrl) return []
+  try {
+    const parsed = new URL(rawUrl)
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '')
+    let path = decodeURIComponent(parsed.pathname).replace(/\/+$/, '').toLowerCase()
+    const keys: string[] = []
+    const queryVideoId = parsed.searchParams.get('v')
+
+    if (host === 'youtu.be' || host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      const parts = path.split('/').filter(Boolean)
+      const videoId = queryVideoId || (parts[0] === 'embed' || parts[0] === 'shorts' || parts[0] === 'live' ? parts[1] : parts[0])
+      if (videoId) pushUnique(keys, `asset:youtube:${videoId.toLowerCase()}`)
+    }
+    if (host === 'dai.ly' || host.endsWith('dailymotion.com')) {
+      const parts = path.split('/').filter(Boolean)
+      const videoIndex = parts.indexOf('video')
+      const videoId = host === 'dai.ly' ? parts[0] : videoIndex >= 0 ? parts[videoIndex + 1] : parts[0]
+      if (videoId) pushUnique(keys, `asset:dailymotion:${videoId.toLowerCase()}`)
+    }
+
+    const giphyMedia = path.match(/\/media\/([a-z0-9]+)(?:\/|$)/i)
+    const giphyPage = path.match(/-([a-z0-9]+)$/i)
+    if (host.includes('giphy.com')) {
+      const assetId = giphyMedia?.[1] || giphyPage?.[1]
+      if (assetId) pushUnique(keys, `asset:giphy:${assetId.toLowerCase()}`)
+    }
+
+    if (host.includes('tenor.com')) {
+      const parts = path.split('/').filter(Boolean)
+      const pageId = path.match(/-([0-9]+)$/)?.[1]
+      const assetId = host.startsWith('media.') ? parts[0] : pageId
+      if (assetId) pushUnique(keys, `asset:tenor:${assetId.toLowerCase()}`)
+    }
+
+    const pexelsId = path.match(/\/photos\/(\d+)(?:\/|$)/)?.[1]
+    if (host.includes('pexels.com') && pexelsId) pushUnique(keys, `asset:pexels:${pexelsId}`)
+    const pixabayId = path.match(/-(\d+)(?:_\d+)?(?:\.[a-z0-9]+)?$/i)?.[1]
+    if (host.includes('pixabay.com') && pixabayId) pushUnique(keys, `asset:pixabay:${pixabayId}`)
+    const unsplashId = path.match(/\/photo-([^/]+)/i)?.[1]
+    if (host.includes('unsplash.com') && unsplashId) pushUnique(keys, `asset:unsplash:${unsplashId}`)
+
+    if (!path) path = '/'
+    pushUnique(keys, `url:${host}${path}`)
+    return keys
+  } catch {
+    const normalized = normalizeIdentityValue(rawUrl).replace(/[?#].*$/, '')
+    return normalized ? [`url:${normalized}`] : []
+  }
+}
+
+export function getWaveIdentityKeys(item: WaveSourceItem): string[] {
+  const keys: string[] = []
+  if (item._id) pushUnique(keys, `db:${String(item._id)}`)
+  if (item.id) pushUnique(keys, `content:${String(item.id).toLowerCase()}`)
+  for (const rawUrl of [item.url, item.thumbUrl, item.pageUrl, item.link, item.source?.url]) {
+    for (const key of getUrlIdentityKeys(rawUrl)) pushUnique(keys, key)
+  }
+  if (item.type === 'quote' || item.type === 'joke' || item.type === 'fact') {
+    const text = normalizeIdentityValue(item.text || item.title || '')
+    if (text) pushUnique(keys, `text:${text}`)
+  }
+  return keys.slice(0, 14)
+}
+
+export function hasSameWaveIdentity(left: WaveSourceItem, right: WaveSourceItem): boolean {
+  const rightKeys = new Set(getWaveIdentityKeys(right))
+  return getWaveIdentityKeys(left).some((key) => rightKeys.has(key))
+}
+
+function jaccard(left: string[], right: string[]): number {
+  const leftSet = new Set(left.map(normalizeForMatch))
+  const rightSet = new Set(right.map(normalizeForMatch))
+  if (!leftSet.size || !rightSet.size) return 0
+  let intersection = 0
+  for (const value of leftSet) if (rightSet.has(value)) intersection += 1
+  return intersection / (leftSet.size + rightSet.size - intersection)
+}
+
+export function areWaveItemsFromSameSeries(left: WaveSourceItem, right: WaveSourceItem): boolean {
+  if (hasSameWaveIdentity(left, right)) return true
+  if ((left.type !== 'image' && left.type !== 'video') || left.type !== right.type) return false
+  const leftProvider = normalizeIdentityValue(left.provider || left.source?.name || '')
+  const rightProvider = normalizeIdentityValue(right.provider || right.source?.name || '')
+  if (!leftProvider || leftProvider !== rightProvider) return false
+
+  const leftHint = createWaveHint(left)
+  const rightHint = createWaveHint(right)
+  const sharedDiscovery = overlap(
+    [...leftHint.tags, ...leftHint.keywords],
+    [...rightHint.tags, ...rightHint.keywords],
+  ).length
+  const labelSimilarity = jaccard(leftHint.terms, rightHint.terms)
+  const discoverySimilarity = jaccard(
+    [...leftHint.tags, ...leftHint.keywords],
+    [...rightHint.tags, ...rightHint.keywords],
+  )
+  return labelSimilarity >= 0.58
+    || (labelSimilarity >= 0.38 && sharedDiscovery >= 2)
+    || (sharedDiscovery >= 3 && discoverySimilarity >= 0.68)
+}
+
 export function createWaveHint(item: WaveSourceItem): WaveSimilarityHint {
   const descriptor = [item.title, item.text, item.description, item.author, item.category, item.host]
     .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
@@ -141,6 +264,7 @@ export function createWaveHint(item: WaveSourceItem): WaveSimilarityHint {
     keywords,
     terms,
     facets: extractFacets([descriptor, ...(item.tags || []), ...(item.keywords || [])]),
+    identityKeys: getWaveIdentityKeys(item),
     provider: uniqueUseful([item.provider, item.source?.name], 1)[0],
     tone: item.tone || undefined,
   }
@@ -153,6 +277,7 @@ export function mergeWaveHints(anchor: WaveSimilarityHint, current: WaveSimilari
     keywords: uniqueUseful([...anchor.keywords, ...current.keywords], 18),
     terms: uniqueUseful([...anchor.terms, ...current.terms], 18),
     facets: uniqueUseful([...anchor.facets, ...current.facets], 12),
+    identityKeys: Array.from(new Set([...anchor.identityKeys, ...current.identityKeys])).slice(0, 14),
     provider: anchor.provider || current.provider,
     tone: anchor.tone || current.tone,
   }
@@ -168,6 +293,9 @@ export function sanitizeWaveHint(input: Partial<WaveSimilarityHint>): WaveSimila
     keywords: uniqueUseful(Array.isArray(input.keywords) ? input.keywords : [], 18),
     terms: uniqueUseful(Array.isArray(input.terms) ? input.terms : [], 18),
     facets: uniqueUseful(Array.isArray(input.facets) ? input.facets : [], 12),
+    identityKeys: Array.isArray(input.identityKeys)
+      ? Array.from(new Set(input.identityKeys.filter((value): value is string => typeof value === 'string' && value.length <= 300))).slice(0, 14)
+      : [],
     provider: uniqueUseful([input.provider], 1)[0],
     tone: input.tone === 'positive' || input.tone === 'neutral' || input.tone === 'negative' ? input.tone : undefined,
   }
@@ -280,7 +408,6 @@ export function isStrongWaveMatch(anchor: WaveSimilarityHint, candidate: WaveSim
       details.specificMatches >= 1
       || details.strongTokenMatches >= 1
       || details.associationMatches >= 1
-      || details.facetMatches >= 2
     )
 }
 

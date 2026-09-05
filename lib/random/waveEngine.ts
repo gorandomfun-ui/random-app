@@ -4,12 +4,13 @@ import { getDbSafe } from './data'
 import type { RandomContentItem } from './clientTypes'
 import type { ItemType, RandomSelectOptions } from './types'
 import {
+  areWaveItemsFromSameSeries,
   createWaveHint,
   getWaveDescriptorTokens,
   getWaveQueryTokens,
+  getWaveSimilarityDetails,
   isStrongWaveMatch,
   sanitizeWaveHint,
-  scoreWaveSimilarity,
   type WaveSimilarityHint,
 } from './wave'
 
@@ -57,6 +58,8 @@ type WaveDocument = Document & {
   isSuppressed?: boolean | null
   obsoleteVideoStatus?: string | null
 }
+
+type WaveItem = Exclude<RandomContentItem, { type: 'minigame' }>
 
 type WaveSearchOptions = {
   anchor: WaveSimilarityHint
@@ -111,7 +114,7 @@ function common(doc: WaveDocument) {
   }
 }
 
-function normalizeWaveDocument(doc: WaveDocument): RandomContentItem | null {
+function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
   const provider = trim(doc.provider) || trim(doc.source?.name) || doc.type || 'random'
   const metadata = common(doc)
 
@@ -276,13 +279,13 @@ function documentKey(doc: WaveDocument): string {
   return `text:${doc.type || 'unknown'}:${trim(doc.title) || trim(doc.text)}`
 }
 
-function itemKey(item: RandomContentItem): string {
+function itemKey(item: WaveItem): string {
   if ('url' in item && item.url) return `${item.type}:${item.url}`
   if ('text' in item && item.text) return `${item.type}:${item.text.trim().toLowerCase()}`
   return item._id || ''
 }
 
-function itemLabelKey(item: RandomContentItem): string {
+function itemLabelKey(item: WaveItem): string {
   const label = 'title' in item && typeof item.title === 'string'
     ? item.title
     : 'text' in item && typeof item.text === 'string'
@@ -291,8 +294,14 @@ function itemLabelKey(item: RandomContentItem): string {
   return label.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-function itemIsQuiz(item: RandomContentItem): boolean {
+function itemIsQuiz(item: WaveItem): boolean {
   return item.type === 'fact' && item.variant === 'quiz'
+}
+
+function sharesAnchorIdentity(anchor: WaveSimilarityHint, candidate: WaveSimilarityHint): boolean {
+  if (!anchor.identityKeys.length || !candidate.identityKeys.length) return false
+  const anchorKeys = new Set(anchor.identityKeys)
+  return candidate.identityKeys.some((key) => anchorKeys.has(key))
 }
 
 export async function findWaveTrail({
@@ -383,42 +392,78 @@ export async function findWaveTrail({
     .map((doc) => {
       const item = normalizeWaveDocument(doc)
       if (!item) return null
+      const hint = createWaveHint(item)
+      if (sharesAnchorIdentity(anchor, hint) || !isStrongWaveMatch(anchor, hint)) return null
+      const details = getWaveSimilarityDetails(anchor, hint)
       return {
         item,
-        score: scoreWaveSimilarity(anchor, createWaveHint(item)),
+        score: details.score,
+        specificMatches: details.specificMatches,
+        associationOnly: details.specificMatches === 0 && details.associationMatches > 0,
         quality: qualityScore(doc),
         tie: Math.random(),
       }
     })
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry && isStrongWaveMatch(anchor, createWaveHint(entry.item))))
-    .sort((left, right) => right.score - left.score || right.quality - left.quality || left.tie - right.tie)
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .sort((left, right) => (
+      Number(left.associationOnly) - Number(right.associationOnly)
+      || right.score - left.score
+      || right.quality - left.quality
+      || left.tie - right.tie
+    ))
 
-  const trail: RandomContentItem[] = []
+  const trail: WaveItem[] = []
   const usedKeys = new Set<string>()
   const usedLabels = new Set<string>()
   const remaining = [...ranked]
-  const target = Math.max(1, Math.min(8, limit))
+  const target = Math.max(1, Math.min(10, limit))
+  const typeCounts = new Map<ItemType, number>()
   let quizCount = 0
+  let associationOnlyCount = 0
 
   while (remaining.length && trail.length < target) {
-    let nextIndex = 0
-    if (quizCount >= 1 && itemIsQuiz(remaining[0].item)) {
-      const bestScore = remaining[0].score
-      const nonQuizIndex = remaining.findIndex(({ item, score }) => (
-        !itemIsQuiz(item) && score >= bestScore * 0.85
+    const isSelectable = (entry: typeof remaining[number]) => {
+      if (associationOnlyCount >= 1 && entry.associationOnly) return false
+      const key = itemKey(entry.item)
+      if (!key || usedKeys.has(key)) return false
+      const labelKey = itemLabelKey(entry.item)
+      if (labelKey && usedLabels.has(labelKey)) return false
+      return !trail.some((selected) => areWaveItemsFromSameSeries(selected, entry.item))
+    }
+
+    let nextIndex = remaining.findIndex(isSelectable)
+    if (nextIndex < 0) break
+    const best = remaining[nextIndex]
+
+    if (quizCount >= 1 && itemIsQuiz(best.item)) {
+      const nonQuizIndex = remaining.findIndex((entry) => (
+        isSelectable(entry)
+        && !itemIsQuiz(entry.item)
+        && (entry.specificMatches > 0 || entry.score >= best.score * 0.85)
       ))
       if (nonQuizIndex >= 0) nextIndex = nonQuizIndex
     }
+
+    const preferred = remaining[nextIndex]
+    if ((typeCounts.get(preferred.item.type) || 0) >= 2) {
+      const differentTypeIndex = remaining.findIndex((entry) => (
+        isSelectable(entry)
+        && entry.item.type !== preferred.item.type
+        && (entry.specificMatches > 0 || entry.score >= preferred.score * 0.72)
+      ))
+      if (differentTypeIndex >= 0) nextIndex = differentTypeIndex
+    }
+
     const [next] = remaining.splice(nextIndex, 1)
     if (!next) break
     const key = itemKey(next.item)
-    if (!key || usedKeys.has(key)) continue
     const labelKey = itemLabelKey(next.item)
-    if (labelKey && usedLabels.has(labelKey)) continue
     usedKeys.add(key)
     if (labelKey) usedLabels.add(labelKey)
     trail.push(next.item)
+    typeCounts.set(next.item.type, (typeCounts.get(next.item.type) || 0) + 1)
     if (itemIsQuiz(next.item)) quizCount += 1
+    if (next.associationOnly) associationOnlyCount += 1
   }
   return trail
 }

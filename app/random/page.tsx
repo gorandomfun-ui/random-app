@@ -21,8 +21,10 @@ import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType, VideoPool } from '@/lib/random/types'
 import {
+  areWaveItemsFromSameSeries,
   createWaveHint,
   hasWaveSignal,
+  hasSameWaveIdentity,
   isStrongWaveMatch,
   type WaveSimilarityHint,
 } from '@/lib/random/wave'
@@ -77,7 +79,7 @@ const INITIAL_VIDEO_POOLS: Partial<Record<number, VideoPool>> = {
 const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 const TEXT_ITEM_TYPES: ItemType[] = ['fact', 'joke', 'quote']
 const WAVE_TOTAL_STEPS = 3
-const WAVE_RESERVE_STEPS = 2
+const WAVE_RESERVE_STEPS = 7
 const RANDOM_READY_TARGET = 3
 const RANDOM_SESSION_TTL_MS = 6 * 60 * 60 * 1000
 const RANDOM_SESSION_VERSION = 1
@@ -578,10 +580,10 @@ function buildImmersiveFragments(
   const lite = effectsProfile === 'webkit-lite'
   const fineLineCount = lite ? (isCompact ? 36 : 54) : (isCompact ? 96 : 180)
   const lowerFineLineCount = lite ? (isCompact ? 48 : 72) : (isCompact ? 112 : 210)
-  const tearCount = lite ? (isCompact ? 14 : 22) : (isCompact ? 34 : 64)
-  const clusterCount = lite ? 2 : (isCompact ? 3 : 4)
-  const voidCount = lite ? 4 : (isCompact ? 8 : 12)
-  const signalCount = lite ? 5 : (isCompact ? 10 : 16)
+  const tearCount = lite ? (isCompact ? 18 : 28) : (isCompact ? 40 : 70)
+  const clusterCount = lite ? 3 : (isCompact ? 4 : 5)
+  const voidCount = lite ? 5 : (isCompact ? 9 : 14)
+  const signalCount = lite ? 7 : (isCompact ? 12 : 18)
   const contentZoneTop = isCompact ? 18 : 16
   const contentZoneBottom = isCompact ? 70 : 84
   const sourceZoneTop = isCompact ? 62 : 77
@@ -640,7 +642,7 @@ function buildImmersiveFragments(
     const mediaLine = rng() > 0.58
     const hot = !protectedZone && rng() > 0.9
     const long = rng() > 0.78
-    const height = rng() > 0.93 ? between(0.42, 0.82) : between(0.1, 0.32)
+    const height = rng() > 0.9 ? between(0.5, 1) : between(0.14, 0.4)
     const width = long ? between(isCompact ? 26 : 38, isCompact ? 88 : 118) : between(3, isCompact ? 36 : 58)
     const left = edgeOnly
       ? rng() > 0.5
@@ -665,8 +667,8 @@ function buildImmersiveFragments(
           ? `saturate(${fixed(between(1.05, hot ? 2.8 : 1.7), 2)}) contrast(${fixed(between(1.02, 1.55), 2)}) brightness(${fixed(hot ? between(0.58, 1.02) : between(0.14, 0.5), 2)}) hue-rotate(${intBetween(-42, 46)}deg)`
           : undefined,
         mixBlendMode: hot ? 'screen' : mediaLine ? 'hard-light' : rng() > 0.7 ? 'screen' : 'normal',
-        '--fragment-opacity': fixed(between(hot ? 0.2 : 0.08, hot ? 0.48 : 0.3) * quiet, 2),
-        '--fragment-pop-opacity': fixed(between(0.22, 0.42) * quiet, 2),
+        '--fragment-opacity': fixed(between(hot ? 0.28 : 0.12, hot ? 0.58 : 0.38) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.32, 0.54) * quiet, 2),
         '--fragment-transform': `translate3d(${fixed(between(-8, 8), 1)}px, 0, 0)`,
       },
     })
@@ -677,9 +679,9 @@ function buildImmersiveFragments(
     const mediaLine = rng() > 0.72
     const long = rng() > 0.66
     const bright = rng() > 0.88
-    const height = rng() > 0.96 ? between(0.42, 0.72) : between(0.12, 0.34)
+    const height = rng() > 0.93 ? between(0.5, 0.86) : between(0.16, 0.42)
     const width = long ? between(isCompact ? 22 : 30, isCompact ? 92 : 122) : between(5, isCompact ? 46 : 66)
-    const opacity = mediaLine ? between(0.16, bright ? 0.48 : 0.32) : between(0.14, bright ? 0.44 : 0.3)
+    const opacity = mediaLine ? between(0.22, bright ? 0.58 : 0.4) : between(0.2, bright ? 0.52 : 0.38)
 
     fragments.push({
       id: `lower-fine-${i}`,
@@ -708,7 +710,7 @@ function buildImmersiveFragments(
     const hot = rng() > 0.82
     const smear = rng() > 0.9
     const width = isCompact ? between(12, 96) : between(8, 82)
-    const height = smear ? between(1.8, 5.6) : between(0.35, 1.75)
+    const height = smear ? between(2.4, 7.2) : between(0.5, 2.3)
     const top = backdropTop(0.02)
     const quiet = quietFactor(top)
     const left = between(-26, 112)
@@ -727,8 +729,8 @@ function buildImmersiveFragments(
         backgroundSize: `${intBetween(86, 210)}vw ${intBetween(92, 210)}vh`,
         filter: `saturate(${fixed(between(1.7, 4.1), 2)}) contrast(${fixed(between(1.25, 2.2), 2)}) brightness(${fixed(hot ? between(0.98, 1.48) : between(0.36, 0.86), 2)}) hue-rotate(${hue}deg)`,
         mixBlendMode: hot ? blends[intBetween(0, blends.length - 2)] : 'screen',
-        '--fragment-opacity': fixed(between(0.12, hot ? 0.64 : 0.42) * quiet, 2),
-        '--fragment-pop-opacity': fixed(between(0.5, 0.78) * quiet, 2),
+        '--fragment-opacity': fixed(between(0.2, hot ? 0.72 : 0.52) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.62, 0.9) * quiet, 2),
         '--fragment-transform': transform,
         ...motion(18, 3, 8200, 22000),
       },
@@ -814,13 +816,13 @@ function buildImmersiveFragments(
         left: `${fixed(between(-4, 102))}%`,
         top: `${fixed(top)}%`,
         width: `${fixed(between(8, isCompact ? 62 : 78))}vw`,
-        height: `${fixed(between(0.7, 3.6), 2)}px`,
+        height: `${fixed(between(1, 4.8), 2)}px`,
         backgroundImage: 'none',
         mixBlendMode: rng() > 0.36 ? 'screen' : 'normal',
         '--fragment-color': color,
         '--fragment-alt-color': altColor,
-        '--fragment-opacity': fixed(between(0.26, 0.7) * quiet, 2),
-        '--fragment-pop-opacity': fixed(between(0.54, 0.88) * quiet, 2),
+        '--fragment-opacity': fixed(between(0.38, 0.82) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.68, 0.96) * quiet, 2),
         '--fragment-transform': `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-2, 2), 1)}px, 0)`,
         ...motion(16, 3, 7600, 21000),
       },
@@ -2129,6 +2131,7 @@ export default function RandomExperiencePage() {
   const waveRemainingRef = useRef(0)
   const [waveTransitionActive, setWaveTransitionActive] = useState(false)
   const waveAnchorRef = useRef<WaveSimilarityHint | null>(null)
+  const waveAnchorItemRef = useRef<Exclude<RandomContentItem, MiniGameItem> | null>(null)
   const waveQueueRef = useRef<RandomContentItem[]>([])
   const wavePreparationGenerationRef = useRef(0)
   const wavePreparationAbortRef = useRef<AbortController | null>(null)
@@ -2304,8 +2307,8 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
     const lite = effectsProfile === 'webkit-lite'
     const count = mode === 'boost'
-      ? randomInt(lite ? 12 : 24, lite ? 16 : 32)
-      : randomInt(lite ? 7 : 14, lite ? 10 : 20)
+      ? randomInt(lite ? 16 : 28, lite ? 20 : 36)
+      : randomInt(lite ? 10 : 18, lite ? 14 : 24)
     const stamp = Date.now()
 
     const gradientForSet = (colors: [string, string, string], variant: GlitchBar['variant']) => {
@@ -2331,29 +2334,29 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
       const roll = Math.random()
       const variant: GlitchBar['variant'] =
-        roll > 0.88 ? 'block' : roll > 0.76 ? 'signal' : roll > 0.66 ? 'void' : 'line'
+        roll > 0.85 ? 'block' : roll > 0.65 ? 'signal' : roll > 0.55 ? 'void' : 'line'
       const wideThreshold = mode === 'boost' ? 7 : 4
       const wideChance = variant === 'line' ? 0.38 : variant === 'signal' ? 0.58 : 0.26
       const wide = index < wideThreshold || Math.random() < wideChance
       const widthValue = variant === 'block'
-        ? randomBetween(3, mode === 'boost' ? 20 : 15)
+        ? randomBetween(4, mode === 'boost' ? 24 : 18)
         : wide
-          ? randomBetween(mode === 'boost' ? 42 : 30, mode === 'boost' ? 118 : 106)
-          : randomBetween(4, mode === 'boost' ? 34 : 28)
+          ? randomBetween(mode === 'boost' ? 48 : 36, mode === 'boost' ? 122 : 110)
+          : randomBetween(5, mode === 'boost' ? 38 : 32)
       const maxLeft = Math.max(-6, 100 - widthValue)
       const leftValue = randomBetween(variant === 'block' ? -2 : -9, maxLeft)
       const topValue = randomBetween(1, 98)
       const heightValue = variant === 'block'
-        ? randomBetween(mode === 'boost' ? 5 : 3, mode === 'boost' ? 18 : 12)
+        ? randomBetween(mode === 'boost' ? 6 : 4, mode === 'boost' ? 21 : 15)
         : variant === 'signal'
-          ? randomBetween(1.2, mode === 'boost' ? 3.8 : 3)
+          ? randomBetween(1.8, mode === 'boost' ? 5 : 4.2)
           : variant === 'void'
-            ? randomBetween(1.4, mode === 'boost' ? 7 : 5)
-            : randomBetween(0.45, mode === 'boost' ? 1.5 : 1.2)
-      const delay = Math.round(randomBetween(0, mode === 'boost' ? (lite ? 80 : 130) : (lite ? 45 : 85)))
+            ? randomBetween(1.8, mode === 'boost' ? 8 : 6)
+            : randomBetween(0.65, mode === 'boost' ? 2 : 1.7)
+      const delay = Math.round(randomBetween(0, mode === 'boost' ? (lite ? 60 : 70) : (lite ? 40 : 60)))
       const duration = Math.round(randomBetween(
-        mode === 'boost' ? (lite ? 130 : 150) : (lite ? 105 : 125),
-        mode === 'boost' ? (lite ? 230 : 290) : (lite ? 180 : 230),
+        mode === 'boost' ? (lite ? 190 : 220) : (lite ? 160 : 190),
+        mode === 'boost' ? (lite ? 300 : 340) : (lite ? 250 : 300),
       ))
       const shiftValue = mode === 'boost'
         ? randomBetween(wide ? 22 : 9, wide ? 46 : 22)
@@ -2407,8 +2410,8 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
     const lite = effectsProfile === 'webkit-lite'
-    const base = mode === 'boost' ? (lite ? 260 : 340) : (lite ? 190 : 260)
-    const tail = mode === 'boost' ? (lite ? 70 : 110) : (lite ? 45 : 75)
+    const base = mode === 'boost' ? (lite ? 360 : 430) : (lite ? 300 : 370)
+    const tail = mode === 'boost' ? 55 : 40
     const total = Math.max(base, (longest || base) + tail)
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
   }, [effectsProfile, makePageGlitchBars])
@@ -2869,6 +2872,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     while (waveQueueRef.current.length) {
       const candidate = waveQueueRef.current.shift()
       if (!candidate || candidate.type === 'minigame') continue
+      if (waveAnchorItemRef.current && hasSameWaveIdentity(waveAnchorItemRef.current, candidate)) continue
       const key = getContentKey(candidate)
       if (!key || isRecentKey(key) || waveHistoryKeysRef.current.has(key)) continue
       waveHistoryKeysRef.current.add(key)
@@ -2894,6 +2898,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
     if (anchorItem.type === 'encourage' || anchorItem.type === 'minigame') {
       waveAnchorRef.current = null
+      waveAnchorItemRef.current = null
       wavePreparedAnchorKeyRef.current = null
       return false
     }
@@ -2901,6 +2906,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const anchor = createWaveHint(anchorItem)
     if (!hasWaveSignal(anchor)) {
       waveAnchorRef.current = null
+      waveAnchorItemRef.current = null
       wavePreparedAnchorKeyRef.current = null
       return false
     }
@@ -2920,23 +2926,28 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (generation !== wavePreparationGenerationRef.current) return false
 
       const keys = new Set<string>()
-      const candidates = response.items.filter((candidate) => {
-        if (!candidate || candidate.type === 'minigame') return false
+      const candidates: Exclude<RandomContentItem, MiniGameItem>[] = []
+      for (const candidate of response.items) {
+        if (!candidate || candidate.type === 'minigame') continue
         const key = getContentKey(candidate)
-        if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) return false
-        if (!isStrongWaveMatch(anchor, createWaveHint(candidate))) return false
+        if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) continue
+        if (hasSameWaveIdentity(anchorItem, candidate)) continue
+        if (!isStrongWaveMatch(anchor, createWaveHint(candidate))) continue
+        if (candidates.some((existing) => areWaveItemsFromSameSeries(existing, candidate))) continue
         keys.add(key)
-        return true
-      })
+        candidates.push(candidate)
+      }
 
       if (candidates.length < WAVE_TOTAL_STEPS) {
         waveAnchorRef.current = null
+        waveAnchorItemRef.current = null
         waveQueueRef.current = []
         wavePreparedAnchorKeyRef.current = null
         return false
       }
 
       waveAnchorRef.current = anchor
+      waveAnchorItemRef.current = anchorItem
       waveQueueRef.current = candidates.slice(0, WAVE_TOTAL_STEPS + WAVE_RESERVE_STEPS)
       const firstCandidate = waveQueueRef.current[0]
       if (firstCandidate) void warmContentMedia(firstCandidate)
@@ -2947,6 +2958,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     } catch {
       if (generation !== wavePreparationGenerationRef.current) return false
       waveAnchorRef.current = null
+      waveAnchorItemRef.current = null
       waveQueueRef.current = []
       wavePreparedAnchorKeyRef.current = null
       return false
@@ -3368,6 +3380,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       setWaveMode(false)
       setWaveRemaining(0)
       waveAnchorRef.current = null
+      waveAnchorItemRef.current = null
       waveQueueRef.current = []
     }
     loadNext(false).catch(() => undefined)
@@ -3476,7 +3489,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     '--random-bg-tone': immersiveBackground.tone,
     '--random-bg-accent': immersiveBackground.accent,
     '--random-bg-strength': immersiveBackground.strength,
-    '--random-bg-noise-strength': Number((immersiveBackground.strength * 0.34).toFixed(2)),
+    '--random-bg-noise-strength': Number((immersiveBackground.strength * 0.42).toFixed(2)),
   }), [immersiveBackground])
   const immersiveSeed = useMemo(
     () => getImmersiveSeed(viewItem, immersiveBackground.image),
@@ -3564,6 +3577,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     setWaveRemaining(0)
     setWaveTransitionActive(false)
     waveAnchorRef.current = null
+    waveAnchorItemRef.current = null
     waveQueueRef.current = []
     waveHistoryKeysRef.current.clear()
     waveHistoryIdsRef.current.clear()
@@ -4241,6 +4255,22 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           background: #020202;
           transition: background 300ms ease;
         }
+        .random-immersive-bg::before {
+          content: '';
+          position: absolute;
+          inset: -2% -5%;
+          z-index: 3;
+          pointer-events: none;
+          background:
+            linear-gradient(90deg, transparent 0 5%, rgba(0, 255, 240, 0.82) 5% 19%, rgba(2, 2, 2, 0.88) 19% 24%, rgba(255, 0, 122, 0.72) 24% 51%, transparent 51% 100%) 0 8% / 88% 2.4px no-repeat,
+            linear-gradient(90deg, transparent 0 16%, rgba(244, 255, 0, 0.7) 16% 29%, rgba(255, 255, 255, 0.82) 29% 32%, rgba(36, 88, 255, 0.78) 32% 73%, transparent 73% 100%) 18% 72% / 90% 3px no-repeat,
+            linear-gradient(90deg, rgba(255, 0, 122, 0.78) 0 14%, transparent 14% 31%, rgba(25, 255, 95, 0.72) 31% 62%, rgba(3, 3, 3, 0.92) 62% 68%, transparent 68% 100%) -10% 88% / 76% 4px no-repeat,
+            linear-gradient(90deg, transparent 0 37%, rgba(255, 255, 255, 0.58) 37% 41%, rgba(0, 255, 240, 0.68) 41% 78%, transparent 78% 100%) 8% 24% / 94% 1.5px no-repeat;
+          mix-blend-mode: screen;
+          opacity: min(0.82, calc(var(--random-bg-strength, 0) * 0.9));
+          transform: translate3d(0, 0, 0);
+          animation: random-bg-signal-drift 8400ms steps(1, end) infinite;
+        }
         .random-immersive-bg::after {
           content: '';
           position: absolute;
@@ -4253,7 +4283,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             repeating-linear-gradient(180deg, transparent 0 5px, rgba(255, 255, 255, 0.035) 5px 5.18px, transparent 5.18px 7px),
             linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 18%, rgba(0, 0, 0, 0.22) 54%, transparent 72%, rgba(0, 0, 0, 0.18));
           mix-blend-mode: screen;
-          opacity: calc(var(--random-bg-strength, 0) * 0.92);
+          opacity: min(0.92, calc(var(--random-bg-strength, 0) * 1.06));
           transform: translateZ(0);
         }
         .random-immersive-bg__media {
@@ -4263,8 +4293,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           background-image: var(--random-bg-image, none);
           background-position: center;
           background-size: cover;
-          filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28);
-          opacity: min(1, calc(var(--random-bg-strength, 0) * 1.2));
+          filter: blur(5px) saturate(2.45) contrast(1.9) brightness(0.32);
+          opacity: min(1, calc(var(--random-bg-strength, 0) * 1.3));
           transform: scale(1.12);
           transition: opacity 120ms ease, background-image 120ms ease, filter 120ms ease;
           animation: random-bg-drift 18s steps(8, end) infinite alternate;
@@ -4377,8 +4407,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           inset: 0;
           z-index: 1;
           background:
-            linear-gradient(180deg, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.62) 42%, rgba(0, 0, 0, 0.92)),
-            radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--random-bg-accent, #b13cff) 10%, transparent), transparent 50%);
+            linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.57) 42%, rgba(0, 0, 0, 0.88)),
+            radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--random-bg-accent, #b13cff) 13%, transparent), transparent 52%);
           opacity: 1;
         }
         .random-immersive-bg__noise {
@@ -4411,11 +4441,29 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           background: rgba(0, 0, 0, 0.38);
         }
         @keyframes random-bg-drift {
-          0% { transform: translate3d(-0.6%, -0.4%, 0) scale(1.12); filter: blur(5px) saturate(2.25) contrast(1.85) brightness(0.28); }
-          20% { transform: translate3d(0.8%, -0.2%, 0) scale(1.14); filter: blur(4px) saturate(2.8) contrast(2.2) brightness(0.24); }
-          43% { transform: translate3d(-0.2%, 0.8%, 0) scale(1.13); filter: blur(6px) saturate(2.1) contrast(1.9) brightness(0.3); }
-          71% { transform: translate3d(1.1%, 0.1%, 0) scale(1.15); filter: blur(4px) saturate(3) contrast(2.15) brightness(0.25); }
-          100% { transform: translate3d(0.4%, 0.7%, 0) scale(1.13); filter: blur(5px) saturate(2.35) contrast(1.95) brightness(0.28); }
+          0% { transform: translate3d(-0.8%, -0.5%, 0) scale(1.12); filter: blur(5px) saturate(2.45) contrast(1.9) brightness(0.32); }
+          20% { transform: translate3d(1.1%, -0.2%, 0) scale(1.15); filter: blur(4px) saturate(2.9) contrast(2.2) brightness(0.28); }
+          43% { transform: translate3d(-0.35%, 1%, 0) scale(1.13); filter: blur(6px) saturate(2.25) contrast(1.95) brightness(0.34); }
+          71% { transform: translate3d(1.35%, 0.1%, 0) scale(1.16); filter: blur(4px) saturate(3.05) contrast(2.15) brightness(0.29); }
+          100% { transform: translate3d(0.5%, 0.9%, 0) scale(1.13); filter: blur(5px) saturate(2.55) contrast(2) brightness(0.32); }
+        }
+        @keyframes random-bg-signal-drift {
+          0%, 100% { transform: translate3d(-2%, 0, 0); opacity: min(0.82, calc(var(--random-bg-strength, 0) * 0.9)); }
+          24% { transform: translate3d(3.5%, 0.2%, 0); opacity: min(0.94, calc(var(--random-bg-strength, 0) * 1.04)); }
+          25% { transform: translate3d(-1%, -0.15%, 0); }
+          61% { transform: translate3d(2%, 0, 0); opacity: min(0.76, calc(var(--random-bg-strength, 0) * 0.82)); }
+          62% { transform: translate3d(-3.5%, 0.25%, 0); }
+        }
+        @keyframes random-bg-drift-lite {
+          0%, 100% { transform: translate3d(-0.6%, -0.25%, 0) scale(1.12); }
+          34% { transform: translate3d(0.8%, 0, 0) scale(1.14); }
+          68% { transform: translate3d(-0.2%, 0.65%, 0) scale(1.13); }
+        }
+        @keyframes random-fragments-drift-lite {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          36% { transform: translate3d(5px, 0, 0); }
+          37% { transform: translate3d(-3px, 1px, 0); }
+          72% { transform: translate3d(2px, -1px, 0); }
         }
         @keyframes random-fragment-corrupt {
           0%, 91%, 100% {
@@ -4484,12 +4532,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         @media (prefers-reduced-motion: reduce) {
           .random-immersive-bg,
+          .random-immersive-bg::before,
           .random-immersive-bg__media,
           .random-immersive-bg__fragments,
           .random-immersive-fragment,
           .random-immersive-bg__noise {
             transition: none;
-            animation: none;
+            animation: none !important;
           }
           .random-page--wave .wave-action,
           .random-page--wave .wave-action__icon,
@@ -4578,11 +4627,23 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             5px 0 0 rgba(0, 255, 255, 0.08),
             -5px 0 0 rgba(255, 0, 130, 0.08);
         }
-        .random-page--lite-effects .random-immersive-bg__media,
         .random-page--lite-effects .random-immersive-bg__noise,
         .random-page--lite-effects .random-immersive-fragment {
           animation: none;
           will-change: auto;
+        }
+        .random-page--lite-effects .random-immersive-bg::before {
+          mix-blend-mode: normal;
+          opacity: min(0.62, calc(var(--random-bg-strength, 0) * 0.7));
+          animation-duration: 11200ms;
+        }
+        .random-page--lite-effects .random-immersive-bg__media {
+          animation: random-bg-drift-lite 18000ms steps(1, end) infinite;
+          will-change: transform;
+        }
+        .random-page--lite-effects .random-immersive-bg__fragments {
+          animation: random-fragments-drift-lite 12600ms steps(1, end) infinite;
+          will-change: transform;
         }
         .random-page--lite-effects .page-glitch-overlay::before,
         .random-page--lite-effects .page-glitch-overlay::after,
@@ -4813,13 +4874,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           }
         }
         .page-glitch-overlay--active {
-          animation: page-glitch-fade 300ms steps(1, end) forwards;
+          animation: page-glitch-fade 420ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active::before {
-          animation: page-glitch-scan 300ms steps(1, end) forwards;
+          animation: page-glitch-scan 420ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active::after {
-          animation: page-glitch-signal 300ms steps(1, end) forwards;
+          animation: page-glitch-signal 420ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active .page-glitch-overlay__bar {
           animation-name: page-glitch-bar;
@@ -5109,12 +5170,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .random-page--lite-effects.random-page--wave .random-immersive-bg__media {
           filter: blur(7px) saturate(1.7) contrast(1.2) brightness(0.44);
           transform: scale(1.14);
-          animation: none;
+          animation: wave-background-breathe-lite 7200ms steps(1, end) infinite alternate;
         }
-        .random-page--lite-effects.random-page--wave .random-immersive-bg__fragments,
         .random-page--lite-effects.random-page--wave .random-immersive-bg__tone {
           filter: none;
           animation: none;
+        }
+        .random-page--lite-effects.random-page--wave .random-immersive-bg__fragments {
+          filter: none;
+          animation: random-fragments-drift-lite 8200ms steps(1, end) infinite;
         }
         .random-page--lite-effects.random-page--wave .random-content-frame {
           filter: none;
@@ -5128,6 +5192,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           42% { transform: translate3d(-8px, 0, 0) scale(0.97); opacity: 0.42; }
           68% { transform: translate3d(5px, 0, 0) scale(1.015); opacity: 0.88; }
           100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+        }
+        @keyframes wave-background-breathe-lite {
+          0% { transform: translate3d(-0.8%, 0, 0) scale(1.14); }
+          50% { transform: translate3d(0.9%, -0.35%, 0) scale(1.16); }
+          100% { transform: translate3d(-0.15%, 0.55%, 0) scale(1.15); }
         }
         .heart-icon--liked {
           transform: scale(1.05);
