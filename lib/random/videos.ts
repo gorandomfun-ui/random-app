@@ -36,6 +36,7 @@ type VideoRecord = {
   dislikeCount?: number | null
   isSuppressed?: boolean | null
   obsoleteVideoStatus?: string | null
+  obsoleteVideoRuntimeBlockedUntil?: Date | string | null
   tone?: 'positive' | 'neutral' | 'negative' | null
   toneConfidence?: number | null
   toneSignals?: string[] | null
@@ -148,6 +149,13 @@ async function pickFromDb(
       $and: [
         { isSuppressed: { $ne: true } },
         { obsoleteVideoStatus: { $ne: 'obsolete' } },
+        {
+          $or: [
+            { obsoleteVideoRuntimeBlockedUntil: { $exists: false } },
+            { obsoleteVideoRuntimeBlockedUntil: null },
+            { obsoleteVideoRuntimeBlockedUntil: { $lte: new Date() } },
+          ],
+        },
         ...(exclude.length ? [{ videoId: { $nin: exclude } }] : []),
         ...(Object.keys(extraMatch).length ? [extraMatch] : []),
       ],

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "daily:auto": "node scripts/daily-auto-ingest.mjs"
+    "daily:auto": "node scripts/daily-auto-ingest.mjs",
+    "backfill:wave": "node scripts/backfill/runWaveProfileBackfill.js"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.6.1",

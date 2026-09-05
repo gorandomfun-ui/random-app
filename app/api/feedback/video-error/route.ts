@@ -49,12 +49,23 @@ export async function POST(request: Request) {
     const sourceUrl = cleanString(body?.sourceUrl, 2000)
     const playerCode = cleanPlayerCode(body?.playerCode)
     const permanentPlayerSignal = playerCode === 100 || playerCode === 101 || playerCode === 150
+    const blockDurationMs = permanentPlayerSignal
+      ? 30 * 24 * 60 * 60 * 1000
+      : reason === 'video-load-timeout'
+        ? 10 * 60 * 1000
+        : 6 * 60 * 60 * 1000
 
     const setFields: Record<string, unknown> = {
       obsoleteVideoRuntimeSuspect: true,
       obsoleteVideoRuntimeSuspectAt: now,
       obsoleteVideoRuntimeSuspectReason: reason,
       obsoleteVideoRuntimePermanentSignal: permanentPlayerSignal,
+      obsoleteVideoRuntimeBlockedUntil: new Date(now.getTime() + blockDurationMs),
+    }
+    if (permanentPlayerSignal) {
+      setFields.obsoleteVideoStatus = 'obsolete'
+      setFields.obsoleteVideoReason = `runtime-player-${playerCode}`
+      setFields.obsoleteVideoCheckedAt = now
     }
     if (provider) setFields.obsoleteVideoRuntimeSuspectProvider = provider
     if (sourceUrl) setFields.obsoleteVideoRuntimeSuspectSourceUrl = sourceUrl

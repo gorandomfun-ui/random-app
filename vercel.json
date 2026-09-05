@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/videos", "schedule": "0 7 * * *" }
+    { "path": "/api/cron/videos", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/wave-profiles", "schedule": "30 8 * * *" }
   ]
 }

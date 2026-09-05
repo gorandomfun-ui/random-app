@@ -25,7 +25,6 @@ import {
   createWaveHint,
   hasWaveSignal,
   hasSameWaveIdentity,
-  isStrongWaveMatch,
   type WaveSimilarityHint,
 } from '@/lib/random/wave'
 import { createRandomSequence, type SequenceEntry } from '@/lib/random/sequence'
@@ -42,7 +41,12 @@ import type {
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { reportImageLoadIssue } from '@/utils/imageSuspects'
-import { reportVideoPlaybackIssue, type VideoPlaybackIssue } from '@/utils/videoSuspects'
+import {
+  isVideoBlockedThisSession,
+  reportVideoPlaybackIssue,
+  type VideoPlaybackIssue,
+} from '@/utils/videoSuspects'
+import { reportWaveFeedback } from '@/utils/waveFeedback'
 import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
 
 const TYPE_ICONS: Record<ItemType, string> = {
@@ -436,7 +440,7 @@ const getSafeBackgroundImage = (value?: string | null, viewportWidth?: number | 
   return null
 }
 
-const cleanProviderVideoId = (value?: string | null) => {
+const cleanProviderVideoId = (value?: string | null, { stripSlug = false }: { stripSlug?: boolean } = {}) => {
   if (!value) return null
   let raw = value
   try {
@@ -447,9 +451,9 @@ const cleanProviderVideoId = (value?: string | null) => {
   const cleaned = raw
     .split('?')[0]
     .split('#')[0]
-    .split('_')[0]
     .trim()
-  return cleaned || null
+  if (!cleaned) return null
+  return stripSlug ? cleaned.split('_')[0] || null : cleaned
 }
 
 const extractYouTubeVideoId = (url: string) => {
@@ -475,14 +479,16 @@ const extractDailymotionVideoId = (url: string) => {
     const parsed = new URL(url)
     const queryVideo = parsed.searchParams.get('video')
     if (queryVideo) return cleanProviderVideoId(queryVideo)
-    if (parsed.hostname.includes('dai.ly')) return cleanProviderVideoId(parsed.pathname.split('/').filter(Boolean)[0])
+    if (parsed.hostname.includes('dai.ly')) return cleanProviderVideoId(parsed.pathname.split('/').filter(Boolean)[0], { stripSlug: true })
     if (parsed.hostname.includes('dailymotion.com')) {
       const parts = parsed.pathname.split('/').filter(Boolean)
       const videoIndex = parts.indexOf('video')
-      return videoIndex >= 0 ? cleanProviderVideoId(parts[videoIndex + 1]) : cleanProviderVideoId(parts[0])
+      return videoIndex >= 0
+        ? cleanProviderVideoId(parts[videoIndex + 1], { stripSlug: true })
+        : cleanProviderVideoId(parts[0], { stripSlug: true })
     }
   } catch {
-    return cleanProviderVideoId(url.split('/').pop())
+    return cleanProviderVideoId(url.split('/').pop(), { stripSlug: true })
   }
   return null
 }
@@ -580,6 +586,8 @@ function buildImmersiveFragments(
   const lite = effectsProfile === 'webkit-lite'
   const fineLineCount = lite ? (isCompact ? 36 : 54) : (isCompact ? 96 : 180)
   const lowerFineLineCount = lite ? (isCompact ? 48 : 72) : (isCompact ? 112 : 210)
+  const extraUpperLineCount = lite ? (isCompact ? 4 : 6) : (isCompact ? 14 : 27)
+  const extraLowerLineCount = lite ? (isCompact ? 5 : 7) : (isCompact ? 16 : 30)
   const tearCount = lite ? (isCompact ? 18 : 28) : (isCompact ? 40 : 70)
   const clusterCount = lite ? 3 : (isCompact ? 4 : 5)
   const voidCount = lite ? 5 : (isCompact ? 9 : 14)
@@ -825,6 +833,45 @@ function buildImmersiveFragments(
         '--fragment-pop-opacity': fixed(between(0.68, 0.96) * quiet, 2),
         '--fragment-transform': `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-2, 2), 1)}px, 0)`,
         ...motion(16, 3, 7600, 21000),
+      },
+    })
+  }
+
+  // These final lines add density without another media layer, filter, or animation.
+  for (let i = 0; i < extraUpperLineCount; i += 1) {
+    fragments.push({
+      id: `extra-upper-fine-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--fine',
+      style: {
+        left: `${fixed(between(-8, 96))}%`,
+        top: `${fixed(between(-1, Math.max(1, contentZoneTop - 1)))}%`,
+        width: `${fixed(between(5, isCompact ? 40 : 56))}vw`,
+        height: `${fixed(between(0.12, 0.3), 2)}px`,
+        backgroundImage: 'none',
+        backgroundColor: softLineColors[intBetween(0, softLineColors.length - 1)],
+        mixBlendMode: 'normal',
+        '--fragment-opacity': fixed(between(0.14, 0.3), 2),
+        '--fragment-pop-opacity': fixed(between(0.14, 0.3), 2),
+        '--fragment-transform': 'translate3d(0, 0, 0)',
+      },
+    })
+  }
+
+  for (let i = 0; i < extraLowerLineCount; i += 1) {
+    fragments.push({
+      id: `extra-lower-fine-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--fine random-immersive-fragment--lower-fine',
+      style: {
+        left: `${fixed(between(-10, 98))}%`,
+        top: `${fixed(between(lowerLineTop, lowerChaosBottom))}%`,
+        width: `${fixed(between(6, isCompact ? 44 : 62))}vw`,
+        height: `${fixed(between(0.12, 0.32), 2)}px`,
+        backgroundImage: 'none',
+        backgroundColor: softLineColors[intBetween(0, softLineColors.length - 1)],
+        mixBlendMode: 'normal',
+        '--fragment-opacity': fixed(between(0.15, 0.32), 2),
+        '--fragment-pop-opacity': fixed(between(0.15, 0.32), 2),
+        '--fragment-transform': 'translate3d(0, 0, 0)',
       },
     })
   }
@@ -1145,6 +1192,13 @@ function wakeYouTubeSound(iframe: HTMLIFrameElement | null) {
   postEmbedMessage(iframe, { event: 'command', func: 'playVideo', args: [] })
 }
 
+function subscribeToYouTubeEvents(iframe: HTMLIFrameElement | null, playerId: string) {
+  postEmbedMessage(iframe, { event: 'listening', id: playerId })
+  for (const eventName of ['onReady', 'onStateChange', 'onError', 'onAutoplayBlocked']) {
+    postEmbedMessage(iframe, { event: 'command', func: 'addEventListener', args: [eventName] })
+  }
+}
+
 function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
   postEmbedMessage(iframe, { command: 'setMuted', parameters: [false] })
   postEmbedMessage(iframe, { command: 'setVolume', parameters: [1] })
@@ -1358,7 +1412,7 @@ function YouTubeEmbed({
 
   const announcePlayer = useCallback(() => {
     markLoaded()
-    postEmbedMessage(iframeRef.current, { event: 'listening', id: playerId })
+    subscribeToYouTubeEvents(iframeRef.current, playerId)
   }, [markLoaded, playerId])
 
   useEffect(() => {
@@ -1384,7 +1438,7 @@ function YouTubeEmbed({
 
     window.addEventListener('message', handleMessage)
     const timers = [0, 250, 900].map((delay) => window.setTimeout(() => {
-      postEmbedMessage(iframeRef.current, { event: 'listening', id: playerId })
+      subscribeToYouTubeEvents(iframeRef.current, playerId)
     }, delay))
     return () => {
       window.removeEventListener('message', handleMessage)
@@ -1642,6 +1696,7 @@ function DailymotionEmbed({
           className="absolute top-1/2 left-1/2"
           allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
           title={text || 'Video'}
           style={{
             border: 'none',
@@ -2120,6 +2175,7 @@ export default function RandomExperiencePage() {
   const randomReadyGenerationRef = useRef(0)
   const randomReadyWaitersRef = useRef<Array<() => void>>([])
   const playbackIssueCountsRef = useRef<Record<string, number>>({})
+  const playbackRecoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [effectsProfile, setEffectsProfile] = useState<EffectsProfile>('standard')
@@ -2140,6 +2196,7 @@ export default function RandomExperiencePage() {
   const wavePreparedAnchorKeyRef = useRef<string | null>(null)
   const waveHistoryKeysRef = useRef<Set<string>>(new Set())
   const waveHistoryIdsRef = useRef<Set<string>>(new Set())
+  const waveShownAtRef = useRef(0)
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
   const [pageGlitchCycle, setPageGlitchCycle] = useState(0)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
@@ -2452,6 +2509,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
       if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
       if (initialRetryTimeoutRef.current) clearTimeout(initialRetryTimeoutRef.current)
+      if (playbackRecoveryTimeoutRef.current) clearTimeout(playbackRecoveryTimeoutRef.current)
       randomReadyGenerationRef.current += 1
       readyWaiters.splice(0).forEach((resolve) => resolve())
       wavePreparationAbortRef.current?.abort()
@@ -2704,10 +2762,13 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         return false
       }
       sequenceStateRef.current = cloneSequenceState(restored.sequence)
-      randomReadyQueueRef.current = restored.ready
+      randomReadyQueueRef.current = restored.ready.filter((entry) => (
+        entry.item.type !== 'video' || !isVideoBlockedThisSession(entry.item)
+      ))
       recentKeysRef.current = restored.recentKeys
       recentKeySetRef.current = new Set(restored.recentKeys)
       if (!restored.currentItem) return false
+      if (restored.currentItem.type === 'video' && isVideoBlockedThisSession(restored.currentItem)) return false
       currentItemRef.current = restored.currentItem
       setCurrentItem(restored.currentItem)
       setLiked(restored.currentItem.type === 'encourage' || restored.currentItem.type === 'minigame'
@@ -2851,6 +2912,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     for (let index = 0; index < iterations; index++) {
       const next = queue.shift()
       if (!next) continue
+      if (next.type === 'video' && isVideoBlockedThisSession(next)) continue
       const key = getContentKey(next)
       if (key && isRecentKey(key)) continue
       if (predicate && !predicate(next)) {
@@ -2872,6 +2934,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     while (waveQueueRef.current.length) {
       const candidate = waveQueueRef.current.shift()
       if (!candidate || candidate.type === 'minigame') continue
+      if (candidate.type === 'video' && isVideoBlockedThisSession(candidate)) continue
       if (waveAnchorItemRef.current && hasSameWaveIdentity(waveAnchorItemRef.current, candidate)) continue
       const key = getContentKey(candidate)
       if (!key || isRecentKey(key) || waveHistoryKeysRef.current.has(key)) continue
@@ -2917,6 +2980,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     try {
       const response = await fetchWave({
         anchor,
+        anchorId: typeof anchorItem._id === 'string' ? anchorItem._id : undefined,
         lang: (locale || 'en') as Lang,
         excludeIds,
         limit: WAVE_TOTAL_STEPS + WAVE_RESERVE_STEPS,
@@ -2929,10 +2993,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       const candidates: Exclude<RandomContentItem, MiniGameItem>[] = []
       for (const candidate of response.items) {
         if (!candidate || candidate.type === 'minigame') continue
+        if (candidate.type === 'video' && isVideoBlockedThisSession(candidate)) continue
         const key = getContentKey(candidate)
         if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) continue
         if (hasSameWaveIdentity(anchorItem, candidate)) continue
-        if (!isStrongWaveMatch(anchor, createWaveHint(candidate))) continue
         if (candidates.some((existing) => areWaveItemsFromSameSeries(existing, candidate))) continue
         keys.add(key)
         candidates.push(candidate)
@@ -3003,10 +3067,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   useEffect(() => {
     if (!currentItem || waveMode || loading) return undefined
-    const timer = window.setTimeout(() => {
+    let disposed = false
+    let timer: number | null = null
+    const prepareWhenRandomQueueIsReady = () => {
+      if (disposed) return
+      if (randomReadyQueueRef.current.length < 2 && randomReadyPromiseRef.current) {
+        timer = window.setTimeout(prepareWhenRandomQueueIsReady, 220)
+        return
+      }
       void ensureWaveTrail(currentItem)
-    }, 40)
-    return () => window.clearTimeout(timer)
+    }
+    timer = window.setTimeout(prepareWhenRandomQueueIsReady, 450)
+    return () => {
+      disposed = true
+      if (timer != null) window.clearTimeout(timer)
+    }
   }, [currentItem, ensureWaveTrail, loading, waveMode])
 
   const acquireItem = useCallback(async (
@@ -3024,7 +3099,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (prefetched) return finalizeCandidate(prefetched)
     }
 
-    const attempts = predicate ? 2 : 1
+    const attempts = type === 'video' ? 3 : predicate ? 2 : 1
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         const res = await fetchRandom({
@@ -3036,6 +3111,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         })
         const item = res?.item
         if (!item || item.type !== type) continue
+        if (item.type === 'video' && isVideoBlockedThisSession(item)) continue
         const key = getContentKey(item)
         if (key && isRecentKey(key)) continue
         if (predicate && !predicate(item)) continue
@@ -3102,7 +3178,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           timeoutMs: 5000,
         })
         const fallbackItem = fallbackResponse?.item
-        if (fallbackItem && fallbackItem.type !== 'minigame') {
+        if (
+          fallbackItem
+          && fallbackItem.type !== 'minigame'
+          && (fallbackItem.type !== 'video' || !isVideoBlockedThisSession(fallbackItem))
+        ) {
           const fallbackKey = getContentKey(fallbackItem)
           if (fallbackKey && !isRecentKey(fallbackKey)) {
             item = finalizeCandidate(fallbackItem)
@@ -3181,7 +3261,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [getContentKey, notifyRandomReady, persistRandomSession, prepareRandomEntry, warmContentMedia])
 
   const takeRandomReadyEntry = useCallback(() => {
-    const entry = randomReadyQueueRef.current.shift() ?? null
+    let entry = randomReadyQueueRef.current.shift() ?? null
+    while (entry?.item.type === 'video' && isVideoBlockedThisSession(entry.item)) {
+      entry = randomReadyQueueRef.current.shift() ?? null
+    }
     if (entry) {
       const upcoming = randomReadyQueueRef.current[0]
       if (upcoming) void warmContentMedia(upcoming.item)
@@ -3348,43 +3431,61 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
     playbackIssueCountsRef.current[key] = attempts + 1
     reportVideoPlaybackIssue(item, issue)
-    if (transitionLockedRef.current) return
-    if (waveModeRef.current) {
-      const replacement = takePreparedWaveCandidate()
-      if (replacement) {
-        transitionLockedRef.current = true
-        setTransitionLocked(true)
-        void (async () => {
-          try {
-            await waitForContentMedia(replacement)
-            triggerWaveTransition()
-            triggerPageGlitch()
-            await waitForTransitionReveal()
-            setIsSecond((prev) => !prev)
-            setTrigger((value) => value + 1)
-            currentItemRef.current = replacement
-            setCurrentItem(replacement)
-            setLiked(isLiked(replacement))
-            updateTheme()
-            await waitForNextPaint()
-            await waitForTransitionSettle('wave')
-          } finally {
-            transitionLockedRef.current = false
-            setTransitionLocked(false)
-          }
-        })()
+
+    const recover = () => {
+      const active = currentItemRef.current
+      if (!active || active.type !== 'video' || getContentKey(active) !== key) return
+      if (transitionLockedRef.current || loadPendingRef.current) {
+        if (playbackRecoveryTimeoutRef.current) clearTimeout(playbackRecoveryTimeoutRef.current)
+        playbackRecoveryTimeoutRef.current = setTimeout(() => {
+          playbackRecoveryTimeoutRef.current = null
+          recover()
+        }, 100)
         return
       }
-      waveModeRef.current = false
-      waveRemainingRef.current = 0
-      setWaveMode(false)
-      setWaveRemaining(0)
-      waveAnchorRef.current = null
-      waveAnchorItemRef.current = null
-      waveQueueRef.current = []
+
+      if (waveModeRef.current) {
+        const replacement = takePreparedWaveCandidate()
+        if (replacement) {
+          transitionLockedRef.current = true
+          setTransitionLocked(true)
+          void (async () => {
+            try {
+              await waitForContentMedia(replacement)
+              triggerWaveTransition()
+              triggerPageGlitch()
+              await waitForTransitionReveal()
+              setIsSecond((prev) => !prev)
+              setTrigger((value) => value + 1)
+              currentItemRef.current = replacement
+              setCurrentItem(replacement)
+              waveShownAtRef.current = Date.now()
+              setLiked(isLiked(replacement))
+              updateTheme()
+              persistRandomSession()
+              await waitForNextPaint()
+              await waitForTransitionSettle('wave')
+            } finally {
+              transitionLockedRef.current = false
+              setTransitionLocked(false)
+            }
+          })()
+          return
+        }
+        waveModeRef.current = false
+        waveRemainingRef.current = 0
+        setWaveMode(false)
+        setWaveRemaining(0)
+        waveAnchorRef.current = null
+        waveAnchorItemRef.current = null
+        waveQueueRef.current = []
+        wavePreparedAnchorKeyRef.current = null
+      }
+      void loadNext(false)
     }
-    loadNext(false).catch(() => undefined)
-  }, [getContentKey, loadNext, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
+
+    recover()
+  }, [getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
 
   useEffect(() => {
     if (initialLoadTriggeredRef.current) return
@@ -3555,6 +3656,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       addLike(item, theme)
       setLiked(true)
       triggerHeartGlitch()
+      if (waveModeRef.current && waveAnchorItemRef.current) {
+        reportWaveFeedback(waveAnchorItemRef.current, item, 'like', waveShownAtRef.current)
+      }
     }
     try {
       window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
@@ -3565,6 +3669,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const handleRandomAgain = useCallback(() => {
     if (transitionLockedRef.current) return
+    const waveCandidate = currentItemRef.current
+    if (
+      waveModeRef.current
+      && waveAnchorItemRef.current
+      && waveCandidate
+      && waveCandidate.type !== 'encourage'
+      && waveCandidate.type !== 'minigame'
+    ) {
+      reportWaveFeedback(
+        waveAnchorItemRef.current,
+        waveCandidate,
+        waveRemainingRef.current <= 1 ? 'complete' : 'exit',
+        waveShownAtRef.current,
+      )
+    }
     wavePreparationAbortRef.current?.abort()
     wavePreparationAbortRef.current = null
     wavePreparationGenerationRef.current += 1
@@ -3581,6 +3700,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     waveQueueRef.current = []
     waveHistoryKeysRef.current.clear()
     waveHistoryIdsRef.current.clear()
+    waveShownAtRef.current = 0
     loadNext(true)
       .catch(() => undefined)
     playAgain()
@@ -3599,6 +3719,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (enteringWave) {
         const prepared = await ensureWaveTrail(current)
         if (!prepared || !waveAnchorRef.current) return
+      } else if (waveAnchorItemRef.current) {
+        reportWaveFeedback(waveAnchorItemRef.current, current, 'continue', waveShownAtRef.current)
       }
       const next = takePreparedWaveCandidate()
       if (!next) {
@@ -3625,6 +3747,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       setTrigger((value) => value + 1)
       currentItemRef.current = next
       setCurrentItem(next)
+      waveShownAtRef.current = Date.now()
       setLiked(isLiked(next))
       updateTheme()
       await waitForNextPaint()

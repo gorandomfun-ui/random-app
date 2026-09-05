@@ -7,12 +7,16 @@ import {
   areWaveItemsFromSameSeries,
   createWaveHint,
   getWaveDescriptorTokens,
-  getWaveQueryTokens,
-  getWaveSimilarityDetails,
-  isStrongWaveMatch,
   sanitizeWaveHint,
   type WaveSimilarityHint,
 } from './wave'
+import {
+  buildWaveProfile,
+  getWaveProfileQueryTokens,
+  getWaveProfileSimilarity,
+  sanitizeWaveProfile,
+  type WaveProfile,
+} from './waveProfile'
 
 type WaveDocument = Document & {
   _id?: ObjectId | string
@@ -26,6 +30,7 @@ type WaveDocument = Document & {
   description?: string | null
   channelTitle?: string | null
   author?: string | null
+  category?: string | null
   provider?: string | null
   source?: { name?: string | null; url?: string | null } | null
   pageUrl?: string | null
@@ -57,12 +62,15 @@ type WaveDocument = Document & {
   likeCount?: number | null
   isSuppressed?: boolean | null
   obsoleteVideoStatus?: string | null
+  obsoleteVideoRuntimeBlockedUntil?: Date | string | null
+  waveProfile?: WaveProfile | null
 }
 
 type WaveItem = Exclude<RandomContentItem, { type: 'minigame' }>
 
 type WaveSearchOptions = {
   anchor: WaveSimilarityHint
+  anchorId?: string
   lang: RandomSelectOptions['lang']
   excludeIds?: string[]
   limit?: number
@@ -71,7 +79,7 @@ type WaveSearchOptions = {
 }
 
 const WAVE_TYPES: ItemType[] = ['image', 'video', 'web', 'quote', 'joke', 'fact']
-const MAX_DB_CANDIDATES = 80
+const MAX_DB_CANDIDATES = 120
 const WAVE_QUERY_MAX_TIME_MS = 900
 let waveIndexPromise: Promise<void> | null = null
 
@@ -80,6 +88,10 @@ function ensureWaveIndexes(collection: Collection<WaveDocument>) {
     waveIndexPromise = Promise.all([
       collection.createIndex({ tags: 1, type: 1 }, { name: 'idx_wave_tags_type' }),
       collection.createIndex({ keywords: 1, type: 1 }, { name: 'idx_wave_keywords_type' }),
+      collection.createIndex({ 'waveProfile.anchors': 1, type: 1 }, { name: 'idx_wave_profile_anchors_type' }),
+      collection.createIndex({ 'waveProfile.phrases': 1, type: 1 }, { name: 'idx_wave_profile_phrases_type' }),
+      collection.createIndex({ 'waveProfile.concepts': 1, type: 1 }, { name: 'idx_wave_profile_concepts_type' }),
+      collection.createIndex({ 'waveProfile.facets': 1, type: 1 }, { name: 'idx_wave_profile_facets_type' }),
     ])
       .then(() => undefined)
       .catch(() => {
@@ -259,18 +271,9 @@ function qualityScore(doc: WaveDocument): number {
     + Math.min(2, Math.log10(Math.max(1, typeof doc.likeCount === 'number' ? doc.likeCount : 0)))
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function descriptorTokenPattern(value: string): string {
-  const escaped = escapeRegExp(value)
-  if (value.length > 4 && value.endsWith('s') && !value.endsWith('ss')) {
-    return `${escapeRegExp(value.slice(0, -1))}s?`
-  }
-  if (value.length < 5) return escaped
-  return `${escapeRegExp(value.slice(0, 5))}[a-z0-9]*`
-}
+const AMBIGUOUS_METADATA_TOKENS = new Set([
+  'background', 'body', 'color', 'colors', 'end', 'face', 'hand', 'head', 'high', 'low', 'stomach',
+])
 
 function documentKey(doc: WaveDocument): string {
   if (doc._id) return `id:${String(doc._id)}`
@@ -304,8 +307,80 @@ function sharesAnchorIdentity(anchor: WaveSimilarityHint, candidate: WaveSimilar
   return candidate.identityKeys.some((key) => anchorKeys.has(key))
 }
 
+function sourceForProfile(doc: WaveDocument) {
+  return {
+    type: doc.type,
+    title: doc.title,
+    text: doc.text,
+    description: doc.description,
+    author: doc.author,
+    category: doc.quiz?.category || doc.category,
+    channelTitle: doc.channelTitle,
+    host: doc.host,
+    provider: doc.provider,
+    tags: doc.tags,
+    keywords: doc.keywords,
+    variant: doc.variant,
+    quiz: doc.quiz,
+  }
+}
+
+function profileForDocument(doc: WaveDocument): WaveProfile {
+  return sanitizeWaveProfile(buildWaveProfile(sourceForProfile(doc)))
+}
+
+function profileForHint(hint: WaveSimilarityHint): WaveProfile {
+  return sanitizeWaveProfile(buildWaveProfile({
+    type: hint.originType,
+    title: hint.terms.join(' '),
+    tags: hint.tags,
+    keywords: hint.keywords,
+  }))
+}
+
+async function resolveAnchorProfile(
+  collection: Collection<WaveDocument>,
+  anchorId: string | undefined,
+  fallback: WaveSimilarityHint,
+): Promise<WaveProfile> {
+  if (anchorId && /^[a-f0-9]{24}$/i.test(anchorId)) {
+    try {
+      const { ObjectId } = await import('mongodb')
+      const doc = await collection.findOne({ _id: new ObjectId(anchorId) } as Filter<WaveDocument>)
+      if (doc) return profileForDocument(doc)
+    } catch {
+      /* The client hint remains a fast fallback for non-Mongo identifiers. */
+    }
+  }
+  return profileForHint(fallback)
+}
+
+async function getLearnedRelations(
+  collection: Collection<Document>,
+  anchorProfile: WaveProfile,
+): Promise<Map<string, number>> {
+  const anchorTerms = [...anchorProfile.phrases, ...anchorProfile.anchors, ...anchorProfile.concepts].slice(0, 12)
+  if (!anchorTerms.length) return new Map()
+  try {
+    const rows = await collection
+      .find({ anchorTerm: { $in: anchorTerms }, score: { $gt: 0.5 } }, { maxTimeMS: 250 })
+      .sort({ score: -1, positive: -1 })
+      .limit(24)
+      .toArray()
+    const result = new Map<string, number>()
+    for (const row of rows) {
+      if (typeof row.candidateTerm !== 'string' || typeof row.score !== 'number') continue
+      result.set(row.candidateTerm, Math.max(result.get(row.candidateTerm) || 0, Math.min(8, row.score)))
+    }
+    return result
+  } catch {
+    return new Map()
+  }
+}
+
 export async function findWaveTrail({
   anchor: rawAnchor,
+  anchorId,
   lang,
   excludeIds = [],
   limit = 10,
@@ -313,9 +388,6 @@ export async function findWaveTrail({
   factVariant,
 }: WaveSearchOptions): Promise<RandomContentItem[]> {
   const anchor = sanitizeWaveHint(rawAnchor)
-  const tokens = getWaveQueryTokens(anchor)
-  const descriptorTokens = getWaveDescriptorTokens(anchor)
-  if (!tokens.length && !descriptorTokens.length) return []
   const db = await getDbSafe()
   if (!db) return []
 
@@ -328,7 +400,20 @@ export async function findWaveTrail({
   const sharedFilters: Filter<WaveDocument>[] = [
     { type: { $in: selectedTypes } },
     { isSuppressed: { $ne: true } },
-    { $or: [{ type: { $ne: 'video' } }, { obsoleteVideoStatus: { $ne: 'obsolete' } }] },
+    {
+      $or: [
+        { type: { $ne: 'video' } },
+        {
+          type: 'video',
+          obsoleteVideoStatus: { $ne: 'obsolete' },
+          $or: [
+            { obsoleteVideoRuntimeBlockedUntil: { $exists: false } },
+            { obsoleteVideoRuntimeBlockedUntil: null },
+            { obsoleteVideoRuntimeBlockedUntil: { $lte: new Date() } },
+          ],
+        },
+      ],
+    },
     languageMatch(lang),
   ]
   if (excludedObjectIds.length) sharedFilters.push({ _id: { $nin: excludedObjectIds } } as Filter<WaveDocument>)
@@ -345,6 +430,11 @@ export async function findWaveTrail({
 
   const collection = db.collection<WaveDocument>('items')
   void ensureWaveIndexes(collection)
+  const anchorProfile = await resolveAnchorProfile(collection, anchorId, anchor)
+  const profileTokens = getWaveProfileQueryTokens(anchorProfile)
+  if (!profileTokens.length) return []
+  const learnedRelations = await getLearnedRelations(db.collection('wave_relations'), anchorProfile)
+  const learnedTokens = Array.from(learnedRelations.keys())
   const findCandidates = async (signalFilter: Filter<WaveDocument>) => {
     try {
       return await collection
@@ -356,29 +446,39 @@ export async function findWaveTrail({
     }
   }
 
-  const descriptorRegex = descriptorTokens.length
-    ? new RegExp(`\\b(?:${descriptorTokens.map(descriptorTokenPattern).join('|')})\\b`, 'i')
-    : null
-  const [metadataDocs, descriptorDocs] = await Promise.all([
-    tokens.length
-      ? findCandidates({ $or: [{ tags: { $in: tokens } }, { keywords: { $in: tokens } }] } as Filter<WaveDocument>)
-      : Promise.resolve([]),
-    descriptorRegex
+  const descriptorTokens = getWaveDescriptorTokens(anchor).slice(0, 12)
+  const specificMetadataTokens = descriptorTokens.filter((token) => !AMBIGUOUS_METADATA_TOKENS.has(token))
+  const metadataTokens = Array.from(new Set([
+    ...specificMetadataTokens,
+    ...profileTokens,
+    ...learnedTokens,
+  ])).slice(0, 32)
+  const profileSignalFilter = {
+    $or: [
+      { 'waveProfile.anchors': { $in: anchorProfile.anchors } },
+      { 'waveProfile.phrases': { $in: anchorProfile.phrases } },
+      { 'waveProfile.concepts': { $in: anchorProfile.concepts } },
+      { 'waveProfile.facets': { $in: anchorProfile.facets } },
+      ...(learnedTokens.length ? [
+        { 'waveProfile.anchors': { $in: learnedTokens } },
+        { 'waveProfile.phrases': { $in: learnedTokens } },
+        { 'waveProfile.concepts': { $in: learnedTokens } },
+      ] : []),
+    ],
+  } as Filter<WaveDocument>
+  const [profileDocs, metadataDocs] = await Promise.all([
+    findCandidates(profileSignalFilter),
+    metadataTokens.length
       ? findCandidates({
         $or: [
-          { title: descriptorRegex },
-          { text: descriptorRegex },
-          { description: descriptorRegex },
-          { author: descriptorRegex },
-          { category: descriptorRegex },
-          { channelTitle: descriptorRegex },
-          { host: descriptorRegex },
+          { tags: { $in: metadataTokens } },
+          { keywords: { $in: metadataTokens } },
         ],
       } as Filter<WaveDocument>)
       : Promise.resolve([]),
   ])
 
-  const candidateGroups = [metadataDocs, descriptorDocs]
+  const candidateGroups = [profileDocs, metadataDocs]
   const docs: WaveDocument[] = []
   const documentKeys = new Set<string>()
   for (const doc of candidateGroups.flat()) {
@@ -388,25 +488,57 @@ export async function findWaveTrail({
     docs.push(doc)
   }
 
+  const pairScores = new Map<string, number>()
+  if (anchorId && /^[a-f0-9]{24}$/i.test(anchorId)) {
+    const candidateIds = docs
+      .map((doc) => doc._id)
+      .filter((id): id is ObjectId => Boolean(id && typeof id !== 'string'))
+    if (candidateIds.length) {
+      try {
+        const rows = await db.collection('wave_feedback_pairs')
+          .find({ anchorId: new ObjectId(anchorId), candidateId: { $in: candidateIds }, score: { $ne: 0 } }, { maxTimeMS: 250 })
+          .limit(candidateIds.length)
+          .toArray()
+        for (const row of rows) {
+          if (row.candidateId && typeof row.score === 'number') pairScores.set(String(row.candidateId), row.score)
+        }
+      } catch {
+        /* Pair learning is optional and never blocks candidate generation. */
+      }
+    }
+  }
+
   const ranked = docs
     .map((doc) => {
       const item = normalizeWaveDocument(doc)
       if (!item) return null
       const hint = createWaveHint(item)
-      if (sharesAnchorIdentity(anchor, hint) || !isStrongWaveMatch(anchor, hint)) return null
-      const details = getWaveSimilarityDetails(anchor, hint)
+      if (sharesAnchorIdentity(anchor, hint)) return null
+      const profile = profileForDocument(doc)
+      const details = getWaveProfileSimilarity(anchorProfile, profile)
+      const candidateTerms = [...profile.phrases, ...profile.anchors, ...profile.concepts]
+      const learnedScore = candidateTerms.reduce((score, term) => Math.max(score, learnedRelations.get(term) || 0), 0)
+      const pairScore = doc._id ? Math.max(-8, Math.min(12, pairScores.get(String(doc._id)) || 0)) : 0
+      const semanticallyConnected = details.phraseMatches > 0
+        || details.anchorMatches > 0
+        || details.conceptMatches > 1
+        || (details.conceptMatches > 0 && details.facetMatches > 0)
+        || details.facetMatches > 1
+      if (!semanticallyConnected && learnedScore < 1) return null
       return {
         item,
-        score: details.score,
-        specificMatches: details.specificMatches,
-        associationOnly: details.specificMatches === 0 && details.associationMatches > 0,
+        score: details.score + learnedScore * 2.5 + pairScore * 2,
+        directMatches: semanticallyConnected ? details.directMatches || 1 : 0,
+        broadOnly: details.phraseMatches === 0 && details.anchorMatches === 0 && details.conceptMatches <= 1,
+        learnedOnly: !semanticallyConnected,
         quality: qualityScore(doc),
         tie: Math.random(),
       }
     })
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
     .sort((left, right) => (
-      Number(left.associationOnly) - Number(right.associationOnly)
+      Number(left.learnedOnly) - Number(right.learnedOnly)
+      || Number(left.broadOnly) - Number(right.broadOnly)
       || right.score - left.score
       || right.quality - left.quality
       || left.tie - right.tie
@@ -419,11 +551,11 @@ export async function findWaveTrail({
   const target = Math.max(1, Math.min(10, limit))
   const typeCounts = new Map<ItemType, number>()
   let quizCount = 0
-  let associationOnlyCount = 0
+  let learnedOnlyCount = 0
 
   while (remaining.length && trail.length < target) {
     const isSelectable = (entry: typeof remaining[number]) => {
-      if (associationOnlyCount >= 1 && entry.associationOnly) return false
+      if (learnedOnlyCount >= 1 && entry.learnedOnly) return false
       const key = itemKey(entry.item)
       if (!key || usedKeys.has(key)) return false
       const labelKey = itemLabelKey(entry.item)
@@ -439,7 +571,7 @@ export async function findWaveTrail({
       const nonQuizIndex = remaining.findIndex((entry) => (
         isSelectable(entry)
         && !itemIsQuiz(entry.item)
-        && (entry.specificMatches > 0 || entry.score >= best.score * 0.85)
+        && (entry.directMatches > 0 || entry.score >= best.score * 0.9)
       ))
       if (nonQuizIndex >= 0) nextIndex = nonQuizIndex
     }
@@ -449,7 +581,8 @@ export async function findWaveTrail({
       const differentTypeIndex = remaining.findIndex((entry) => (
         isSelectable(entry)
         && entry.item.type !== preferred.item.type
-        && (entry.specificMatches > 0 || entry.score >= preferred.score * 0.72)
+        && entry.directMatches > 0
+        && entry.score >= preferred.score * 0.8
       ))
       if (differentTypeIndex >= 0) nextIndex = differentTypeIndex
     }
@@ -463,7 +596,7 @@ export async function findWaveTrail({
     trail.push(next.item)
     typeCounts.set(next.item.type, (typeCounts.get(next.item.type) || 0) + 1)
     if (itemIsQuiz(next.item)) quizCount += 1
-    if (next.associationOnly) associationOnlyCount += 1
+    if (next.learnedOnly) learnedOnlyCount += 1
   }
   return trail
 }

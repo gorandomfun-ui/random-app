@@ -11,6 +11,7 @@ const WAVE_TYPES: ItemType[] = ['image', 'video', 'web', 'quote', 'joke', 'fact'
 
 type WaveRequest = {
   anchor?: Partial<WaveSimilarityHint>
+  anchorId?: string
   lang?: 'en' | 'fr' | 'de' | 'es' | 'jp'
   excludeIds?: string[]
   limit?: number
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
     }
     let items = await findWaveTrail({
       anchor,
+      anchorId: typeof body.anchorId === 'string' ? body.anchorId : undefined,
       lang: body.lang || 'en',
       excludeIds: Array.isArray(body.excludeIds) ? body.excludeIds.filter((value): value is string => typeof value === 'string') : [],
       limit: typeof body.limit === 'number' ? body.limit : 10,

@@ -47,6 +47,7 @@ export async function fetchRandom({
 
 export async function fetchWave({
   anchor,
+  anchorId,
   lang,
   excludeIds = [],
   limit = 10,
@@ -55,6 +56,7 @@ export async function fetchWave({
   signal,
 }: {
   anchor: WaveSimilarityHint
+  anchorId?: string
   lang: 'en' | 'fr' | 'de' | 'jp' | 'es'
   excludeIds?: string[]
   limit?: number
@@ -66,7 +68,7 @@ export async function fetchWave({
     method: 'POST',
     cache: 'no-store',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ anchor, lang, excludeIds, limit, types, factVariant }),
+    body: JSON.stringify({ anchor, anchorId, lang, excludeIds, limit, types, factVariant }),
     signal,
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)

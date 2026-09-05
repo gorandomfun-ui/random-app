@@ -1,15 +1,50 @@
 import type { VideoItem } from '@/lib/random/clientTypes'
 
 export type VideoPlaybackIssue = {
-  reason: 'video-load-timeout' | 'video-error' | 'youtube-player-error'
+  reason: 'video-load-timeout' | 'video-error' | 'youtube-player-error' | 'dailymotion-player-error'
   playerCode?: number
 }
 
 const reportedThisSession = new Set<string>()
+const blockedThisSession = new Set<string>()
 const SESSION_TTL_MS = 60 * 60 * 1000
 
 function cleanString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function itemKey(item: Partial<VideoItem> | null | undefined): string | null {
+  if (!item || item.type !== 'video') return null
+  return cleanString(item._id) || cleanString(item.url)
+}
+
+export function blockVideoForSession(item: Partial<VideoItem> | null | undefined) {
+  const key = itemKey(item)
+  if (!key) return
+  blockedThisSession.add(key)
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(`random-video-blocked:${key}`, String(Date.now()))
+  } catch {
+    /* The in-memory block remains enough for this page. */
+  }
+}
+
+export function isVideoBlockedThisSession(item: Partial<VideoItem> | null | undefined): boolean {
+  const key = itemKey(item)
+  if (!key) return false
+  if (blockedThisSession.has(key)) return true
+  if (typeof window === 'undefined') return false
+  try {
+    const timestamp = Number(window.sessionStorage.getItem(`random-video-blocked:${key}`) || 0)
+    if (timestamp && Date.now() - timestamp < SESSION_TTL_MS) {
+      blockedThisSession.add(key)
+      return true
+    }
+  } catch {
+    /* Ignore storage failures. */
+  }
+  return false
 }
 
 export function reportVideoPlaybackIssue(
@@ -22,6 +57,7 @@ export function reportVideoPlaybackIssue(
   const url = cleanString(item.url)
   const key = itemId || url
   if (!key || reportedThisSession.has(key)) return
+  blockVideoForSession(item)
 
   const now = Date.now()
   try {

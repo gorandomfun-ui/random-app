@@ -2,7 +2,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { ObjectId, type Db } from 'mongodb'
+import { ObjectId, type Db, type Filter } from 'mongodb'
 import { getDbSafe } from '@/lib/random/data'
 
 type VideoDoc = {
@@ -18,6 +18,7 @@ type VideoDoc = {
   obsoleteVideoReason?: string | null
   obsoleteVideoHttpStatus?: number | null
   obsoleteVideoScanId?: string | null
+  obsoleteVideoRuntimeSuspect?: boolean | null
 }
 
 type CheckOutcome = {
@@ -68,6 +69,7 @@ type VideoScanJob = {
   deleted: number
   cursor: string | null
   upperBoundId: ObjectId | null
+  staleBefore?: Date | null
   counts: ScanResult['counts']
   startedAt: Date
   updatedAt: Date
@@ -88,9 +90,9 @@ const MAX_STREAM_BATCHES = 40
 const DELETE_CONFIRMATION_MAX_AGE_HOURS = 24 * 14
 const RETRY_DELAY_MS = 200
 const PERSISTED_JOB_ID = 'obsolete-videos' as const
-const PERSISTED_SCAN_BATCH_SIZE = 25
-const PERSISTED_SCAN_CONCURRENCY = 4
-const PERSISTED_SCAN_TIMEOUT_MS = 6000
+const PERSISTED_SCAN_BATCH_SIZE = 100
+const PERSISTED_SCAN_CONCURRENCY = 12
+const PERSISTED_SCAN_TIMEOUT_MS = 4500
 const PERSISTED_SCAN_LEASE_MS = 2 * 60 * 1000
 const PERSISTED_DELETE_BATCH_SIZE = 25
 let videoScanIndexPromise: Promise<void> | null = null
@@ -722,6 +724,13 @@ function ensureVideoScanIndexes(db: Db) {
           partialFilterExpression: { type: 'video' },
         },
       ),
+      db.collection('items').createIndex(
+        { type: 1, obsoleteVideoRuntimeSuspect: 1, _id: 1 },
+        {
+          name: 'idx_video_runtime_suspect',
+          partialFilterExpression: { type: 'video' },
+        },
+      ),
     ])
       .then(() => undefined)
       .catch((error) => {
@@ -859,6 +868,19 @@ function buildChunkFilter({
   }
 
   return filter
+}
+
+function buildPersistedCandidateFilter(staleBefore: Date): Filter<VideoDoc> {
+  return {
+    type: 'video',
+    $or: [
+      { obsoleteVideoRuntimeSuspect: true },
+      { obsoleteVideoCheckedAt: { $exists: false } },
+      { obsoleteVideoCheckedAt: null },
+      { obsoleteVideoCheckedAt: { $lt: staleBefore } },
+      { obsoleteVideoStatus: { $in: ['obsolete', 'rate-limited', 'ambiguous'] as const } },
+    ],
+  }
 }
 
 async function runChunkScan(
@@ -1096,16 +1118,18 @@ async function startOrResumePersistedJob(db: Db) {
     return serializePersistedJob(db, existing, existingLeaseIsActive)
   }
 
-  const latest = await db
-    .collection<VideoDoc>('items')
-    .find({ type: 'video' }, { projection: { _id: 1 } })
-    .sort({ _id: -1 })
-    .limit(1)
-    .next()
+  await ensureVideoScanIndexes(db)
+  const staleBefore = new Date(now.getTime() - DEFAULT_STALE_HOURS * 60 * 60 * 1000)
+  const candidateFilter = buildPersistedCandidateFilter(staleBefore)
+  const [latest, total] = await Promise.all([
+    db.collection<VideoDoc>('items')
+      .find(candidateFilter, { projection: { _id: 1 } })
+      .sort({ _id: -1 })
+      .limit(1)
+      .next(),
+    db.collection('items').countDocuments(candidateFilter),
+  ])
   const upperBoundId = latest?._id || null
-  const total = upperBoundId
-    ? await db.collection('items').countDocuments({ type: 'video', _id: { $lte: upperBoundId } })
-    : 0
   const job: VideoScanJob = {
     _id: PERSISTED_JOB_ID,
     scanId: randomUUID(),
@@ -1117,6 +1141,7 @@ async function startOrResumePersistedJob(db: Db) {
     deleted: 0,
     cursor: null,
     upperBoundId,
+    staleBefore,
     counts: emptyScanCounts(),
     startedAt: now,
     updatedAt: now,
@@ -1176,10 +1201,40 @@ async function runPersistedJobStep(db: Db) {
 
     const idFilter: { $gt?: ObjectId; $lte: ObjectId } = { $lte: job.upperBoundId }
     if (job.cursor) idFilter.$gt = new ObjectId(job.cursor)
-    const docs = await db
-      .collection<VideoDoc>('items')
+    const items = db.collection<VideoDoc>('items')
+    const staleBefore = job.staleBefore || new Date(job.startedAt.getTime() - DEFAULT_STALE_HOURS * 60 * 60 * 1000)
+    const candidateFilter = buildPersistedCandidateFilter(staleBefore)
+    const suspectDocs = await items
       .find(
-        { type: 'video', _id: idFilter },
+        {
+          type: 'video',
+          _id: { $lte: job.upperBoundId },
+          obsoleteVideoRuntimeSuspect: true,
+          obsoleteVideoScanId: { $ne: job.scanId },
+        },
+        {
+          projection: {
+            _id: 1,
+            provider: 1,
+            url: 1,
+            videoId: 1,
+            title: 1,
+            thumb: 1,
+            thumbUrl: 1,
+          },
+        },
+      )
+      .sort({ _id: 1 })
+      .limit(PERSISTED_SCAN_BATCH_SIZE)
+      .toArray()
+    const prioritizedSuspects = suspectDocs.length > 0
+    const docs = prioritizedSuspects ? suspectDocs : await items
+      .find(
+        {
+          ...candidateFilter,
+          _id: idFilter,
+          obsoleteVideoScanId: { $ne: job.scanId },
+        },
         {
           projection: {
             _id: 1,
@@ -1201,7 +1256,7 @@ async function runPersistedJobStep(db: Db) {
       await jobs.updateOne(
         { _id: PERSISTED_JOB_ID, leaseToken },
         {
-          $set: { status: 'completed', completedAt, updatedAt: completedAt },
+          $set: { status: 'completed', total: job.checked, completedAt, updatedAt: completedAt },
           $unset: { leaseToken: '', leaseUntil: '' },
         },
       )
@@ -1218,13 +1273,15 @@ async function runPersistedJobStep(db: Db) {
     const counts = structuredClone(job.counts || emptyScanCounts())
     mergeCounts(counts, result.counts)
     const lastId = docs[docs.length - 1]._id
-    const done = docs.length < PERSISTED_SCAN_BATCH_SIZE || lastId.equals(job.upperBoundId)
+    const done = !prioritizedSuspects
+      && (docs.length < PERSISTED_SCAN_BATCH_SIZE || lastId.equals(job.upperBoundId))
     const updatedAt = new Date()
     await jobs.updateOne(
       { _id: PERSISTED_JOB_ID, leaseToken },
       {
         $set: {
-          cursor: lastId.toHexString(),
+          cursor: prioritizedSuspects ? job.cursor : lastId.toHexString(),
+          total: done ? job.checked + docs.length : job.total,
           counts,
           status: done ? 'completed' : 'running',
           completedAt: done ? updatedAt : null,
