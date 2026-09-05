@@ -89,6 +89,8 @@ const RANDOM_SESSION_TTL_MS = 6 * 60 * 60 * 1000
 const RANDOM_SESSION_VERSION = 1
 const RANDOM_SESSION_PREFIX = 'random-experience-session-'
 const EFFECTS_TEST_MAX_STEPS = 25
+const EFFECTS_TEST_DRAWS_PER_STEP = 20
+const EFFECTS_PROGRESSION_MAX_DRAWS = 500
 const EFFECTS_TEST_STORAGE_KEY = 'random-effects-test-step'
 const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
 
@@ -248,6 +250,7 @@ type PersistedRandomSession = {
   currentItem: DisplayItem | null
   ready: PreparedRandomEntry[]
   sequence: RandomSequenceState
+  progressionDraws: number
   recentKeys: string[]
 }
 
@@ -301,6 +304,11 @@ type ThemeStyle = CSSProperties & {
   ['--random-overdrive-echo-duration']?: string
   ['--random-overdrive-echo-reach']?: string
   ['--random-overdrive-echo-reach-negative']?: string
+  ['--random-final-edge-opacity']?: number
+  ['--random-final-edge-short']?: string
+  ['--random-final-edge-medium']?: string
+  ['--random-final-edge-long']?: string
+  ['--random-final-edge-duration']?: string
 }
 type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
 type ImmersiveBackgroundStyle = CSSProperties & {
@@ -333,17 +341,38 @@ function clampProgress(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
 
+function clampOverdrive(value: number): number {
+  return Math.max(0, Math.min(1.5, value))
+}
+
 function lerp(from: number, to: number, progress: number): number {
   return from + (to - from) * clampProgress(progress)
 }
 
-function progressionForStep(step: number): number {
-  const anchors = [0, 0.12, 0.5, 1.08, 1.52, 2]
-  const boundedStep = Math.max(0, Math.min(EFFECTS_TEST_MAX_STEPS, step))
-  const segment = Math.min(anchors.length - 2, Math.floor(boundedStep / 5))
-  const linear = (boundedStep - segment * 5) / 5
+function progressionForDraws(draws: number): number {
+  const anchors = [
+    { draws: 0, intensity: 0 },
+    { draws: 10, intensity: 0.04 },
+    { draws: 50, intensity: 0.34 },
+    { draws: 100, intensity: 0.72 },
+    { draws: 200, intensity: 1.4 },
+    { draws: 300, intensity: 2 },
+    { draws: 400, intensity: 2.25 },
+    { draws: EFFECTS_PROGRESSION_MAX_DRAWS, intensity: 2.5 },
+  ]
+  const boundedDraws = Math.max(0, Math.min(EFFECTS_PROGRESSION_MAX_DRAWS, draws))
+  const upperIndex = anchors.findIndex((anchor) => boundedDraws <= anchor.draws)
+  if (upperIndex <= 0) return anchors[0].intensity
+  const lower = anchors[upperIndex - 1]
+  const upper = anchors[upperIndex]
+  const linear = (boundedDraws - lower.draws) / Math.max(1, upper.draws - lower.draws)
   const eased = linear * linear * (3 - 2 * linear)
-  return anchors[segment] + (anchors[segment + 1] - anchors[segment]) * eased
+  return lower.intensity + (upper.intensity - lower.intensity) * eased
+}
+
+function progressionForStep(step: number): number {
+  const boundedStep = Math.max(0, Math.min(EFFECTS_TEST_MAX_STEPS, step))
+  return progressionForDraws(boundedStep * EFFECTS_TEST_DRAWS_PER_STEP)
 }
 
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
@@ -445,6 +474,9 @@ const parseRandomSession = (raw: string, lang: Lang): PersistedRandomSession | n
       currentItem: isDisplayItem(parsed.currentItem) ? parsed.currentItem : null,
       ready,
       sequence: cloneSequenceState(parsed.sequence as RandomSequenceState),
+      progressionDraws: typeof parsed.progressionDraws === 'number' && Number.isFinite(parsed.progressionDraws)
+        ? Math.max(0, Math.min(EFFECTS_PROGRESSION_MAX_DRAWS, Math.round(parsed.progressionDraws)))
+        : 0,
       recentKeys: Array.isArray(parsed.recentKeys)
         ? parsed.recentKeys.filter((key): key is string => typeof key === 'string').slice(-RECENT_SESSION_LIMIT)
         : [],
@@ -2239,6 +2271,8 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const [effectsProfile, setEffectsProfile] = useState<EffectsProfile>('standard')
   const [effectsTestStep, setEffectsTestStep] = useState(0)
   const effectsTestStepRef = useRef(0)
+  const [progressionDraws, setProgressionDraws] = useState(0)
+  const progressionDrawsRef = useRef(0)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
@@ -2266,13 +2300,15 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
   const adsAllowed = consent?.ads === true
 
-  const effectsTestIntensity = useMemo(
-    () => effectsTestMode ? progressionForStep(effectsTestStep) : 0,
-    [effectsTestMode, effectsTestStep],
+  const progressionIntensity = useMemo(
+    () => effectsTestMode
+      ? progressionForStep(effectsTestStep)
+      : progressionForDraws(progressionDraws),
+    [effectsTestMode, effectsTestStep, progressionDraws],
   )
   const effectiveProgressionIntensity = effectsProfile === 'webkit-lite'
-    ? effectsTestIntensity * 0.72
-    : effectsTestIntensity
+    ? progressionIntensity * 0.72
+    : progressionIntensity
 
   useEffect(() => {
     if (!effectsTestMode) return
@@ -2456,13 +2492,13 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal', progression = 0): GlitchBar[] => {
     const lite = effectsProfile === 'webkit-lite'
-    const rawEnergy = mode === 'boost' && !effectsTestMode ? 1 : Math.max(0, progression)
+    const rawEnergy = mode === 'boost' ? Math.max(1, progression) : Math.max(0, progression)
     const energy = clampProgress(rawEnergy)
-    const overdrive = effectsTestMode ? clampProgress(rawEnergy - 1) : 0
+    const overdrive = clampOverdrive(rawEnergy - 1)
     const normalMin = lite ? 10 : 18
     const normalMax = lite ? 14 : 24
-    const boostMin = effectsTestMode ? (lite ? 24 : 40) : (lite ? 16 : 28)
-    const boostMax = effectsTestMode ? (lite ? 30 : 48) : (lite ? 20 : 36)
+    const boostMin = lite ? 24 : 40
+    const boostMax = lite ? 30 : 48
     const extraMin = Math.round(overdrive * (lite ? 7 : 12))
     const extraMax = Math.round(overdrive * (lite ? 9 : 15))
     const count = randomInt(
@@ -2493,55 +2529,55 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     return Array.from({ length: count }, (_, index) => {
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
       const roll = Math.random()
-      const variant: GlitchBar['variant'] = roll > lerp(0.85, effectsTestMode ? 0.7 : 0.77, energy) - overdrive * 0.08
+      const variant: GlitchBar['variant'] = roll > lerp(0.85, 0.7, energy) - overdrive * 0.08
         ? 'block'
-        : roll > lerp(0.65, effectsTestMode ? 0.52 : 0.59, energy) - overdrive * 0.07
+        : roll > lerp(0.65, 0.52, energy) - overdrive * 0.07
           ? 'signal'
-          : roll > lerp(0.55, effectsTestMode ? 0.45 : 0.5, energy) - overdrive * 0.04
+          : roll > lerp(0.55, 0.45, energy) - overdrive * 0.04
             ? 'void'
             : 'line'
-      const wideThreshold = Math.round(lerp(4, effectsTestMode ? 10 : 7, energy) + overdrive * 4)
+      const wideThreshold = Math.round(lerp(4, 10, energy) + overdrive * 4)
       const wideChance = (variant === 'line' ? 0.38 : variant === 'signal' ? 0.58 : 0.26)
-        + energy * (effectsTestMode ? 0.14 : 0.08)
+        + energy * 0.14
       const wide = index < wideThreshold || Math.random() < wideChance
       const widthValue = Math.min(140, (variant === 'block'
-        ? randomBetween(4, lerp(18, effectsTestMode ? 30 : 24, energy))
+        ? randomBetween(4, lerp(18, 30, energy))
         : wide
           ? randomBetween(
-              lerp(36, effectsTestMode ? 56 : 48, energy),
-              lerp(110, effectsTestMode ? 132 : 122, energy),
+              lerp(36, 56, energy),
+              lerp(110, 132, energy),
             )
-          : randomBetween(5, lerp(32, effectsTestMode ? 46 : 38, energy))) * (1 + overdrive * 0.08))
+          : randomBetween(5, lerp(32, 46, energy))) * (1 + overdrive * 0.08))
       const maxLeft = Math.max(-6, 100 - widthValue)
       const leftValue = randomBetween(variant === 'block' ? -2 : -9, maxLeft)
       const topValue = randomBetween(1, 98)
       const heightValue = variant === 'block'
-        ? randomBetween(lerp(4, 6, energy), lerp(15, effectsTestMode ? 26 : 21, energy) + overdrive * 10)
+        ? randomBetween(lerp(4, 6, energy), lerp(15, 26, energy) + overdrive * 10)
         : variant === 'signal'
-          ? randomBetween(1.8, lerp(4.2, effectsTestMode ? 6.2 : 5, energy) + overdrive * 2)
+          ? randomBetween(1.8, lerp(4.2, 6.2, energy) + overdrive * 2)
           : variant === 'void'
-            ? randomBetween(1.8, lerp(6, effectsTestMode ? 10 : 8, energy) + overdrive * 1.2)
-            : randomBetween(0.65, lerp(1.7, effectsTestMode ? 2.7 : 2, energy) + overdrive * 0.8)
+            ? randomBetween(1.8, lerp(6, 10, energy) + overdrive * 1.2)
+            : randomBetween(0.65, lerp(1.7, 2.7, energy) + overdrive * 0.8)
       const delay = Math.round(randomBetween(
         0,
-        lerp(lite ? 40 : 60, effectsTestMode ? (lite ? 78 : 100) : (lite ? 60 : 70), energy)
+        lerp(lite ? 40 : 60, lite ? 78 : 100, energy)
           + overdrive * (lite ? 18 : 30),
       ))
       const duration = Math.round(randomBetween(
         lerp(
           lite ? 160 : 190,
-          effectsTestMode ? (lite ? 230 : 275) : (lite ? 190 : 220),
+          lite ? 230 : 275,
           energy,
         ) + overdrive * (lite ? 45 : 70),
         lerp(
           lite ? 250 : 300,
-          effectsTestMode ? (lite ? 390 : 480) : (lite ? 300 : 340),
+          lite ? 390 : 480,
           energy,
         ) + overdrive * (lite ? 70 : 100),
       ))
       const shiftValue = randomBetween(
-        lerp(wide ? 14 : 5, wide ? (effectsTestMode ? 30 : 22) : (effectsTestMode ? 13 : 9), energy),
-        lerp(wide ? 30 : 16, wide ? (effectsTestMode ? 64 : 46) : (effectsTestMode ? 32 : 22), energy)
+        lerp(wide ? 14 : 5, wide ? 30 : 13, energy),
+        lerp(wide ? 30 : 16, wide ? 64 : 32, energy)
           + overdrive * (wide ? 28 : 14),
       )
       const yShiftValue = variant === 'block'
@@ -2571,7 +2607,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         popOpacity,
       }
     })
-  }, [effectsProfile, effectsTestMode])
+  }, [effectsProfile])
 
   const triggerBurgerGlitch = useCallback(() => {
     setBurgerGlitch(true)
@@ -2586,9 +2622,9 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   }, [])
 
   const triggerPageGlitch = useCallback((mode: 'normal' | 'boost' = 'normal', progression = 0) => {
-    const rawEnergy = mode === 'boost' && !effectsTestMode ? 1 : Math.max(0, progression)
+    const rawEnergy = mode === 'boost' ? Math.max(1, progression) : Math.max(0, progression)
     const energy = clampProgress(rawEnergy)
-    const overdrive = effectsTestMode ? clampProgress(rawEnergy - 1) : 0
+    const overdrive = clampOverdrive(rawEnergy - 1)
     const bars = makePageGlitchBars(mode, rawEnergy)
     setPageGlitchBars(bars)
     setPageGlitchCycle((cycle) => cycle + 1)
@@ -2596,12 +2632,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
     const lite = effectsProfile === 'webkit-lite'
-    const peak = effectsTestMode ? (lite ? 520 : 620) : (lite ? 360 : 430)
+    const peak = lite ? 520 : 620
     const base = Math.round(lerp(lite ? 300 : 370, peak, energy) + overdrive * (lite ? 100 : 180))
-    const tail = Math.round(lerp(40, effectsTestMode ? 70 : 55, energy) + overdrive * 20)
+    const tail = Math.round(lerp(40, 70, energy) + overdrive * 20)
     const total = Math.max(base, (longest || base) + tail)
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
-  }, [effectsProfile, effectsTestMode, makePageGlitchBars])
+  }, [effectsProfile, makePageGlitchBars])
 
   const triggerWaveTransition = useCallback(() => {
     if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
@@ -2871,6 +2907,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       currentItem: currentItemRef.current,
       ready: randomReadyQueueRef.current.slice(0, RANDOM_READY_TARGET),
       sequence: cloneSequenceState(sequenceStateRef.current),
+      progressionDraws: progressionDrawsRef.current,
       recentKeys: recentKeysRef.current.slice(-RECENT_SESSION_LIMIT),
     }
     try {
@@ -2892,6 +2929,8 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         return false
       }
       sequenceStateRef.current = cloneSequenceState(restored.sequence)
+      progressionDrawsRef.current = restored.progressionDraws
+      setProgressionDraws(restored.progressionDraws)
       randomReadyQueueRef.current = restored.ready.filter((entry) => (
         entry.item.type !== 'video' || !isVideoBlockedThisSession(entry.item)
       ))
@@ -3453,13 +3492,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     })
   ), [])
 
-  const loadNext = useCallback(async (reward = false) => {
+  const loadNext = useCallback(async (reward = false, advanceProgression = reward) => {
     if (loadPendingRef.current || transitionLockedRef.current) return false
     loadPendingRef.current = true
     transitionLockedRef.current = true
     setTransitionLocked(true)
     setLoading(true)
     let displayed = false
+    let rawTransitionIntensity = progressionIntensity
     let transitionIntensity = effectiveProgressionIntensity
 
     try {
@@ -3473,11 +3513,20 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (!entry) return false
 
       await waitForContentMedia(entry.item)
-      if (reward && effectsTestMode) {
-        const nextStep = Math.min(EFFECTS_TEST_MAX_STEPS, effectsTestStepRef.current + 1)
-        setTestProgress(nextStep)
-        const nextIntensity = progressionForStep(nextStep)
-        transitionIntensity = effectsProfile === 'webkit-lite' ? nextIntensity * 0.72 : nextIntensity
+      if (reward && advanceProgression) {
+        if (effectsTestMode) {
+          const nextStep = Math.min(EFFECTS_TEST_MAX_STEPS, effectsTestStepRef.current + 1)
+          setTestProgress(nextStep)
+          rawTransitionIntensity = progressionForStep(nextStep)
+        } else {
+          const nextDraws = Math.min(EFFECTS_PROGRESSION_MAX_DRAWS, progressionDrawsRef.current + 1)
+          progressionDrawsRef.current = nextDraws
+          setProgressionDraws(nextDraws)
+          rawTransitionIntensity = progressionForDraws(nextDraws)
+        }
+        transitionIntensity = effectsProfile === 'webkit-lite'
+          ? rawTransitionIntensity * 0.72
+          : rawTransitionIntensity
       }
       triggerPageGlitch(entry.slot.kind === 'encourage' ? 'boost' : 'normal', transitionIntensity)
       await waitForTransitionReveal()
@@ -3512,7 +3561,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
       }
       updateTheme()
-      playRandom(transitionIntensity)
+      playRandom(rawTransitionIntensity)
 
       if (adsAllowed) {
         footerAdCounterRef.current = (footerAdCounterRef.current + 1) % 10
@@ -3553,7 +3602,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
+  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     const current = currentItemRef.current
@@ -3699,8 +3748,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const mainStyle = useMemo<ThemeStyle>(() => {
     const baseIntensity = clampProgress(effectiveProgressionIntensity)
-    const overdrive = clampProgress(effectiveProgressionIntensity - 1)
-    const edgeOverdrive = clampProgress(effectsTestIntensity - 1) * (effectsProfile === 'webkit-lite' ? 0.68 : 1)
+    const overdrive = clampOverdrive(effectiveProgressionIntensity - 1)
+    const edgeOverdrive = clampOverdrive(progressionIntensity - 1) * (effectsProfile === 'webkit-lite' ? 0.68 : 1)
+    const finalPush = clampProgress((progressionIntensity - 2) / 0.5)
+    const finalProfileScale = effectsProfile === 'webkit-lite' ? 0.58 : 1
     const ambientShift = baseIntensity * 6 + overdrive * 4
     const transitionShift = baseIntensity * 14 + overdrive * 10
     const transitionY = baseIntensity * 4 + overdrive * 3
@@ -3740,7 +3791,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       '--random-overdrive-edge-short': `${(18 + edgeOverdrive * 38).toFixed(2)}px`,
       '--random-overdrive-edge-medium': `${(30 + edgeOverdrive * 66).toFixed(2)}px`,
       '--random-overdrive-edge-long': `${(44 + edgeOverdrive * 104).toFixed(2)}px`,
-      '--random-overdrive-edge-opacity': Number(Math.min(0.84, edgeOverdrive * 0.84).toFixed(3)),
+      '--random-overdrive-edge-opacity': Number(Math.min(0.9, edgeOverdrive * 0.84).toFixed(3)),
       '--random-overdrive-edge-hit-opacity': Number(Math.min(1, 0.2 + edgeOverdrive * 0.8).toFixed(3)),
       '--random-overdrive-edge-duration': `${Math.max(0.92, 3.2 - edgeOverdrive * 2.28).toFixed(2)}s`,
       '--random-overdrive-edge-shift': `${edgeShift.toFixed(2)}px`,
@@ -3749,8 +3800,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       '--random-overdrive-echo-duration': `${Math.round(560 + edgeOverdrive * 300)}ms`,
       '--random-overdrive-echo-reach': `${echoReach.toFixed(2)}px`,
       '--random-overdrive-echo-reach-negative': `${(-echoReach).toFixed(2)}px`,
+      '--random-final-edge-opacity': Number((finalPush * 0.88 * finalProfileScale).toFixed(3)),
+      '--random-final-edge-short': `${(34 + finalPush * 44 * finalProfileScale).toFixed(2)}px`,
+      '--random-final-edge-medium': `${(72 + finalPush * 82 * finalProfileScale).toFixed(2)}px`,
+      '--random-final-edge-long': `${(118 + finalPush * 122 * finalProfileScale).toFixed(2)}px`,
+      '--random-final-edge-duration': `${Math.max(0.62, 1.4 - finalPush * 0.78 * finalProfileScale).toFixed(2)}s`,
     }
-  }, [effectiveProgressionIntensity, effectsProfile, effectsTestIntensity, theme.bg, theme.cream, theme.text])
+  }, [effectiveProgressionIntensity, effectsProfile, progressionIntensity, theme.bg, theme.cream, theme.text])
 
   const viewItem = currentItem
   const isPriming = !viewItem
@@ -3854,6 +3910,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const handleRandomAgain = useCallback(() => {
     if (transitionLockedRef.current) return
+    const wasWave = waveModeRef.current
     const waveCandidate = currentItemRef.current
     if (
       waveModeRef.current
@@ -3886,14 +3943,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     waveHistoryKeysRef.current.clear()
     waveHistoryIdsRef.current.clear()
     waveShownAtRef.current = 0
-    loadNext(true)
+    loadNext(true, !wasWave)
       .catch(() => undefined)
-    const nextTestStep = effectsTestMode
-      ? Math.min(EFFECTS_TEST_MAX_STEPS, effectsTestStepRef.current + 1)
-      : 0
-    const nextTestIntensity = progressionForStep(nextTestStep) * (effectsProfile === 'webkit-lite' ? 0.72 : 1)
-    playAgain(nextTestIntensity)
-  }, [effectsProfile, effectsTestMode, loadNext])
+    const nextProgressionIntensity = effectsTestMode
+      ? progressionForStep(wasWave
+        ? effectsTestStepRef.current
+        : Math.min(EFFECTS_TEST_MAX_STEPS, effectsTestStepRef.current + 1))
+      : progressionForDraws(wasWave
+        ? progressionDrawsRef.current
+        : Math.min(EFFECTS_PROGRESSION_MAX_DRAWS, progressionDrawsRef.current + 1))
+    playAgain(nextProgressionIntensity)
+  }, [effectsTestMode, loadNext])
 
   const handleWave = useCallback(async () => {
     if (transitionLockedRef.current) return
@@ -3966,7 +4026,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${effectsTestMode && effectsTestStep > 0 ? ' random-page--effects-progressing' : ''}${effectsTestMode && effectsTestIntensity > 1 ? ' random-page--effects-overdrive' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
       {effectsTestMode ? (
@@ -4621,7 +4681,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           animation: random-bg-drift 18s steps(8, end) infinite alternate;
           will-change: opacity, background-image, transform;
         }
-        .random-page--effects-test .random-immersive-bg__media {
+        .random-page--effects-progressing .random-immersive-bg__media {
           animation-duration: var(--random-progress-bg-duration, 18s);
         }
         .random-immersive-bg__fragments {
@@ -4748,7 +4808,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           opacity: var(--random-bg-noise-strength, 0);
           animation: random-bg-noise-pop 18000ms steps(1, end) infinite;
         }
-        .random-page--effects-test .random-immersive-bg__noise {
+        .random-page--effects-progressing .random-immersive-bg__noise {
           animation-duration: var(--random-progress-noise-duration, 18s);
         }
         .video-embed-poster {
@@ -5347,31 +5407,31 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           justify-content: center;
           color: inherit;
         }
-        .random-page--effects-test:not(.random-page--wave) .random-main-header,
-        .random-page--effects-test:not(.random-page--wave) .random-category-row,
-        .random-page--effects-test:not(.random-page--wave) .random-action-section {
+        .random-page--effects-progressing:not(.random-page--wave) .random-main-header,
+        .random-page--effects-progressing:not(.random-page--wave) .random-category-row,
+        .random-page--effects-progressing:not(.random-page--wave) .random-action-section {
           animation: random-progress-ambient var(--random-progress-ambient-duration, 11s) steps(1, end) infinite;
         }
-        .random-page--effects-test:not(.random-page--wave) .random-category-row {
+        .random-page--effects-progressing:not(.random-page--wave) .random-category-row {
           animation-delay: -1.7s;
         }
-        .random-page--effects-test:not(.random-page--wave) .random-action-section {
+        .random-page--effects-progressing:not(.random-page--wave) .random-action-section {
           animation-delay: -3.1s;
         }
-        .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-main-header {
+        .random-page--effects-progressing.random-page--glitching:not(.random-page--wave) .random-main-header {
           animation: random-progress-header-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
-        .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-category-row {
+        .random-page--effects-progressing.random-page--glitching:not(.random-page--wave) .random-category-row {
           animation: random-progress-category-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
-        .random-page--effects-test .random-content-frame {
+        .random-page--effects-progressing .random-content-frame {
           position: relative;
           isolation: isolate;
         }
-        .random-page--effects-test .random-content-frame::before,
-        .random-page--effects-test .random-content-frame::after {
+        .random-page--effects-progressing .random-content-frame::before,
+        .random-page--effects-progressing .random-content-frame::after {
           content: '';
           position: absolute;
           inset: var(--random-overdrive-echo-reach-negative, -4px);
@@ -5379,7 +5439,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           pointer-events: none;
           opacity: 0;
         }
-        .random-page--effects-test .random-content-frame::before {
+        .random-page--effects-progressing .random-content-frame::before {
           background:
             linear-gradient(90deg, rgba(0, 234, 255, 0.96), rgba(255, 255, 255, 0.72) 36%, transparent 100%) left 0 top 5% / var(--random-overdrive-edge-long, 44px) 1px no-repeat,
             linear-gradient(90deg, rgba(216, 255, 0, 0.78), transparent 100%) left 0 top 19% / var(--random-overdrive-edge-short, 18px) 1px no-repeat,
@@ -5389,7 +5449,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             linear-gradient(180deg, rgba(0, 234, 255, 0.82), transparent 100%) left 7% top 0 / 1px var(--random-overdrive-edge-short, 18px) no-repeat;
           filter: drop-shadow(4px 0 0 rgba(0, 234, 255, 0.2));
         }
-        .random-page--effects-test .random-content-frame::after {
+        .random-page--effects-progressing .random-content-frame::after {
           background:
             linear-gradient(90deg, rgba(255, 22, 120, 0.92), rgba(137, 80, 255, 0.7) 44%, transparent 100%) left 0 top 12% / var(--random-overdrive-edge-medium, 30px) 1px no-repeat,
             linear-gradient(90deg, rgba(255, 22, 120, 0.84), transparent 100%) left 0 bottom 12% / var(--random-overdrive-edge-long, 44px) 1.4px no-repeat,
@@ -5405,11 +5465,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .random-page--effects-overdrive.random-page--glitching:not(.random-page--wave) .random-content-frame::after {
           animation: random-content-echo-b var(--random-overdrive-echo-duration, 560ms) steps(1, end) both;
         }
-        .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-content-frame {
+        .random-page--effects-progressing.random-page--glitching:not(.random-page--wave) .random-content-frame {
           animation: random-progress-content-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
-        .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-action-section {
+        .random-page--effects-progressing.random-page--glitching:not(.random-page--wave) .random-action-section {
           animation: random-progress-action-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
@@ -5491,12 +5551,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           72% { transform: translate3d(var(--random-progress-transition-shift-soft-negative, 0px), 0, 0); }
         }
         @media (prefers-reduced-motion: reduce) {
-          .random-page--effects-test .random-main-header,
-          .random-page--effects-test .random-category-row,
-          .random-page--effects-test .random-action-section,
-          .random-page--effects-test .random-content-frame,
-          .random-page--effects-test .random-content-frame::before,
-          .random-page--effects-test .random-content-frame::after {
+          .random-page--effects-progressing .random-main-header,
+          .random-page--effects-progressing .random-category-row,
+          .random-page--effects-progressing .random-action-section,
+          .random-page--effects-progressing .random-content-frame,
+          .random-page--effects-progressing .random-content-frame::before,
+          .random-page--effects-progressing .random-content-frame::after,
+          .random-page--effects-final::after {
             animation: none !important;
           }
         }
@@ -5609,6 +5670,36 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             inset 0 -26px 58px rgba(104, 54, 255, 0.3);
           transition: opacity 440ms ease;
         }
+        .random-page::after {
+          content: '';
+          position: fixed;
+          inset: 0;
+          z-index: 8;
+          pointer-events: none;
+          opacity: 0;
+        }
+        .random-page--effects-final:not(.random-page--wave)::after {
+          opacity: var(--random-final-edge-opacity, 0);
+          background:
+            linear-gradient(90deg, rgba(255, 255, 255, 0.78), rgba(0, 234, 255, 0.82) 22%, transparent 100%) left 0 top 6% / var(--random-final-edge-long, 118px) 1.8px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.88), transparent 100%) left 0 top 23% / var(--random-final-edge-short, 34px) 2.4px no-repeat,
+            linear-gradient(90deg, rgba(137, 80, 255, 0.84), rgba(0, 234, 255, 0.52) 46%, transparent 100%) left 0 top 38% / var(--random-final-edge-medium, 72px) 1.4px no-repeat,
+            linear-gradient(90deg, rgba(0, 234, 255, 0.92), transparent 100%) left 0 top 64% / var(--random-final-edge-long, 118px) 2.1px no-repeat,
+            linear-gradient(90deg, rgba(255, 22, 120, 0.8), rgba(255, 255, 255, 0.58) 34%, transparent 100%) left 0 top 79% / var(--random-final-edge-medium, 72px) 1.6px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.82), transparent 100%) left 0 top 93% / var(--random-final-edge-short, 34px) 2px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.94), rgba(255, 255, 255, 0.66) 26%, transparent 100%) right 0 top 13% / var(--random-final-edge-medium, 72px) 2px no-repeat,
+            linear-gradient(270deg, rgba(0, 234, 255, 0.86), transparent 100%) right 0 top 29% / var(--random-final-edge-long, 118px) 1.5px no-repeat,
+            linear-gradient(270deg, rgba(216, 255, 0, 0.86), rgba(137, 80, 255, 0.54) 42%, transparent 100%) right 0 top 47% / var(--random-final-edge-short, 34px) 2.5px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.9), transparent 100%) right 0 top 58% / var(--random-final-edge-medium, 72px) 1.7px no-repeat,
+            linear-gradient(270deg, rgba(255, 255, 255, 0.76), rgba(0, 234, 255, 0.62) 31%, transparent 100%) right 0 top 74% / var(--random-final-edge-long, 118px) 2.2px no-repeat,
+            linear-gradient(270deg, rgba(137, 80, 255, 0.9), transparent 100%) right 0 top 91% / var(--random-final-edge-medium, 72px) 1.5px no-repeat;
+          filter: saturate(1.35) brightness(1.08);
+          animation: random-final-perimeter var(--random-final-edge-duration, 1.4s) steps(4, end) infinite;
+          will-change: transform, opacity;
+        }
+        .random-page--effects-final.random-page--glitching:not(.random-page--wave)::after {
+          opacity: min(1, calc(var(--random-final-edge-opacity, 0) + 0.12));
+        }
         .random-page--effects-overdrive:not(.random-page--wave)::before {
           opacity: var(--random-overdrive-edge-opacity, 0);
           background:
@@ -5703,6 +5794,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             filter: saturate(1.85) brightness(1.2);
           }
         }
+        @keyframes random-final-perimeter {
+          0%, 100% {
+            transform: translate3d(0, 0, 0) scaleX(1);
+            filter: saturate(1.2) brightness(0.96);
+          }
+          24% {
+            transform: translate3d(0, -8px, 0) scaleX(0.93);
+            filter: saturate(1.8) brightness(1.18);
+          }
+          49% {
+            transform: translate3d(0, 5px, 0) scaleX(1.04);
+            filter: saturate(2.1) brightness(1.26);
+          }
+          76% {
+            transform: translate3d(0, -3px, 0) scaleX(0.97);
+            filter: saturate(1.55) brightness(1.08);
+          }
+        }
         @keyframes wave-background-breathe {
           0% { transform: translate3d(-1.2%, 0, 0) scale(1.18); }
           100% { transform: translate3d(1.2%, -0.7%, 0) scale(1.23); }
@@ -5733,6 +5842,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           box-shadow:
             inset 4px 0 12px rgba(0, 234, 255, 0.14),
             inset -4px 0 12px rgba(255, 22, 120, 0.14);
+          animation-timing-function: steps(2, end);
+        }
+        .random-page--lite-effects.random-page--effects-final:not(.random-page--wave)::after {
+          background:
+            linear-gradient(90deg, rgba(255, 255, 255, 0.72), rgba(0, 234, 255, 0.76) 26%, transparent 100%) left 0 top 8% / var(--random-final-edge-long, 118px) 1.6px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.8), transparent 100%) left 0 top 36% / var(--random-final-edge-short, 34px) 2.1px no-repeat,
+            linear-gradient(90deg, rgba(255, 22, 120, 0.76), transparent 100%) left 0 top 81% / var(--random-final-edge-medium, 72px) 1.5px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.86), rgba(255, 255, 255, 0.58) 30%, transparent 100%) right 0 top 19% / var(--random-final-edge-medium, 72px) 1.8px no-repeat,
+            linear-gradient(270deg, rgba(0, 234, 255, 0.8), transparent 100%) right 0 top 57% / var(--random-final-edge-long, 118px) 1.4px no-repeat,
+            linear-gradient(270deg, rgba(137, 80, 255, 0.82), transparent 100%) right 0 top 92% / var(--random-final-edge-short, 34px) 1.9px no-repeat;
           animation-timing-function: steps(2, end);
         }
         .random-page--lite-effects.random-page--effects-overdrive .random-content-frame::after {

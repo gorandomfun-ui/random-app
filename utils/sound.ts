@@ -39,6 +39,10 @@ function soundProgress(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
 }
 
+function soundFinalPush(progress: number): number {
+  return soundProgress((progress - 2) / 0.5)
+}
+
 function getTransitionNoiseBuffer(context: AudioContext): AudioBuffer {
   if (transitionNoiseBuffer && transitionNoiseBuffer.sampleRate === context.sampleRate) {
     return transitionNoiseBuffer
@@ -55,13 +59,14 @@ function getTransitionNoiseBuffer(context: AudioContext): AudioBuffer {
 function transitionTail(progress: number, direction: 1 | -1) {
   const energy = soundProgress(progress)
   const overdrive = soundProgress(progress - 1)
+  const finalPush = soundFinalPush(progress)
   if (muted || energy < 0.06) return
   const c = getAudioContext()
   if (!c) return
   if (c.state === 'suspended') void c.resume().catch(() => undefined)
 
   const start = c.currentTime + 0.008
-  const duration = 0.14 + energy * 0.44 + overdrive * 0.28
+  const duration = 0.14 + energy * 0.44 + overdrive * 0.28 + finalPush * 0.18
   const source = c.createBufferSource()
   const filter = c.createBiquadFilter()
   const gain = c.createGain()
@@ -69,23 +74,23 @@ function transitionTail(progress: number, direction: 1 | -1) {
 
   source.buffer = getTransitionNoiseBuffer(c)
   filter.type = 'bandpass'
-  filter.Q.value = 0.7 + energy * 1.2 + overdrive * 3.1
+  filter.Q.value = 0.7 + energy * 1.2 + overdrive * 3.1 + finalPush * 1.4
   filter.frequency.setValueAtTime(
-    direction > 0 ? 720 - overdrive * 460 : 3200 - overdrive * 1700,
+    direction > 0 ? 720 - overdrive * 460 - finalPush * 55 : 3200 - overdrive * 1700 - finalPush * 260,
     start,
   )
   filter.frequency.exponentialRampToValueAtTime(
-    direction > 0 ? 4800 - overdrive * 3000 : 540 - overdrive * 190,
+    direction > 0 ? 4800 - overdrive * 3000 + finalPush * 420 : 540 - overdrive * 190 - finalPush * 45,
     start + duration * 0.72,
   )
-  filter.frequency.exponentialRampToValueAtTime(280 - overdrive * 90, start + duration)
+  filter.frequency.exponentialRampToValueAtTime(280 - overdrive * 90 - finalPush * 24, start + duration)
   gain.gain.setValueAtTime(0.0001, start)
-  gain.gain.linearRampToValueAtTime(0.012 + energy * 0.052 + overdrive * 0.03, start + duration * 0.12)
-  gain.gain.setValueAtTime(0.009 + energy * 0.035 + overdrive * 0.026, start + duration * 0.68)
+  gain.gain.linearRampToValueAtTime(0.012 + energy * 0.052 + overdrive * 0.03 + finalPush * 0.012, start + duration * 0.12)
+  gain.gain.setValueAtTime(0.009 + energy * 0.035 + overdrive * 0.026 + finalPush * 0.009, start + duration * 0.68)
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
 
   if (panner) {
-    const panReach = 0.42 * energy + 0.16 * overdrive
+    const panReach = Math.min(0.82, 0.42 * energy + 0.16 * overdrive + finalPush * 0.08)
     panner.pan.setValueAtTime(-panReach * direction, start)
     panner.pan.linearRampToValueAtTime(panReach * direction, start + duration * 0.7)
     source.connect(filter).connect(gain).connect(panner).connect(c.destination)
@@ -98,14 +103,15 @@ function transitionTail(progress: number, direction: 1 | -1) {
 
 function resonantPulse(progress: number, direction: 1 | -1) {
   const overdrive = soundProgress(progress - 1)
+  const finalPush = soundFinalPush(progress)
   if (muted || overdrive < 0.02) return
   const c = getAudioContext()
   if (!c) return
   if (c.state === 'suspended') void c.resume().catch(() => undefined)
 
   const start = c.currentTime + 0.014
-  const duration = 0.34 + overdrive * 0.5
-  const root = (direction > 0 ? 150 : 168) + overdrive * 52
+  const duration = 0.34 + overdrive * 0.5 + finalPush * 0.18
+  const root = (direction > 0 ? 150 : 168) + overdrive * 52 + finalPush * 16
   const filter = c.createBiquadFilter()
   const gain = c.createGain()
   const metallicGain = c.createGain()
@@ -115,8 +121,8 @@ function resonantPulse(progress: number, direction: 1 | -1) {
   const metallic = c.createOscillator()
 
   filter.type = 'lowpass'
-  filter.Q.value = 1.4 + overdrive * 2.8
-  filter.frequency.setValueAtTime(980 + overdrive * 420, start)
+  filter.Q.value = 1.4 + overdrive * 2.8 + finalPush * 1.1
+  filter.frequency.setValueAtTime(980 + overdrive * 420 + finalPush * 260, start)
   filter.frequency.exponentialRampToValueAtTime(380, start + duration)
 
   low.type = 'sine'
@@ -128,19 +134,19 @@ function resonantPulse(progress: number, direction: 1 | -1) {
   metallic.type = 'sawtooth'
   metallic.frequency.setValueAtTime(root * 2.45, start)
   metallic.frequency.exponentialRampToValueAtTime(root * 1.35, start + duration * 0.82)
-  metallicGain.gain.setValueAtTime(0.16 + overdrive * 0.22, start)
+  metallicGain.gain.setValueAtTime(0.16 + overdrive * 0.22 + finalPush * 0.09, start)
   metallicGain.gain.exponentialRampToValueAtTime(0.08, start + duration * 0.82)
 
   gain.gain.setValueAtTime(0.0001, start)
-  gain.gain.linearRampToValueAtTime(0.012 + overdrive * 0.048, start + duration * 0.12)
-  gain.gain.setValueAtTime(0.01 + overdrive * 0.036, start + duration * 0.66)
+  gain.gain.linearRampToValueAtTime(0.012 + overdrive * 0.048 + finalPush * 0.01, start + duration * 0.12)
+  gain.gain.setValueAtTime(0.01 + overdrive * 0.036 + finalPush * 0.008, start + duration * 0.66)
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
 
   low.connect(filter)
   beat.connect(filter)
   metallic.connect(metallicGain).connect(filter)
   if (panner) {
-    const panReach = 0.18 + overdrive * 0.18
+    const panReach = 0.18 + overdrive * 0.18 + finalPush * 0.08
     panner.pan.setValueAtTime(panReach * direction, start)
     panner.pan.linearRampToValueAtTime(-panReach * direction, start + duration * 0.72)
     filter.connect(gain).connect(panner).connect(c.destination)
@@ -154,6 +160,54 @@ function resonantPulse(progress: number, direction: 1 | -1) {
   low.stop(start + duration + 0.02)
   beat.stop(start + duration + 0.02)
   metallic.stop(start + duration * 0.82)
+}
+
+function pressurePulse(progress: number, direction: 1 | -1) {
+  const finalPush = soundFinalPush(progress)
+  if (muted || finalPush < 0.02) return
+  const c = getAudioContext()
+  if (!c) return
+  if (c.state === 'suspended') void c.resume().catch(() => undefined)
+
+  const start = c.currentTime + 0.055
+  const duration = 0.48 + finalPush * 0.42
+  const root = direction > 0 ? 92 : 106
+  const low = c.createOscillator()
+  const tension = c.createOscillator()
+  const filter = c.createBiquadFilter()
+  const gain = c.createGain()
+  const panner = typeof c.createStereoPanner === 'function' ? c.createStereoPanner() : null
+
+  low.type = 'sine'
+  low.frequency.setValueAtTime(root + finalPush * 18, start)
+  low.frequency.exponentialRampToValueAtTime(root * 0.62, start + duration)
+  tension.type = 'triangle'
+  tension.frequency.setValueAtTime(root * (2.8 + finalPush * 0.4), start)
+  tension.frequency.exponentialRampToValueAtTime(root * 1.18, start + duration * 0.86)
+
+  filter.type = 'bandpass'
+  filter.Q.value = 2.4 + finalPush * 3.2
+  filter.frequency.setValueAtTime(720 + finalPush * 360, start)
+  filter.frequency.exponentialRampToValueAtTime(190, start + duration)
+  gain.gain.setValueAtTime(0.0001, start)
+  gain.gain.linearRampToValueAtTime(0.012 + finalPush * 0.022, start + duration * 0.16)
+  gain.gain.setValueAtTime(0.009 + finalPush * 0.014, start + duration * 0.68)
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+
+  low.connect(filter)
+  tension.connect(filter)
+  if (panner) {
+    panner.pan.setValueAtTime(0.24 * direction, start)
+    panner.pan.linearRampToValueAtTime(-0.34 * direction, start + duration * 0.74)
+    filter.connect(gain).connect(panner).connect(c.destination)
+  } else {
+    filter.connect(gain).connect(c.destination)
+  }
+
+  low.start(start)
+  tension.start(start + 0.025)
+  low.stop(start + duration + 0.02)
+  tension.stop(start + duration * 0.88)
 }
 
 export function playRandom(progress = 0) {
@@ -187,6 +241,7 @@ export function playRandom(progress = 0) {
   }
   transitionTail(progress, 1)
   resonantPulse(progress, 1)
+  pressurePulse(progress, 1)
 }
 
 export function playAgain(progress = 0) {
@@ -198,6 +253,7 @@ export function playAgain(progress = 0) {
   setTimeout(()=>env({ freq: base*(0.8 + energy * 0.12), type:'square', gain:(0.10 + energy * 0.02) * digitalPresence, attack:0.002, decay:0.03, sustain:0.02 + energy * 0.02, release:0.05 + energy * 0.15 + overdrive * 0.08 }), 40)
   transitionTail(progress, -1)
   resonantPulse(progress, -1)
+  pressurePulse(progress, -1)
 }
 
 async function swoosh(duration: number, gainValue: number, startFrequency: number, endFrequency: number) {
