@@ -282,6 +282,11 @@ function itemProvider(item: RandomContentItem): string {
   return ''
 }
 
+function itemGroup(item: RandomContentItem): 'image' | 'video' | 'web' | 'text' {
+  if (item.type === 'image' || item.type === 'video' || item.type === 'web') return item.type
+  return 'text'
+}
+
 function itemLabelKey(item: RandomContentItem): string {
   const label = 'title' in item && typeof item.title === 'string'
     ? item.title
@@ -343,25 +348,27 @@ export async function findWaveTrail({
     }
   }
 
-  const metadataDocs = tokens.length
-    ? await findCandidates({ $or: [{ tags: { $in: tokens } }, { keywords: { $in: tokens } }] } as Filter<WaveDocument>)
-    : []
-  let descriptorDocs: WaveDocument[] = []
-  const desiredCandidates = Math.max(3, Math.min(8, limit))
-  if (metadataDocs.length < desiredCandidates && descriptorTokens.length) {
-    const descriptorRegex = new RegExp(`\\b(?:${descriptorTokens.map(escapeRegExp).join('|')})\\b`, 'i')
-    descriptorDocs = await findCandidates({
-      $or: [
-        { title: descriptorRegex },
-        { text: descriptorRegex },
-        { description: descriptorRegex },
-        { author: descriptorRegex },
-        { category: descriptorRegex },
-        { channelTitle: descriptorRegex },
-        { host: descriptorRegex },
-      ],
-    } as Filter<WaveDocument>)
-  }
+  const descriptorRegex = descriptorTokens.length
+    ? new RegExp(`\\b(?:${descriptorTokens.map(escapeRegExp).join('|')})\\b`, 'i')
+    : null
+  const [metadataDocs, descriptorDocs] = await Promise.all([
+    tokens.length
+      ? findCandidates({ $or: [{ tags: { $in: tokens } }, { keywords: { $in: tokens } }] } as Filter<WaveDocument>)
+      : Promise.resolve([]),
+    descriptorRegex
+      ? findCandidates({
+        $or: [
+          { title: descriptorRegex },
+          { text: descriptorRegex },
+          { description: descriptorRegex },
+          { author: descriptorRegex },
+          { category: descriptorRegex },
+          { channelTitle: descriptorRegex },
+          { host: descriptorRegex },
+        ],
+      } as Filter<WaveDocument>)
+      : Promise.resolve([]),
+  ])
 
   const candidateGroups = [metadataDocs, descriptorDocs]
   const docs: WaveDocument[] = []
@@ -391,6 +398,7 @@ export async function findWaveTrail({
   const usedKeys = new Set<string>()
   const usedLabels = new Set<string>()
   const providerCounts = new Map<string, number>()
+  const groupCounts = new Map<ReturnType<typeof itemGroup>, number>()
   const remaining = [...ranked]
   const target = Math.max(1, Math.min(8, limit))
   let previousHint: WaveSimilarityHint | null = null
@@ -403,10 +411,16 @@ export async function findWaveTrail({
       const rightFlow = scoreWaveSimilarity(flowAnchor, createWaveHint(right.item))
       return rightFlow - leftFlow || right.score - left.score || right.quality - left.quality || left.tie - right.tie
     })
-    const diverseIndex = remaining.findIndex(({ item }) => {
+    const providerIsAvailable = (item: RandomContentItem) => {
       const provider = itemProvider(item)
       return !provider || (providerCounts.get(provider) ?? 0) < 2
-    })
+    }
+    let diverseIndex = remaining.findIndex(({ item }) => (
+      providerIsAvailable(item) && (groupCounts.get(itemGroup(item)) ?? 0) < 2
+    ))
+    if (diverseIndex < 0) {
+      diverseIndex = remaining.findIndex(({ item }) => providerIsAvailable(item))
+    }
     if (diverseIndex < 0) break
     const [next] = remaining.splice(diverseIndex, 1)
     if (!next) break
@@ -419,6 +433,8 @@ export async function findWaveTrail({
     trail.push(next.item)
     const provider = itemProvider(next.item)
     if (provider) providerCounts.set(provider, (providerCounts.get(provider) ?? 0) + 1)
+    const group = itemGroup(next.item)
+    groupCounts.set(group, (groupCounts.get(group) ?? 0) + 1)
     previousHint = createWaveHint(next.item)
   }
   return trail

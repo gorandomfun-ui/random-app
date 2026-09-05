@@ -42,7 +42,6 @@ import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { reportImageLoadIssue } from '@/utils/imageSuspects'
 import { reportVideoPlaybackIssue, type VideoPlaybackIssue } from '@/utils/videoSuspects'
 import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
-import { dispatchAadsRefresh } from '@/lib/aads'
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',
@@ -60,8 +59,6 @@ const ENCOURAGE_GROUP_SIZE = 5
 const ENCOURAGE_ICON_TOTAL = 30
 const ENCOURAGE_INTERVALS = [22, 24, 28, 24, 26, 28]
 
-const PRELOAD_TARGET_PER_TYPE = 4
-const VIDEO_PRELOAD_TARGET_PER_TYPE = 6
 const RECENT_SESSION_LIMIT = 40
 const STRONG_POOL_INITIAL_DRAWS = 20
 const INITIAL_VIDEO_POOLS: Partial<Record<number, VideoPool>> = {
@@ -81,14 +78,11 @@ const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', '
 const TEXT_ITEM_TYPES: ItemType[] = ['fact', 'joke', 'quote']
 const WAVE_TOTAL_STEPS = 3
 const WAVE_RESERVE_STEPS = 2
-const RANDOM_READY_TARGET = 5
+const RANDOM_READY_TARGET = 3
 const RANDOM_SESSION_TTL_MS = 6 * 60 * 60 * 1000
 const RANDOM_SESSION_VERSION = 1
 const RANDOM_SESSION_PREFIX = 'random-experience-session-'
 const MINI_GAME_FREQUENCY = MINIGAMES_ENABLED ? 3 : 0
-
-const getPreloadTargetForType = (type: ItemType) =>
-  type === 'video' ? VIDEO_PRELOAD_TARGET_PER_TYPE : PRELOAD_TARGET_PER_TYPE
 
 const FALLBACK_ENCOURAGE_MESSAGES = [
   'Keep exploring forward.',
@@ -2051,7 +2045,8 @@ export default function RandomExperiencePage() {
   const [loading, setLoading] = useState(true)
   const [randomReadyDepth, setRandomReadyDepth] = useState(0)
   const loadPendingRef = useRef(false)
-  const queuedLoadRef = useRef<boolean | null>(null)
+  const transitionLockedRef = useRef(false)
+  const [transitionLocked, setTransitionLocked] = useState(false)
   const randomReadyQueueRef = useRef<PreparedRandomEntry[]>([])
   const randomReadyPromiseRef = useRef<Promise<void> | null>(null)
   const randomReadyGenerationRef = useRef(0)
@@ -2074,6 +2069,7 @@ export default function RandomExperiencePage() {
   const waveHistoryKeysRef = useRef<Set<string>>(new Set())
   const waveHistoryIdsRef = useRef<Set<string>>(new Set())
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
+  const [pageGlitchCycle, setPageGlitchCycle] = useState(0)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
   const [soundMuted, setSoundMuted] = useState(false)
@@ -2233,6 +2229,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const waveTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const initialRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
     const count = mode === 'boost' ? randomInt(62, 84) : randomInt(34, 48)
@@ -2329,6 +2326,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   const triggerPageGlitch = useCallback((mode: 'normal' | 'boost' = 'normal') => {
     const bars = makePageGlitchBars(mode)
     setPageGlitchBars(bars)
+    setPageGlitchCycle((cycle) => cycle + 1)
     setPageGlitchActive(true)
     if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
@@ -2342,11 +2340,13 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
     setWaveTransitionActive(false)
     window.requestAnimationFrame(() => {
-      setWaveTransitionActive(true)
-      waveTransitionTimeoutRef.current = setTimeout(() => {
-        setWaveTransitionActive(false)
-        waveTransitionTimeoutRef.current = null
-      }, 840)
+      window.requestAnimationFrame(() => {
+        setWaveTransitionActive(true)
+        waveTransitionTimeoutRef.current = setTimeout(() => {
+          setWaveTransitionActive(false)
+          waveTransitionTimeoutRef.current = null
+        }, 840)
+      })
     })
   }, [])
 
@@ -2371,6 +2371,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       if (heartGlitchTimeoutRef.current) clearTimeout(heartGlitchTimeoutRef.current)
       if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
       if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
+      if (initialRetryTimeoutRef.current) clearTimeout(initialRetryTimeoutRef.current)
       randomReadyGenerationRef.current += 1
       readyWaiters.splice(0).forEach((resolve) => resolve())
       wavePreparationAbortRef.current?.abort()
@@ -2549,26 +2550,15 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     quote: [],
     web: [],
   })
-  const preloadPromisesRef = useRef<Record<ItemType, Promise<void> | null>>({
-    image: null,
-    video: null,
-    joke: null,
-    fact: null,
-    quote: null,
-    web: null,
-  })
-  const prefetchLoadedRef = useRef(new Set<ItemType>())
   const recentKeysRef = useRef<string[]>([])
   const recentKeySetRef = useRef<Set<string>>(new Set())
 
   const clearPreloadedCaches = useCallback(() => {
     for (const type of ALL_ITEM_TYPES) {
       preloadQueuesRef.current[type] = []
-      preloadPromisesRef.current[type] = null
     }
     recentKeysRef.current = []
     recentKeySetRef.current = new Set()
-    prefetchLoadedRef.current = new Set()
   }, [])
 
   const getContentKey = useCallback((item: RandomContentItem): string => {
@@ -2750,101 +2740,6 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     }
   }, [getContentKey, locale])
 
-  const ensureQueue = useCallback(async (type: ItemType, target = getPreloadTargetForType(type)) => {
-    const version = langVersionRef.current
-    const queue = preloadQueuesRef.current[type]
-    if (!prefetchLoadedRef.current.has(type)) {
-      prefetchLoadedRef.current.add(type)
-      drainPrefetchedItems(type)
-    }
-    if (queue.length >= target) return
-
-    if (target === 1) {
-      const existingPromise = preloadPromisesRef.current[type]
-      if (existingPromise) {
-        let timeoutId: ReturnType<typeof setTimeout> | null = null
-        try {
-          await Promise.race([
-            existingPromise,
-            new Promise<void>((resolve) => {
-              timeoutId = setTimeout(() => {
-                timeoutId = null
-                resolve()
-              }, 350)
-            }),
-          ])
-        } catch {
-          /* ignore */
-        } finally {
-          if (timeoutId != null) clearTimeout(timeoutId)
-        }
-        if (queue.length >= 1) return
-      }
-
-      let tries = 0
-      const maxTries = 6
-      while (queue.length < 1 && tries < maxTries) {
-        tries += 1
-        try {
-          const res = await fetchRandom({ types: [type] as RandomTypes, lang: (locale || 'en') as Lang })
-          if (version !== langVersionRef.current) return
-          const item = res?.item
-          if (!item || item.type !== type) continue
-          const key = getContentKey(item)
-          if (!key || isRecentKey(key)) continue
-          const duplicate = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === key)
-          if (duplicate) continue
-          preloadQueuesRef.current[type].push(item)
-        } catch {
-          /* try again */
-        }
-      }
-      return
-    }
-
-    const existing = preloadPromisesRef.current[type]
-    if (existing) {
-      try {
-        await existing
-      } catch {
-        /* ignore */
-      }
-      if (preloadQueuesRef.current[type].length >= target) return
-    }
-
-    const runner = (async () => {
-      const maxAttempts = Math.max(target, 1) * 6
-      let attempts = 0
-      while (preloadQueuesRef.current[type].length < target && attempts < maxAttempts) {
-        if (version !== langVersionRef.current) break
-        attempts += 1
-        try {
-          const res = await fetchRandom({ types: [type] as RandomTypes, lang: (locale || 'en') as Lang })
-          const item = res?.item
-          if (!item || item.type !== type) continue
-          const key = getContentKey(item)
-          if (!key) continue
-          if (isRecentKey(key)) continue
-          const duplicate = preloadQueuesRef.current[type].some((entry) => getContentKey(entry) === key)
-          if (duplicate) continue
-          preloadQueuesRef.current[type].push(item)
-          if (preloadQueuesRef.current[type].length >= target) break
-        } catch {
-          /* continue */
-        }
-      }
-    })()
-
-    preloadPromisesRef.current[type] = runner
-    try {
-      await runner
-    } finally {
-      if (preloadPromisesRef.current[type] === runner) {
-        preloadPromisesRef.current[type] = null
-      }
-    }
-  }, [drainPrefetchedItems, getContentKey, isRecentKey, locale])
-
 const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   if (!MINIGAMES_ENABLED || MINI_GAME_FREQUENCY <= 0) return null
   const state = miniGameStateRef.current
@@ -2866,9 +2761,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       state.globalLevel = Math.min(state.globalLevel + 1, 20)
       state.gamesAtCurrentLevel = 0
     }
-    ensureQueue('joke').catch(() => undefined)
     return createMiniGameItem({ id, level })
-  }, [ensureQueue])
+  }, [])
 
   const takeFromQueue = useCallback((type: ItemType, predicate?: (item: RandomContentItem) => boolean): RandomContentItem | null => {
     const queue = preloadQueuesRef.current[type]
@@ -2887,12 +2781,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     return null
   }, [getContentKey, isRecentKey])
 
-  const finalizeCandidate = useCallback((type: ItemType, candidate: RandomContentItem, refill = true) => {
+  const finalizeCandidate = useCallback((candidate: RandomContentItem) => {
     const key = getContentKey(candidate)
     if (key) registerRecentKey(key)
-    if (refill) ensureQueue(type).catch(() => undefined)
     return candidate
-  }, [ensureQueue, getContentKey, registerRecentKey])
+  }, [getContentKey, registerRecentKey])
 
   const takePreparedWaveCandidate = useCallback((): Exclude<RandomContentItem, MiniGameItem> | null => {
     while (waveQueueRef.current.length) {
@@ -2933,7 +2826,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
     const anchorKey = getContentKey(anchorItem)
     const excludeIds = typeof anchorItem._id === 'string' ? [anchorItem._id] : []
-    const requestTimeout = window.setTimeout(() => controller.abort(), 2500)
+    const requestTimeout = window.setTimeout(() => controller.abort(), 6000)
     try {
       const response = await fetchWave({
         anchor,
@@ -2997,58 +2890,33 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (miniGame) return miniGame
     }
 
-    if (options.strong) {
-      let strongAttempts = 0
-      const maxStrongAttempts = predicate ? 5 : 3
-      while (strongAttempts < maxStrongAttempts) {
-        strongAttempts += 1
-        try {
-          const res = await fetchRandom({
-            types: [type] as RandomTypes,
-            lang: (locale || 'en') as Lang,
-            strong: true,
-            videoPool: options.videoPool,
-          })
-          const item = res?.item
-          if (!item || item.type !== type) continue
-          const key = getContentKey(item)
-          if (key && isRecentKey(key)) continue
-          if (predicate && !predicate(item)) continue
-          return finalizeCandidate(type, item, false)
-        } catch {
-          /* fallback to normal selection */
-        }
-      }
+    if (!options.strong) {
+      const prefetched = takeFromQueue(type, predicate)
+      if (prefetched) return finalizeCandidate(prefetched)
     }
 
-    await ensureQueue(type, 1)
-
-    let candidate = takeFromQueue(type, predicate)
-
-    let fallbackAttempts = 0
-    while (!candidate && fallbackAttempts < PRELOAD_TARGET_PER_TYPE * 3) {
-      fallbackAttempts += 1
+    const attempts = predicate ? 2 : 1
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
-        const res = await fetchRandom({ types: [type] as RandomTypes, lang: (locale || 'en') as Lang })
+        const res = await fetchRandom({
+          types: [type] as RandomTypes,
+          lang: (locale || 'en') as Lang,
+          strong: Boolean(options.strong && !predicate),
+          videoPool: options.videoPool,
+          timeoutMs: 5000,
+        })
         const item = res?.item
         if (!item || item.type !== type) continue
         const key = getContentKey(item)
         if (key && isRecentKey(key)) continue
-        if (predicate && !predicate(item)) {
-          preloadQueuesRef.current[type].push(item)
-          continue
-        }
-        candidate = item
-        break
+        if (predicate && !predicate(item)) continue
+        return finalizeCandidate(item)
       } catch {
-        /* retry */
+        /* The sequence-level fallback will try all available content types. */
       }
     }
-
-    if (!candidate) return null
-
-    return finalizeCandidate(type, candidate)
-  }, [ensureQueue, finalizeCandidate, getContentKey, isRecentKey, locale, spawnMiniGameIfDue, takeFromQueue])
+    return null
+  }, [finalizeCandidate, getContentKey, isRecentKey, locale, spawnMiniGameIfDue, takeFromQueue])
 
   const prepareRandomEntry = useCallback(async (): Promise<PreparedRandomEntry | null> => {
     const languageVersion = langVersionRef.current
@@ -3077,7 +2945,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (!item && !useStrongPool) {
       item = takeFromQueue(slot.itemType, factPredicate)
       resolvedType = item ? slot.itemType : null
-      if (item) item = finalizeCandidate(slot.itemType, item)
+      if (item) item = finalizeCandidate(item)
     }
     if (!item) {
       item = await acquireItem(slot.itemType, factPredicate, {
@@ -3102,12 +2970,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           types: selectedTypes as RandomTypes,
           lang: (locale || 'en') as Lang,
           preview: true,
+          timeoutMs: 5000,
         })
         const fallbackItem = fallbackResponse?.item
         if (fallbackItem && fallbackItem.type !== 'minigame') {
           const fallbackKey = getContentKey(fallbackItem)
           if (fallbackKey && !isRecentKey(fallbackKey)) {
-            item = finalizeCandidate(fallbackItem.type, fallbackItem, false)
+            item = finalizeCandidate(fallbackItem)
             resolvedType = fallbackItem.type
           }
         }
@@ -3128,19 +2997,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     waiters.forEach((resolve) => resolve())
   }, [])
 
-  const waitForRandomReady = useCallback((timeoutMs = 2500) => {
+  const waitForRandomReady = useCallback(() => {
     if (randomReadyQueueRef.current.length) return Promise.resolve()
     return new Promise<void>((resolve) => {
-      let settled = false
       const finish = () => {
-        if (settled) return
-        settled = true
-        window.clearTimeout(timer)
         const index = randomReadyWaitersRef.current.indexOf(finish)
         if (index >= 0) randomReadyWaitersRef.current.splice(index, 1)
         resolve()
       }
-      const timer = window.setTimeout(finish, timeoutMs)
       randomReadyWaitersRef.current.push(finish)
     })
   }, [])
@@ -3153,7 +3017,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const runner = (async () => {
       let failedAttempts = 0
       let totalAttempts = 0
-      while (randomReadyQueueRef.current.length < target && failedAttempts < 3 && totalAttempts < target * 8) {
+      while (randomReadyQueueRef.current.length < target && failedAttempts < 2 && totalAttempts < target * 3) {
         totalAttempts += 1
         let entry: PreparedRandomEntry | null = null
         try {
@@ -3183,6 +3047,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     randomReadyPromiseRef.current = runner
     void runner.finally(() => {
       if (randomReadyPromiseRef.current === runner) randomReadyPromiseRef.current = null
+      notifyRandomReady()
     })
     return runner
   }, [getContentKey, notifyRandomReady, persistRandomSession, prepareRandomEntry, warmContentMedia])
@@ -3215,36 +3080,51 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))
   }, [])
 
-  const loadNext = useCallback(async (reward = false) => {
-    if (loadPendingRef.current) {
-      if (queuedLoadRef.current == null) {
-        queuedLoadRef.current = reward
-      } else {
-        queuedLoadRef.current = queuedLoadRef.current || reward
+  const waitForTransitionReveal = useCallback(() => (
+    new Promise<void>((resolve) => window.setTimeout(resolve, 96))
+  ), [])
+
+  const waitForNextPaint = useCallback(() => (
+    new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(fallback)
+        resolve()
       }
-      return
-    }
+      const fallback = window.setTimeout(finish, 80)
+      window.requestAnimationFrame(finish)
+    })
+  ), [])
+
+  const loadNext = useCallback(async (reward = false) => {
+    if (loadPendingRef.current || transitionLockedRef.current) return false
     loadPendingRef.current = true
-    if (!currentItemRef.current) {
-      setLoading(true)
-    }
+    transitionLockedRef.current = true
+    setTransitionLocked(true)
+    setLoading(true)
+    let displayed = false
 
     try {
       let entry = takeRandomReadyEntry()
       if (!entry) {
         const waiting = waitForRandomReady()
-        void fillRandomReadyQueue()
+        void fillRandomReadyQueue(1)
         await waiting
         entry = takeRandomReadyEntry()
       }
-      if (!entry) return
+      if (!entry) return false
+
+      triggerPageGlitch(entry.slot.kind === 'encourage' ? 'boost' : 'normal')
+      await waitForTransitionReveal()
 
       setIsSecond((prev) => !prev)
       setTrigger((t) => t + 1)
-      triggerPageGlitch(entry.slot.kind === 'encourage' ? 'boost' : 'normal')
       const displayedItem = entry.item
       currentItemRef.current = displayedItem
       setCurrentItem(displayedItem)
+      displayed = true
 
       let contentItem: RandomContentItem | null = null
       if (displayedItem.type === 'encourage') {
@@ -3288,19 +3168,28 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         maybeSpawnDiamond()
       }
       persistRandomSession()
+      await waitForNextPaint()
+      return true
     } catch {
       /* Keep the current item; the next prepared item remains usable. */
+      return false
     } finally {
       loadPendingRef.current = false
-      setLoading(false)
-      void fillRandomReadyQueue()
-      const queued = queuedLoadRef.current
-      queuedLoadRef.current = null
-      if (queued != null) {
-        void loadNext(queued)
+      transitionLockedRef.current = false
+      setTransitionLocked(false)
+      if (displayed || currentItemRef.current) {
+        setLoading(false)
+      } else {
+        setLoading(true)
+        if (initialRetryTimeoutRef.current) clearTimeout(initialRetryTimeoutRef.current)
+        initialRetryTimeoutRef.current = setTimeout(() => {
+          initialRetryTimeoutRef.current = null
+          void loadNext(false)
+        }, 700)
       }
+      void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForRandomReady])
+  }, [addAction, adsAllowed, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForNextPaint, waitForRandomReady, waitForTransitionReveal])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     const current = currentItemRef.current
@@ -3315,14 +3204,29 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
     playbackIssueCountsRef.current[key] = attempts + 1
     reportVideoPlaybackIssue(item, issue)
+    if (transitionLockedRef.current) return
     if (waveModeRef.current) {
       const replacement = takePreparedWaveCandidate()
       if (replacement) {
+        transitionLockedRef.current = true
+        setTransitionLocked(true)
         triggerWaveTransition()
-        currentItemRef.current = replacement
-        setCurrentItem(replacement)
-        setLiked(isLiked(replacement))
-        updateTheme()
+        triggerPageGlitch()
+        void (async () => {
+          try {
+            await waitForTransitionReveal()
+            setIsSecond((prev) => !prev)
+            setTrigger((value) => value + 1)
+            currentItemRef.current = replacement
+            setCurrentItem(replacement)
+            setLiked(isLiked(replacement))
+            updateTheme()
+            await waitForNextPaint()
+          } finally {
+            transitionLockedRef.current = false
+            setTransitionLocked(false)
+          }
+        })()
         return
       }
       waveModeRef.current = false
@@ -3334,7 +3238,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       waveQueueRef.current = []
     }
     loadNext(false).catch(() => undefined)
-  }, [getContentKey, loadNext, takePreparedWaveCandidate, triggerWaveTransition, updateTheme])
+  }, [getContentKey, loadNext, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForNextPaint, waitForTransitionReveal])
 
   useEffect(() => {
     if (initialLoadTriggeredRef.current) return
@@ -3416,7 +3320,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }), [theme.bg, theme.cream, theme.text])
 
   const viewItem = currentItem
-  const isPriming = !viewItem && loading
+  const isPriming = !viewItem
 
   const currentImmersiveImage = useMemo(
     () => (isPriming ? null : getImmersiveBackgroundImage(viewItem, viewportWidth)),
@@ -3486,9 +3390,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
   const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
-  const controlsDisabled = !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
-  const randomAgainDisabled = loading && !viewItem
-  const waveDisabled = controlsDisabled || loading || (!waveMode && !waveReady)
+  const controlsDisabled = transitionLocked || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
+  const randomAgainDisabled = !viewItem || transitionLocked
+  const waveDisabled = controlsDisabled || transitionLocked || loading || (!waveMode && !waveReady)
 
   const handleLike = useCallback(() => {
     const item = currentItemRef.current
@@ -3509,6 +3413,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [liked, theme, triggerHeartGlitch])
 
   const handleRandomAgain = useCallback(() => {
+    if (transitionLockedRef.current) return
     wavePreparationAbortRef.current?.abort()
     wavePreparationAbortRef.current = null
     wavePreparationGenerationRef.current += 1
@@ -3522,15 +3427,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     waveQueueRef.current = []
     waveHistoryKeysRef.current.clear()
     waveHistoryIdsRef.current.clear()
-    if (adsAllowed) {
-      dispatchAadsRefresh('footer')
-    }
     loadNext(true)
       .catch(() => undefined)
     playAgain()
-  }, [adsAllowed, loadNext])
+  }, [loadNext])
 
-  const handleWave = useCallback(() => {
+  const handleWave = useCallback(async () => {
+    if (transitionLockedRef.current) return
     const current = currentItemRef.current
     if (!current || current.type === 'encourage' || current.type === 'minigame') return
 
@@ -3543,6 +3446,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       return
     }
 
+    transitionLockedRef.current = true
+    setTransitionLocked(true)
     const nextRemaining = enteringWave ? WAVE_TOTAL_STEPS : Math.max(1, waveRemainingRef.current - 1)
     waveModeRef.current = true
     waveRemainingRef.current = nextRemaining
@@ -3552,11 +3457,22 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (enteringWave) playWaveEnter()
     else playWaveStep()
     triggerWaveTransition()
-    currentItemRef.current = next
-    setCurrentItem(next)
-    setLiked(isLiked(next))
-    updateTheme()
-  }, [handleRandomAgain, takePreparedWaveCandidate, triggerWaveTransition, updateTheme, waveReady])
+    triggerPageGlitch()
+
+    try {
+      await waitForTransitionReveal()
+      setIsSecond((prev) => !prev)
+      setTrigger((value) => value + 1)
+      currentItemRef.current = next
+      setCurrentItem(next)
+      setLiked(isLiked(next))
+      updateTheme()
+      await waitForNextPaint()
+    } finally {
+      transitionLockedRef.current = false
+      setTransitionLocked(false)
+    }
+  }, [handleRandomAgain, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForNextPaint, waitForTransitionReveal, waveReady])
 
   const handlePrimaryAction = useCallback(() => {
     if (!waveModeRef.current || waveRemainingRef.current <= 1) {
@@ -3591,6 +3507,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         <div className="random-immersive-bg__noise" />
       </div>
       <div
+        key={pageGlitchCycle}
         className={`page-glitch-overlay${pageGlitchActive ? ' page-glitch-overlay--active' : ''}`}
         aria-hidden="true"
       >
@@ -3727,11 +3644,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
       <section className="random-content-section relative z-10 flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
         <div className="random-content-frame w-full" style={contentFrameStyle}>
-          {isPriming ? (
+          {!viewItem ? (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
             </div>
-          ) : viewItem ? (
+          ) : (
             <ContentRenderer
               item={viewItem}
               theme={theme}
@@ -3746,10 +3663,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               onVideoSoundUnlocked={unlockVideoSound}
               onPlaybackIssue={handlePlaybackIssue}
             />
-          ) : (
-            <div className="flex items-center justify-center w-full h-full">
-              <span className="font-inter opacity-70">No content</span>
-            </div>
           )}
         </div>
 
