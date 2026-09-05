@@ -268,6 +268,24 @@ type ThemeStyle = CSSProperties & {
   ['--random-progress']?: number
   ['--random-progress-shift']?: string
   ['--random-progress-shift-negative']?: string
+  ['--random-progress-transition-shift']?: string
+  ['--random-progress-transition-shift-negative']?: string
+  ['--random-progress-transition-shift-half']?: string
+  ['--random-progress-transition-shift-half-negative']?: string
+  ['--random-progress-transition-shift-soft']?: string
+  ['--random-progress-transition-shift-soft-negative']?: string
+  ['--random-progress-transition-y']?: string
+  ['--random-progress-transition-y-negative']?: string
+  ['--random-progress-chroma-shift']?: string
+  ['--random-progress-transition-duration']?: string
+  ['--random-progress-transition-scale']?: number
+  ['--random-progress-bg-hit-scale']?: number
+  ['--random-progress-bg-hit-shift']?: string
+  ['--random-progress-bg-hit-shift-negative']?: string
+  ['--random-progress-bg-hit-shift-half']?: string
+  ['--random-progress-bg-hit-shift-soft-negative']?: string
+  ['--random-progress-overlay-saturate']?: number
+  ['--random-progress-overlay-contrast']?: number
   ['--random-progress-ambient-duration']?: string
   ['--random-progress-bg-duration']?: string
   ['--random-progress-noise-duration']?: string
@@ -2422,11 +2440,11 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal', progression = 0): GlitchBar[] => {
     const lite = effectsProfile === 'webkit-lite'
-    const energy = mode === 'boost' ? 1 : clampProgress(progression)
+    const energy = mode === 'boost' && !effectsTestMode ? 1 : clampProgress(progression)
     const normalMin = lite ? 10 : 18
     const normalMax = lite ? 14 : 24
-    const boostMin = lite ? 16 : 28
-    const boostMax = lite ? 20 : 36
+    const boostMin = effectsTestMode ? (lite ? 24 : 40) : (lite ? 16 : 28)
+    const boostMax = effectsTestMode ? (lite ? 30 : 48) : (lite ? 20 : 36)
     const count = randomInt(
       Math.round(lerp(normalMin, boostMin, energy)),
       Math.round(lerp(normalMax, boostMax, energy)),
@@ -2455,39 +2473,54 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     return Array.from({ length: count }, (_, index) => {
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
       const roll = Math.random()
-      const variant: GlitchBar['variant'] = roll > lerp(0.85, 0.77, energy)
+      const variant: GlitchBar['variant'] = roll > lerp(0.85, effectsTestMode ? 0.7 : 0.77, energy)
         ? 'block'
-        : roll > lerp(0.65, 0.59, energy)
+        : roll > lerp(0.65, effectsTestMode ? 0.52 : 0.59, energy)
           ? 'signal'
-          : roll > lerp(0.55, 0.5, energy)
+          : roll > lerp(0.55, effectsTestMode ? 0.45 : 0.5, energy)
             ? 'void'
             : 'line'
-      const wideThreshold = Math.round(lerp(4, 7, energy))
-      const wideChance = (variant === 'line' ? 0.38 : variant === 'signal' ? 0.58 : 0.26) + energy * 0.08
+      const wideThreshold = Math.round(lerp(4, effectsTestMode ? 10 : 7, energy))
+      const wideChance = (variant === 'line' ? 0.38 : variant === 'signal' ? 0.58 : 0.26)
+        + energy * (effectsTestMode ? 0.14 : 0.08)
       const wide = index < wideThreshold || Math.random() < wideChance
       const widthValue = variant === 'block'
-        ? randomBetween(4, lerp(18, 24, energy))
+        ? randomBetween(4, lerp(18, effectsTestMode ? 30 : 24, energy))
         : wide
-          ? randomBetween(lerp(36, 48, energy), lerp(110, 122, energy))
-          : randomBetween(5, lerp(32, 38, energy))
+          ? randomBetween(
+              lerp(36, effectsTestMode ? 56 : 48, energy),
+              lerp(110, effectsTestMode ? 132 : 122, energy),
+            )
+          : randomBetween(5, lerp(32, effectsTestMode ? 46 : 38, energy))
       const maxLeft = Math.max(-6, 100 - widthValue)
       const leftValue = randomBetween(variant === 'block' ? -2 : -9, maxLeft)
       const topValue = randomBetween(1, 98)
       const heightValue = variant === 'block'
-        ? randomBetween(lerp(4, 6, energy), lerp(15, 21, energy))
+        ? randomBetween(lerp(4, 6, energy), lerp(15, effectsTestMode ? 26 : 21, energy))
         : variant === 'signal'
-          ? randomBetween(1.8, lerp(4.2, 5, energy))
+          ? randomBetween(1.8, lerp(4.2, effectsTestMode ? 6.2 : 5, energy))
           : variant === 'void'
-            ? randomBetween(1.8, lerp(6, 8, energy))
-            : randomBetween(0.65, lerp(1.7, 2, energy))
-      const delay = Math.round(randomBetween(0, lerp(lite ? 40 : 60, lite ? 60 : 70, energy)))
+            ? randomBetween(1.8, lerp(6, effectsTestMode ? 10 : 8, energy))
+            : randomBetween(0.65, lerp(1.7, effectsTestMode ? 2.7 : 2, energy))
+      const delay = Math.round(randomBetween(
+        0,
+        lerp(lite ? 40 : 60, effectsTestMode ? (lite ? 78 : 100) : (lite ? 60 : 70), energy),
+      ))
       const duration = Math.round(randomBetween(
-        lerp(lite ? 160 : 190, lite ? 190 : 220, energy),
-        lerp(lite ? 250 : 300, lite ? 300 : 340, energy),
+        lerp(
+          lite ? 160 : 190,
+          effectsTestMode ? (lite ? 230 : 275) : (lite ? 190 : 220),
+          energy,
+        ),
+        lerp(
+          lite ? 250 : 300,
+          effectsTestMode ? (lite ? 390 : 480) : (lite ? 300 : 340),
+          energy,
+        ),
       ))
       const shiftValue = randomBetween(
-        lerp(wide ? 14 : 5, wide ? 22 : 9, energy),
-        lerp(wide ? 30 : 16, wide ? 46 : 22, energy),
+        lerp(wide ? 14 : 5, wide ? (effectsTestMode ? 30 : 22) : (effectsTestMode ? 13 : 9), energy),
+        lerp(wide ? 30 : 16, wide ? (effectsTestMode ? 64 : 46) : (effectsTestMode ? 32 : 22), energy),
       )
       const yShiftValue = variant === 'block'
         ? randomBetween(-3.5, 3.5)
@@ -2516,7 +2549,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         popOpacity,
       }
     })
-  }, [effectsProfile])
+  }, [effectsProfile, effectsTestMode])
 
   const triggerBurgerGlitch = useCallback(() => {
     setBurgerGlitch(true)
@@ -2531,7 +2564,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   }, [])
 
   const triggerPageGlitch = useCallback((mode: 'normal' | 'boost' = 'normal', progression = 0) => {
-    const energy = mode === 'boost' ? 1 : clampProgress(progression)
+    const energy = mode === 'boost' && !effectsTestMode ? 1 : clampProgress(progression)
     const bars = makePageGlitchBars(mode, energy)
     setPageGlitchBars(bars)
     setPageGlitchCycle((cycle) => cycle + 1)
@@ -2539,11 +2572,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
     const lite = effectsProfile === 'webkit-lite'
-    const base = Math.round(lerp(lite ? 300 : 370, lite ? 360 : 430, energy))
-    const tail = Math.round(lerp(40, 55, energy))
+    const peak = effectsTestMode ? (lite ? 520 : 620) : (lite ? 360 : 430)
+    const base = Math.round(lerp(lite ? 300 : 370, peak, energy))
+    const tail = Math.round(lerp(40, effectsTestMode ? 70 : 55, energy))
     const total = Math.max(base, (longest || base) + tail)
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
-  }, [effectsProfile, makePageGlitchBars])
+  }, [effectsProfile, effectsTestMode, makePageGlitchBars])
 
   const triggerWaveTransition = useCallback(() => {
     if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
@@ -3645,11 +3679,29 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     '--theme-cream': theme.cream,
     '--theme-text': theme.text,
     '--random-progress': effectiveProgressionIntensity,
-    '--random-progress-shift': `${(effectiveProgressionIntensity * 4).toFixed(2)}px`,
-    '--random-progress-shift-negative': `${(-effectiveProgressionIntensity * 4).toFixed(2)}px`,
-    '--random-progress-ambient-duration': `${Math.max(2.2, 11 - effectiveProgressionIntensity * 8.8).toFixed(2)}s`,
-    '--random-progress-bg-duration': `${Math.max(9, 18 - effectiveProgressionIntensity * 9).toFixed(2)}s`,
-    '--random-progress-noise-duration': `${Math.max(6, 18 - effectiveProgressionIntensity * 12).toFixed(2)}s`,
+    '--random-progress-shift': `${(effectiveProgressionIntensity * 6).toFixed(2)}px`,
+    '--random-progress-shift-negative': `${(-effectiveProgressionIntensity * 6).toFixed(2)}px`,
+    '--random-progress-transition-shift': `${(effectiveProgressionIntensity * 14).toFixed(2)}px`,
+    '--random-progress-transition-shift-negative': `${(-effectiveProgressionIntensity * 14).toFixed(2)}px`,
+    '--random-progress-transition-shift-half': `${(effectiveProgressionIntensity * 7).toFixed(2)}px`,
+    '--random-progress-transition-shift-half-negative': `${(-effectiveProgressionIntensity * 7).toFixed(2)}px`,
+    '--random-progress-transition-shift-soft': `${(effectiveProgressionIntensity * 5).toFixed(2)}px`,
+    '--random-progress-transition-shift-soft-negative': `${(-effectiveProgressionIntensity * 5).toFixed(2)}px`,
+    '--random-progress-transition-y': `${(effectiveProgressionIntensity * 4).toFixed(2)}px`,
+    '--random-progress-transition-y-negative': `${(-effectiveProgressionIntensity * 4).toFixed(2)}px`,
+    '--random-progress-chroma-shift': `${(effectiveProgressionIntensity * 16).toFixed(2)}px`,
+    '--random-progress-transition-duration': `${Math.round(420 + effectiveProgressionIntensity * 200)}ms`,
+    '--random-progress-transition-scale': 1 + effectiveProgressionIntensity * 0.025,
+    '--random-progress-bg-hit-scale': 1.12 + effectiveProgressionIntensity * 0.045,
+    '--random-progress-bg-hit-shift': `${(effectiveProgressionIntensity * 10).toFixed(2)}px`,
+    '--random-progress-bg-hit-shift-negative': `${(-effectiveProgressionIntensity * 10).toFixed(2)}px`,
+    '--random-progress-bg-hit-shift-half': `${(effectiveProgressionIntensity * 5.5).toFixed(2)}px`,
+    '--random-progress-bg-hit-shift-soft-negative': `${(-effectiveProgressionIntensity * 3).toFixed(2)}px`,
+    '--random-progress-overlay-saturate': 1 + effectiveProgressionIntensity * 1.1,
+    '--random-progress-overlay-contrast': 1 + effectiveProgressionIntensity * 0.35,
+    '--random-progress-ambient-duration': `${Math.max(1.8, 11 - effectiveProgressionIntensity * 9.2).toFixed(2)}s`,
+    '--random-progress-bg-duration': `${Math.max(7, 18 - effectiveProgressionIntensity * 11).toFixed(2)}s`,
+    '--random-progress-noise-duration': `${Math.max(5, 18 - effectiveProgressionIntensity * 13).toFixed(2)}s`,
   }), [effectiveProgressionIntensity, theme.bg, theme.cream, theme.text])
 
   const viewItem = currentItem
@@ -3866,7 +3918,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${effectsTestMode && effectsTestStep > 0 ? ' random-page--effects-progressing' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
       {effectsTestMode ? (
@@ -5101,13 +5153,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           }
         }
         .page-glitch-overlay--active {
-          animation: page-glitch-fade 420ms steps(1, end) forwards;
+          animation: page-glitch-fade var(--random-progress-transition-duration, 420ms) steps(1, end) forwards;
+          filter:
+            saturate(var(--random-progress-overlay-saturate, 1))
+            contrast(var(--random-progress-overlay-contrast, 1));
         }
         .page-glitch-overlay--active::before {
-          animation: page-glitch-scan 420ms steps(1, end) forwards;
+          animation: page-glitch-scan var(--random-progress-transition-duration, 420ms) steps(1, end) forwards;
         }
         .page-glitch-overlay--active::after {
-          animation: page-glitch-signal 420ms steps(1, end) forwards;
+          animation: page-glitch-signal var(--random-progress-transition-duration, 420ms) steps(1, end) forwards;
         }
         .page-glitch-overlay--active .page-glitch-overlay__bar {
           animation-name: page-glitch-bar;
@@ -5131,19 +5186,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           }
           8% {
             opacity: 0.72;
-            transform: translate3d(7px, 0, 0);
+            transform: translate3d(calc(7px + var(--random-progress-chroma-shift, 0px)), 0, 0);
           }
           15% {
             opacity: 0.28;
-            transform: translate3d(-5px, 0, 0);
+            transform: translate3d(calc(-5px - var(--random-progress-chroma-shift, 0px)), 0, 0);
           }
           28% {
             opacity: 0.64;
-            transform: translate3d(3px, 0, 0);
+            transform: translate3d(calc(3px + var(--random-progress-transition-shift, 0px)), 0, 0);
           }
           52% {
             opacity: 0.36;
-            transform: translate3d(-2px, 0, 0);
+            transform: translate3d(calc(-2px + var(--random-progress-transition-shift-negative, 0px)), 0, 0);
           }
           100% {
             opacity: 0;
@@ -5157,21 +5212,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           }
           9% {
             opacity: 0.72;
-            transform: translate3d(-12px, 0, 0);
+            transform: translate3d(calc(-12px - var(--random-progress-chroma-shift, 0px)), 0, 0);
           }
           10% {
             opacity: 0;
           }
           31% {
             opacity: 0.5;
-            transform: translate3d(9px, 0, 0);
+            transform: translate3d(calc(9px + var(--random-progress-chroma-shift, 0px)), 0, 0);
           }
           33% {
             opacity: 0;
           }
           58% {
             opacity: 0.42;
-            transform: translate3d(-6px, 0, 0);
+            transform: translate3d(calc(-6px + var(--random-progress-transition-shift-negative, 0px)), 0, 0);
           }
           60% {
             opacity: 0;
@@ -5255,16 +5310,31 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           animation-delay: -3.1s;
         }
         .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-main-header {
-          animation: random-progress-header-hit 420ms steps(1, end) both;
+          animation: random-progress-header-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
         .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-category-row {
-          animation: random-progress-category-hit 420ms steps(1, end) both;
+          animation: random-progress-category-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
         .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-content-frame {
-          animation: random-progress-content-hit 420ms steps(1, end) both;
+          animation: random-progress-content-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
+        }
+        .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-action-section {
+          animation: random-progress-action-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
+          will-change: transform;
+        }
+        .random-page--effects-progressing.random-page--glitching:not(.random-page--wave) .random-immersive-bg__media {
+          animation: random-progress-bg-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
+          will-change: transform;
+        }
+        .random-page--effects-progressing.random-page--glitching:not(.random-page--wave) .random-immersive-bg__fragments {
+          animation: random-progress-fragments-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
+          will-change: transform;
+        }
+        .random-page--lite-effects .page-glitch-overlay--active {
+          filter: none;
         }
         @keyframes random-progress-ambient {
           0%, 18%, 100% { transform: translate3d(0, 0, 0); }
@@ -5275,22 +5345,45 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         @keyframes random-progress-header-hit {
           0%, 100% { transform: translate3d(0, 0, 0); }
-          14% { transform: translate3d(var(--random-progress-shift-negative, 0px), 0, 0); }
-          28% { transform: translate3d(var(--random-progress-shift, 0px), -1px, 0); }
-          52% { transform: translate3d(var(--random-progress-shift-negative, 0px), 1px, 0); }
-          68% { transform: translate3d(var(--random-progress-shift, 0px), 0, 0); }
+          14% { transform: translate3d(var(--random-progress-transition-shift-negative, 0px), var(--random-progress-transition-y, 0px), 0); }
+          28% { transform: translate3d(var(--random-progress-transition-shift, 0px), var(--random-progress-transition-y-negative, 0px), 0); }
+          42% { transform: translate3d(var(--random-progress-transition-shift-half-negative, 0px), 0, 0); }
+          52% { transform: translate3d(var(--random-progress-transition-shift-negative, 0px), var(--random-progress-transition-y, 0px), 0); }
+          68% { transform: translate3d(var(--random-progress-transition-shift, 0px), 0, 0); }
         }
         @keyframes random-progress-category-hit {
           0%, 100% { transform: translate3d(0, 0, 0); }
-          18% { transform: translate3d(var(--random-progress-shift, 0px), 0, 0); }
-          38% { transform: translate3d(var(--random-progress-shift-negative, 0px), 0, 0); }
-          61% { transform: translate3d(var(--random-progress-shift, 0px), 0, 0); }
+          18% { transform: translate3d(var(--random-progress-transition-shift, 0px), 0, 0) scaleX(var(--random-progress-transition-scale, 1)); }
+          38% { transform: translate3d(var(--random-progress-transition-shift-negative, 0px), var(--random-progress-transition-y-negative, 0px), 0); }
+          61% { transform: translate3d(var(--random-progress-transition-shift, 0px), var(--random-progress-transition-y, 0px), 0); }
         }
         @keyframes random-progress-content-hit {
           0%, 100% { transform: translate3d(0, 0, 0); }
-          20% { transform: translate3d(var(--random-progress-shift-negative, 0px), 0, 0); }
-          42% { transform: translate3d(var(--random-progress-shift, 0px), 0, 0); }
-          64% { transform: translate3d(0, 0, 0); }
+          12% { transform: translate3d(var(--random-progress-transition-shift-negative, 0px), var(--random-progress-transition-y, 0px), 0); }
+          26% { transform: translate3d(var(--random-progress-transition-shift, 0px), var(--random-progress-transition-y-negative, 0px), 0); }
+          42% { transform: translate3d(var(--random-progress-transition-shift-half-negative, 0px), 0, 0); }
+          64% { transform: translate3d(var(--random-progress-transition-shift, 0px), 0, 0); }
+          78% { transform: translate3d(0, 0, 0); }
+        }
+        @keyframes random-progress-action-hit {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          16% { transform: translate3d(var(--random-progress-transition-shift-half, 0px), 0, 0); }
+          36% { transform: translate3d(var(--random-progress-transition-shift-half-negative, 0px), var(--random-progress-transition-y, 0px), 0); }
+          58% { transform: translate3d(var(--random-progress-transition-shift-soft, 0px), 0, 0); }
+        }
+        @keyframes random-progress-bg-hit {
+          0%, 100% { transform: scale(1.12) translate3d(0, 0, 0); }
+          12% { transform: scale(var(--random-progress-bg-hit-scale, 1.12)) translate3d(var(--random-progress-bg-hit-shift, 0px), 0, 0); }
+          24% { transform: scale(1.12) translate3d(var(--random-progress-bg-hit-shift-negative, 0px), var(--random-progress-transition-y, 0px), 0); }
+          43% { transform: scale(var(--random-progress-bg-hit-scale, 1.12)) translate3d(var(--random-progress-bg-hit-shift-half, 0px), var(--random-progress-transition-y-negative, 0px), 0); }
+          68% { transform: scale(1.12) translate3d(var(--random-progress-bg-hit-shift-soft-negative, 0px), 0, 0); }
+        }
+        @keyframes random-progress-fragments-hit {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          14% { transform: translate3d(var(--random-progress-transition-shift, 0px), 0, 0); }
+          29% { transform: translate3d(var(--random-progress-transition-shift-negative, 0px), var(--random-progress-transition-y-negative, 0px), 0); }
+          48% { transform: translate3d(var(--random-progress-transition-shift-soft, 0px), var(--random-progress-transition-y, 0px), 0); }
+          72% { transform: translate3d(var(--random-progress-transition-shift-soft-negative, 0px), 0, 0); }
         }
         @media (prefers-reduced-motion: reduce) {
           .random-page--effects-test .random-main-header,
