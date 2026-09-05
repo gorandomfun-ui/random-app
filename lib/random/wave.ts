@@ -20,6 +20,7 @@ export type WaveSimilarityDetails = {
   termMatches: number
   facetMatches: number
   strongTokenMatches: number
+  associationMatches: number
 }
 
 type WaveSourceItem = {
@@ -61,6 +62,7 @@ const LOW_SIGNAL_TERMS = new Set([
   'del', 'los', 'las', 'una', 'uno', 'para', 'por', 'con', 'como', 'esta', 'este', 'mundo', 'sobre', 'entre',
   'uma', 'dos', 'das', 'com', 'sem', 'mais', 'muito', 'muita', 'pelo', 'pela', 'para', 'star', 'stars',
   'project', 'stock', 'bizarre', 'weird', 'strange', 'absurd', 'absurdity',
+  'answer', 'answers', 'fact', 'facts', 'knowledge', 'question', 'questions', 'quiz', 'quizzes', 'test', 'trivia',
 ])
 
 const FACET_PATTERNS: Array<[RegExp, string]> = [
@@ -79,10 +81,17 @@ const FACET_PATTERNS: Array<[RegExp, string]> = [
   [/\b(?:19[5-9]\d|200\d|[5-9]0s|y2k)\b/i, 'era-dated'],
 ]
 
-export const WAVE_MIN_SIMILARITY_SCORE = 5
+export const WAVE_MIN_SIMILARITY_SCORE = 5.5
 
 function normalize(value: string): string {
   return value.trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+}
+
+function normalizeForMatch(value: string): string {
+  const normalized = normalize(value)
+  if (normalized.length > 5 && normalized.endsWith('ies')) return `${normalized.slice(0, -3)}y`
+  if (normalized.length > 4 && normalized.endsWith('s') && !normalized.endsWith('ss')) return normalized.slice(0, -1)
+  return normalized
 }
 
 function isUseful(value: string): boolean {
@@ -194,8 +203,30 @@ export function buildWaveSimilarityMatches<T extends Document>(hint?: WaveSimila
 }
 
 function overlap(left: string[], right: string[]): string[] {
-  const rightSet = new Set(right.map(normalize))
-  return left.map(normalize).filter((value, index, values) => rightSet.has(value) && values.indexOf(value) === index)
+  const rightSet = new Set(right.map(normalizeForMatch))
+  return left
+    .map(normalizeForMatch)
+    .filter((value, index, values) => rightSet.has(value) && values.indexOf(value) === index)
+}
+
+function lexicalAssociationCount(left: string[], right: string[]): number {
+  const leftValues = Array.from(new Set(left.map(normalizeForMatch)))
+  const rightValues = Array.from(new Set(right.map(normalizeForMatch)))
+  const matches = new Set<string>()
+  for (const leftValue of leftValues) {
+    if (leftValue.length < 5) continue
+    for (const rightValue of rightValues) {
+      if (rightValue.length < 5 || leftValue === rightValue) continue
+      const shorter = leftValue.length <= rightValue.length ? leftValue : rightValue
+      const longer = leftValue.length > rightValue.length ? leftValue : rightValue
+      let sharedPrefix = 0
+      while (sharedPrefix < shorter.length && shorter[sharedPrefix] === longer[sharedPrefix]) sharedPrefix += 1
+      const closePrefix = sharedPrefix >= 5 && sharedPrefix / shorter.length >= 0.8
+      const directExtension = longer.startsWith(shorter) && longer.length - shorter.length <= 3
+      if (closePrefix || directExtension) matches.add(`${leftValue}:${rightValue}`)
+    }
+  }
+  return Math.min(3, matches.size)
 }
 
 export function getWaveSimilarityDetails(anchor: WaveSimilarityHint, candidate: WaveSimilarityHint): WaveSimilarityDetails {
@@ -212,10 +243,30 @@ export function getWaveSimilarityDetails(anchor: WaveSimilarityHint, candidate: 
     [...anchor.keywords, ...anchor.terms],
     [...candidate.keywords, ...candidate.terms],
   ).filter((value) => value.length >= 6).length
+  const associationMatches = lexicalAssociationCount(
+    [...anchor.tags, ...anchor.keywords, ...anchor.terms],
+    [...candidate.tags, ...candidate.keywords, ...candidate.terms],
+  )
   const toneScore = anchor.tone && candidate.tone === anchor.tone ? 0.2 : 0
   const typeScore = anchor.originType && candidate.originType === anchor.originType ? 0.15 : 0
-  const score = tagMatches * 7 + keywordMatches * 4 + termMatches * 4 + specificMatches * 1.5 + facetMatches * 2.5 + toneScore + typeScore
-  return { score, specificMatches, tagMatches, keywordMatches, termMatches, facetMatches, strongTokenMatches }
+  const score = tagMatches * 7
+    + keywordMatches * 4
+    + termMatches * 4
+    + specificMatches * 1.5
+    + facetMatches * 2.5
+    + associationMatches * 5.5
+    + toneScore
+    + typeScore
+  return {
+    score,
+    specificMatches,
+    tagMatches,
+    keywordMatches,
+    termMatches,
+    facetMatches,
+    strongTokenMatches,
+    associationMatches,
+  }
 }
 
 export function scoreWaveSimilarity(anchor: WaveSimilarityHint, candidate: WaveSimilarityHint): number {
@@ -225,7 +276,12 @@ export function scoreWaveSimilarity(anchor: WaveSimilarityHint, candidate: WaveS
 export function isStrongWaveMatch(anchor: WaveSimilarityHint, candidate: WaveSimilarityHint): boolean {
   const details = getWaveSimilarityDetails(anchor, candidate)
   return details.score >= WAVE_MIN_SIMILARITY_SCORE
-    && (details.specificMatches >= 2 || details.strongTokenMatches >= 1 || details.facetMatches >= 2)
+    && (
+      details.specificMatches >= 1
+      || details.strongTokenMatches >= 1
+      || details.associationMatches >= 1
+      || details.facetMatches >= 2
+    )
 }
 
 export function hasWaveSignal(hint: WaveSimilarityHint): boolean {

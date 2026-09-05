@@ -8,7 +8,6 @@ import {
   getWaveDescriptorTokens,
   getWaveQueryTokens,
   isStrongWaveMatch,
-  mergeWaveHints,
   sanitizeWaveHint,
   scoreWaveSimilarity,
   type WaveSimilarityHint,
@@ -261,6 +260,15 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function descriptorTokenPattern(value: string): string {
+  const escaped = escapeRegExp(value)
+  if (value.length > 4 && value.endsWith('s') && !value.endsWith('ss')) {
+    return `${escapeRegExp(value.slice(0, -1))}s?`
+  }
+  if (value.length < 5) return escaped
+  return `${escapeRegExp(value.slice(0, 5))}[a-z0-9]*`
+}
+
 function documentKey(doc: WaveDocument): string {
   if (doc._id) return `id:${String(doc._id)}`
   const url = trim(doc.url)
@@ -274,19 +282,6 @@ function itemKey(item: RandomContentItem): string {
   return item._id || ''
 }
 
-function itemProvider(item: RandomContentItem): string {
-  if ('provider' in item && typeof item.provider === 'string' && item.provider.trim()) {
-    return item.provider.trim().toLowerCase()
-  }
-  if ('source' in item && item.source?.name) return item.source.name.trim().toLowerCase()
-  return ''
-}
-
-function itemGroup(item: RandomContentItem): 'image' | 'video' | 'web' | 'text' {
-  if (item.type === 'image' || item.type === 'video' || item.type === 'web') return item.type
-  return 'text'
-}
-
 function itemLabelKey(item: RandomContentItem): string {
   const label = 'title' in item && typeof item.title === 'string'
     ? item.title
@@ -294,6 +289,10 @@ function itemLabelKey(item: RandomContentItem): string {
       ? item.text
       : ''
   return label.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function itemIsQuiz(item: RandomContentItem): boolean {
+  return item.type === 'fact' && item.variant === 'quiz'
 }
 
 export async function findWaveTrail({
@@ -349,7 +348,7 @@ export async function findWaveTrail({
   }
 
   const descriptorRegex = descriptorTokens.length
-    ? new RegExp(`\\b(?:${descriptorTokens.map(escapeRegExp).join('|')})\\b`, 'i')
+    ? new RegExp(`\\b(?:${descriptorTokens.map(descriptorTokenPattern).join('|')})\\b`, 'i')
     : null
   const [metadataDocs, descriptorDocs] = await Promise.all([
     tokens.length
@@ -397,32 +396,20 @@ export async function findWaveTrail({
   const trail: RandomContentItem[] = []
   const usedKeys = new Set<string>()
   const usedLabels = new Set<string>()
-  const providerCounts = new Map<string, number>()
-  const groupCounts = new Map<ReturnType<typeof itemGroup>, number>()
   const remaining = [...ranked]
   const target = Math.max(1, Math.min(8, limit))
-  let previousHint: WaveSimilarityHint | null = null
+  let quizCount = 0
 
   while (remaining.length && trail.length < target) {
-    remaining.sort((left, right) => {
-      if (!previousHint) return right.score - left.score || right.quality - left.quality || left.tie - right.tie
-      const flowAnchor = mergeWaveHints(anchor, previousHint)
-      const leftFlow = scoreWaveSimilarity(flowAnchor, createWaveHint(left.item))
-      const rightFlow = scoreWaveSimilarity(flowAnchor, createWaveHint(right.item))
-      return rightFlow - leftFlow || right.score - left.score || right.quality - left.quality || left.tie - right.tie
-    })
-    const providerIsAvailable = (item: RandomContentItem) => {
-      const provider = itemProvider(item)
-      return !provider || (providerCounts.get(provider) ?? 0) < 2
+    let nextIndex = 0
+    if (quizCount >= 1 && itemIsQuiz(remaining[0].item)) {
+      const bestScore = remaining[0].score
+      const nonQuizIndex = remaining.findIndex(({ item, score }) => (
+        !itemIsQuiz(item) && score >= bestScore * 0.85
+      ))
+      if (nonQuizIndex >= 0) nextIndex = nonQuizIndex
     }
-    let diverseIndex = remaining.findIndex(({ item }) => (
-      providerIsAvailable(item) && (groupCounts.get(itemGroup(item)) ?? 0) < 2
-    ))
-    if (diverseIndex < 0) {
-      diverseIndex = remaining.findIndex(({ item }) => providerIsAvailable(item))
-    }
-    if (diverseIndex < 0) break
-    const [next] = remaining.splice(diverseIndex, 1)
+    const [next] = remaining.splice(nextIndex, 1)
     if (!next) break
     const key = itemKey(next.item)
     if (!key || usedKeys.has(key)) continue
@@ -431,11 +418,7 @@ export async function findWaveTrail({
     usedKeys.add(key)
     if (labelKey) usedLabels.add(labelKey)
     trail.push(next.item)
-    const provider = itemProvider(next.item)
-    if (provider) providerCounts.set(provider, (providerCounts.get(provider) ?? 0) + 1)
-    const group = itemGroup(next.item)
-    groupCounts.set(group, (groupCounts.get(group) ?? 0) + 1)
-    previousHint = createWaveHint(next.item)
+    if (itemIsQuiz(next.item)) quizCount += 1
   }
   return trail
 }

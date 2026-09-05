@@ -117,6 +117,65 @@ const IMMERSIVE_ACCENTS: Record<string, string> = {
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
+const VISUAL_READY_TIMEOUT_MS = 2400
+const VISUAL_READY_CACHE_LIMIT = 80
+
+type EffectsProfile = 'standard' | 'webkit-lite'
+
+const visualReadyCache = new Map<string, Promise<boolean>>()
+
+function shouldUseWebkitLiteEffects(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const isIOSWebKit = /iP(?:ad|hone|od)/i.test(ua)
+    || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  const isSafari = /Safari/i.test(ua) && !/(?:Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS|Android)/i.test(ua)
+  return isIOSWebKit || isSafari
+}
+
+function preloadVisualUrl(url: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !url) return Promise.resolve(false)
+  const cached = visualReadyCache.get(url)
+  if (cached) return cached
+
+  const pending = new Promise<boolean>((resolve) => {
+    const image = new window.Image()
+    let settled = false
+    let timeout: number | null = null
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      if (timeout) window.clearTimeout(timeout)
+      image.onload = null
+      image.onerror = null
+      resolve(ready)
+    }
+    image.decoding = 'async'
+    image.onload = () => {
+      if (typeof image.decode !== 'function') {
+        finish(true)
+        return
+      }
+      image.decode().then(() => finish(true)).catch(() => finish(true))
+    }
+    image.onerror = () => finish(false)
+    timeout = window.setTimeout(() => finish(false), VISUAL_READY_TIMEOUT_MS)
+    image.src = url
+    if (image.complete && image.naturalWidth > 0) {
+      window.requestAnimationFrame(() => finish(true))
+    }
+  })
+
+  if (visualReadyCache.size >= VISUAL_READY_CACHE_LIMIT) {
+    const oldest = visualReadyCache.keys().next().value
+    if (oldest) visualReadyCache.delete(oldest)
+  }
+  visualReadyCache.set(url, pending)
+  void pending.then((ready) => {
+    if (!ready && visualReadyCache.get(url) === pending) visualReadyCache.delete(url)
+  })
+  return pending
+}
 
 type GlitchBar = {
   id: string
@@ -507,16 +566,22 @@ function getImmersiveSeed(item: DisplayItem | null, image?: string | null) {
   return `${item.type}:${image || ''}`
 }
 
-function buildImmersiveFragments(image: string | null, seedValue: string, viewportWidth: number | null): ImmersiveFragment[] {
+function buildImmersiveFragments(
+  image: string | null,
+  seedValue: string,
+  viewportWidth: number | null,
+  effectsProfile: EffectsProfile,
+): ImmersiveFragment[] {
   if (!image) return []
 
   const isCompact = viewportWidth != null && viewportWidth < 720
-  const fineLineCount = isCompact ? 300 : 700
-  const lowerFineLineCount = isCompact ? 380 : 820
-  const tearCount = isCompact ? 82 : 190
-  const clusterCount = isCompact ? 4 : 7
-  const voidCount = isCompact ? 10 : 22
-  const signalCount = isCompact ? 12 : 26
+  const lite = effectsProfile === 'webkit-lite'
+  const fineLineCount = lite ? (isCompact ? 36 : 54) : (isCompact ? 96 : 180)
+  const lowerFineLineCount = lite ? (isCompact ? 48 : 72) : (isCompact ? 112 : 210)
+  const tearCount = lite ? (isCompact ? 14 : 22) : (isCompact ? 34 : 64)
+  const clusterCount = lite ? 2 : (isCompact ? 3 : 4)
+  const voidCount = lite ? 4 : (isCompact ? 8 : 12)
+  const signalCount = lite ? 5 : (isCompact ? 10 : 16)
   const contentZoneTop = isCompact ? 18 : 16
   const contentZoneBottom = isCompact ? 70 : 84
   const sourceZoneTop = isCompact ? 62 : 77
@@ -673,7 +738,9 @@ function buildImmersiveFragments(image: string | null, seedValue: string, viewpo
   for (let cluster = 0; cluster < clusterCount; cluster += 1) {
     const clusterTop = rng() > 0.52 ? between(-2, contentZoneTop - 4) : between(lowerBlockTop, lowerBlockBottom)
     const clusterLeft = between(-3, 92)
-    const parts = intBetween(isCompact ? 7 : 9, isCompact ? 12 : 15)
+    const parts = lite
+      ? intBetween(3, 5)
+      : intBetween(isCompact ? 5 : 6, isCompact ? 8 : 9)
     const clusterWidth = between(isCompact ? 20 : 28, isCompact ? 72 : 108)
     const clusterHeight = between(20, isCompact ? 78 : 108)
 
@@ -2043,7 +2110,6 @@ export default function RandomExperiencePage() {
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [randomReadyDepth, setRandomReadyDepth] = useState(0)
   const loadPendingRef = useRef(false)
   const transitionLockedRef = useRef(false)
   const [transitionLocked, setTransitionLocked] = useState(false)
@@ -2054,18 +2120,21 @@ export default function RandomExperiencePage() {
   const playbackIssueCountsRef = useRef<Record<string, number>>({})
   const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
+  const [effectsProfile, setEffectsProfile] = useState<EffectsProfile>('standard')
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
   const [waveRemaining, setWaveRemaining] = useState(0)
   const waveModeRef = useRef(false)
   const waveRemainingRef = useRef(0)
-  const [waveReady, setWaveReady] = useState(false)
   const [waveTransitionActive, setWaveTransitionActive] = useState(false)
   const waveAnchorRef = useRef<WaveSimilarityHint | null>(null)
   const waveQueueRef = useRef<RandomContentItem[]>([])
   const wavePreparationGenerationRef = useRef(0)
   const wavePreparationAbortRef = useRef<AbortController | null>(null)
+  const wavePreparationPromiseRef = useRef<Promise<boolean> | null>(null)
+  const wavePreparationKeyRef = useRef<string | null>(null)
+  const wavePreparedAnchorKeyRef = useRef<string | null>(null)
   const waveHistoryKeysRef = useRef<Set<string>>(new Set())
   const waveHistoryIdsRef = useRef<Set<string>>(new Set())
   const [pageGlitchActive, setPageGlitchActive] = useState(false)
@@ -2162,6 +2231,7 @@ export default function RandomExperiencePage() {
 
   useEffect(() => {
     setDisableFullscreenButton(shouldBypassNativeFullscreen())
+    setEffectsProfile(shouldUseWebkitLiteEffects() ? 'webkit-lite' : 'standard')
   }, [])
 
   useEffect(() => {
@@ -2232,7 +2302,10 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   const initialRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const makePageGlitchBars = useCallback((mode: 'normal' | 'boost' = 'normal'): GlitchBar[] => {
-    const count = mode === 'boost' ? randomInt(62, 84) : randomInt(34, 48)
+    const lite = effectsProfile === 'webkit-lite'
+    const count = mode === 'boost'
+      ? randomInt(lite ? 12 : 24, lite ? 16 : 32)
+      : randomInt(lite ? 7 : 14, lite ? 10 : 20)
     const stamp = Date.now()
 
     const gradientForSet = (colors: [string, string, string], variant: GlitchBar['variant']) => {
@@ -2277,8 +2350,11 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
           : variant === 'void'
             ? randomBetween(1.4, mode === 'boost' ? 7 : 5)
             : randomBetween(0.45, mode === 'boost' ? 1.5 : 1.2)
-      const delay = Math.round(randomBetween(0, mode === 'boost' ? 190 : 135))
-      const duration = Math.round(randomBetween(mode === 'boost' ? 180 : 150, mode === 'boost' ? 360 : 300))
+      const delay = Math.round(randomBetween(0, mode === 'boost' ? (lite ? 80 : 130) : (lite ? 45 : 85)))
+      const duration = Math.round(randomBetween(
+        mode === 'boost' ? (lite ? 130 : 150) : (lite ? 105 : 125),
+        mode === 'boost' ? (lite ? 230 : 290) : (lite ? 180 : 230),
+      ))
       const shiftValue = mode === 'boost'
         ? randomBetween(wide ? 22 : 9, wide ? 46 : 22)
         : randomBetween(wide ? 14 : 5, wide ? 30 : 16)
@@ -2309,7 +2385,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         popOpacity,
       }
     })
-  }, [])
+  }, [effectsProfile])
 
   const triggerBurgerGlitch = useCallback(() => {
     setBurgerGlitch(true)
@@ -2330,11 +2406,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     setPageGlitchActive(true)
     if (pageGlitchTimeoutRef.current) clearTimeout(pageGlitchTimeoutRef.current)
     const longest = bars.reduce((max, bar) => Math.max(max, bar.duration + bar.delay), 0)
-    const base = mode === 'boost' ? 420 : 320
-    const tail = mode === 'boost' ? 180 : 120
+    const lite = effectsProfile === 'webkit-lite'
+    const base = mode === 'boost' ? (lite ? 260 : 340) : (lite ? 190 : 260)
+    const tail = mode === 'boost' ? (lite ? 70 : 110) : (lite ? 45 : 75)
     const total = Math.max(base, (longest || base) + tail)
     pageGlitchTimeoutRef.current = setTimeout(() => setPageGlitchActive(false), total)
-  }, [makePageGlitchBars])
+  }, [effectsProfile, makePageGlitchBars])
 
   const triggerWaveTransition = useCallback(() => {
     if (waveTransitionTimeoutRef.current) clearTimeout(waveTransitionTimeoutRef.current)
@@ -2345,10 +2422,10 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         waveTransitionTimeoutRef.current = setTimeout(() => {
           setWaveTransitionActive(false)
           waveTransitionTimeoutRef.current = null
-        }, 840)
+        }, effectsProfile === 'webkit-lite' ? 360 : 520)
       })
     })
-  }, [])
+  }, [effectsProfile])
 
   const openFullscreen = useCallback((payload: FullscreenVideoPayload) => {
     setFullscreenVideo(payload)
@@ -2625,7 +2702,6 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       }
       sequenceStateRef.current = cloneSequenceState(restored.sequence)
       randomReadyQueueRef.current = restored.ready
-      setRandomReadyDepth(restored.ready.length)
       recentKeysRef.current = restored.recentKeys
       recentKeySetRef.current = new Set(restored.recentKeys)
       if (!restored.currentItem) return false
@@ -2641,27 +2717,29 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     }
   }, [locale])
 
-  const warmContentMedia = useCallback((item: DisplayItem) => {
-    if (typeof window === 'undefined') return
-    let urls: string[] = []
+  const warmContentMedia = useCallback((item: DisplayItem): Promise<boolean> => {
+    if (typeof window === 'undefined') return Promise.resolve(false)
+    let url: string | null = null
     if (item.type === 'video') {
       const posterUrl = getImmersiveBackgroundImage(item, null)
-      if (posterUrl) urls = [posterUrl]
+      if (posterUrl) url = posterUrl
     } else if (item.type === 'image') {
-      urls = [item.url, item.thumbUrl].filter((value): value is string => Boolean(value))
+      url = item.url || item.thumbUrl || null
     } else if (item.type === 'web' && item.ogImage) {
-      urls = [item.ogImage]
+      url = item.ogImage
     } else if (item.type === 'encourage') {
-      urls = [item.icon]
+      url = item.icon
     }
-
-    new Set(urls).forEach((url) => {
-      const image = new window.Image()
-      image.decoding = 'async'
-      image.src = url
-      if (typeof image.decode === 'function') image.decode().catch(() => undefined)
-    })
+    return url ? preloadVisualUrl(url) : Promise.resolve(true)
   }, [])
+
+  const waitForContentMedia = useCallback(async (item: DisplayItem) => {
+    const timeoutMs = effectsProfile === 'webkit-lite' ? 260 : 360
+    await Promise.race([
+      warmContentMedia(item),
+      new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs)),
+    ])
+  }, [effectsProfile, warmContentMedia])
 
   const drainPrefetchedItems = useCallback((type: ItemType) => {
     if (typeof window === 'undefined') return
@@ -2796,37 +2874,40 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       waveHistoryKeysRef.current.add(key)
       if (typeof candidate._id === 'string') waveHistoryIdsRef.current.add(candidate._id)
       registerRecentKey(key)
-      warmContentMedia(candidate)
+      void warmContentMedia(candidate)
+      const upcoming = waveQueueRef.current[0]
+      if (upcoming) void warmContentMedia(upcoming)
       return candidate
     }
     return null
   }, [getContentKey, isRecentKey, registerRecentKey, warmContentMedia])
 
-  const prepareWaveTrail = useCallback(async (anchorItem: DisplayItem) => {
+  const requestWaveTrail = useCallback(async (anchorItem: DisplayItem): Promise<boolean> => {
     wavePreparationAbortRef.current?.abort()
     const controller = new AbortController()
     wavePreparationAbortRef.current = controller
     const generation = wavePreparationGenerationRef.current + 1
     wavePreparationGenerationRef.current = generation
-    setWaveReady(false)
     waveQueueRef.current = []
     waveHistoryKeysRef.current.clear()
     waveHistoryIdsRef.current.clear()
 
     if (anchorItem.type === 'encourage' || anchorItem.type === 'minigame') {
       waveAnchorRef.current = null
-      return
+      wavePreparedAnchorKeyRef.current = null
+      return false
     }
 
     const anchor = createWaveHint(anchorItem)
     if (!hasWaveSignal(anchor)) {
       waveAnchorRef.current = null
-      return
+      wavePreparedAnchorKeyRef.current = null
+      return false
     }
 
     const anchorKey = getContentKey(anchorItem)
     const excludeIds = typeof anchorItem._id === 'string' ? [anchorItem._id] : []
-    const requestTimeout = window.setTimeout(() => controller.abort(), 6000)
+    const requestTimeout = window.setTimeout(() => controller.abort(), 3000)
     try {
       const response = await fetchWave({
         anchor,
@@ -2836,7 +2917,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         types: ALL_ITEM_TYPES,
         signal: controller.signal,
       })
-      if (generation !== wavePreparationGenerationRef.current) return
+      if (generation !== wavePreparationGenerationRef.current) return false
 
       const keys = new Set<string>()
       const candidates = response.items.filter((candidate) => {
@@ -2845,25 +2926,30 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) return false
         if (!isStrongWaveMatch(anchor, createWaveHint(candidate))) return false
         keys.add(key)
-        warmContentMedia(candidate)
         return true
       })
 
       if (candidates.length < WAVE_TOTAL_STEPS) {
         waveAnchorRef.current = null
         waveQueueRef.current = []
-        return
+        wavePreparedAnchorKeyRef.current = null
+        return false
       }
 
       waveAnchorRef.current = anchor
       waveQueueRef.current = candidates.slice(0, WAVE_TOTAL_STEPS + WAVE_RESERVE_STEPS)
+      const firstCandidate = waveQueueRef.current[0]
+      if (firstCandidate) void warmContentMedia(firstCandidate)
+      wavePreparedAnchorKeyRef.current = anchorKey
       if (anchorKey) waveHistoryKeysRef.current.add(anchorKey)
       if (typeof anchorItem._id === 'string') waveHistoryIdsRef.current.add(anchorItem._id)
-      setWaveReady(true)
+      return true
     } catch {
-      if (generation !== wavePreparationGenerationRef.current) return
+      if (generation !== wavePreparationGenerationRef.current) return false
       waveAnchorRef.current = null
       waveQueueRef.current = []
+      wavePreparedAnchorKeyRef.current = null
+      return false
     } finally {
       window.clearTimeout(requestTimeout)
       if (wavePreparationAbortRef.current === controller) {
@@ -2872,13 +2958,44 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
   }, [getContentKey, isRecentKey, locale, warmContentMedia])
 
+  const ensureWaveTrail = useCallback((anchorItem: DisplayItem): Promise<boolean> => {
+    if (anchorItem.type === 'encourage' || anchorItem.type === 'minigame') return Promise.resolve(false)
+    const anchorKey = getContentKey(anchorItem)
+    if (
+      anchorKey
+      && wavePreparedAnchorKeyRef.current === anchorKey
+      && waveQueueRef.current.length >= WAVE_TOTAL_STEPS
+      && waveAnchorRef.current
+    ) {
+      return Promise.resolve(true)
+    }
+    if (
+      anchorKey
+      && wavePreparationKeyRef.current === anchorKey
+      && wavePreparationPromiseRef.current
+    ) {
+      return wavePreparationPromiseRef.current
+    }
+
+    const pending = requestWaveTrail(anchorItem)
+    wavePreparationKeyRef.current = anchorKey
+    wavePreparationPromiseRef.current = pending
+    void pending.finally(() => {
+      if (wavePreparationPromiseRef.current === pending) {
+        wavePreparationPromiseRef.current = null
+        wavePreparationKeyRef.current = null
+      }
+    })
+    return pending
+  }, [getContentKey, requestWaveTrail])
+
   useEffect(() => {
-    if (!currentItem || waveMode || loading || randomReadyDepth < 3) return undefined
+    if (!currentItem || waveMode || loading) return undefined
     const timer = window.setTimeout(() => {
-      void prepareWaveTrail(currentItem)
-    }, 180)
+      void ensureWaveTrail(currentItem)
+    }, 40)
     return () => window.clearTimeout(timer)
-  }, [currentItem, loading, prepareWaveTrail, randomReadyDepth, waveMode])
+  }, [currentItem, ensureWaveTrail, loading, waveMode])
 
   const acquireItem = useCallback(async (
     type: ItemType,
@@ -3037,8 +3154,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         ))
         if (duplicate) continue
         randomReadyQueueRef.current.push(entry)
-        setRandomReadyDepth(randomReadyQueueRef.current.length)
-        warmContentMedia(entry.item)
+        if (randomReadyQueueRef.current.length === 1) void warmContentMedia(entry.item)
         persistRandomSession()
         notifyRandomReady()
       }
@@ -3055,19 +3171,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const takeRandomReadyEntry = useCallback(() => {
     const entry = randomReadyQueueRef.current.shift() ?? null
     if (entry) {
-      setRandomReadyDepth(randomReadyQueueRef.current.length)
+      const upcoming = randomReadyQueueRef.current[0]
+      if (upcoming) void warmContentMedia(upcoming.item)
       persistRandomSession()
     }
     return entry
-  }, [persistRandomSession])
+  }, [persistRandomSession, warmContentMedia])
 
   useEffect(() => {
     langVersionRef.current += 1
     randomReadyGenerationRef.current += 1
     randomReadyQueueRef.current = []
-    setRandomReadyDepth(0)
     randomReadyPromiseRef.current = null
     sequenceStateRef.current = createInitialSequenceState()
+    wavePreparationAbortRef.current?.abort()
+    wavePreparationAbortRef.current = null
+    wavePreparationPromiseRef.current = null
+    wavePreparationKeyRef.current = null
+    wavePreparedAnchorKeyRef.current = null
     notifyRandomReady()
     clearPreloadedCaches()
   }, [clearPreloadedCaches, locale, notifyRandomReady])
@@ -3081,8 +3202,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [])
 
   const waitForTransitionReveal = useCallback(() => (
-    new Promise<void>((resolve) => window.setTimeout(resolve, 96))
-  ), [])
+    new Promise<void>((resolve) => window.setTimeout(resolve, effectsProfile === 'webkit-lite' ? 48 : 68))
+  ), [effectsProfile])
+
+  const waitForTransitionSettle = useCallback((kind: 'random' | 'wave' = 'random') => (
+    new Promise<void>((resolve) => window.setTimeout(
+      resolve,
+      kind === 'wave'
+        ? (effectsProfile === 'webkit-lite' ? 300 : 450)
+        : (effectsProfile === 'webkit-lite' ? 220 : 330),
+    ))
+  ), [effectsProfile])
 
   const waitForNextPaint = useCallback(() => (
     new Promise<void>((resolve) => {
@@ -3116,6 +3246,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       if (!entry) return false
 
+      await waitForContentMedia(entry.item)
       triggerPageGlitch(entry.slot.kind === 'encourage' ? 'boost' : 'normal')
       await waitForTransitionReveal()
 
@@ -3169,6 +3300,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       persistRandomSession()
       await waitForNextPaint()
+      await waitForTransitionSettle('random')
       return true
     } catch {
       /* Keep the current item; the next prepared item remains usable. */
@@ -3189,7 +3321,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForNextPaint, waitForRandomReady, waitForTransitionReveal])
+  }, [addAction, adsAllowed, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     const current = currentItemRef.current
@@ -3210,10 +3342,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       if (replacement) {
         transitionLockedRef.current = true
         setTransitionLocked(true)
-        triggerWaveTransition()
-        triggerPageGlitch()
         void (async () => {
           try {
+            await waitForContentMedia(replacement)
+            triggerWaveTransition()
+            triggerPageGlitch()
             await waitForTransitionReveal()
             setIsSecond((prev) => !prev)
             setTrigger((value) => value + 1)
@@ -3222,6 +3355,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             setLiked(isLiked(replacement))
             updateTheme()
             await waitForNextPaint()
+            await waitForTransitionSettle('wave')
           } finally {
             transitionLockedRef.current = false
             setTransitionLocked(false)
@@ -3233,12 +3367,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       waveRemainingRef.current = 0
       setWaveMode(false)
       setWaveRemaining(0)
-      setWaveReady(false)
       waveAnchorRef.current = null
       waveQueueRef.current = []
     }
     loadNext(false).catch(() => undefined)
-  }, [getContentKey, loadNext, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForNextPaint, waitForTransitionReveal])
+  }, [getContentKey, loadNext, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
 
   useEffect(() => {
     if (initialLoadTriggeredRef.current) return
@@ -3246,8 +3379,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const restored = restoreRandomSession()
     if (restored) {
       const current = currentItemRef.current
-      if (current) warmContentMedia(current)
-      randomReadyQueueRef.current.forEach(({ item }) => warmContentMedia(item))
+      if (current) void warmContentMedia(current)
+      const upcoming = randomReadyQueueRef.current[0]
+      if (upcoming) void warmContentMedia(upcoming.item)
       void fillRandomReadyQueue()
       return
     }
@@ -3271,8 +3405,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
       const current = currentItemRef.current
-      if (current && !waveModeRef.current && randomReadyQueueRef.current.length >= 3) {
-        void prepareWaveTrail(current)
+      if (current && !waveModeRef.current) {
+        void ensureWaveTrail(current)
       }
     }
     const persist = () => persistRandomSession()
@@ -3284,7 +3418,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       window.removeEventListener('pagehide', persist)
       document.removeEventListener('visibilitychange', refill)
     }
-  }, [fillRandomReadyQueue, persistRandomSession, prepareWaveTrail])
+  }, [ensureWaveTrail, fillRandomReadyQueue, persistRandomSession])
 
   useEffect(() => {
     const current = currentItem
@@ -3349,8 +3483,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     [immersiveBackground.image, viewItem]
   )
   const immersiveFragments = useMemo(
-    () => buildImmersiveFragments(immersiveBackground.image, immersiveSeed, viewportWidth),
-    [immersiveBackground.image, immersiveSeed, viewportWidth]
+    () => buildImmersiveFragments(immersiveBackground.image, immersiveSeed, viewportWidth, effectsProfile),
+    [effectsProfile, immersiveBackground.image, immersiveSeed, viewportWidth]
   )
   const isEncourage = viewItem?.type === 'encourage'
   const categoryType: ItemType | null = useMemo(() => {
@@ -3392,7 +3526,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
   const controlsDisabled = transitionLocked || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
   const randomAgainDisabled = !viewItem || transitionLocked
-  const waveDisabled = controlsDisabled || transitionLocked || loading || (!waveMode && !waveReady)
+  const waveEligible = useMemo(() => {
+    if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return false
+    return hasWaveSignal(createWaveHint(viewItem))
+  }, [viewItem])
+  const waveDisabled = controlsDisabled || transitionLocked || loading || (!waveMode && !waveEligible)
 
   const handleLike = useCallback(() => {
     const item = currentItemRef.current
@@ -3417,11 +3555,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     wavePreparationAbortRef.current?.abort()
     wavePreparationAbortRef.current = null
     wavePreparationGenerationRef.current += 1
+    wavePreparationPromiseRef.current = null
+    wavePreparationKeyRef.current = null
+    wavePreparedAnchorKeyRef.current = null
     waveModeRef.current = false
     waveRemainingRef.current = 0
     setWaveMode(false)
     setWaveRemaining(0)
-    setWaveReady(false)
     setWaveTransitionActive(false)
     waveAnchorRef.current = null
     waveQueueRef.current = []
@@ -3438,28 +3578,34 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (!current || current.type === 'encourage' || current.type === 'minigame') return
 
     const enteringWave = !waveModeRef.current
-    if (enteringWave && (!waveReady || !waveAnchorRef.current)) return
-    const next = takePreparedWaveCandidate()
-    if (!next) {
-      setWaveReady(false)
-      if (waveModeRef.current) handleRandomAgain()
-      return
-    }
-
     transitionLockedRef.current = true
     setTransitionLocked(true)
-    const nextRemaining = enteringWave ? WAVE_TOTAL_STEPS : Math.max(1, waveRemainingRef.current - 1)
-    waveModeRef.current = true
-    waveRemainingRef.current = nextRemaining
-    setWaveMode(true)
-    setWaveReady(false)
-    setWaveRemaining(nextRemaining)
-    if (enteringWave) playWaveEnter()
-    else playWaveStep()
-    triggerWaveTransition()
-    triggerPageGlitch()
 
     try {
+      if (enteringWave) {
+        const prepared = await ensureWaveTrail(current)
+        if (!prepared || !waveAnchorRef.current) return
+      }
+      const next = takePreparedWaveCandidate()
+      if (!next) {
+        waveModeRef.current = false
+        waveRemainingRef.current = 0
+        setWaveMode(false)
+        setWaveRemaining(0)
+        return
+      }
+
+      const nextRemaining = enteringWave ? WAVE_TOTAL_STEPS : Math.max(1, waveRemainingRef.current - 1)
+      waveModeRef.current = true
+      waveRemainingRef.current = nextRemaining
+      setWaveMode(true)
+      setWaveRemaining(nextRemaining)
+      if (enteringWave) playWaveEnter()
+      else playWaveStep()
+
+      await waitForContentMedia(next)
+      triggerWaveTransition()
+      triggerPageGlitch()
       await waitForTransitionReveal()
       setIsSecond((prev) => !prev)
       setTrigger((value) => value + 1)
@@ -3468,11 +3614,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       setLiked(isLiked(next))
       updateTheme()
       await waitForNextPaint()
+      await waitForTransitionSettle('wave')
     } finally {
       transitionLockedRef.current = false
       setTransitionLocked(false)
     }
-  }, [handleRandomAgain, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForNextPaint, waitForTransitionReveal, waveReady])
+  }, [ensureWaveTrail, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
 
   const handlePrimaryAction = useCallback(() => {
     if (!waveModeRef.current || waveRemainingRef.current <= 1) {
@@ -3493,7 +3640,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
       <div className="random-immersive-bg" style={immersiveBackgroundStyle} aria-hidden="true">
@@ -4362,6 +4509,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           opacity: 0;
           background-color: transparent;
           overflow: hidden;
+          contain: strict;
         }
         .page-glitch-overlay::before,
         .page-glitch-overlay::after {
@@ -4429,6 +4577,22 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           box-shadow:
             5px 0 0 rgba(0, 255, 255, 0.08),
             -5px 0 0 rgba(255, 0, 130, 0.08);
+        }
+        .random-page--lite-effects .random-immersive-bg__media,
+        .random-page--lite-effects .random-immersive-bg__noise,
+        .random-page--lite-effects .random-immersive-fragment {
+          animation: none;
+          will-change: auto;
+        }
+        .random-page--lite-effects .page-glitch-overlay::before,
+        .random-page--lite-effects .page-glitch-overlay::after,
+        .random-page--lite-effects .page-glitch-overlay__bar {
+          mix-blend-mode: normal;
+        }
+        .random-page--lite-effects .page-glitch-overlay__bar--signal,
+        .random-page--lite-effects .page-glitch-overlay__bar--block {
+          filter: none;
+          box-shadow: 3px 0 0 rgba(0, 255, 255, 0.2), -3px 0 0 rgba(255, 0, 130, 0.18);
         }
         .video-embed-shell {
           position: relative;
@@ -4649,13 +4813,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           }
         }
         .page-glitch-overlay--active {
-          animation: page-glitch-fade 360ms steps(1, end) forwards;
+          animation: page-glitch-fade 300ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active::before {
-          animation: page-glitch-scan 360ms steps(1, end) forwards;
+          animation: page-glitch-scan 300ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active::after {
-          animation: page-glitch-signal 360ms steps(1, end) forwards;
+          animation: page-glitch-signal 300ms steps(1, end) forwards;
         }
         .page-glitch-overlay--active .page-glitch-overlay__bar {
           animation-name: page-glitch-bar;
@@ -4871,13 +5035,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           animation: wave-perimeter 3.4s ease-in-out infinite;
         }
         .random-page--wave .random-immersive-bg__media {
-          filter: blur(15px) saturate(2.75) contrast(1.35) brightness(0.48);
+          filter: blur(10px) saturate(2.25) contrast(1.3) brightness(0.46);
           opacity: min(1, calc(var(--random-bg-strength, 0) * 1.6));
           transform: scale(1.2);
           animation: wave-background-breathe 5.2s ease-in-out infinite alternate;
         }
         .random-page--wave .random-immersive-bg__fragments {
-          filter: blur(2.4px) saturate(1.8);
+          filter: blur(1px) saturate(1.55);
           opacity: min(1, calc(var(--random-bg-strength, 0) * 0.46));
         }
         .random-page--wave .random-immersive-bg__tone {
@@ -4891,10 +5055,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           transition: filter 440ms ease, transform 440ms ease;
         }
         .random-page--wave-transition .random-content-frame {
-          animation: wave-content-surge 820ms cubic-bezier(0.18, 0.72, 0.22, 1) both;
+          animation: wave-content-surge 500ms cubic-bezier(0.18, 0.72, 0.22, 1) both;
         }
         .random-page--wave-transition::before {
-          animation: wave-entry-flash 960ms ease-out both;
+          animation: wave-entry-flash 600ms ease-out both;
         }
         @keyframes wave-button-pulse {
           0%, 100% { transform: scale(1); }
@@ -4925,18 +5089,45 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           100% { opacity: 1; transform: scale(1.035); }
         }
         @keyframes wave-content-surge {
-          0% { transform: scale(1); filter: blur(0) saturate(1); }
-          34% { transform: scale(0.94) translateX(-12px); filter: blur(8px) saturate(1.8); }
-          58% { transform: scale(1.035) translateX(8px); filter: blur(2px) saturate(1.5); }
-          100% {
-            transform: scale(1);
-            filter: drop-shadow(10px 0 18px rgba(0, 234, 255, 0.2)) drop-shadow(-10px 0 18px rgba(255, 22, 120, 0.18));
-          }
+          0% { transform: scale(1); opacity: 1; }
+          34% { transform: scale(0.94) translateX(-12px); opacity: 0.38; }
+          58% { transform: scale(1.035) translateX(8px); opacity: 0.84; }
+          100% { transform: scale(1); opacity: 1; }
         }
         @keyframes wave-entry-flash {
           0% { opacity: 0; }
           28% { opacity: 1; }
           100% { opacity: 0.66; }
+        }
+        .random-page--lite-effects.random-page--wave::before {
+          opacity: 0.58;
+          animation: none;
+          box-shadow:
+            inset 12px 0 28px rgba(0, 234, 255, 0.3),
+            inset -12px 0 28px rgba(255, 22, 120, 0.28);
+        }
+        .random-page--lite-effects.random-page--wave .random-immersive-bg__media {
+          filter: blur(7px) saturate(1.7) contrast(1.2) brightness(0.44);
+          transform: scale(1.14);
+          animation: none;
+        }
+        .random-page--lite-effects.random-page--wave .random-immersive-bg__fragments,
+        .random-page--lite-effects.random-page--wave .random-immersive-bg__tone {
+          filter: none;
+          animation: none;
+        }
+        .random-page--lite-effects.random-page--wave .random-content-frame {
+          filter: none;
+          transition: none;
+        }
+        .random-page--lite-effects.random-page--wave-transition .random-content-frame {
+          animation: wave-content-surge-lite 340ms cubic-bezier(0.18, 0.72, 0.22, 1) both;
+        }
+        @keyframes wave-content-surge-lite {
+          0% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+          42% { transform: translate3d(-8px, 0, 0) scale(0.97); opacity: 0.42; }
+          68% { transform: translate3d(5px, 0, 0) scale(1.015); opacity: 0.88; }
+          100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
         }
         .heart-icon--liked {
           transform: scale(1.05);
