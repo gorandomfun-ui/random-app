@@ -289,12 +289,18 @@ type ThemeStyle = CSSProperties & {
   ['--random-progress-ambient-duration']?: string
   ['--random-progress-bg-duration']?: string
   ['--random-progress-noise-duration']?: string
-  ['--random-overdrive-edge-width']?: string
+  ['--random-overdrive-edge-short']?: string
+  ['--random-overdrive-edge-medium']?: string
+  ['--random-overdrive-edge-long']?: string
   ['--random-overdrive-edge-opacity']?: number
   ['--random-overdrive-edge-hit-opacity']?: number
   ['--random-overdrive-edge-duration']?: string
   ['--random-overdrive-edge-shift']?: string
   ['--random-overdrive-edge-shift-negative']?: string
+  ['--random-overdrive-echo-opacity']?: number
+  ['--random-overdrive-echo-duration']?: string
+  ['--random-overdrive-echo-reach']?: string
+  ['--random-overdrive-echo-reach-negative']?: string
 }
 type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
 type ImmersiveBackgroundStyle = CSSProperties & {
@@ -3699,7 +3705,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const transitionShift = baseIntensity * 14 + overdrive * 10
     const transitionY = baseIntensity * 4 + overdrive * 3
     const backgroundShift = baseIntensity * 10 + overdrive * 8
-    const edgeShift = 18 + edgeOverdrive * 64
+    const edgeShift = 6 + edgeOverdrive * 14
+    const echoReach = 4 + edgeOverdrive * 28
 
     return {
       backgroundColor: theme.bg,
@@ -3730,12 +3737,18 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       '--random-progress-ambient-duration': `${Math.max(1.15, 11 - baseIntensity * 9.2 - overdrive * 1.25).toFixed(2)}s`,
       '--random-progress-bg-duration': `${Math.max(4.5, 18 - baseIntensity * 11 - overdrive * 2.5).toFixed(2)}s`,
       '--random-progress-noise-duration': `${Math.max(3.2, 18 - baseIntensity * 13 - overdrive * 1.8).toFixed(2)}s`,
-      '--random-overdrive-edge-width': `${(12 + edgeOverdrive * 22).toFixed(2)}px`,
-      '--random-overdrive-edge-opacity': Number(Math.min(0.78, edgeOverdrive * 0.78).toFixed(3)),
-      '--random-overdrive-edge-hit-opacity': Number(Math.min(0.96, 0.18 + edgeOverdrive * 0.78).toFixed(3)),
-      '--random-overdrive-edge-duration': `${Math.max(1.05, 3.4 - edgeOverdrive * 2.35).toFixed(2)}s`,
+      '--random-overdrive-edge-short': `${(18 + edgeOverdrive * 38).toFixed(2)}px`,
+      '--random-overdrive-edge-medium': `${(30 + edgeOverdrive * 66).toFixed(2)}px`,
+      '--random-overdrive-edge-long': `${(44 + edgeOverdrive * 104).toFixed(2)}px`,
+      '--random-overdrive-edge-opacity': Number(Math.min(0.84, edgeOverdrive * 0.84).toFixed(3)),
+      '--random-overdrive-edge-hit-opacity': Number(Math.min(1, 0.2 + edgeOverdrive * 0.8).toFixed(3)),
+      '--random-overdrive-edge-duration': `${Math.max(0.92, 3.2 - edgeOverdrive * 2.28).toFixed(2)}s`,
       '--random-overdrive-edge-shift': `${edgeShift.toFixed(2)}px`,
       '--random-overdrive-edge-shift-negative': `${(-edgeShift).toFixed(2)}px`,
+      '--random-overdrive-echo-opacity': Number(Math.min(0.92, edgeOverdrive * 0.92).toFixed(3)),
+      '--random-overdrive-echo-duration': `${Math.round(560 + edgeOverdrive * 300)}ms`,
+      '--random-overdrive-echo-reach': `${echoReach.toFixed(2)}px`,
+      '--random-overdrive-echo-reach-negative': `${(-echoReach).toFixed(2)}px`,
     }
   }, [effectiveProgressionIntensity, effectsProfile, effectsTestIntensity, theme.bg, theme.cream, theme.text])
 
@@ -5353,6 +5366,45 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           animation: random-progress-category-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
         }
+        .random-page--effects-test .random-content-frame {
+          position: relative;
+          isolation: isolate;
+        }
+        .random-page--effects-test .random-content-frame::before,
+        .random-page--effects-test .random-content-frame::after {
+          content: '';
+          position: absolute;
+          inset: var(--random-overdrive-echo-reach-negative, -4px);
+          z-index: 5;
+          pointer-events: none;
+          opacity: 0;
+        }
+        .random-page--effects-test .random-content-frame::before {
+          background:
+            linear-gradient(90deg, rgba(0, 234, 255, 0.96), rgba(255, 255, 255, 0.72) 36%, transparent 100%) left 0 top 5% / var(--random-overdrive-edge-long, 44px) 1px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.78), transparent 100%) left 0 top 19% / var(--random-overdrive-edge-short, 18px) 1px no-repeat,
+            linear-gradient(90deg, rgba(0, 234, 255, 0.86), transparent 100%) left 0 bottom 31% / var(--random-overdrive-edge-medium, 30px) 1.4px no-repeat,
+            linear-gradient(270deg, rgba(0, 234, 255, 0.92), rgba(255, 255, 255, 0.6) 42%, transparent 100%) right 0 top 27% / var(--random-overdrive-edge-medium, 30px) 1px no-repeat,
+            linear-gradient(270deg, rgba(216, 255, 0, 0.74), transparent 100%) right 0 bottom 8% / var(--random-overdrive-edge-long, 44px) 1px no-repeat,
+            linear-gradient(180deg, rgba(0, 234, 255, 0.82), transparent 100%) left 7% top 0 / 1px var(--random-overdrive-edge-short, 18px) no-repeat;
+          filter: drop-shadow(4px 0 0 rgba(0, 234, 255, 0.2));
+        }
+        .random-page--effects-test .random-content-frame::after {
+          background:
+            linear-gradient(90deg, rgba(255, 22, 120, 0.92), rgba(137, 80, 255, 0.7) 44%, transparent 100%) left 0 top 12% / var(--random-overdrive-edge-medium, 30px) 1px no-repeat,
+            linear-gradient(90deg, rgba(255, 22, 120, 0.84), transparent 100%) left 0 bottom 12% / var(--random-overdrive-edge-long, 44px) 1.4px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.96), rgba(255, 255, 255, 0.62) 38%, transparent 100%) right 0 top 4% / var(--random-overdrive-edge-long, 44px) 1px no-repeat,
+            linear-gradient(270deg, rgba(137, 80, 255, 0.86), transparent 100%) right 0 top 61% / var(--random-overdrive-edge-short, 18px) 1px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.78), transparent 100%) right 0 bottom 28% / var(--random-overdrive-edge-medium, 30px) 1px no-repeat,
+            linear-gradient(0deg, rgba(255, 22, 120, 0.8), transparent 100%) right 9% bottom 0 / 1px var(--random-overdrive-edge-medium, 30px) no-repeat;
+          filter: drop-shadow(-4px 0 0 rgba(255, 22, 120, 0.18));
+        }
+        .random-page--effects-overdrive.random-page--glitching:not(.random-page--wave) .random-content-frame::before {
+          animation: random-content-echo-a var(--random-overdrive-echo-duration, 560ms) steps(1, end) both;
+        }
+        .random-page--effects-overdrive.random-page--glitching:not(.random-page--wave) .random-content-frame::after {
+          animation: random-content-echo-b var(--random-overdrive-echo-duration, 560ms) steps(1, end) both;
+        }
         .random-page--effects-test.random-page--glitching:not(.random-page--wave) .random-content-frame {
           animation: random-progress-content-hit var(--random-progress-transition-duration, 420ms) steps(1, end) both;
           will-change: transform;
@@ -5401,6 +5453,23 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           64% { transform: translate3d(var(--random-progress-transition-shift, 0px), 0, 0); }
           78% { transform: translate3d(0, 0, 0); }
         }
+        @keyframes random-content-echo-a {
+          0%, 100% { opacity: 0; transform: translate3d(0, 0, 0) scaleX(1); }
+          12% { opacity: var(--random-overdrive-echo-opacity, 0); transform: translate3d(var(--random-overdrive-echo-reach-negative, -4px), 0, 0) scaleX(1.035); }
+          26% { opacity: 0; transform: translate3d(var(--random-overdrive-echo-reach, 4px), 0, 0) scaleX(1); }
+          43% { opacity: var(--random-overdrive-echo-opacity, 0); transform: translate3d(var(--random-overdrive-echo-reach, 4px), -2px, 0) scaleX(1.06); }
+          61% { opacity: 0; transform: translate3d(0, 0, 0) scaleX(1); }
+          76% { opacity: var(--random-overdrive-echo-opacity, 0); transform: translate3d(var(--random-overdrive-echo-reach-negative, -4px), 2px, 0) scaleX(1.025); }
+          88% { opacity: 0; }
+        }
+        @keyframes random-content-echo-b {
+          0%, 100% { opacity: 0; transform: translate3d(0, 0, 0) scaleX(1); }
+          18% { opacity: 0; transform: translate3d(0, 0, 0) scaleX(1); }
+          31% { opacity: var(--random-overdrive-echo-opacity, 0); transform: translate3d(var(--random-overdrive-echo-reach, 4px), 2px, 0) scaleX(1.045); }
+          48% { opacity: 0; transform: translate3d(var(--random-overdrive-echo-reach-negative, -4px), 0, 0) scaleX(1); }
+          66% { opacity: var(--random-overdrive-echo-opacity, 0); transform: translate3d(var(--random-overdrive-echo-reach-negative, -4px), -2px, 0) scaleX(1.07); }
+          82% { opacity: 0; }
+        }
         @keyframes random-progress-action-hit {
           0%, 100% { transform: translate3d(0, 0, 0); }
           16% { transform: translate3d(var(--random-progress-transition-shift-half, 0px), 0, 0); }
@@ -5425,7 +5494,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           .random-page--effects-test .random-main-header,
           .random-page--effects-test .random-category-row,
           .random-page--effects-test .random-action-section,
-          .random-page--effects-test .random-content-frame {
+          .random-page--effects-test .random-content-frame,
+          .random-page--effects-test .random-content-frame::before,
+          .random-page--effects-test .random-content-frame::after {
             animation: none !important;
           }
         }
@@ -5541,13 +5612,29 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .random-page--effects-overdrive:not(.random-page--wave)::before {
           opacity: var(--random-overdrive-edge-opacity, 0);
           background:
-            repeating-linear-gradient(180deg, transparent 0 12px, rgba(0, 234, 255, 0.58) 12px 12.8px, transparent 12.8px 25px, rgba(216, 255, 0, 0.36) 25px 25.7px, transparent 25.7px 38px) left top / var(--random-overdrive-edge-width, 12px) 145% no-repeat,
-            repeating-linear-gradient(180deg, transparent 0 8px, rgba(255, 22, 120, 0.6) 8px 8.8px, transparent 8.8px 21px, rgba(137, 80, 255, 0.45) 21px 21.8px, transparent 21.8px 35px) right bottom / var(--random-overdrive-edge-width, 12px) 145% no-repeat;
+            linear-gradient(90deg, rgba(0, 234, 255, 0.8), transparent 100%) left 0 top 3% / var(--random-overdrive-edge-medium, 30px) 0.8px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.62), transparent 100%) left 0 top 11% / var(--random-overdrive-edge-short, 18px) 1px no-repeat,
+            linear-gradient(90deg, rgba(0, 234, 255, 0.72), rgba(255, 255, 255, 0.3) 48%, transparent 100%) left 0 top 18% / var(--random-overdrive-edge-long, 44px) 1.2px no-repeat,
+            linear-gradient(90deg, rgba(137, 80, 255, 0.64), transparent 100%) left 0 top 31% / var(--random-overdrive-edge-short, 18px) 0.7px no-repeat,
+            linear-gradient(90deg, rgba(0, 234, 255, 0.82), transparent 100%) left 0 top 46% / var(--random-overdrive-edge-medium, 30px) 1px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.58), transparent 100%) left 0 top 59% / var(--random-overdrive-edge-long, 44px) 0.8px no-repeat,
+            linear-gradient(90deg, rgba(0, 234, 255, 0.68), transparent 100%) left 0 top 71% / var(--random-overdrive-edge-short, 18px) 1.3px no-repeat,
+            linear-gradient(90deg, rgba(255, 255, 255, 0.5), rgba(0, 234, 255, 0.42) 28%, transparent 100%) left 0 top 84% / var(--random-overdrive-edge-medium, 30px) 0.7px no-repeat,
+            linear-gradient(90deg, rgba(216, 255, 0, 0.62), transparent 100%) left 0 top 96% / var(--random-overdrive-edge-long, 44px) 1px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.84), transparent 100%) right 0 top 7% / var(--random-overdrive-edge-short, 18px) 1.2px no-repeat,
+            linear-gradient(270deg, rgba(137, 80, 255, 0.7), transparent 100%) right 0 top 16% / var(--random-overdrive-edge-long, 44px) 0.8px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.74), rgba(255, 255, 255, 0.32) 44%, transparent 100%) right 0 top 27% / var(--random-overdrive-edge-medium, 30px) 1px no-repeat,
+            linear-gradient(270deg, rgba(216, 255, 0, 0.54), transparent 100%) right 0 top 39% / var(--random-overdrive-edge-short, 18px) 0.7px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.88), transparent 100%) right 0 top 53% / var(--random-overdrive-edge-long, 44px) 1.3px no-repeat,
+            linear-gradient(270deg, rgba(137, 80, 255, 0.66), transparent 100%) right 0 top 66% / var(--random-overdrive-edge-medium, 30px) 0.8px no-repeat,
+            linear-gradient(270deg, rgba(255, 22, 120, 0.7), transparent 100%) right 0 top 78% / var(--random-overdrive-edge-short, 18px) 1px no-repeat,
+            linear-gradient(270deg, rgba(255, 255, 255, 0.48), rgba(255, 22, 120, 0.38) 32%, transparent 100%) right 0 top 89% / var(--random-overdrive-edge-long, 44px) 0.7px no-repeat,
+            linear-gradient(270deg, rgba(137, 80, 255, 0.68), transparent 100%) right 0 top 98% / var(--random-overdrive-edge-medium, 30px) 1.1px no-repeat;
           box-shadow:
-            inset 18px 0 34px rgba(0, 234, 255, 0.2),
-            inset -18px 0 34px rgba(255, 22, 120, 0.2);
+            inset 6px 0 16px rgba(0, 234, 255, 0.16),
+            inset -6px 0 16px rgba(255, 22, 120, 0.16);
           animation: random-overdrive-perimeter var(--random-overdrive-edge-duration, 3.4s) steps(5, end) infinite;
-          will-change: background-position, opacity;
+          will-change: transform, opacity;
         }
         .random-page--effects-overdrive.random-page--glitching:not(.random-page--wave)::before {
           opacity: var(--random-overdrive-edge-hit-opacity, 0.18);
@@ -5604,13 +5691,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         @keyframes random-overdrive-perimeter {
           0%, 100% {
-            background-position: left 0 top 0, right 0 bottom 0;
+            transform: translate3d(0, 0, 0);
+            filter: saturate(1) brightness(0.9);
           }
           32% {
-            background-position: left 0 top var(--random-overdrive-edge-shift-negative, -18px), right 0 bottom var(--random-overdrive-edge-shift, 18px);
+            transform: translate3d(0, var(--random-overdrive-edge-shift-negative, -6px), 0);
+            filter: saturate(1.5) brightness(1.12);
           }
           66% {
-            background-position: left 0 top var(--random-overdrive-edge-shift, 18px), right 0 bottom var(--random-overdrive-edge-shift-negative, -18px);
+            transform: translate3d(0, var(--random-overdrive-edge-shift, 6px), 0);
+            filter: saturate(1.85) brightness(1.2);
           }
         }
         @keyframes wave-background-breathe {
@@ -5641,8 +5731,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .random-page--lite-effects.random-page--effects-overdrive:not(.random-page--wave)::before {
           box-shadow:
-            inset 10px 0 22px rgba(0, 234, 255, 0.16),
-            inset -10px 0 22px rgba(255, 22, 120, 0.16);
+            inset 4px 0 12px rgba(0, 234, 255, 0.14),
+            inset -4px 0 12px rgba(255, 22, 120, 0.14);
+          animation-timing-function: steps(2, end);
+        }
+        .random-page--lite-effects.random-page--effects-overdrive .random-content-frame::after {
+          display: none;
+        }
+        .random-page--lite-effects.random-page--effects-overdrive.random-page--glitching:not(.random-page--wave) .random-content-frame::before {
           animation-timing-function: steps(2, end);
         }
         .random-page--lite-effects.random-page--wave .random-immersive-bg__media {
