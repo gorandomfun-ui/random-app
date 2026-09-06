@@ -49,7 +49,14 @@ import {
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
 import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
-import { createTestEncourage3DEvent, type Encourage3DEvent } from '@/lib/encourage3d/catalog'
+import {
+  advanceProductionEncourage3DSchedule,
+  createEncourage3DSchedule,
+  createTestEncourage3DEvent,
+  parseEncourage3DSchedule,
+  type Encourage3DEvent,
+  type Encourage3DScheduleState,
+} from '@/lib/encourage3d/catalog'
 
 const Encourage3DOverlay = dynamic(() => import('@/components/encourage3d/Encourage3DOverlay'), {
   ssr: false,
@@ -258,6 +265,7 @@ type PersistedRandomSession = {
   sequence: RandomSequenceState
   progressionDraws: number
   recentKeys: string[]
+  encourage3dSchedule: Encourage3DScheduleState | null
 }
 
 const createInitialSequenceState = (): RandomSequenceState => ({
@@ -486,6 +494,7 @@ const parseRandomSession = (raw: string, lang: Lang): PersistedRandomSession | n
       recentKeys: Array.isArray(parsed.recentKeys)
         ? parsed.recentKeys.filter((key): key is string => typeof key === 'string').slice(-RECENT_SESSION_LIMIT)
         : [],
+      encourage3dSchedule: parseEncourage3DSchedule(parsed.encourage3dSchedule),
     }
   } catch {
     return null
@@ -2283,6 +2292,7 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const [burgerPointPulse, setBurgerPointPulse] = useState(false)
   const [encourage3dEvent, setEncourage3dEvent] = useState<Encourage3DEvent | null>(null)
   const encourage3dSequenceRef = useRef(0)
+  const encourage3dScheduleRef = useRef<Encourage3DScheduleState | null>(null)
   const previousEncourage3dMainRef = useRef<string | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement | null>(null)
   const [heartGlitch, setHeartGlitch] = useState(false)
@@ -2636,11 +2646,32 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       encourage3dSequenceRef.current,
       previousEncourage3dMainRef.current,
     )
-    previousEncourage3dMainRef.current = next.main.id
+    previousEncourage3dMainRef.current = next.main?.id ?? previousEncourage3dMainRef.current
     setMenuOpen(false)
     setShareOpen(false)
     setEncourage3dEvent(next)
   }, [effectsTestMode])
+
+  const queueProductionEncourage3D = useCallback(() => {
+    if (effectsTestMode) return
+    const now = Date.now()
+    const schedule = encourage3dScheduleRef.current
+      ?? createEncourage3DSchedule(now, 0)
+    const draws = schedule.actions + 1
+    const next = advanceProductionEncourage3DSchedule(schedule, {
+      now,
+      draws,
+      score,
+      previousMainId: previousEncourage3dMainRef.current,
+    })
+    encourage3dScheduleRef.current = next.state
+    if (!next.event) return
+
+    previousEncourage3dMainRef.current = next.event.main?.id ?? previousEncourage3dMainRef.current
+    setMenuOpen(false)
+    setShareOpen(false)
+    setEncourage3dEvent(next.event)
+  }, [effectsTestMode, score])
 
   const handleEncourage3DAward = useCallback((points: number) => {
     addPoints(points)
@@ -2948,6 +2979,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       sequence: cloneSequenceState(sequenceStateRef.current),
       progressionDraws: progressionDrawsRef.current,
       recentKeys: recentKeysRef.current.slice(-RECENT_SESSION_LIMIT),
+      encourage3dSchedule: encourage3dScheduleRef.current,
     }
     try {
       sessionStorage.setItem(`${RANDOM_SESSION_PREFIX}${langKey}`, JSON.stringify(payload))
@@ -2970,6 +3002,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       sequenceStateRef.current = cloneSequenceState(restored.sequence)
       progressionDrawsRef.current = restored.progressionDraws
       setProgressionDraws(restored.progressionDraws)
+      encourage3dScheduleRef.current = restored.encourage3dSchedule
       randomReadyQueueRef.current = restored.ready.filter((entry) => (
         entry.item.type !== 'video' || !isVideoBlockedThisSession(entry.item)
       ))
@@ -3618,12 +3651,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         maybeSpawnDiamond()
       }
-      persistRandomSession()
       await waitForNextPaint()
       await waitForTransitionSettle('random')
-      if (effectsTestMode && reward) {
-        queueTestEncourage3D(effectsTestStepRef.current)
+      if (reward) {
+        if (effectsTestMode) {
+          queueTestEncourage3D(effectsTestStepRef.current)
+        } else if (displayedItem.type !== 'encourage' && displayedItem.type !== 'minigame') {
+          queueProductionEncourage3D()
+        }
       }
+      persistRandomSession()
       return true
     } catch {
       /* Keep the current item; the next prepared item remains usable. */
@@ -3644,7 +3681,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
+  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     const current = currentItemRef.current
@@ -4314,7 +4351,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         </div>
       </section>
 
-      {effectsTestMode && encourage3dEvent ? (
+      {encourage3dEvent ? (
         <Encourage3DOverlay
           event={encourage3dEvent}
           menuTargetRef={menuButtonRef}

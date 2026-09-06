@@ -16,7 +16,7 @@ export type Encourage3DCompanion = Encourage3DAsset & {
 
 export type Encourage3DEvent = {
   id: string
-  main: Encourage3DAsset
+  main: Encourage3DAsset | null
   companions: Encourage3DCompanion[]
   companionCount: number
   finish: Encourage3DFinish
@@ -25,7 +25,27 @@ export type Encourage3DEvent = {
   points: number
 }
 
-const TEST_MAIN_ASSETS: Encourage3DAsset[] = [
+export type Encourage3DScheduleState = {
+  startedAt: number
+  actions: number
+  lastShownAt: number
+  lastShownDraw: number
+  nextEligibleAt: number
+  nextEligibleDraw: number
+  shown: number
+}
+
+type ProductionContext = {
+  draws: number
+  score: number
+  previousMainId?: string | null
+}
+
+type ScheduleContext = ProductionContext & {
+  now: number
+}
+
+const MAIN_ASSETS: Encourage3DAsset[] = [
   {
     id: 'rocket',
     src: '/encourage/runtime/default/main/rocket__main__r1__p1.glb',
@@ -52,7 +72,7 @@ const TEST_MAIN_ASSETS: Encourage3DAsset[] = [
   },
 ]
 
-const TEST_COMPANIONS: Encourage3DCompanion[] = [
+const COMPANIONS: Encourage3DCompanion[] = [
   {
     id: 'sparkle',
     src: '/encourage/runtime/default/companions/sparkle__companion__r1__p1__solo-attach__multi-4.glb',
@@ -69,20 +89,63 @@ const TEST_COMPANIONS: Encourage3DCompanion[] = [
   },
 ]
 
-const TEST_ANIMATIONS: Encourage3DAnimation[] = ['burst', 'rise', 'swing', 'orbit', 'impact']
+const ANIMATIONS: Encourage3DAnimation[] = ['burst', 'rise', 'swing', 'orbit', 'impact']
+const MAX_PRODUCTION_APPEARANCES = 3
 
-function unlockedRankForTestStep(step: number): number {
-  if (step >= 23) return 5
-  if (step >= 15) return 4
-  if (step >= 8) return 3
-  if (step >= 3) return 2
+function randomInt(min: number, max: number, random: () => number): number {
+  return Math.floor(random() * (max - min + 1)) + min
+}
+
+function pick<T>(items: T[], random: () => number): T {
+  return items[Math.min(items.length - 1, Math.floor(random() * items.length))]
+}
+
+function shuffledCompanions(random: () => number): Encourage3DCompanion[] {
+  return random() < 0.5 ? COMPANIONS : [...COMPANIONS].reverse()
+}
+
+function unlockedRank(draws: number, score: number): number {
+  if (draws >= 140 || score >= 180) return 5
+  if (draws >= 70 || score >= 80) return 3
+  if (draws >= 16 || score >= 20) return 2
   return 1
 }
 
-function testFinishForSequence(sequence: number): Encourage3DFinish {
-  if (sequence > 0 && sequence % 9 === 0) return 'gold'
-  if (sequence > 0 && sequence % 5 === 0) return 'silver'
+function productionFinish(draws: number, score: number, random: () => number): Encourage3DFinish {
+  const roll = random()
+  if ((draws >= 120 || score >= 150) && roll < 0.006) return 'gold'
+  if ((draws >= 42 || score >= 45) && roll < 0.06) return 'silver'
   return 'color'
+}
+
+function pickProductionMain(
+  context: ProductionContext,
+  finish: Encourage3DFinish,
+  random: () => number,
+): Encourage3DAsset {
+  const rank = unlockedRank(context.draws, context.score)
+  let eligible = MAIN_ASSETS.filter((asset) => asset.rank <= rank)
+
+  // Even after rank five unlocks, the crown only appears as exceptional gold.
+  if (finish !== 'gold' || random() >= 0.08) {
+    eligible = eligible.filter((asset) => asset.id !== 'crown')
+  }
+  const alternatives = eligible.filter((asset) => asset.id !== context.previousMainId)
+  return pick(alternatives.length ? alternatives : eligible, random)
+}
+
+function eventPoints(
+  main: Encourage3DAsset | null,
+  companions: Encourage3DCompanion[],
+  companionCount: number,
+  finish: Encourage3DFinish,
+): number {
+  const companionPoints = Array.from({ length: companionCount }).reduce<number>(
+    (total, _, index) => total + companions[index % companions.length].points,
+    0,
+  )
+  const multiplier = finish === 'gold' ? 3 : finish === 'silver' ? 2 : 1
+  return ((main?.points ?? 0) + companionPoints) * multiplier
 }
 
 export function createTestEncourage3DEvent(
@@ -90,33 +153,136 @@ export function createTestEncourage3DEvent(
   sequence: number,
   previousMainId?: string | null,
 ): Encourage3DEvent {
-  const unlockedRank = unlockedRankForTestStep(step)
-  const eligible = TEST_MAIN_ASSETS.filter((asset) => asset.rank <= unlockedRank)
-  let main = eligible[sequence % eligible.length]
+  const testRank = step >= 23 ? 5 : step >= 8 ? 3 : step >= 3 ? 2 : 1
+  const companionOnly = sequence > 0 && sequence % 6 === 0
+  const eligible = MAIN_ASSETS.filter((asset) => asset.rank <= testRank)
+  let main = companionOnly ? null : eligible[sequence % eligible.length]
 
-  if (eligible.length > 1 && main.id === previousMainId) {
+  if (main && eligible.length > 1 && main.id === previousMainId) {
     main = eligible[(sequence + 1) % eligible.length]
   }
 
-  const companionCount = Math.min(3, 1 + (sequence % 3))
-  const companions = sequence % 2 === 0
-    ? TEST_COMPANIONS
-    : [...TEST_COMPANIONS].reverse()
-  const finish = testFinishForSequence(sequence)
-  const multiplier = finish === 'gold' ? 3 : finish === 'silver' ? 2 : 1
-  const companionPoints = Array.from({ length: companionCount }).reduce<number>(
-    (total, _, index) => total + companions[index % companions.length].points,
-    0,
-  )
+  const companionCount = companionOnly ? 4 : Math.min(3, 1 + (sequence % 3))
+  const companions = sequence % 2 === 0 ? COMPANIONS : [...COMPANIONS].reverse()
+  const finish: Encourage3DFinish = sequence > 0 && sequence % 31 === 0
+    ? 'gold'
+    : sequence > 0 && sequence % 13 === 0
+      ? 'silver'
+      : 'color'
+  const appliedFinish = main ? finish : 'color'
 
   return {
-    id: `encourage-3d-${Date.now()}-${sequence}`,
+    id: `encourage-3d-test-${Date.now()}-${sequence}`,
+    main,
+    companions,
+    companionCount,
+    finish: appliedFinish,
+    animation: ANIMATIONS[sequence % ANIMATIONS.length],
+    message: ENCOURAGEMENT_MESSAGES[sequence % ENCOURAGEMENT_MESSAGES.length],
+    points: eventPoints(main, companions, companionCount, appliedFinish),
+  }
+}
+
+export function createProductionEncourage3DEvent(
+  context: ProductionContext,
+  random: () => number = Math.random,
+): Encourage3DEvent {
+  const companionOnly = random() < 0.22
+  const finish = companionOnly ? 'color' : productionFinish(context.draws, context.score, random)
+  const main = companionOnly ? null : pickProductionMain(context, finish, random)
+  const companions = shuffledCompanions(random)
+  const companionCount = companionOnly ? randomInt(3, 4, random) : randomInt(1, 3, random)
+
+  return {
+    id: `encourage-3d-${Date.now()}-${context.draws}`,
     main,
     companions,
     companionCount,
     finish,
-    animation: TEST_ANIMATIONS[sequence % TEST_ANIMATIONS.length],
-    message: ENCOURAGEMENT_MESSAGES[sequence % ENCOURAGEMENT_MESSAGES.length],
-    points: (main.points + companionPoints) * multiplier,
+    animation: pick(ANIMATIONS, random),
+    message: pick(ENCOURAGEMENT_MESSAGES, random),
+    points: eventPoints(main, companions, companionCount, finish),
+  }
+}
+
+export function createEncourage3DSchedule(
+  now: number,
+  draws: number,
+  random: () => number = Math.random,
+): Encourage3DScheduleState {
+  return {
+    startedAt: now,
+    actions: draws,
+    lastShownAt: 0,
+    lastShownDraw: draws,
+    nextEligibleAt: now + randomInt(70, 170, random) * 1000,
+    nextEligibleDraw: draws + randomInt(10, 18, random),
+    shown: 0,
+  }
+}
+
+export function parseEncourage3DSchedule(value: unknown): Encourage3DScheduleState | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<Encourage3DScheduleState>
+  const numbers = [
+    candidate.startedAt,
+    candidate.actions,
+    candidate.lastShownAt,
+    candidate.lastShownDraw,
+    candidate.nextEligibleAt,
+    candidate.nextEligibleDraw,
+    candidate.shown,
+  ]
+  if (!numbers.every((entry) => typeof entry === 'number' && Number.isFinite(entry))) return null
+  return {
+    startedAt: candidate.startedAt as number,
+    actions: Math.max(0, Math.round(candidate.actions as number)),
+    lastShownAt: candidate.lastShownAt as number,
+    lastShownDraw: Math.max(0, Math.round(candidate.lastShownDraw as number)),
+    nextEligibleAt: candidate.nextEligibleAt as number,
+    nextEligibleDraw: Math.max(0, Math.round(candidate.nextEligibleDraw as number)),
+    shown: Math.max(0, Math.min(MAX_PRODUCTION_APPEARANCES, Math.round(candidate.shown as number))),
+  }
+}
+
+export function advanceProductionEncourage3DSchedule(
+  current: Encourage3DScheduleState,
+  context: ScheduleContext,
+  random: () => number = Math.random,
+): { state: Encourage3DScheduleState; event: Encourage3DEvent | null } {
+  const updated = {
+    ...current,
+    actions: Math.max(current.actions, context.draws),
+  }
+  if (
+    current.shown >= MAX_PRODUCTION_APPEARANCES
+    || context.draws < current.nextEligibleDraw
+    || context.now < current.nextEligibleAt
+  ) {
+    return { state: updated, event: null }
+  }
+
+  const eligibleDraws = Math.max(0, context.draws - current.nextEligibleDraw)
+  const activeMinutes = Math.max(0, (context.now - current.startedAt) / 60_000)
+  const scoreSignal = Math.min(0.025, Math.max(0, context.score) / 4000)
+  const probability = Math.min(
+    0.28,
+    0.055 + Math.min(0.14, eligibleDraws * 0.012) + Math.min(0.065, activeMinutes * 0.006) + scoreSignal,
+  )
+
+  if (random() >= probability) return { state: updated, event: null }
+
+  const shown = current.shown + 1
+  const event = createProductionEncourage3DEvent(context, random)
+  return {
+    event,
+    state: {
+      ...updated,
+      lastShownAt: context.now,
+      lastShownDraw: context.draws,
+      nextEligibleAt: context.now + randomInt(180, 420, random) * 1000,
+      nextEligibleDraw: context.draws + randomInt(18 + shown * 3, 34 + shown * 6, random),
+      shown,
+    },
   }
 }

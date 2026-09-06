@@ -22,8 +22,6 @@ type Props = {
 
 type LoadedModel = {
   root: THREE.Group
-  baseScale: number
-  offsetY: number
 }
 
 type ModelCacheEntry = {
@@ -33,20 +31,16 @@ type ModelCacheEntry = {
 const modelCache = new Map<string, Promise<ModelCacheEntry>>()
 
 const companionPositions = [
-  new THREE.Vector3(-1.62, 0.92, 0.2),
-  new THREE.Vector3(1.62, 0.76, 0.1),
-  new THREE.Vector3(-1.42, -1.05, 0.35),
-  new THREE.Vector3(1.34, -1.08, 0.25),
+  new THREE.Vector3(-1.18, 0.76, 0.3),
+  new THREE.Vector3(1.18, 0.68, 0.22),
+  new THREE.Vector3(-1.04, -0.86, 0.38),
+  new THREE.Vector3(1.02, -0.88, 0.32),
 ]
 
-function easeOutBack(value: number): number {
-  const c1 = 1.70158
+function easeOutBack(value: number, overshoot = 1.70158): number {
+  const c1 = overshoot
   const c3 = c1 + 1
   return 1 + c3 * Math.pow(value - 1, 3) + c1 * Math.pow(value - 1, 2)
-}
-
-function easeOutCubic(value: number): number {
-  return 1 - Math.pow(1 - value, 3)
 }
 
 function loadModel(src: string): Promise<ModelCacheEntry> {
@@ -74,17 +68,17 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
   const common = {
     normalMap: original.normalMap ?? null,
     side: THREE.DoubleSide,
-    envMapIntensity: companion ? 1.9 : 2.3,
+    envMapIntensity: companion ? 2.25 : 2.65,
   }
 
   if (finish === 'gold' || finish === 'silver') {
     return new THREE.MeshPhysicalMaterial({
       ...common,
-      color: finish === 'gold' ? new THREE.Color('#ffc52e') : new THREE.Color('#d9e3ef'),
-      metalness: 0.92,
-      roughness: finish === 'gold' ? 0.16 : 0.12,
+      color: finish === 'gold' ? new THREE.Color('#ffc229') : new THREE.Color('#dce8f5'),
+      metalness: 0.86,
+      roughness: finish === 'gold' ? 0.12 : 0.1,
       clearcoat: 1,
-      clearcoatRoughness: 0.04,
+      clearcoatRoughness: 0.025,
     })
   }
 
@@ -92,17 +86,22 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
     ...common,
     color: new THREE.Color('#ffffff'),
     map: original.map ?? null,
+    emissive: new THREE.Color('#ffffff'),
+    emissiveMap: original.map ?? null,
+    emissiveIntensity: companion ? 0.12 : 0.16,
     roughnessMap: original.roughnessMap ?? null,
     metalnessMap: original.metalnessMap ?? null,
-    metalness: 0.04,
-    roughness: 0.13,
-    transmission: companion ? 0.12 : 0.18,
-    thickness: companion ? 0.18 : 0.32,
-    ior: 1.44,
+    metalness: 0.02,
+    roughness: companion ? 0.09 : 0.075,
+    transmission: companion ? 0.035 : 0.065,
+    thickness: companion ? 0.12 : 0.2,
+    ior: 1.46,
     clearcoat: 1,
-    clearcoatRoughness: 0.035,
+    clearcoatRoughness: 0.018,
+    specularIntensity: 1,
+    specularColor: new THREE.Color('#ffffff'),
     transparent: true,
-    opacity: 0.98,
+    opacity: companion ? 0.95 : 0.94,
   })
 }
 
@@ -112,8 +111,8 @@ function cloneAndPrepare(
   targetSize: number,
   companion = false,
 ): LoadedModel {
-  const root = source.clone(true)
-  root.traverse((child) => {
+  const content = source.clone(true)
+  content.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry = child.geometry
     const sourceMaterial = Array.isArray(child.material) ? child.material[0] : child.material
@@ -122,37 +121,38 @@ function cloneAndPrepare(
     child.receiveShadow = false
   })
 
-  const bounds = new THREE.Box3().setFromObject(root)
+  const bounds = new THREE.Box3().setFromObject(content)
   const size = bounds.getSize(new THREE.Vector3())
   const center = bounds.getCenter(new THREE.Vector3())
   const maxDimension = Math.max(size.x, size.y, size.z, 0.001)
-  const baseScale = targetSize / maxDimension
-  root.position.sub(center)
-  root.scale.setScalar(baseScale)
+  const planarMax = Math.max(size.x, size.y, 0.001)
+  const planarAspect = Math.min(size.x, size.y) / planarMax
+  const occupancyScale = companion
+    ? 1
+    : Math.min(1, Math.max(0.78, Math.sqrt(0.48 / Math.max(0.001, planarAspect))))
+  const baseScale = (targetSize * occupancyScale) / maxDimension
+  content.position.sub(center)
 
-  return {
-    root,
-    baseScale,
-    offsetY: size.y * baseScale * 0.03,
-  }
+  const normalized = new THREE.Group()
+  normalized.scale.setScalar(baseScale)
+  normalized.add(content)
+
+  const root = new THREE.Group()
+  root.add(normalized)
+  return { root }
 }
 
 function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group) {
   if (animation === 'rise') {
-    root.position.set(0, -2.7, 0)
-    root.rotation.set(0.16, -0.22, -0.16)
+    root.rotation.set(0.11, -0.3, -0.1)
   } else if (animation === 'swing') {
-    root.position.set(-2.8, 0.2, 0)
-    root.rotation.set(0.12, -0.5, -0.55)
+    root.rotation.set(0.1, -0.52, -0.22)
   } else if (animation === 'orbit') {
-    root.position.set(2.1, 1.2, 0)
-    root.rotation.set(-0.15, 1.1, 0.28)
+    root.rotation.set(-0.1, 0.72, 0.16)
   } else if (animation === 'impact') {
-    root.position.set(0, 2.5, 0)
-    root.rotation.set(0.35, 0.25, 0.18)
+    root.rotation.set(0.18, 0.18, 0.08)
   } else {
-    root.position.set(0, 0, 0)
-    root.rotation.set(0.18, -0.8, -0.08)
+    root.rotation.set(0.12, -0.68, -0.06)
   }
 }
 
@@ -205,9 +205,9 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         const companionSelections = Array.from({ length: event.companionCount }, (_, index) => (
           event.companions[index % event.companions.length]
         ))
-        const [mainEntry, ...companionEntries] = await Promise.all([
-          loadModel(event.main.src),
-          ...companionSelections.map((entry) => loadModel(entry.src)),
+        const [mainEntry, companionEntries] = await Promise.all([
+          event.main ? loadModel(event.main.src) : Promise.resolve(null),
+          Promise.all(companionSelections.map((entry) => loadModel(entry.src))),
         ])
         if (disposed) return
 
@@ -218,8 +218,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' })
         renderer.setClearColor(0x000000, 0)
         renderer.outputColorSpace = THREE.SRGBColorSpace
-        renderer.toneMapping = THREE.ACESFilmicToneMapping
-        renderer.toneMappingExposure = 1.22
+        renderer.toneMapping = THREE.NeutralToneMapping
+        renderer.toneMappingExposure = 1.08
         const isTouch = window.matchMedia('(pointer: coarse)').matches
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch ? 1.15 : 1.5))
         host.appendChild(renderer.domElement)
@@ -229,32 +229,43 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         scene.environment = environment
         pmrem.dispose()
 
-        const keyLight = new THREE.DirectionalLight(0xffffff, 3.4)
+        const keyLight = new THREE.DirectionalLight(0xffffff, 3.8)
         keyLight.position.set(-3.8, 5.2, 6)
         scene.add(keyLight)
-        const colorLight = new THREE.PointLight(0xff2bad, 18, 12)
+        const colorLight = new THREE.PointLight(0xff149e, 21, 12)
         colorLight.position.set(3, 1.4, 4)
         scene.add(colorLight)
-        const cyanLight = new THREE.PointLight(0x16dfff, 13, 10)
+        const cyanLight = new THREE.PointLight(0x00cfff, 16, 10)
         cyanLight.position.set(-3.2, -1.8, 3.2)
         scene.add(cyanLight)
 
         const stage = new THREE.Group()
         scene.add(stage)
-        const main = cloneAndPrepare(mainEntry.scene, event.finish, 3.4)
-        initialMainTransform(event.animation, main.root)
-        main.root.scale.multiplyScalar(0.02)
-        stage.add(main.root)
+        const main = mainEntry ? cloneAndPrepare(mainEntry.scene, event.finish, 2.38) : null
+        if (main) {
+          initialMainTransform(event.animation, main.root)
+          main.root.scale.setScalar(0.025)
+          stage.add(main.root)
+        }
 
         const companions = companionEntries.map((entry, index) => {
-          const prepared = cloneAndPrepare(entry.scene, 'color', index % 2 === 0 ? 0.74 : 0.58, true)
-          const target = companionPositions[index % companionPositions.length]
-          prepared.root.position.copy(target).multiplyScalar(1.9)
-          const startPosition = prepared.root.position.clone()
-          prepared.root.scale.multiplyScalar(0.02)
+          const targetSize = main ? (index % 2 === 0 ? 0.62 : 0.5) : (index % 2 === 0 ? 0.82 : 0.68)
+          const prepared = cloneAndPrepare(entry.scene, 'color', targetSize, true)
+          const spread = main ? 1 : 0.92
+          const target = companionPositions[index % companionPositions.length].clone().multiplyScalar(spread)
+          const startPosition = target.clone().multiplyScalar(0.08)
+          startPosition.z = -1.2 - index * 0.08
+          prepared.root.position.copy(startPosition)
+          prepared.root.scale.setScalar(0.025)
           prepared.root.rotation.set(0.2, -0.4 + index * 0.34, index % 2 === 0 ? -0.3 : 0.28)
           stage.add(prepared.root)
-          return { ...prepared, startPosition, target: target.clone(), index }
+          return {
+            ...prepared,
+            baseRotation: prepared.root.rotation.clone(),
+            startPosition,
+            target,
+            index,
+          }
         })
 
         stage.traverse((child) => {
@@ -280,42 +291,31 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         const render = (now: number) => {
           if (disposed || !renderer) return
           const elapsed = (now - startedAt) / 1000
-          const mainProgress = Math.min(1, elapsed / 0.82)
-          const mainEase = easeOutBack(mainProgress)
-          let mainBaseY = 0
+          const mainProgress = Math.min(1, elapsed / 0.46)
+          const mainEase = easeOutBack(mainProgress, 2.25)
 
-          if (event.animation === 'rise') {
-            mainBaseY = THREE.MathUtils.lerp(-2.7, main.offsetY, easeOutCubic(mainProgress))
-          } else if (event.animation === 'swing') {
-            main.root.position.x = THREE.MathUtils.lerp(-2.8, 0, easeOutCubic(mainProgress))
-            mainBaseY = 0.2
-            main.root.rotation.z = THREE.MathUtils.lerp(-0.55, -0.08, mainProgress)
-          } else if (event.animation === 'orbit') {
-            const orbitProgress = easeOutCubic(mainProgress)
-            main.root.position.x = Math.cos(orbitProgress * Math.PI * 1.5) * (1 - orbitProgress) * 2.2
-            mainBaseY = Math.sin(orbitProgress * Math.PI * 1.5) * (1 - orbitProgress) * 1.35
-            main.root.rotation.y = 1.1 - orbitProgress * 1.25
-          } else if (event.animation === 'impact') {
-            mainBaseY = THREE.MathUtils.lerp(2.5, main.offsetY, easeOutCubic(mainProgress))
-            main.root.rotation.z = THREE.MathUtils.lerp(0.18, -0.06, mainProgress)
+          if (main) {
+            const settled = Math.max(0, elapsed - 0.46)
+            main.root.scale.setScalar(Math.max(0.025, mainEase))
+            main.root.position.y = Math.sin(settled * 1.65) * 0.018
+            main.root.rotation.y += settled > 0 ? 0.0021 : 0
           }
 
-          const mainScale = Math.max(0.02, mainEase)
-          main.root.scale.setScalar(main.baseScale * mainScale)
-          main.root.position.y = mainBaseY + Math.sin(elapsed * 1.8) * 0.025
-          main.root.rotation.y += 0.0026
-
           companions.forEach((companion) => {
-            const delayed = Math.max(0, Math.min(1, (elapsed - 0.2 - companion.index * 0.08) / 0.62))
-            const eased = easeOutBack(delayed)
-            companion.root.position.lerpVectors(companion.startPosition, companion.target, easeOutCubic(delayed))
-            companion.root.scale.setScalar(companion.baseScale * Math.max(0.02, eased))
-            companion.root.position.y += Math.sin(elapsed * 2.5 + companion.index) * 0.035
-            companion.root.rotation.z += companion.index % 2 === 0 ? 0.004 : -0.003
-            companion.root.rotation.y += 0.005
+            const delay = (main ? 0.1 : 0.04) + companion.index * 0.045
+            const duration = 0.38
+            const progress = Math.max(0, Math.min(1, (elapsed - delay) / duration))
+            const burstEase = easeOutBack(progress, 2.7)
+            const settled = Math.max(0, elapsed - delay - duration)
+            companion.root.position.lerpVectors(companion.startPosition, companion.target, burstEase)
+            companion.root.position.y += Math.sin(settled * 3.2 + companion.index * 1.4) * 0.018
+            companion.root.scale.setScalar(Math.max(0.025, burstEase) * (1 + Math.sin(settled * 4.2 + companion.index) * 0.022))
+            companion.root.rotation.copy(companion.baseRotation)
           })
 
-          stage.rotation.z = Math.sin(elapsed * 0.72) * 0.018
+          const flash = Math.exp(-elapsed * 8)
+          colorLight.intensity = 21 + flash * 18
+          cyanLight.intensity = 16 + flash * 12
           renderer.render(scene, camera)
           frame = window.requestAnimationFrame(render)
         }
@@ -352,6 +352,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
   return (
     <div
       className={`encourage-3d${ready ? ' encourage-3d--ready' : ''}${closing ? ' encourage-3d--closing' : ''}`}
+      data-main={event.main?.id ?? 'companions'}
+      data-finish={event.finish}
       role="dialog"
       aria-modal="true"
       aria-label={`${event.message}. ${event.points} points.`}
@@ -431,7 +433,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           position: absolute;
           inset: 0 0 104px;
           opacity: 0;
-          filter: drop-shadow(0 28px 34px rgba(0,0,0,.32));
+          filter: saturate(1.34) contrast(1.06) drop-shadow(0 24px 30px rgba(0,0,0,.34));
           transition: opacity 160ms ease-out;
         }
         .encourage-3d--ready .encourage-3d__canvas {
@@ -457,7 +459,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           text-align: center;
           opacity: 0;
           transform: translate3d(0, 14px, 0);
-          animation: encourage-copy-in 420ms 520ms cubic-bezier(.18,.9,.28,1.08) forwards;
+          animation: encourage-copy-in 360ms 360ms cubic-bezier(.18,.9,.28,1.08) forwards;
         }
         .encourage-3d__copy p {
           max-width: 560px;
