@@ -20,6 +20,10 @@
 # production
 /build
 
+# Source 3D encouragement models are kept locally; optimized runtime copies are committed.
+/public/encourage/default/**/*.glb
+/public/encourage/special/**/*.glb
+
 # misc
 .DS_Store
 *.pem

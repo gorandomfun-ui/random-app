@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { RotateCcw, X } from 'lucide-react'
 
@@ -48,6 +49,11 @@ import {
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
 import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
+import { createTestEncourage3DEvent, type Encourage3DEvent } from '@/lib/encourage3d/catalog'
+
+const Encourage3DOverlay = dynamic(() => import('@/components/encourage3d/Encourage3DOverlay'), {
+  ssr: false,
+})
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',
@@ -2241,7 +2247,7 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
 
 export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?: boolean }) {
   const { dict, locale, locales, setLocale, t } = useI18n()
-  const { addAction, maybeSpawnDiamond, quizScore } = useScore()
+  const { addAction, addPoints, maybeSpawnDiamond, quizScore, score } = useScore()
   const { consent } = useCookieConsent()
 
   const [menuOpen, setMenuOpen] = useState(false)
@@ -2274,6 +2280,11 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const [progressionDraws, setProgressionDraws] = useState(0)
   const progressionDrawsRef = useRef(0)
   const [burgerGlitch, setBurgerGlitch] = useState(false)
+  const [burgerPointPulse, setBurgerPointPulse] = useState(false)
+  const [encourage3dEvent, setEncourage3dEvent] = useState<Encourage3DEvent | null>(null)
+  const encourage3dSequenceRef = useRef(0)
+  const previousEncourage3dMainRef = useRef<string | null>(null)
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null)
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
   const [waveRemaining, setWaveRemaining] = useState(0)
@@ -2463,6 +2474,7 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
   const quizScoreText = useMemo(() => `${quizScore} PTS`, [quizScore])
+  const scoreText = useMemo(() => `${score} PTS`, [score])
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
   const miniGameStateRef = useRef<{
@@ -2485,6 +2497,7 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
 
 const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState())
   const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const burgerPointPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const waveTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2613,6 +2626,32 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     setBurgerGlitch(true)
     if (burgerGlitchTimeoutRef.current) clearTimeout(burgerGlitchTimeoutRef.current)
     burgerGlitchTimeoutRef.current = setTimeout(() => setBurgerGlitch(false), 380)
+  }, [])
+
+  const queueTestEncourage3D = useCallback((step: number) => {
+    if (!effectsTestMode) return
+    encourage3dSequenceRef.current += 1
+    const next = createTestEncourage3DEvent(
+      step,
+      encourage3dSequenceRef.current,
+      previousEncourage3dMainRef.current,
+    )
+    previousEncourage3dMainRef.current = next.main.id
+    setMenuOpen(false)
+    setShareOpen(false)
+    setEncourage3dEvent(next)
+  }, [effectsTestMode])
+
+  const handleEncourage3DAward = useCallback((points: number) => {
+    addPoints(points)
+    triggerBurgerGlitch()
+    setBurgerPointPulse(true)
+    if (burgerPointPulseTimeoutRef.current) clearTimeout(burgerPointPulseTimeoutRef.current)
+    burgerPointPulseTimeoutRef.current = setTimeout(() => setBurgerPointPulse(false), 620)
+  }, [addPoints, triggerBurgerGlitch])
+
+  const handleEncourage3DComplete = useCallback(() => {
+    setEncourage3dEvent(null)
   }, [])
 
   const triggerHeartGlitch = useCallback(() => {
@@ -3582,6 +3621,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       persistRandomSession()
       await waitForNextPaint()
       await waitForTransitionSettle('random')
+      if (effectsTestMode && reward) {
+        queueTestEncourage3D(effectsTestStepRef.current)
+      }
       return true
     } catch {
       /* Keep the current item; the next prepared item remains usable. */
@@ -3602,7 +3644,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
+  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     const current = currentItemRef.current
@@ -3879,8 +3921,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
   const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
-  const controlsDisabled = transitionLocked || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
-  const randomAgainDisabled = !viewItem || transitionLocked
+  const controlsDisabled = transitionLocked || Boolean(encourage3dEvent) || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
+  const randomAgainDisabled = !viewItem || transitionLocked || Boolean(encourage3dEvent)
   const waveEligible = useMemo(() => {
     if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return false
     return hasWaveSignal(createWaveHint(viewItem))
@@ -4087,13 +4129,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       </div>
       <header className="random-main-header relative z-10 flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
         <button
+          ref={menuButtonRef}
           type="button"
           aria-label="Menu"
           onClick={() => {
             triggerBurgerGlitch()
             setMenuOpen(true)
           }}
-          className="flex items-center"
+          className={`random-menu-trigger flex items-center${burgerPointPulse ? ' random-menu-trigger--points' : ''}`}
+          style={{ color: theme.text }}
         >
           <BurgerIcon color={theme.text} glitch={burgerGlitch} />
         </button>
@@ -4270,6 +4314,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         </div>
       </section>
 
+      {effectsTestMode && encourage3dEvent ? (
+        <Encourage3DOverlay
+          event={encourage3dEvent}
+          menuTargetRef={menuButtonRef}
+          onAward={handleEncourage3DAward}
+          onComplete={handleEncourage3DComplete}
+        />
+      ) : null}
+
       {menuOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
           <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
@@ -4384,7 +4437,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
                 className="text-lg font-semibold uppercase"
                 style={{ color: '#191916' }}
               >
-                {quizScoreText}
+                {scoreText}
               </span>
 
               <button
@@ -5564,6 +5617,28 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .burger-icon {
           position: relative;
         }
+        .random-menu-trigger {
+          position: relative;
+          width: 44px;
+          height: 44px;
+          justify-content: flex-start;
+        }
+        .random-menu-trigger::after {
+          content: '';
+          position: absolute;
+          left: -8px;
+          top: -5px;
+          width: 43px;
+          height: 36px;
+          border: 2px solid currentColor;
+          border-radius: 50%;
+          opacity: 0;
+          transform: scale(.28);
+          pointer-events: none;
+        }
+        .random-menu-trigger--points::after {
+          animation: encourage-menu-receive 580ms cubic-bezier(.16,.82,.28,1) forwards;
+        }
         .burger-icon .burger-line {
           width: 100%;
           border-radius: 9999px;
@@ -5609,6 +5684,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             box-shadow: none;
             filter: none;
           }
+        }
+        @keyframes encourage-menu-receive {
+          0% { opacity: 0; transform: scale(.28); }
+          24% { opacity: 1; transform: scale(1.24); }
+          58% { opacity: .72; transform: scale(.92); }
+          100% { opacity: 0; transform: scale(1.52); }
         }
 
         .heart-icon {
