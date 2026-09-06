@@ -203,8 +203,9 @@ function cloneAndPrepare(
   content.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry = child.geometry
-    const sourceMaterial = Array.isArray(child.material) ? child.material[0] : child.material
-    child.material = makeMaterial(sourceMaterial, companion ? 'color' : finish, companion)
+    child.material = Array.isArray(child.material)
+      ? child.material.map((material) => makeMaterial(material, companion ? 'color' : finish, companion))
+      : makeMaterial(child.material, companion ? 'color' : finish, companion)
     child.castShadow = false
     child.receiveShadow = false
   })

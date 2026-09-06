@@ -101,6 +101,7 @@ const RANDOM_READY_TARGET = 3
 const RANDOM_SESSION_TTL_MS = 6 * 60 * 60 * 1000
 const RANDOM_SESSION_VERSION = 1
 const RANDOM_SESSION_PREFIX = 'random-experience-session-'
+const RANDOM_TEST_SESSION_PREFIX = 'random-effects-test-session-'
 const EFFECTS_TEST_MAX_STEPS = 25
 const EFFECTS_TEST_DRAWS_PER_STEP = 20
 const EFFECTS_PROGRESSION_MAX_DRAWS = 500
@@ -2667,7 +2668,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     if (effectsTestMode) return
     const now = Date.now()
     const schedule = encourage3dScheduleRef.current
-      ?? createEncourage3DSchedule(now, 0)
+      ?? createEncourage3DSchedule(now, progressionDrawsRef.current)
     const draws = schedule.actions + 1
     const next = advanceProductionEncourage3DSchedule(schedule, {
       now,
@@ -2971,6 +2972,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   const persistRandomSession = useCallback(() => {
     if (typeof window === 'undefined') return
     const langKey = (locale || 'en') as Lang
+    const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : RANDOM_SESSION_PREFIX
     const payload: PersistedRandomSession = {
       version: RANDOM_SESSION_VERSION,
       timestamp: Date.now(),
@@ -2983,21 +2985,23 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       encourage3dSchedule: encourage3dScheduleRef.current,
     }
     try {
-      sessionStorage.setItem(`${RANDOM_SESSION_PREFIX}${langKey}`, JSON.stringify(payload))
+      sessionStorage.setItem(`${storagePrefix}${langKey}`, JSON.stringify(payload))
     } catch {
       /* Session restoration must never block navigation. */
     }
-  }, [locale])
+  }, [effectsTestMode, locale])
 
   const restoreRandomSession = useCallback(() => {
     if (typeof window === 'undefined') return false
     const langKey = (locale || 'en') as Lang
+    const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : RANDOM_SESSION_PREFIX
     try {
-      const raw = sessionStorage.getItem(`${RANDOM_SESSION_PREFIX}${langKey}`)
+      const storageKey = `${storagePrefix}${langKey}`
+      const raw = sessionStorage.getItem(storageKey)
       if (!raw) return false
       const restored = parseRandomSession(raw, langKey)
       if (!restored) {
-        sessionStorage.removeItem(`${RANDOM_SESSION_PREFIX}${langKey}`)
+        sessionStorage.removeItem(storageKey)
         return false
       }
       sequenceStateRef.current = cloneSequenceState(restored.sequence)
@@ -3021,7 +3025,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     } catch {
       return false
     }
-  }, [locale])
+  }, [effectsTestMode, locale])
 
   const warmContentMedia = useCallback((item: DisplayItem): Promise<boolean> => {
     if (typeof window === 'undefined') return Promise.resolve(false)
@@ -3757,6 +3761,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (initialLoadTriggeredRef.current) return
     initialLoadTriggeredRef.current = true
     const restored = restoreRandomSession()
+    if (!effectsTestMode && !encourage3dScheduleRef.current) {
+      encourage3dScheduleRef.current = createEncourage3DSchedule(
+        Date.now(),
+        progressionDrawsRef.current,
+      )
+    }
     if (restored) {
       const current = currentItemRef.current
       if (current) void warmContentMedia(current)
@@ -3766,7 +3776,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       return
     }
     loadNext(false).catch(() => setLoading(false))
-  }, [fillRandomReadyQueue, loadNext, restoreRandomSession, warmContentMedia])
+  }, [effectsTestMode, fillRandomReadyQueue, loadNext, restoreRandomSession, warmContentMedia])
 
   useEffect(() => {
     if (currentItem) persistRandomSession()
