@@ -473,6 +473,11 @@ const frDictionary = {
   },
   "encourage": {
     "roundLabel": "Manche",
+    "goldLabel": "Or",
+    "silverLabel": "Argent",
+    "pointsLabel": "pts",
+    "closeLabel": "Fermer l’encouragement",
+    "unavailableLabel": "Effet 3D indisponible",
     "messages": [
       "Tu viens de percer une nouvelle couche.",
       "Une autre ronde de hasard franchie.",

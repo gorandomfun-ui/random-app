@@ -473,6 +473,11 @@ const deDictionary = {
   }  ,
   "encourage": {
     "roundLabel": "Runde",
+    "goldLabel": "Gold",
+    "silverLabel": "Silber",
+    "pointsLabel": "Pkt.",
+    "closeLabel": "Ermutigung schließen",
+    "unavailableLabel": "3D-Effekt nicht verfügbar",
     "messages": [
       "Du hast eine brandneue Schicht durchbrochen.",
       "Eine weitere Zufallsrunde gemeistert.",

@@ -1,5 +1,3 @@
-import ENCOURAGEMENT_MESSAGES from '@/lib/encourage/messages'
-
 export type Encourage3DFinish = 'color' | 'silver' | 'gold'
 export type Encourage3DAnimation = 'burst' | 'rise' | 'swing' | 'orbit' | 'impact'
 
@@ -38,6 +36,7 @@ export type Encourage3DScheduleState = {
 type ProductionContext = {
   draws: number
   score: number
+  messages: readonly string[]
   previousMainId?: string | null
 }
 
@@ -90,14 +89,19 @@ const COMPANIONS: Encourage3DCompanion[] = [
 ]
 
 const ANIMATIONS: Encourage3DAnimation[] = ['burst', 'rise', 'swing', 'orbit', 'impact']
-const MAX_PRODUCTION_APPEARANCES = 3
+const MAX_PRODUCTION_APPEARANCES = 2
+const DEFAULT_MESSAGE = 'Keep exploring'
 
 function randomInt(min: number, max: number, random: () => number): number {
   return Math.floor(random() * (max - min + 1)) + min
 }
 
-function pick<T>(items: T[], random: () => number): T {
+function pick<T>(items: readonly T[], random: () => number): T {
   return items[Math.min(items.length - 1, Math.floor(random() * items.length))]
+}
+
+function pickMessage(messages: readonly string[], random: () => number): string {
+  return messages.length ? pick(messages, random) : DEFAULT_MESSAGE
 }
 
 function shuffledCompanions(random: () => number): Encourage3DCompanion[] {
@@ -151,6 +155,7 @@ function eventPoints(
 export function createTestEncourage3DEvent(
   step: number,
   sequence: number,
+  messages: readonly string[],
   previousMainId?: string | null,
 ): Encourage3DEvent {
   const testRank = step >= 23 ? 5 : step >= 8 ? 3 : step >= 3 ? 2 : 1
@@ -162,7 +167,9 @@ export function createTestEncourage3DEvent(
     main = eligible[(sequence + 1) % eligible.length]
   }
 
-  const companionCount = companionOnly ? 4 : Math.min(3, 1 + (sequence % 3))
+  const companionCount = companionOnly
+    ? 3 + (Math.floor(sequence / 6) % 3)
+    : Math.min(3, 1 + (sequence % 3))
   const companions = sequence % 2 === 0 ? COMPANIONS : [...COMPANIONS].reverse()
   const finish: Encourage3DFinish = sequence > 0 && sequence % 31 === 0
     ? 'gold'
@@ -178,7 +185,7 @@ export function createTestEncourage3DEvent(
     companionCount,
     finish: appliedFinish,
     animation: ANIMATIONS[sequence % ANIMATIONS.length],
-    message: ENCOURAGEMENT_MESSAGES[sequence % ENCOURAGEMENT_MESSAGES.length],
+    message: messages.length ? messages[sequence % messages.length] : DEFAULT_MESSAGE,
     points: eventPoints(main, companions, companionCount, appliedFinish),
   }
 }
@@ -191,7 +198,7 @@ export function createProductionEncourage3DEvent(
   const finish = companionOnly ? 'color' : productionFinish(context.draws, context.score, random)
   const main = companionOnly ? null : pickProductionMain(context, finish, random)
   const companions = shuffledCompanions(random)
-  const companionCount = companionOnly ? randomInt(3, 4, random) : randomInt(1, 3, random)
+  const companionCount = companionOnly ? randomInt(3, 5, random) : randomInt(1, 3, random)
 
   return {
     id: `encourage-3d-${Date.now()}-${context.draws}`,
@@ -200,7 +207,7 @@ export function createProductionEncourage3DEvent(
     companionCount,
     finish,
     animation: pick(ANIMATIONS, random),
-    message: pick(ENCOURAGEMENT_MESSAGES, random),
+    message: pickMessage(context.messages, random),
     points: eventPoints(main, companions, companionCount, finish),
   }
 }
@@ -215,8 +222,8 @@ export function createEncourage3DSchedule(
     actions: draws,
     lastShownAt: 0,
     lastShownDraw: draws,
-    nextEligibleAt: now + randomInt(70, 170, random) * 1000,
-    nextEligibleDraw: draws + randomInt(10, 18, random),
+    nextEligibleAt: now + randomInt(120, 300, random) * 1000,
+    nextEligibleDraw: draws + randomInt(15, 28, random),
     shown: 0,
   }
 }
@@ -264,10 +271,10 @@ export function advanceProductionEncourage3DSchedule(
 
   const eligibleDraws = Math.max(0, context.draws - current.nextEligibleDraw)
   const activeMinutes = Math.max(0, (context.now - current.startedAt) / 60_000)
-  const scoreSignal = Math.min(0.025, Math.max(0, context.score) / 4000)
+  const scoreSignal = Math.min(0.025, Math.max(0, context.score) / 5000)
   const probability = Math.min(
-    0.28,
-    0.055 + Math.min(0.14, eligibleDraws * 0.012) + Math.min(0.065, activeMinutes * 0.006) + scoreSignal,
+    0.18,
+    0.04 + Math.min(0.085, eligibleDraws * 0.008) + Math.min(0.03, activeMinutes * 0.003) + scoreSignal,
   )
 
   if (random() >= probability) return { state: updated, event: null }
@@ -280,8 +287,8 @@ export function advanceProductionEncourage3DSchedule(
       ...updated,
       lastShownAt: context.now,
       lastShownDraw: context.draws,
-      nextEligibleAt: context.now + randomInt(180, 420, random) * 1000,
-      nextEligibleDraw: context.draws + randomInt(18 + shown * 3, 34 + shown * 6, random),
+      nextEligibleAt: context.now + randomInt(300, 600, random) * 1000,
+      nextEligibleDraw: context.draws + randomInt(29 + shown * 3, 50 + shown * 8, random),
       shown,
     },
   }

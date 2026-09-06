@@ -473,6 +473,11 @@ const jpDictionary = {
   }  ,
   "encourage": {
     "roundLabel": "ラウンド",
+    "goldLabel": "ゴールド",
+    "silverLabel": "シルバー",
+    "pointsLabel": "pt",
+    "closeLabel": "演出を閉じる",
+    "unavailableLabel": "3Dエフェクトを表示できません",
     "messages": [
       "まったく新しい層を突き抜けた。",
       "ランダムの周回をクリアした。",

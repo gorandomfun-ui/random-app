@@ -7,6 +7,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
+import { useI18n } from '@/providers/I18nProvider'
 import type {
   Encourage3DAnimation,
   Encourage3DEvent,
@@ -30,12 +31,84 @@ type ModelCacheEntry = {
 
 const modelCache = new Map<string, Promise<ModelCacheEntry>>()
 
-const companionPositions = [
-  new THREE.Vector3(-1.18, 0.76, 0.3),
-  new THREE.Vector3(1.18, 0.68, 0.22),
-  new THREE.Vector3(-1.04, -0.86, 0.38),
-  new THREE.Vector3(1.02, -0.88, 0.32),
-]
+type CompanionPlacement = {
+  position: readonly [number, number, number]
+  size: number
+  rotation: readonly [number, number, number]
+}
+
+const companionLayouts: Record<number, CompanionPlacement[][]> = {
+  1: [
+    [{ position: [-1.2, 0.72, 0.24], size: 0.62, rotation: [0.18, -0.28, -0.24] }],
+    [{ position: [1.22, -0.34, 0.26], size: 0.68, rotation: [0.16, 0.34, 0.28] }],
+    [{ position: [0.94, 0.86, 0.22], size: 0.54, rotation: [0.2, -0.18, 0.16] }],
+  ],
+  2: [
+    [
+      { position: [-1.2, 0.72, 0.24], size: 0.64, rotation: [0.18, -0.3, -0.24] },
+      { position: [1.08, -0.8, 0.3], size: 0.48, rotation: [0.16, 0.34, 0.25] },
+    ],
+    [
+      { position: [1.22, 0.58, 0.24], size: 0.58, rotation: [0.16, 0.26, 0.24] },
+      { position: [0.82, -0.94, 0.3], size: 0.7, rotation: [0.2, -0.22, -0.18] },
+    ],
+    [
+      { position: [-1.16, -0.6, 0.28], size: 0.7, rotation: [0.18, 0.3, -0.3] },
+      { position: [1.18, 0.7, 0.24], size: 0.52, rotation: [0.16, -0.3, 0.2] },
+    ],
+  ],
+  3: [
+    [
+      { position: [-1.24, 0.66, 0.22], size: 0.64, rotation: [0.18, -0.32, -0.28] },
+      { position: [1.2, 0.34, 0.28], size: 0.46, rotation: [0.14, 0.28, 0.24] },
+      { position: [0.9, -0.94, 0.3], size: 0.72, rotation: [0.2, -0.18, -0.2] },
+    ],
+    [
+      { position: [-1.12, 0.88, 0.24], size: 0.48, rotation: [0.18, 0.28, -0.2] },
+      { position: [-1.18, -0.68, 0.3], size: 0.7, rotation: [0.2, -0.28, 0.28] },
+      { position: [1.24, 0.5, 0.24], size: 0.58, rotation: [0.16, 0.26, 0.22] },
+    ],
+    [
+      { position: [-1.28, 0.22, 0.26], size: 0.58, rotation: [0.18, -0.32, -0.26] },
+      { position: [0.72, 0.96, 0.22], size: 0.68, rotation: [0.16, 0.2, 0.18] },
+      { position: [1.18, -0.7, 0.3], size: 0.5, rotation: [0.2, -0.24, 0.3] },
+    ],
+  ],
+  4: [
+    [
+      { position: [-1.24, 0.72, 0.22], size: 0.58, rotation: [0.18, -0.3, -0.24] },
+      { position: [-1.06, -0.72, 0.3], size: 0.42, rotation: [0.16, 0.3, 0.3] },
+      { position: [1.24, 0.34, 0.26], size: 0.7, rotation: [0.2, -0.22, 0.24] },
+      { position: [0.84, -0.98, 0.3], size: 0.5, rotation: [0.16, 0.24, -0.2] },
+    ],
+    [
+      { position: [-1.28, 0.28, 0.26], size: 0.68, rotation: [0.18, 0.28, -0.3] },
+      { position: [-0.72, 0.98, 0.22], size: 0.44, rotation: [0.14, -0.24, 0.18] },
+      { position: [1.18, 0.7, 0.24], size: 0.54, rotation: [0.18, 0.3, 0.24] },
+      { position: [1.12, -0.78, 0.3], size: 0.72, rotation: [0.2, -0.2, -0.24] },
+    ],
+    [
+      { position: [-1.18, 0.82, 0.22], size: 0.5, rotation: [0.16, -0.28, -0.24] },
+      { position: [-1.22, -0.5, 0.3], size: 0.72, rotation: [0.2, 0.28, 0.26] },
+      { position: [0.72, 0.96, 0.24], size: 0.62, rotation: [0.18, -0.2, 0.18] },
+      { position: [1.24, -0.62, 0.28], size: 0.44, rotation: [0.16, 0.3, -0.3] },
+    ],
+  ],
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function layoutFor(count: number, eventId: string): CompanionPlacement[] {
+  const layouts = companionLayouts[Math.max(1, Math.min(4, count))]
+  return layouts[hashString(eventId) % layouts.length]
+}
 
 function easeOutBack(value: number, overshoot = 1.70158): number {
   const c1 = overshoot
@@ -63,12 +136,25 @@ function loadModel(src: string): Promise<ModelCacheEntry> {
   return pending
 }
 
+function intensifyTextureColors(material: THREE.MeshPhysicalMaterial, saturation: number) {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+      float encourageLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+      diffuseColor.rgb = clamp(mix(vec3(encourageLuma), diffuseColor.rgb, ${saturation.toFixed(2)}), 0.0, 1.0);`,
+    )
+  }
+  material.customProgramCacheKey = () => `encourage-color-${saturation.toFixed(2)}`
+}
+
 function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, companion: boolean): THREE.Material {
   const original = source as THREE.MeshStandardMaterial
   const common = {
     normalMap: original.normalMap ?? null,
+    normalScale: original.normalScale?.clone() ?? new THREE.Vector2(1, 1),
     side: THREE.DoubleSide,
-    envMapIntensity: companion ? 2.25 : 2.65,
+    envMapIntensity: companion ? 1.9 : 2.15,
   }
 
   if (finish === 'gold' || finish === 'silver') {
@@ -82,27 +168,29 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
     })
   }
 
-  return new THREE.MeshPhysicalMaterial({
+  const material = new THREE.MeshPhysicalMaterial({
     ...common,
-    color: new THREE.Color('#ffffff'),
+    color: original.color?.clone() ?? new THREE.Color('#ffffff'),
     map: original.map ?? null,
-    emissive: new THREE.Color('#ffffff'),
-    emissiveMap: original.map ?? null,
-    emissiveIntensity: companion ? 0.12 : 0.16,
-    roughnessMap: original.roughnessMap ?? null,
-    metalnessMap: original.metalnessMap ?? null,
-    metalness: 0.02,
-    roughness: companion ? 0.09 : 0.075,
-    transmission: companion ? 0.035 : 0.065,
-    thickness: companion ? 0.12 : 0.2,
-    ior: 1.46,
+    metalness: 0,
+    roughness: companion ? 0.11 : 0.09,
+    transmission: companion ? 0.32 : 0.38,
+    thickness: companion ? 0.42 : 0.58,
+    attenuationDistance: companion ? 1.1 : 0.9,
+    attenuationColor: new THREE.Color('#ffffff'),
+    ior: 1.48,
+    iridescence: companion ? 0.2 : 0.38,
+    iridescenceIOR: 1.32,
+    iridescenceThicknessRange: [110, 390] as [number, number],
     clearcoat: 1,
-    clearcoatRoughness: 0.018,
+    clearcoatRoughness: 0.025,
     specularIntensity: 1,
     specularColor: new THREE.Color('#ffffff'),
     transparent: true,
-    opacity: companion ? 0.95 : 0.94,
+    opacity: companion ? 0.86 : 0.84,
   })
+  intensifyTextureColors(material, companion ? 1.52 : 1.68)
+  return material
 }
 
 function cloneAndPrepare(
@@ -157,6 +245,7 @@ function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group
 }
 
 export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onComplete }: Props) {
+  const { t } = useI18n()
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
   const closeStartedRef = useRef(false)
   const [ready, setReady] = useState(false)
@@ -164,7 +253,12 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
   const [failed, setFailed] = useState(false)
   const [flightTarget, setFlightTarget] = useState({ x: 0, y: 0 })
 
-  const finishLabel = event.finish === 'gold' ? 'GOLD' : event.finish === 'silver' ? 'SILVER' : null
+  const finishLabel = event.finish === 'gold'
+    ? t('encourage.goldLabel', 'Gold')
+    : event.finish === 'silver'
+      ? t('encourage.silverLabel', 'Silver')
+      : null
+  const pointsLabel = t('encourage.pointsLabel', 'pts')
   const rewardStyle = useMemo(() => ({
     '--encourage-flight-x': `${flightTarget.x}px`,
     '--encourage-flight-y': `${flightTarget.y}px`,
@@ -205,7 +299,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         const companionSelections = Array.from({ length: event.companionCount }, (_, index) => (
           event.companions[index % event.companions.length]
         ))
-        const [mainEntry, companionEntries] = await Promise.all([
+        const [mainEntry, allCompanionEntries] = await Promise.all([
           event.main ? loadModel(event.main.src) : Promise.resolve(null),
           Promise.all(companionSelections.map((entry) => loadModel(entry.src))),
         ])
@@ -219,7 +313,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         renderer.setClearColor(0x000000, 0)
         renderer.outputColorSpace = THREE.SRGBColorSpace
         renderer.toneMapping = THREE.NeutralToneMapping
-        renderer.toneMappingExposure = 1.08
+        renderer.toneMappingExposure = 1.12
         const isTouch = window.matchMedia('(pointer: coarse)').matches
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch ? 1.15 : 1.5))
         host.appendChild(renderer.domElement)
@@ -229,35 +323,42 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         scene.environment = environment
         pmrem.dispose()
 
-        const keyLight = new THREE.DirectionalLight(0xffffff, 3.8)
+        const keyLight = new THREE.DirectionalLight(0xffffff, 3.6)
         keyLight.position.set(-3.8, 5.2, 6)
         scene.add(keyLight)
-        const colorLight = new THREE.PointLight(0xff149e, 21, 12)
+        const colorLight = new THREE.PointLight(0xff149e, 12, 12)
         colorLight.position.set(3, 1.4, 4)
         scene.add(colorLight)
-        const cyanLight = new THREE.PointLight(0x00cfff, 16, 10)
+        const cyanLight = new THREE.PointLight(0x00cfff, 9, 10)
         cyanLight.position.set(-3.2, -1.8, 3.2)
         scene.add(cyanLight)
 
         const stage = new THREE.Group()
         scene.add(stage)
-        const main = mainEntry ? cloneAndPrepare(mainEntry.scene, event.finish, 2.38) : null
+        const featuredCompanionEntry = mainEntry ? null : allCompanionEntries[0] ?? null
+        const companionEntries = mainEntry ? allCompanionEntries : allCompanionEntries.slice(1)
+        const centralEntry = mainEntry ?? featuredCompanionEntry
+        const main = centralEntry
+          ? cloneAndPrepare(centralEntry.scene, mainEntry ? event.finish : 'color', mainEntry ? 2.38 : 2.08, !mainEntry)
+          : null
+        let mainBaseRotation: THREE.Euler | null = null
         if (main) {
           initialMainTransform(event.animation, main.root)
+          mainBaseRotation = main.root.rotation.clone()
           main.root.scale.setScalar(0.025)
           stage.add(main.root)
         }
 
+        const placements = layoutFor(companionEntries.length, event.id)
         const companions = companionEntries.map((entry, index) => {
-          const targetSize = main ? (index % 2 === 0 ? 0.62 : 0.5) : (index % 2 === 0 ? 0.82 : 0.68)
-          const prepared = cloneAndPrepare(entry.scene, 'color', targetSize, true)
-          const spread = main ? 1 : 0.92
-          const target = companionPositions[index % companionPositions.length].clone().multiplyScalar(spread)
+          const placement = placements[index % placements.length]
+          const prepared = cloneAndPrepare(entry.scene, 'color', placement.size, true)
+          const target = new THREE.Vector3(...placement.position)
           const startPosition = target.clone().multiplyScalar(0.08)
           startPosition.z = -1.2 - index * 0.08
           prepared.root.position.copy(startPosition)
           prepared.root.scale.setScalar(0.025)
-          prepared.root.rotation.set(0.2, -0.4 + index * 0.34, index % 2 === 0 ? -0.3 : 0.28)
+          prepared.root.rotation.set(...placement.rotation)
           stage.add(prepared.root)
           return {
             ...prepared,
@@ -297,8 +398,11 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           if (main) {
             const settled = Math.max(0, elapsed - 0.46)
             main.root.scale.setScalar(Math.max(0.025, mainEase))
-            main.root.position.y = Math.sin(settled * 1.65) * 0.018
-            main.root.rotation.y += settled > 0 ? 0.0021 : 0
+            main.root.position.set(0, 0, 0)
+            if (mainBaseRotation) {
+              main.root.rotation.copy(mainBaseRotation)
+              main.root.rotation.y += settled * 0.28
+            }
           }
 
           companions.forEach((companion) => {
@@ -307,15 +411,16 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
             const progress = Math.max(0, Math.min(1, (elapsed - delay) / duration))
             const burstEase = easeOutBack(progress, 2.7)
             const settled = Math.max(0, elapsed - delay - duration)
+            const pulseCycle = (settled + companion.index * 0.31) % 1.9
+            const pulse = pulseCycle < 0.34 ? Math.sin((pulseCycle / 0.34) * Math.PI) * 0.065 : 0
             companion.root.position.lerpVectors(companion.startPosition, companion.target, burstEase)
-            companion.root.position.y += Math.sin(settled * 3.2 + companion.index * 1.4) * 0.018
-            companion.root.scale.setScalar(Math.max(0.025, burstEase) * (1 + Math.sin(settled * 4.2 + companion.index) * 0.022))
+            companion.root.scale.setScalar(Math.max(0.025, burstEase) * (1 + pulse))
             companion.root.rotation.copy(companion.baseRotation)
           })
 
           const flash = Math.exp(-elapsed * 8)
-          colorLight.intensity = 21 + flash * 18
-          cyanLight.intensity = 16 + flash * 12
+          colorLight.intensity = 12 + flash * 8
+          cyanLight.intensity = 9 + flash * 6
           renderer.render(scene, camera)
           frame = window.requestAnimationFrame(render)
         }
@@ -356,14 +461,14 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
       data-finish={event.finish}
       role="dialog"
       aria-modal="true"
-      aria-label={`${event.message}. ${event.points} points.`}
+      aria-label={`${event.message}. ${event.points} ${pointsLabel}.`}
     >
       <div className="encourage-3d__backdrop" aria-hidden="true" />
       <button
         type="button"
         className="encourage-3d__close"
         onClick={close}
-        aria-label="Close encouragement"
+        aria-label={t('encourage.closeLabel', 'Close encouragement')}
         disabled={closing}
       >
         <X size={28} strokeWidth={2.2} />
@@ -371,11 +476,11 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
 
       <div className="encourage-3d__stage">
         <div ref={canvasHostRef} className="encourage-3d__canvas" aria-hidden="true" />
-        {failed ? <span className="encourage-3d__error">3D preview unavailable</span> : null}
+        {failed ? <span className="encourage-3d__error">{t('encourage.unavailableLabel', '3D effect unavailable')}</span> : null}
         <div className="encourage-3d__copy">
           {finishLabel ? <span className={`encourage-3d__finish encourage-3d__finish--${event.finish}`}>{finishLabel}</span> : null}
           <p>{event.message}</p>
-          <strong>+{event.points} PTS</strong>
+          <strong>+{event.points} {pointsLabel}</strong>
         </div>
       </div>
 
@@ -433,7 +538,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           position: absolute;
           inset: 0 0 104px;
           opacity: 0;
-          filter: saturate(1.34) contrast(1.06) drop-shadow(0 24px 30px rgba(0,0,0,.34));
+          filter: saturate(1.12) contrast(1.04) drop-shadow(0 24px 30px rgba(0,0,0,.34));
           transition: opacity 160ms ease-out;
         }
         .encourage-3d--ready .encourage-3d__canvas {
@@ -467,7 +572,6 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           font-size: clamp(19px, 4.7vw, 30px);
           font-weight: 700;
           line-height: 1.08;
-          text-transform: uppercase;
         }
         .encourage-3d__copy strong {
           color: #fff36b;

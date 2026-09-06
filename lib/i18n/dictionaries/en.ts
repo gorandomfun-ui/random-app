@@ -473,6 +473,11 @@ const enDictionary = {
   }  ,
   "encourage": {
     "roundLabel": "Round",
+    "goldLabel": "Gold",
+    "silverLabel": "Silver",
+    "pointsLabel": "pts",
+    "closeLabel": "Close encouragement",
+    "unavailableLabel": "3D effect unavailable",
     "messages": [
       "You pierced a brand-new layer.",
       "Another circuit of randomness cleared.",

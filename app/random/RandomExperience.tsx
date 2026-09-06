@@ -2258,6 +2258,16 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, addPoints, maybeSpawnDiamond, quizScore, score } = useScore()
   const { consent } = useCookieConsent()
+  const encourageMessages = useMemo(() => {
+    const fallback = FALLBACK_ENCOURAGE_MESSAGES
+    if (!dict || typeof dict !== 'object') return fallback
+    const dictionary = dict as Record<string, unknown>
+    const encourageBlock = dictionary.encourage as { messages?: unknown }
+    const candidate = encourageBlock?.messages
+    if (!Array.isArray(candidate)) return fallback
+    const cleaned = candidate.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    return cleaned.length ? cleaned : fallback
+  }, [dict])
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
@@ -2644,13 +2654,14 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     const next = createTestEncourage3DEvent(
       step,
       encourage3dSequenceRef.current,
+      encourageMessages,
       previousEncourage3dMainRef.current,
     )
     previousEncourage3dMainRef.current = next.main?.id ?? previousEncourage3dMainRef.current
     setMenuOpen(false)
     setShareOpen(false)
     setEncourage3dEvent(next)
-  }, [effectsTestMode])
+  }, [effectsTestMode, encourageMessages])
 
   const queueProductionEncourage3D = useCallback(() => {
     if (effectsTestMode) return
@@ -2662,6 +2673,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       now,
       draws,
       score,
+      messages: encourageMessages,
       previousMainId: previousEncourage3dMainRef.current,
     })
     encourage3dScheduleRef.current = next.state
@@ -2671,7 +2683,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     setMenuOpen(false)
     setShareOpen(false)
     setEncourage3dEvent(next.event)
-  }, [effectsTestMode, score])
+  }, [effectsTestMode, encourageMessages, score])
 
   const handleEncourage3DAward = useCallback((points: number) => {
     addPoints(points)
@@ -2751,17 +2763,6 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       wavePreparationAbortRef.current?.abort()
     }
   }, [])
-
-  const encourageMessages = useMemo(() => {
-    const fallback = FALLBACK_ENCOURAGE_MESSAGES
-    if (!dict || typeof dict !== 'object') return fallback
-    const dictionary = dict as Record<string, unknown>
-    const encourageBlock = dictionary.encourage as { messages?: unknown }
-    const candidate = encourageBlock?.messages
-    if (!Array.isArray(candidate)) return fallback
-    const cleaned = candidate.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-    return cleaned.length ? cleaned : fallback
-  }, [dict])
 
   useEffect(() => {
     encourageQueueRef.current = shuffleArray(encourageMessages)
