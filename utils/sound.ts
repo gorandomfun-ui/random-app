@@ -39,6 +39,100 @@ function soundProgress(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
 }
 
+export function playEncourage3D(
+  progress = 0,
+  finish: 'color' | 'silver' | 'gold' = 'color',
+) {
+  if (muted) return
+  const c = getAudioContext()
+  if (!c) return
+
+  const play = () => {
+    if (muted) return
+    const energy = soundProgress(progress)
+    const rarity = finish === 'gold' ? 1 : finish === 'silver' ? 0.52 : 0
+    const root = 392 + energy * 72 + rarity * 34
+    const bodyGain = 0.07 + energy * 0.018 + rarity * 0.012
+
+    env({
+      freq: root,
+      type: 'sine',
+      gain: bodyGain,
+      attack: 0.006,
+      decay: 0.075,
+      sustain: 0.035,
+      release: 0.16 + energy * 0.08,
+    })
+    setTimeout(() => env({
+      freq: root * 1.25,
+      type: 'triangle',
+      gain: bodyGain * 0.86,
+      attack: 0.004,
+      decay: 0.065,
+      sustain: 0.045,
+      release: 0.2 + energy * 0.1,
+    }), 72)
+    setTimeout(() => env({
+      freq: root * 1.5,
+      type: 'sine',
+      gain: bodyGain * 0.82,
+      attack: 0.004,
+      decay: 0.07,
+      sustain: 0.055,
+      release: 0.24 + energy * 0.12,
+    }), 148)
+
+    if (energy >= 0.28 || rarity > 0) {
+      setTimeout(() => env({
+        freq: root * 2,
+        type: 'triangle',
+        gain: 0.026 + energy * 0.02 + rarity * 0.008,
+        attack: 0.003,
+        decay: 0.055,
+        sustain: 0.04,
+        release: 0.3 + energy * 0.12,
+      }), 232)
+    }
+    if (energy >= 0.62 || finish !== 'color') {
+      setTimeout(() => env({
+        freq: root * 2.5,
+        type: 'sine',
+        gain: 0.019 + energy * 0.015 + rarity * 0.008,
+        attack: 0.002,
+        decay: 0.045,
+        sustain: 0.03,
+        release: 0.36 + rarity * 0.18,
+      }), 315)
+    }
+    if (finish === 'gold') {
+      setTimeout(() => env({
+        freq: root * 3,
+        type: 'sine',
+        gain: 0.032,
+        attack: 0.004,
+        decay: 0.08,
+        sustain: 0.09,
+        release: 0.56,
+      }), 420)
+      setTimeout(() => env({
+        freq: root * 4,
+        type: 'triangle',
+        gain: 0.018,
+        attack: 0.003,
+        decay: 0.07,
+        sustain: 0.06,
+        release: 0.62,
+      }), 505)
+    }
+  }
+
+  if (c.state === 'suspended') {
+    void c.resume().then(play).catch(() => undefined)
+  } else {
+    play()
+  }
+}
+
 function soundFinalPush(progress: number): number {
   return soundProgress((progress - 2) / 0.5)
 }

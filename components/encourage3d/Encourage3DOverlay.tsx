@@ -8,8 +8,10 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 import { useI18n } from '@/providers/I18nProvider'
+import { playEncourage3D } from '@/utils/sound'
 import type {
   Encourage3DAnimation,
+  Encourage3DAsset,
   Encourage3DEvent,
   Encourage3DFinish,
 } from '@/lib/encourage3d/catalog'
@@ -23,13 +25,15 @@ type Props = {
 
 type LoadedModel = {
   root: THREE.Group
+  flat: boolean
+  ownedGeometries: THREE.BufferGeometry[]
 }
 
-type ModelCacheEntry = {
-  scene: THREE.Group
-}
+type AssetCacheEntry =
+  | { kind: 'model'; scene: THREE.Group }
+  | { kind: 'image'; texture: THREE.Texture; aspect: number }
 
-const modelCache = new Map<string, Promise<ModelCacheEntry>>()
+const assetCache = new Map<string, Promise<AssetCacheEntry>>()
 
 type CompanionPlacement = {
   position: readonly [number, number, number]
@@ -116,24 +120,104 @@ function easeOutBack(value: number, overshoot = 1.70158): number {
   return 1 + c3 * Math.pow(value - 1, 3) + c1 * Math.pow(value - 1, 2)
 }
 
-function loadModel(src: string): Promise<ModelCacheEntry> {
-  const cached = modelCache.get(src)
+function loadImageTexture(src: string): Promise<Extract<AssetCacheEntry, { kind: 'image' }>> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => {
+      try {
+        const scanCanvas = document.createElement('canvas')
+        scanCanvas.width = image.naturalWidth
+        scanCanvas.height = image.naturalHeight
+        const scanContext = scanCanvas.getContext('2d', { willReadFrequently: true })
+        if (!scanContext) throw new Error('Canvas 2D context unavailable')
+        scanContext.drawImage(image, 0, 0)
+        const pixels = scanContext.getImageData(0, 0, scanCanvas.width, scanCanvas.height).data
+        let minX = scanCanvas.width
+        let minY = scanCanvas.height
+        let maxX = -1
+        let maxY = -1
+        const stride = 2
+        for (let y = 0; y < scanCanvas.height; y += stride) {
+          for (let x = 0; x < scanCanvas.width; x += stride) {
+            if (pixels[(y * scanCanvas.width + x) * 4 + 3] < 8) continue
+            minX = Math.min(minX, x)
+            minY = Math.min(minY, y)
+            maxX = Math.max(maxX, x)
+            maxY = Math.max(maxY, y)
+          }
+        }
+
+        if (maxX < minX || maxY < minY) throw new Error(`Empty transparent image: ${src}`)
+        const visibleWidth = maxX - minX + 1
+        const visibleHeight = maxY - minY + 1
+        const padding = Math.ceil(Math.max(visibleWidth, visibleHeight) * 0.025)
+        const sourceX = Math.max(0, minX - padding)
+        const sourceY = Math.max(0, minY - padding)
+        const sourceWidth = Math.min(scanCanvas.width - sourceX, visibleWidth + padding * 2)
+        const sourceHeight = Math.min(scanCanvas.height - sourceY, visibleHeight + padding * 2)
+        const scale = Math.min(1, 1024 / Math.max(sourceWidth, sourceHeight))
+        const textureCanvas = document.createElement('canvas')
+        textureCanvas.width = Math.max(1, Math.round(sourceWidth * scale))
+        textureCanvas.height = Math.max(1, Math.round(sourceHeight * scale))
+        const textureContext = textureCanvas.getContext('2d')
+        if (!textureContext) throw new Error('Canvas 2D context unavailable')
+        textureContext.drawImage(
+          image,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          textureCanvas.width,
+          textureCanvas.height,
+        )
+
+        scanCanvas.width = 1
+        scanCanvas.height = 1
+        const texture = new THREE.CanvasTexture(textureCanvas)
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.minFilter = THREE.LinearMipmapLinearFilter
+        texture.magFilter = THREE.LinearFilter
+        texture.generateMipmaps = true
+        texture.needsUpdate = true
+        resolve({ kind: 'image', texture, aspect: textureCanvas.width / textureCanvas.height })
+      } catch (error) {
+        reject(error)
+      }
+    }
+    image.onerror = () => reject(new Error(`Unable to load image: ${src}`))
+    image.src = src
+  })
+}
+
+function loadAsset(asset: Encourage3DAsset): Promise<AssetCacheEntry> {
+  const cached = assetCache.get(asset.src)
   if (cached) return cached
 
-  const pending = new Promise<ModelCacheEntry>((resolve, reject) => {
-    const loader = new GLTFLoader()
-    loader.setMeshoptDecoder(MeshoptDecoder)
-    loader.load(
-      src,
-      (gltf) => resolve({ scene: gltf.scene }),
-      undefined,
-      reject,
-    )
-  })
+  const pending: Promise<AssetCacheEntry> = asset.kind === 'image'
+    ? loadImageTexture(asset.src)
+    : new Promise((resolve, reject) => {
+        const loader = new GLTFLoader()
+        loader.setMeshoptDecoder(MeshoptDecoder)
+        loader.load(
+          asset.src,
+          (gltf) => resolve({ kind: 'model', scene: gltf.scene }),
+          undefined,
+          reject,
+        )
+      })
 
-  modelCache.set(src, pending)
-  void pending.catch(() => modelCache.delete(src))
+  assetCache.set(asset.src, pending)
+  void pending.catch(() => assetCache.delete(asset.src))
   return pending
+}
+
+export async function preloadEncourage3DEvent(event: Encourage3DEvent): Promise<void> {
+  const assets = [event.main, ...event.companions].filter((asset): asset is Encourage3DAsset => Boolean(asset))
+  const uniqueAssets = [...new Map(assets.map((asset) => [asset.src, asset])).values()]
+  await Promise.all(uniqueAssets.map(loadAsset))
 }
 
 function intensifyTextureColors(material: THREE.MeshPhysicalMaterial, saturation: number) {
@@ -228,7 +312,42 @@ function cloneAndPrepare(
 
   const root = new THREE.Group()
   root.add(normalized)
-  return { root }
+  return { root, flat: false, ownedGeometries: [] }
+}
+
+function prepareImage(
+  entry: Extract<AssetCacheEntry, { kind: 'image' }>,
+  targetSize: number,
+): LoadedModel {
+  const geometry = new THREE.PlaneGeometry(entry.aspect, 1)
+  const material = new THREE.MeshBasicMaterial({
+    map: entry.texture,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 1,
+    alphaTest: 0.015,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  const normalized = new THREE.Group()
+  normalized.scale.setScalar(targetSize / Math.max(entry.aspect, 1))
+  normalized.add(mesh)
+  const root = new THREE.Group()
+  root.add(normalized)
+  return { root, flat: true, ownedGeometries: [geometry] }
+}
+
+function prepareAsset(
+  entry: AssetCacheEntry,
+  finish: Encourage3DFinish,
+  targetSize: number,
+  companion = false,
+): LoadedModel {
+  return entry.kind === 'model'
+    ? cloneAndPrepare(entry.scene, finish, targetSize, companion)
+    : prepareImage(entry, targetSize)
 }
 
 function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group) {
@@ -245,10 +364,16 @@ function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group
   }
 }
 
+function initialFlatMainTransform(animation: Encourage3DAnimation, root: THREE.Group) {
+  const direction = animation === 'swing' || animation === 'impact' ? -1 : 1
+  root.rotation.set(0.02 * direction, 0.08 * direction, animation === 'orbit' ? 0.08 : -0.035 * direction)
+}
+
 export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onComplete }: Props) {
   const { t } = useI18n()
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
   const closeStartedRef = useRef(false)
+  const soundPlayedRef = useRef<string | null>(null)
   const [ready, setReady] = useState(false)
   const [closing, setClosing] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -294,6 +419,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
     let renderer: THREE.WebGLRenderer | null = null
     let environment: THREE.Texture | null = null
     const disposables: THREE.Material[] = []
+    const disposableGeometries: THREE.BufferGeometry[] = []
 
     const start = async () => {
       try {
@@ -301,8 +427,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           event.companions[index % event.companions.length]
         ))
         const [mainEntry, allCompanionEntries] = await Promise.all([
-          event.main ? loadModel(event.main.src) : Promise.resolve(null),
-          Promise.all(companionSelections.map((entry) => loadModel(entry.src))),
+          event.main ? loadAsset(event.main) : Promise.resolve(null),
+          Promise.all(companionSelections.map(loadAsset)),
         ])
         if (disposed) return
 
@@ -340,12 +466,14 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         const companionEntries = mainEntry ? allCompanionEntries : allCompanionEntries.slice(1)
         const centralEntry = mainEntry ?? featuredCompanionEntry
         const main = centralEntry
-          ? cloneAndPrepare(centralEntry.scene, mainEntry ? event.finish : 'color', mainEntry ? 2.38 : 2.08, !mainEntry)
+          ? prepareAsset(centralEntry, mainEntry ? event.finish : 'color', mainEntry ? 2.38 : 2.08, !mainEntry)
           : null
         let mainBaseRotation: THREE.Euler | null = null
         if (main) {
-          initialMainTransform(event.animation, main.root)
+          if (main.flat) initialFlatMainTransform(event.animation, main.root)
+          else initialMainTransform(event.animation, main.root)
           mainBaseRotation = main.root.rotation.clone()
+          disposableGeometries.push(...main.ownedGeometries)
           main.root.scale.setScalar(0.025)
           stage.add(main.root)
         }
@@ -353,13 +481,14 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         const placements = layoutFor(companionEntries.length, event.id)
         const companions = companionEntries.map((entry, index) => {
           const placement = placements[index % placements.length]
-          const prepared = cloneAndPrepare(entry.scene, 'color', placement.size, true)
+          const prepared = prepareAsset(entry, 'color', placement.size, true)
           const target = new THREE.Vector3(...placement.position)
           const startPosition = target.clone().multiplyScalar(0.08)
           startPosition.z = -1.2 - index * 0.08
           prepared.root.position.copy(startPosition)
           prepared.root.scale.setScalar(0.025)
           prepared.root.rotation.set(...placement.rotation)
+          disposableGeometries.push(...prepared.ownedGeometries)
           stage.add(prepared.root)
           return {
             ...prepared,
@@ -402,7 +531,12 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
             main.root.position.set(0, 0, 0)
             if (mainBaseRotation) {
               main.root.rotation.copy(mainBaseRotation)
-              main.root.rotation.y += settled * 0.28
+              if (main.flat) {
+                main.root.rotation.y += Math.sin(settled * 0.8) * 0.08
+                main.root.rotation.z += settled * 0.075
+              } else {
+                main.root.rotation.y += settled * 0.28
+              }
             }
           }
 
@@ -426,13 +560,20 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           frame = window.requestAnimationFrame(render)
         }
 
+        if (soundPlayedRef.current !== event.id) {
+          soundPlayedRef.current = event.id
+          playEncourage3D(event.intensity, event.finish)
+        }
         setReady(true)
         frame = window.requestAnimationFrame(render)
 
         return () => observer.disconnect()
       } catch (error) {
         console.error('[Encourage3D] Unable to render the preview.', error)
-        if (!disposed) setFailed(true)
+        if (!disposed) {
+          setFailed(true)
+          setReady(true)
+        }
         return undefined
       }
     }
@@ -447,6 +588,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
       disconnect?.()
       window.cancelAnimationFrame(frame)
       disposables.forEach((material) => material.dispose())
+      disposableGeometries.forEach((geometry) => geometry.dispose())
       environment?.dispose()
       if (renderer) {
         renderer.dispose()
@@ -502,6 +644,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           overflow: hidden;
           color: #fffbea;
           opacity: 0;
+        }
+        .encourage-3d--ready {
           animation: encourage-overlay-in 240ms ease-out forwards;
         }
         .encourage-3d__backdrop {
@@ -527,6 +671,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           background: rgba(0, 0, 0, 0.34);
           opacity: 0;
           transform: scale(0.76);
+        }
+        .encourage-3d--ready .encourage-3d__close {
           animation: encourage-copy-in 380ms 240ms cubic-bezier(.18,.9,.28,1.18) forwards;
         }
         .encourage-3d__stage {
@@ -565,6 +711,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           text-align: center;
           opacity: 0;
           transform: translate3d(0, 14px, 0);
+        }
+        .encourage-3d--ready .encourage-3d__copy {
           animation: encourage-copy-in 360ms 360ms cubic-bezier(.18,.9,.28,1.08) forwards;
         }
         .encourage-3d__copy p {

@@ -52,8 +52,10 @@ import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/
 import {
   advanceProductionEncourage3DSchedule,
   createEncourage3DSchedule,
+  createProductionEncourage3DEvent,
   createTestEncourage3DEvent,
   parseEncourage3DSchedule,
+  shouldPreloadProductionEncourage3D,
   type Encourage3DEvent,
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
@@ -2302,8 +2304,12 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const [burgerGlitch, setBurgerGlitch] = useState(false)
   const [burgerPointPulse, setBurgerPointPulse] = useState(false)
   const [encourage3dEvent, setEncourage3dEvent] = useState<Encourage3DEvent | null>(null)
+  const [encourage3dPending, setEncourage3dPending] = useState(false)
   const encourage3dSequenceRef = useRef(0)
   const encourage3dScheduleRef = useRef<Encourage3DScheduleState | null>(null)
+  const preparedEncourage3dEventRef = useRef<Encourage3DEvent | null>(null)
+  const preparedEncourage3dPromiseRef = useRef<Promise<void> | null>(null)
+  const encourage3dRevealGenerationRef = useRef(0)
   const previousEncourage3dMainRef = useRef<string | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement | null>(null)
   const [heartGlitch, setHeartGlitch] = useState(false)
@@ -2649,6 +2655,28 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     burgerGlitchTimeoutRef.current = setTimeout(() => setBurgerGlitch(false), 380)
   }, [])
 
+  const preloadEncourage3D = useCallback(async (event: Encourage3DEvent) => {
+    const overlayModule = await import('@/components/encourage3d/Encourage3DOverlay')
+    await overlayModule.preloadEncourage3DEvent(event)
+  }, [])
+
+  const revealEncourage3D = useCallback((event: Encourage3DEvent, preload?: Promise<void> | null) => {
+    const generation = encourage3dRevealGenerationRef.current + 1
+    encourage3dRevealGenerationRef.current = generation
+    setEncourage3dPending(true)
+    const pending = preload ?? preloadEncourage3D(event)
+    void pending.then(() => {
+      if (encourage3dRevealGenerationRef.current !== generation) return
+      setMenuOpen(false)
+      setShareOpen(false)
+      setEncourage3dEvent(event)
+      setEncourage3dPending(false)
+    }).catch((error) => {
+      console.error('[Encourage3D] Unable to preload the selected composition.', error)
+      if (encourage3dRevealGenerationRef.current === generation) setEncourage3dPending(false)
+    })
+  }, [preloadEncourage3D])
+
   const queueTestEncourage3D = useCallback((step: number) => {
     if (!effectsTestMode) return
     encourage3dSequenceRef.current += 1
@@ -2659,10 +2687,8 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       previousEncourage3dMainRef.current,
     )
     previousEncourage3dMainRef.current = next.main?.id ?? previousEncourage3dMainRef.current
-    setMenuOpen(false)
-    setShareOpen(false)
-    setEncourage3dEvent(next)
-  }, [effectsTestMode, encourageMessages])
+    revealEncourage3D(next)
+  }, [effectsTestMode, encourageMessages, revealEncourage3D])
 
   const queueProductionEncourage3D = useCallback(() => {
     if (effectsTestMode) return
@@ -2670,21 +2696,42 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     const schedule = encourage3dScheduleRef.current
       ?? createEncourage3DSchedule(now, progressionDrawsRef.current)
     const draws = schedule.actions + 1
-    const next = advanceProductionEncourage3DSchedule(schedule, {
+    const context = {
       now,
       draws,
       score,
       messages: encourageMessages,
       previousMainId: previousEncourage3dMainRef.current,
-    })
+    }
+
+    if (
+      !preparedEncourage3dEventRef.current
+      && shouldPreloadProductionEncourage3D(schedule, draws)
+    ) {
+      const prepared = createProductionEncourage3DEvent(context)
+      const preload = preloadEncourage3D(prepared)
+      preparedEncourage3dEventRef.current = prepared
+      preparedEncourage3dPromiseRef.current = preload
+      void preload.catch((error) => {
+        console.error('[Encourage3D] Unable to prepare the next composition.', error)
+        if (preparedEncourage3dEventRef.current?.id === prepared.id) {
+          preparedEncourage3dEventRef.current = null
+          preparedEncourage3dPromiseRef.current = null
+        }
+      })
+    }
+
+    const prepared = preparedEncourage3dEventRef.current
+    const preparedPromise = preparedEncourage3dPromiseRef.current
+    const next = advanceProductionEncourage3DSchedule(schedule, context, Math.random, prepared)
     encourage3dScheduleRef.current = next.state
     if (!next.event) return
 
+    preparedEncourage3dEventRef.current = null
+    preparedEncourage3dPromiseRef.current = null
     previousEncourage3dMainRef.current = next.event.main?.id ?? previousEncourage3dMainRef.current
-    setMenuOpen(false)
-    setShareOpen(false)
-    setEncourage3dEvent(next.event)
-  }, [effectsTestMode, encourageMessages, score])
+    revealEncourage3D(next.event, prepared?.id === next.event.id ? preparedPromise : null)
+  }, [effectsTestMode, encourageMessages, preloadEncourage3D, revealEncourage3D, score])
 
   const handleEncourage3DAward = useCallback((points: number) => {
     addPoints(points)
@@ -2696,6 +2743,10 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
 
   const handleEncourage3DComplete = useCallback(() => {
     setEncourage3dEvent(null)
+  }, [])
+
+  useEffect(() => () => {
+    encourage3dRevealGenerationRef.current += 1
   }, [])
 
   const triggerHeartGlitch = useCallback(() => {
@@ -3969,8 +4020,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
   const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
-  const controlsDisabled = transitionLocked || Boolean(encourage3dEvent) || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
-  const randomAgainDisabled = !viewItem || transitionLocked || Boolean(encourage3dEvent)
+  const controlsDisabled = transitionLocked || encourage3dPending || Boolean(encourage3dEvent) || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
+  const randomAgainDisabled = !viewItem || transitionLocked || encourage3dPending || Boolean(encourage3dEvent)
   const waveEligible = useMemo(() => {
     if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return false
     return hasWaveSignal(createWaveHint(viewItem))
