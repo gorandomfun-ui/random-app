@@ -120,6 +120,22 @@ const COMPANIONS: Encourage3DCompanion[] = [
     points: 1,
     maxInstances: 4,
   },
+  {
+    id: 'flash',
+    src: '/encourage/runtime/default/companions/flash__companion__r1__p1__solo-attach__multi-4.glb',
+    kind: 'model',
+    rank: 1,
+    points: 1,
+    maxInstances: 4,
+  },
+  {
+    id: 'shine',
+    src: '/encourage/runtime/default/companions/shine__companion__r1__p1__solo-attach__multi-1.glb',
+    kind: 'model',
+    rank: 1,
+    points: 1,
+    maxInstances: 1,
+  },
 ]
 
 const ANIMATIONS: Encourage3DAnimation[] = ['burst', 'rise', 'swing', 'orbit', 'impact']
@@ -142,7 +158,14 @@ function pickMessage(messages: readonly string[], random: () => number): string 
 }
 
 function shuffledCompanions(random: () => number): Encourage3DCompanion[] {
-  return random() < 0.5 ? COMPANIONS : [...COMPANIONS].reverse()
+  const companions = [...COMPANIONS]
+  for (let index = companions.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1))
+    const current = companions[index]
+    companions[index] = companions[swapIndex]
+    companions[swapIndex] = current
+  }
+  return companions
 }
 
 function clamp01(value: number): number {
@@ -173,7 +196,7 @@ function pickProductionMain(
   random: () => number,
 ): Encourage3DAsset {
   const rank = unlockedRank(context.draws, context.score)
-  let eligible = MAIN_ASSETS.filter((asset) => asset.rank <= rank)
+  let eligible = MAIN_ASSETS.filter((asset) => asset.kind === 'model' && asset.rank <= rank)
 
   // The crown remains an exceptional late-progression reward.
   if (finish === 'gold' && rank >= 5 && random() < 0.38) {
@@ -214,7 +237,7 @@ export function createTestEncourage3DEvent(
 ): Encourage3DEvent {
   const testRank = step >= 23 ? 5 : step >= 16 ? 4 : step >= 8 ? 3 : step >= 3 ? 2 : 1
   const companionOnly = sequence > 0 && sequence % 6 === 0
-  const eligible = MAIN_ASSETS.filter((asset) => asset.rank <= testRank)
+  const eligible = MAIN_ASSETS.filter((asset) => asset.kind === 'model' && asset.rank <= testRank)
   let main = companionOnly ? null : eligible[sequence % eligible.length]
 
   if (main && eligible.length > 1 && main.id === previousMainId) {
