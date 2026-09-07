@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { X } from 'lucide-react'
 import * as THREE from 'three'
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 import { useI18n } from '@/providers/I18nProvider'
 import { playEncourage3D } from '@/utils/sound'
 import type {
-  Encourage3DAnimation,
   Encourage3DAsset,
   Encourage3DEvent,
   Encourage3DFinish,
@@ -30,6 +29,9 @@ type LoadedModel = {
 type AssetCacheEntry = { scene: THREE.Group }
 
 const assetCache = new Map<string, Promise<AssetCacheEntry>>()
+const MAIN_TARGET_SIZE = 2.62
+const MAIN_YAW = THREE.MathUtils.degToRad(45)
+const MAIN_PITCH = THREE.MathUtils.degToRad(20)
 
 type CompanionPlacement = {
   position: readonly [number, number, number]
@@ -160,35 +162,120 @@ export async function preloadEncourage3DEvent(event: Encourage3DEvent): Promise<
   await Promise.all(uniqueAssets.map(loadAsset))
 }
 
-function intensifyTextureColors(material: THREE.MeshPhysicalMaterial, saturation: number) {
+function intensifyTextureColors(material: THREE.MeshPhysicalMaterial, saturation: number, contrast: number) {
   material.onBeforeCompile = (shader) => {
+    shader.vertexShader = `varying vec3 encourageObjectPosition;\n${shader.vertexShader}`.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      encourageObjectPosition = position;`,
+    )
+    shader.fragmentShader = `varying vec3 encourageObjectPosition;\n${shader.fragmentShader}`
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <map_fragment>',
       `#include <map_fragment>
       float encourageLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-      diffuseColor.rgb = clamp(mix(vec3(encourageLuma), diffuseColor.rgb, ${saturation.toFixed(2)}), 0.0, 1.0);`,
+      vec3 encourageSaturated = mix(vec3(encourageLuma), diffuseColor.rgb, ${saturation.toFixed(2)});
+      encourageSaturated = clamp((encourageSaturated - 0.5) * ${contrast.toFixed(2)} + 0.52, 0.0, 1.0);
+      float encourageBand = clamp(
+        encourageObjectPosition.x * 0.5 + encourageObjectPosition.y * 0.16 + 0.5,
+        0.0,
+        1.0
+      );
+      vec3 encourageGradient = mix(
+        vec3(1.0, 0.28, 0.015),
+        vec3(1.0, 0.015, 0.48),
+        smoothstep(0.03, 0.55, encourageBand)
+      );
+      encourageGradient = mix(
+        encourageGradient,
+        vec3(0.025, 0.24, 1.0),
+        smoothstep(0.52, 0.98, encourageBand)
+      );
+      float encourageTextureWeight = 0.48 + smoothstep(0.22, 0.72, encourageLuma) * 0.2;
+      diffuseColor.rgb = mix(encourageGradient, encourageSaturated, encourageTextureWeight);`,
     )
   }
-  material.customProgramCacheKey = () => `encourage-color-${saturation.toFixed(2)}`
+  material.customProgramCacheKey = () => `encourage-color-${saturation.toFixed(2)}-${contrast.toFixed(2)}`
+}
+
+function createStudioEnvironment(): THREE.Scene {
+  const studio = new THREE.Scene()
+  const geometry = new THREE.BoxGeometry(1, 1, 1)
+  const room = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#30263b'),
+      roughness: 1,
+      metalness: 0,
+      side: THREE.BackSide,
+    }),
+  )
+  room.scale.setScalar(12)
+  studio.add(room)
+
+  const addPanel = (
+    color: THREE.ColorRepresentation,
+    intensity: number,
+    position: readonly [number, number, number],
+    scale: readonly [number, number, number],
+    rotation: readonly [number, number, number] = [0, 0, 0],
+  ) => {
+    const panel = new THREE.Mesh(
+      geometry,
+      new THREE.MeshLambertMaterial({
+        color: 0x000000,
+        emissive: new THREE.Color(color),
+        emissiveIntensity: intensity,
+        side: THREE.DoubleSide,
+      }),
+    )
+    panel.position.set(...position)
+    panel.scale.set(...scale)
+    panel.rotation.set(...rotation)
+    studio.add(panel)
+  }
+
+  addPanel(0xffffff, 9, [-4.8, 1.4, 4.5], [0.12, 3.8, 1.2], [0, -0.18, 0])
+  addPanel(0xffffff, 8, [0.6, 4.8, 2.2], [3.2, 0.1, 1.6])
+  addPanel(0xffffff, 7, [4.7, -0.3, 2.8], [0.12, 2.6, 1.4], [0, 0.2, 0])
+  addPanel(0xffd7f4, 5, [3.8, 2.1, -2.6], [0.12, 1.7, 2.3])
+  addPanel(0x54e9ff, 4.5, [-4.1, -2.2, -1.4], [0.12, 1.5, 2.8])
+  addPanel(0xffffff, 6, [-0.8, -4.7, -2], [2.8, 0.1, 1.8])
+  return studio
+}
+
+function disposeSceneResources(scene: THREE.Scene) {
+  const geometries = new Set<THREE.BufferGeometry>()
+  const materials = new Set<THREE.Material>()
+  scene.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return
+    geometries.add(child.geometry)
+    const childMaterials = Array.isArray(child.material) ? child.material : [child.material]
+    childMaterials.forEach((material) => materials.add(material))
+  })
+  geometries.forEach((geometry) => geometry.dispose())
+  materials.forEach((material) => material.dispose())
 }
 
 function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, companion: boolean): THREE.Material {
   const original = source as THREE.MeshStandardMaterial
   const common = {
-    normalMap: original.normalMap ?? null,
-    normalScale: original.normalScale?.clone() ?? new THREE.Vector2(1, 1),
+    normalMap: null,
     side: THREE.DoubleSide,
-    envMapIntensity: companion ? 2.8 : 3.15,
+    envMapIntensity: companion ? 2.25 : 2.6,
   }
 
   if (finish === 'gold' || finish === 'silver') {
     return new THREE.MeshPhysicalMaterial({
       ...common,
-      color: finish === 'gold' ? new THREE.Color('#ffc229') : new THREE.Color('#dce8f5'),
-      metalness: 0.86,
-      roughness: finish === 'gold' ? 0.12 : 0.1,
+      color: finish === 'gold' ? new THREE.Color('#ffb000') : new THREE.Color('#dcecff'),
+      metalness: 0.78,
+      roughness: finish === 'gold' ? 0.09 : 0.075,
       clearcoat: 1,
       clearcoatRoughness: 0.025,
+      specularIntensity: 1,
+      iridescence: 0.12,
+      iridescenceIOR: 1.3,
     })
   }
 
@@ -196,24 +283,25 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
     ...common,
     color: original.color?.clone() ?? new THREE.Color('#ffffff'),
     map: original.map ?? null,
-    metalness: companion ? 0.38 : 0.44,
-    roughness: companion ? 0.055 : 0.045,
-    transmission: companion ? 0.1 : 0.14,
-    thickness: companion ? 0.32 : 0.44,
-    attenuationDistance: companion ? 0.72 : 0.62,
+    metalness: 0.04,
+    roughness: companion ? 0.09 : 0.075,
+    transmission: 0,
+    thickness: companion ? 0.2 : 0.28,
+    attenuationDistance: companion ? 0.82 : 0.74,
     attenuationColor: new THREE.Color('#ffffff'),
-    ior: 1.48,
-    iridescence: companion ? 0.34 : 0.46,
-    iridescenceIOR: 1.32,
-    iridescenceThicknessRange: [110, 390] as [number, number],
+    ior: 1.52,
+    dispersion: companion ? 0.012 : 0.022,
+    iridescence: companion ? 0.08 : 0.12,
+    iridescenceIOR: 1.3,
+    iridescenceThicknessRange: [120, 300] as [number, number],
     clearcoat: 1,
     clearcoatRoughness: 0.025,
     specularIntensity: 1,
     specularColor: new THREE.Color('#ffffff'),
     transparent: true,
-    opacity: companion ? 0.97 : 0.95,
+    opacity: companion ? 0.95 : 0.93,
   })
-  intensifyTextureColors(material, companion ? 2.05 : 2.2)
+  intensifyTextureColors(material, companion ? 1.32 : 1.4, 1.01)
   return material
 }
 
@@ -262,20 +350,6 @@ function prepareAsset(
   companion = false,
 ): LoadedModel {
   return cloneAndPrepare(entry.scene, finish, targetSize, companion)
-}
-
-function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group) {
-  if (animation === 'rise') {
-    root.rotation.set(0.11, -0.3, -0.1)
-  } else if (animation === 'swing') {
-    root.rotation.set(0.1, -0.52, -0.22)
-  } else if (animation === 'orbit') {
-    root.rotation.set(-0.1, 0.72, 0.16)
-  } else if (animation === 'impact') {
-    root.rotation.set(0.18, 0.18, 0.08)
-  } else {
-    root.rotation.set(0.12, -0.68, -0.06)
-  }
 }
 
 export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onComplete }: Props) {
@@ -346,23 +420,40 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         renderer.setClearColor(0x000000, 0)
         renderer.outputColorSpace = THREE.SRGBColorSpace
         renderer.toneMapping = THREE.NeutralToneMapping
-        renderer.toneMappingExposure = 1.12
+        renderer.toneMappingExposure = 1.06
         const isTouch = window.matchMedia('(pointer: coarse)').matches
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch ? 1.15 : 1.5))
         host.appendChild(renderer.domElement)
 
         const pmrem = new THREE.PMREMGenerator(renderer)
-        environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-        scene.environment = environment
-        pmrem.dispose()
+        const studioEnvironment = createStudioEnvironment()
+        try {
+          environment = pmrem.fromScene(studioEnvironment, 0.025).texture
+          scene.environment = environment
+        } finally {
+          disposeSceneResources(studioEnvironment)
+          pmrem.dispose()
+        }
 
-        const keyLight = new THREE.DirectionalLight(0xffffff, 3.6)
-        keyLight.position.set(-3.8, 5.2, 6)
-        scene.add(keyLight)
-        const colorLight = new THREE.PointLight(0xff149e, 12, 12)
+        RectAreaLightUniformsLib.init()
+        const keyPanel = new THREE.RectAreaLight(0xffffff, 7, 2.2, 5.2)
+        keyPanel.position.set(-3.8, 3.8, 5.2)
+        keyPanel.lookAt(0, 0, 0)
+        scene.add(keyPanel)
+        const fillPanel = new THREE.RectAreaLight(0xffd9f5, 4.5, 3.2, 1.3)
+        fillPanel.position.set(4, 1.4, 4.6)
+        fillPanel.lookAt(0, 0, 0)
+        scene.add(fillPanel)
+        const rimPanel = new THREE.RectAreaLight(0x66edff, 3.8, 1.4, 3.4)
+        rimPanel.position.set(-3.8, -2.4, 3.2)
+        rimPanel.lookAt(0, 0, 0)
+        scene.add(rimPanel)
+        scene.add(new THREE.AmbientLight(0xffffff, 0.42))
+
+        const colorLight = new THREE.PointLight(0xff149e, 4.2, 12)
         colorLight.position.set(3, 1.4, 4)
         scene.add(colorLight)
-        const cyanLight = new THREE.PointLight(0x00cfff, 9, 10)
+        const cyanLight = new THREE.PointLight(0x00dfff, 3.6, 10)
         cyanLight.position.set(-3.2, -1.8, 3.2)
         scene.add(cyanLight)
 
@@ -372,14 +463,19 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
         const companionEntries = mainEntry ? allCompanionEntries : allCompanionEntries.slice(1)
         const centralEntry = mainEntry ?? featuredCompanionEntry
         const main = centralEntry
-          ? prepareAsset(centralEntry, mainEntry ? event.finish : 'color', mainEntry ? 2.38 : 2.08, !mainEntry)
+          ? prepareAsset(centralEntry, mainEntry ? event.finish : 'color', mainEntry ? MAIN_TARGET_SIZE : 2.29, !mainEntry)
           : null
-        let mainBaseRotation: THREE.Euler | null = null
+        let mainTiltPivot: THREE.Group | null = null
+        let mainSpinPivot: THREE.Group | null = null
         if (main) {
-          initialMainTransform(event.animation, main.root)
-          mainBaseRotation = main.root.rotation.clone()
+          mainTiltPivot = new THREE.Group()
+          mainTiltPivot.rotation.order = 'YXZ'
+          mainTiltPivot.rotation.set(MAIN_PITCH, MAIN_YAW, 0)
+          mainSpinPivot = new THREE.Group()
+          mainSpinPivot.add(main.root)
+          mainTiltPivot.add(mainSpinPivot)
           main.root.scale.setScalar(0.025)
-          stage.add(main.root)
+          stage.add(mainTiltPivot)
         }
 
         const placements = layoutFor(companionEntries.length, event.id)
@@ -387,13 +483,18 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           const placement = placements[index % placements.length]
           const prepared = prepareAsset(entry, 'color', placement.size, true)
           const target = new THREE.Vector3(...placement.position)
+          const isShine = companionSelections[index]?.id === 'shine'
+          const radialRotation = isShine
+            ? Math.atan2(-target.y, -target.x) - Math.PI / 2
+            : 0
           prepared.root.position.copy(target)
           prepared.root.scale.setScalar(0.025)
-          prepared.root.rotation.set(0, 0, 0)
+          prepared.root.rotation.set(0, 0, radialRotation)
           stage.add(prepared.root)
           return {
             ...prepared,
             baseRotation: prepared.root.rotation.clone(),
+            isShine,
             target,
             index,
           }
@@ -429,10 +530,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
             const settled = Math.max(0, elapsed - 0.46)
             main.root.scale.setScalar(Math.max(0.025, mainEase))
             main.root.position.set(0, 0, 0)
-            if (mainBaseRotation) {
-              main.root.rotation.copy(mainBaseRotation)
-              main.root.rotation.y += settled * 0.28
-            }
+            if (mainTiltPivot) mainTiltPivot.position.set(0, 0, 0)
+            if (mainSpinPivot) mainSpinPivot.rotation.y = settled * 0.28
           }
 
           companions.forEach((companion) => {
@@ -443,14 +542,23 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
             const settled = Math.max(0, elapsed - delay - duration)
             const pulseCycle = (settled + companion.index * 0.23) % 1.6
             const pulse = pulseCycle < 0.16 ? Math.sin((pulseCycle / 0.16) * Math.PI) * 0.085 : 0
+            const entranceScale = Math.max(0.025, burstEase)
             companion.root.position.copy(companion.target)
-            companion.root.scale.setScalar(Math.max(0.025, burstEase) * (1 + pulse))
+            if (companion.isShine) {
+              const lengthCycle = (settled + companion.index * 0.19) % 1.45
+              const lengthPulse = lengthCycle < 0.18
+                ? Math.sin((lengthCycle / 0.18) * Math.PI) * 0.16
+                : 0
+              companion.root.scale.set(entranceScale, entranceScale * (1 + lengthPulse), entranceScale)
+            } else {
+              companion.root.scale.setScalar(entranceScale * (1 + pulse))
+            }
             companion.root.rotation.copy(companion.baseRotation)
           })
 
           const flash = Math.exp(-elapsed * 8)
-          colorLight.intensity = 12 + flash * 8
-          cyanLight.intensity = 9 + flash * 6
+          colorLight.intensity = 4.2 + flash * 3.2
+          cyanLight.intensity = 3.6 + flash * 2.8
           renderer.render(scene, camera)
           frame = window.requestAnimationFrame(render)
         }
