@@ -95,6 +95,8 @@ const enDictionary = {
   },
   "video": {
     "fullscreen": "Fullscreen",
+    "mute": "Mute video",
+    "unmute": "Unmute video",
     "openExternally": "Open in app"
   },
   "shuffle": {

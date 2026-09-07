@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { RotateCcw, X } from 'lucide-react'
+import { RotateCcw, Volume2, VolumeX, X } from 'lucide-react'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import { useCookieConsent } from '@/components/CookieConsent'
@@ -647,7 +647,9 @@ function getImmersiveBackgroundData(
           ? 0.66
           : 0.56
       : 0.5
-    : 0
+    : isPriming
+      ? 0
+      : 0.34
 
   return {
     image,
@@ -688,8 +690,6 @@ function buildImmersiveFragments(
   viewportWidth: number | null,
   effectsProfile: EffectsProfile,
 ): ImmersiveFragment[] {
-  if (!image) return []
-
   const isCompact = viewportWidth != null && viewportWidth < 720
   const lite = effectsProfile === 'webkit-lite'
   const fineLineCount = lite ? (isCompact ? 36 : 54) : (isCompact ? 96 : 180)
@@ -755,10 +755,10 @@ function buildImmersiveFragments(
     const sourceZone = inSourceZone(top)
     const edgeOnly = protectedZone && !sourceZone && rng() > 0.08
     const quiet = sourceZone ? 0.04 : edgeOnly ? 0.42 : quietFactor(top)
-    const mediaLine = rng() > 0.58
+    const mediaLine = Boolean(image) && rng() > 0.58
     const hot = !protectedZone && rng() > 0.9
     const long = rng() > 0.78
-    const height = rng() > 0.9 ? between(0.5, 1) : between(0.14, 0.4)
+    const height = (rng() > 0.9 ? between(0.5, 1) : between(0.14, 0.4)) * 0.6
     const width = long ? between(isCompact ? 26 : 38, isCompact ? 88 : 118) : between(3, isCompact ? 36 : 58)
     const left = edgeOnly
       ? rng() > 0.5
@@ -792,10 +792,10 @@ function buildImmersiveFragments(
 
   for (let i = 0; i < lowerFineLineCount; i += 1) {
     const top = between(lowerLineTop, lowerChaosBottom)
-    const mediaLine = rng() > 0.72
+    const mediaLine = Boolean(image) && rng() > 0.72
     const long = rng() > 0.66
     const bright = rng() > 0.88
-    const height = rng() > 0.93 ? between(0.5, 0.86) : between(0.16, 0.42)
+    const height = (rng() > 0.93 ? between(0.5, 0.86) : between(0.16, 0.42)) * 0.6
     const width = long ? between(isCompact ? 22 : 30, isCompact ? 92 : 122) : between(5, isCompact ? 46 : 66)
     const opacity = mediaLine ? between(0.22, bright ? 0.58 : 0.4) : between(0.2, bright ? 0.52 : 0.38)
 
@@ -826,7 +826,7 @@ function buildImmersiveFragments(
     const hot = rng() > 0.82
     const smear = rng() > 0.9
     const width = isCompact ? between(12, 96) : between(8, 82)
-    const height = smear ? between(2.4, 7.2) : between(0.5, 2.3)
+    const height = (smear ? between(2.4, 7.2) : between(0.5, 2.3)) * 0.6
     const top = backdropTop(0.02)
     const quiet = quietFactor(top)
     const left = between(-26, 112)
@@ -866,7 +866,7 @@ function buildImmersiveFragments(
       const bright = rng() > 0.48
       const wide = rng() > 0.38
       const width = wide ? between(38, isCompact ? 150 : 260) : between(9, isCompact ? 56 : 86)
-      const height = rng() > 0.68 ? between(12, 42) : between(3, 16)
+      const height = (rng() > 0.68 ? between(12, 42) : between(3, 16)) * 0.6
       const localLeft = between(0, clusterWidth)
       const localTop = between(0, clusterHeight)
       const transform = `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-4, 4), 1)}px, 0)`
@@ -898,7 +898,7 @@ function buildImmersiveFragments(
     const quiet = quietFactor(top)
     const left = between(-20, 105)
     const width = strip ? between(18, 92) : between(8, 32)
-    const height = strip ? between(1, 8) : between(5, 18)
+    const height = (strip ? between(1, 8) : between(5, 18)) * 0.6
 
     fragments.push({
       id: `void-${i}`,
@@ -932,7 +932,7 @@ function buildImmersiveFragments(
         left: `${fixed(between(-4, 102))}%`,
         top: `${fixed(top)}%`,
         width: `${fixed(between(8, isCompact ? 62 : 78))}vw`,
-        height: `${fixed(between(1, 4.8), 2)}px`,
+        height: `${fixed(between(1, 4.8) * 0.6, 2)}px`,
         backgroundImage: 'none',
         mixBlendMode: rng() > 0.36 ? 'screen' : 'normal',
         '--fragment-color': color,
@@ -954,7 +954,7 @@ function buildImmersiveFragments(
         left: `${fixed(between(-8, 96))}%`,
         top: `${fixed(between(-1, Math.max(1, contentZoneTop - 1)))}%`,
         width: `${fixed(between(5, isCompact ? 40 : 56))}vw`,
-        height: `${fixed(between(0.12, 0.3), 2)}px`,
+        height: `${fixed(between(0.12, 0.3) * 0.6, 2)}px`,
         backgroundImage: 'none',
         backgroundColor: softLineColors[intBetween(0, softLineColors.length - 1)],
         mixBlendMode: 'normal',
@@ -973,7 +973,7 @@ function buildImmersiveFragments(
         left: `${fixed(between(-10, 98))}%`,
         top: `${fixed(between(lowerLineTop, lowerChaosBottom))}%`,
         width: `${fixed(between(6, isCompact ? 44 : 62))}vw`,
-        height: `${fixed(between(0.12, 0.32), 2)}px`,
+        height: `${fixed(between(0.12, 0.32) * 0.6, 2)}px`,
         backgroundImage: 'none',
         backgroundColor: softLineColors[intBetween(0, softLineColors.length - 1)],
         mixBlendMode: 'normal',
@@ -1198,15 +1198,20 @@ function openProviderUrl(url?: string | null) {
   }
 }
 
+function resetWindowScrollPosition() {
+  if (typeof window === 'undefined') return
+  const reset = () => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  reset()
+  window.requestAnimationFrame(() => window.requestAnimationFrame(reset))
+}
+
 function VideoFullscreenIconButton({
   label,
   onClick,
-  offsetForSound = false,
   hidden = false,
 }: {
   label: string
   onClick: () => void
-  offsetForSound?: boolean
   hidden?: boolean
 }) {
   if (hidden) return null
@@ -1225,7 +1230,7 @@ function VideoFullscreenIconButton({
       style={{
         position: 'absolute',
         top: '12px',
-        right: offsetForSound ? '148px' : '16px',
+        right: '16px',
         zIndex: 4,
         pointerEvents: 'auto',
         touchAction: 'manipulation',
@@ -1238,6 +1243,43 @@ function VideoFullscreenIconButton({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={FULLSCREEN_ICON} alt="" aria-hidden="true" style={{ width: '20px', height: '20px' }} />
+    </button>
+  )
+}
+
+function VideoSoundIconButton({ muted, onClick }: { muted: boolean; onClick: () => void }) {
+  const { t } = useI18n()
+  const label = muted
+    ? t('video.unmute', 'Unmute video')
+    : t('video.mute', 'Mute video')
+  const Icon = muted ? VolumeX : Volume2
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onClick()
+      }}
+      className="rounded-full bg-black/60 text-white shadow-lg hover:bg-black/75"
+      style={{
+        position: 'absolute',
+        top: '12px',
+        right: '68px',
+        zIndex: 4,
+        pointerEvents: 'auto',
+        touchAction: 'manipulation',
+        width: '44px',
+        height: '40px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon size={21} strokeWidth={2.2} aria-hidden="true" />
     </button>
   )
 }
@@ -1300,6 +1342,10 @@ function wakeYouTubeSound(iframe: HTMLIFrameElement | null) {
   postEmbedMessage(iframe, { event: 'command', func: 'playVideo', args: [] })
 }
 
+function muteYouTubeSound(iframe: HTMLIFrameElement | null) {
+  postEmbedMessage(iframe, { event: 'command', func: 'mute', args: [] })
+}
+
 function subscribeToYouTubeEvents(iframe: HTMLIFrameElement | null, playerId: string) {
   postEmbedMessage(iframe, { event: 'listening', id: playerId })
   for (const eventName of ['onReady', 'onStateChange', 'onError', 'onAutoplayBlocked']) {
@@ -1311,6 +1357,11 @@ function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
   postEmbedMessage(iframe, { command: 'setMuted', parameters: [false] })
   postEmbedMessage(iframe, { command: 'setVolume', parameters: [1] })
   postEmbedMessage(iframe, { command: 'play' })
+}
+
+function muteDailymotionSound(iframe: HTMLIFrameElement | null) {
+  postEmbedMessage(iframe, { command: 'setMuted', parameters: [true] })
+  postEmbedMessage(iframe, { command: 'setVolume', parameters: [0] })
 }
 
 function scheduleVideoSoundWake(wake: () => void) {
@@ -1574,11 +1625,16 @@ function YouTubeEmbed({
     return scheduleVideoSoundWake(requestSound)
   }, [isFullscreenActive, isMuted, requestSound])
 
-  const unmute = () => {
-    preservePlayerOnUnmuteRef.current = true
-    requestSound()
-    onVideoSoundUnlocked?.()
-    setIsMuted(false)
+  const toggleMute = () => {
+    if (isMuted) {
+      preservePlayerOnUnmuteRef.current = true
+      requestSound()
+      onVideoSoundUnlocked?.()
+      setIsMuted(false)
+      return
+    }
+    muteYouTubeSound(iframeRef.current)
+    setIsMuted(true)
   }
 
   const handleFullscreen = async () => {
@@ -1639,9 +1695,9 @@ function YouTubeEmbed({
         <VideoFullscreenIconButton
           label={fullscreenLabel}
           onClick={handleFullscreen}
-          offsetForSound={isMuted}
           hidden={isFullscreenActive}
         />
+        {!isFullscreenActive ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
         {isFullscreenActive ? (
           <button
             type="button"
@@ -1650,16 +1706,6 @@ function YouTubeEmbed({
             onClick={onCloseFullscreen}
           >
             ×
-          </button>
-        ) : null}
-        {isMuted ? (
-          <button
-            type="button"
-            onClick={unmute}
-            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-            style={{ position: 'absolute', top: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
-          >
-            Tap to unmute
           </button>
         ) : null}
       </div>
@@ -1766,11 +1812,16 @@ function DailymotionEmbed({
     openProviderUrl(item.url)
   }
 
-  const unmute = () => {
-    preservePlayerOnUnmuteRef.current = true
-    requestSound()
-    onVideoSoundUnlocked?.()
-    setIsMuted(false)
+  const toggleMute = () => {
+    if (isMuted) {
+      preservePlayerOnUnmuteRef.current = true
+      requestSound()
+      onVideoSoundUnlocked?.()
+      setIsMuted(false)
+      return
+    }
+    muteDailymotionSound(iframeRef.current)
+    setIsMuted(true)
   }
 
   return (
@@ -1817,9 +1868,9 @@ function DailymotionEmbed({
         <VideoFullscreenIconButton
           label={fullscreenLabel}
           onClick={handleFullscreen}
-          offsetForSound={isMuted}
           hidden={isFullscreenActive}
         />
+        {!isFullscreenActive ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
         {isFullscreenActive ? (
           <button
             type="button"
@@ -1828,16 +1879,6 @@ function DailymotionEmbed({
             onClick={onCloseFullscreen}
           >
             ×
-          </button>
-        ) : null}
-        {isMuted ? (
-          <button
-            type="button"
-            onClick={unmute}
-            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-            style={{ position: 'absolute', top: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
-          >
-            Tap to unmute
           </button>
         ) : null}
       </div>
@@ -1894,15 +1935,20 @@ function HtmlVideoEmbed({
     }
   }, [isMuted, item.url, shouldAutoPlay])
 
-  const unmute = () => {
+  const toggleMute = () => {
     const video = videoRef.current
-    if (video) {
-      video.muted = false
-      const playPromise = video.play()
-      if (playPromise) playPromise.catch(() => undefined)
+    if (isMuted) {
+      if (video) {
+        video.muted = false
+        const playPromise = video.play()
+        if (playPromise) playPromise.catch(() => undefined)
+      }
+      onVideoSoundUnlocked?.()
+      setIsMuted(false)
+      return
     }
-    onVideoSoundUnlocked?.()
-    setIsMuted(false)
+    if (video) video.muted = true
+    setIsMuted(true)
   }
 
   const handleFullscreen = async () => {
@@ -1958,9 +2004,11 @@ function HtmlVideoEmbed({
         <VideoFullscreenIconButton
           label={fullscreenLabel}
           onClick={handleFullscreen}
-          offsetForSound={shouldAutoPlay && isMuted}
           hidden={isFullscreenActive}
         />
+        {shouldAutoPlay && !isFullscreenActive ? (
+          <VideoSoundIconButton muted={isMuted} onClick={toggleMute} />
+        ) : null}
         {isFullscreenActive ? (
           <button
             type="button"
@@ -1969,16 +2017,6 @@ function HtmlVideoEmbed({
             onClick={onCloseFullscreen}
           >
             ×
-          </button>
-        ) : null}
-        {shouldAutoPlay && isMuted ? (
-          <button
-            type="button"
-            onClick={unmute}
-            className="rounded-full bg-black/60 px-4 py-2 text-xs sm:text-sm font-semibold uppercase tracking-wide text-white shadow-lg hover:bg-black/75"
-            style={{ position: 'absolute', top: '12px', right: '16px', zIndex: 3, pointerEvents: 'auto', minWidth: '120px', textAlign: 'center' }}
-          >
-            Tap to unmute
           </button>
         ) : null}
       </div>
@@ -2474,6 +2512,16 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   }, [])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const previousScrollRestoration = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
+    resetWindowScrollPosition()
+    return () => {
+      window.history.scrollRestoration = previousScrollRestoration
+    }
+  }, [])
+
+  useEffect(() => {
     try {
       localStorage.removeItem('random:selectedTypes')
     } catch {
@@ -2637,7 +2685,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
         top: `${topValue.toFixed(2)}%`,
         width: `${widthValue.toFixed(2)}%`,
         left: `${leftValue.toFixed(2)}%`,
-        height: `${heightValue.toFixed(2)}px`,
+        height: `${(heightValue * 0.6).toFixed(2)}px`,
         background: gradientForSet(palette, variant),
         delay,
         duration,
@@ -3068,6 +3116,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       if (restored.currentItem.type === 'video' && isVideoBlockedThisSession(restored.currentItem)) return false
       currentItemRef.current = restored.currentItem
       setCurrentItem(restored.currentItem)
+      resetWindowScrollPosition()
       setLiked(restored.currentItem.type === 'encourage' || restored.currentItem.type === 'minigame'
         ? false
         : isLiked(restored.currentItem))
@@ -3664,6 +3713,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       const displayedItem = entry.item
       currentItemRef.current = displayedItem
       setCurrentItem(displayedItem)
+      resetWindowScrollPosition()
       displayed = true
 
       let contentItem: RandomContentItem | null = null
@@ -3839,7 +3889,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [fillRandomReadyQueue, locale])
 
   useEffect(() => {
-    const refill = () => {
+    const refill = (event?: Event) => {
+      if (event?.type === 'pageshow') resetWindowScrollPosition()
       if (document.visibilityState === 'hidden') {
         persistRandomSession()
         return
@@ -3924,7 +3975,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       '--random-progress-bg-hit-shift-negative': `${(-backgroundShift).toFixed(2)}px`,
       '--random-progress-bg-hit-shift-half': `${(backgroundShift * 0.55).toFixed(2)}px`,
       '--random-progress-bg-hit-shift-soft-negative': `${(-backgroundShift * 0.3).toFixed(2)}px`,
-      '--random-progress-overlay-saturate': 1 + baseIntensity * 1.1 + overdrive * 0.5,
+      '--random-progress-overlay-saturate': 1 + baseIntensity * 0.35 + overdrive * 0.15,
       '--random-progress-overlay-contrast': 1 + baseIntensity * 0.35 + overdrive * 0.2,
       '--random-progress-ambient-duration': `${Math.max(1.15, 11 - baseIntensity * 9.2 - overdrive * 1.25).toFixed(2)}s`,
       '--random-progress-bg-duration': `${Math.max(4.5, 18 - baseIntensity * 11 - overdrive * 2.5).toFixed(2)}s`,
@@ -4795,10 +4846,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           z-index: 3;
           pointer-events: none;
           background:
-            linear-gradient(90deg, transparent 0 5%, rgba(0, 255, 240, 0.82) 5% 19%, rgba(2, 2, 2, 0.88) 19% 24%, rgba(255, 0, 122, 0.72) 24% 51%, transparent 51% 100%) 0 8% / 88% 2.4px no-repeat,
-            linear-gradient(90deg, transparent 0 16%, rgba(244, 255, 0, 0.7) 16% 29%, rgba(255, 255, 255, 0.82) 29% 32%, rgba(36, 88, 255, 0.78) 32% 73%, transparent 73% 100%) 18% 72% / 90% 3px no-repeat,
-            linear-gradient(90deg, rgba(255, 0, 122, 0.78) 0 14%, transparent 14% 31%, rgba(25, 255, 95, 0.72) 31% 62%, rgba(3, 3, 3, 0.92) 62% 68%, transparent 68% 100%) -10% 88% / 76% 4px no-repeat,
-            linear-gradient(90deg, transparent 0 37%, rgba(255, 255, 255, 0.58) 37% 41%, rgba(0, 255, 240, 0.68) 41% 78%, transparent 78% 100%) 8% 24% / 94% 1.5px no-repeat;
+            linear-gradient(90deg, transparent 0 5%, rgba(0, 255, 240, 0.82) 5% 19%, rgba(2, 2, 2, 0.88) 19% 24%, rgba(255, 0, 122, 0.72) 24% 51%, transparent 51% 100%) 0 8% / 88% 1.44px no-repeat,
+            linear-gradient(90deg, transparent 0 16%, rgba(244, 255, 0, 0.7) 16% 29%, rgba(255, 255, 255, 0.82) 29% 32%, rgba(36, 88, 255, 0.78) 32% 73%, transparent 73% 100%) 18% 72% / 90% 1.8px no-repeat,
+            linear-gradient(90deg, rgba(255, 0, 122, 0.78) 0 14%, transparent 14% 31%, rgba(25, 255, 95, 0.72) 31% 62%, rgba(3, 3, 3, 0.92) 62% 68%, transparent 68% 100%) -10% 88% / 76% 2.4px no-repeat,
+            linear-gradient(90deg, transparent 0 37%, rgba(255, 255, 255, 0.58) 37% 41%, rgba(0, 255, 240, 0.68) 41% 78%, transparent 78% 100%) 8% 24% / 94% 0.9px no-repeat;
           mix-blend-mode: screen;
           opacity: min(0.82, calc(var(--random-bg-strength, 0) * 0.9));
           transform: translate3d(0, 0, 0);
@@ -4827,7 +4878,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           background-position: center;
           background-size: cover;
           filter: blur(5px) saturate(2.45) contrast(1.9) brightness(0.32);
-          opacity: min(1, calc(var(--random-bg-strength, 0) * 1.3));
+          opacity: min(1, calc(var(--random-bg-strength, 0) * 1.82));
           transform: scale(1.12);
           transition: opacity 120ms ease, background-image 120ms ease, filter 120ms ease;
           animation: random-bg-drift 18s steps(8, end) infinite alternate;

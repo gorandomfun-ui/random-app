@@ -1,6 +1,6 @@
 export type Encourage3DFinish = 'color' | 'silver' | 'gold'
 export type Encourage3DAnimation = 'burst' | 'rise' | 'swing' | 'orbit' | 'impact'
-export type Encourage3DAssetKind = 'model' | 'image'
+export type Encourage3DAssetKind = 'model'
 
 export type Encourage3DAsset = {
   id: string
@@ -49,58 +49,36 @@ type ScheduleContext = ProductionContext & {
 }
 
 const MAIN_ASSETS: Encourage3DAsset[] = [
-  {
-    id: 'rocket',
-    src: '/encourage/runtime/default/main/rocket__main__r1__p1.glb',
-    kind: 'model',
-    rank: 1,
-    points: 1,
-  },
-  {
-    id: 'cup',
-    src: '/encourage/runtime/default/main/cup__main__r2__p1.glb',
-    kind: 'model',
-    rank: 2,
-    points: 1,
-  },
-  {
-    id: 'diamond',
-    src: '/encourage/runtime/default/main/diamond__main__r2__p2.glb',
-    kind: 'model',
-    rank: 2,
-    points: 2,
-  },
-  {
-    id: 'crown',
-    src: '/encourage/runtime/default/main/crown__main__r5__p4.glb',
-    kind: 'model',
-    rank: 5,
-    points: 4,
-  },
-  { id: 'dice', src: '/encourage/glossy/3.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'burst', src: '/encourage/glossy/6.webp', kind: 'image', rank: 3, points: 2 },
-  { id: 'ladder', src: '/encourage/glossy/7.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'lightning', src: '/encourage/glossy/8.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'compass', src: '/encourage/glossy/9.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'magnifier', src: '/encourage/glossy/10.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'flashlight', src: '/encourage/glossy/11.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'pickaxe', src: '/encourage/glossy/12.webp', kind: 'image', rank: 3, points: 2 },
-  { id: 'camera', src: '/encourage/glossy/13.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'key', src: '/encourage/glossy/14.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'cards', src: '/encourage/glossy/15.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'coins', src: '/encourage/glossy/16.webp', kind: 'image', rank: 4, points: 3 },
-  { id: 'weather', src: '/encourage/glossy/17.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'prismatic-lightning', src: '/encourage/glossy/18.webp', kind: 'image', rank: 3, points: 2 },
-  { id: 'spiral', src: '/encourage/glossy/19.webp', kind: 'image', rank: 3, points: 2 },
-  { id: 'door', src: '/encourage/glossy/20.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'shooting-star-a', src: '/encourage/glossy/21.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'shooting-star-b', src: '/encourage/glossy/22.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'globe', src: '/encourage/glossy/23.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'smile', src: '/encourage/glossy/24.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'shuffle', src: '/encourage/glossy/25.webp', kind: 'image', rank: 1, points: 1 },
-  { id: 'star-platform', src: '/encourage/glossy/26.webp', kind: 'image', rank: 4, points: 3 },
-  { id: 'unicorn', src: '/encourage/glossy/27.webp', kind: 'image', rank: 2, points: 2 },
-  { id: 'star-cluster', src: '/encourage/glossy/28.webp', kind: 'image', rank: 1, points: 1 },
+  { id: 'rocket', src: '/encourage/runtime/default/main/rocket__main__r1__p1.glb', kind: 'model', rank: 1, points: 1 },
+  { id: 'dice', src: '/encourage/runtime/default/main/dice__main__r1__p1.glb', kind: 'model', rank: 1, points: 1 },
+  { id: 'flash', src: '/encourage/runtime/default/main/flash__main__r1__p1.glb', kind: 'model', rank: 1, points: 1 },
+  { id: 'sparkle', src: '/encourage/runtime/default/main/sparkle__main__r1__p1.glb', kind: 'model', rank: 1, points: 1 },
+  { id: 'alternate', src: '/encourage/runtime/default/main/alternate__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'cup', src: '/encourage/runtime/default/main/cup__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'diamond', src: '/encourage/runtime/default/main/diamond__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
+  { id: 'coin', src: '/encourage/runtime/default/main/coin__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
+  { id: 'compass', src: '/encourage/runtime/default/main/compass__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
+  { id: 'ladder', src: '/encourage/runtime/default/main/lader__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
+  { id: 'cup-alt', src: '/encourage/runtime/default/main/no_cup__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'camera', src: '/encourage/runtime/default/main/photo__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'pickaxe', src: '/encourage/runtime/default/main/pic__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'smile', src: '/encourage/runtime/default/main/smile__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'burst', src: '/encourage/runtime/default/main/splat__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'bursts', src: '/encourage/runtime/default/main/splats__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
+  { id: 'stars', src: '/encourage/runtime/default/main/stars__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'flash-alt', src: '/encourage/runtime/default/main/flash__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
+  { id: 'torch', src: '/encourage/runtime/default/main/torch__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
+  { id: 'cards', src: '/encourage/runtime/default/main/cards__main__r3__p3.glb', kind: 'model', rank: 3, points: 3 },
+  { id: 'coin-stack', src: '/encourage/runtime/default/main/coin__main__r3__p1.glb', kind: 'model', rank: 3, points: 1 },
+  { id: 'magnifier', src: '/encourage/runtime/default/main/compasss__main__r1__p3.glb', kind: 'model', rank: 1, points: 3 },
+  { id: 'earth', src: '/encourage/runtime/default/main/earth__main__r3__p1.glb', kind: 'model', rank: 3, points: 1 },
+  { id: 'key', src: '/encourage/runtime/default/main/key__main__r3__p2.glb', kind: 'model', rank: 3, points: 2 },
+  { id: 'door', src: '/encourage/runtime/default/main/ok__main__r3__p2.glb', kind: 'model', rank: 3, points: 2 },
+  { id: 'shooting-star', src: '/encourage/runtime/default/main/starswoosh__main__r3__p1.glb', kind: 'model', rank: 3, points: 1 },
+  { id: 'weather', src: '/encourage/runtime/default/main/sunclouds__main__r4__p1.glb', kind: 'model', rank: 4, points: 1 },
+  { id: 'swirl', src: '/encourage/runtime/default/main/swirl__main__r4__p1.glb', kind: 'model', rank: 4, points: 1 },
+  { id: 'crown', src: '/encourage/runtime/default/main/crown__main__r5__p4.glb', kind: 'model', rank: 5, points: 4 },
+  { id: 'unicorn', src: '/encourage/runtime/default/main/unicorn__main__r5__p5.glb', kind: 'model', rank: 5, points: 5 },
 ]
 
 const COMPANIONS: Encourage3DCompanion[] = [
@@ -276,7 +254,7 @@ export function createProductionEncourage3DEvent(
   const finish = companionOnly ? 'color' : productionFinish(context.draws, context.score, random)
   const main = companionOnly ? null : pickProductionMain(context, finish, random)
   const companions = shuffledCompanions(random)
-  const companionCount = companionOnly ? randomInt(2, 4, random) : pick([1, 2, 2, 3, 3, 4], random)
+  const companionCount = companionOnly ? randomInt(3, 5, random) : pick([1, 2, 2, 3, 3, 4], random)
 
   return {
     id: `encourage-3d-${Date.now()}-${context.draws}`,

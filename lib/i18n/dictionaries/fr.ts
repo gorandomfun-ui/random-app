@@ -95,6 +95,8 @@ const frDictionary = {
   },
   "video": {
     "fullscreen": "Plein écran",
+    "mute": "Couper le son",
+    "unmute": "Activer le son",
     "openExternally": "Ouvrir dans l'app"
   },
   "shuffle": {

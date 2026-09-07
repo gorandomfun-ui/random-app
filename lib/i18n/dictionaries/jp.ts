@@ -95,6 +95,8 @@ const jpDictionary = {
   },
   "video": {
     "fullscreen": "全画面",
+    "mute": "動画をミュート",
+    "unmute": "動画のミュートを解除",
     "openExternally": "アプリで開く"
   },
   "shuffle": {

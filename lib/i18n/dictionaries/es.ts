@@ -81,6 +81,8 @@ const esDictionary = {
   video: {
     ...enDictionary.video,
     fullscreen: "Pantalla completa",
+    mute: "Silenciar video",
+    unmute: "Activar sonido",
     openExternally: "Abrir en la app",
   },
   shuffle: {

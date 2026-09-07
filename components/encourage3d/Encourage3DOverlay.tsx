@@ -25,77 +25,72 @@ type Props = {
 
 type LoadedModel = {
   root: THREE.Group
-  flat: boolean
-  ownedGeometries: THREE.BufferGeometry[]
 }
 
-type AssetCacheEntry =
-  | { kind: 'model'; scene: THREE.Group }
-  | { kind: 'image'; texture: THREE.Texture; aspect: number }
+type AssetCacheEntry = { scene: THREE.Group }
 
 const assetCache = new Map<string, Promise<AssetCacheEntry>>()
 
 type CompanionPlacement = {
   position: readonly [number, number, number]
   size: number
-  rotation: readonly [number, number, number]
 }
 
 const companionLayouts: Record<number, CompanionPlacement[][]> = {
   1: [
-    [{ position: [-1.2, 0.72, 0.24], size: 0.62, rotation: [0.18, -0.28, -0.24] }],
-    [{ position: [1.22, -0.34, 0.26], size: 0.68, rotation: [0.16, 0.34, 0.28] }],
-    [{ position: [0.94, 0.86, 0.22], size: 0.54, rotation: [0.2, -0.18, 0.16] }],
+    [{ position: [-1.2, 0.72, 0.24], size: 0.62 }],
+    [{ position: [1.22, -0.34, 0.26], size: 0.68 }],
+    [{ position: [0.94, 0.86, 0.22], size: 0.54 }],
   ],
   2: [
     [
-      { position: [-1.2, 0.72, 0.24], size: 0.64, rotation: [0.18, -0.3, -0.24] },
-      { position: [1.08, -0.8, 0.3], size: 0.48, rotation: [0.16, 0.34, 0.25] },
+      { position: [-1.2, 0.72, 0.24], size: 0.64 },
+      { position: [1.08, -0.8, 0.3], size: 0.48 },
     ],
     [
-      { position: [1.22, 0.58, 0.24], size: 0.58, rotation: [0.16, 0.26, 0.24] },
-      { position: [0.82, -0.94, 0.3], size: 0.7, rotation: [0.2, -0.22, -0.18] },
+      { position: [1.22, 0.58, 0.24], size: 0.58 },
+      { position: [0.82, -0.94, 0.3], size: 0.7 },
     ],
     [
-      { position: [-1.16, -0.6, 0.28], size: 0.7, rotation: [0.18, 0.3, -0.3] },
-      { position: [1.18, 0.7, 0.24], size: 0.52, rotation: [0.16, -0.3, 0.2] },
+      { position: [-1.16, -0.6, 0.28], size: 0.7 },
+      { position: [1.18, 0.7, 0.24], size: 0.52 },
     ],
   ],
   3: [
     [
-      { position: [-1.24, 0.66, 0.22], size: 0.64, rotation: [0.18, -0.32, -0.28] },
-      { position: [1.2, 0.34, 0.28], size: 0.46, rotation: [0.14, 0.28, 0.24] },
-      { position: [0.9, -0.94, 0.3], size: 0.72, rotation: [0.2, -0.18, -0.2] },
+      { position: [-1.24, 0.66, 0.22], size: 0.64 },
+      { position: [1.2, 0.34, 0.28], size: 0.46 },
+      { position: [0.9, -0.94, 0.3], size: 0.72 },
     ],
     [
-      { position: [-1.12, 0.88, 0.24], size: 0.48, rotation: [0.18, 0.28, -0.2] },
-      { position: [-1.18, -0.68, 0.3], size: 0.7, rotation: [0.2, -0.28, 0.28] },
-      { position: [1.24, 0.5, 0.24], size: 0.58, rotation: [0.16, 0.26, 0.22] },
+      { position: [-1.12, 0.88, 0.24], size: 0.48 },
+      { position: [-1.18, -0.68, 0.3], size: 0.7 },
+      { position: [1.24, 0.5, 0.24], size: 0.58 },
     ],
     [
-      { position: [-1.28, 0.22, 0.26], size: 0.58, rotation: [0.18, -0.32, -0.26] },
-      { position: [0.72, 0.96, 0.22], size: 0.68, rotation: [0.16, 0.2, 0.18] },
-      { position: [1.18, -0.7, 0.3], size: 0.5, rotation: [0.2, -0.24, 0.3] },
+      { position: [-1.28, 0.22, 0.26], size: 0.58 },
+      { position: [0.72, 0.96, 0.22], size: 0.68 },
+      { position: [1.18, -0.7, 0.3], size: 0.5 },
     ],
   ],
   4: [
     [
-      { position: [-1.24, 0.72, 0.22], size: 0.58, rotation: [0.18, -0.3, -0.24] },
-      { position: [-1.06, -0.72, 0.3], size: 0.42, rotation: [0.16, 0.3, 0.3] },
-      { position: [1.24, 0.34, 0.26], size: 0.7, rotation: [0.2, -0.22, 0.24] },
-      { position: [0.84, -0.98, 0.3], size: 0.5, rotation: [0.16, 0.24, -0.2] },
+      { position: [-1.24, 0.72, 0.22], size: 0.58 },
+      { position: [-1.06, -0.72, 0.3], size: 0.42 },
+      { position: [1.24, 0.34, 0.26], size: 0.7 },
+      { position: [0.84, -0.98, 0.3], size: 0.5 },
     ],
     [
-      { position: [-1.28, 0.28, 0.26], size: 0.68, rotation: [0.18, 0.28, -0.3] },
-      { position: [-0.72, 0.98, 0.22], size: 0.44, rotation: [0.14, -0.24, 0.18] },
-      { position: [1.18, 0.7, 0.24], size: 0.54, rotation: [0.18, 0.3, 0.24] },
-      { position: [1.12, -0.78, 0.3], size: 0.72, rotation: [0.2, -0.2, -0.24] },
+      { position: [-1.28, 0.28, 0.26], size: 0.68 },
+      { position: [-0.72, 0.98, 0.22], size: 0.44 },
+      { position: [1.18, 0.7, 0.24], size: 0.54 },
+      { position: [1.12, -0.78, 0.3], size: 0.72 },
     ],
     [
-      { position: [-1.18, 0.82, 0.22], size: 0.5, rotation: [0.16, -0.28, -0.24] },
-      { position: [-1.22, -0.5, 0.3], size: 0.72, rotation: [0.2, 0.28, 0.26] },
-      { position: [0.72, 0.96, 0.24], size: 0.62, rotation: [0.18, -0.2, 0.18] },
-      { position: [1.24, -0.62, 0.28], size: 0.44, rotation: [0.16, 0.3, -0.3] },
+      { position: [-1.18, 0.82, 0.22], size: 0.5 },
+      { position: [-1.22, -0.5, 0.3], size: 0.72 },
+      { position: [0.72, 0.96, 0.24], size: 0.62 },
+      { position: [1.24, -0.62, 0.28], size: 0.44 },
     ],
   ],
 }
@@ -114,100 +109,44 @@ function layoutFor(count: number, eventId: string): CompanionPlacement[] {
   return layouts[hashString(eventId) % layouts.length]
 }
 
+function selectCompanions(event: Encourage3DEvent): Encourage3DAsset[] {
+  const selected: Encourage3DAsset[] = []
+  const instances = new Map<string, number>()
+  let cursor = 0
+
+  while (selected.length < event.companionCount && cursor < event.companions.length * event.companionCount) {
+    const companion = event.companions[cursor % event.companions.length]
+    const used = instances.get(companion.id) ?? 0
+    if (used < companion.maxInstances) {
+      selected.push(companion)
+      instances.set(companion.id, used + 1)
+    }
+    cursor += 1
+  }
+
+  return selected
+}
+
 function easeOutBack(value: number, overshoot = 1.70158): number {
   const c1 = overshoot
   const c3 = c1 + 1
   return 1 + c3 * Math.pow(value - 1, 3) + c1 * Math.pow(value - 1, 2)
 }
 
-function loadImageTexture(src: string): Promise<Extract<AssetCacheEntry, { kind: 'image' }>> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.decoding = 'async'
-    image.onload = () => {
-      try {
-        const scanCanvas = document.createElement('canvas')
-        scanCanvas.width = image.naturalWidth
-        scanCanvas.height = image.naturalHeight
-        const scanContext = scanCanvas.getContext('2d', { willReadFrequently: true })
-        if (!scanContext) throw new Error('Canvas 2D context unavailable')
-        scanContext.drawImage(image, 0, 0)
-        const pixels = scanContext.getImageData(0, 0, scanCanvas.width, scanCanvas.height).data
-        let minX = scanCanvas.width
-        let minY = scanCanvas.height
-        let maxX = -1
-        let maxY = -1
-        const stride = 2
-        for (let y = 0; y < scanCanvas.height; y += stride) {
-          for (let x = 0; x < scanCanvas.width; x += stride) {
-            if (pixels[(y * scanCanvas.width + x) * 4 + 3] < 8) continue
-            minX = Math.min(minX, x)
-            minY = Math.min(minY, y)
-            maxX = Math.max(maxX, x)
-            maxY = Math.max(maxY, y)
-          }
-        }
-
-        if (maxX < minX || maxY < minY) throw new Error(`Empty transparent image: ${src}`)
-        const visibleWidth = maxX - minX + 1
-        const visibleHeight = maxY - minY + 1
-        const padding = Math.ceil(Math.max(visibleWidth, visibleHeight) * 0.025)
-        const sourceX = Math.max(0, minX - padding)
-        const sourceY = Math.max(0, minY - padding)
-        const sourceWidth = Math.min(scanCanvas.width - sourceX, visibleWidth + padding * 2)
-        const sourceHeight = Math.min(scanCanvas.height - sourceY, visibleHeight + padding * 2)
-        const scale = Math.min(1, 1024 / Math.max(sourceWidth, sourceHeight))
-        const textureCanvas = document.createElement('canvas')
-        textureCanvas.width = Math.max(1, Math.round(sourceWidth * scale))
-        textureCanvas.height = Math.max(1, Math.round(sourceHeight * scale))
-        const textureContext = textureCanvas.getContext('2d')
-        if (!textureContext) throw new Error('Canvas 2D context unavailable')
-        textureContext.drawImage(
-          image,
-          sourceX,
-          sourceY,
-          sourceWidth,
-          sourceHeight,
-          0,
-          0,
-          textureCanvas.width,
-          textureCanvas.height,
-        )
-
-        scanCanvas.width = 1
-        scanCanvas.height = 1
-        const texture = new THREE.CanvasTexture(textureCanvas)
-        texture.colorSpace = THREE.SRGBColorSpace
-        texture.minFilter = THREE.LinearMipmapLinearFilter
-        texture.magFilter = THREE.LinearFilter
-        texture.generateMipmaps = true
-        texture.needsUpdate = true
-        resolve({ kind: 'image', texture, aspect: textureCanvas.width / textureCanvas.height })
-      } catch (error) {
-        reject(error)
-      }
-    }
-    image.onerror = () => reject(new Error(`Unable to load image: ${src}`))
-    image.src = src
-  })
-}
-
 function loadAsset(asset: Encourage3DAsset): Promise<AssetCacheEntry> {
   const cached = assetCache.get(asset.src)
   if (cached) return cached
 
-  const pending: Promise<AssetCacheEntry> = asset.kind === 'image'
-    ? loadImageTexture(asset.src)
-    : new Promise((resolve, reject) => {
-        const loader = new GLTFLoader()
-        loader.setMeshoptDecoder(MeshoptDecoder)
-        loader.load(
-          asset.src,
-          (gltf) => resolve({ kind: 'model', scene: gltf.scene }),
-          undefined,
-          reject,
-        )
-      })
+  const pending: Promise<AssetCacheEntry> = new Promise((resolve, reject) => {
+    const loader = new GLTFLoader()
+    loader.setMeshoptDecoder(MeshoptDecoder)
+    loader.load(
+      asset.src,
+      (gltf) => resolve({ scene: gltf.scene }),
+      undefined,
+      reject,
+    )
+  })
 
   assetCache.set(asset.src, pending)
   void pending.catch(() => assetCache.delete(asset.src))
@@ -215,7 +154,8 @@ function loadAsset(asset: Encourage3DAsset): Promise<AssetCacheEntry> {
 }
 
 export async function preloadEncourage3DEvent(event: Encourage3DEvent): Promise<void> {
-  const assets = [event.main, ...event.companions].filter((asset): asset is Encourage3DAsset => Boolean(asset))
+  const selectedCompanions = selectCompanions(event)
+  const assets = [event.main, ...selectedCompanions].filter((asset): asset is Encourage3DAsset => Boolean(asset))
   const uniqueAssets = [...new Map(assets.map((asset) => [asset.src, asset])).values()]
   await Promise.all(uniqueAssets.map(loadAsset))
 }
@@ -237,6 +177,8 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
   const common = {
     normalMap: original.normalMap ?? null,
     normalScale: original.normalScale?.clone() ?? new THREE.Vector2(1, 1),
+    metalnessMap: original.metalnessMap ?? null,
+    roughnessMap: original.roughnessMap ?? null,
     side: THREE.DoubleSide,
     envMapIntensity: companion ? 1.9 : 2.15,
   }
@@ -312,31 +254,7 @@ function cloneAndPrepare(
 
   const root = new THREE.Group()
   root.add(normalized)
-  return { root, flat: false, ownedGeometries: [] }
-}
-
-function prepareImage(
-  entry: Extract<AssetCacheEntry, { kind: 'image' }>,
-  targetSize: number,
-): LoadedModel {
-  const geometry = new THREE.PlaneGeometry(entry.aspect, 1)
-  const material = new THREE.MeshBasicMaterial({
-    map: entry.texture,
-    color: 0xffffff,
-    transparent: true,
-    opacity: 1,
-    alphaTest: 0.015,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  const normalized = new THREE.Group()
-  normalized.scale.setScalar(targetSize / Math.max(entry.aspect, 1))
-  normalized.add(mesh)
-  const root = new THREE.Group()
-  root.add(normalized)
-  return { root, flat: true, ownedGeometries: [geometry] }
+  return { root }
 }
 
 function prepareAsset(
@@ -345,9 +263,7 @@ function prepareAsset(
   targetSize: number,
   companion = false,
 ): LoadedModel {
-  return entry.kind === 'model'
-    ? cloneAndPrepare(entry.scene, finish, targetSize, companion)
-    : prepareImage(entry, targetSize)
+  return cloneAndPrepare(entry.scene, finish, targetSize, companion)
 }
 
 function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group) {
@@ -362,11 +278,6 @@ function initialMainTransform(animation: Encourage3DAnimation, root: THREE.Group
   } else {
     root.rotation.set(0.12, -0.68, -0.06)
   }
-}
-
-function initialFlatMainTransform(animation: Encourage3DAnimation, root: THREE.Group) {
-  const direction = animation === 'swing' || animation === 'impact' ? -1 : 1
-  root.rotation.set(0.02 * direction, 0.08 * direction, animation === 'orbit' ? 0.08 : -0.035 * direction)
 }
 
 export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onComplete }: Props) {
@@ -419,13 +330,10 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
     let renderer: THREE.WebGLRenderer | null = null
     let environment: THREE.Texture | null = null
     const disposables: THREE.Material[] = []
-    const disposableGeometries: THREE.BufferGeometry[] = []
 
     const start = async () => {
       try {
-        const companionSelections = Array.from({ length: event.companionCount }, (_, index) => (
-          event.companions[index % event.companions.length]
-        ))
+        const companionSelections = selectCompanions(event)
         const [mainEntry, allCompanionEntries] = await Promise.all([
           event.main ? loadAsset(event.main) : Promise.resolve(null),
           Promise.all(companionSelections.map(loadAsset)),
@@ -470,10 +378,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           : null
         let mainBaseRotation: THREE.Euler | null = null
         if (main) {
-          if (main.flat) initialFlatMainTransform(event.animation, main.root)
-          else initialMainTransform(event.animation, main.root)
+          initialMainTransform(event.animation, main.root)
           mainBaseRotation = main.root.rotation.clone()
-          disposableGeometries.push(...main.ownedGeometries)
           main.root.scale.setScalar(0.025)
           stage.add(main.root)
         }
@@ -483,17 +389,13 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           const placement = placements[index % placements.length]
           const prepared = prepareAsset(entry, 'color', placement.size, true)
           const target = new THREE.Vector3(...placement.position)
-          const startPosition = target.clone().multiplyScalar(0.08)
-          startPosition.z = -1.2 - index * 0.08
-          prepared.root.position.copy(startPosition)
+          prepared.root.position.copy(target)
           prepared.root.scale.setScalar(0.025)
-          prepared.root.rotation.set(...placement.rotation)
-          disposableGeometries.push(...prepared.ownedGeometries)
+          prepared.root.rotation.set(0, 0, 0)
           stage.add(prepared.root)
           return {
             ...prepared,
             baseRotation: prepared.root.rotation.clone(),
-            startPosition,
             target,
             index,
           }
@@ -531,24 +433,19 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
             main.root.position.set(0, 0, 0)
             if (mainBaseRotation) {
               main.root.rotation.copy(mainBaseRotation)
-              if (main.flat) {
-                main.root.rotation.y += Math.sin(settled * 0.8) * 0.08
-                main.root.rotation.z += settled * 0.075
-              } else {
-                main.root.rotation.y += settled * 0.28
-              }
+              main.root.rotation.y += settled * 0.28
             }
           }
 
           companions.forEach((companion) => {
             const delay = (main ? 0.1 : 0.04) + companion.index * 0.045
-            const duration = 0.38
+            const duration = 0.26
             const progress = Math.max(0, Math.min(1, (elapsed - delay) / duration))
             const burstEase = easeOutBack(progress, 2.7)
             const settled = Math.max(0, elapsed - delay - duration)
-            const pulseCycle = (settled + companion.index * 0.31) % 1.9
-            const pulse = pulseCycle < 0.34 ? Math.sin((pulseCycle / 0.34) * Math.PI) * 0.065 : 0
-            companion.root.position.lerpVectors(companion.startPosition, companion.target, burstEase)
+            const pulseCycle = (settled + companion.index * 0.23) % 1.6
+            const pulse = pulseCycle < 0.16 ? Math.sin((pulseCycle / 0.16) * Math.PI) * 0.085 : 0
+            companion.root.position.copy(companion.target)
             companion.root.scale.setScalar(Math.max(0.025, burstEase) * (1 + pulse))
             companion.root.rotation.copy(companion.baseRotation)
           })
@@ -588,7 +485,6 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
       disconnect?.()
       window.cancelAnimationFrame(frame)
       disposables.forEach((material) => material.dispose())
-      disposableGeometries.forEach((geometry) => geometry.dispose())
       environment?.dispose()
       if (renderer) {
         renderer.dispose()
@@ -679,7 +575,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           position: relative;
           width: min(92vw, 680px);
           height: min(76vh, 720px);
-          min-height: 470px;
+          height: min(76dvh, 720px);
+          max-height: calc(100dvh - max(76px, env(safe-area-inset-top)) - max(28px, env(safe-area-inset-bottom)));
         }
         .encourage-3d__canvas {
           position: absolute;
@@ -811,7 +708,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           .encourage-3d__stage {
             width: 100vw;
             height: min(78vh, 680px);
-            min-height: 460px;
+            height: min(78dvh, 680px);
+            max-height: calc(100dvh - max(70px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
           }
           .encourage-3d__canvas { inset: 20px 0 108px; }
           .encourage-3d__copy { left: 22px; right: 22px; bottom: 14px; }
