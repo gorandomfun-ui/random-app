@@ -4429,6 +4429,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
             <button
               type="button"
+              data-random-primary
+              aria-label={randomAgainLabel}
               onClick={handlePrimaryAction}
               disabled={randomAgainDisabled}
               aria-busy={randomAgainDisabled}

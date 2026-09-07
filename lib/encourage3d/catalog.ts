@@ -112,7 +112,7 @@ const COMPANIONS: Encourage3DCompanion[] = [
     kind: 'model',
     rank: 1,
     points: 1,
-    maxInstances: 1,
+    maxInstances: 4,
   },
 ]
 
@@ -135,15 +135,8 @@ function pickMessage(messages: readonly string[], random: () => number): string 
   return messages.length ? pick(messages, random) : DEFAULT_MESSAGE
 }
 
-function shuffledCompanions(random: () => number): Encourage3DCompanion[] {
-  const companions = [...COMPANIONS]
-  for (let index = companions.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1))
-    const current = companions[index]
-    companions[index] = companions[swapIndex]
-    companions[swapIndex] = current
-  }
-  return companions
+function sparkleMain(): Encourage3DAsset {
+  return MAIN_ASSETS.find((asset) => asset.id === 'sparkle') as Encourage3DAsset
 }
 
 function clamp01(value: number): number {
@@ -174,7 +167,11 @@ function pickProductionMain(
   random: () => number,
 ): Encourage3DAsset {
   const rank = unlockedRank(context.draws, context.score)
-  let eligible = MAIN_ASSETS.filter((asset) => asset.kind === 'model' && asset.rank <= rank)
+  let eligible = MAIN_ASSETS.filter((asset) => (
+    asset.kind === 'model'
+    && asset.rank <= rank
+    && asset.id !== 'sparkle'
+  ))
 
   // The crown remains an exceptional late-progression reward.
   if (finish === 'gold' && rank >= 5 && random() < 0.38) {
@@ -214,18 +211,20 @@ export function createTestEncourage3DEvent(
   previousMainId?: string | null,
 ): Encourage3DEvent {
   const testRank = step >= 23 ? 5 : step >= 16 ? 4 : step >= 8 ? 3 : step >= 3 ? 2 : 1
-  const companionOnly = sequence > 0 && sequence % 6 === 0
-  const eligible = MAIN_ASSETS.filter((asset) => asset.kind === 'model' && asset.rank <= testRank)
-  let main = companionOnly ? null : eligible[sequence % eligible.length]
+  const sparkleSolo = sequence > 0 && sequence % 6 === 0
+  const eligible = MAIN_ASSETS.filter((asset) => (
+    asset.kind === 'model'
+    && asset.rank <= testRank
+    && asset.id !== 'sparkle'
+  ))
+  let main = sparkleSolo ? sparkleMain() : eligible[sequence % eligible.length]
 
   if (main && eligible.length > 1 && main.id === previousMainId) {
     main = eligible[(sequence + 1) % eligible.length]
   }
 
-  const companionCount = companionOnly
-    ? 3 + (Math.floor(sequence / 6) % 3)
-    : Math.min(3, 1 + (sequence % 3))
-  const companions = sequence % 2 === 0 ? COMPANIONS : [...COMPANIONS].reverse()
+  const companionCount = sparkleSolo ? 0 : 3 + (sequence % 2)
+  const companions = sparkleSolo ? [] : [COMPANIONS[sequence % COMPANIONS.length]]
   const finish: Encourage3DFinish = sequence > 0 && sequence % 31 === 0
     ? 'gold'
     : sequence > 0 && sequence % 13 === 0
@@ -250,11 +249,11 @@ export function createProductionEncourage3DEvent(
   context: ProductionContext,
   random: () => number = Math.random,
 ): Encourage3DEvent {
-  const companionOnly = random() < 0.18
-  const finish = companionOnly ? 'color' : productionFinish(context.draws, context.score, random)
-  const main = companionOnly ? null : pickProductionMain(context, finish, random)
-  const companions = shuffledCompanions(random)
-  const companionCount = companionOnly ? randomInt(3, 5, random) : pick([1, 2, 2, 3, 3, 4], random)
+  const sparkleSolo = random() < 0.18
+  const finish = sparkleSolo ? 'color' : productionFinish(context.draws, context.score, random)
+  const main = sparkleSolo ? sparkleMain() : pickProductionMain(context, finish, random)
+  const companions = sparkleSolo ? [] : [pick(COMPANIONS, random)]
+  const companionCount = sparkleSolo ? 0 : randomInt(3, 4, random)
 
   return {
     id: `encourage-3d-${Date.now()}-${context.draws}`,

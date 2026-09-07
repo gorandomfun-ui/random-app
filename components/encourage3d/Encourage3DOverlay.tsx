@@ -75,22 +75,22 @@ const companionLayouts: Record<number, CompanionPlacement[][]> = {
   ],
   4: [
     [
-      { position: [-1.24, 0.72, 0.22], size: 0.58 },
-      { position: [-1.06, -0.72, 0.3], size: 0.42 },
-      { position: [1.24, 0.34, 0.26], size: 0.7 },
-      { position: [0.84, -0.98, 0.3], size: 0.5 },
+      { position: [-1.2, 0.88, 0.22], size: 0.48 },
+      { position: [-1.34, 0.04, 0.28], size: 0.68 },
+      { position: [-1.02, -0.9, 0.3], size: 0.42 },
+      { position: [1.26, 0.24, 0.26], size: 0.62 },
     ],
     [
-      { position: [-1.28, 0.28, 0.26], size: 0.68 },
-      { position: [-0.72, 0.98, 0.22], size: 0.44 },
-      { position: [1.18, 0.7, 0.24], size: 0.54 },
-      { position: [1.12, -0.78, 0.3], size: 0.72 },
+      { position: [-1.24, -0.38, 0.28], size: 0.7 },
+      { position: [1.08, 0.94, 0.22], size: 0.46 },
+      { position: [1.34, 0.08, 0.28], size: 0.66 },
+      { position: [1.04, -0.88, 0.3], size: 0.5 },
     ],
     [
-      { position: [-1.18, 0.82, 0.22], size: 0.5 },
-      { position: [-1.22, -0.5, 0.3], size: 0.72 },
-      { position: [0.72, 0.96, 0.24], size: 0.62 },
-      { position: [1.24, -0.62, 0.28], size: 0.44 },
+      { position: [-1.3, 0.54, 0.24], size: 0.58 },
+      { position: [-1.08, -0.76, 0.3], size: 0.44 },
+      { position: [0.92, 0.92, 0.22], size: 0.68 },
+      { position: [1.3, -0.18, 0.28], size: 0.5 },
     ],
   ],
 }
@@ -177,10 +177,8 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
   const common = {
     normalMap: original.normalMap ?? null,
     normalScale: original.normalScale?.clone() ?? new THREE.Vector2(1, 1),
-    metalnessMap: original.metalnessMap ?? null,
-    roughnessMap: original.roughnessMap ?? null,
     side: THREE.DoubleSide,
-    envMapIntensity: companion ? 1.9 : 2.15,
+    envMapIntensity: companion ? 2.8 : 3.15,
   }
 
   if (finish === 'gold' || finish === 'silver') {
@@ -198,14 +196,14 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
     ...common,
     color: original.color?.clone() ?? new THREE.Color('#ffffff'),
     map: original.map ?? null,
-    metalness: 0,
-    roughness: companion ? 0.11 : 0.09,
-    transmission: companion ? 0.32 : 0.38,
-    thickness: companion ? 0.42 : 0.58,
-    attenuationDistance: companion ? 1.1 : 0.9,
+    metalness: companion ? 0.38 : 0.44,
+    roughness: companion ? 0.055 : 0.045,
+    transmission: companion ? 0.1 : 0.14,
+    thickness: companion ? 0.32 : 0.44,
+    attenuationDistance: companion ? 0.72 : 0.62,
     attenuationColor: new THREE.Color('#ffffff'),
     ior: 1.48,
-    iridescence: companion ? 0.2 : 0.38,
+    iridescence: companion ? 0.34 : 0.46,
     iridescenceIOR: 1.32,
     iridescenceThicknessRange: [110, 390] as [number, number],
     clearcoat: 1,
@@ -213,9 +211,9 @@ function makeMaterial(source: THREE.Material, finish: Encourage3DFinish, compani
     specularIntensity: 1,
     specularColor: new THREE.Color('#ffffff'),
     transparent: true,
-    opacity: companion ? 0.86 : 0.84,
+    opacity: companion ? 0.97 : 0.95,
   })
-  intensifyTextureColors(material, companion ? 1.52 : 1.68)
+  intensifyTextureColors(material, companion ? 2.05 : 2.2)
   return material
 }
 
@@ -497,6 +495,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
     <div
       className={`encourage-3d${ready ? ' encourage-3d--ready' : ''}${closing ? ' encourage-3d--closing' : ''}`}
       data-main={event.main?.id ?? 'companions'}
+      data-companion={event.companions[0]?.id ?? 'none'}
+      data-companion-count={event.companionCount}
       data-finish={event.finish}
       role="dialog"
       aria-modal="true"
@@ -582,7 +582,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           position: absolute;
           inset: 0 0 104px;
           opacity: 0;
-          filter: saturate(1.12) contrast(1.04) drop-shadow(0 24px 30px rgba(0,0,0,.34));
+          filter: saturate(1.24) contrast(1.08) drop-shadow(0 24px 30px rgba(0,0,0,.34));
           transition: opacity 160ms ease-out;
         }
         .encourage-3d--ready .encourage-3d__canvas {
