@@ -64,7 +64,6 @@ const MAIN_ASSETS: Encourage3DAsset[] = [
   { id: 'smile', src: '/encourage/runtime/default/main/smile__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
   { id: 'burst', src: '/encourage/runtime/default/main/splat__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
   { id: 'bursts', src: '/encourage/runtime/default/main/splats__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
-  { id: 'stars', src: '/encourage/runtime/default/main/stars__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
   { id: 'flash-alt', src: '/encourage/runtime/default/main/flash__main__r2__p1.glb', kind: 'model', rank: 2, points: 1 },
   { id: 'torch', src: '/encourage/runtime/default/main/torch__main__r2__p2.glb', kind: 'model', rank: 2, points: 2 },
   { id: 'cards', src: '/encourage/runtime/default/main/cards__main__r3__p3.glb', kind: 'model', rank: 3, points: 3 },

@@ -2738,6 +2738,34 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     revealEncourage3D(next)
   }, [effectsTestMode, encourageMessages, revealEncourage3D])
 
+  const prepareProductionEncourage3D = useCallback((
+    schedule: Encourage3DScheduleState,
+    draws: number,
+  ) => {
+    if (
+      effectsTestMode
+      || preparedEncourage3dEventRef.current
+      || !shouldPreloadProductionEncourage3D(schedule, draws)
+    ) return
+
+    const prepared = createProductionEncourage3DEvent({
+      draws,
+      score,
+      messages: encourageMessages,
+      previousMainId: previousEncourage3dMainRef.current,
+    })
+    const preload = preloadEncourage3D(prepared)
+    preparedEncourage3dEventRef.current = prepared
+    preparedEncourage3dPromiseRef.current = preload
+    void preload.catch((error) => {
+      console.error('[Encourage3D] Unable to prepare the next composition.', error)
+      if (preparedEncourage3dEventRef.current?.id === prepared.id) {
+        preparedEncourage3dEventRef.current = null
+        preparedEncourage3dPromiseRef.current = null
+      }
+    })
+  }, [effectsTestMode, encourageMessages, preloadEncourage3D, score])
+
   const queueProductionEncourage3D = useCallback(() => {
     if (effectsTestMode) return
     const now = Date.now()
@@ -2752,22 +2780,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       previousMainId: previousEncourage3dMainRef.current,
     }
 
-    if (
-      !preparedEncourage3dEventRef.current
-      && shouldPreloadProductionEncourage3D(schedule, draws)
-    ) {
-      const prepared = createProductionEncourage3DEvent(context)
-      const preload = preloadEncourage3D(prepared)
-      preparedEncourage3dEventRef.current = prepared
-      preparedEncourage3dPromiseRef.current = preload
-      void preload.catch((error) => {
-        console.error('[Encourage3D] Unable to prepare the next composition.', error)
-        if (preparedEncourage3dEventRef.current?.id === prepared.id) {
-          preparedEncourage3dEventRef.current = null
-          preparedEncourage3dPromiseRef.current = null
-        }
-      })
-    }
+    prepareProductionEncourage3D(schedule, draws)
 
     const prepared = preparedEncourage3dEventRef.current
     const preparedPromise = preparedEncourage3dPromiseRef.current
@@ -2779,7 +2792,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     preparedEncourage3dPromiseRef.current = null
     previousEncourage3dMainRef.current = next.event.main?.id ?? previousEncourage3dMainRef.current
     revealEncourage3D(next.event, prepared?.id === next.event.id ? preparedPromise : null)
-  }, [effectsTestMode, encourageMessages, preloadEncourage3D, revealEncourage3D, score])
+  }, [effectsTestMode, encourageMessages, prepareProductionEncourage3D, revealEncourage3D, score])
 
   const handleEncourage3DAward = useCallback((points: number) => {
     addPoints(points)
@@ -3882,6 +3895,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   useEffect(() => {
     if (currentItem) persistRandomSession()
   }, [currentItem, persistRandomSession])
+
+  useEffect(() => {
+    if (effectsTestMode || !initialLoadTriggeredRef.current || !currentItemRef.current) return
+    const timer = window.setTimeout(() => {
+      const schedule = encourage3dScheduleRef.current
+      if (!schedule) return
+      prepareProductionEncourage3D(schedule, schedule.actions + 1)
+    }, 240)
+    return () => window.clearTimeout(timer)
+  }, [effectsTestMode, prepareProductionEncourage3D, progressionDraws])
 
   useEffect(() => {
     if (!initialLoadTriggeredRef.current || !currentItemRef.current) return
