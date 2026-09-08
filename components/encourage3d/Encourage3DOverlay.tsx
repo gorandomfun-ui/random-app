@@ -33,8 +33,8 @@ const assetCache = new Map<string, Promise<AssetCacheEntry>>()
 const MAIN_TARGET_SIZE = 2.62
 const MAIN_YAW = THREE.MathUtils.degToRad(45)
 const MAIN_PITCH = THREE.MathUtils.degToRad(20)
-const MAIN_TURN_LEFT = THREE.MathUtils.degToRad(45)
-const MAIN_TURN_RIGHT = THREE.MathUtils.degToRad(60)
+const MAIN_TURN_LEFT = THREE.MathUtils.degToRad(35)
+const MAIN_TURN_RIGHT = THREE.MathUtils.degToRad(70)
 const MAIN_ENTRANCE_DURATION = 0.78
 
 type CompanionPlacement = {
