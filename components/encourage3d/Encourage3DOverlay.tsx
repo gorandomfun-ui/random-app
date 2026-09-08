@@ -33,22 +33,16 @@ const assetCache = new Map<string, Promise<AssetCacheEntry>>()
 const MAIN_TARGET_SIZE = 2.62
 const MAIN_YAW = THREE.MathUtils.degToRad(45)
 const MAIN_PITCH = THREE.MathUtils.degToRad(20)
-const MAIN_TURN_LIMIT = THREE.MathUtils.degToRad(55)
+const MAIN_TURN_LEFT = THREE.MathUtils.degToRad(60)
+const MAIN_TURN_RIGHT = THREE.MathUtils.degToRad(45)
 const MAIN_ENTRANCE_DURATION = 0.78
 
 type CompanionPlacement = {
-  angle: number
   position: readonly [number, number, number]
   size: number
-  paletteVariant: number
 }
 
-const COLOR_PALETTES = [
-  ['#ff6a08', '#ff149e', '#174cff'],
-  ['#ffd000', '#ff5b18', '#ff1f91'],
-  ['#15e4ff', '#2467ff', '#a329ff'],
-  ['#ff32c6', '#b51cff', '#55efff'],
-] as const
+const COLOR_PALETTE = ['#ff6a08', '#ff149e', '#174cff'] as const
 
 function hashString(value: string): number {
   let hash = 2166136261
@@ -70,11 +64,6 @@ function seededRandom(value: string): () => number {
   }
 }
 
-function circularDistance(left: number, right: number): number {
-  const difference = Math.abs(left - right) % (Math.PI * 2)
-  return Math.min(difference, Math.PI * 2 - difference)
-}
-
 function protectionFor(size: THREE.Vector3 | null): { x: number; y: number; depth: number } {
   if (!size) return { x: 0.76, y: 0.76, depth: 0.3 }
   const sweptHorizontal = Math.hypot(size.x, size.z) / 2
@@ -86,23 +75,35 @@ function protectionFor(size: THREE.Vector3 | null): { x: number; y: number; dept
   }
 }
 
-function companionAngles(count: number, shine: boolean, random: () => number): number[] {
-  if (shine) {
-    const phase = THREE.MathUtils.degToRad(28 + random() * 34)
-    return Array.from({ length: count }, (_, index) => (
-      phase + index * (Math.PI * 2 / count) + (random() - 0.5) * 0.18
-    ))
-  }
+function anglesForSide(count: number, left: boolean, random: () => number): number[] {
+  const ranges = count === 1
+    ? [[-1.02, 1.02]]
+    : count === 2
+      ? [[0.28, 1.08], [-1.08, -0.28]]
+      : [[0.56, 1.12], [-0.2, 0.2], [-1.12, -0.56]]
+  return ranges.slice(0, count).map(([minimum, maximum]) => {
+    const sideAngle = minimum + (maximum - minimum) * random()
+    return left ? Math.PI - sideAngle : sideAngle
+  })
+}
 
-  const angles: number[] = []
-  let attempts = 0
-  while (angles.length < count && attempts < 80) {
-    const candidate = random() * Math.PI * 2
-    if (angles.every((angle) => circularDistance(angle, candidate) >= 0.72)) angles.push(candidate)
-    attempts += 1
-  }
-  while (angles.length < count) {
-    angles.push(random() * Math.PI * 2)
+function companionAngles(count: number, random: () => number): number[] {
+  if (count <= 0) return []
+  const leftCount = count === 1
+    ? (random() < 0.5 ? 1 : 0)
+    : count === 2
+      ? 1
+      : Math.floor(count / 2) + (count % 2 && random() < 0.5 ? 1 : 0)
+  const angles = [
+    ...anglesForSide(leftCount, true, random),
+    ...anglesForSide(count - leftCount, false, random),
+  ]
+
+  for (let index = angles.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1))
+    const current = angles[index]
+    angles[index] = angles[swapIndex]
+    angles[swapIndex] = current
   }
   return angles
 }
@@ -111,18 +112,16 @@ function layoutFor(
   count: number,
   eventId: string,
   mainSize: THREE.Vector3 | null,
-  shine: boolean,
 ): { placements: CompanionPlacement[]; protection: ReturnType<typeof protectionFor> } {
-  const random = seededRandom(`${eventId}:${shine ? 'shine' : 'companion'}`)
+  const random = seededRandom(`${eventId}:companion`)
   const protection = protectionFor(mainSize)
-  const angles = companionAngles(count, shine, random)
-  const sizeBands = shine ? [0.34, 0.44, 0.55, 0.39] : [0.4, 0.54, 0.46, 0.62]
+  const angles = companionAngles(count, random)
+  const sizeBands = [0.4, 0.54, 0.46, 0.62]
   const sizeOffset = Math.floor(random() * sizeBands.length)
-  const paletteOffset = Math.floor(random() * 4)
   const placements = angles.map((angle, index) => {
     const size = sizeBands[(index + sizeOffset) % sizeBands.length] * (0.96 + random() * 0.08)
-    const companionRadius = shine ? 0 : size * 0.54
-    const gap = shine ? 0.15 : 0.13
+    const companionRadius = size * 0.54
+    const gap = 0.13
     const protectedX = protection.x + companionRadius + gap
     const protectedY = protection.y + companionRadius + gap
     const cosine = Math.cos(angle)
@@ -132,10 +131,8 @@ function layoutFor(
       + sine * sine / (protectedY * protectedY),
     )
     return {
-      angle,
       position: [cosine * radius, sine * radius, 0.24 + random() * 0.1] as const,
       size,
-      paletteVariant: shine ? (paletteOffset + index) % 4 : 0,
     }
   })
   return { placements, protection }
@@ -144,7 +141,6 @@ function layoutFor(
 function compositionExtents(
   placements: readonly CompanionPlacement[],
   protection: ReturnType<typeof protectionFor>,
-  shine: boolean,
 ): { x: number; y: number; depth: number } {
   let x = protection.x
   let y = protection.y
@@ -152,17 +148,9 @@ function compositionExtents(
 
   placements.forEach((placement) => {
     const [anchorX, anchorY, anchorZ] = placement.position
-    if (shine) {
-      const outerX = anchorX + Math.cos(placement.angle) * placement.size
-      const outerY = anchorY + Math.sin(placement.angle) * placement.size
-      const halfWidth = placement.size * 0.16
-      x = Math.max(x, Math.abs(anchorX) + halfWidth, Math.abs(outerX) + halfWidth)
-      y = Math.max(y, Math.abs(anchorY) + halfWidth, Math.abs(outerY) + halfWidth)
-    } else {
-      const radius = placement.size * 0.56
-      x = Math.max(x, Math.abs(anchorX) + radius)
-      y = Math.max(y, Math.abs(anchorY) + radius)
-    }
+    const radius = placement.size * 0.56
+    x = Math.max(x, Math.abs(anchorX) + radius)
+    y = Math.max(y, Math.abs(anchorY) + radius)
     depth = Math.max(depth, anchorZ + placement.size * 0.5)
   })
 
@@ -210,21 +198,21 @@ function easeInOutCubic(value: number): number {
 function centralTurn(elapsed: number): number {
   const firstTurnDuration = 0.78
   if (elapsed < firstTurnDuration) {
-    return THREE.MathUtils.lerp(0, -MAIN_TURN_LIMIT, easeOutCubic(elapsed / firstTurnDuration))
+    return THREE.MathUtils.lerp(0, -MAIN_TURN_LEFT, easeOutCubic(elapsed / firstTurnDuration))
   }
 
   const sweepDuration = 1.45
   const phase = (elapsed - firstTurnDuration) % (sweepDuration * 2)
   if (phase < sweepDuration) {
     return THREE.MathUtils.lerp(
-      -MAIN_TURN_LIMIT,
-      MAIN_TURN_LIMIT,
+      -MAIN_TURN_LEFT,
+      MAIN_TURN_RIGHT,
       easeInOutSine(phase / sweepDuration),
     )
   }
   return THREE.MathUtils.lerp(
-    MAIN_TURN_LIMIT,
-    -MAIN_TURN_LIMIT,
+    MAIN_TURN_RIGHT,
+    -MAIN_TURN_LEFT,
     easeInOutSine((phase - sweepDuration) / sweepDuration),
   )
 }
@@ -265,9 +253,7 @@ function intensifyTextureColors(
   material: THREE.MeshPhysicalMaterial,
   saturation: number,
   contrast: number,
-  paletteVariant = 0,
 ) {
-  const palette = COLOR_PALETTES[paletteVariant % COLOR_PALETTES.length]
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = `varying vec3 encourageObjectPosition;\n${shader.vertexShader}`.replace(
       '#include <begin_vertex>',
@@ -287,22 +273,20 @@ function intensifyTextureColors(
         1.0
       );
       vec3 encourageGradient = mix(
-        ${shaderColor(palette[0])},
-        ${shaderColor(palette[1])},
+        ${shaderColor(COLOR_PALETTE[0])},
+        ${shaderColor(COLOR_PALETTE[1])},
         smoothstep(0.03, 0.55, encourageBand)
       );
       encourageGradient = mix(
         encourageGradient,
-        ${shaderColor(palette[2])},
+        ${shaderColor(COLOR_PALETTE[2])},
         smoothstep(0.52, 0.98, encourageBand)
       );
       float encourageTextureWeight = 0.48 + smoothstep(0.22, 0.72, encourageLuma) * 0.2;
       diffuseColor.rgb = mix(encourageGradient, encourageSaturated, encourageTextureWeight);`,
     )
   }
-  material.customProgramCacheKey = () => (
-    `encourage-color-${saturation.toFixed(2)}-${contrast.toFixed(2)}-${paletteVariant}`
-  )
+  material.customProgramCacheKey = () => `encourage-color-${saturation.toFixed(2)}-${contrast.toFixed(2)}`
 }
 
 function createStudioEnvironment(): THREE.Scene {
@@ -368,7 +352,6 @@ function makeMaterial(
   source: THREE.Material,
   finish: Encourage3DFinish,
   companion: boolean,
-  paletteVariant = 0,
 ): THREE.Material {
   const original = source as THREE.MeshStandardMaterial
   const common = {
@@ -413,7 +396,7 @@ function makeMaterial(
     transparent: true,
     opacity: companion ? 0.95 : 0.93,
   })
-  intensifyTextureColors(material, companion ? 1.32 : 1.4, 1.01, paletteVariant)
+  intensifyTextureColors(material, companion ? 1.32 : 1.4, 1.01)
   return material
 }
 
@@ -422,15 +405,14 @@ function cloneAndPrepare(
   finish: Encourage3DFinish,
   targetSize: number,
   companion = false,
-  paletteVariant = 0,
 ): LoadedModel {
   const content = source.clone(true)
   content.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry = child.geometry
     child.material = Array.isArray(child.material)
-      ? child.material.map((material) => makeMaterial(material, companion ? 'color' : finish, companion, paletteVariant))
-      : makeMaterial(child.material, companion ? 'color' : finish, companion, paletteVariant)
+      ? child.material.map((material) => makeMaterial(material, companion ? 'color' : finish, companion))
+      : makeMaterial(child.material, companion ? 'color' : finish, companion)
     child.castShadow = false
     child.receiveShadow = false
   })
@@ -461,9 +443,8 @@ function prepareAsset(
   finish: Encourage3DFinish,
   targetSize: number,
   companion = false,
-  paletteVariant = 0,
 ): LoadedModel {
-  return cloneAndPrepare(entry.scene, finish, targetSize, companion, paletteVariant)
+  return cloneAndPrepare(entry.scene, finish, targetSize, companion)
 }
 
 export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onComplete }: Props) {
@@ -595,40 +576,19 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           stage.add(mainTiltPivot)
         }
 
-        const companionAssets = mainEntry ? companionSelections : companionSelections.slice(1)
-        const shineComposition = companionAssets.length > 0
-          && companionAssets.every((asset) => asset.id === 'shine')
-        const layout = layoutFor(companionEntries.length, event.id, main?.size ?? null, shineComposition)
+        const layout = layoutFor(companionEntries.length, event.id, main?.size ?? null)
         const placements = layout.placements
-        const viewExtents = compositionExtents(placements, layout.protection, shineComposition)
+        const viewExtents = compositionExtents(placements, layout.protection)
         const companions = companionEntries.map((entry, index) => {
           const placement = placements[index % placements.length]
-          const isShine = companionAssets[index]?.id === 'shine'
-          const prepared = prepareAsset(
-            entry,
-            'color',
-            placement.size,
-            true,
-            isShine ? placement.paletteVariant : 0,
-          )
+          const prepared = prepareAsset(entry, 'color', placement.size, true)
           const target = new THREE.Vector3(...placement.position)
-          const radialRotation = isShine
-            ? Math.atan2(-target.y, -target.x) - Math.PI / 2
-            : 0
-          const animationRoot = isShine ? new THREE.Group() : prepared.root
-          animationRoot.position.copy(target)
-          animationRoot.scale.setScalar(0.025)
-          animationRoot.rotation.set(0, 0, radialRotation)
-          if (isShine) {
-            prepared.root.position.set(0, -prepared.size.y / 2, 0)
-            animationRoot.add(prepared.root)
-          }
-          stage.add(animationRoot)
+          prepared.root.position.copy(target)
+          prepared.root.scale.setScalar(0.025)
+          stage.add(prepared.root)
           return {
             ...prepared,
-            root: animationRoot,
-            baseRotation: animationRoot.rotation.clone(),
-            isShine,
+            baseRotation: prepared.root.rotation.clone(),
             target,
             index,
           }
@@ -687,15 +647,7 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
             const pulse = pulseCycle < 0.16 ? Math.sin((pulseCycle / 0.16) * Math.PI) * 0.085 : 0
             const entranceScale = Math.max(0.025, burstEase)
             companion.root.position.copy(companion.target)
-            if (companion.isShine) {
-              const lengthCycle = (settled + companion.index * 0.19) % 1.45
-              const lengthPulse = lengthCycle < 0.18
-                ? Math.sin((lengthCycle / 0.18) * Math.PI) * 0.16
-                : 0
-              companion.root.scale.set(entranceScale, entranceScale * (1 + lengthPulse), entranceScale)
-            } else {
-              companion.root.scale.setScalar(entranceScale * (1 + pulse))
-            }
+            companion.root.scale.setScalar(entranceScale * (1 + pulse))
             companion.root.rotation.copy(companion.baseRotation)
           })
 

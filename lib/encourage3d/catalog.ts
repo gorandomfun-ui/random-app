@@ -104,14 +104,6 @@ const COMPANIONS: Encourage3DCompanion[] = [
     points: 1,
     maxInstances: 4,
   },
-  {
-    id: 'shine',
-    src: '/encourage/runtime/default/companions/shine__companion__r1__p1__solo-attach__multi-1.glb',
-    kind: 'model',
-    rank: 1,
-    points: 1,
-    maxInstances: 4,
-  },
 ]
 
 const ANIMATIONS: Encourage3DAnimation[] = ['burst', 'rise', 'swing', 'orbit', 'impact']
