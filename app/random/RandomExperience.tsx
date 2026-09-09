@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
+import ControlledVideoEmbed from '@/components/players/ControlledVideoEmbed'
+import { providerVideo } from '@/lib/players/state'
 import Link from 'next/link'
 import { RotateCcw, Volume2, VolumeX, X } from 'lucide-react'
 
@@ -48,6 +50,7 @@ import {
   type VideoPlaybackIssue,
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
+import RandomPlayerFrame from '@/components/players/RandomPlayerFrame'
 import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
 import {
   advanceProductionEncourage3DSchedule,
@@ -1435,6 +1438,13 @@ function VideoEmbed({
   const url = item.url
   if (!url) return null
 
+  const supported = providerVideo(url)
+  if (process.env.NEXT_PUBLIC_RANDOM_PLAYER_V2 === '1' && supported?.provider === 'youtube') {
+    return <ControlledVideoEmbed key={`${supported.provider}:${supported.id}`} provider={supported.provider} videoId={supported.id}
+      title={item.text} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} soundMuted={soundMuted}
+      onVideoSoundUnlocked={onVideoSoundUnlocked}
+      onError={(playerCode) => onPlaybackIssue?.(item, { reason: 'youtube-player-error', playerCode })} />
+  }
   const looksYouTube = provider.includes('youtube') || /youtu\.?be/.test(url)
   const looksDailymotion = !looksYouTube && (provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(url))
 
@@ -1824,64 +1834,85 @@ function DailymotionEmbed({
     setIsMuted(true)
   }
 
+  const renderPlayer = (fullscreen: boolean, legacyControls = false) => (
+    <div
+      className="video-embed-player w-full h-full"
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        height: fullscreen ? '100%' : frameHeight,
+      }}
+    >
+      {posterUrl ? (
+        <div
+          className="video-embed-poster"
+          style={{
+            backgroundImage: cssImageUrl(posterUrl),
+            opacity: iframeLoaded ? 0 : 1,
+          }}
+        />
+      ) : null}
+      <iframe
+        key={`${embedUrl}-${reloadNonce}`}
+        ref={iframeRef}
+        src={embedUrl}
+        onLoad={markLoaded}
+        className="absolute top-1/2 left-1/2"
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+        title={text || 'Video'}
+        style={{
+          border: 'none',
+          width: fullscreen ? '100%' : '177.8%',
+          height: '100%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1,
+        }}
+      />
+      {legacyControls ? (
+        <>
+          <VideoFullscreenIconButton
+            label={fullscreenLabel}
+            onClick={handleFullscreen}
+            hidden={fullscreen}
+          />
+          {!fullscreen ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
+          {fullscreen ? (
+            <button
+              type="button"
+              aria-label="Close video"
+              className="video-fullscreen-close"
+              onClick={onCloseFullscreen}
+            >
+              ×
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  )
+
+  if (process.env.NEXT_PUBLIC_RANDOM_PLAYER_V2 === '1') {
+    return (
+      <RandomPlayerFrame
+        title={text}
+        frameHeight={frameHeight}
+        fullscreenLabel={fullscreenLabel}
+        soundControl={<VideoSoundIconButton muted={isMuted} onClick={toggleMute} />}
+      >
+        {(fullscreen) => renderPlayer(fullscreen)}
+      </RandomPlayerFrame>
+    )
+  }
+
   return (
     <div
       ref={shellRef}
       className={`video-embed-shell w-full h-full${isFullscreenActive ? ' video-embed-shell--fullscreen' : ''}`}
       style={{ position: 'relative', height: isFullscreenActive ? undefined : frameHeight }}
     >
-      <div
-        className="video-embed-player w-full h-full"
-        style={{
-          position: 'relative',
-          overflow: 'hidden',
-          height: isFullscreenActive ? undefined : frameHeight,
-        }}
-      >
-        {posterUrl ? (
-          <div
-            className="video-embed-poster"
-            style={{
-              backgroundImage: cssImageUrl(posterUrl),
-              opacity: iframeLoaded ? 0 : 1,
-            }}
-          />
-        ) : null}
-        <iframe
-          key={`${embedUrl}-${reloadNonce}`}
-          ref={iframeRef}
-          src={embedUrl}
-          onLoad={markLoaded}
-          className="absolute top-1/2 left-1/2"
-          allow="autoplay; fullscreen; picture-in-picture"
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          title={text || 'Video'}
-          style={{
-            border: 'none',
-            width: '177.8%',
-            height: '100%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 1,
-          }}
-        />
-        <VideoFullscreenIconButton
-          label={fullscreenLabel}
-          onClick={handleFullscreen}
-          hidden={isFullscreenActive}
-        />
-        {!isFullscreenActive ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
-        {isFullscreenActive ? (
-          <button
-            type="button"
-            aria-label="Close video"
-            className="video-fullscreen-close"
-            onClick={onCloseFullscreen}
-          >
-            ×
-          </button>
-        ) : null}
-      </div>
+      {renderPlayer(isFullscreenActive, true)}
       <VideoFullscreenBrand visible={isFullscreenActive} />
     </div>
   )
@@ -1967,59 +1998,80 @@ function HtmlVideoEmbed({
     openProviderUrl(item.url)
   }
 
+  const renderPlayer = (fullscreen: boolean, legacyControls = false) => (
+    <div
+      className="video-embed-player w-full h-full"
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        height: fullscreen ? '100%' : frameHeight,
+      }}
+    >
+      <video
+        ref={videoRef}
+        controls
+        playsInline
+        autoPlay={shouldAutoPlay}
+        muted={shouldAutoPlay && isMuted}
+        className="absolute top-1/2 left-1/2"
+        style={{
+          backgroundColor: '#000',
+          width: fullscreen ? '100%' : '177.8%',
+          height: '100%',
+          transform: 'translate(-50%, -50%)',
+        }}
+        poster={item.thumbUrl ?? undefined}
+        controlsList="nodownload"
+        disablePictureInPicture
+        onError={() => onPlaybackIssue?.(item, { reason: 'video-error' })}
+      >
+        <source src={item.url} />
+      </video>
+      {legacyControls ? (
+        <>
+          <VideoFullscreenIconButton
+            label={fullscreenLabel}
+            onClick={handleFullscreen}
+            hidden={fullscreen}
+          />
+          {shouldAutoPlay && !fullscreen ? (
+            <VideoSoundIconButton muted={isMuted} onClick={toggleMute} />
+          ) : null}
+          {fullscreen ? (
+            <button
+              type="button"
+              aria-label="Close video"
+              className="video-fullscreen-close"
+              onClick={onCloseFullscreen}
+            >
+              ×
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  )
+
+  if (process.env.NEXT_PUBLIC_RANDOM_PLAYER_V2 === '1') {
+    return (
+      <RandomPlayerFrame
+        title={item.text}
+        frameHeight={frameHeight}
+        fullscreenLabel={fullscreenLabel}
+        soundControl={shouldAutoPlay ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
+      >
+        {(fullscreen) => renderPlayer(fullscreen)}
+      </RandomPlayerFrame>
+    )
+  }
+
   return (
     <div
       ref={shellRef}
       className={`video-embed-shell w-full h-full${isFullscreenActive ? ' video-embed-shell--fullscreen' : ''}`}
       style={{ position: 'relative', height: isFullscreenActive ? undefined : frameHeight }}
     >
-      <div
-        className="video-embed-player w-full h-full"
-        style={{
-          position: 'relative',
-          overflow: 'hidden',
-          height: isFullscreenActive ? undefined : frameHeight,
-        }}
-      >
-        <video
-          ref={videoRef}
-          controls
-          playsInline
-          autoPlay={shouldAutoPlay}
-          muted={shouldAutoPlay && isMuted}
-          className="absolute top-1/2 left-1/2"
-          style={{
-            backgroundColor: '#000',
-            width: '177.8%',
-            height: '100%',
-            transform: 'translate(-50%, -50%)',
-          }}
-          poster={item.thumbUrl ?? undefined}
-          controlsList="nodownload"
-          disablePictureInPicture
-          onError={() => onPlaybackIssue?.(item, { reason: 'video-error' })}
-        >
-          <source src={item.url} />
-        </video>
-        <VideoFullscreenIconButton
-          label={fullscreenLabel}
-          onClick={handleFullscreen}
-          hidden={isFullscreenActive}
-        />
-        {shouldAutoPlay && !isFullscreenActive ? (
-          <VideoSoundIconButton muted={isMuted} onClick={toggleMute} />
-        ) : null}
-        {isFullscreenActive ? (
-          <button
-            type="button"
-            aria-label="Close video"
-            className="video-fullscreen-close"
-            onClick={onCloseFullscreen}
-          >
-            ×
-          </button>
-        ) : null}
-      </div>
+      {renderPlayer(isFullscreenActive, true)}
       <VideoFullscreenBrand visible={isFullscreenActive} />
     </div>
   )
