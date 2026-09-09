@@ -7,6 +7,7 @@ type Props = {
   items: LikeItem[]
   onDelete?: () => void
   readOnly?: boolean
+  onOpen?: (item: LikeItem) => void
 }
 
 /** Palette fallback si l'item n'a pas de theme sauvegardé */
@@ -52,7 +53,7 @@ function makeColorIndices(n: number, cols: number, paletteLen: number) {
   return out
 }
 
-export default function LikesGrid({ items, onDelete, readOnly = false }: Props) {
+export default function LikesGrid({ items, onDelete, readOnly = false, onOpen }: Props) {
   // assez de tuiles pour "remplir" la page (ajuste si tu veux)
   const MIN_TILES_MOBILE = 12   // ~6 lignes * 2 colonnes
   const MIN_TILES_DESKTOP = 24  // ajoute un peu sur grand écran
@@ -84,6 +85,7 @@ export default function LikesGrid({ items, onDelete, readOnly = false }: Props) 
           paletteIdx={colorIdx[idx] ?? (idx % PALETTE.length)}
           onDelete={onDelete}
           readOnly={readOnly}
+          onOpen={onOpen}
         />
       ))}
 
@@ -102,12 +104,24 @@ export default function LikesGrid({ items, onDelete, readOnly = false }: Props) 
   )
 }
 
-function Tile({ it, paletteIdx, onDelete, readOnly }: { it: LikeItem; paletteIdx: number; onDelete?: () => void; readOnly?: boolean }) {
+function Tile({
+  it,
+  paletteIdx,
+  onDelete,
+  readOnly,
+  onOpen,
+}: {
+  it: LikeItem
+  paletteIdx: number
+  onDelete?: () => void
+  readOnly?: boolean
+  onOpen?: (item: LikeItem) => void
+}) {
   const t = it.theme || PALETTE[paletteIdx]
   const isText = it.type === 'quote' || it.type === 'joke' || it.type === 'fact'
   const displayImg = it.ogImage || it.thumbUrl
 
-  const open = () => { if (it.url) window.open(it.url, '_blank', 'noopener,noreferrer') }
+  const open = () => onOpen?.(it)
 
   return (
     <div className="relative" style={{ background: t.bg, color: t.cream, aspectRatio: '1 / 1' }}>

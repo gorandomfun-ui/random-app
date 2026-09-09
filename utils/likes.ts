@@ -1,4 +1,5 @@
 // utils/likes.ts
+import { decodeSavedContent } from '@/lib/likes/savedContent'
 import { invalidateWeLikesCache } from '@/lib/likes/weCache'
 
 export type LikeType = 'image' | 'video' | 'web' | 'quote' | 'joke' | 'fact'
@@ -15,6 +16,7 @@ export type LikeItem = {
   provider?: string
   theme?: { bg: string; deep: string; cream: string; text: string }
   likedAt: number
+  snapshot?: unknown
 }
 
 export type GlobalLikeItem = LikeItem & {
@@ -122,6 +124,7 @@ export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
       provider: getSourceName(payload.source, payload.provider) || undefined,
       theme,
       likedAt: Date.now(),
+      snapshot: decodeSavedContent(payload),
     }
     if (idx >= 0) arr.splice(idx, 1)
     arr.unshift(item)

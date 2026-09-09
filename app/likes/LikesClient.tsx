@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import LikesGrid from '../../components/LikesGrid'
+import { useSavedLikeView } from '@/components/likes/useSavedLikeView'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
@@ -18,6 +21,11 @@ import {
   WE_LIKES_INVALIDATED_EVENT,
   writeWeLikesCache,
 } from '@/lib/likes/weCache'
+
+const SavedRandom = dynamic(
+  () => import('../random/RandomExperience').then((module) => module.RandomExperience),
+  { ssr: false },
+)
 
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 type LikesClientProps = {
@@ -205,6 +213,8 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const [globalLoading, setGlobalLoading] = useState(false)
   const [lastGlobalFetchedAt, setLastGlobalFetchedAt] = useState(seedTimestamp)
   const [activeTab, setActiveTab] = useState<'you' | 'we'>('you')
+  const router = useRouter()
+  const saved = useSavedLikeView(activeTab, setActiveTab)
   const [themeIdx, setThemeIdx] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)
@@ -215,7 +225,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const previousActiveTabRef = useRef<'you' | 'we'>('you')
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
   const [footerAdVisible, setFooterAdVisible] = useState(false)
-  const adsAllowed = consent?.ads === true
+  const adsAllowed = consent?.ads === true && !saved.view
 
   const cacheWeLikes = useCallback((entries: GlobalLikeItem[], timestamp: number) => {
     if (!timestamp) return
@@ -464,7 +474,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         )
       }
 
-      return <LikesGrid items={items} onDelete={load} />
+      return <LikesGrid items={items} onDelete={load} onOpen={saved.open} />
     }
 
     if (globalLoading && !globalLoaded) {
@@ -483,10 +493,12 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
       )
     }
 
-    return <LikesGrid items={globalItems} readOnly />
+    return <LikesGrid items={globalItems} readOnly onOpen={saved.open} />
   }
 
   return (
+    <>
+      <div hidden={Boolean(saved.view)}>
     <main
       className="relative min-h-screen overflow-hidden pb-[calc(var(--ad-bar-height,0px)+24px)]"
       style={mainStyle}
@@ -861,6 +873,16 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
         }
       `}</style>
     </main>
+      </div>
+      {saved.view ? (
+        <SavedRandom
+          key={saved.view.item._id}
+          savedItem={saved.view.item}
+          onSavedBack={saved.back}
+          onSavedRandom={() => router.push('/random?next=1')}
+        />
+      ) : null}
+    </>
   )
 }
 

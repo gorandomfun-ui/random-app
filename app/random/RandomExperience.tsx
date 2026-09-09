@@ -2295,7 +2295,18 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
   )
 }
 
-export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?: boolean }) {
+export function RandomExperience({
+  effectsTestMode = false,
+  savedItem,
+  onSavedBack,
+  onSavedRandom,
+}: {
+  effectsTestMode?: boolean
+  savedItem?: RandomContentItem
+  onSavedBack?: () => void
+  onSavedRandom?: () => void
+}) {
+  const savedMode = Boolean(savedItem)
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, addPoints, maybeSpawnDiamond, quizScore, score } = useScore()
   const { consent } = useCookieConsent()
@@ -2315,14 +2326,14 @@ export function RandomExperience({ effectsTestMode = false }: { effectsTestMode?
   const [shareOpen, setShareOpen] = useState(false)
   const selectedTypes = ALL_ITEM_TYPES
   const [themeIdx, setThemeIdx] = useState(() => randIdx(THEMES.length))
-  const [currentItem, setCurrentItem] = useState<DisplayItem | null>(null)
-  const currentItemRef = useRef<DisplayItem | null>(null)
+  const [currentItem, setCurrentItem] = useState<DisplayItem | null>(savedItem ?? null)
+  const currentItemRef = useRef<DisplayItem | null>(savedItem ?? null)
   const footerAdCounterRef = useRef(0)
   const [footerAdVisible, setFooterAdVisible] = useState(false)
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!savedMode)
   const loadPendingRef = useRef(false)
   const transitionLockedRef = useRef(false)
   const [transitionLocked, setTransitionLocked] = useState(false)
@@ -3082,7 +3093,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   }, [])
 
   const persistRandomSession = useCallback(() => {
-    if (typeof window === 'undefined') return
+    if (savedMode || typeof window === 'undefined') return
     const langKey = (locale || 'en') as Lang
     const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : RANDOM_SESSION_PREFIX
     const payload: PersistedRandomSession = {
@@ -3101,7 +3112,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     } catch {
       /* Session restoration must never block navigation. */
     }
-  }, [effectsTestMode, locale])
+  }, [savedMode, effectsTestMode, locale])
 
   const restoreRandomSession = useCallback(() => {
     if (typeof window === 'undefined') return false
@@ -3578,6 +3589,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [])
 
   const fillRandomReadyQueue = useCallback((target = RANDOM_READY_TARGET) => {
+    if (savedMode) return Promise.resolve()
     if (randomReadyQueueRef.current.length >= target) return randomReadyPromiseRef.current ?? Promise.resolve()
     if (randomReadyPromiseRef.current) return randomReadyPromiseRef.current
 
@@ -3617,7 +3629,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       notifyRandomReady()
     })
     return runner
-  }, [getContentKey, notifyRandomReady, persistRandomSession, prepareRandomEntry, warmContentMedia])
+  }, [savedMode, getContentKey, notifyRandomReady, persistRandomSession, prepareRandomEntry, warmContentMedia])
 
   const takeRandomReadyEntry = useCallback(() => {
     let entry = randomReadyQueueRef.current.shift() ?? null
@@ -3648,8 +3660,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [clearPreloadedCaches, locale, notifyRandomReady])
 
   useEffect(() => {
-    selectedTypes.forEach((type) => drainPrefetchedItems(type))
-  }, [drainPrefetchedItems, selectedTypes])
+    if (!savedMode) selectedTypes.forEach((type) => drainPrefetchedItems(type))
+  }, [savedMode, drainPrefetchedItems, selectedTypes])
 
   const updateTheme = useCallback(() => {
     setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))
@@ -3803,6 +3815,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
+    if (savedMode) return
     const current = currentItemRef.current
     if (!current || current.type !== 'video') return
 
@@ -3869,10 +3882,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
 
     recover()
-  }, [getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
+  }, [savedMode, getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
 
   useEffect(() => {
-    if (initialLoadTriggeredRef.current) return
+    if (savedMode || initialLoadTriggeredRef.current) return
     initialLoadTriggeredRef.current = true
     const restored = restoreRandomSession()
     if (!effectsTestMode && !encourage3dScheduleRef.current) {
@@ -3881,7 +3894,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         progressionDrawsRef.current,
       )
     }
-    if (restored) {
+    const locationUrl = new URL(window.location.href)
+    const advanceFromSaved = locationUrl.searchParams.get('next') === '1'
+    if (advanceFromSaved) {
+      locationUrl.searchParams.delete('next')
+      history.replaceState(
+        history.state,
+        '',
+        locationUrl.pathname + locationUrl.search + locationUrl.hash,
+      )
+    }
+    if (restored && !advanceFromSaved) {
       const current = currentItemRef.current
       if (current) void warmContentMedia(current)
       const upcoming = randomReadyQueueRef.current[0]
@@ -3890,7 +3913,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       return
     }
     loadNext(false).catch(() => setLoading(false))
-  }, [effectsTestMode, fillRandomReadyQueue, loadNext, restoreRandomSession, warmContentMedia])
+  }, [savedMode, effectsTestMode, fillRandomReadyQueue, loadNext, restoreRandomSession, warmContentMedia])
 
   useEffect(() => {
     if (currentItem) persistRandomSession()
@@ -4124,6 +4147,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [liked, theme, triggerHeartGlitch])
 
   const handleRandomAgain = useCallback(() => {
+    if (savedMode) {
+      onSavedRandom?.()
+      return
+    }
     if (transitionLockedRef.current) return
     const wasWave = waveModeRef.current
     const waveCandidate = currentItemRef.current
@@ -4168,7 +4195,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         ? progressionDrawsRef.current
         : Math.min(EFFECTS_PROGRESSION_MAX_DRAWS, progressionDrawsRef.current + 1))
     playAgain(nextProgressionIntensity)
-  }, [effectsTestMode, loadNext])
+  }, [savedMode, onSavedRandom, effectsTestMode, loadNext])
 
   const handleWave = useCallback(async () => {
     if (transitionLockedRef.current) return
@@ -4304,15 +4331,23 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         <button
           ref={menuButtonRef}
           type="button"
-          aria-label="Menu"
+          aria-label={savedMode ? t('common.back', 'Back') : 'Menu'}
           onClick={() => {
+            if (savedMode) {
+              onSavedBack?.()
+              return
+            }
             triggerBurgerGlitch()
             setMenuOpen(true)
           }}
           className={`random-menu-trigger flex items-center${burgerPointPulse ? ' random-menu-trigger--points' : ''}`}
           style={{ color: theme.text }}
         >
-          <BurgerIcon color={theme.text} glitch={burgerGlitch} />
+          {savedMode ? (
+            <MonoIcon src="/icons/return.svg" color={theme.text} size={28} />
+          ) : (
+            <BurgerIcon color={theme.text} glitch={burgerGlitch} />
+          )}
         </button>
 
         <div className="flex-1 flex justify-center">
