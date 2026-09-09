@@ -1362,11 +1362,6 @@ function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
   postEmbedMessage(iframe, { command: 'play' })
 }
 
-function muteDailymotionSound(iframe: HTMLIFrameElement | null) {
-  postEmbedMessage(iframe, { command: 'setMuted', parameters: [true] })
-  postEmbedMessage(iframe, { command: 'setVolume', parameters: [0] })
-}
-
 function scheduleVideoSoundWake(wake: () => void) {
   if (typeof window === 'undefined') return () => undefined
   const timers = VIDEO_SOUND_WAKE_DELAYS.map((delay) => window.setTimeout(wake, delay))
@@ -1476,7 +1471,6 @@ function VideoEmbed({
         isFullscreenActive={isFullscreenActive}
         onFullscreenFallback={onOpenFullscreen}
         onCloseFullscreen={onCloseFullscreen}
-        onVideoSoundUnlocked={onVideoSoundUnlocked}
         onPlaybackIssue={onPlaybackIssue}
       />
     )
@@ -1733,7 +1727,6 @@ function DailymotionEmbed({
   isFullscreenActive,
   onFullscreenFallback,
   onCloseFullscreen,
-  onVideoSoundUnlocked,
   onPlaybackIssue,
 }: {
   item: VideoContentItem
@@ -1744,24 +1737,20 @@ function DailymotionEmbed({
   isFullscreenActive: boolean
   onFullscreenFallback?: (payload: FullscreenVideoPayload) => void
   onCloseFullscreen?: () => void
-  onVideoSoundUnlocked?: () => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
+  const { t } = useI18n()
   const { url, text } = item
   const shellRef = useRef<HTMLDivElement | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  const preservePlayerOnUnmuteRef = useRef(false)
   const soundMutedRef = useRef(soundMuted)
   const [isMuted, setIsMuted] = useState(soundMuted)
   const [embedMuted, setEmbedMuted] = useState(soundMuted)
+  const [showSoundHint, setShowSoundHint] = useState(false)
 
   useEffect(() => {
     soundMutedRef.current = soundMuted
     setIsMuted(soundMuted)
-    if (preservePlayerOnUnmuteRef.current && !soundMuted) {
-      preservePlayerOnUnmuteRef.current = false
-      return
-    }
     setEmbedMuted(soundMuted)
   }, [soundMuted])
 
@@ -1769,7 +1758,6 @@ function DailymotionEmbed({
     const nextMuted = soundMutedRef.current
     setIsMuted(nextMuted)
     setEmbedMuted(nextMuted)
-    preservePlayerOnUnmuteRef.current = false
   }, [url])
 
   const embedUrl = useMemo(() => {
@@ -1795,6 +1783,16 @@ function DailymotionEmbed({
   }, [embedMuted, url])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
+
+  useEffect(() => {
+    if (!iframeLoaded) {
+      setShowSoundHint(false)
+      return undefined
+    }
+    setShowSoundHint(true)
+    const timer = window.setTimeout(() => setShowSoundHint(false), 4000)
+    return () => window.clearTimeout(timer)
+  }, [iframeLoaded, url])
 
   const requestSound = useCallback(() => {
     wakeDailymotionSound(iframeRef.current)
@@ -1822,17 +1820,27 @@ function DailymotionEmbed({
     openProviderUrl(item.url)
   }
 
-  const toggleMute = () => {
-    if (isMuted) {
-      preservePlayerOnUnmuteRef.current = true
-      requestSound()
-      onVideoSoundUnlocked?.()
-      setIsMuted(false)
-      return
-    }
-    muteDailymotionSound(iframeRef.current)
-    setIsMuted(true)
-  }
+  const soundHint = showSoundHint ? (
+    <div
+      role="status"
+      className="rounded-full bg-black/60 text-white shadow-lg"
+      style={{
+        position: 'absolute',
+        top: '12px',
+        right: '68px',
+        zIndex: 4,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+        padding: '11px 14px',
+        fontSize: '12px',
+        fontWeight: 700,
+        lineHeight: '18px',
+      }}
+    >
+      {t('video.tapForSound', 'Tap for sound')}
+    </div>
+  ) : null
 
   const renderPlayer = (fullscreen: boolean, legacyControls = false) => (
     <div
@@ -1877,7 +1885,7 @@ function DailymotionEmbed({
             onClick={handleFullscreen}
             hidden={fullscreen}
           />
-          {!fullscreen ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
+          {!fullscreen ? soundHint : null}
           {fullscreen ? (
             <button
               type="button"
@@ -1899,7 +1907,7 @@ function DailymotionEmbed({
         title={text}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
-        soundControl={<VideoSoundIconButton muted={isMuted} onClick={toggleMute} />}
+        soundControl={soundHint}
       >
         {(fullscreen) => renderPlayer(fullscreen)}
       </RandomPlayerFrame>

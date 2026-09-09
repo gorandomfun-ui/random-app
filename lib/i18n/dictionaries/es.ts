@@ -83,6 +83,7 @@ const esDictionary = {
     fullscreen: "Pantalla completa",
     mute: "Silenciar video",
     unmute: "Activar sonido",
+    tapForSound: "Toca para oír",
     openExternally: "Abrir en la app",
   },
   shuffle: {

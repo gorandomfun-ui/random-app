@@ -97,6 +97,7 @@ const deDictionary = {
     "fullscreen": "Vollbild",
     "mute": "Video stummschalten",
     "unmute": "Videoton einschalten",
+    "tapForSound": "Tippen für Ton",
     "openExternally": "In App öffnen"
   },
   "shuffle": {

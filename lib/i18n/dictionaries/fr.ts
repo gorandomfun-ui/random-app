@@ -97,6 +97,7 @@ const frDictionary = {
     "fullscreen": "Plein écran",
     "mute": "Couper le son",
     "unmute": "Activer le son",
+    "tapForSound": "Touchez pour le son",
     "openExternally": "Ouvrir dans l'app"
   },
   "shuffle": {
