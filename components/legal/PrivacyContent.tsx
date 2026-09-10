@@ -36,7 +36,7 @@ export default function PrivacyContent() {
             <CookieSettingsLink>{copy.settings}</CookieSettingsLink>
           </nav>
           {copy.sections.map((section) => (
-            <section key={section.title} className="space-y-2">
+            <section id={section.id} key={section.title} className="scroll-mt-6 space-y-2">
               <h2 className="text-xl font-semibold">{section.title}</h2>
               <p className="leading-relaxed">{section.body}</p>
             </section>
