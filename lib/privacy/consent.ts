@@ -35,6 +35,10 @@ export function normalizeConsent(value: Consent, gpc = false): Consent {
   }
 }
 
+export function hasOptionalConsent(value: Consent): boolean {
+  return value.media === true || value.ads === true
+}
+
 export function recordConsent(value: Consent, now = Date.now(), gpc = false): ConsentRecord {
   return {
     version: 2,
@@ -82,3 +86,24 @@ export function parseConsent(raw: string | null, now = Date.now()): ConsentRecor
 
 // V1 had neither a timestamp nor proof distinguishing automatic grants from user choice.
 // Never silently migrate a positive V1 permission. No service starts during the new choice.
+
+/** Grant only optional media. Preserve the expiry of already-made choices.
+ * A click to allow a video is not a new advertising permission or renewal.
+ */
+export function grantMediaConsent(
+  current: ConsentRecord | null,
+  now = Date.now(),
+  gpc = false,
+): ConsentRecord {
+  if (
+    current &&
+    hasOptionalConsent(current.choices) &&
+    parseConsent(JSON.stringify(current), now)
+  ) {
+    return {
+      ...current,
+      choices: normalizeConsent({ ...current.choices, media: true }, gpc),
+    }
+  }
+  return recordConsent({ ...denied(), media: true }, now, gpc)
+}

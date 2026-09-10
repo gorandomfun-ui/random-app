@@ -453,9 +453,10 @@ const deDictionary = {
 
     privacy: {
       title: "Cookies & Datenschutz",
-      bodyPrefix: "Wir setzen nur unbedingt erforderliche Cookies (Sprachauswahl, Einwilligungsprotokoll). A-ADS liefert Anzeigen ohne Tracking-Cookies; zusätzliche Tracker werden hier zur Einwilligung angeboten.",
+      bodyPrefix: "Optionale Videoplayer und A-ADS-Werbung werden entsprechend Ihrer ausdrücklichen Auswahl geladen. Ein Standardplayer von Dailymotion kann nur in dem in unserer Datenschutzerklärung beschriebenen geprüften Modus verfügbar bleiben.",
       manageCookies: "Cookies verwalten",
-      privacyPolicy: "Datenschutzerklärung"
+      privacyPolicy: "Datenschutzerklärung",
+      termsOfUse: "Nutzungsbedingungen"
     },
 
     usa: {

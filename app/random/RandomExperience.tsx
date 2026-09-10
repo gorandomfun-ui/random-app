@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import ExternalMediaGate from '@/components/ExternalMediaGate'
 import ControlledVideoEmbed from '@/components/players/ControlledVideoEmbed'
 import { providerVideo } from '@/lib/players/state'
+import { randomPlayerKind } from '@/lib/privacy/mediaPolicy'
 import Link from 'next/link'
 import { RotateCcw, Volume2, VolumeX, X } from 'lucide-react'
 
@@ -1408,8 +1409,16 @@ function useVideoEmbedWatchdog(
 }
 
 function VideoEmbed(props: Parameters<typeof VideoEmbedAllowed>[0]) {
-  return providerVideo(props.item.url)
-    ? <ExternalMediaGate><VideoEmbedAllowed {...props} /></ExternalMediaGate>
+  const player = randomPlayerKind(props.item)
+  return player
+    ? <ExternalMediaGate
+        player={player}
+        source={props.item.url}
+        standardDailymotion={player === 'dailymotion'}
+        onBlocked={props.onCloseFullscreen}
+      >
+        <VideoEmbedAllowed {...props} />
+      </ExternalMediaGate>
     : <VideoEmbedAllowed {...props} />
 }
 
@@ -2934,16 +2943,6 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     setFullscreenVideo(null)
     exitNativeFullscreen()
   }, [])
-
-  useEffect(() => {
-    if (
-      consent?.media !== true &&
-      currentItem?.type === 'video' &&
-      providerVideo(currentItem.url)
-    ) {
-      closeFullscreen()
-    }
-  }, [closeFullscreen, consent?.media, currentItem])
 
   useEffect(() => {
     const initial = randIdx(THEMES.length)

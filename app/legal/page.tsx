@@ -165,6 +165,10 @@ export default function LegalPage() {
               <a href="/privacy" className="underline">
                 {t('legal.privacy.privacyPolicy')}
               </a>
+              <span className="mx-1">·</span>
+              <a href="/terms" className="underline">
+                {t('legal.privacy.termsOfUse')}
+              </a>
             </p>
           </div>
 

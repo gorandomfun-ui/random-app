@@ -453,9 +453,10 @@ const enDictionary = {
 
     privacy: {
       title: "Cookies & privacy",
-      bodyPrefix: "We only set essential cookies (language choice, consent log). A-ADS delivers ads without tracking cookies; if we add other trackers they will appear here for opt-in.",
+      bodyPrefix: "Optional video players and A-ADS advertising are loaded according to your explicit choices. A standard Dailymotion player may remain available only in the verified mode described in our privacy policy.",
       manageCookies: "Manage my cookies",
-      privacyPolicy: "Privacy policy"
+      privacyPolicy: "Privacy policy",
+      termsOfUse: "Terms of use"
     },
 
     usa: {

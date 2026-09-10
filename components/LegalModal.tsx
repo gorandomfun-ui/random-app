@@ -86,6 +86,10 @@ export default function LegalModal({ open, onClose }: Props) {
                 <a href="/privacy" className="underline underline-offset-2">
                   {t('legal.privacy.privacyPolicy')}
                 </a>
+                <span className="mx-1">·</span>
+                <a href="/terms" className="underline underline-offset-2">
+                  {t('legal.privacy.termsOfUse')}
+                </a>
               </p>
             </div>
 

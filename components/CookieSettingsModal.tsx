@@ -71,7 +71,13 @@ export default function CookieSettingsModal() {
             {copy.adsText}
           </span>
         </label>
+        <p className="text-sm">{copy.standardMediaText}</p>
+        <p className="text-sm">{copy.remembered}</p>
         {gpc && <p>{copy.gpc}</p>}
+      </div>
+      <div className="mb-4 flex flex-wrap gap-4 text-sm">
+        <a href="/privacy" className="underline">{copy.policy}</a>
+        <a href="/terms" className="underline">{copy.terms}</a>
       </div>
       <div className="flex flex-wrap justify-end gap-3">
         <button

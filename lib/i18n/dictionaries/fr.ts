@@ -453,9 +453,10 @@ const frDictionary = {
 
     privacy: {
       title: "Cookies & vie privée",
-      bodyPrefix: "Nous utilisons uniquement des cookies essentiels (préférence de langue, journal de consentement). A-ADS diffuse des publicités sans cookies de suivi ; si nous ajoutons d’autres traceurs, ils seront proposés ici pour opt-in.",
+      bodyPrefix: "Les lecteurs vidéo optionnels et la publicité A-ADS sont chargés selon vos choix explicites. Un lecteur Dailymotion standard peut rester accessible uniquement dans le mode vérifié décrit dans notre politique de confidentialité.",
       manageCookies: "Gérer mes cookies",
-      privacyPolicy: "Politique de confidentialité"
+      privacyPolicy: "Politique de confidentialité",
+      termsOfUse: "Conditions d’utilisation"
     },
 
     usa: {

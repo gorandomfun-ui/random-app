@@ -60,11 +60,18 @@ function getDailymotionEmbedUrl(url: string): string | null {
 
 function SharedContentView({ content, theme }: { content: SharedContent; theme: Theme }) {
   if (content.type === 'video' && content.mediaUrl) {
-    const embedUrl = getYouTubeEmbedUrl(content.mediaUrl) || getDailymotionEmbedUrl(content.mediaUrl)
+    const youtubeEmbedUrl = getYouTubeEmbedUrl(content.mediaUrl)
+    const dailymotionEmbedUrl = getDailymotionEmbedUrl(content.mediaUrl)
+    const embedUrl = youtubeEmbedUrl || dailymotionEmbedUrl
     if (embedUrl) {
+      const player = youtubeEmbedUrl ? 'youtube' : 'dailymotion'
       return (
         <div className="relative w-full bg-black" style={{ aspectRatio: '16 / 9' }}>
-          <ExternalMediaGate>
+          <ExternalMediaGate
+            player={player}
+            source={content.mediaUrl}
+            standardDailymotion={player === 'dailymotion'}
+          >
             <iframe
               src={embedUrl}
               title={content.title}
