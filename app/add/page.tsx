@@ -743,6 +743,7 @@ type MenuOverlayProps = {
 function MenuOverlay({ close, languagesOpen, setLanguagesOpen, langs, locale, setLocale, applyLangOut, theme, t }: MenuOverlayProps) {
   const languageLabel = t('language.title', 'Language')
   const legalLabel = t('legal.title', 'Legal notice')
+  const privacyLabel = t('legal.privacy.privacyPolicy', 'Privacy')
   const likesLabel = t('likes.title', 'Likes')
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
@@ -814,6 +815,10 @@ function MenuOverlay({ close, languagesOpen, setLanguagesOpen, langs, locale, se
 
           <Link href="/legal" onClick={close} className="text-lg font-semibold" style={{ color: theme.cream }}>
             {legalLabel}
+          </Link>
+
+          <Link href="/privacy" onClick={close} className="text-lg font-semibold" style={{ color: theme.cream }}>
+            {privacyLabel}
           </Link>
 
           <Link href="/add" onClick={close} className="flex items-center gap-2" style={{ color: theme.cream }}>

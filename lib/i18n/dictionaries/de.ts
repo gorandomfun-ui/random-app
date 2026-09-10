@@ -47,6 +47,7 @@ const deDictionary = {
   "footer": {
     "social": "Sozial",
     "legal": "Impressum.",
+    "privacy": "Datenschutz",
     "share": "Teilen"
   },
   "modal": {

@@ -73,6 +73,7 @@ export default function LegalPage() {
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
+  const privacyLabel = useMemo(() => t('legal.privacy.privacyPolicy', 'Privacy'), [t])
   const subtitle = useMemo(() => t('legal.subtitle', 'Transparency & accountability'), [t])
   const disclaimerTitle = useMemo(() => t('legal.disclaimer.title', 'Disclaimer'), [t])
   const disclaimerBody = useMemo(() => t('legal.disclaimer.body'), [t])
@@ -295,6 +296,15 @@ export default function LegalPage() {
                 style={{ color: theme.cream }}
               >
                 {legalLabel}
+              </Link>
+
+              <Link
+                href="/privacy"
+                onClick={() => setMenuOpen(false)}
+                className="text-lg font-semibold"
+                style={{ color: theme.cream }}
+              >
+                {privacyLabel}
               </Link>
 
               <Link

@@ -496,10 +496,12 @@ export default function HomePage() {
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
+  const privacyLabel = useMemo(() => t('legal.privacy.privacyPolicy', 'Privacy'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
 
   const footerCopy = useMemo(() => ({
-    legal: t('footer.legal', 'Legal notice.'),
+    legal: t('footer.legal', 'Legal notice').replace(/[.。]\s*$/, ''),
+    privacy: t('footer.privacy', 'Privacy'),
     share: t('footer.share', 'share'),
   }), [t])
 
@@ -820,10 +822,12 @@ export default function HomePage() {
       >
         <div className="w-full px-4 h-full flex items-center justify-between" style={{ color: theme.text }}>
           <SocialPopover theme={theme} />
-          <Link href="/legal" className="flex items-center gap-2">
+          <div className="flex items-center gap-1 whitespace-nowrap font-inter text-[11px] font-semibold min-[430px]:text-sm sm:text-base" style={{ color: theme.cream }}>
             <MonoIcon src="/icons/info.svg" color={theme.cream} size={20} />
-            <span className="font-inter font-semibold" style={{ color: theme.cream }}>{footerCopy.legal}</span>
-          </Link>
+            <Link href="/legal">{footerCopy.legal}</Link>
+            <span aria-hidden="true">/</span>
+            <Link href="/privacy">{footerCopy.privacy}</Link>
+          </div>
           <div className="flex items-center gap-4">
             <Link href="/add" className="flex items-center gap-1">
               <span className="font-inter font-semibold" style={{ color: theme.cream }}>Add</span>
@@ -967,6 +971,15 @@ export default function HomePage() {
                 style={{ color: theme.cream }}
               >
                 {legalLabel}
+              </Link>
+
+              <Link
+                href="/privacy"
+                onClick={() => setMenuOpen(false)}
+                className="text-lg font-semibold"
+                style={{ color: theme.cream }}
+              >
+                {privacyLabel}
               </Link>
 
               <Link

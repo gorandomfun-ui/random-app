@@ -40,6 +40,7 @@ const esDictionary = {
   footer: {
     ...enDictionary.footer,
     legal: "Aviso legal.",
+    privacy: "Privacidad",
     share: "compartir",
   },
   modal: {

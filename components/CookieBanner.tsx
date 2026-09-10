@@ -6,9 +6,7 @@ import { privacyCopy } from '@/lib/privacy/copy'
 
 export default function CookieBanner() {
   const {
-    consent,
     isBannerOpen,
-    isSettingsOpen,
     acceptAll,
     allowMedia,
     rejectAll,
@@ -18,19 +16,7 @@ export default function CookieBanner() {
   const { locale } = useI18n()
   const copy = privacyCopy[locale] || privacyCopy.en
 
-  if (!isBannerOpen) {
-    if (!consent || isSettingsOpen) return null
-    return (
-      <button
-        type="button"
-        onClick={openSettings}
-        className="fixed left-3 z-[170] max-w-[calc(100vw-24px)] rounded-full border border-neutral-400 bg-white px-3 py-2 text-xs text-neutral-900 shadow"
-        style={{ bottom: 'calc(var(--ad-bar-height, 0px) + 12px)' }}
-      >
-        {consent.media ? copy.shortcut : copy.limited}
-      </button>
-    )
-  }
+  if (!isBannerOpen) return null
 
   const button = 'rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white hover:opacity-90'
 

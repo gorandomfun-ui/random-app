@@ -2633,6 +2633,7 @@ export function RandomExperience({
   const randomAgainLabel = useMemo(() => t('modal.randomAgain', 'RANDOM AGAIN'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
+  const privacyLabel = useMemo(() => t('legal.privacy.privacyPolicy', 'Privacy'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
   const quizScoreText = useMemo(() => `${quizScore} PTS`, [quizScore])
@@ -4707,6 +4708,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
                 style={{ color: theme.cream }}
               >
                 {legalLabel}
+              </Link>
+
+              <Link
+                href="/privacy"
+                onClick={() => setMenuOpen(false)}
+                className="text-lg font-semibold"
+                style={{ color: theme.cream }}
+              >
+                {privacyLabel}
               </Link>
 
               <Link

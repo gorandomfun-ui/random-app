@@ -326,6 +326,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
   const legalLabel = useMemo(() => t('legal.title', 'Legal notice'), [t])
+  const privacyLabel = useMemo(() => t('legal.privacy.privacyPolicy', 'Privacy'), [t])
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
   const adFormat = useMemo(() => {
     if (vw >= 1024) return { width: 728, height: 90, variant: 'desktop' as const }
@@ -674,6 +675,15 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
                 style={{ color: theme.cream }}
               >
                 {legalLabel}
+              </Link>
+
+              <Link
+                href="/privacy"
+                onClick={() => setMenuOpen(false)}
+                className="text-lg font-semibold"
+                style={{ color: theme.cream }}
+              >
+                {privacyLabel}
               </Link>
 
               <Link

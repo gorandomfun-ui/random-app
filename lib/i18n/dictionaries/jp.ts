@@ -47,6 +47,7 @@ const jpDictionary = {
   "footer": {
     "social": "ソーシャル",
     "legal": "法的通知。",
+    "privacy": "プライバシー",
     "share": "共有"
   },
   "modal": {

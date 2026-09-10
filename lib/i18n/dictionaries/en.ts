@@ -47,6 +47,7 @@ const enDictionary = {
   "footer": {
     "social": "social",
     "legal": "Legal notice.",
+    "privacy": "Privacy",
     "share": "share"
   },
   "modal": {

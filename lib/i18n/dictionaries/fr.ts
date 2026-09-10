@@ -47,6 +47,7 @@ const frDictionary = {
   "footer": {
     "social": "social",
     "legal": "Mentions légales.",
+    "privacy": "Confidentialité",
     "share": "partager"
   },
   "modal": {

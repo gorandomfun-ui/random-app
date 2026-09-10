@@ -6,6 +6,8 @@ type SharePresentation = {
   foundOn: string
   randomMore: string
   share: string
+  legal: string
+  privacy: string
   close: string
   copyLink: string
   copied: string
@@ -18,6 +20,8 @@ export const SHARE_PRESENTATION: Record<ShareLocale, SharePresentation> = {
     foundOn: 'Look what I found on goRANDOM.fun',
     randomMore: 'RANDOM MORE',
     share: 'Share',
+    legal: 'Legal notice',
+    privacy: 'Privacy',
     close: 'Close',
     copyLink: 'Copy link',
     copied: 'Copied!',
@@ -28,6 +32,8 @@ export const SHARE_PRESENTATION: Record<ShareLocale, SharePresentation> = {
     foundOn: 'Regarde ce que j’ai trouvé sur goRANDOM.fun',
     randomMore: 'ENCORE DU RANDOM',
     share: 'Partager',
+    legal: 'Mentions légales',
+    privacy: 'Confidentialité',
     close: 'Fermer',
     copyLink: 'Copier le lien',
     copied: 'Copié !',
@@ -38,6 +44,8 @@ export const SHARE_PRESENTATION: Record<ShareLocale, SharePresentation> = {
     foundOn: 'Schau, was ich auf goRANDOM.fun gefunden habe',
     randomMore: 'MEHR RANDOM',
     share: 'Teilen',
+    legal: 'Impressum',
+    privacy: 'Datenschutz',
     close: 'Schließen',
     copyLink: 'Link kopieren',
     copied: 'Kopiert!',
@@ -48,6 +56,8 @@ export const SHARE_PRESENTATION: Record<ShareLocale, SharePresentation> = {
     foundOn: 'Mira lo que encontré en goRANDOM.fun',
     randomMore: 'MÁS RANDOM',
     share: 'Compartir',
+    legal: 'Aviso legal',
+    privacy: 'Privacidad',
     close: 'Cerrar',
     copyLink: 'Copiar enlace',
     copied: '¡Copiado!',
@@ -58,6 +68,8 @@ export const SHARE_PRESENTATION: Record<ShareLocale, SharePresentation> = {
     foundOn: 'goRANDOM.funでこんなのを見つけたよ',
     randomMore: 'もっとランダム',
     share: '共有',
+    legal: '法的通知',
+    privacy: 'プライバシー',
     close: '閉じる',
     copyLink: 'リンクをコピー',
     copied: 'コピーしました！',

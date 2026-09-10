@@ -199,6 +199,12 @@ export default function SharedRandomExperience({
             <span className="hidden sm:inline">{labels.share}</span>
           </button>
         </div>
+
+        <nav className="mt-4 flex items-center justify-center gap-2 text-center text-xs font-semibold opacity-80">
+          <Link href="/legal" className="underline underline-offset-2">{labels.legal}</Link>
+          <span aria-hidden="true">/</span>
+          <Link href="/privacy" className="underline underline-offset-2">{labels.privacy}</Link>
+        </nav>
       </section>
 
       <ShareMenu
