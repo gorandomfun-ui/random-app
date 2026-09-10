@@ -1,100 +1,150 @@
-'use client';
+'use client'
 
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
+import {
+  CONSENT_KEY,
+  LEGACY_CONSENT_KEY,
+  denied,
+  normalizeConsent,
+  parseConsent,
+  recordConsent,
+  type Consent,
+  type ConsentRecord,
+} from '@/lib/privacy/consent'
 
-type Categories = 'necessary' | 'analytics' | 'ads' | 'personalization';
-
-export type Consent = Record<Categories, boolean>;
+export type { Consent } from '@/lib/privacy/consent'
+export type Region = 'eu' | 'us' | 'other'
 
 type Ctx = {
-  consent: Consent | null;              // null = pas encore décidé
-  decided: boolean;                     // consent !== null
-  isBannerOpen: boolean;                // bannière visible ?
-  isSettingsOpen: boolean;              // modal réglages ouvert ?
-  acceptAll: () => void;
-  rejectAll: () => void;
-  save: (next: Consent) => void;        // sauvegarder réglages
-  openSettings: () => void;
-  closeSettings: () => void;
-  region: Region;
-};
+  consent: Consent | null
+  decided: boolean
+  isBannerOpen: boolean
+  isSettingsOpen: boolean
+  acceptAll: () => void
+  rejectAll: () => void
+  save: (next: Consent) => void
+  openSettings: () => void
+  closeSettings: () => void
+  region: Region
+  gpc: boolean
+}
 
-const KEY = 'random.consent.v1';
-const ADS_EVENT = 'cookie:ads-changed';
+const Context = createContext<Ctx | null>(null)
 
-export type Region = 'eu' | 'us' | 'other';
-
-const DEFAULT_CONSENT: Consent = {
-  necessary: true,
-  analytics: false,
-  ads: true,
-  personalization: false,
-};
-
-const ConsentCtx = createContext<Ctx | null>(null);
+function readGpc() {
+  return (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true
+}
 
 export function CookieConsentProvider({
   children,
   region = 'other',
 }: {
-  children: React.ReactNode;
-  region?: Region;
+  children: ReactNode
+  region?: Region
 }) {
-  const [consent, setConsent] = useState<Consent | null>(null);
-  const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [record, setRecord] = useState<ConsentRecord | null>(null)
+  const [ready, setReady] = useState(false)
+  const [gpc, setGpc] = useState(false)
+  const [isSettingsOpen, setSettingsOpen] = useState(false)
 
-  // Charger depuis localStorage au montage (client seulement)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Consent;
-        // sécurité : necessary toujours true
-        parsed.necessary = true;
-        setConsent(parsed);
-      } else {
-        if (region === 'eu') {
-          setConsent(null); // force la bannière uniquement en zone EU
-        } else {
-          setConsent({ ...DEFAULT_CONSENT });
-          localStorage.setItem(KEY, JSON.stringify(DEFAULT_CONSENT));
-        }
+    const read = () => {
+      setGpc(readGpc())
+      try {
+        setRecord(parseConsent(localStorage.getItem(CONSENT_KEY)))
+      } catch {
+        setRecord(null)
       }
-    } catch {
-      if (region === 'eu') {
-        setConsent(null);
-      } else {
-        setConsent({ ...DEFAULT_CONSENT });
-      }
+      setReady(true)
     }
-  }, [region]);
+
+    read()
+    const storage = (event: StorageEvent) => {
+      if (event.key === CONSENT_KEY || event.key === null) read()
+    }
+    const focus = () => setGpc(readGpc())
+    window.addEventListener('storage', storage)
+    window.addEventListener('focus', focus)
+    return () => {
+      window.removeEventListener('storage', storage)
+      window.removeEventListener('focus', focus)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!record) return
+    let timer: number
+    const schedule = () => {
+      const remaining = record.expiresAt - Date.now()
+      if (remaining <= 0) {
+        setRecord(null)
+        return
+      }
+      timer = window.setTimeout(schedule, Math.min(remaining, 2_147_483_647))
+    }
+    schedule()
+    const visible = () => {
+      if (record.expiresAt <= Date.now()) setRecord(null)
+    }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [record])
+
+  useEffect(() => {
+    if (!gpc || !record?.choices.ads) return
+    const updated = { ...record, choices: normalizeConsent(record.choices, true) }
+    setRecord(updated)
+    try {
+      localStorage.setItem(CONSENT_KEY, JSON.stringify(updated))
+    } catch {
+      /* Retained in memory. */
+    }
+  }, [gpc, record])
 
   const save = useCallback((next: Consent) => {
-    const fixed = { ...next, necessary: true };
-    setConsent(fixed);
-    localStorage.setItem(KEY, JSON.stringify(fixed));
-    setSettingsOpen(false);
-  }, []);
+    const signal = readGpc()
+    setGpc(signal)
+    const value = recordConsent(next, Date.now(), signal)
+    setRecord(value)
+    setReady(true)
+    setSettingsOpen(false)
+    try {
+      localStorage.setItem(CONSENT_KEY, JSON.stringify(value))
+      localStorage.removeItem(LEGACY_CONSENT_KEY)
+    } catch {
+      /* Effective in this tab even without storage. */
+    }
+  }, [])
 
-  const acceptAll = useCallback(() => {
-    save({ necessary: true, analytics: false, ads: true, personalization: false });
-  }, [save]);
+  const acceptAll = useCallback(() => save({ ...denied(), ads: true, media: true }), [save])
+  const rejectAll = useCallback(() => save(denied()), [save])
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const consent = useMemo(
+    () => (record ? normalizeConsent(record.choices, gpc) : null),
+    [record, gpc],
+  )
 
-  const rejectAll = useCallback(() => {
-    save({ necessary: true, analytics: false, ads: false, personalization: false });
-  }, [save]);
-
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
-
-  const decided = consent !== null;
-  const isBannerOpen = region === 'eu' ? !decided && !isSettingsOpen : false;
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('cookie:ads-changed', { detail: consent?.ads === true }))
+  }, [consent?.ads])
 
   const value = useMemo<Ctx>(
     () => ({
       consent,
-      decided,
-      isBannerOpen,
+      decided: consent !== null,
+      isBannerOpen: ready && !consent && !isSettingsOpen,
       isSettingsOpen,
       acceptAll,
       rejectAll,
@@ -102,21 +152,27 @@ export function CookieConsentProvider({
       openSettings,
       closeSettings,
       region,
+      gpc,
     }),
-    [consent, decided, isBannerOpen, isSettingsOpen, acceptAll, rejectAll, save, openSettings, closeSettings, region]
-  );
+    [
+      consent,
+      ready,
+      isSettingsOpen,
+      acceptAll,
+      rejectAll,
+      save,
+      openSettings,
+      closeSettings,
+      region,
+      gpc,
+    ],
+  )
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const adsEnabled = consent?.ads === true;
-    window.dispatchEvent(new CustomEvent(ADS_EVENT, { detail: adsEnabled }));
-  }, [consent?.ads]);
-
-  return <ConsentCtx.Provider value={value}>{children}</ConsentCtx.Provider>;
+  return <Context.Provider value={value}>{children}</Context.Provider>
 }
 
 export function useCookieConsent(): Ctx {
-  const ctx = useContext(ConsentCtx);
-  if (!ctx) throw new Error('useCookieConsent must be used inside CookieConsentProvider');
-  return ctx;
+  const ctx = useContext(Context)
+  if (!ctx) throw new Error('CookieConsentProvider is missing')
+  return ctx
 }

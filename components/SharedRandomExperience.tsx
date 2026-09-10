@@ -5,6 +5,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 
+import ExternalMediaGate from '@/components/ExternalMediaGate'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ShareMenu from '@/components/ShareMenu'
@@ -63,14 +64,16 @@ function SharedContentView({ content, theme }: { content: SharedContent; theme: 
     if (embedUrl) {
       return (
         <div className="relative w-full bg-black" style={{ aspectRatio: '16 / 9' }}>
-          <iframe
-            src={embedUrl}
-            title={content.title}
-            className="absolute inset-0 h-full w-full"
-            allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-            allowFullScreen
-            style={{ border: 0 }}
-          />
+          <ExternalMediaGate>
+            <iframe
+              src={embedUrl}
+              title={content.title}
+              className="absolute inset-0 h-full w-full"
+              allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+              allowFullScreen
+              style={{ border: 0 }}
+            />
+          </ExternalMediaGate>
         </div>
       )
     }

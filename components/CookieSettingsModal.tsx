@@ -1,106 +1,94 @@
-'use client';
+'use client'
 
-import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
-import { Consent, useCookieConsent } from './CookieConsent';
+import { useEffect, useRef, useState } from 'react'
+import { useCookieConsent } from './CookieConsent'
+import { useI18n } from '@/providers/I18nProvider'
+import { denied } from '@/lib/privacy/consent'
+import { privacyCopy } from '@/lib/privacy/copy'
 
 export default function CookieSettingsModal() {
-  const { consent, isSettingsOpen, closeSettings, save } = useCookieConsent();
-  const [local, setLocal] = useState<Consent>({
-    necessary: true,
-    analytics: false,
-    ads: false,
-    personalization: false,
-  });
+  const { consent, isSettingsOpen, closeSettings, save, rejectAll, gpc } = useCookieConsent()
+  const { locale } = useI18n()
+  const copy = privacyCopy[locale] || privacyCopy.en
+  const [local, setLocal] = useState(denied)
+  const dialog = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
-    if (consent) setLocal(consent);
-  }, [consent]);
-
-  if (!isSettingsOpen) return null;
-
-  const onToggle = (key: keyof Consent) =>
-    setLocal((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  const onSave = () => save(local);
+    if (isSettingsOpen) {
+      setLocal(consent || denied())
+      dialog.current?.showModal()
+    } else dialog.current?.close()
+  }, [isSettingsOpen, consent])
 
   return (
-    <div id="cookie-settings-modal" className="fixed inset-0 z-[220]">
-      <div className="absolute inset-0 bg-black/60" aria-hidden="true" onClick={closeSettings} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Paramètres des cookies"
-        className="pointer-events-auto absolute left-1/2 top-1/2 w-[min(92vw,720px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white text-neutral-900 shadow-2xl ring-1 ring-black/10"
-      >
-        <div className="flex items-center justify-between border-b border-black/10 px-6 py-5">
-          <h2 className="text-xl font-bold">Paramètres des cookies</h2>
-          <button onClick={closeSettings} aria-label="Fermer" className="rounded-full p-2 hover:bg-black/5">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto px-6 py-6">
-          <ul className="space-y-4">
-            <li className="flex items-start gap-3">
-              <input type="checkbox" checked readOnly className="mt-1" />
-              <div>
-                <div className="font-semibold">Nécessaires</div>
-                <div className="text-sm text-neutral-600">
-                  Indispensables au fonctionnement du site (toujours actifs).
-                </div>
-              </div>
-            </li>
-
-            <li className="flex items-start gap-3 opacity-50">
-              <input type="checkbox" checked={false} readOnly className="mt-1" />
-              <div>
-                <div className="font-semibold">Analytics</div>
-                <div className="text-sm text-neutral-600">
-                  Pas d’outil configuré pour le moment.
-                </div>
-              </div>
-            </li>
-
-            <li className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={local.ads}
-                onChange={() => onToggle('ads')}
-                className="mt-1"
-              />
-              <div>
-                <div className="font-semibold">Publicité</div>
-                <div className="text-sm text-neutral-600">
-                  Affiche ou masque les annonces A-ADS (contextuelles, sans suivi).
-                </div>
-              </div>
-            </li>
-
-            <li className="flex items-start gap-3 opacity-50">
-              <input type="checkbox" checked={false} readOnly className="mt-1" />
-              <div>
-                <div className="font-semibold">Personnalisation</div>
-                <div className="text-sm text-neutral-600">
-                  Non utilisé actuellement.
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-
-        <div className="flex justify-end gap-3 border-t border-black/10 px-6 py-4">
-          <button onClick={closeSettings} className="rounded-xl px-4 py-2 hover:bg-neutral-100">
-            Annuler
-          </button>
-          <button
-            onClick={onSave}
-            className="rounded-xl bg-neutral-900 px-4 py-2 text-white hover:opacity-90"
-          >
-            Enregistrer
-          </button>
-        </div>
+    <dialog
+      ref={dialog}
+      id="cookie-settings-modal"
+      aria-label={copy.title}
+      onCancel={(event) => {
+        event.preventDefault()
+        closeSettings()
+      }}
+      className="w-[min(92vw,720px)] rounded-2xl bg-white p-6 text-neutral-900 shadow-2xl backdrop:bg-black/60"
+    >
+      <div className="flex justify-between gap-4">
+        <h2 className="text-xl font-bold">{copy.title}</h2>
+        <button type="button" aria-label={copy.close} onClick={closeSettings}>
+          ×
+        </button>
       </div>
-    </div>
-  );
+      <div className="my-6 max-h-[55vh] space-y-5 overflow-y-auto">
+        <label className="flex gap-3">
+          <input type="checkbox" checked disabled />
+          <span>
+            <strong>{copy.necessary}</strong>
+            <br />
+            {copy.necessaryText}
+          </span>
+        </label>
+        <label className="flex gap-3">
+          <input
+            type="checkbox"
+            checked={local.media}
+            onChange={(event) => setLocal((value) => ({ ...value, media: event.target.checked }))}
+          />
+          <span>
+            <strong>{copy.media}</strong>
+            <br />
+            {copy.mediaText}
+          </span>
+        </label>
+        <label className="flex gap-3">
+          <input
+            type="checkbox"
+            checked={!gpc && local.ads}
+            disabled={gpc}
+            onChange={(event) => setLocal((value) => ({ ...value, ads: event.target.checked }))}
+          />
+          <span>
+            <strong>{copy.ads}</strong>
+            <br />
+            {copy.adsText}
+          </span>
+        </label>
+        {gpc && <p>{copy.gpc}</p>}
+      </div>
+      <div className="flex flex-wrap justify-end gap-3">
+        <button
+          type="button"
+          className="rounded-xl bg-neutral-900 px-4 py-2 text-white"
+          onClick={rejectAll}
+        >
+          {copy.reject}
+        </button>
+        <button
+          type="button"
+          className="rounded-xl bg-neutral-900 px-4 py-2 text-white"
+          onClick={() => save(local)}
+        >
+          {copy.save}
+        </button>
+      </div>
+    </dialog>
+  )
 }

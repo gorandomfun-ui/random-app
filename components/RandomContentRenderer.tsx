@@ -2,6 +2,8 @@
 
 /* eslint-disable @next/next/no-img-element */
 
+import ExternalMediaGate from '@/components/ExternalMediaGate'
+import { providerVideo } from '@/lib/players/state'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type {
   FactItem,
@@ -143,7 +145,9 @@ export default function RandomContentRenderer({
   }
 
   if (item.type === 'video') {
-    return <Video block={item as VideoItem} theme={theme} />
+    return providerVideo((item as VideoItem).url)
+      ? <ExternalMediaGate><Video block={item as VideoItem} theme={theme} /></ExternalMediaGate>
+      : <Video block={item as VideoItem} theme={theme} />
   }
 
   if (item.type === 'minigame') {

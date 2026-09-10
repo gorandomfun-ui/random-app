@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
+import ExternalMediaGate from '@/components/ExternalMediaGate'
 import ControlledVideoEmbed from '@/components/players/ControlledVideoEmbed'
 import { providerVideo } from '@/lib/players/state'
 import Link from 'next/link'
@@ -1406,7 +1407,13 @@ function useVideoEmbedWatchdog(
   return { loaded, markLoaded, reloadNonce }
 }
 
-function VideoEmbed({
+function VideoEmbed(props: Parameters<typeof VideoEmbedAllowed>[0]) {
+  return providerVideo(props.item.url)
+    ? <ExternalMediaGate><VideoEmbedAllowed {...props} /></ExternalMediaGate>
+    : <VideoEmbedAllowed {...props} />
+}
+
+function VideoEmbedAllowed({
   item,
   frameHeight,
   soundMuted,
@@ -2927,6 +2934,16 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     setFullscreenVideo(null)
     exitNativeFullscreen()
   }, [])
+
+  useEffect(() => {
+    if (
+      consent?.media !== true &&
+      currentItem?.type === 'video' &&
+      providerVideo(currentItem.url)
+    ) {
+      closeFullscreen()
+    }
+  }, [closeFullscreen, consent?.media, currentItem])
 
   useEffect(() => {
     const initial = randIdx(THEMES.length)

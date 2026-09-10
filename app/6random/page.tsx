@@ -9,6 +9,7 @@ import MonoIcon from '@/components/MonoIcon'
 import QuizScoreText from '@/components/QuizScoreText'
 import ShareMenu from '@/components/ShareMenu'
 import { useCookieConsent } from '@/components/CookieConsent'
+import ExternalMediaGate from '@/components/ExternalMediaGate'
 import { useI18n } from '@/providers/I18nProvider'
 import { THEMES, TEXT_COLORS } from '@/lib/theme'
 import type { ItemType } from '@/lib/random/types'
@@ -877,13 +878,15 @@ export default function NoroscopePage() {
         if (embedUrl) {
           return (
             <>
-              <iframe
-                src={embedUrl}
-                title={item.text || badgeText}
-                allow="autoplay; fullscreen; picture-in-picture"
-                allowFullScreen
-                className="absolute inset-0 h-full w-full"
-              />
+              <ExternalMediaGate>
+                <iframe
+                  src={embedUrl}
+                  title={item.text || badgeText}
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  className="absolute inset-0 h-full w-full"
+                />
+              </ExternalMediaGate>
               {badge}
               {renderSourceBar(item)}
             </>
