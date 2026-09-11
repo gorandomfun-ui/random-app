@@ -80,16 +80,27 @@ export async function loadWave<T>(db: Db, anchorId: string, lang: string, allowe
   const payload = decode(row)
   if (payload == null) return null
   const anchor = candidateFromRow(row, payload, now), p = anchor.profile
-  const terms = [
+  const signals: Filter<Document>[] = [
     ...(p.tokens.length ? [{ 'discoveryProfile.tokens': { $in: p.tokens.slice(0, 24) } }] : []),
     ...(p.practices.length ? [{ 'discoveryProfile.practices': { $in: p.practices } }] : []),
     ...(p.entities.length ? [{ 'discoveryProfile.entities': { $in: p.entities } }] : []),
   ]
-  if (!anchor.available || anchor.suppressed || !terms.length) return null
+  if (!anchor.available || anchor.suppressed || !signals.length) return null
   const caps: Record<Format, number> = { video: 60, image: 40, web: 20, quote: 20, joke: 20, fact: 20 }
-  const results = await Promise.allSettled(TYPES.filter(t => allowed.includes(t)).map(type => ringSample(db,
-    { $and: [base(type, lang, now), { discoveryVersion: 2 }, { $or: terms }] }, caps[type], random())))
-  const candidates = decodeRows(results.flatMap(r => r.status === 'fulfilled' ? r.value : []), decode, now)
+  const results = await Promise.allSettled(TYPES.filter(t => allowed.includes(t)).map(async type => {
+    // Keeping each relation signal outside `$or` lets Mongo use the matching
+    // multikey+rand index. Split the same fixed budget across those queries.
+    const perSignal = Math.max(8, Math.ceil(caps[type] / signals.length))
+    const samples = await Promise.allSettled(signals.map(signal => ringSample(db,
+      { $and: [base(type, lang, now), { discoveryVersion: 2 }, signal] }, perSignal, random())))
+    const unique = new Map<string, CatalogueRow>()
+    for (const sample of samples) {
+      if (sample.status !== 'fulfilled') continue
+      for (const candidate of sample.value) unique.set(String(candidate._id), candidate)
+    }
+    return [...unique.values()].slice(0, caps[type])
+  }))
+  const candidates = decodeRows(results.flatMap(result => result.status === 'fulfilled' ? result.value : []), decode, now)
   const plan = composeWave(anchor, candidates, { excluded: new Set(excluded) })
   return { anchor, plan }
 }
