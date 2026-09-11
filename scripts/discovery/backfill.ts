@@ -7,10 +7,21 @@ async function main() {
   try {
     const db = client.db(process.env.MONGODB_DB || process.env.MONGO_DB || 'randomapp')
     const batchesArg = process.argv.find(x => x.startsWith('--batches='))?.split('=')[1]
-    const batches = Math.max(1, Math.min(50, Number(batchesArg) || 1)), deadline = Date.now() + 25000
+    const limitArg = process.argv.find(x => x.startsWith('--limit='))?.split('=')[1]
+    const secondsArg = process.argv.find(x => x.startsWith('--seconds='))?.split('=')[1]
+    const progressArg = process.argv.find(x => x.startsWith('--progress-every='))?.split('=')[1]
+    const batches = Math.max(1, Math.min(2000, Number(batchesArg) || 1))
+    const maxRuntimeMs = secondsArg ? Math.max(5, Math.min(900, Number(secondsArg) || 25)) * 1000 : 25000
+    const progressEvery = Math.max(1, Math.min(100, Number(progressArg) || 1))
+    const deadline = Date.now() + maxRuntimeMs
+    const limit = Math.max(1, Math.min(500, Number(limitArg) || 200))
+    let totalProcessed = 0
     for (let i = 0; i < batches && Date.now() < deadline; i++) {
-      const result = await backfillBatch(db)
-      console.log(JSON.stringify(result))
+      const result = await backfillBatch(db, limit)
+      totalProcessed += result.processed
+      if (result.finished || (i + 1) % progressEvery === 0) {
+        console.log(JSON.stringify({ batches: i + 1, totalProcessed, ...result }))
+      }
       if (result.finished) break
     }
   } finally { await client.close() }

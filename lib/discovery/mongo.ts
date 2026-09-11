@@ -14,7 +14,12 @@ function base(type: Format, lang: string, now: number): Filter<Document> {
   return { type, isSuppressed: { $ne: true }, ...(type === 'video' ? {
     obsoleteVideoStatus: { $ne: 'obsolete' },
     $or: [{ obsoleteVideoRuntimeBlockedUntil: { $exists: false } }, { obsoleteVideoRuntimeBlockedUntil: null }, { obsoleteVideoRuntimeBlockedUntil: { $lte: new Date(now) } }],
-  } : {}), ...(!visual && type !== 'web' ? { lang: { $in: [lang, ...(lang === 'jp' ? ['ja'] : [])] } } : {}) }
+  } : {}), ...(!visual && type !== 'web' ? { $or: [
+    { languageScope: { $exists: false } },
+    { languageScope: null },
+    { languageScope: 'universal' },
+    { languageScope: 'localized', lang: { $in: [lang, ...(lang === 'jp' ? ['ja'] : [])] } },
+  ] } : {}) }
 }
 async function ringSample(db: Db, match: Filter<Document>, limit: number, point: number): Promise<CatalogueRow[]> {
   const collection = db.collection('items')
@@ -91,7 +96,7 @@ export async function loadWave<T>(db: Db, anchorId: string, lang: string, allowe
 export async function installDiscoveryIndexes(db: Db): Promise<void> {
   const items = db.collection('items')
   await items.createIndex({ type: 1, discoveryFamily: 1, rand: 1 }, { name: 'discovery_family_rand_v2' })
-  await items.createIndex({ type: 1, lang: 1, rand: 1 }, { name: 'discovery_lang_rand_v2' })
+  await items.createIndex({ type: 1, languageScope: 1, lang: 1, rand: 1 }, { name: 'discovery_lang_rand_v2' })
   await items.createIndex({ type: 1, trendObservedAt: -1, rand: 1 }, { name: 'discovery_trend_v2' })
   await items.createIndex({ type: 1, 'discoveryProfile.evidence': 1, rand: 1 }, { name: 'discovery_evidence_v2' })
   for (const field of ['tokens', 'practices', 'entities']) {

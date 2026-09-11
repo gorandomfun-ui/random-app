@@ -48,6 +48,12 @@ test('MongoDB: actual catalogue sampling, stock exclusions, Wave trios and more 
     const wave = await loadWave(db, String(anchor!._id), 'en', ['video', 'image'], decode, random, now)
     assert.ok(wave?.plan.ready)
     assert.equal(wave.plan.trio.length, 3); assert.ok(wave.plan.trio.some(x => x.type === 'video'))
+    await db.collection('items').insertOne({ type: 'fact', provider: 'open-trivia-db', variant: 'quiz',
+      quiz: { id: 'quiz-without-language', question: 'Universal quiz?', answers: ['Yes', 'No'], correctIndex: 0 },
+      discoveryVersion: 2, discoveryProfile: profile, discoveryFamily: profile.family, rand: random() })
+    const textState = newSession(91), textTicket = planDraw(textState, 'fact')
+    const quiz = await selectPool(db, textTicket, textState, 'jp', decode, random, now, 'quiz')
+    assert.ok(quiz); assert.equal(quiz.item.type, 'fact')
     for (let i = 0; i < 100; i++) await saveOwnerReference(db, { contentKey: `reference-${i}`, ownerId: 'owner', active: true, familyId: 'craft', profile, type: 'video', version: 2 })
     const candidates = [candidateFromRow(anchor!, decode(anchor!), now)]
     const assigned = await applyOwnerReferences(db, candidates, 'owner')
