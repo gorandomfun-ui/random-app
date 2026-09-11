@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { integerSetting, videoRunPolicy, runStopReason } from './lib/daily-auto-policy.mjs'
 
 let host = process.env.HOST || process.env.RANDOM_INGEST_HOST || ''
 const key = process.env.ADMIN_INGEST_KEY || process.env.KEY || ''
@@ -11,10 +13,15 @@ const skipCompleted = readBool(
   process.env.GITHUB_EVENT_NAME === 'schedule',
 )
 
-const minVideoInserted = readInt('DAILY_AUTO_MIN_VIDEO_INSERTED', 1200, 0, 5000)
-const maxVideoChunks = readInt('DAILY_AUTO_MAX_VIDEO_CHUNKS', 40, 1, 120)
-const maxRuntimeMs = readInt('DAILY_AUTO_MAX_RUNTIME_MINUTES', 150, 10, 330) * 60 * 1000
-const continueChunkThreshold = readInt('DAILY_AUTO_CONTINUE_CHUNK_INSERTED', 15, 0, 500)
+const policy = videoRunPolicy()
+const minVideoInserted = policy.target
+const maxVideoChunks = policy.maxChunks
+const maxRuntimeMs = policy.maxRuntimeMs
+const runNonce = `${process.env.GITHUB_RUN_ID || Date.now()}-${randomUUID().slice(0, 8)}`
+let requestDeadline = Date.now() + maxRuntimeMs
+function requestSignal(maxMs = 240000) {
+  return AbortSignal.timeout(Math.max(1, Math.min(maxMs, requestDeadline - Date.now())))
+}
 const webCount = readInt('DAILY_AUTO_WEB_COUNT', 12, 1, 20)
 const webPer = readInt('DAILY_AUTO_WEB_PER', 10, 1, 10)
 const webPages = readInt('DAILY_AUTO_WEB_PAGES', 3, 1, 10)
@@ -31,9 +38,7 @@ if (!/^https?:\/\//i.test(host)) {
 }
 
 function readInt(name, fallback, min, max) {
-  const parsed = Number(process.env[name])
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.max(min, Math.min(max, Math.floor(parsed)))
+  return integerSetting(process.env[name], fallback, min, max)
 }
 
 function localHour(timeZone) {
@@ -166,6 +171,7 @@ async function callDailyAuto(params) {
 
   console.log(`→ ${url.pathname}?${url.searchParams.toString()}`)
   const response = await fetch(url, {
+    signal: requestSignal(),
     cache: 'no-store',
     headers: { 'x-admin-ingest-key': key },
   })
@@ -201,6 +207,7 @@ async function submitReport(summary) {
   try {
     const url = new URL('/api/ingest/daily-auto/report', host)
     const response = await fetch(url, {
+      signal: requestSignal(),
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -223,6 +230,7 @@ async function fetchRecentReports() {
   url.searchParams.set('limit', '30')
 
   const response = await fetch(url, {
+    signal: requestSignal(),
     cache: 'no-store',
     headers: { 'x-admin-ingest-key': key },
   })
@@ -324,6 +332,7 @@ function writeGithubSummary(summary) {
 async function main() {
   const started = Date.now()
   const startedAt = new Date(started).toISOString()
+  requestDeadline = started + maxRuntimeMs
 
   if (await hasCompletedProfileToday()) {
     const summary = {
@@ -353,7 +362,9 @@ async function main() {
   let webInserted = 0
   let videoEnriched = 0
   let chunks = 0
-  let lastVideoChunkInserted = 0
+  let emptyStreak = 0
+  let youtubeEmptyStreak = 0
+  let stopReason = null
   let existingSkipped = 0
   const providerCounts = {}
   const phases = []
@@ -392,6 +403,7 @@ async function main() {
   }
 
   const runPhase = async (params) => {
+    if (Date.now() >= requestDeadline - 1000) return null
     const phaseStarted = Date.now()
     try {
       const payload = await callDailyAuto(params)
@@ -412,45 +424,51 @@ async function main() {
     const payload = await runPhase(phase)
     chunks += 1
     if (!payload) {
-      lastVideoChunkInserted = 0
+      emptyStreak += 1
       continue
     }
     const inserted = videoInsertedFrom(payload)
     videoInserted += inserted
-    lastVideoChunkInserted = inserted
+    emptyStreak = inserted === 0 ? emptyStreak + 1 : 0
   }
 
-  while (chunks < maxVideoChunks && Date.now() - started < maxRuntimeMs) {
-    const targetReached = videoInserted >= minVideoInserted
-    if (targetReached && lastVideoChunkInserted < continueChunkThreshold) {
-      break
-    }
+  while (true) {
+    stopReason = runStopReason({ inserted: videoInserted, target: minVideoInserted, chunks,
+      maxChunks: maxVideoChunks, elapsed: Date.now() - started, maxRuntimeMs, emptyStreak })
+    if (stopReason) break
 
-    const youtubeOnly = runProfile === 'morning'
+    // Stop requesting empty YouTube batches for this run; keep other providers productive.
+    const youtubeOnly = youtubeEmptyStreak < 3 && (runProfile === 'morning'
       ? chunks % 3 !== 2
-      : chunks % 2 === 0
+      : chunks % 2 === 0)
     const payload = await runPhase({
       phase: 'combo-videos',
       count: youtubeOnly ? 8 : 10,
-      per: youtubeOnly ? 20 : 22,
+      per: policy.multiplier > 1 ? policy.per : youtubeOnly ? 20 : 22,
       pages: 1,
       days: 365,
       durations: 'any',
-      providers: youtubeOnly ? 'youtube' : 'youtube,dailymotion',
-      run: `${runProfile}:combo:${chunks}`,
+      providers: youtubeEmptyStreak >= 3 ? 'dailymotion' : youtubeOnly ? 'youtube' : 'youtube,dailymotion',
+      run: `${runProfile}:combo:${runNonce}:${chunks}`,
     })
 
     chunks += 1
     if (!payload) {
-      lastVideoChunkInserted = 0
+      emptyStreak += 1
       continue
     }
     const inserted = videoInsertedFrom(payload)
     videoInserted += inserted
-    lastVideoChunkInserted = inserted
+    emptyStreak = inserted === 0 ? emptyStreak + 1 : 0
+    if (youtubeOnly) youtubeEmptyStreak = getNumber(asResult(payload).providerCounts?.youtube) === 0 ? youtubeEmptyStreak + 1 : 0
   }
 
-  const webPayload = await runPhase({
+  if (readBool('DAILY_AUTO_DISCOVERY_ENABLED') && Date.now() < requestDeadline - 185000) {
+    const discoveryPayload = await runPhase({ phase: 'discovery', run: `${runProfile}:discovery:${runNonce}` })
+    if (discoveryPayload) videoInserted += getNumber(asResult(discoveryPayload).inserted)
+  }
+
+  const webPayload = Date.now() < requestDeadline - 5000 ? await runPhase({
     phase: 'web',
     count: webCount,
     per: webPer,
@@ -458,12 +476,12 @@ async function main() {
     providers: webProviders,
     requireOg: '1',
     run: `${runProfile}:web`,
-  })
+  }) : null
   if (webPayload) {
     webInserted += webInsertedFrom(webPayload)
   }
 
-  if (enrichLimit > 0) {
+  if (enrichLimit > 0 && Date.now() < requestDeadline - 5000) {
     const enrichPayload = await runPhase({
       phase: 'enrich-videos',
       limit: enrichLimit,
@@ -492,10 +510,17 @@ async function main() {
     errors,
     minVideoInserted,
     maxVideoChunks,
+    targetReached: videoInserted >= minVideoInserted,
+    stopReason,
+    multiplier: policy.multiplier,
+    baselineVideoTarget: policy.baseline,
+    maxRuntimeMs,
     phases,
   }
 
   console.log('Daily auto summary:', summary)
+  // A small, separate reporting allowance does not restart ingestion.
+  requestDeadline = Date.now() + 15000
   await submitReport(summary)
   writeGithubSummary(summary)
 

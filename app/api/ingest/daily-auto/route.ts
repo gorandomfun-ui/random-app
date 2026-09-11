@@ -9,7 +9,7 @@ import { enrichRecentYouTubeVideos, ingestTrendingVideos, ingestVideos, pickTren
 import { buildDailyRetroQueries, buildDailyVideoQueries, buildDailyWebQueries } from '@/lib/ingest/daily-auto/queries'
 import { logCronRun, type CronTrigger } from '@/lib/metrics/cron'
 
-const PHASES = ['trending', 'retro', 'combo-videos', 'web', 'enrich-videos'] as const
+const PHASES = ['discovery', 'trending', 'retro', 'combo-videos', 'web', 'enrich-videos'] as const
 type DailyAutoPhase = (typeof PHASES)[number]
 
 type SearchProvider = 'youtube' | 'dailymotion' | 'pixabay' | 'pexels'
@@ -35,7 +35,9 @@ function authorize(req: NextRequest): { ok: true; triggeredBy: CronTrigger; key:
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized', reason: 'missing-expected-key' }, { status: 401 }) }
   }
 
-  if (!isCron && providedKey !== expectedKey) {
+  const cronSecret = process.env.CRON_SECRET
+  const signedCron = Boolean(isCron && cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`)
+  if (!signedCron && providedKey !== expectedKey) {
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized', reason: 'mismatch' }, { status: 401 }) }
   }
 
@@ -43,6 +45,7 @@ function authorize(req: NextRequest): { ok: true; triggeredBy: CronTrigger; key:
 }
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number): number {
+  if (value == null || value.trim() === '') return fallback
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, Math.floor(parsed)))
@@ -168,6 +171,14 @@ export async function GET(req: NextRequest) {
 
   try {
     let payload: PhasePayload
+
+    if (phase === 'discovery') {
+      if (dryRun || process.env.RANDOM_DISCOVERY_WORKER_ENABLED !== '1') return NextResponse.json({ ok: true, phase, durationMs: 0, result: { inserted: 0, disabled: true } })
+      const { getDb } = await import('@/lib/db')
+      const { runDiscoveryBatch } = await import('@/lib/discovery/worker')
+      const result = await runDiscoveryBatch(await getDb())
+      return NextResponse.json({ ok: true, phase, durationMs: Date.now() - startedAt.getTime(), result })
+    }
 
     if (phase === 'trending') {
       const manualRegions = parseList(req.nextUrl.searchParams.get('regions')).map((entry) => entry.toUpperCase())

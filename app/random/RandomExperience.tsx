@@ -23,6 +23,11 @@ import { useScore } from '@/providers/ScoreProvider'
 import { ENCOURAGE_PAGES_ENABLED, MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES } from '@/lib/theme'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
+import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
+import { newSession, type Session as DiscoverySession } from '@/lib/discovery/pool'
+import { parseSession as parseDiscoverySession } from '@/lib/discovery/sessionCodec'
+import { WaveSession, type WavePlan } from '@/lib/discovery/waves'
+import type { Candidate } from '@/lib/discovery/types'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType, VideoPool } from '@/lib/random/types'
 import {
@@ -262,10 +267,14 @@ type RandomSequenceState = {
 type PreparedRandomEntry = {
   slot: SequenceSlot
   item: DisplayItem
+  discoveryKey?: string
+  generation?: number
+  sequenceAfter?: RandomSequenceState
 }
 
 type PersistedRandomSession = {
   version: number
+  discovery?: DiscoverySession
   timestamp: number
   lang: Lang
   currentItem: DisplayItem | null
@@ -491,6 +500,7 @@ const parseRandomSession = (raw: string, lang: Lang): PersistedRandomSession | n
 
     return {
       version: RANDOM_SESSION_VERSION,
+      discovery: parseDiscoverySession(parsed.discovery) ?? undefined,
       timestamp: parsed.timestamp,
       lang,
       currentItem: isDisplayItem(parsed.currentItem) ? parsed.currentItem : null,
@@ -2373,16 +2383,29 @@ function BurgerIcon({ color, glitch = false }: { color: string; glitch?: boolean
 
 export function RandomExperience({
   effectsTestMode = false,
+  discoveryMode = false,
+  waveDiscoveryMode = process.env.NEXT_PUBLIC_RANDOM_WAVE_V2 === '1',
+  curationMode = false,
   savedItem,
   onSavedBack,
   onSavedRandom,
 }: {
   effectsTestMode?: boolean
+  discoveryMode?: boolean
+  waveDiscoveryMode?: boolean
+  curationMode?: boolean
   savedItem?: RandomContentItem
   onSavedBack?: () => void
   onSavedRandom?: () => void
 }) {
   const savedMode = Boolean(savedItem)
+  const discoveryEnabled = discoveryMode && !effectsTestMode && !savedMode
+  const discoveryRef = useRef(new DiscoveryController<RandomContentItem>(newSession(Math.floor(Math.random() * 0xffffffff))))
+  const committedSequenceRef = useRef<RandomSequenceState | null>(null)
+  const discoveryWaveRef = useRef<WaveSession<RandomContentItem> | null>(null)
+  const pendingWaveRef = useRef<Candidate<RandomContentItem> | null>(null)
+  const [curationError, setCurationError] = useState('')
+  const curatorPendingRef = useRef(false)
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, addPoints, maybeSpawnDiamond, quizScore, score } = useScore()
   const { consent } = useCookieConsent()
@@ -3172,14 +3195,15 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
   const persistRandomSession = useCallback(() => {
     if (savedMode || typeof window === 'undefined') return
     const langKey = (locale || 'en') as Lang
-    const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : RANDOM_SESSION_PREFIX
+    const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : curationMode ? 'random-curation-v2-' : discoveryEnabled ? 'random-discovery-v2-' : RANDOM_SESSION_PREFIX
     const payload: PersistedRandomSession = {
       version: RANDOM_SESSION_VERSION,
       timestamp: Date.now(),
       lang: langKey,
       currentItem: currentItemRef.current,
-      ready: randomReadyQueueRef.current.slice(0, RANDOM_READY_TARGET),
-      sequence: cloneSequenceState(sequenceStateRef.current),
+      ready: discoveryEnabled ? [] : randomReadyQueueRef.current.slice(0, RANDOM_READY_TARGET),
+      discovery: discoveryEnabled ? discoveryRef.current.snapshot() : undefined,
+      sequence: cloneSequenceState(discoveryEnabled ? committedSequenceRef.current ?? sequenceStateRef.current : sequenceStateRef.current),
       progressionDraws: progressionDrawsRef.current,
       recentKeys: recentKeysRef.current.slice(-RECENT_SESSION_LIMIT),
       encourage3dSchedule: encourage3dScheduleRef.current,
@@ -3189,12 +3213,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     } catch {
       /* Session restoration must never block navigation. */
     }
-  }, [savedMode, effectsTestMode, locale])
+  }, [savedMode, effectsTestMode, locale, discoveryEnabled, curationMode])
 
   const restoreRandomSession = useCallback(() => {
     if (typeof window === 'undefined') return false
     const langKey = (locale || 'en') as Lang
-    const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : RANDOM_SESSION_PREFIX
+    const storagePrefix = effectsTestMode ? RANDOM_TEST_SESSION_PREFIX : curationMode ? 'random-curation-v2-' : discoveryEnabled ? 'random-discovery-v2-' : RANDOM_SESSION_PREFIX
     try {
       const storageKey = `${storagePrefix}${langKey}`
       const raw = sessionStorage.getItem(storageKey)
@@ -3203,6 +3227,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
       if (!restored) {
         sessionStorage.removeItem(storageKey)
         return false
+      }
+      if (discoveryEnabled) {
+        if (!restored.discovery) return false
+        discoveryRef.current.invalidate()
+        discoveryRef.current = new DiscoveryController(restored.discovery)
+        committedSequenceRef.current = cloneSequenceState(restored.sequence)
       }
       sequenceStateRef.current = cloneSequenceState(restored.sequence)
       progressionDrawsRef.current = restored.progressionDraws
@@ -3226,7 +3256,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     } catch {
       return false
     }
-  }, [effectsTestMode, locale])
+  }, [effectsTestMode, locale, discoveryEnabled, curationMode])
 
   const warmContentMedia = useCallback((item: DisplayItem): Promise<boolean> => {
     if (typeof window === 'undefined') return Promise.resolve(false)
@@ -3353,6 +3383,28 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     return createMiniGameItem({ id, level })
   }, [])
 
+  const invalidateDiscoveryQueue = useCallback(() => {
+    if (!discoveryEnabled) return
+    discoveryRef.current.invalidate()
+    randomReadyGenerationRef.current += 1
+    randomReadyQueueRef.current = []
+    randomReadyPromiseRef.current = null
+    if (committedSequenceRef.current) sequenceStateRef.current = cloneSequenceState(committedSequenceRef.current)
+    const waiters = randomReadyWaitersRef.current.splice(0)
+    waiters.forEach(resolve => resolve())
+  }, [discoveryEnabled])
+
+  const commitWaveDisplay = useCallback(() => {
+    const candidate = pendingWaveRef.current
+    if (!candidate || !waveDiscoveryMode) return
+    discoveryWaveRef.current?.displayed(candidate.key)
+    pendingWaveRef.current = null
+    if (discoveryEnabled) {
+      invalidateDiscoveryQueue()
+      discoveryRef.current.waveDisplayed(candidate)
+    }
+  }, [discoveryEnabled, waveDiscoveryMode, invalidateDiscoveryQueue])
+
   const takeFromQueue = useCallback((type: ItemType, predicate?: (item: RandomContentItem) => boolean): RandomContentItem | null => {
     const queue = preloadQueuesRef.current[type]
     const iterations = queue.length
@@ -3378,6 +3430,20 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [getContentKey, registerRecentKey])
 
   const takePreparedWaveCandidate = useCallback((): Exclude<RandomContentItem, MiniGameItem> | null => {
+    if (waveDiscoveryMode) {
+      const wave = discoveryWaveRef.current
+      for (let attempt = 0; wave && attempt < 10; attempt++) {
+        const next = wave.next()
+        if (!next) return null
+        const item = next.payload
+        const key = getContentKey(item)
+        if (item.type === 'minigame' || (item.type === 'video' && isVideoBlockedThisSession(item)) || (key && isRecentKey(key))) { wave.failed(next.key); continue }
+        pendingWaveRef.current = next
+        if (key) registerRecentKey(key)
+        return item
+      }
+      return null
+    }
     while (waveQueueRef.current.length) {
       const candidate = waveQueueRef.current.shift()
       if (!candidate || candidate.type === 'minigame') continue
@@ -3394,7 +3460,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       return candidate
     }
     return null
-  }, [getContentKey, isRecentKey, registerRecentKey, warmContentMedia])
+  }, [getContentKey, isRecentKey, registerRecentKey, warmContentMedia, waveDiscoveryMode])
 
   const requestWaveTrail = useCallback(async (anchorItem: DisplayItem): Promise<boolean> => {
     wavePreparationAbortRef.current?.abort()
@@ -3414,7 +3480,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
 
     const anchor = createWaveHint(anchorItem)
-    if (!hasWaveSignal(anchor)) {
+    if (!waveDiscoveryMode && !hasWaveSignal(anchor)) {
       waveAnchorRef.current = null
       waveAnchorItemRef.current = null
       wavePreparedAnchorKeyRef.current = null
@@ -3425,6 +3491,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const excludeIds = typeof anchorItem._id === 'string' ? [anchorItem._id] : []
     const requestTimeout = window.setTimeout(() => controller.abort(), 3000)
     try {
+      if (waveDiscoveryMode) {
+        discoveryWaveRef.current = null
+        const response = await fetch('/api/discovery/wave', { method: 'POST', signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ anchorId: anchorItem._id, lang: locale || 'en', types: ALL_ITEM_TYPES, excludeKeys: discoveryRef.current.snapshot().recent.map(x => x.key) }) })
+        if (!response.ok) return false
+        const plan = await response.json() as WavePlan<RandomContentItem> & { anchor?: Candidate<RandomContentItem> }
+        if (generation !== wavePreparationGenerationRef.current || !plan.ready || !plan.anchor) return false
+        discoveryWaveRef.current = new WaveSession(plan.anchor, [...plan.trio, ...plan.reserves])
+        waveAnchorRef.current = anchor
+        waveAnchorItemRef.current = anchorItem
+        wavePreparedAnchorKeyRef.current = anchorKey
+        const first = discoveryWaveRef.current.next()
+        if (first) void warmContentMedia(first.payload)
+        return Boolean(first)
+      }
       const response = await fetchWave({
         anchor,
         anchorId: typeof anchorItem._id === 'string' ? anchorItem._id : undefined,
@@ -3479,7 +3560,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         wavePreparationAbortRef.current = null
       }
     }
-  }, [getContentKey, isRecentKey, locale, warmContentMedia])
+  }, [getContentKey, isRecentKey, locale, warmContentMedia, waveDiscoveryMode])
 
   const ensureWaveTrail = useCallback((anchorItem: DisplayItem): Promise<boolean> => {
     if (anchorItem.type === 'encourage' || anchorItem.type === 'minigame') return Promise.resolve(false)
@@ -3572,15 +3653,38 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const prepareRandomEntry = useCallback(async (): Promise<PreparedRandomEntry | null> => {
     const languageVersion = langVersionRef.current
+    const discoveryGeneration = randomReadyGenerationRef.current
     const previousState = cloneSequenceState(sequenceStateRef.current)
     sequenceStateRef.current = cloneSequenceState(previousState)
+    if (discoveryEnabled && !committedSequenceRef.current) committedSequenceRef.current = cloneSequenceState(previousState)
     const slot = getNextSlot()
     const preparedState = cloneSequenceState(sequenceStateRef.current)
     sequenceStateRef.current = previousState
     if (!slot) return null
     if (slot.kind === 'encourage') {
       sequenceStateRef.current = preparedState
-      return { slot, item: buildEncourageItem(slot.encourageIndex) }
+      return { slot, item: buildEncourageItem(slot.encourageIndex), sequenceAfter: preparedState, generation: discoveryGeneration }
+    }
+
+    if (discoveryEnabled) {
+      if (slot.itemType === 'joke') {
+        const miniGame = spawnMiniGameIfDue()
+        if (miniGame) { sequenceStateRef.current = preparedState; return { slot, item: miniGame, sequenceAfter: preparedState, generation: discoveryGeneration } }
+      }
+      const load = makeRandomLoader<RandomContentItem>(locale || 'en')
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const prepared = await discoveryRef.current.prepare(slot.itemType, async (session, type, signal, variant) => {
+          const candidate = await load(session, type, signal, variant)
+          if (!candidate || candidate.payload.type !== type || (candidate.payload.type === 'video' && isVideoBlockedThisSession(candidate.payload))) return null
+          return candidate
+        }, slot.itemType === 'fact' ? slot.requireQuiz ? 'quiz' : 'text' : undefined)
+        if (languageVersion !== langVersionRef.current || discoveryGeneration !== randomReadyGenerationRef.current) return null
+        if (!prepared) continue
+        sequenceStateRef.current = preparedState
+        return { slot, item: prepared.item, discoveryKey: prepared.candidate.key, sequenceAfter: preparedState, generation: discoveryGeneration }
+      }
+      // Keep this format slot pending. A slow video never becomes an image.
+      return null
     }
 
     let item: RandomContentItem | null = null
@@ -3646,7 +3750,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
     sequenceStateRef.current = resolvedType && resolvedType !== slot.itemType ? previousState : preparedState
     return { slot, item }
-  }, [acquireItem, buildEncourageItem, finalizeCandidate, getContentKey, getNextSlot, isRecentKey, locale, selectedTypes, spawnMiniGameIfDue, takeFromQueue])
+  }, [acquireItem, buildEncourageItem, finalizeCandidate, getContentKey, getNextSlot, isRecentKey, locale, selectedTypes, spawnMiniGameIfDue, takeFromQueue, discoveryEnabled])
 
   const notifyRandomReady = useCallback(() => {
     const waiters = randomReadyWaitersRef.current.splice(0)
@@ -3666,7 +3770,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [])
 
   const fillRandomReadyQueue = useCallback((target = RANDOM_READY_TARGET) => {
-    if (savedMode) return Promise.resolve()
+    if (savedMode || (discoveryEnabled && waveModeRef.current && waveRemainingRef.current > 1)) return Promise.resolve()
     if (randomReadyQueueRef.current.length >= target) return randomReadyPromiseRef.current ?? Promise.resolve()
     if (randomReadyPromiseRef.current) return randomReadyPromiseRef.current
 
@@ -3692,7 +3796,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         const duplicate = key && randomReadyQueueRef.current.some((candidate) => (
           getContentKey(candidate.item as RandomContentItem) === key
         ))
-        if (duplicate) continue
+        if (duplicate) {
+          if (discoveryEnabled) { invalidateDiscoveryQueue(); return }
+          continue
+        }
         randomReadyQueueRef.current.push(entry)
         if (randomReadyQueueRef.current.length === 1) void warmContentMedia(entry.item)
         persistRandomSession()
@@ -3706,11 +3813,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       notifyRandomReady()
     })
     return runner
-  }, [savedMode, getContentKey, notifyRandomReady, persistRandomSession, prepareRandomEntry, warmContentMedia])
+  }, [savedMode, getContentKey, notifyRandomReady, persistRandomSession, prepareRandomEntry, warmContentMedia, discoveryEnabled, invalidateDiscoveryQueue])
 
   const takeRandomReadyEntry = useCallback(() => {
     let entry = randomReadyQueueRef.current.shift() ?? null
     while (entry?.item.type === 'video' && isVideoBlockedThisSession(entry.item)) {
+      if (discoveryEnabled) { invalidateDiscoveryQueue(); return null }
       entry = randomReadyQueueRef.current.shift() ?? null
     }
     if (entry) {
@@ -3719,7 +3827,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       persistRandomSession()
     }
     return entry
-  }, [persistRandomSession, warmContentMedia])
+  }, [persistRandomSession, warmContentMedia, discoveryEnabled, invalidateDiscoveryQueue])
 
   useEffect(() => {
     langVersionRef.current += 1
@@ -3727,6 +3835,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     randomReadyQueueRef.current = []
     randomReadyPromiseRef.current = null
     sequenceStateRef.current = createInitialSequenceState()
+    committedSequenceRef.current = cloneSequenceState(sequenceStateRef.current)
+    discoveryRef.current.invalidate()
+    discoveryRef.current = new DiscoveryController(newSession(Math.floor(Math.random() * 0xffffffff)))
+    discoveryWaveRef.current = null
+    pendingWaveRef.current = null
     wavePreparationAbortRef.current?.abort()
     wavePreparationAbortRef.current = null
     wavePreparationPromiseRef.current = null
@@ -3737,8 +3850,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [clearPreloadedCaches, locale, notifyRandomReady])
 
   useEffect(() => {
-    if (!savedMode) selectedTypes.forEach((type) => drainPrefetchedItems(type))
-  }, [savedMode, drainPrefetchedItems, selectedTypes])
+    if (!savedMode && !discoveryEnabled) selectedTypes.forEach((type) => drainPrefetchedItems(type))
+  }, [savedMode, drainPrefetchedItems, selectedTypes, discoveryEnabled])
 
   const updateTheme = useCallback(() => {
     setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))
@@ -3810,6 +3923,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       triggerPageGlitch(entry.slot.kind === 'encourage' ? 'boost' : 'normal', transitionIntensity)
       await waitForTransitionReveal()
 
+      if (discoveryEnabled) {
+        if (entry.generation !== randomReadyGenerationRef.current) return false
+        if (entry.discoveryKey) discoveryRef.current.displayed(entry.discoveryKey)
+        if (entry.sequenceAfter) committedSequenceRef.current = cloneSequenceState(entry.sequenceAfter)
+        if (entry.item.type !== 'encourage' && entry.item.type !== 'minigame') { const key = getContentKey(entry.item); if (key) registerRecentKey(key) }
+      }
       setIsSecond((prev) => !prev)
       setTrigger((t) => t + 1)
       const displayedItem = entry.item
@@ -3871,7 +3990,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       persistRandomSession()
       return true
     } catch {
-      /* Keep the current item; the next prepared item remains usable. */
+      if (discoveryEnabled) invalidateDiscoveryQueue()
+      /* The failed reservation and its speculative successors are discarded together. */
       return false
     } finally {
       loadPendingRef.current = false
@@ -3889,7 +4009,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle])
+  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle, discoveryEnabled, getContentKey, registerRecentKey, invalidateDiscoveryQueue])
 
   const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
     if (savedMode) return
@@ -3919,6 +4039,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
 
       if (waveModeRef.current) {
+        if (waveDiscoveryMode && discoveryWaveRef.current) {
+          const failed = discoveryWaveRef.current.candidates.find(x => getContentKey(x.payload) === key)
+          if (failed) discoveryWaveRef.current.revokeLast(failed.key)
+        }
         const replacement = takePreparedWaveCandidate()
         if (replacement) {
           transitionLockedRef.current = true
@@ -3931,6 +4055,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               await waitForTransitionReveal()
               setIsSecond((prev) => !prev)
               setTrigger((value) => value + 1)
+              commitWaveDisplay()
               currentItemRef.current = replacement
               setCurrentItem(replacement)
               waveShownAtRef.current = Date.now()
@@ -3959,7 +4084,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
 
     recover()
-  }, [savedMode, getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
+  }, [savedMode, getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
 
   useEffect(() => {
     if (savedMode || initialLoadTriggeredRef.current) return
@@ -4198,13 +4323,25 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const randomAgainDisabled = !viewItem || transitionLocked || encourage3dPending || Boolean(encourage3dEvent)
   const waveEligible = useMemo(() => {
     if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return false
-    return hasWaveSignal(createWaveHint(viewItem))
-  }, [viewItem])
+    return waveDiscoveryMode ? Boolean(viewItem._id) : hasWaveSignal(createWaveHint(viewItem))
+  }, [viewItem, waveDiscoveryMode])
   const waveDisabled = controlsDisabled || transitionLocked || loading || (!waveMode && !waveEligible)
 
-  const handleLike = useCallback(() => {
+  const handleLike = useCallback(async () => {
     const item = currentItemRef.current
     if (!item || item.type === 'encourage' || item.type === 'minigame') return
+    if (curationMode) {
+      if (curatorPendingRef.current || !['video', 'image'].includes(item.type)) return
+      curatorPendingRef.current = true; setCurationError('')
+      try {
+        const response = await fetch('/api/discovery/curation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item._id, active: !liked }) })
+        if (!response.ok) throw new Error('Référence non enregistrée. Vérifie ton accès et ce contenu.')
+        if (currentItemRef.current === item) setLiked(!liked)
+        if (!liked) triggerHeartGlitch()
+      } catch (cause) { setCurationError(cause instanceof Error ? cause.message : 'Erreur de curation') }
+      finally { curatorPendingRef.current = false }
+      return
+    }
     if (liked) {
       removeLike(item)
       setLiked(false)
@@ -4221,7 +4358,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     } catch {
       /* ignore */
     }
-  }, [liked, theme, triggerHeartGlitch])
+  }, [liked, theme, triggerHeartGlitch, curationMode])
+
+  useEffect(() => {
+    if (!curationMode) return
+    setLiked(false); setCurationError('')
+    if (!currentItem || !['video', 'image'].includes(currentItem.type) || !('_id' in currentItem)) return
+    const controller = new AbortController()
+    void fetch(`/api/discovery/curation?itemId=${encodeURIComponent(String(currentItem._id))}`, { signal: controller.signal, cache: 'no-store' })
+      .then(response => { if (!response.ok) throw new Error(); return response.json() })
+      .then(body => { if (!controller.signal.aborted) setLiked(body.active === true) })
+      .catch(() => { if (!controller.signal.aborted) setCurationError('État de la référence indisponible.') })
+    return () => controller.abort()
+  }, [curationMode, currentItem])
 
   const handleRandomAgain = useCallback(() => {
     if (savedMode) {
@@ -4313,6 +4462,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       await waitForTransitionReveal()
       setIsSecond((prev) => !prev)
       setTrigger((value) => value + 1)
+      commitWaveDisplay()
       currentItemRef.current = next
       setCurrentItem(next)
       waveShownAtRef.current = Date.now()
@@ -4324,7 +4474,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       transitionLockedRef.current = false
       setTransitionLocked(false)
     }
-  }, [ensureWaveTrail, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
+  }, [ensureWaveTrail, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
 
   const handlePrimaryAction = useCallback(() => {
     if (!waveModeRef.current || waveRemainingRef.current <= 1) {
@@ -4348,6 +4498,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
+      {curationMode ? <aside className="fixed bottom-2 left-2 z-50 bg-black text-white rounded px-3 py-2 text-xs">
+        <span>Curation privée · Les cœurs vidéo/image orientent le Pool Cool.</span>
+        <button type="button" className="ml-3 underline" onClick={async () => { await fetch('/api/discovery/curation/access', { method: 'DELETE' }); window.location.reload() }}>Quitter</button>
+        {curationError ? <p role="status">{curationError}</p> : null}
+      </aside> : null}
       {effectsTestMode ? (
         <div className="effects-test-meter" aria-label={`Effects intensity ${effectsTestStep} of ${EFFECTS_TEST_MAX_STEPS}`}>
           <span>{String(effectsTestStep).padStart(2, '0')}</span>

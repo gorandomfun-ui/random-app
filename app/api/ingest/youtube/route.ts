@@ -1,3 +1,4 @@
+import { permitBaseYouTube } from '@/lib/ingest/youtubeQuota'
 // ==============================================
 // File: app/api/ingest/videos/route.ts — FULL
 // ==============================================
@@ -79,6 +80,7 @@ async function fetchJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
+    if (!await permitBaseYouTube(url)) return null
     const res = await fetch(url, { cache: 'no-store', headers: UA, signal: ctrl.signal })
     if (!res.ok) return null
     return (await res.json()) as T
@@ -113,6 +115,7 @@ async function ytSearchQueries(queries: string[], per: number, pages: number, da
     const q = qRaw.trim()
     if (!q) continue
     let pageToken = ''
+    const order = Math.random() < 0.5 ? 'date' : 'relevance'
     for (let p = 0; p < Math.max(1, pages); p++) {
       const params = new URLSearchParams({
         key: KEY,
@@ -120,7 +123,7 @@ async function ytSearchQueries(queries: string[], per: number, pages: number, da
         type: 'video',
         maxResults: String(Math.min(50, Math.max(1, per))),
         q,
-        order: Math.random() < 0.5 ? 'date' : 'relevance',
+        order,
         publishedAfter,
         videoEmbeddable: 'true',
       })

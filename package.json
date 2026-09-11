@@ -8,7 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "daily:auto": "node scripts/daily-auto-ingest.mjs",
-    "backfill:wave": "node scripts/backfill/runWaveProfileBackfill.js"
+    "backfill:wave": "node scripts/backfill/runWaveProfileBackfill.js",
+    "test:discovery": "node --import tsx --test tests/discovery/*.test.ts tests/discovery/*.test.mjs",
+    "discovery:setup": "node --import tsx scripts/discovery/setup.ts",
+    "discovery:backfill": "node --import tsx scripts/discovery/backfill.ts",
+    "discovery:audit": "node --import tsx scripts/discovery/audit.ts",
+    "discovery:explore": "node --import tsx scripts/discovery/explore.ts",
+    "test:discovery:ui": "node tests/discovery/ui.lifecycle.mjs"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.6.1",
@@ -40,10 +46,13 @@
     "@types/styled-jsx": "^2.2.9",
     "@types/three": "^0.185.4",
     "autoprefixer": "^10.4.21",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "15.5.3",
+    "jsdom": "26.1.0",
     "postcss": "^8.5.6",
     "tailwindcss": "3.4",
+    "tsx": "4.23.13",
     "typescript": "^5"
   }
 }

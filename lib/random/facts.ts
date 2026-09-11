@@ -184,7 +184,7 @@ function normalizeSpaces(value: string): string {
 function decodeHtml(value: string): string {
   if (!value) return ''
   try {
-    const $ = cheerio.load(`<span>${value}</span>`, { decodeEntities: true })
+    const $ = cheerio.load(`<span>${value}</span>`, {})
     return normalizeSpaces($('span').text())
   } catch {
     return normalizeSpaces(value)

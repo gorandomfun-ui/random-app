@@ -1,6 +1,8 @@
 import { getDb } from '@/lib/db';
 import type { Collection, Db, Filter } from 'mongodb';
-import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
+import { buildTagList, mergeKeywordSources } from './extract';
+import { buildProfile } from '../discovery/profile';
+import type { Profile, SourceMetadata } from '../discovery/types';
 import { deriveToneAugmentation, flattenToneSegments } from './tone';
 
 export const IMAGE_PROVIDERS = ['giphy', 'pixabay', 'tenor', 'pexels'] as const;
@@ -87,9 +89,16 @@ type ImageSource = {
   apiTags?: string[];
   contextQueries?: string[];
   description?: string;
+  creatorId?: string;
 };
 
 export type ImageDocument = {
+  sourceMetadata?: SourceMetadata;
+  discoveryProfile?: Profile;
+  discoveryFamily?: string;
+  discoveryVersion?: 2;
+  discoveryQueries?: string[];
+  creatorId?: string;
   type: 'image';
   url: string;
   thumb?: string | null;
@@ -210,7 +219,8 @@ async function fetchGiphy(query: string, per: number): Promise<ImageSource[]> {
       source: { name: 'Giphy', url: item?.url || url },
       title,
       alt: title,
-      apiTags: [...slugTags, ...user],
+      apiTags: slugTags,
+      creatorId: user[0],
       contextQueries: [query],
       description: typeof item?.content_description === 'string' ? item.content_description : undefined,
     }];
@@ -244,7 +254,8 @@ async function fetchTenor(query: string, per: number): Promise<ImageSource[]> {
       source: { name: 'Tenor', url: item?.itemurl || url },
       title,
       alt: title,
-      apiTags: [...tags, ...author],
+      apiTags: tags,
+      creatorId: author[0],
       contextQueries: [query],
       description: title,
     }];
@@ -324,10 +335,8 @@ function normalizePixabayUrl(originalUrl: string, thumb?: string | null): string
 }
 
 function buildImageDocument(source: ImageSource): ImageDocument | null {
-  const contextTags = expandQueryToTags(source.contextQueries || []);
   const candidates = [
     source.provider,
-    contextTags,
     source.apiTags,
     source.title,
     source.alt,
@@ -339,7 +348,6 @@ function buildImageDocument(source: ImageSource): ImageDocument | null {
     source.title,
     source.alt,
     source.description,
-    contextTags,
     source.apiTags,
   ]);
   const tone = deriveToneAugmentation(toneSegments);
@@ -347,7 +355,6 @@ function buildImageDocument(source: ImageSource): ImageDocument | null {
   const keywords = mergeKeywordSources([
     source.title,
     source.alt,
-    (source.contextQueries || []).join(' '),
     source.description,
     tone?.toneSignals.join(' '),
   ], 14);
@@ -357,10 +364,14 @@ function buildImageDocument(source: ImageSource): ImageDocument | null {
     : source.url;
 
   if (!looksLikeImageUrl(url)) return null;
-  if (!tags.length || !keywords.length) return null;
+  const sourceMetadata: SourceMetadata = { title: source.title, description: source.description || source.alt, tags: source.apiTags };
+  const profile = buildProfile(sourceMetadata);
 
   return {
     type: 'image',
+    sourceMetadata, discoveryProfile: profile, discoveryFamily: profile.family, discoveryVersion: 2,
+    discoveryQueries: [...new Set(source.contextQueries || [])].slice(0, 24),
+    creatorId: source.creatorId,
     url,
     thumb: source.thumb ?? undefined,
     provider: source.provider,

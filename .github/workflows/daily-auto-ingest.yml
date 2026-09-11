@@ -27,7 +27,7 @@ on:
 jobs:
   daily-auto-ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +43,9 @@ jobs:
           DAILY_AUTO_PROFILE: ${{ github.event.inputs.profile || 'auto' }}
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
           DAILY_AUTO_SKIP_COMPLETED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          DAILY_AUTO_DISCOVERY_ENABLED: ${{ vars.DAILY_AUTO_DISCOVERY_ENABLED || '0' }}
+          DAILY_AUTO_VIDEO_MULTIPLIER: ${{ vars.DAILY_AUTO_VIDEO_MULTIPLIER || '2' }}
+          DAILY_AUTO_RUNTIME_CEILING_MINUTES: ${{ vars.DAILY_AUTO_RUNTIME_CEILING_MINUTES || '30' }}
           DAILY_AUTO_MIN_VIDEO_INSERTED: ${{ vars.DAILY_AUTO_MIN_VIDEO_INSERTED || '1200' }}
           DAILY_AUTO_MAX_VIDEO_CHUNKS: ${{ vars.DAILY_AUTO_MAX_VIDEO_CHUNKS || '40' }}
           DAILY_AUTO_MAX_RUNTIME_MINUTES: ${{ vars.DAILY_AUTO_MAX_RUNTIME_MINUTES || '150' }}

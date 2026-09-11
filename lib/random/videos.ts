@@ -103,12 +103,14 @@ function buildVideoPoolMatches(pool: VideoPool): Filter<VideoRecord>[] {
   if (pool === 'trending') {
     const trending = {
       $and: [
-        strong,
         nonRetro,
         coolToneMatch(),
         coolEditorialMatch(),
-        { tags: TRENDING_TAG_REGEX },
-        { updatedAt: { $gte: new Date(Date.now() - TRENDING_MAX_AGE_MS) } },
+        { $or: [
+          { trendObservedAt: { $gte: new Date(Date.now() - TRENDING_MAX_AGE_MS) } },
+          { $and: [strong, { discoveryVersion: { $ne: 2 } }, { tags: TRENDING_TAG_REGEX },
+            { updatedAt: { $gte: new Date(Date.now() - TRENDING_MAX_AGE_MS) } }] },
+        ] },
       ],
     } as Filter<VideoRecord>
     return [trending, strongFresh, anyFresh]

@@ -33,8 +33,10 @@ function compactSummary(value: unknown): Record<string, unknown> {
     providerCounts: raw.providerCounts,
     minVideoInserted: raw.minVideoInserted,
     maxVideoChunks: raw.maxVideoChunks,
+    videoPolicy: { targetReached: raw.targetReached, stopReason: raw.stopReason, multiplier: raw.multiplier,
+      baselineVideoTarget: raw.baselineVideoTarget, maxRuntimeMs: raw.maxRuntimeMs },
     errors: Array.isArray(raw.errors) ? raw.errors.slice(0, 20) : [],
-    phases: Array.isArray(raw.phases) ? raw.phases.slice(0, 40) : [],
+    phases: Array.isArray(raw.phases) ? raw.phases.slice(0, 124) : [],
   }
 }
 

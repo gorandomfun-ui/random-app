@@ -1,3 +1,4 @@
+import { permitBaseYouTube } from '@/lib/ingest/youtubeQuota'
 export type FetchOptions = RequestInit & { timeoutMs?: number }
 
 export const DEFAULT_INGEST_HEADERS: HeadersInit = {
@@ -22,6 +23,7 @@ export async function fetchWithTimeout(
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
 
   try {
+    if (!await permitBaseYouTube(input instanceof URL || typeof input === 'string' || input instanceof Request ? input : String(input))) return null
     const response = await fetch(input, {
       ...rest,
       headers: mergeHeaders(headers),

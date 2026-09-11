@@ -1,3 +1,4 @@
+import { permitBaseYouTube } from '@/lib/ingest/youtubeQuota'
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
@@ -25,6 +26,7 @@ async function fetchWithTiming(url: string, init: RequestInit, timeoutMs: number
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const started = Date.now()
   try {
+    if (!await permitBaseYouTube(url)) throw new Error('YouTube daily budget exhausted')
     const res = await fetch(url, { ...init, signal: controller.signal })
     const durationMs = Date.now() - started
     return { res, durationMs }

@@ -1,7 +1,9 @@
 import { getDb } from '@/lib/db';
+import { permitBaseYouTube } from './youtubeQuota';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
-import { buildTagList, expandQueryToTags, mergeKeywordSources } from './extract';
-import { deriveToneAugmentation, flattenToneSegments } from './tone';
+import { buildVideoDocument } from './videoDocument';
+export { buildVideoDocument } from './videoDocument';
+import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
 import { isFunTrend, isRoutineTrend } from '@/lib/random/videoEditorial';
 
 export type VideoProvider =
@@ -23,6 +25,11 @@ export type RawVideo = {
   thumb?: string;
   source?: SourceRef;
   contextQueries?: string[];
+  publishedAt?: string | Date;
+  trendObservedAt?: Date;
+  statsObservedAt?: Date;
+  viewCount?: number;
+  sourceStatus?: DiscoveryVideoFields['sourceStatus'];
   apiTags?: string[];
   description?: string;
   channelId?: string;
@@ -34,7 +41,7 @@ export type RawVideo = {
   editorialRoutineIngestedAt?: Date;
 };
 
-export type VideoDocument = {
+export type VideoDocument = Partial<DiscoveryVideoFields> & {
   type: 'video';
   videoId: string;
   url: string;
@@ -160,6 +167,7 @@ type YoutubeThumbnails = {
 };
 
 type YoutubeSnippet = {
+  publishedAt?: string;
   title?: string;
   description?: string;
   channelId?: string;
@@ -191,6 +199,8 @@ type YoutubePlaylistResponse = {
 };
 
 type YoutubeVideoItem = {
+  statistics?: { viewCount?: string };
+  status?: DiscoveryVideoFields['sourceStatus'];
   id?: string;
   snippet?: YoutubeSnippet;
   contentDetails?: { duration?: string };
@@ -209,6 +219,8 @@ type YoutubeChannelResponse = {
 };
 
 type YoutubeVideoDetailsItem = {
+  statistics?: { viewCount?: string };
+  status?: DiscoveryVideoFields['sourceStatus'];
   id?: string;
   snippet?: YoutubeSnippet;
   contentDetails?: { duration?: string };
@@ -258,6 +270,9 @@ type DailymotionItem = {
   ['channel.name']?: string;
   ['channel.id']?: string;
   ['owner.screenname']?: string;
+  ['owner.id']?: string;
+  created_time?: number;
+  views_total?: number;
 };
 
 type DailymotionResponse = {
@@ -338,6 +353,10 @@ async function fetchJson<T = unknown>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    if (!await permitBaseYouTube(url)) {
+      warnings?.push({ label: label || 'youtube', message: 'Shared YouTube quota exhausted' });
+      return null;
+    }
     const headers = new Headers(USER_AGENT as HeadersInit);
     if (init?.headers) {
       const extra = new Headers(init.headers as HeadersInit);
@@ -432,6 +451,8 @@ async function searchYouTube(
         return;
       }
       let pageToken = '';
+      const order = Math.random() < 0.5 ? 'date' : 'relevance';
+      const publishedAfter = days > 0 ? new Date(started - days * 86400000).toISOString() : undefined;
       for (let page = 0; page < pages; page++) {
         const params = new URLSearchParams();
         params.set('key', key);
@@ -439,12 +460,9 @@ async function searchYouTube(
         params.set('type', 'video');
         params.set('maxResults', String(Math.min(50, Math.max(1, per))));
         params.set('q', trimmed);
-        params.set('order', Math.random() < 0.5 ? 'date' : 'relevance');
+        params.set('order', order);
         params.set('videoEmbeddable', 'true');
-        if (days > 0) {
-          const publishedAfter = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-          params.set('publishedAfter', publishedAfter);
-        }
+        if (publishedAfter) params.set('publishedAfter', publishedAfter);
         if (duration && duration !== 'any') {
           params.set('videoDuration', duration);
         }
@@ -467,6 +485,11 @@ async function searchYouTube(
             url: `https://youtu.be/${id}`,
             provider: 'youtube',
             title: snippet?.title || '',
+            description: snippet?.description,
+            channelId: snippet?.channelId,
+            channelTitle: snippet?.channelTitle,
+            publishedAt: snippet?.publishedAt,
+            liveBroadcastContent: snippet?.liveBroadcastContent,
             thumb: youtubeThumb(id),
             source: { name: 'YouTube', url: `https://youtu.be/${id}` },
             contextQueries: [context],
@@ -528,13 +551,14 @@ async function searchDailymotion(
     const trimmed = query.trim();
     if (!trimmed) continue;
 
+    const sort = Math.random() < 0.5 ? 'recent' : 'relevance';
     for (let page = 0; page < pages; page++) {
       const params = new URLSearchParams({
         search: trimmed,
         limit: String(limit),
         page: String(page + 1),
-        sort: Math.random() < 0.5 ? 'recent' : 'relevance',
-        fields: 'id,title,description,thumbnail_url,thumbnail_480_url,thumbnail_720_url,url,duration,channel.name,channel.id,owner.screenname',
+        sort,
+        fields: 'id,title,description,thumbnail_url,thumbnail_480_url,thumbnail_720_url,url,duration,channel.name,channel.id,owner.screenname,owner.id,created_time,views_total',
       });
 
       const data = await fetchJson<DailymotionResponse>(
@@ -550,9 +574,9 @@ async function searchDailymotion(
         if (!id) continue;
         const url = item?.url?.trim() || `https://www.dailymotion.com/video/${id}`;
         const thumb = item?.thumbnail_720_url || item?.thumbnail_url || item?.thumbnail_480_url;
-        const channelTitle = item?.['channel.name'] || item?.['owner.screenname'] || undefined;
-        const channelId = item?.['channel.id'] || undefined;
-        const title = item?.title?.trim() || trimmed;
+        const channelTitle = item?.['owner.screenname'] || undefined;
+        const channelId = item?.['owner.id'] || undefined;
+        const title = item?.title?.trim() || undefined;
         collected.push({
           videoId: `dailymotion:${id}`,
           url,
@@ -562,6 +586,10 @@ async function searchDailymotion(
           thumb: thumb || undefined,
           channelTitle,
           channelId,
+          categoryId: item?.['channel.id'],
+          publishedAt: item.created_time ? new Date(item.created_time * 1000) : undefined,
+          viewCount: item.views_total,
+          statsObservedAt: item.views_total != null ? new Date() : undefined,
           duration: secondsToIsoDuration(item?.duration),
           source: { name: 'Dailymotion', url },
           contextQueries: [`dailymotion:${trimmed}`],
@@ -771,12 +799,13 @@ async function updateYouTubeDetailsForIds(
 ): Promise<{ checked: number; updated: number }> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || !videoIds.length) return { checked: 0, updated: 0 };
+  videoIds = [...new Set(videoIds)].filter(id => /^[A-Za-z0-9_-]{11}$/.test(id));
   const collection = await getCollection();
   let checked = 0;
   let updated = 0;
   for (let i = 0; i < videoIds.length; i += 50) {
     const chunk = videoIds.slice(i, i + 50);
-    const params = new URLSearchParams({ key, part: 'snippet,contentDetails', id: chunk.join(',') });
+    const params = new URLSearchParams({ key, part: 'snippet,contentDetails,statistics,status', id: chunk.join(',') });
     const data = await fetchJson<YoutubeVideoDetailsResponse>(
       `${YT_ENDPOINT}/videos?${params.toString()}`,
       10000,
@@ -804,11 +833,19 @@ async function updateYouTubeDetailsForIds(
       if (high) update.thumb = high;
       if (item.contentDetails?.duration) update.duration = item.contentDetails.duration;
       if (!Object.keys(update).length) continue;
+      Object.assign(update, videoDiscoveryFields({
+        provider: 'youtube', title: snippet?.title, description: snippet?.description, apiTags: snippet?.tags,
+        publishedAt: snippet?.publishedAt,
+        viewCount: item.statistics?.viewCount != null ? Number(item.statistics.viewCount) : undefined,
+        statsObservedAt: item.statistics ? now : undefined, sourceStatus: item.status,
+      }, now));
+      // Enrichment must not erase how the item was discovered.
+      delete update.discoveryQueries;
       update.updatedAt = now;
       update.enrichedAt = now;
       operations.push({
         updateOne: {
-          filter: { type: 'video', provider: 'youtube', videoId: item.id },
+          filter: { type: 'video', provider: { $in: ['youtube', 'reddit-youtube', 'manual'] }, videoId: item.id },
           update: { $set: update },
         },
       });
@@ -953,72 +990,6 @@ export async function redditYouTube(
   return out;
 }
 
-function looksLikeHttpUrl(url?: string | null): boolean {
-  if (!url || typeof url !== 'string') return false;
-  const trimmed = url.trim();
-  if (!trimmed) return false;
-  try {
-    const parsed = new URL(trimmed);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
-
-function buildVideoDocument(raw: RawVideo): VideoDocument | null {
-  const contextTags = expandQueryToTags(raw.contextQueries || []);
-  const candidates = [
-    raw.provider,
-    contextTags,
-    raw.apiTags,
-    raw.channelTitle,
-  ];
-  const toneSegments = flattenToneSegments([
-    raw.provider,
-    raw.source?.name,
-    raw.title,
-    raw.description,
-    raw.channelTitle,
-    contextTags,
-    raw.apiTags,
-  ]);
-  const tone = deriveToneAugmentation(toneSegments);
-  const tags = buildTagList([...candidates, tone?.toneTagHints], 14);
-  const keywords = mergeKeywordSources([
-    raw.title,
-    raw.description,
-    raw.channelTitle,
-    (raw.contextQueries || []).join(' '),
-    tone?.toneSignals.join(' '),
-  ], 16);
-
-  if (!raw.videoId || !looksLikeHttpUrl(raw.url)) return null;
-  if (!tags.length || !keywords.length) return null;
-
-  return {
-    type: 'video',
-    videoId: raw.videoId,
-    url: raw.url,
-    provider: raw.provider,
-    title: raw.title,
-    thumb: raw.thumb,
-    source: raw.source,
-    description: raw.description,
-    channelId: raw.channelId,
-    channelTitle: raw.channelTitle,
-    duration: raw.duration,
-    categoryId: raw.categoryId,
-    liveBroadcastContent: raw.liveBroadcastContent,
-    editorialRoutine: raw.editorialRoutine,
-    editorialRoutineIngestedAt: raw.editorialRoutineIngestedAt,
-    tags,
-    keywords,
-    tone: tone?.tone,
-    toneConfidence: tone?.toneConfidence,
-    toneSignals: tone?.toneSignals,
-  };
-}
-
 let cachedCollection: Collection<VideoDocument> | null = null;
 let videoIndexesEnsured = false;
 
@@ -1101,6 +1072,14 @@ export async function finalizeVideoIngest(
   }
 
   const collection = await getCollection();
+  const observedTrends = documents.filter(doc => doc.trendObservedAt);
+  if (insertOnly && observedTrends.length) {
+    const refreshed = await collection.bulkWrite(observedTrends.map(doc => ({ updateOne: {
+      filter: { type: 'video' as const, videoId: doc.videoId },
+      update: { $max: { trendObservedAt: doc.trendObservedAt! } },
+    } })), { ordered: false });
+    summary.updated += refreshed.modifiedCount;
+  }
   let writeDocuments = documents;
   if (insertOnly) {
     const ids = documents.map((doc) => doc.videoId).filter(Boolean);
@@ -1340,7 +1319,7 @@ async function fetchYouTubeTrending(region: string, limit: number, warnings: Fet
   }
   const url = new URL(YT_VIDEOS_ENDPOINT);
   url.searchParams.set('key', key);
-  url.searchParams.set('part', 'snippet,contentDetails');
+  url.searchParams.set('part', 'snippet,contentDetails,statistics,status');
   url.searchParams.set('chart', 'mostPopular');
   url.searchParams.set('regionCode', region);
   url.searchParams.set('maxResults', String(Math.min(50, Math.max(1, limit))));
@@ -1365,6 +1344,12 @@ async function fetchYouTubeTrending(region: string, limit: number, warnings: Fet
       provider: 'youtube',
       title: snippet.title,
       description: snippet.description,
+      apiTags: snippet.tags,
+      publishedAt: snippet.publishedAt,
+      trendObservedAt: new Date(),
+      viewCount: item.statistics?.viewCount != null ? Number(item.statistics.viewCount) : undefined,
+      statsObservedAt: item.statistics ? new Date() : undefined,
+      sourceStatus: item.status,
       thumb: thumb || undefined,
       channelId: snippet.channelId,
       channelTitle: snippet.channelTitle,
@@ -1382,7 +1367,7 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
   const params = new URLSearchParams({
     sort: 'trending',
     limit: String(Math.min(100, Math.max(1, limit))),
-    fields: 'id,title,description,thumbnail_url,thumbnail_480_url,url,duration,channel.name,channel.id,owner.screenname',
+    fields: 'id,title,description,thumbnail_url,thumbnail_480_url,url,duration,channel.name,channel.id,owner.screenname,owner.id,created_time,views_total',
   });
   const locale = DAILYMOTION_LOCALE[region];
   if (locale) params.set('localization', locale);
@@ -1408,8 +1393,13 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
       title,
       description: item?.description || undefined,
       thumb: thumb || undefined,
-      channelId: item?.['channel.id'] || undefined,
-      channelTitle: item?.['channel.name'] || item?.['owner.screenname'] || undefined,
+      channelId: item?.['owner.id'] || undefined,
+      channelTitle: item?.['owner.screenname'] || undefined,
+      categoryId: item?.['channel.id'],
+      publishedAt: item.created_time ? new Date(item.created_time * 1000) : undefined,
+      viewCount: item.views_total,
+      statsObservedAt: item.views_total != null ? new Date() : undefined,
+      trendObservedAt: new Date(),
       duration: secondsToIsoDuration(item?.duration),
       source: { name: 'Dailymotion', url },
       contextQueries: [`dailymotion:trending:${region.toLowerCase()}`],

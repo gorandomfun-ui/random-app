@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022", "ES2022.Intl", "DOM"],
+    "module": "ESNext", "moduleResolution": "Bundler", "strict": true,
+    "skipLibCheck": true, "noEmit": true, "esModuleInterop": true,
+    "baseUrl": ".", "paths": { "@/*": ["./*"] }, "types": ["node"]
+  },
+  "include": ["lib/discovery/**/*.ts", "lib/ingest/discoveryMetadata.ts", "lib/ingest/videos.ts", "lib/ingest/images.ts", "lib/random/videos.ts", "app/api/discovery/**/*.ts", "tests/discovery/**/*.ts", "scripts/discovery/**/*.ts"]
+}

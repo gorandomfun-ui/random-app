@@ -1,0 +1,84 @@
+import { build } from 'esbuild'
+import { JSDOM } from 'jsdom'
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { createRequire } from 'node:module'
+import fs from 'node:fs'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+const root=process.cwd()
+const temporary=fs.mkdtempSync(path.join(root,'.random-ui-test-'))
+const output=path.join(temporary,'component.cjs')
+await build({entryPoints:[`${root}/app/random/RandomExperience.tsx`],outfile:output,bundle:true,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],tsconfig:`${root}/tsconfig.json`,plugins:[{name:'ui-test-boundaries',setup(build){
+ build.onResolve({filter:/^(next\/|@\/components\/|@\/providers\/|@\/utils\/sound$)/},args=>({path:args.path,namespace:'stubs'}))
+ build.onLoad({filter:/.*/,namespace:'stubs'},({path})=>{
+  if(path.includes('I18nProvider'))return{contents:`export const useI18n=()=>({dict:{},locale:'en',locales:['en'],setLocale:()=>{},t:(key,fallback)=>fallback||key})`}
+  if(path.includes('ScoreProvider'))return{contents:`export const useScore=()=>({addAction:()=>{},addPoints:()=>{},maybeSpawnDiamond:()=>{},quizScore:0,score:0})`}
+  if(path.includes('CookieConsent'))return{contents:`export const useCookieConsent=()=>({consent:null})`}
+  if(path==='next/dynamic')return{contents:`export default ()=>()=>null`}
+  if(path.includes('/utils/sound'))return{contents:`export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},setMuted=()=>{}`}
+  if(path.includes('RandomContentRenderer'))return{contents:`import React from 'react'; export const FactQuizCard=()=>React.createElement('div',null,'Quiz')`}
+  return{contents:`import React from 'react'; export default function Stub(p){return React.createElement('span',null,p.children||p.label||p.text||null)}`}
+ })
+}}]})
+const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',{url:'https://test.invalid/random',pretendToBeVisual:true})
+for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
+window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
+globalThis.requestAnimationFrame=window.requestAnimationFrame.bind(window);globalThis.cancelAnimationFrame=window.cancelAnimationFrame.bind(window)
+let serial=0;const calls=[]
+globalThis.fetch=async(input,init={})=>{
+ const url=new URL(String(input),'https://test.invalid')
+ if(url.pathname==='/api/discovery/random'){
+  const req=JSON.parse(init.body);calls.push(req);const n=++serial
+  const profile={version:2,tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
+  const payload={type:req.type,_id:n.toString(16).padStart(24,'0'),url:`https://example.invalid/${n}`,provider:'youtube',text:`Fixture ${n}`,title:`Fixture ${n}`,variant:req.factVariant==='quiz'?'quiz':'text',question:'Question',options:['a','b'],correctIndex:0}
+  return Response.json({candidate:{key:`fixture:${n}`,type:req.type,payload,profile,provider:'youtube',stock:false,available:true}})
+ }
+ if(url.pathname==='/api/discovery/wave'){
+  const req=JSON.parse(init.body);const profile={version:2,tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
+  const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
+  return Response.json({ready:true,anchor:make('fixture:'+parseInt(req.anchorId,16),'video'),trio:[make('wave1001','video'),make('wave1002','image'),make('wave1003','video')],reserves:[make('wave1004','video')]})
+ }
+ return Response.json({ok:true})
+}
+const require=createRequire(pathToFileURL(path.join(root,'package.json')));const {RandomExperience}=require(output)
+let app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
+async function until(fn){const end=Date.now()+10000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,40))}throw new Error('UI condition timeout')}
+const snapshot=()=>{const raw=sessionStorage.getItem('random-discovery-v2-en');return raw?JSON.parse(raw):null}
+try{
+ await until(()=>snapshot()?.discovery?.displayed>=1)
+ await until(()=>calls.length>=3)
+ let previous=snapshot().discovery.displayed
+ for(let i=0;i<5;i++){
+  const buttons=[...document.querySelectorAll('button')];const button=buttons.find(x=>/random again/i.test(x.textContent))
+  if(!button)throw new Error('Random Again not rendered')
+  await until(()=>!button.disabled);button.click()
+  await until(()=>snapshot()?.discovery?.displayed>previous);previous=snapshot().discovery.displayed
+ }
+ const state=snapshot();if(state.ready.length!==0)throw new Error('Speculative media leaked into saved session')
+ if(state.discovery.displayed!==6)throw new Error('Wrong committed draw count')
+ if(state.sequence.draws!==6)throw new Error('Format sequence drifted from actual display')
+ app.unmount()
+ const priorRequests=calls.length
+ app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
+ await until(()=>calls.length>priorRequests)
+ if(snapshot().discovery.displayed!==6)throw new Error('Reload consumed a Random')
+ const afterReload=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+ await until(()=>afterReload&&!afterReload.disabled);afterReload.click()
+ await until(()=>snapshot()?.discovery?.displayed===7)
+ const waveButton=document.querySelector('button[aria-label="Wave"]')
+ await until(()=>waveButton&&!waveButton.disabled);waveButton.click()
+ await until(()=>snapshot()?.discovery?.recent.some(x=>x.key.startsWith('wave')))
+ const waveRevision=snapshot().discovery.revision
+ for(let i=0;i<2;i++){
+  const btn=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+  await until(()=>!btn.disabled);btn.click()
+  await until(()=>snapshot()?.discovery?.revision>=waveRevision+i+1)
+ }
+ if(snapshot().discovery.displayed!==7)throw new Error('Wave consumed an ordinary Random')
+ const leave=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+ await until(()=>!leave.disabled);leave.click()
+ await until(()=>snapshot()?.discovery?.displayed===8)
+ if(snapshot().sequence.draws!==8)throw new Error('Sequence not restored after Wave')
+ console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,mode:'JSDOM, player/components boundaries stubbed'},null,2))
+}finally{app.unmount();dom.window.close();fs.rmSync(temporary,{recursive:true,force:true})}

@@ -18,7 +18,7 @@ import {
   type WaveProfile,
 } from './waveProfile'
 
-type WaveDocument = Document & {
+export type WaveDocument = Document & {
   _id?: ObjectId | string
   type?: ItemType
   url?: string | null
@@ -126,7 +126,7 @@ function common(doc: WaveDocument) {
   }
 }
 
-function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
+export function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
   const provider = trim(doc.provider) || trim(doc.source?.name) || doc.type || 'random'
   const metadata = common(doc)
 

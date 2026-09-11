@@ -1,3 +1,4 @@
+import { permitBaseYouTube } from '@/lib/ingest/youtubeQuota'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
@@ -386,7 +387,12 @@ async function filterUnavailableYouTube(videos: RawVideo[], warnings: FetchWarni
     })
 
     try {
+      if (!await permitBaseYouTube(`${YT_ENDPOINT}/videos?${params.toString()}`)) {
+        warnings.push({ label: 'youtube:availability', message: 'Shared YouTube quota exhausted' })
+        break
+      }
       const response = await fetch(`${YT_ENDPOINT}/videos?${params.toString()}`, {
+        signal: AbortSignal.timeout(10000),
         headers: USER_AGENT,
         cache: 'no-store',
       })
