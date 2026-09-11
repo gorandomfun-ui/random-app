@@ -5,6 +5,7 @@ import { buildVideoDocument } from './videoDocument';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
 import {
+  isOrdinaryRoutineVideo,
   ROUTINE_NEWS_RADIO_DAILY_LIMIT,
 } from '@/lib/random/videoEditorial';
 import { applyRoutineVideoIngestCap } from './videoEditorialAdmission';
@@ -994,24 +995,32 @@ export async function redditYouTube(
 }
 
 let cachedCollection: Collection<VideoDocument> | null = null;
-let videoIndexesEnsured = false;
+let videoIndexesPromise: Promise<void> | null = null;
 
 async function getCollection(): Promise<Collection<VideoDocument>> {
   if (!cachedCollection) {
     const db: Db = await getDb();
     cachedCollection = db.collection<VideoDocument>('items');
   }
-  if (!videoIndexesEnsured && cachedCollection) {
-    videoIndexesEnsured = true;
-    cachedCollection
-      .createIndex(
+  if (!videoIndexesPromise) {
+    videoIndexesPromise = Promise.all([
+      cachedCollection.createIndex(
         { type: 1, videoId: 1 },
         { unique: true, name: 'uniq_video_id', partialFilterExpression: { type: 'video', videoId: { $type: 'string' } } },
-      )
-      .catch((error) => {
-      console.warn('[ingest:videos] failed to ensure index', error);
+      ),
+      cachedCollection.createIndex(
+        { editorialRoutineIngestedAt: -1 },
+        { name: 'video_editorial_routine_ingested_at', partialFilterExpression: {
+          type: 'video', editorialRoutine: true, editorialRoutineIngestedAt: { $type: 'date' },
+        } },
+      ),
+    ]).then(() => undefined).catch((error) => {
+      videoIndexesPromise = null;
+      console.warn('[ingest:videos] failed to ensure indexes', error);
+      throw error;
     });
   }
+  await videoIndexesPromise;
   return cachedCollection;
 }
 
@@ -1037,7 +1046,19 @@ export async function finalizeVideoIngest(
   }
 
   const collection = await getCollection();
-  const admission = await applyRoutineVideoIngestCap(await getDb(), Array.from(map.values()), new Date(), { dryRun });
+  const deduplicated = Array.from(map.values());
+  const routineIds = deduplicated.filter(isOrdinaryRoutineVideo).map((video) => video.videoId);
+  const existingRoutineRows = routineIds.length
+    ? await collection.find({ type: 'video', videoId: { $in: routineIds } } as Filter<VideoDocument>)
+      .project<{ videoId?: string }>({ videoId: 1 }).toArray()
+    : [];
+  const existingRoutineIds = new Set(existingRoutineRows
+    .map((document) => document.videoId)
+    .filter((videoId): videoId is string => typeof videoId === 'string'));
+  const admission = await applyRoutineVideoIngestCap(await getDb(), deduplicated, new Date(), {
+    dryRun,
+    existingVideoIds: existingRoutineIds,
+  });
   if (admission.filtered) {
     warnings.push({
       label: routineWarningLabel,

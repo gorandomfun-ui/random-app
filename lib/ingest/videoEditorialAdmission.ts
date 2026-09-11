@@ -21,9 +21,10 @@ export async function applyRoutineVideoIngestCap(
   db: Db,
   videos: RawVideo[],
   now = new Date(),
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; existingVideoIds?: ReadonlySet<string> } = {},
 ): Promise<{ videos: RawVideo[]; admitted: number; filtered: number; alreadyIngested: number }> {
-  const ordinary = videos.filter(isOrdinaryRoutineVideo)
+  const existingVideoIds = options.existingVideoIds ?? new Set<string>()
+  const ordinary = videos.filter(video => isOrdinaryRoutineVideo(video) && !existingVideoIds.has(video.videoId))
   if (!ordinary.length) return { videos, admitted: 0, filtered: 0, alreadyIngested: 0 }
 
   const collection = db.collection<VideoDocument>('items')
@@ -36,7 +37,7 @@ export async function applyRoutineVideoIngestCap(
     const allowance = Math.max(0, ROUTINE_NEWS_RADIO_DAILY_LIMIT - alreadyIngested)
     let admitted = 0
     const selected = videos.flatMap((video) => {
-      if (!isOrdinaryRoutineVideo(video)) return [video]
+      if (!isOrdinaryRoutineVideo(video) || existingVideoIds.has(video.videoId)) return [video]
       if (admitted >= allowance) return []
       admitted += 1
       return [{ ...video, editorialRoutine: true, editorialRoutineIngestedAt: now }]
@@ -54,7 +55,7 @@ export async function applyRoutineVideoIngestCap(
   let admitted = 0
   const selected: RawVideo[] = []
   for (const video of videos) {
-    if (!isOrdinaryRoutineVideo(video)) {
+    if (!isOrdinaryRoutineVideo(video) || existingVideoIds.has(video.videoId)) {
       selected.push(video)
       continue
     }

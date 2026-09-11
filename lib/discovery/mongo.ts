@@ -115,4 +115,6 @@ export async function installDiscoveryIndexes(db: Db): Promise<void> {
   for (const field of ['tokens', 'practices', 'entities']) {
     await items.createIndex({ type: 1, discoveryVersion: 1, [`discoveryProfile.${field}`]: 1, rand: 1 }, { name: `discovery_${field}_v2` })
   }
+  await items.createIndex({ editorialRoutineIngestedAt: -1 }, { name: 'video_editorial_routine_ingested_at',
+    partialFilterExpression: { type: 'video', editorialRoutine: true, editorialRoutineIngestedAt: { $type: 'date' } } })
 }

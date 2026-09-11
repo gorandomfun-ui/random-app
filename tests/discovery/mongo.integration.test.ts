@@ -33,22 +33,25 @@ test('MongoDB: every automatic video path shares the two-per-24h ordinary news/r
     await db.collection('items').insertOne({ type: 'video', videoId: 'existing001', provider: 'youtube',
       editorialRoutine: true, editorialRoutineIngestedAt: new Date(now.getTime() - 3600000) })
     const candidates = [
+      { videoId: 'existing001', url: 'https://youtu.be/existing001', provider: 'youtube', title: 'Daily news bulletin' },
       { videoId: 'news0000001', url: 'https://youtu.be/news0000001', provider: 'youtube', title: 'Daily news bulletin' },
       { videoId: 'radio000001', url: 'https://youtu.be/radio000001', provider: 'youtube', title: 'Morning radio full episode' },
       { videoId: 'funny000001', url: 'https://youtu.be/funny000001', provider: 'youtube', title: 'Daily news parody comedy sketch' },
       { videoId: 'advert00001', url: 'https://youtu.be/advert00001', provider: 'youtube', title: 'Vintage television commercial 1974' },
       { videoId: 'music000001', url: 'https://youtu.be/music000001', provider: 'youtube', title: 'Basement concert captured on VHS' },
     ] as const
-    const dryRun = await applyRoutineVideoIngestCap(db, [...candidates], now, { dryRun: true })
+    const existingVideoIds = new Set(['existing001'])
+    const dryRun = await applyRoutineVideoIngestCap(db, [...candidates], now, { dryRun: true, existingVideoIds })
     assert.equal(dryRun.admitted, 1)
     assert.equal(await db.collection('video_editorial_quota_v1').countDocuments(), 0)
-    const admission = await applyRoutineVideoIngestCap(db, [...candidates], now)
+    const admission = await applyRoutineVideoIngestCap(db, [...candidates], now, { existingVideoIds })
     assert.equal(admission.alreadyIngested, 1)
     assert.equal(admission.admitted, 1)
     assert.equal(admission.filtered, 1)
-    assert.deepEqual(admission.videos.map(video => video.videoId), ['news0000001', 'funny000001', 'advert00001', 'music000001'])
-    assert.equal(admission.videos[0].editorialRoutine, true)
-    assert.ok(admission.videos.slice(1).every(video => video.editorialRoutine !== true))
+    assert.deepEqual(admission.videos.map(video => video.videoId), ['existing001', 'news0000001', 'funny000001', 'advert00001', 'music000001'])
+    assert.equal(admission.videos[0].editorialRoutine, undefined)
+    assert.equal(admission.videos[1].editorialRoutine, true)
+    assert.ok(admission.videos.slice(2).every(video => video.editorialRoutine !== true))
     const concurrent = await Promise.all(Array.from({ length: 20 }, (_, index) => applyRoutineVideoIngestCap(
       db,
       [{ videoId: `radio-next-${index}`, url: `https://example.invalid/${index}`, provider: 'youtube', title: 'Radio news bulletin' }],
@@ -66,6 +69,8 @@ test('MongoDB: actual catalogue sampling, stock exclusions, Wave trios and more 
   const now = Date.now(), random = seeded(44), profile = buildProfile({ title: 'Stone carving workshop' })
   try {
     await installDiscoveryIndexes(db); await installOwnerIndexes(db)
+    const indexNames = (await db.collection('items').listIndexes().toArray()).map(index => index.name)
+    assert.ok(indexNames.includes('video_editorial_routine_ingested_at'))
     const docs = Array.from({ length: 180 }, (_, i) => ({ type: i % 3 ? 'video' : 'image',
       provider: i % 9 === 0 ? 'pexels' : i % 3 ? 'youtube' : 'giphy',
       url: `https://example.invalid/media/${i}`, title: 'Stone carving workshop', videoId: i % 3 ? `video-${i}` : undefined,
