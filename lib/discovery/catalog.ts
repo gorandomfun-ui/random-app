@@ -1,6 +1,7 @@
 import { buildProfile, isStockProvider } from './profile'
 import { hash } from './random'
 import type { Candidate, Format, Profile, SourceMetadata } from './types'
+import { isOrdinaryRoutineVideo } from '../random/videoEditorial'
 
 export type CatalogueRow = Record<string, unknown> & { _id?: unknown; type?: string }
 const text = (x: unknown): string | undefined => typeof x === 'string' && x.trim() ? x : undefined
@@ -47,10 +48,17 @@ export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number):
   const status = row.sourceStatus as { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string } | undefined
   const until = date(row.obsoleteVideoRuntimeBlockedUntil)
   const channel = provider === 'dailymotion' && row.discoveryProvenance === 'legacy-source-fields' ? undefined : text(row.channelId) ?? text(row.creatorId)
+  const routineEditorial = row.type === 'video' && (row.editorialRoutine === true || isOrdinaryRoutineVideo({
+    title: text(row.title) ?? text(row.text),
+    description: text(row.description),
+    channelTitle: text(row.channelTitle),
+    categoryId: text(row.categoryId),
+    liveBroadcastContent: text(row.liveBroadcastContent),
+  }))
   return { key: canonicalMediaKey(row), type: row.type as Format, provider, payload,
     profile: profileFromRow(row), authorKey: channel ? `${provider === 'reddit-youtube' ? 'youtube' : provider}:${channel}` : undefined,
     seriesKey: text(row.verifiedSeriesKey), duplicateKey: text(row.verifiedDuplicateKey),
-    stock: isStockProvider(provider, text(row.url)), quiz: row.type === 'fact' && row.variant === 'quiz',
+    stock: isStockProvider(provider, text(row.url)), routineEditorial, quiz: row.type === 'fact' && row.variant === 'quiz',
     available: row.obsoleteVideoStatus !== 'obsolete' && (until == null || until <= now) &&
       status?.embeddable !== false && status?.privacyStatus !== 'private' &&
       !['rejected', 'failed', 'deleted'].includes(status?.uploadStatus ?? ''),

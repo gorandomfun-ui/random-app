@@ -14,6 +14,7 @@ import { createSearchSeeds } from '../../lib/discovery/seeds'
 import { DiscoveryController } from '../../lib/discovery/controller'
 import { parseSession, randomHandler } from '../../lib/discovery/handlers'
 import type { Candidate, Format } from '../../lib/discovery/types'
+import { isOrdinaryRoutineVideo } from '../../lib/random/videoEditorial'
 
 const NOW = Date.UTC(2026, 8, 9)
 function item(key: string, title = 'stone carving workshop', type: Format = 'video', extra: Partial<Candidate<string>> = {}): Candidate<string> {
@@ -52,6 +53,15 @@ test('normalisation respects actual runtime-block field and provider status', ()
   assert.equal(candidateFromRow({ type: 'video', sourceStatus: { embeddable: false } }, 'a', NOW).available, false)
   assert.equal(candidateFromRow({ type: 'image', url: 'https://images.pexels.com/photo/1.jpg' }, 'a', NOW).stock, true)
 })
+test('ordinary news/radio is distinguished from humour, old ads, music captures and unusual archives', () => {
+  assert.ok(isOrdinaryRoutineVideo({ title: 'Daily news bulletin — 8 PM' }))
+  assert.ok(isOrdinaryRoutineVideo({ title: 'Morning radio full episode' }))
+  assert.ok(isOrdinaryRoutineVideo({ title: 'Ceramics today', categoryId: '25' }))
+  assert.ok(!isOrdinaryRoutineVideo({ title: 'Daily news parody comedy sketch' }))
+  assert.ok(!isOrdinaryRoutineVideo({ title: 'Vintage television commercial 1974' }))
+  assert.ok(!isOrdinaryRoutineVideo({ title: 'Basement concert captured on VHS' }))
+  assert.ok(!isOrdinaryRoutineVideo({ title: 'Strange public access archive 1987' }))
+})
 test('same YouTube video has one identity across URLs and Reddit provider', () => {
   const a = canonicalMediaKey({ type: 'video', provider: 'reddit-youtube', videoId: 'abcdefghijk' })
   const b = canonicalMediaKey({ type: 'video', url: 'https://www.youtube.com/watch?v=abcdefghijk&t=42' })
@@ -85,6 +95,14 @@ test('hard stock exclusion survives every cool/general fallback before forty', (
     assert.equal(pickPool([stock], ticket, state, seeded(i), NOW), null)
     state = commitDraw(state, ticket, item(`normal${i}`, 'guitar', 'image'))
   }
+})
+test('ordinary news/radio is a hard Pool Cool exclusion but remains available to the general draw', () => {
+  const state = newSession(71)
+  const routine = item('routine', 'Daily news bulletin', 'video', { routineEditorial: true })
+  const cool = { ...planDraw(state, 'video'), mode: 'cool' as const, branch: 'autonomous' as const }
+  assert.equal(pickPool([routine], cool, state, seeded(1), NOW), null)
+  const general = { ...cool, mode: 'random' as const, branch: 'general' as const, lane: 'any' as const }
+  assert.equal(pickPool([routine], general, state, seeded(1), NOW)?.item.key, 'routine')
 })
 test('an overwhelmingly large family does not dominate a family-first draw', () => {
   const candidates = Array.from({ length: 900 }, (_, i) => item(`game${i}`, 'gameplay'))
@@ -145,6 +163,14 @@ test('three images or an unrelated quiz are not an acceptable Wave fallback', ()
   assert.equal(composeWave(anchor, images).ready, false)
   assert.equal(composeWave(anchor, [...images, item('quiz', 'football', 'fact', { quiz: true })]).ready, false)
 })
+test('Wave never uses an ordinary news/radio candidate, including as a reserve', () => {
+  const anchor = item('anchor', 'stone carving workshop')
+  const routine = item('routine', 'stone carving daily news bulletin', 'video', { routineEditorial: true })
+  const candidates = [routine, item('v1'), item('v2'), item('i1', 'stone carving', 'image'), item('i2', 'stone carving', 'image')]
+  const plan = composeWave(anchor, candidates)
+  assert.ok(plan.ready)
+  assert.ok(![...plan.trio, ...plan.reserves].some(candidate => candidate.key === routine.key))
+})
 test('series and duplicate identities are hard exclusions, repeated authors are soft', () => {
   const anchor = item('a'), candidates = [1, 2, 3].map(i => item(`v${i}`, 'stone carving', 'video', { seriesKey: 'verified-series' }))
   assert.equal(composeWave(anchor, candidates).ready, false)
@@ -191,11 +217,12 @@ test('search tasks keep stable identity, dates, language and ordering across pag
 })
 test('playlist publication dates and authors refer to the video, not to the playlist', async () => {
   const load = youtubePageLoader('FAKE_TEST_KEY', (async () => Response.json({ items: [{
-    snippet: { title: 'recording', channelId: 'playlist-owner', videoOwnerChannelId: 'video-owner', publishedAt: '2026-01-01' },
+    snippet: { title: 'recording', channelId: 'playlist-owner', videoOwnerChannelId: 'video-owner', publishedAt: '2026-01-01', liveBroadcastContent: 'live' },
     contentDetails: { videoId: 'abcdefghijk', videoPublishedAt: '2009-01-01' },
   }] })) as typeof fetch)
   const page = await load({ _id: 'p', depth: 2, spec: { kind: 'playlist', playlistId: 'p' } } as DiscoveryTask, new AbortController().signal, async () => true)
   assert.equal(page.videos[0].publishedAt, '2009-01-01'); assert.equal(page.videos[0].channelId, 'video-owner')
+  assert.equal(page.videos[0].liveBroadcastContent, 'live')
 })
 test('seed portfolio varies language, topics and years without changing a result profile', () => {
   const seeds = createSearchSeeds(seeded(7), NOW, 40)

@@ -35,9 +35,11 @@ function decodeRows<T>(rows: CatalogueRow[], decode: Decoder<T>, now: number): C
 }
 /** Independent of legacy strongPool, showWeight, likeCount and public feedback collections. */
 export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text'): Promise<Candidate<T>[]> {
+  const decodePoolRows = (rows: CatalogueRow[]) => decodeRows(rows, decode, now)
+    .filter(candidate => !(ticket.mode === 'cool' && candidate.routineEditorial))
   if (ticket.type !== 'video' && ticket.type !== 'image') {
     const match = { $and: [base(ticket.type, lang, now), ...(ticket.type === 'fact' && factVariant ? [factVariant === 'quiz' ? { variant: 'quiz' } : { variant: { $ne: 'quiz' } }] : [])] }
-    return decodeRows(await ringSample(db, match, 24, random()), decode, now)
+    return decodePoolRows(await ringSample(db, match, 24, random()))
   }
   if (ticket.branch === 'autonomous' && (ticket.lane === 'trend' || ticket.lane === 'unknown')) {
     const lane = ticket.lane === 'trend'
@@ -45,7 +47,7 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
       : { $or: [{ 'discoveryProfile.evidence': 'unknown' }, { discoveryVersion: { $exists: false } }] }
     try {
       const rows = await ringSample(db, { $and: [base(ticket.type, lang, now), lane, { provider: { $nin: ['pexels', 'pixabay'] } }] }, 60, random())
-      const preferred = decodeRows(rows, decode, now)
+      const preferred = decodePoolRows(rows)
       if (preferred.length) return preferred
     } catch { /* Bounded fallback to the general family sample. */ }
   }
@@ -58,7 +60,7 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
     ] }
     return ringSample(db, match, 12, random())
   }))
-  return decodeRows(results.flatMap(r => r.status === 'fulfilled' ? r.value : []), decode, now)
+  return decodePoolRows(results.flatMap(r => r.status === 'fulfilled' ? r.value : []))
 }
 export async function selectPool<T>(db: Db, ticket: Intent, state: Session, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', ownerId = '') {
   const retrievalTicket = ticket.branch === 'editorial' && !ownerId ? { ...ticket, branch: 'autonomous' as const } : ticket

@@ -4,9 +4,7 @@ import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/stro
 import type { RandomSelectOptions, VideoPool } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
 import {
-  FUN_TREND_REGEX,
-  ROUTINE_NEWS_RADIO_REGEX,
-  YOUTUBE_NEWS_CATEGORY_ID,
+  routineVideoSelectionMatch,
 } from '@/lib/random/videoEditorial'
 import {
   markGlobalItem,
@@ -79,16 +77,7 @@ function coolToneMatch(): Filter<VideoRecord> {
 }
 
 function coolEditorialMatch(): Filter<VideoRecord> {
-  const routineFree = {
-    $and: [
-      excludeVideoText(ROUTINE_NEWS_RADIO_REGEX),
-      { categoryId: { $ne: YOUTUBE_NEWS_CATEGORY_ID } },
-      { liveBroadcastContent: { $nin: ['live', 'upcoming'] } },
-    ],
-  } as Filter<VideoRecord>
-  return {
-    $or: [routineFree, matchVideoText(FUN_TREND_REGEX)],
-  } as Filter<VideoRecord>
+  return routineVideoSelectionMatch() as Filter<VideoRecord>
 }
 
 function buildVideoPoolMatches(pool: VideoPool): Filter<VideoRecord>[] {

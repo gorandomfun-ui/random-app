@@ -4,7 +4,10 @@ import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildVideoDocument } from './videoDocument';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
-import { isFunTrend, isRoutineTrend } from '@/lib/random/videoEditorial';
+import {
+  ROUTINE_NEWS_RADIO_DAILY_LIMIT,
+} from '@/lib/random/videoEditorial';
+import { applyRoutineVideoIngestCap } from './videoEditorialAdmission';
 
 export type VideoProvider =
   | 'youtube'
@@ -1021,9 +1024,11 @@ export async function finalizeVideoIngest(
     providers?: string[];
     skipDetails?: boolean;
     insertOnly?: boolean;
+    routineWarningLabel?: string;
   },
 ): Promise<IngestResult> {
-  const { dryRun, sampleSize, warnings, providers, skipDetails = false, insertOnly = false } = options;
+  const { dryRun, sampleSize, warnings, providers, skipDetails = false, insertOnly = false,
+    routineWarningLabel = 'videos:editorial-quota' } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -1031,7 +1036,16 @@ export async function finalizeVideoIngest(
     map.set(video.videoId, video);
   }
 
-  const unique = Array.from(map.values());
+  const collection = await getCollection();
+  const admission = await applyRoutineVideoIngestCap(await getDb(), Array.from(map.values()), new Date(), { dryRun });
+  if (admission.filtered) {
+    warnings.push({
+      label: routineWarningLabel,
+      message: `${admission.filtered} routine news, radio, podcast, or live video${admission.filtered === 1 ? '' : 's'} filtered; ${Math.min(ROUTINE_NEWS_RADIO_DAILY_LIMIT, admission.alreadyIngested + admission.admitted)}/${ROUTINE_NEWS_RADIO_DAILY_LIMIT} admitted in the last 24 hours`,
+    });
+  }
+
+  const unique = admission.videos;
   const documents: VideoDocument[] = [];
   let skippedInvalid = 0;
   for (const raw of unique) {
@@ -1071,7 +1085,6 @@ export async function finalizeVideoIngest(
     return summary;
   }
 
-  const collection = await getCollection();
   const observedTrends = documents.filter(doc => doc.trendObservedAt);
   if (insertOnly && observedTrends.length) {
     const refreshed = await collection.bulkWrite(observedTrends.map(doc => ({ updateOne: {
@@ -1421,48 +1434,14 @@ export async function ingestTrendingVideos(regions: string[], options: { dryRun?
   ]);
   const settled = await Promise.all(tasks);
   for (const rows of settled) collected.push(...rows);
-  const regular = collected.filter((video) => !isRoutineTrend(video) || isFunTrend(video));
-  const routine = collected.filter((video) => isRoutineTrend(video) && !isFunTrend(video));
-  const now = new Date();
-  const routineWindowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const collection = await getCollection();
-  const routineAlreadyIngested = await collection.countDocuments({
-    type: 'video',
-    editorialRoutine: true,
-    editorialRoutineIngestedAt: { $gte: routineWindowStart },
-  } as Filter<VideoDocument>);
-  const routineAllowance = Math.max(0, 2 - routineAlreadyIngested);
-  const admittedRoutine = routine.slice(0, routineAllowance).map((video) => ({
-    ...video,
-    editorialRoutine: true,
-    editorialRoutineIngestedAt: now,
-  }));
-  const selected = [...regular, ...admittedRoutine];
-  const filteredCount = routine.length - admittedRoutine.length;
-  if (filteredCount) {
-    warnings.push({
-      label: 'trending:editorial-quota',
-      message: `${filteredCount} routine news, radio, podcast, or live video${filteredCount === 1 ? '' : 's'} filtered; ${Math.min(2, routineAlreadyIngested + admittedRoutine.length)}/2 admitted in the last 24 hours`,
-    });
-  }
-  if (!selected.length) {
-    return {
-      scanned: 0,
-      unique: 0,
-      inserted: 0,
-      updated: 0,
-      dryRun: Boolean(options.dryRun),
-      warnings,
-      providers: ['youtube', 'dailymotion'],
-    };
-  }
-  return finalizeVideoIngest(selected, {
+  return finalizeVideoIngest(collected, {
     dryRun: Boolean(options.dryRun),
-    sampleSize: Math.min(20, selected.length),
+    sampleSize: Math.min(20, collected.length),
     warnings,
     providers: ['youtube', 'dailymotion'],
     skipDetails: options.skipDetails ?? true,
     insertOnly: options.insertOnly ?? false,
+    routineWarningLabel: 'trending:editorial-quota',
   });
 }
 

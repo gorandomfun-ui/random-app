@@ -31,7 +31,8 @@ function same(a: Seen, b: Candidate): boolean {
 }
 export function hardEligible(c: Candidate, intent: Intent, state: Session): boolean {
   return c.available && !c.suppressed && c.type === intent.type &&
-    (!c.stock || intent.allowStock) && !state.recent.some(x => same(x, c))
+    (!c.stock || intent.allowStock) && !(intent.mode === 'cool' && c.routineEditorial) &&
+    !state.recent.some(x => same(x, c))
 }
 export function commitDraw<T>(state: Session, ticket: Intent, item: Candidate<T>): Session {
   if (ticket.revision !== state.revision || !hardEligible(item, ticket, state)) throw new Error('Stale or invalid Random reservation')

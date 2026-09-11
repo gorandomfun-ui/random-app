@@ -126,7 +126,8 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
     const response = await request(`https://www.googleapis.com/youtube/v3/${endpoint}?${params}`, { signal })
     if (!response.ok) throw new Error(`youtube-status-${response.status}`) // Never log a URL containing the API key.
     type ApiItem = { id?: { videoId?: string }; snippet?: { title?: string; description?: string; channelId?: string;
-      videoOwnerChannelId?: string; videoOwnerChannelTitle?: string; channelTitle?: string; publishedAt?: string; resourceId?: { videoId?: string } };
+      videoOwnerChannelId?: string; videoOwnerChannelTitle?: string; channelTitle?: string; publishedAt?: string;
+      liveBroadcastContent?: string; resourceId?: { videoId?: string } };
       contentDetails?: { videoId?: string; videoPublishedAt?: string; relatedPlaylists?: { uploads?: string } } }
     const data = await response.json() as { items?: ApiItem[]; nextPageToken?: string }
     if (spec.kind === 'channel') return { videos: [], children: (data.items ?? []).flatMap(x =>
@@ -139,6 +140,7 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
         description: s?.description, thumb: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
         channelId: spec.kind === 'playlist' ? s?.videoOwnerChannelId : s?.channelId,
         channelTitle: spec.kind === 'playlist' ? s?.videoOwnerChannelTitle : s?.channelTitle,
+        liveBroadcastContent: s?.liveBroadcastContent,
         publishedAt: spec.kind === 'playlist' ? item.contentDetails?.videoPublishedAt : s?.publishedAt,
         contextQueries: [`discovery-task:${task._id}`, ...(spec.kind === 'search' ? [spec.query] : [])] }]
     })

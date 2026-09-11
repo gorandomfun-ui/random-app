@@ -30,6 +30,8 @@ export type Candidate<T = unknown> = {
   seriesKey?: string
   duplicateKey?: string
   stock: boolean
+  /** True only for ordinary news/radio/live programming; humorous exceptions stay false. */
+  routineEditorial?: boolean
   quiz?: boolean
   available: boolean
   suppressed?: boolean

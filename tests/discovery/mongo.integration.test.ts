@@ -3,12 +3,13 @@ import assert from 'node:assert/strict'
 import { MongoClient } from 'mongodb'
 import { randomUUID } from 'node:crypto'
 import { reserveQuota } from '../../lib/discovery/exploration'
-import { installDiscoveryIndexes, selectPool, loadWave } from '../../lib/discovery/mongo'
+import { installDiscoveryIndexes, selectPool, loadWave, loadPoolCandidates } from '../../lib/discovery/mongo'
 import { installOwnerIndexes, saveOwnerReference, applyOwnerReferences } from '../../lib/discovery/ownerStore'
 import { buildProfile } from '../../lib/discovery/profile'
 import { newSession, planDraw, commitDraw } from '../../lib/discovery/pool'
 import { seeded } from '../../lib/discovery/random'
 import { candidateFromRow } from '../../lib/discovery/catalog'
+import { applyRoutineVideoIngestCap } from '../../lib/ingest/videoEditorialAdmission'
 
 const uri = process.env.RANDOM_TEST_MONGO_URI
 test('MongoDB integration: 100 concurrent reservations cannot exceed a daily cap of 12', { skip: !uri }, async () => {
@@ -24,6 +25,41 @@ test('MongoDB integration: 100 concurrent reservations cannot exceed a daily cap
   }
 })
 
+test('MongoDB: every automatic video path shares the two-per-24h ordinary news/radio cap', { skip: !uri }, async () => {
+  const client = new MongoClient(uri!, { serverSelectionTimeoutMS: 5000 })
+  const db = client.db(`random_discovery_test_${randomUUID().replaceAll('-', '')}`)
+  const now = new Date('2026-09-11T12:00:00.000Z')
+  try {
+    await db.collection('items').insertOne({ type: 'video', videoId: 'existing001', provider: 'youtube',
+      editorialRoutine: true, editorialRoutineIngestedAt: new Date(now.getTime() - 3600000) })
+    const candidates = [
+      { videoId: 'news0000001', url: 'https://youtu.be/news0000001', provider: 'youtube', title: 'Daily news bulletin' },
+      { videoId: 'radio000001', url: 'https://youtu.be/radio000001', provider: 'youtube', title: 'Morning radio full episode' },
+      { videoId: 'funny000001', url: 'https://youtu.be/funny000001', provider: 'youtube', title: 'Daily news parody comedy sketch' },
+      { videoId: 'advert00001', url: 'https://youtu.be/advert00001', provider: 'youtube', title: 'Vintage television commercial 1974' },
+      { videoId: 'music000001', url: 'https://youtu.be/music000001', provider: 'youtube', title: 'Basement concert captured on VHS' },
+    ] as const
+    const dryRun = await applyRoutineVideoIngestCap(db, [...candidates], now, { dryRun: true })
+    assert.equal(dryRun.admitted, 1)
+    assert.equal(await db.collection('video_editorial_quota_v1').countDocuments(), 0)
+    const admission = await applyRoutineVideoIngestCap(db, [...candidates], now)
+    assert.equal(admission.alreadyIngested, 1)
+    assert.equal(admission.admitted, 1)
+    assert.equal(admission.filtered, 1)
+    assert.deepEqual(admission.videos.map(video => video.videoId), ['news0000001', 'funny000001', 'advert00001', 'music000001'])
+    assert.equal(admission.videos[0].editorialRoutine, true)
+    assert.ok(admission.videos.slice(1).every(video => video.editorialRoutine !== true))
+    const concurrent = await Promise.all(Array.from({ length: 20 }, (_, index) => applyRoutineVideoIngestCap(
+      db,
+      [{ videoId: `radio-next-${index}`, url: `https://example.invalid/${index}`, provider: 'youtube', title: 'Radio news bulletin' }],
+      now,
+    )))
+    assert.equal(concurrent.reduce((sum, result) => sum + result.admitted, 0), 0)
+    const quota = await db.collection<{ _id: string; timestamps: Date[] }>('video_editorial_quota_v1').findOne({ _id: 'routine-news-radio' })
+    assert.equal((quota?.timestamps as Date[]).length, 2)
+  } finally { await db.dropDatabase(); await client.close() }
+})
+
 test('MongoDB: actual catalogue sampling, stock exclusions, Wave trios and more than 64 owner references', { skip: !uri }, async () => {
   const client = new MongoClient(uri!, { serverSelectionTimeoutMS: 5000 })
   const db = client.db(`random_discovery_test_${randomUUID().replaceAll('-', '')}`)
@@ -37,6 +73,20 @@ test('MongoDB: actual catalogue sampling, stock exclusions, Wave trios and more 
       discoveryVersion: 2, discoveryProfile: profile, discoveryFamily: profile.family, rand: random() }))
     await db.collection('items').insertMany(docs)
     const decode = (row: Record<string, unknown>) => ({ id: String(row._id), type: String(row.type) })
+    const newsProfile = buildProfile({ title: 'Stone carving daily news bulletin' })
+    const funnyProfile = buildProfile({ title: 'Stone carving daily news parody comedy' })
+    await db.collection('items').insertMany([
+      { type: 'video', provider: 'youtube', url: 'https://example.invalid/routine', videoId: 'routine-news',
+        title: 'Stone carving daily news bulletin', sourceMetadata: { title: 'Stone carving daily news bulletin' },
+        discoveryVersion: 2, discoveryProfile: newsProfile, discoveryFamily: 'music', rand: .2 },
+      { type: 'video', provider: 'youtube', url: 'https://example.invalid/parody', videoId: 'routine-parody',
+        title: 'Stone carving daily news parody comedy', sourceMetadata: { title: 'Stone carving daily news parody comedy' },
+        discoveryVersion: 2, discoveryProfile: funnyProfile, discoveryFamily: 'music', rand: .4 },
+    ])
+    const coolCandidates = await loadPoolCandidates(db, { ...planDraw(newSession(140), 'video'), mode: 'cool', branch: 'autonomous', lane: 'described' },
+      'en', decode, () => .1, now)
+    assert.ok(!coolCandidates.some(candidate => candidate.key.includes('routine-news')))
+    assert.ok(coolCandidates.some(candidate => candidate.key.includes('routine-parody')))
     let state = newSession(14)
     for (let i = 0; i < 40; i++) {
       const ticket = planDraw(state, i % 3 ? 'video' : 'image')

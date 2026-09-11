@@ -45,7 +45,7 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
   const ranks = new Map<string, Relation>()
   const counts = new Map<string, number>()
   const seen = new Set<string>()
-  const ranked = candidates.filter(x => x.available && !x.suppressed && !excluded.has(x.key) && !duplicates(anchor, x))
+  const ranked = candidates.filter(x => x.available && !x.suppressed && !x.routineEditorial && !excluded.has(x.key) && !duplicates(anchor, x))
     .filter(x => { const rel = relation(anchor.profile, x.profile); if (!rel) return false; ranks.set(x.key, rel); return true })
     .sort((a, b) => ranks.get(b.key)!.score - ranks.get(a.key)!.score || a.key.localeCompare(b.key))
     .filter(x => {

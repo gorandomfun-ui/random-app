@@ -25,7 +25,7 @@ export function dailymotionPageLoader(request: typeof fetch = fetch): PageLoader
     const page = Math.max(1, Math.min(10, Number(task.cursor) || 1))
     const params = new URLSearchParams({ limit: '50', page: String(page), sort: spec.sort, availability: 'true', private: 'false',
       created_after: String(Math.floor(new Date(spec.after).getTime() / 1000)), created_before: String(Math.floor(new Date(spec.before).getTime() / 1000)),
-      fields: 'id,title,description,url,thumbnail_url,duration,owner.id,owner.screenname,created_time,views_total,private' })
+      fields: 'id,title,description,url,thumbnail_url,duration,channel.id,owner.id,owner.screenname,created_time,views_total,private' })
     if (spec.query) params.set('search', spec.query)
     if (spec.category) params.set('channel', spec.category)
     const response = await request(`https://api.dailymotion.com/videos?${params}`, { signal })
@@ -36,6 +36,7 @@ export function dailymotionPageLoader(request: typeof fetch = fetch): PageLoader
       const str = (key: string) => typeof row[key] === 'string' ? row[key] as string : undefined
       return [{ videoId: `dailymotion:${row.id}`, provider: 'dailymotion', url: `https://www.dailymotion.com/video/${row.id}`,
         title: str('title'), description: str('description'), thumb: str('thumbnail_url'), channelId: str('owner.id'), channelTitle: str('owner.screenname'),
+        categoryId: str('channel.id'),
         duration: typeof row.duration === 'number' ? `PT${Math.max(0, row.duration)}S` : undefined,
         publishedAt: typeof row.created_time === 'number' ? new Date(row.created_time * 1000) : undefined,
         viewCount: typeof row.views_total === 'number' ? row.views_total : undefined, statsObservedAt: new Date(),
