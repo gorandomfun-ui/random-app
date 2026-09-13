@@ -1,11 +1,12 @@
 import type { Db } from 'mongodb'
 import { seeded } from './random'
+import type { VideoIngestStage } from '../ingest/videos'
 import { enqueue, quotaConfigFromEnv, runExploration, youtubePageLoader, type DiscoveryProvider, type ExplorationStage } from './exploration'
 import { dailymotionPageLoader, type DailymotionSpec } from './dailymotion'
 import { createSearchSeeds } from './seeds'
 import { enqueueOwnerExploration } from './subjectExploration'
 
-export type DiscoveryStage = 'seeding' | 'exploring' | 'completed' | ExplorationStage
+export type DiscoveryStage = 'seeding' | 'exploring' | 'completed' | ExplorationStage | VideoIngestStage
 export type DiscoveryBatchOptions = { provider?: DiscoveryProvider; seed?: boolean; maxMs?: number; signal?: AbortSignal;
   onStage?: (stage: DiscoveryStage) => void }
 
@@ -65,7 +66,8 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
     onStage: options.onStage,
     loadPage: (task, signal, permit) => task.spec.kind === 'dailymotion' ? dailymotion(task, signal, permit)
       : youtube ? youtube(task, signal, permit) : Promise.reject(new Error('youtube-unconfigured')),
-    ingest: videos => finalizeVideoIngest(videos, { dryRun: false, sampleSize: 0, warnings: [], skipDetails: true, insertOnly: true }) })
+    ingest: videos => finalizeVideoIngest(videos, { dryRun: false, sampleSize: 0, warnings: [], skipDetails: true,
+      insertOnly: true, onStage: options.onStage }) })
   options.onStage?.('completed')
   return { ...report, ownerSearchesEnqueued, ownerSchedulingFailed }
 }

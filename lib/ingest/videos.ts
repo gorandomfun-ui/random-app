@@ -106,6 +106,9 @@ type IngestResult = {
   remaining?: number;
 };
 
+export type VideoIngestStage = 'ingest-collection' | 'ingest-routine' | 'ingest-admission' |
+  'ingest-existing' | 'ingest-write' | 'ingest-completed';
+
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
 const YT_VIDEOS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/videos';
 const USER_AGENT = { 'User-Agent': 'RandomAppBot/1.0 (+https://random.app)' };
@@ -1034,10 +1037,11 @@ export async function finalizeVideoIngest(
     skipDetails?: boolean;
     insertOnly?: boolean;
     routineWarningLabel?: string;
+    onStage?: (stage: VideoIngestStage) => void;
   },
 ): Promise<IngestResult> {
   const { dryRun, sampleSize, warnings, providers, skipDetails = false, insertOnly = false,
-    routineWarningLabel = 'videos:editorial-quota' } = options;
+    routineWarningLabel = 'videos:editorial-quota', onStage } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -1045,8 +1049,10 @@ export async function finalizeVideoIngest(
     map.set(video.videoId, video);
   }
 
+  onStage?.('ingest-collection');
   const collection = await getCollection();
   const deduplicated = Array.from(map.values());
+  onStage?.('ingest-routine');
   const routineIds = deduplicated.filter(isOrdinaryRoutineVideo).map((video) => video.videoId);
   const existingRoutineRows = routineIds.length
     ? await collection.find({ type: 'video', videoId: { $in: routineIds } } as Filter<VideoDocument>)
@@ -1055,6 +1061,7 @@ export async function finalizeVideoIngest(
   const existingRoutineIds = new Set(existingRoutineRows
     .map((document) => document.videoId)
     .filter((videoId): videoId is string => typeof videoId === 'string'));
+  onStage?.('ingest-admission');
   const admission = await applyRoutineVideoIngestCap(await getDb(), deduplicated, new Date(), {
     dryRun,
     existingVideoIds: existingRoutineIds,
@@ -1103,6 +1110,7 @@ export async function finalizeVideoIngest(
   };
 
   if (dryRun || !documents.length) {
+    onStage?.('ingest-completed');
     return summary;
   }
 
@@ -1116,6 +1124,7 @@ export async function finalizeVideoIngest(
   }
   let writeDocuments = documents;
   if (insertOnly) {
+    onStage?.('ingest-existing');
     const ids = documents.map((doc) => doc.videoId).filter(Boolean);
     const existing = ids.length
       ? await collection
@@ -1129,11 +1138,13 @@ export async function finalizeVideoIngest(
   }
 
   if (!writeDocuments.length) {
+    onStage?.('ingest-completed');
     return summary;
   }
 
   const now = new Date();
   if (insertOnly) {
+    onStage?.('ingest-write');
     const insertDocuments = writeDocuments.map((doc) => ({
       ...doc,
       createdAt: now,
@@ -1152,6 +1163,7 @@ export async function finalizeVideoIngest(
       }
     }
 
+    onStage?.('ingest-completed');
     return summary;
   }
 
