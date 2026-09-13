@@ -67,7 +67,7 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
     loadPage: (task, signal, permit) => task.spec.kind === 'dailymotion' ? dailymotion(task, signal, permit)
       : youtube ? youtube(task, signal, permit) : Promise.reject(new Error('youtube-unconfigured')),
     ingest: videos => finalizeVideoIngest(videos, { dryRun: false, sampleSize: 0, warnings: [], skipDetails: true,
-      insertOnly: true, onStage: options.onStage }) })
+      insertOnly: true, onStage: options.onStage, conservativeRoutineInitialization: true }) })
   options.onStage?.('completed')
   return { ...report, ownerSearchesEnqueued, ownerSchedulingFailed }
 }

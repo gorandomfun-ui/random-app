@@ -1051,10 +1051,11 @@ export async function finalizeVideoIngest(
     insertOnly?: boolean;
     routineWarningLabel?: string;
     onStage?: (stage: VideoIngestStage) => void;
+    conservativeRoutineInitialization?: boolean;
   },
 ): Promise<IngestResult> {
   const { dryRun, sampleSize, warnings, providers, skipDetails = false, insertOnly = false,
-    routineWarningLabel = 'videos:editorial-quota', onStage } = options;
+    routineWarningLabel = 'videos:editorial-quota', onStage, conservativeRoutineInitialization = false } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -1073,6 +1074,7 @@ export async function finalizeVideoIngest(
   const admission = await applyRoutineVideoIngestCap(await getDb(), deduplicated, new Date(), {
     dryRun,
     existingVideoIds: existingRoutineIds,
+    conservativeInitialization: conservativeRoutineInitialization,
   });
   if (admission.filtered) {
     warnings.push({

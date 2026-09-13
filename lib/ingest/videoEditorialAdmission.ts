@@ -13,7 +13,7 @@ async function recentItemTimestamps(collection: Collection<VideoDocument>, windo
   const rows = await collection.find({ type: 'video', editorialRoutine: true,
     editorialRoutineIngestedAt: { $gte: windowStart } } as Filter<VideoDocument>)
     .project<{ editorialRoutineIngestedAt?: Date }>({ editorialRoutineIngestedAt: 1 })
-    .sort({ editorialRoutineIngestedAt: -1 }).limit(ROUTINE_NEWS_RADIO_DAILY_LIMIT).toArray()
+    .sort({ editorialRoutineIngestedAt: -1 }).limit(ROUTINE_NEWS_RADIO_DAILY_LIMIT).maxTimeMS(5000).toArray()
   return rows.map(row => row.editorialRoutineIngestedAt).filter((value): value is Date => value instanceof Date)
 }
 
@@ -21,7 +21,7 @@ export async function applyRoutineVideoIngestCap(
   db: Db,
   videos: RawVideo[],
   now = new Date(),
-  options: { dryRun?: boolean; existingVideoIds?: ReadonlySet<string> } = {},
+  options: { dryRun?: boolean; existingVideoIds?: ReadonlySet<string>; conservativeInitialization?: boolean } = {},
 ): Promise<{ videos: RawVideo[]; admitted: number; filtered: number; alreadyIngested: number }> {
   const existingVideoIds = options.existingVideoIds ?? new Set<string>()
   const ordinary = videos.filter(video => isOrdinaryRoutineVideo(video) && !existingVideoIds.has(video.videoId))
@@ -30,8 +30,10 @@ export async function applyRoutineVideoIngestCap(
   const collection = db.collection<VideoDocument>('items')
   const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000)
   const quota = db.collection<RoutineQuota>('video_editorial_quota_v1')
-  const existingQuota = await quota.findOne({ _id: QUOTA_ID })
-  const itemTimestamps = existingQuota ? [] : await recentItemTimestamps(collection, windowStart)
+  const existingQuota = await quota.findOne({ _id: QUOTA_ID }, { maxTimeMS: 2000 })
+  const itemTimestamps = existingQuota ? [] : options.conservativeInitialization
+    ? Array.from({ length: ROUTINE_NEWS_RADIO_DAILY_LIMIT }, () => now)
+    : await recentItemTimestamps(collection, windowStart)
   if (options.dryRun) {
     const alreadyIngested = activeTimestamps(existingQuota?.timestamps ?? itemTimestamps, windowStart).length
     const allowance = Math.max(0, ROUTINE_NEWS_RADIO_DAILY_LIMIT - alreadyIngested)
@@ -46,11 +48,11 @@ export async function applyRoutineVideoIngestCap(
   }
 
   try {
-    await quota.updateOne({ _id: QUOTA_ID }, { $setOnInsert: { timestamps: itemTimestamps } }, { upsert: true })
+    await quota.updateOne({ _id: QUOTA_ID }, { $setOnInsert: { timestamps: itemTimestamps } }, { upsert: true, maxTimeMS: 2000 })
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error
   }
-  const initialized = await quota.findOne({ _id: QUOTA_ID })
+  const initialized = await quota.findOne({ _id: QUOTA_ID }, { maxTimeMS: 2000 })
   const alreadyIngested = activeTimestamps(initialized?.timestamps, windowStart).length
   let admitted = 0
   const selected: RawVideo[] = []
@@ -65,7 +67,7 @@ export async function applyRoutineVideoIngestCap(
     const reserved = await quota.findOneAndUpdate({ _id: QUOTA_ID,
       $expr: { $lt: [{ $size: active }, ROUTINE_NEWS_RADIO_DAILY_LIMIT] } }, [
       { $set: { timestamps: { $concatArrays: [active, [now]] }, updatedAt: now } },
-    ], { returnDocument: 'after' })
+    ], { returnDocument: 'after', maxTimeMS: 2000 })
     if (!reserved) continue
     admitted += 1
     selected.push({ ...video, editorialRoutine: true, editorialRoutineIngestedAt: now })
