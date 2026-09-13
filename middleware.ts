@@ -37,7 +37,8 @@ function requestHostname(request: NextRequest): string {
 function isLocalOnlyPath(pathname: string): boolean {
   if (LOCAL_ONLY_STATIC_PATHS.has(pathname)) return true
   if (!pathname.startsWith('/admin')) return false
-  return pathname !== '/admin/ingest-reports' && !pathname.startsWith('/admin/ingest-reports/')
+  const onlineAdminPaths = ['/admin/curation', '/admin/ingest-reports']
+  return !onlineAdminPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))
 }
 
 export function middleware(request: NextRequest) {
