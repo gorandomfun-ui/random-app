@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Db } from 'mongodb'
-import { quotaConfigFromEnv, type DiscoveryProvider, type ExplorationReport } from './exploration'
+import { quotaConfigFromEnv, withAbortDeadline, type DiscoveryProvider, type ExplorationReport } from './exploration'
 import type { DiscoveryBatchOptions } from './worker'
 
 export function githubDiscoveryConfig() {
@@ -56,9 +56,10 @@ export type ProviderBatch = BatchReport & { provider: DiscoveryProvider; duratio
 
 /** Providers take turns. An empty, exhausted or failing provider yields to the other. */
 export async function runDiscoveryLoop(options: {
-  providers: readonly DiscoveryProvider[]; maxMs: number; signal?: AbortSignal; now?: () => number;
+  providers: readonly DiscoveryProvider[]; maxMs: number; signal?: AbortSignal; now?: () => number; batchDeadlineMs?: number;
   runBatch: (options: DiscoveryBatchOptions) => Promise<BatchReport>;
   onBatch?: (report: ProviderBatch) => void;
+  onStage?: (event: { provider: DiscoveryProvider; stage: 'seeding' | 'exploring' | 'completed' }) => void;
 }) {
   const now = options.now ?? Date.now, deadline = now() + Math.min(600000, options.maxMs)
   const active = [...new Set(options.providers)], seededProviders = new Set<DiscoveryProvider>()
@@ -68,7 +69,19 @@ export async function runDiscoveryLoop(options: {
     // Divide a short remaining budget so the second provider still gets a turn.
     const maxMs = Math.min(90000, Math.floor((deadline - started) / (active.length + 1)))
     if (maxMs < 20000) break
-    const result = await options.runBatch({ provider, seed: !seededProviders.has(provider), maxMs, signal: options.signal })
+    const batchDeadlineMs = Math.min(maxMs, Math.max(1, options.batchDeadlineMs ?? maxMs))
+    let result: BatchReport
+    try {
+      result = await withAbortDeadline(batchDeadlineMs, options.signal, signal => options.runBatch({
+        provider, seed: !seededProviders.has(provider), maxMs: batchDeadlineMs, signal,
+        onStage: stage => options.onStage?.({ provider, stage }),
+      }))
+    } catch (error) {
+      if (options.signal?.aborted) break
+      if (!(error instanceof DOMException) || error.name !== 'TimeoutError') throw error
+      result = { pages: 0, inserted: 0, failures: 1, quotaDenied: 0,
+        errors: { timeout: 1, rateLimit: 0, http: 0, other: 0 }, stopReason: 'provider-errors' }
+    }
     seededProviders.add(provider)
     const report = { ...result, provider, durationMs: now() - started }
     reports.push(report); options.onBatch?.(report)

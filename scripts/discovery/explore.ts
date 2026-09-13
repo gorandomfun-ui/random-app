@@ -43,6 +43,7 @@ async function main() {
     const { runDiscoveryBatch } = await import('../../lib/discovery/worker')
     const result = await runDiscoveryLoop({ ...config, signal: controller.signal,
       runBatch: options => runDiscoveryBatch(database!, options),
+      onStage: event => console.log(JSON.stringify({ discoveryStage: event })),
       onBatch: report => { reports.push(report); console.log(JSON.stringify(report)) },
     })
     status = result.failures || reports.some(r => r.ownerSchedulingFailed) ? 'partial' : 'completed'

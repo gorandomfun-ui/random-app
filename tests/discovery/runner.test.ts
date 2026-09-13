@@ -66,6 +66,22 @@ test('provider deadline settles even when the underlying request ignores abort',
   assert.ok(Date.now() - started < 500)
 })
 
+test('a whole provider batch is bounded and reports its last stage', async () => {
+  const stages: string[] = []
+  const started = Date.now()
+  const result = await runDiscoveryLoop({ providers: ['dailymotion'], maxMs: 60000, batchDeadlineMs: 20,
+    onStage: event => stages.push(`${event.provider}:${event.stage}`),
+    runBatch: async options => {
+      options.onStage?.('seeding')
+      return new Promise(() => undefined)
+    },
+  })
+  assert.ok(Date.now() - started < 500)
+  assert.deepEqual(stages, ['dailymotion:seeding'])
+  assert.equal(result.reports[0]?.stopReason, 'provider-errors')
+  assert.equal(result.reports[0]?.errors.timeout, 1)
+})
+
 function check(env: Record<string, string | undefined>, args: string[] = []) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'scripts/discovery/explore.ts', ...args], {
     env: { ...process.env, MONGO_URI: '', MONGO_DB: '', MONGODB_URI: '', MONGODB_DB: '', DRY_RUN: '',

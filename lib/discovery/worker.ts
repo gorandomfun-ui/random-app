@@ -5,7 +5,8 @@ import { dailymotionPageLoader, type DailymotionSpec } from './dailymotion'
 import { createSearchSeeds } from './seeds'
 import { enqueueOwnerExploration } from './subjectExploration'
 
-export type DiscoveryBatchOptions = { provider?: DiscoveryProvider; seed?: boolean; maxMs?: number; signal?: AbortSignal }
+export type DiscoveryBatchOptions = { provider?: DiscoveryProvider; seed?: boolean; maxMs?: number; signal?: AbortSignal;
+  onStage?: (stage: 'seeding' | 'exploring' | 'completed') => void }
 
 export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions = {}) {
   if (process.env.RANDOM_DISCOVERY_WORKER_ENABLED !== '1') throw new Error('Discovery worker disabled')
@@ -19,6 +20,7 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
   let ownerSearchesEnqueued = 0, ownerSchedulingFailed = false
 
   if (options.seed !== false && !options.signal?.aborted) {
+    options.onStage?.('seeding')
     let rotation = Math.floor(started / 3600000)
     try {
       const cursor = await db.collection<{ _id: string; sequence: number }>('discovery_scheduler_v2').findOneAndUpdate(
@@ -56,10 +58,12 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
   const { finalizeVideoIngest } = await import('../ingest/videos')
   const youtube = providers.includes('youtube') ? youtubePageLoader(process.env.YOUTUBE_API_KEY!) : null
   const dailymotion = dailymotionPageLoader()
+  options.onStage?.('exploring')
   const report = await runExploration({ db, quota, random, maxMs: Math.max(0, maxMs - (Date.now() - started)),
     provider: options.provider ?? (providers.length === 1 ? providers[0] : undefined), signal: options.signal,
     loadPage: (task, signal, permit) => task.spec.kind === 'dailymotion' ? dailymotion(task, signal, permit)
       : youtube ? youtube(task, signal, permit) : Promise.reject(new Error('youtube-unconfigured')),
     ingest: videos => finalizeVideoIngest(videos, { dryRun: false, sampleSize: 0, warnings: [], skipDetails: true, insertOnly: true }) })
+  options.onStage?.('completed')
   return { ...report, ownerSearchesEnqueued, ownerSchedulingFailed }
 }
