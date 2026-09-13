@@ -10,9 +10,10 @@ export async function reserveDailymotionQuota(db: Db, now: number): Promise<bool
   const configured = Number(process.env.RANDOM_DM_DISCOVERY_DAILY_LIMIT ?? 60)
   if (!Number.isSafeInteger(configured) || configured < 0 || configured > 200) throw new Error('Invalid Dailymotion exploration budget')
   const c = db.collection<{ _id: string; spent: number }>('discovery_dm_quota_v2'), _id = quotaDay(now)
-  try { await c.updateOne({ _id }, { $setOnInsert: { spent: 0 } }, { upsert: true }) }
+  try { await c.updateOne({ _id }, { $setOnInsert: { spent: 0 } }, { upsert: true, maxTimeMS: 2000 }) }
   catch (error) { if ((error as { code?: number }).code !== 11000) throw error }
-  return Boolean(await c.findOneAndUpdate({ _id, spent: { $lt: configured } }, { $inc: { spent: 1 } }, { returnDocument: 'after' }))
+  return Boolean(await c.findOneAndUpdate({ _id, spent: { $lt: configured } }, { $inc: { spent: 1 } },
+    { returnDocument: 'after', maxTimeMS: 2000 }))
 }
 
 /** Uses the same public legacy API as the current ingestion. No paid Player ID or SDK. */

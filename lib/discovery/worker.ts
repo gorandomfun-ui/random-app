@@ -1,12 +1,13 @@
 import type { Db } from 'mongodb'
 import { seeded } from './random'
-import { enqueue, quotaConfigFromEnv, runExploration, youtubePageLoader, type DiscoveryProvider } from './exploration'
+import { enqueue, quotaConfigFromEnv, runExploration, youtubePageLoader, type DiscoveryProvider, type ExplorationStage } from './exploration'
 import { dailymotionPageLoader, type DailymotionSpec } from './dailymotion'
 import { createSearchSeeds } from './seeds'
 import { enqueueOwnerExploration } from './subjectExploration'
 
+export type DiscoveryStage = 'seeding' | 'exploring' | 'completed' | ExplorationStage
 export type DiscoveryBatchOptions = { provider?: DiscoveryProvider; seed?: boolean; maxMs?: number; signal?: AbortSignal;
-  onStage?: (stage: 'seeding' | 'exploring' | 'completed') => void }
+  onStage?: (stage: DiscoveryStage) => void }
 
 export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions = {}) {
   if (process.env.RANDOM_DISCOVERY_WORKER_ENABLED !== '1') throw new Error('Discovery worker disabled')
@@ -61,6 +62,7 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
   options.onStage?.('exploring')
   const report = await runExploration({ db, quota, random, maxMs: Math.max(0, maxMs - (Date.now() - started)),
     provider: options.provider ?? (providers.length === 1 ? providers[0] : undefined), signal: options.signal,
+    onStage: options.onStage,
     loadPage: (task, signal, permit) => task.spec.kind === 'dailymotion' ? dailymotion(task, signal, permit)
       : youtube ? youtube(task, signal, permit) : Promise.reject(new Error('youtube-unconfigured')),
     ingest: videos => finalizeVideoIngest(videos, { dryRun: false, sampleSize: 0, warnings: [], skipDetails: true, insertOnly: true }) })

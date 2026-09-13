@@ -22,7 +22,7 @@ export async function enqueue(db: Db, spec: SearchSpec, depth = 0, editorial = f
   if (depth > 2) return
   await db.collection<DiscoveryTask>('discovery_tasks_v2').updateOne({ _id: taskId(spec) }, { $setOnInsert: {
     spec, depth, editorial, due: new Date(now), leaseUntil: new Date(0), attempts: 0, pages: 0, dryPages: 0, priority: 1,
-  } }, { upsert: true })
+  } }, { upsert: true, maxTimeMS: 2000 })
 }
 export type QuotaConfig = { searchDailyLimit: number; otherDailyLimit: number;
   /** Capacity reserved for all existing jobs. Configure from actual usage, not a guessed default. */
@@ -61,6 +61,7 @@ export function quotaConfigFromEnv(): QuotaConfig {
 export type Page = { videos: RawVideo[]; nextCursor?: string; children: SearchSpec[] }
 export type PageLoader = (task: DiscoveryTask, signal: AbortSignal, permit: (bucket: 'search' | 'other') => Promise<boolean>) => Promise<Page>
 export type DiscoveryProvider = 'youtube' | 'dailymotion'
+export type ExplorationStage = 'claiming' | 'provider' | 'ingesting' | 'recovering'
 export type ExplorationReport = { pages: number; inserted: number; failures: number; quotaDenied: number;
   errors: { timeout: number; rateLimit: number; http: number; other: number };
   stopReason: 'idle' | 'time-budget' | 'task-budget' | 'quota' | 'provider-errors' | 'cancelled' }
@@ -107,7 +108,8 @@ export function focusMatchesVideo(video: RawVideo, focus?: DiscoveryFocus): bool
 export async function runExploration(options: {
   db: Db; quota?: QuotaConfig; random: Rng; loadPage: PageLoader;
   ingest: (videos: RawVideo[]) => Promise<{ inserted: number; existingSkipped?: number }>;
-  now?: () => number; maxMs?: number; provider?: DiscoveryProvider; signal?: AbortSignal
+  now?: () => number; maxMs?: number; provider?: DiscoveryProvider; signal?: AbortSignal;
+  onStage?: (stage: ExplorationStage) => void
 }): Promise<ExplorationReport> {
   const { db, quota, random, loadPage, ingest } = options, now = options.now ?? Date.now
   const deadline = now() + Math.min(180000, options.maxMs ?? 180000)
@@ -121,6 +123,7 @@ export async function runExploration(options: {
   const pagesByTask = new Map<string, number>()
   while (now() < deadline - 15000 && attempts++ < 40) {
     if (options.signal?.aborted) { report.stopReason = 'cancelled'; break }
+    options.onStage?.('claiming')
     const kinds: SearchSpec['kind'][] = [
       ...(options.provider !== 'dailymotion' ? ['search', 'channel', 'playlist'] as const : []),
       ...(options.provider !== 'youtube' && process.env.RANDOM_DM_DISCOVERY_ENABLED === '1' ? ['dailymotion'] as const : []),
@@ -153,11 +156,13 @@ export async function runExploration(options: {
           ownerId: focus.ownerId, contentKey: focus.referenceKey, active: true,
         }, { projection: { _id: 1 }, maxTimeMS: 500 })
         if (!active) {
-          await tasks.updateOne(fence, { $set: { due: new Date(now() + 7 * 86400000), leaseUntil: new Date(0) }, $unset: { leaseToken: '' } })
+          await tasks.updateOne(fence, { $set: { due: new Date(now() + 7 * 86400000), leaseUntil: new Date(0) }, $unset: { leaseToken: '' } },
+            { maxTimeMS: 2000 })
           continue
         }
       }
       phase = 'provider'
+      options.onStage?.('provider')
       // Real 50-result Dailymotion pages can exceed ten seconds. Keep a provider-specific bound.
       const providerTimeoutMs = provider === 'dailymotion' ? 20000 : 10000
       const pageBudgetMs = Math.max(1, Math.min(providerTimeoutMs, deadline - now() - 15000))
@@ -172,6 +177,7 @@ export async function runExploration(options: {
           return allowed
         }))
       phase = 'ingest'
+      options.onStage?.('ingesting')
       // Do not persist unbounded upstream responses. Inserts must use the existing unique video ID.
       const focused = page.videos.slice(0, 50).filter(video => focusMatchesVideo(video, task!.spec.focus))
       const result = await ingest(focused)
@@ -186,7 +192,7 @@ export async function runExploration(options: {
       await tasks.updateOne(fence, { $set: { cursor: continuePaging ? page.nextCursor : undefined,
         due: new Date(now() + (continuePaging ? 1000 : cooldown)), leaseUntil: new Date(0),
         pages: continuePaging ? task.pages + 1 : 0, dryPages, lastYield: yieldScore,
-        priority: .25 + .75 * yieldScore }, $inc: { attempts: 1 }, $unset: { leaseToken: '' } })
+        priority: .25 + .75 * yieldScore }, $inc: { attempts: 1 }, $unset: { leaseToken: '' } }, { maxTimeMS: 2000 })
       // Descendants remain suggestions. They never become owner references automatically.
       for (const spec of page.children.slice(0, 3)) await enqueue(db, spec, task.depth + 1, task.editorial, now())
       pagesByTask.set(task._id, (pagesByTask.get(task._id) ?? 0) + 1)
@@ -195,15 +201,16 @@ export async function runExploration(options: {
     } catch (error) {
       // Database/insert failures are not provider timeouts. Stop rather than hiding a failed write.
       if (phase !== 'provider') throw error
+      options.onStage?.('recovering')
       if (options.signal?.aborted) {
-        await tasks.updateOne(fence, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: '' } })
+        await tasks.updateOne(fence, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: '' } }, { maxTimeMS: 2000 })
         report.stopReason = 'cancelled'; break
       }
       const reason = pageFailure(error)
       if (reason === 'quota') report.quotaDenied++
       else { report.failures++; report.errors[reason]++; consecutiveFailures[provider]++ }
       await tasks.updateOne(fence, { $set: { due: new Date(now() + 86400000), leaseUntil: new Date(0) },
-        $inc: { attempts: 1 }, $unset: { leaseToken: '' } })
+        $inc: { attempts: 1 }, $unset: { leaseToken: '' } }, { maxTimeMS: 2000 })
       // One exhausted provider must not starve the other provider's queued tasks.
       if (reason === 'quota' && provider === 'dailymotion') blockedKinds.add('dailymotion')
       // An editorial cap does not imply that autonomous searches have exhausted their quota.

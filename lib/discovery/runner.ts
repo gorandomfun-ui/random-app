@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Db } from 'mongodb'
 import { quotaConfigFromEnv, withAbortDeadline, type DiscoveryProvider, type ExplorationReport } from './exploration'
-import type { DiscoveryBatchOptions } from './worker'
+import type { DiscoveryBatchOptions, DiscoveryStage } from './worker'
 
 export function githubDiscoveryConfig() {
   if (process.env.RANDOM_DISCOVERY_WORKER_ENABLED !== '1') throw new Error('RANDOM_DISCOVERY_WORKER_ENABLED must be 1')
@@ -59,7 +59,7 @@ export async function runDiscoveryLoop(options: {
   providers: readonly DiscoveryProvider[]; maxMs: number; signal?: AbortSignal; now?: () => number; batchDeadlineMs?: number;
   runBatch: (options: DiscoveryBatchOptions) => Promise<BatchReport>;
   onBatch?: (report: ProviderBatch) => void;
-  onStage?: (event: { provider: DiscoveryProvider; stage: 'seeding' | 'exploring' | 'completed' }) => void;
+  onStage?: (event: { provider: DiscoveryProvider; stage: DiscoveryStage }) => void;
 }) {
   const now = options.now ?? Date.now, deadline = now() + Math.min(600000, options.maxMs)
   const active = [...new Set(options.providers)], seededProviders = new Set<DiscoveryProvider>()
