@@ -25,10 +25,9 @@ export function relation(anchor: Profile, candidate: Profile): Relation | null {
   const practices = shared(anchor.titlePractices ?? [], candidate.titlePractices ?? [])
     .filter(x => PRACTICE_LINKS.has(x))
   const titleLink = titles.length >= 2 || (meaningful(anchor.titleTokens ?? []).length <= 3 && titles.some(x => x.length >= 7))
-  const supportedTitle = titles.length >= 1 && terms.length >= 3
-  if (!entities.length && !titleLink && !supportedTitle && !practices.length) return null
+  if (!entities.length && !titleLink && !practices.length) return null
   const score = entities.length ? .94 : titleLink ? Math.min(.92, .76 + .04 * titles.length)
-    : supportedTitle ? .72 : .62
+    : .62
   return { score, reasons: [...entities.map(x => `entity:${x}`), ...titles.map(x => `title:${x}`),
     ...practices.map(x => `title-practice:${x}`), ...terms.filter(x => !titles.includes(x)).slice(0, 3).map(x => `term:${x}`)] }
 }

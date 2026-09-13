@@ -66,6 +66,28 @@
     "related": false
   },
   {
+    "name": "Peppa Pig toy factory → generic toy fact",
+    "provenance": "Faux positif observé après le premier correctif en production le 13 septembre 2026.",
+    "anchor": {
+      "title": "Peppa Pig Tales 2025 | Toy Factory | BRAND NEW Peppa Pig Episodes"
+    },
+    "neighbor": {
+      "title": "Which best selling toy of 1983 caused hysteria, resulting in riots breaking out in stores?"
+    },
+    "related": false
+  },
+  {
+    "name": "Peppa Pig toy factory → unrelated sugar factory",
+    "provenance": "Faux positif observé après le premier correctif en production le 13 septembre 2026.",
+    "anchor": {
+      "title": "Peppa Pig Tales 2025 | Toy Factory | BRAND NEW Peppa Pig Episodes"
+    },
+    "neighbor": {
+      "title": "Sugar factory CherryHill NJ"
+    },
+    "related": false
+  },
+  {
     "name": "youtube:D6dDG9t11Eo → youtube:P4qUjTO6k74",
     "provenance": "Titres exacts des réponses API publiques du 13 septembre 2026 ; pas de description disponible.",
     "anchor": {
