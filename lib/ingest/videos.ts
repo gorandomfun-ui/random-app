@@ -1067,10 +1067,7 @@ export async function finalizeVideoIngest(
   const deduplicated = Array.from(map.values());
   onStage?.('ingest-routine');
   const routineIds = deduplicated.filter(isOrdinaryRoutineVideo).map((video) => video.videoId);
-  onStage?.('ingest-existing');
-  const existingIds = await findExistingVideoIds(collection, insertOnly
-    ? deduplicated.map(video => video.videoId)
-    : routineIds);
+  const existingIds = insertOnly ? new Set<string>() : await findExistingVideoIds(collection, routineIds);
   const existingRoutineIds = new Set(routineIds.filter(videoId => existingIds.has(videoId)));
   onStage?.('ingest-admission');
   const admission = await applyRoutineVideoIngestCap(await getDb(), deduplicated, new Date(), {
@@ -1133,11 +1130,7 @@ export async function finalizeVideoIngest(
     } })), { ordered: false });
     summary.updated += refreshed.modifiedCount;
   }
-  let writeDocuments = documents;
-  if (insertOnly) {
-    writeDocuments = documents.filter((doc) => !existingIds.has(doc.videoId));
-    summary.existingSkipped = documents.length - writeDocuments.length;
-  }
+  const writeDocuments = documents;
 
   if (!writeDocuments.length) {
     onStage?.('ingest-completed');
@@ -1153,12 +1146,18 @@ export async function finalizeVideoIngest(
       updatedAt: now,
       rand: Math.random(),
     }));
-    const insertResult = await collection.insertMany(insertDocuments, { ordered: false, maxTimeMS: 10000 });
-    summary.inserted = insertResult.insertedCount || 0;
+    const insertResult = await collection.bulkWrite(insertDocuments.map(doc => ({ updateOne: {
+      filter: { type: 'video' as const, videoId: doc.videoId },
+      update: { $setOnInsert: doc },
+      upsert: true,
+    } })), { ordered: false });
+    summary.inserted = insertResult.upsertedCount || 0;
+    summary.existingSkipped = insertResult.matchedCount || 0;
 
     if (!skipDetails && summary.inserted > 0) {
-      const newVideoIds = insertDocuments
-        .map((doc) => doc.videoId)
+      const upsertedIndexes = Object.keys(insertResult.upsertedIds || {}).map(key => Number(key));
+      const newVideoIds = upsertedIndexes
+        .map(index => insertDocuments[index]?.videoId)
         .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
       if (newVideoIds.length) {
         await updateYouTubeDetailsForIds(newVideoIds, warnings);
