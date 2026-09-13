@@ -3,6 +3,7 @@ import type { Candidate } from '../../lib/discovery/types'
 import type { Relation } from '../../lib/discovery/waves'
 import { SIGNAL_VERSION } from '../../lib/discovery/profile'
 
+async function main() {
 const input = process.argv[process.argv.indexOf('--url') + 1]
 if (!process.argv.includes('--url') || !input) {
   console.error('Usage: node --import tsx scripts/discovery/check-wave-quality.ts --url http://localhost:3000')
@@ -43,3 +44,9 @@ for (const anchorId of ids) {
 console.log(JSON.stringify({ ready, empty, errors, semanticReviewRequired: true,
   note: 'Inspecter aussi les liens positifs perdus. Un résultat vide ne prouve pas que cette version est déployée.' }))
 if (errors) process.exitCode = 1
+}
+
+main().catch(error => {
+  console.error(error instanceof Error ? error.message : 'wave-quality-check-failed')
+  process.exitCode = 1
+})
