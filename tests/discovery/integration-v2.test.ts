@@ -8,6 +8,8 @@ import { CURATOR_TTL, createCuratorToken, validCuratorToken, matchesCuratorSecre
 import { dailymotionPageLoader } from '../../lib/discovery/dailymotion'
 import type { Candidate } from '../../lib/discovery/types'
 import type { DiscoveryTask } from '../../lib/discovery/exploration'
+import { planCurationLikeMutation } from '../../lib/discovery/curationLike'
+import { CURATION_APP_PATHS, PUBLIC_APP_PATHS } from '../../lib/navigation/appPaths'
 
 const item = (key: string, type: 'image' | 'video' = 'video'): Candidate<string> => ({ key, type, provider: 'youtube',
   profile: buildProfile({ title: 'Stone carving workshop' }), payload: key, stock: false, available: true })
@@ -51,6 +53,28 @@ test('private curation requires configured secret, signed nonexpired cookie and 
     if (oldSecret === undefined) delete process.env.RANDOM_CURATOR_SECRET; else process.env.RANDOM_CURATOR_SECRET = oldSecret
     if (oldOwner === undefined) delete process.env.RANDOM_EDITOR_OWNER_ID; else process.env.RANDOM_EDITOR_OWNER_ID = oldOwner
   }
+})
+test('curation navigation stays isolated from public navigation', () => {
+  assert.deepEqual(PUBLIC_APP_PATHS, { home: '/', random: '/random', likes: '/likes' })
+  assert.deepEqual(CURATION_APP_PATHS, {
+    home: '/admin/curation',
+    random: '/admin/curation/random',
+    likes: '/admin/curation/likes',
+  })
+})
+test('a curation heart plans exactly one public vote while preserving an existing local vote', () => {
+  assert.deepEqual(planCurationLikeMutation({
+    wasActive: false, nextActive: true, syncPublicLike: true, locallyLiked: false, publicLikeCounted: undefined,
+  }), { changed: true, likeDelta: 1, publicLikeCounted: true })
+  assert.deepEqual(planCurationLikeMutation({
+    wasActive: false, nextActive: true, syncPublicLike: true, locallyLiked: true, publicLikeCounted: undefined,
+  }), { changed: true, likeDelta: 0, publicLikeCounted: true })
+  assert.deepEqual(planCurationLikeMutation({
+    wasActive: true, nextActive: false, syncPublicLike: true, locallyLiked: false, publicLikeCounted: undefined,
+  }), { changed: true, likeDelta: -1, publicLikeCounted: false })
+  assert.deepEqual(planCurationLikeMutation({
+    wasActive: true, nextActive: true, syncPublicLike: true, locallyLiked: true, publicLikeCounted: true,
+  }), { changed: false, likeDelta: 0, publicLikeCounted: true })
 })
 test('Dailymotion partitions keep dates/sort/category across pagination and never use the query as evidence', async () => {
   const urls: URL[] = []

@@ -69,6 +69,8 @@ import {
   type Encourage3DEvent,
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
+import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
+import { invalidateWeLikesCache } from '@/lib/likes/weCache'
 
 const Encourage3DOverlay = dynamic(() => import('@/components/encourage3d/Encourage3DOverlay'), {
   ssr: false,
@@ -2386,6 +2388,7 @@ export function RandomExperience({
   discoveryMode = false,
   waveDiscoveryMode = process.env.NEXT_PUBLIC_RANDOM_WAVE_V2 === '1',
   curationMode = false,
+  navigationPaths = PUBLIC_APP_PATHS,
   savedItem,
   onSavedBack,
   onSavedRandom,
@@ -2394,6 +2397,7 @@ export function RandomExperience({
   discoveryMode?: boolean
   waveDiscoveryMode?: boolean
   curationMode?: boolean
+  navigationPaths?: AppNavigationPaths
   savedItem?: RandomContentItem
   onSavedBack?: () => void
   onSavedRandom?: () => void
@@ -4335,14 +4339,20 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       curatorPendingRef.current = true; setCurationError('')
       const nextLiked = !liked
       try {
-        const response = await fetch('/api/discovery/curation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item._id, active: nextLiked }) })
+        const locallyLiked = isLiked(item)
+        const response = await fetch('/api/discovery/curation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemId: item._id, active: nextLiked, syncPublicLike: true, locallyLiked }),
+        })
         if (!response.ok) throw new Error('Référence non enregistrée. Vérifie ton accès et ce contenu.')
         if (nextLiked) {
-          if (!isLiked(item)) addLike(item, theme)
+          if (!locallyLiked) addLike(item, theme, { sync: false })
           triggerHeartGlitch()
-        } else if (isLiked(item)) {
-          removeLike(item)
+        } else if (locallyLiked) {
+          removeLike(item, { sync: false })
         }
+        invalidateWeLikesCache()
         if (currentItemRef.current === item) setLiked(nextLiked)
         try {
           window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
@@ -4509,10 +4519,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
-      {curationMode ? <aside className="fixed bottom-2 left-2 z-50 bg-black text-white rounded px-3 py-2 text-xs">
-        <span>Curation privée · Les cœurs alimentent Your Likes, We Like et Pool Cool.</span>
-        <button type="button" className="ml-3 underline" onClick={async () => { await fetch('/api/discovery/curation/access', { method: 'DELETE' }); window.location.reload() }}>Quitter</button>
-        {curationError ? <p role="status">{curationError}</p> : null}
+      {curationMode && curationError ? <aside role="status" className="fixed bottom-2 left-2 z-50 rounded bg-black px-3 py-2 text-xs text-white">
+        {curationError}
       </aside> : null}
       {effectsTestMode ? (
         <div className="effects-test-meter" aria-label={`Effects intensity ${effectsTestStep} of ${EFFECTS_TEST_MAX_STEPS}`}>
@@ -4801,7 +4809,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               style={{ gap: '10px' }}
             >
               <Link
-                href="/"
+                href={navigationPaths.home}
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}
@@ -4810,7 +4818,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               </Link>
 
               <Link
-                href="/random"
+                href={navigationPaths.random}
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}
@@ -4819,7 +4827,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               </Link>
 
               <Link
-                href="/likes"
+                href={navigationPaths.likes}
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center gap-2"
                 style={{ color: theme.cream }}

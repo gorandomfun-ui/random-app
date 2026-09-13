@@ -2,7 +2,8 @@ import type { Candidate, Profile } from './types'
 import { relation } from './waves'
 
 export type OwnerReference = { contentKey: string; ownerId: string; active: boolean;
-  familyId: string; profile: Profile; type: 'video' | 'image'; version: number; itemId?: string; updatedAt?: Date; rand?: number }
+  familyId: string; profile: Profile; type: 'video' | 'image'; version: number; itemId?: string;
+  publicLikeCounted?: boolean; updatedAt?: Date; rand?: number }
 /** Offline assignment. References are explicitly owner-scoped and only original likes are seeds. */
 export function assignEditorial<T>(items: Candidate<T>[], references: OwnerReference[], ownerId: string) {
   if (!ownerId) throw new Error('Owner identity required')

@@ -21,6 +21,7 @@ import {
   WE_LIKES_INVALIDATED_EVENT,
   writeWeLikesCache,
 } from '@/lib/likes/weCache'
+import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
 
 const SavedRandom = dynamic(
   () => import('../random/RandomExperience').then((module) => module.RandomExperience),
@@ -31,6 +32,8 @@ type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 type LikesClientProps = {
   initialGlobalItems?: GlobalLikeItem[]
   initialFetchedAt?: number
+  curationMode?: boolean
+  navigationPaths?: AppNavigationPaths
 }
 
 const GLOBAL_LIKES_LIMIT = 200
@@ -201,7 +204,12 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
   return fragments
 }
 
-export default function LikesClient({ initialGlobalItems = [], initialFetchedAt = 0 }: LikesClientProps = {}) {
+export default function LikesClient({
+  initialGlobalItems = [],
+  initialFetchedAt = 0,
+  curationMode = false,
+  navigationPaths = PUBLIC_APP_PATHS,
+}: LikesClientProps = {}) {
   const { t, locale, locales, setLocale } = useI18n()
   const { consent } = useCookieConsent()
   const cached = typeof window !== 'undefined' ? readWeCache() : null
@@ -602,7 +610,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
               style={{ gap: '10px' }}
             >
               <Link
-                href="/"
+                href={navigationPaths.home}
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}
@@ -611,7 +619,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
               </Link>
 
               <Link
-                href="/random"
+                href={navigationPaths.random}
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center"
                 style={{ color: theme.cream }}
@@ -620,7 +628,7 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
               </Link>
 
               <Link
-                href="/likes"
+                href={navigationPaths.likes}
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center gap-2"
                 style={{ color: theme.cream }}
@@ -889,7 +897,11 @@ export default function LikesClient({ initialGlobalItems = [], initialFetchedAt 
           key={saved.view.item._id}
           savedItem={saved.view.item}
           onSavedBack={saved.back}
-          onSavedRandom={() => router.push('/random?next=1')}
+          onSavedRandom={() => router.push(`${navigationPaths.random}?next=1`)}
+          curationMode={curationMode}
+          discoveryMode={curationMode}
+          waveDiscoveryMode={curationMode}
+          navigationPaths={navigationPaths}
         />
       ) : null}
     </>

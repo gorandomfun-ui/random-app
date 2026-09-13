@@ -53,6 +53,10 @@ export type LikeablePayload = {
   source?: SourceLike
 }
 
+type LikeMutationOptions = {
+  sync?: boolean
+}
+
 function normaliseIdCandidate(value?: string | number | null): string | null {
   if (value == null) return null
   return String(value)
@@ -106,7 +110,11 @@ export function getAll(): LikeItem[] {
 
 export const getLikes = getAll
 
-export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
+export function saveLike(
+  payload: LikeablePayload,
+  theme?: LikeItem['theme'],
+  options: LikeMutationOptions = {},
+) {
   try {
     const arr = getAll()
     const id = buildId(payload)
@@ -130,13 +138,16 @@ export function saveLike(payload: LikeablePayload, theme?: LikeItem['theme']) {
     arr.unshift(item)
     setStore(arr.slice(0, MAX_LOCAL_LIKES))
 
-    void syncItemLike(itemId, payload, 'POST')
+    if (options.sync !== false) void syncItemLike(itemId, payload, 'POST')
   } catch {}
 }
 
 export const addLike = saveLike
 
-export function removeLike(idOrItem: string | LikeablePayload | LikeItem) {
+export function removeLike(
+  idOrItem: string | LikeablePayload | LikeItem,
+  options: LikeMutationOptions = {},
+) {
   const id = typeof idOrItem === 'string' ? idOrItem : buildId(idOrItem)
   try {
     const arr = getAll()
@@ -159,7 +170,9 @@ export function removeLike(idOrItem: string | LikeablePayload | LikeItem) {
       remoteId = normaliseIdCandidate((idOrItem as LikeablePayload | null | undefined)?._id) ?? null
     }
 
-    void syncItemLike(remoteId, typeof idOrItem === 'string' ? removed ?? null : idOrItem, 'DELETE')
+    if (options.sync !== false) {
+      void syncItemLike(remoteId, typeof idOrItem === 'string' ? removed ?? null : idOrItem, 'DELETE')
+    }
   } catch {}
 }
 
