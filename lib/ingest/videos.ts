@@ -1146,17 +1146,22 @@ export async function finalizeVideoIngest(
       updatedAt: now,
       rand: Math.random(),
     }));
-    const insertResult = await collection.bulkWrite(insertDocuments.map(doc => ({ updateOne: {
-      filter: { type: 'video' as const, videoId: doc.videoId },
-      update: { $setOnInsert: doc },
-      upsert: true,
-    } })), { ordered: false });
-    summary.inserted = insertResult.upsertedCount || 0;
-    summary.existingSkipped = insertResult.matchedCount || 0;
+    let insertedIndexes = insertDocuments.map((_doc, index) => index);
+    try {
+      const insertResult = await collection.insertMany(insertDocuments, { ordered: false, maxTimeMS: 20000 });
+      summary.inserted = insertResult.insertedCount || 0;
+    } catch (error) {
+      const bulk = error as { writeErrors?: Array<{ code?: number; index?: number }>; result?: { insertedCount?: number } };
+      const writeErrors = bulk.writeErrors ?? [];
+      if (!writeErrors.length || writeErrors.some(entry => entry.code !== 11000)) throw error;
+      const duplicateIndexes = new Set(writeErrors.flatMap(entry => Number.isSafeInteger(entry.index) ? [entry.index!] : []));
+      insertedIndexes = insertedIndexes.filter(index => !duplicateIndexes.has(index));
+      summary.inserted = bulk.result?.insertedCount ?? insertedIndexes.length;
+      summary.existingSkipped = duplicateIndexes.size;
+    }
 
     if (!skipDetails && summary.inserted > 0) {
-      const upsertedIndexes = Object.keys(insertResult.upsertedIds || {}).map(key => Number(key));
-      const newVideoIds = upsertedIndexes
+      const newVideoIds = insertedIndexes
         .map(index => insertDocuments[index]?.videoId)
         .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
       if (newVideoIds.length) {
