@@ -12,6 +12,12 @@ export type SourceMetadata = {
 }
 export type Profile = {
   version: typeof PROFILE_VERSION
+  /** Matching revision, independent of the persisted catalogue schema version. */
+  signalVersion?: number
+  titleTokens?: string[]
+  titlePractices?: string[]
+  /** Conservative classification for session repetition, never a verified series ID. */
+  pattern?: string
   tokens: string[]
   entities: string[]
   practices: string[]
@@ -42,9 +48,9 @@ export type Candidate<T = unknown> = {
   editorialFamilies?: string[]
   directEditorialReference?: boolean
 }
-export type Seen = Pick<Candidate, 'key' | 'type' | 'authorKey' | 'seriesKey' | 'duplicateKey' | 'stock'> & { family: string }
+export type Seen = Pick<Candidate, 'key' | 'type' | 'authorKey' | 'seriesKey' | 'duplicateKey' | 'stock'> & { family: string; pattern?: string }
 export function isVisual(type: Format): type is Visual { return type === 'video' || type === 'image' }
 export function seenOf(c: Candidate): Seen {
   return { key: c.key, type: c.type, authorKey: c.authorKey, seriesKey: c.seriesKey,
-    duplicateKey: c.duplicateKey, stock: c.stock, family: c.profile.family }
+    duplicateKey: c.duplicateKey, stock: c.stock, family: c.profile.family, pattern: c.profile.pattern }
 }

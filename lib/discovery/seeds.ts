@@ -1,5 +1,5 @@
 import { type SearchSpec } from './exploration'
-import { shuffled, type Rng } from './random'
+import { hash, seeded, shuffled, type Rng } from './random'
 
 /** Starter vocabulary, deliberately configurable. This is search coverage, never proof of a result's subject. */
 export const SEARCH_AXES: Record<string, string[]> = {
@@ -15,10 +15,16 @@ export const SEARCH_AXES: Record<string, string[]> = {
   es: ['televisión local', 'animación independiente', 'torneo amateur', 'espectáculo callejero', 'instrumento experimental', 'máquina casera', 'película familiar', 'publicidad regional', 'experimento científico', 'cortometraje experimental', 'videojuego', 'animación generativa'],
   ja: ['ローカルテレビ', '自主制作アニメ', 'アマチュア大会', '大道芸', '実験楽器', '自作機械', 'ホームビデオ', 'ローカルCM', '科学実験', '自主制作映画', 'ゲーム実況', '生成アニメ'],
 }
-export function createSearchSeeds(random: Rng, now: number, limit = 20, axes = SEARCH_AXES): SearchSpec[] {
+export function createSearchSeeds(random: Rng, now: number, limit = 20, axes = SEARCH_AXES, rotation?: number): SearchSpec[] {
   const current = new Date(now), year = current.getUTCFullYear()
-  const pairs = shuffled(Object.entries(axes).flatMap(([language, queries]) => queries.map(query => ({ language, query }))), random)
-  return pairs.slice(0, Math.max(0, Math.min(100, limit))).map(({ language, query }, i) => {
+  const vocabulary = Object.entries(axes).flatMap(([language, queries]) => queries.map(query => ({ language, query })))
+  if (!vocabulary.length) return []
+  const size = Math.max(0, Math.min(vocabulary.length, 100, Math.floor(limit)))
+  const rotating = Number.isSafeInteger(rotation) && rotation! >= 0
+  const pairs = shuffled(vocabulary, rotating ? seeded(hash('discovery-search-rotation-v1')) : random)
+  const start = rotating ? (rotation! * size) % pairs.length : 0
+  const selected = Array.from({ length: size }, (_, index) => pairs[(start + index) % pairs.length])
+  return selected.map(({ language, query }, i) => {
     // Rotate actual publication windows. They never claim to be the footage's recording date.
     const fromYear = i % 3 === 0 ? year : i % 3 === 1 ? 2005 + Math.floor(random() * Math.max(1, year - 2010)) : year - 5 + Math.floor(random() * 5)
     const dayBoundary = Date.UTC(year, current.getUTCMonth(), current.getUTCDate())

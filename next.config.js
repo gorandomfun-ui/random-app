@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    NEXT_PUBLIC_RANDOM_WAVE_V2: process.env.RANDOM_WAVE_V2_ENABLED || '0',
+    NEXT_PUBLIC_RANDOM_WAVE_V2: process.env.RANDOM_WAVE_V2_ENABLED !== '0' ? '1' : '0',
     NEXT_PUBLIC_RANDOM_PLAYER_V2: process.env.NEXT_PUBLIC_RANDOM_PLAYER_V2 || '1',
   },
   images: {

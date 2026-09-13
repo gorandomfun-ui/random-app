@@ -900,7 +900,7 @@ export default function LikesClient({
           onSavedRandom={() => router.push(`${navigationPaths.random}?next=1`)}
           curationMode={curationMode}
           discoveryMode={curationMode}
-          waveDiscoveryMode={curationMode}
+          waveDiscoveryMode={curationMode || process.env.NEXT_PUBLIC_RANDOM_WAVE_V2 === '1'}
           navigationPaths={navigationPaths}
         />
       ) : null}

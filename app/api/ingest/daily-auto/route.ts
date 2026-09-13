@@ -238,6 +238,8 @@ export async function GET(req: NextRequest) {
       const queries = await buildDailyVideoQueries({
         count: queryCount,
         seed: `combo:${new Date().toISOString().slice(0, 10)}:${runKey}:${providers.join('-')}:${queryCount}`,
+        portfolioSeed: `video:${new Date().toISOString().slice(0, 10)}:${runKey.replace(/:\d+$/, '')}`,
+        portfolioOffset: Math.max(0, Number(runKey.match(/:(\d+)$/)?.[1]) || 0) * queryCount,
       })
       const result = await ingestVideos({
         mode: 'search',

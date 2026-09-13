@@ -1,6 +1,7 @@
-import { buildProfile, isStockProvider } from './profile'
+import { buildProfile, isStockProvider, SIGNAL_VERSION } from './profile'
 import { hash } from './random'
-import type { Candidate, Format, Profile, SourceMetadata } from './types'
+import { legacySourceSnapshot } from './backfill'
+import type { Candidate, Format, Profile } from './types'
 import { isOrdinaryRoutineVideo } from '../random/videoEditorial'
 
 export type CatalogueRow = Record<string, unknown> & { _id?: unknown; type?: string }
@@ -29,7 +30,22 @@ export function canonicalMediaKey(row: CatalogueRow): string {
         const ytId = parsed.hostname === 'youtu.be' ? parsed.pathname.slice(1) : parsed.searchParams.get('v') ?? parsed.pathname.match(/^\/(?:shorts|embed)\/([^/]+)/)?.[1]
         if (ytId) return `youtube:${ytId}`
       }
-      // Query strings can identify an image variant; do not strip them blindly.
+      // Provider IDs identify the work; delivery parameters only identify encodings/tracking.
+      if (row.type === 'image' && /(^|\.)giphy\.com$/i.test(parsed.hostname)) {
+        const media = parsed.pathname.match(/\/media\/(?:v1\.[^/]+\/)?([A-Za-z0-9]+)(?:\/|$)/)
+        const page = parsed.pathname.match(/\/(?:gifs|stickers)\/(?:.*-)?([A-Za-z0-9]+)\/?$/)
+        const gifId = media?.[1] ?? page?.[1]
+        if (gifId) return `giphy:${gifId}`
+      }
+      if (row.type === 'image' && /(^|\.)tenor\.com$/i.test(parsed.hostname)) {
+        const pageId = parsed.pathname.match(/^\/view\/.*-([0-9]+)\/?$/)?.[1]
+        if (pageId) return `tenor:${pageId}`
+        // CDN IDs differ between GIF/MP4: only strip the known rendition segment.
+        const mediaId = /^(?:media[0-9]*|c)\.tenor\.com$/i.test(parsed.hostname)
+          ? parsed.pathname.match(/^\/([^/]+)\/[^/]+$/)?.[1] : undefined
+        if (mediaId) return `tenor-media:${mediaId}`
+      }
+      // Preserve query strings for unknown providers: they can identify distinct images.
       parsed.hash = ''
       return `${row.type}:${parsed.href}`
     } catch { /* Fall back to the persisted identity. */ }
@@ -39,9 +55,9 @@ export function canonicalMediaKey(row: CatalogueRow): string {
 /** Backfill only from a source snapshot. Legacy tags/keywords can contain the search query. */
 export function profileFromRow(row: CatalogueRow): Profile {
   const profile = row.discoveryProfile as Profile | undefined
-  if (row.discoveryVersion === 2 && profile?.version === 2) return profile
-  const source = row.sourceMetadata as SourceMetadata | undefined
-  return buildProfile(source ?? {})
+  if (row.discoveryVersion === 2 && profile?.version === 2 && profile.signalVersion === SIGNAL_VERSION) return profile
+  // Bounded read-time refresh only: no writes, no provider calls, no catalogue-wide migration.
+  return buildProfile(legacySourceSnapshot(row))
 }
 export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number): Candidate<T> {
   const provider = text(row.provider) ?? 'unknown'

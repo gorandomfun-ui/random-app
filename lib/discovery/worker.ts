@@ -9,7 +9,17 @@ export async function runDiscoveryBatch(db: Db) {
   const quota = quotaConfigFromEnv()
   const { finalizeVideoIngest } = await import('../ingest/videos')
     const now = Date.now(), random = seeded(Math.floor(now / 86400000))
-    const seeds = createSearchSeeds(random, now, 20)
+    // One tiny counter per worker invocation, independent of catalogue size.
+    // Failure to reserve a page must not stop the existing ingestion.
+    let rotation = Math.floor(now / 3600000)
+    try {
+      const cursor = await db.collection<{ _id: string; sequence: number }>('discovery_scheduler_v2').findOneAndUpdate(
+        { _id: 'search-seed-rotation' }, { $inc: { sequence: 1 } },
+        { upsert: true, returnDocument: 'after', maxTimeMS: 700 },
+      )
+      if (cursor) rotation = cursor.sequence - 1
+    } catch { /* Time-based rotation is a bounded fallback. */ }
+    const seeds = createSearchSeeds(random, now, 20, undefined, rotation)
     await Promise.all(seeds.map(spec => enqueue(db, spec)))
     if (process.env.RANDOM_DM_DISCOVERY_ENABLED === '1') {
       const dailymotionSeeds: DailymotionSpec[] = []

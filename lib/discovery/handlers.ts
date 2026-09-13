@@ -43,7 +43,7 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const { editorialFamilies: _families, directEditorialReference: _direct, ...publicCandidate } = choice.item
-      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback })
+      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection })
     } catch { return json({ error: 'unavailable' }, 503) }
   }
 }

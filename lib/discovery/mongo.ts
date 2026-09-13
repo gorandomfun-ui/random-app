@@ -41,7 +41,7 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
     const match = { $and: [base(ticket.type, lang, now), ...(ticket.type === 'fact' && factVariant ? [factVariant === 'quiz' ? { variant: 'quiz' } : { variant: { $ne: 'quiz' } }] : [])] }
     return decodePoolRows(await ringSample(db, match, 24, random()))
   }
-  if (ticket.branch === 'autonomous' && (ticket.lane === 'trend' || ticket.lane === 'unknown')) {
+  if (ticket.mode === 'cool' && (ticket.lane === 'trend' || ticket.lane === 'unknown')) {
     const lane = ticket.lane === 'trend'
       ? { trendObservedAt: { $gte: new Date(now - 7 * 86400000), $lte: new Date(now) } }
       : { $or: [{ 'discoveryProfile.evidence': 'unknown' }, { discoveryVersion: { $exists: false } }] }
@@ -64,14 +64,20 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
 }
 export async function selectPool<T>(db: Db, ticket: Intent, state: Session, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', ownerId = '') {
   const retrievalTicket = ticket.branch === 'editorial' && !ownerId ? { ...ticket, branch: 'autonomous' as const } : ticket
-  const candidates = await loadPoolCandidates(db, retrievalTicket, lang, decode, random, now, factVariant)
-  if (ticket.branch === 'editorial' && ownerId) {
-    try {
-      const assigned = await applyOwnerReferences(db, candidates, ownerId)
-      return pickPool(assigned.candidates, ticket, state, random, now, assigned.referenceCounts)
-    } catch { /* Owner tooling must not stop autonomous discovery. */ }
+  const choose = async (candidates: Candidate<T>[]) => {
+    if (ticket.branch === 'editorial' && ownerId) {
+      try {
+        const assigned = await applyOwnerReferences(db, candidates, ownerId)
+        return pickPool(assigned.candidates, ticket, state, random, now, assigned.referenceCounts)
+      } catch { /* Owner tooling must not stop autonomous discovery. */ }
+    }
+    return pickPool(candidates, ticket, state, random, now)
   }
-  return pickPool(candidates, ticket, state, random, now)
+  const candidates = await loadPoolCandidates(db, retrievalTicket, lang, decode, random, now, factVariant)
+  const selected = await choose(candidates)
+  if (selected || !['trend', 'unknown'].includes(ticket.lane)) return selected
+  // A lane containing only seen/blocked candidates must not freeze the format slot.
+  return choose(await loadPoolCandidates(db, { ...retrievalTicket, lane: 'any' }, lang, decode, random, now, factVariant))
 }
 export async function loadWave<T>(db: Db, anchorId: string, lang: string, allowed: Format[], decode: Decoder<T>, random: Rng, now: number, excluded: string[] = []) {
   if (!ObjectId.isValid(anchorId)) return null
@@ -81,7 +87,7 @@ export async function loadWave<T>(db: Db, anchorId: string, lang: string, allowe
   if (payload == null) return null
   const anchor = candidateFromRow(row, payload, now), p = anchor.profile
   const signals: Filter<Document>[] = [
-    ...(p.tokens.length ? [{ 'discoveryProfile.tokens': { $in: p.tokens.slice(0, 24) } }] : []),
+    ...(p.tokens.length ? [{ 'discoveryProfile.tokens': { $in: (p.titleTokens?.length ? p.titleTokens : p.tokens).slice(0, 16) } }] : []),
     ...(p.practices.length ? [{ 'discoveryProfile.practices': { $in: p.practices } }] : []),
     ...(p.entities.length ? [{ 'discoveryProfile.entities': { $in: p.entities } }] : []),
   ]

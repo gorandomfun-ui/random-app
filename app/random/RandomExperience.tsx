@@ -2467,6 +2467,7 @@ export function RandomExperience({
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
   const [waveRemaining, setWaveRemaining] = useState(0)
+  const [waveAvailableKey, setWaveAvailableKey] = useState<string | null>(null)
   const waveModeRef = useRef(false)
   const waveRemainingRef = useRef(0)
   const [waveTransitionActive, setWaveTransitionActive] = useState(false)
@@ -3572,8 +3573,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (
       anchorKey
       && wavePreparedAnchorKeyRef.current === anchorKey
-      && waveQueueRef.current.length >= WAVE_TOTAL_STEPS
       && waveAnchorRef.current
+      && (waveDiscoveryMode
+        ? Boolean(discoveryWaveRef.current?.next())
+        : waveQueueRef.current.length >= WAVE_TOTAL_STEPS)
     ) {
       return Promise.resolve(true)
     }
@@ -3595,10 +3598,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
     })
     return pending
-  }, [getContentKey, requestWaveTrail])
+  }, [getContentKey, requestWaveTrail, waveDiscoveryMode])
 
   useEffect(() => {
-    if (!currentItem || waveMode || loading) return undefined
+    if (!currentItem || waveMode || loading || transitionLocked) {
+      if (!waveMode) setWaveAvailableKey(null)
+      return undefined
+    }
+    if (currentItem.type === 'encourage' || currentItem.type === 'minigame') {
+      setWaveAvailableKey(null)
+      return undefined
+    }
+    const anchorKey = getContentKey(currentItem)
+    const eligible = waveDiscoveryMode ? Boolean(currentItem._id) : hasWaveSignal(createWaveHint(currentItem))
+    if (!anchorKey || !eligible) {
+      setWaveAvailableKey(null)
+      return undefined
+    }
+    setWaveAvailableKey(null)
     let disposed = false
     let timer: number | null = null
     const prepareWhenRandomQueueIsReady = () => {
@@ -3607,14 +3624,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         timer = window.setTimeout(prepareWhenRandomQueueIsReady, 220)
         return
       }
-      void ensureWaveTrail(currentItem)
+      void ensureWaveTrail(currentItem).then((ready) => {
+        if (disposed || currentItemRef.current !== currentItem) return
+        setWaveAvailableKey(ready ? anchorKey : null)
+      })
     }
     timer = window.setTimeout(prepareWhenRandomQueueIsReady, 450)
     return () => {
       disposed = true
       if (timer != null) window.clearTimeout(timer)
     }
-  }, [currentItem, ensureWaveTrail, loading, waveMode])
+  }, [currentItem, ensureWaveTrail, getContentKey, loading, transitionLocked, waveDiscoveryMode, waveMode])
 
   const acquireItem = useCallback(async (
     type: ItemType,
@@ -4329,7 +4349,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return false
     return waveDiscoveryMode ? Boolean(viewItem._id) : hasWaveSignal(createWaveHint(viewItem))
   }, [viewItem, waveDiscoveryMode])
-  const waveDisabled = controlsDisabled || transitionLocked || loading || (!waveMode && !waveEligible)
+  const waveCurrentKey = useMemo(() => (
+    viewItem && viewItem.type !== 'encourage' && viewItem.type !== 'minigame'
+      ? getContentKey(viewItem)
+      : null
+  ), [getContentKey, viewItem])
+  const waveAvailable = waveMode || Boolean(waveEligible && waveCurrentKey && waveAvailableKey === waveCurrentKey)
+  const waveDisabled = controlsDisabled || transitionLocked || loading || !waveAvailable
 
   const handleLike = useCallback(async () => {
     const item = currentItemRef.current
@@ -4623,21 +4649,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             }
             void handleWave()
           }}
-          className="wave-action flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-wait"
+          className={`wave-action ${waveAvailable ? 'wave-action--available' : 'wave-action--unavailable'}${waveMode ? ' wave-action--active' : ''} flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default`}
           disabled={waveDisabled}
           aria-pressed={waveMode}
           style={{
             backgroundColor: 'transparent',
-            border: `2px solid ${theme.text}`,
-            color: theme.text,
-            opacity: waveDisabled ? 0.72 : 1,
+            border: `2px solid ${waveAvailable ? theme.text : '#777777'}`,
+            color: waveAvailable ? theme.text : '#777777',
+            opacity: 1,
           }}
         >
           <span className="wave-action__echo wave-action__echo--one" aria-hidden="true" />
           <span className="wave-action__echo wave-action__echo--two" aria-hidden="true" />
           <span className="wave-action__echo wave-action__echo--three" aria-hidden="true" />
           <span className="wave-action__icon" aria-hidden="true">
-            {waveMode ? <X size={27} strokeWidth={2.25} /> : <MonoIcon src="/icons/wave.svg" color="#ffffff" size={27} />}
+            {waveMode ? <X size={27} strokeWidth={2.25} /> : <MonoIcon src="/icons/wave.svg" color={waveAvailable ? '#ffffff' : '#777777'} size={27} />}
           </span>
         </button>
       </header>
@@ -5453,6 +5479,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           .random-page--wave .wave-action,
           .random-page--wave .wave-action__icon,
           .random-page--wave .wave-action__echo,
+          .wave-action--available:not(.wave-action--active),
+          .wave-action--available:not(.wave-action--active) .wave-action__icon,
+          .wave-action--available:not(.wave-action--active) .wave-action__echo,
           .random-page--wave::before,
           .random-page--effects-overdrive::before,
           .random-page--wave .random-immersive-bg__media,
@@ -6174,6 +6203,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .random-page--wave .wave-action {
           animation: wave-button-pulse 1.28s cubic-bezier(0.42, 0, 0.25, 1) infinite;
         }
+        .wave-action--available:not(.wave-action--active) {
+          animation: wave-ready-button 2.15s cubic-bezier(0.42, 0, 0.25, 1) infinite;
+        }
         .wave-action__icon {
           position: relative;
           z-index: 2;
@@ -6182,6 +6214,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .random-page--wave .wave-action__icon {
           animation: wave-icon-flow 0.72s ease-in-out infinite;
+        }
+        .wave-action--available:not(.wave-action--active) .wave-action__icon {
+          animation: wave-ready-icon 1.6s ease-in-out infinite;
         }
         .wave-action__echo {
           position: absolute;
@@ -6200,6 +6235,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .random-page--wave .wave-action__echo {
           animation: wave-echo 1.72s cubic-bezier(0.2, 0.62, 0.3, 1) infinite;
+        }
+        .wave-action--available:not(.wave-action--active) .wave-action__echo {
+          animation: wave-ready-echo 2.4s cubic-bezier(0.2, 0.62, 0.3, 1) infinite;
+        }
+        .wave-action--available:not(.wave-action--active) .wave-action__echo--two {
+          animation-delay: 0.52s;
+        }
+        .wave-action--available:not(.wave-action--active) .wave-action__echo--three {
+          animation-delay: 1.04s;
         }
         .random-page--wave .wave-action__echo--two {
           animation-delay: 0.36s;
@@ -6316,6 +6360,21 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           40% { transform: scale(1.13); }
           58% { transform: scale(0.97); }
           72% { transform: scale(1.055); }
+        }
+        @keyframes wave-ready-button {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+          42% { transform: translate3d(0, -2px, 0) scale(1.055); }
+          64% { transform: translate3d(0, 1px, 0) scale(0.99); }
+        }
+        @keyframes wave-ready-icon {
+          0%, 100% { transform: translateX(-1px) skewX(-3deg); }
+          50% { transform: translateX(2px) skewX(3deg); }
+        }
+        @keyframes wave-ready-echo {
+          0% { transform: scale(0.92); opacity: 0; }
+          18% { opacity: 0.46; }
+          68% { opacity: 0.08; }
+          100% { transform: scale(1.72); opacity: 0; }
         }
         @keyframes wave-icon-flow {
           0%, 100% { transform: translateX(-3px) skewX(-7deg) scaleX(0.9); }

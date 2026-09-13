@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     const ownerId = curatorOwnerId()
     const existing = await db.collection('discovery_owner_references_v2').findOne(
-      { ownerId, contentKey: candidate.key },
+      { ownerId, $or: [{ contentKey: candidate.key }, { itemId: body.itemId }] },
       { projection: { active: 1, publicLikeCounted: 1 }, maxTimeMS: 700 },
     )
     const syncPublicLike = body.syncPublicLike === true

@@ -68,13 +68,18 @@ export async function runExploration(options: {
   const deadline = now() + Math.min(180000, options.maxMs ?? 180000), report = { pages: 0, inserted: 0, failures: 0 }
   const tasks = db.collection<DiscoveryTask>('discovery_tasks_v2')
   let attempts = 0
+  const pagesByTask = new Map<string, number>()
   while (now() < deadline - 15000 && attempts++ < 40) {
-    const claim = async (untried: boolean) => tasks.findOneAndUpdate({ due: { $lte: new Date(now()) }, leaseUntil: { $lte: new Date(now()) },
+    const saturated = [...pagesByTask].filter(([, pages]) => pages >= 2).map(([id]) => id)
+    const claim = async (untried: boolean, rotate = true) => tasks.findOneAndUpdate({ due: { $lte: new Date(now()) }, leaseUntil: { $lte: new Date(now()) },
       ...(untried ? { attempts: 0 } : {}),
+      ...(rotate && saturated.length ? { _id: { $nin: saturated } } : {}),
       ...(process.env.RANDOM_DM_DISCOVERY_ENABLED !== '1' ? { 'spec.kind': { $ne: 'dailymotion' } } : {}) }, { $set: { leaseUntil: new Date(now() + 240000), leaseToken: randomUUID() } },
     { sort: { priority: -1, due: 1, _id: 1 }, returnDocument: 'after' })
     let task = await claim(random() < .25)
     if (!task) task = await claim(false)
+    // Prefer another productive route; keep paging if this is the only available one.
+    if (!task && saturated.length) task = await claim(false, false)
     if (!task) break
     const fence = { _id: task._id, leaseToken: task.leaseToken }
     try {
@@ -95,6 +100,7 @@ export async function runExploration(options: {
         priority: .25 + .75 * yieldScore }, $inc: { attempts: 1 }, $unset: { leaseToken: '' } })
       // Descendants remain suggestions. They never become owner references automatically.
       for (const spec of page.children.slice(0, 3)) await enqueue(db, spec, task.depth + 1, task.editorial, now())
+      pagesByTask.set(task._id, (pagesByTask.get(task._id) ?? 0) + 1)
       report.pages++; report.inserted += result.inserted
     } catch (error) {
       report.failures++

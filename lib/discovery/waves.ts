@@ -1,26 +1,38 @@
 import type { Candidate, Profile } from './types'
+import { SIGNAL_VERSION } from './profile'
 
 export type Relation = { score: number; reasons: string[] }
 function shared(a: string[], b: string[]): string[] { const set = new Set(b); return a.filter(x => set.has(x)) }
 function overlap(a: string[], b: string[]): number {
   return a.length && b.length ? shared(a, b).length / Math.max(1, Math.min(a.length, b.length)) : 0
 }
-/** No embeddings/service implied. All available weights are normalised to 1. */
+// Broad media/category words can retrieve candidates but cannot prove a subject match.
+const BROAD = new Set(('film films movie movies trailer trailers bande annonce cinema cinematic video ' +
+  'food cooking cuisine cafe coffee restaurant art performance music song songs tv ads commercial commercials ' +
+  'workshop tutorial guide episode series part compilation giphy tenor gif gifs animated animation ' +
+  'love life people time day night world man woman boy girl style').split(/\s+/))
+const PRACTICE_LINKS = new Set(['stone-carving', 'pottery', 'skateboarding', 'surfing', 'football',
+  'guitar-performance', 'punk-performance', 'singing', 'noodle-making', 'cooking', 'commercial',
+  'stop-motion', 'astronomy', 'robotics', 'speedrunning', 'walking-tour', 'rail-travel'])
+/** A generic theme, a hashtag list or common functional words cannot establish a Wave. */
 export function relation(anchor: Profile, candidate: Profile): Relation | null {
-  if (anchor.version !== 2 || candidate.version !== 2) return null
+  if (anchor.signalVersion !== SIGNAL_VERSION || candidate.signalVersion !== SIGNAL_VERSION) return null
   const entities = shared(anchor.entities, candidate.entities)
-  const practices = shared(anchor.practices, candidate.practices)
-  const tokens = shared(anchor.tokens, candidate.tokens)
-  // A broad theme, era, colour, provider, public like or editorial like cannot open the gate.
-  if (!entities.length && !practices.length && tokens.length < 2) return null
-  const subject = Math.max(entities.length ? 1 : 0, Math.min(1, tokens.length / 3))
-  const practice = overlap(anchor.practices, candidate.practices)
-  const context = overlap(anchor.themes, candidate.themes)
-  const score = (.5 * subject + .25 * practice + .1 * context) / .85
-  if (score < .3) return null
-  return { score, reasons: [...entities.map(x => `entity:${x}`), ...practices.map(x => `practice:${x}`),
-    ...tokens.slice(0, 4).map(x => `term:${x}`)] }
+  const meaningful = (values: string[]) => values.filter(x => !BROAD.has(x))
+  const titles = shared(meaningful(anchor.titleTokens ?? []), meaningful(candidate.titleTokens ?? []))
+  const terms = shared(meaningful(anchor.tokens), meaningful(candidate.tokens))
+  // Practice-only matching requires explicit title evidence on BOTH sides.
+  const practices = shared(anchor.titlePractices ?? [], candidate.titlePractices ?? [])
+    .filter(x => PRACTICE_LINKS.has(x))
+  const titleLink = titles.length >= 2 || (meaningful(anchor.titleTokens ?? []).length <= 3 && titles.some(x => x.length >= 7))
+  const supportedTitle = titles.length >= 1 && terms.length >= 3
+  if (!entities.length && !titleLink && !supportedTitle && !practices.length) return null
+  const score = entities.length ? .94 : titleLink ? Math.min(.92, .76 + .04 * titles.length)
+    : supportedTitle ? .72 : .62
+  return { score, reasons: [...entities.map(x => `entity:${x}`), ...titles.map(x => `title:${x}`),
+    ...practices.map(x => `title-practice:${x}`), ...terms.filter(x => !titles.includes(x)).slice(0, 3).map(x => `term:${x}`)] }
 }
+
 export function duplicates(a: Candidate, b: Candidate): boolean {
   return a.key === b.key || Boolean(a.duplicateKey && a.duplicateKey === b.duplicateKey) ||
     Boolean(a.seriesKey && a.seriesKey === b.seriesKey)
@@ -62,6 +74,7 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
     const all = [...prefix, ...chosen]
     if (!validSet(all)) return
     if (chosen.length === needed) {
+      if (anchor.type === 'video' && !all.some(x => x.type === 'video')) return
       const priority = 2 * Number(all.some(x => x.type === 'video')) + Number(new Set(all.map(x => x.type)).size >= 2)
       const sum = all.reduce((v, x) => v + (ranks.get(x.key) ?? relation(anchor.profile, x.profile))!.score, 0) / 3
       const red = (redundancy(all[0], all[1]) + redundancy(all[0], all[2]) + redundancy(all[1], all[2])) / 3

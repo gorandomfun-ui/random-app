@@ -1,3 +1,4 @@
+import { planVideoQueries } from './videoPortfolio'
 import { loadVideoKeywordDictionary, type VideoKeywordDictionary } from '@/lib/ingest/videoKeywords'
 
 type Rng = () => number
@@ -674,6 +675,8 @@ function fallbackExtras(dict: Required<VideoKeywordDictionary>): string[] {
 export type DailyQueryOptions = {
   count?: number
   seed?: string
+  portfolioSeed?: string
+  portfolioOffset?: number
 }
 
 export async function buildDailyVideoQueries(options: DailyQueryOptions = {}): Promise<string[]> {
@@ -713,7 +716,8 @@ export async function buildDailyVideoQueries(options: DailyQueryOptions = {}): P
     if (query) queries.push(query)
   }
 
-  return unique(queries).slice(0, count)
+  return planVideoQueries(unique(queries), { count, seed: options.portfolioSeed ?? options.seed ?? `video:${new Date().toISOString().slice(0, 10)}`,
+    offset: options.portfolioOffset }).map(entry => entry.query)
 }
 
 export async function buildDailyRetroQueries(options: DailyQueryOptions = {}): Promise<string[]> {

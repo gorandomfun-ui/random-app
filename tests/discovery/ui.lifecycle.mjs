@@ -18,25 +18,27 @@ await build({entryPoints:[`${root}/app/random/RandomExperience.tsx`],outfile:out
   if(path==='next/dynamic')return{contents:`export default ()=>()=>null`}
   if(path.includes('/utils/sound'))return{contents:`export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},setMuted=()=>{}`}
   if(path.includes('RandomContentRenderer'))return{contents:`import React from 'react'; export const FactQuizCard=()=>React.createElement('div',null,'Quiz')`}
-  return{contents:`import React from 'react'; export default function Stub(p){return React.createElement('span',null,p.children||p.label||p.text||null)}`}
+  return{contents:`import React from 'react'; export default function Stub(p){return React.createElement('span',{className:p.className},p.children||p.label||p.text||null)}`}
  })
 }}]})
 const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',{url:'https://test.invalid/random',pretendToBeVisual:true})
 for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
 window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
 globalThis.requestAnimationFrame=window.requestAnimationFrame.bind(window);globalThis.cancelAnimationFrame=window.cancelAnimationFrame.bind(window)
-let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0
+let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true
 globalThis.fetch=async(input,init={})=>{
  const url=new URL(String(input),'https://test.invalid')
  if(url.pathname==='/api/discovery/random'){
   const req=JSON.parse(init.body);calls.push(req);const n=++serial
-  const profile={version:2,tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
+  const profile={version:2,signalVersion:3,titleTokens:['stone','carving'],titlePractices:['stone-carving'],tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
   const payload={type:req.type,_id:n.toString(16).padStart(24,'0'),url:`https://example.invalid/${n}`,provider:'youtube',text:`Fixture ${n}`,title:`Fixture ${n}`,variant:req.factVariant==='quiz'?'quiz':'text',question:'Question',options:['a','b'],correctIndex:0}
   return Response.json({candidate:{key:`fixture:${n}`,type:req.type,payload,profile,provider:'youtube',stock:false,available:true}})
  }
  if(url.pathname==='/api/discovery/wave'){
-  const req=JSON.parse(init.body);const profile={version:2,tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
+  waveCalls++
+  const req=JSON.parse(init.body);const profile={version:2,signalVersion:3,titleTokens:['stone','carving'],titlePractices:['stone-carving'],tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
   const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
+  if(!wavePlansAvailable)return Response.json({ready:false,trio:[],reserves:[]})
   return Response.json({ready:true,anchor:make('fixture:'+parseInt(req.anchorId,16),'video'),trio:[make('wave1001','video'),make('wave1002','image'),make('wave1003','video')],reserves:[make('wave1004','video')]})
  }
  if(url.pathname==='/api/discovery/curation'){
@@ -74,7 +76,9 @@ try{
  await until(()=>afterReload&&!afterReload.disabled);afterReload.click()
  await until(()=>snapshot()?.discovery?.displayed===7)
  const waveButton=document.querySelector('button[aria-label="Wave"]')
- await until(()=>waveButton&&!waveButton.disabled);waveButton.click()
+ await until(()=>waveButton&&!waveButton.disabled)
+ if(!waveButton.classList.contains('wave-action--available'))throw new Error('Ready Wave is not visibly available')
+ waveButton.click()
  await until(()=>snapshot()?.discovery?.recent.some(x=>x.key.startsWith('wave')))
  const waveRevision=snapshot().discovery.revision
  for(let i=0;i<2;i++){
@@ -90,15 +94,36 @@ try{
  app.unmount();sessionStorage.removeItem('random-curation-v2-en');localStorage.removeItem('likes')
  app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true,curationMode:true}))
  const curationSnapshot=()=>{const raw=sessionStorage.getItem('random-curation-v2-en');return raw?JSON.parse(raw):null}
- await until(()=>curationSnapshot()?.currentItem&&['video','image'].includes(curationSnapshot().currentItem.type))
+ await until(()=>curationSnapshot()?.currentItem)
+ // The first curated draw can legitimately be a quote, quiz or website.
+ // Navigate as a visitor would instead of waiting forever for its type to change.
+ for(let i=0;i<40&&!['video','image'].includes(curationSnapshot().currentItem.type);i++){
+  const prior=curationSnapshot().discovery.displayed
+  const next=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+  await until(()=>next&&!next.disabled);next.click()
+  await until(()=>curationSnapshot().discovery.displayed>prior)
+ }
+ if(!['video','image'].includes(curationSnapshot().currentItem.type))throw new Error('No visual curation draw in one cycle')
  await until(()=>curationReads>0)
  const likeButton=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='Like')
  await until(()=>likeButton&&!likeButton.disabled);likeButton.click()
- await until(()=>curationWrites.some(x=>x.active===true)&&publicLikeWrites.some(x=>x.method==='POST'))
+ await until(()=>curationWrites.some(x=>x.active===true&&x.syncPublicLike===true))
+ if(publicLikeWrites.length)throw new Error('Curation sent a duplicate public feedback request')
  const likedId=String(curationSnapshot().currentItem._id)
+ await until(()=>Boolean(likeButton.querySelector('.heart-icon--liked')))
  if(!JSON.parse(localStorage.getItem('likes')||'[]').some(x=>x.itemId===likedId))throw new Error('Curation heart did not enter Your Likes')
  likeButton.click()
- await until(()=>curationWrites.some(x=>x.active===false)&&publicLikeWrites.some(x=>x.method==='DELETE'))
+ await until(()=>curationWrites.some(x=>x.active===false&&x.syncPublicLike===true))
+ if(publicLikeWrites.length)throw new Error('Curation unlike sent a duplicate public feedback request')
+ await until(()=>!likeButton.querySelector('.heart-icon--liked'))
  if(JSON.parse(localStorage.getItem('likes')||'[]').some(x=>x.itemId===likedId))throw new Error('Curation unlike did not leave Your Likes')
- console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,curationHeart:{yourLikes:true,weLike:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
+ app.unmount();wavePlansAvailable=false
+ const waveCallsBeforeUnavailable=waveCalls
+ const unavailableItem={type:'video',_id:'ffffffffffffffffffffffff',url:'https://example.invalid/unavailable',provider:'youtube',text:'Unavailable Wave fixture'}
+ app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{savedItem:unavailableItem,waveDiscoveryMode:true}))
+ await until(()=>waveCalls>waveCallsBeforeUnavailable)
+ const unavailableWaveButton=document.querySelector('button[aria-label="Wave"]')
+ await until(()=>unavailableWaveButton?.classList.contains('wave-action--unavailable'))
+ if(!unavailableWaveButton.disabled)throw new Error('Unavailable Wave button remained active')
+ console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,waveAvailability:{readyAnimated:true,unavailableGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
 }finally{app.unmount();dom.window.close();fs.rmSync(temporary,{recursive:true,force:true})}

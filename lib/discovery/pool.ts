@@ -1,16 +1,17 @@
 import { bagValue, weighted, type Rng } from './random'
+import { appendExposure, diversityWeights, pickDiverse, type Exposure } from './diversity'
 import { isVisual, seenOf, type Candidate, type Format, type Seen } from './types'
 
 export type Session = {
   version: 2; seed: number; revision: number; displayed: number; visuals: number
   mixedVisuals: number; coolTickets: number; editorialTickets: number; autonomousTickets: number
-  recent: Seen[]; visualHistory: Seen[]
+  recent: Seen[]; visualHistory: Seen[]; exposures?: Exposure[]
 }
 export type Intent = { revision: number; type: Format; mode: 'random' | 'cool';
-  branch: 'editorial' | 'autonomous' | 'general'; lane: 'trend' | 'unknown' | 'described' | 'any'; allowStock: boolean; allowDirectReference: boolean }
+  branch: 'editorial' | 'autonomous' | 'general'; lane: 'trend' | 'recent' | 'unknown' | 'described' | 'any'; allowStock: boolean; allowDirectReference: boolean }
 export function newSession(seed: number): Session {
   return { version: 2, seed, revision: 0, displayed: 0, visuals: 0, mixedVisuals: 0,
-    coolTickets: 0, editorialTickets: 0, autonomousTickets: 0, recent: [], visualHistory: [] }
+    coolTickets: 0, editorialTickets: 0, autonomousTickets: 0, recent: [], visualHistory: [], exposures: [] }
 }
 export function planDraw(state: Session, type: Format): Intent {
   const visual = isVisual(type)
@@ -19,8 +20,8 @@ export function planDraw(state: Session, type: Format): Intent {
   const editorial = cool && bagValue(state.seed, 'editorial', state.coolTickets,
     [true, true, true, true, true, false, false, false, false, false])
   const lane = cool ? bagValue(state.seed, 'autonomous', editorial ? state.coolTickets : state.autonomousTickets,
-    ['trend', 'trend', 'trend', 'trend', 'trend', 'unknown', 'unknown', 'unknown', 'unknown',
-      ...Array<Intent['lane']>(11).fill('described')] as Intent['lane'][]) : 'any'
+    ['trend', 'trend', 'trend', 'trend', 'trend', 'recent', 'recent', 'recent', 'recent',
+      'unknown', 'unknown', 'unknown', ...Array<Intent['lane']>(8).fill('described')] as Intent['lane'][]) : 'any'
   return { revision: state.revision, type, mode: cool ? 'cool' : 'random',
     branch: editorial ? 'editorial' : cool ? 'autonomous' : 'general', lane,
     allowStock: visual && !cool && state.displayed >= 40 && state.visualHistory.slice(-19).every(x => !x.stock),
@@ -42,32 +43,21 @@ export function commitDraw<T>(state: Session, ticket: Intent, item: Candidate<T>
     coolTickets: state.coolTickets + Number(ticket.mode === 'cool'),
     editorialTickets: state.editorialTickets + Number(ticket.branch === 'editorial'),
     autonomousTickets: state.autonomousTickets + Number(ticket.branch === 'autonomous'),
-    recent: [...state.recent, entry].slice(-40),
+    recent: [...state.recent, entry].slice(-40), exposures: appendExposure(state.exposures, item),
     visualHistory: visual ? [...state.visualHistory, entry].slice(-40) : state.visualHistory }
 }
 /** Wave views affect repetition only: never the introductory 10/40 or the format sequence. */
 export function recordWave(state: Session, item: Candidate): Session {
-  return { ...state, revision: state.revision + 1, recent: [...state.recent, seenOf(item)].slice(-40) }
+  return { ...state, revision: state.revision + 1, recent: [...state.recent, seenOf(item)].slice(-40), exposures: appendExposure(state.exposures, item) }
 }
-function repeatPenalty(c: Candidate, state: Session): number {
-  let weight = 1
-  const history = state.visualHistory, videos = history.filter(x => x.type === 'video')
-  if (c.authorKey && videos.slice(-5).some(x => x.authorKey === c.authorKey)) weight *= .08
-  if (c.authorKey && videos.slice(-20).filter(x => x.authorKey === c.authorKey).length >= 2) weight *= .15
-  if (c.seriesKey && history.slice(-10).some(x => x.seriesKey === c.seriesKey)) weight *= .1
-  if (history.slice(-2).length === 2 && history.slice(-2).every(x => x.family === c.profile.family)) weight *= .2
-  if (history.slice(-20).filter(x => x.family === c.profile.family).length >= 7) weight *= .25
-  return weight
+export type PoolResult<T> = { item: Candidate<T>; branch: Intent['branch']; fallback: boolean;
+  selection?: { requestedLane: Intent['lane']; servedLane: Intent['lane']; reasons: string[] } }
+export function matchesLane(c: Candidate, lane: Intent['lane'], now: number): boolean {
+  if (lane === 'trend') return c.trendObservedAt != null && c.trendObservedAt <= now && c.trendObservedAt >= now - 7 * 86400000
+  if (lane === 'recent') return c.publishedAt != null && c.publishedAt <= now && c.publishedAt >= now - 90 * 86400000
+  if (lane === 'unknown' || lane === 'described') return c.profile.evidence === lane
+  return true
 }
-function byFamily<T>(items: Candidate<T>[], state: Session, random: Rng): Candidate<T> | null {
-  const families = new Map<string, Candidate<T>[]>()
-  for (const c of items) {
-    const list = families.get(c.profile.family) ?? []; list.push(c); families.set(c.profile.family, list)
-  }
-  const family = weighted([...families.values()], group => Math.max(...group.map(c => repeatPenalty(c, state))), random)
-  return family ? weighted(family, c => repeatPenalty(c, state), random) : null
-}
-export type PoolResult<T> = { item: Candidate<T>; branch: Intent['branch']; fallback: boolean }
 /** Caller supplies a bounded, family-balanced sample from the DB, not the whole catalogue. */
 export function pickPool<T>(candidates: Candidate<T>[], ticket: Intent, state: Session, random: Rng,
   now: number, referenceCounts: Record<string, number> = {}): PoolResult<T> | null {
@@ -84,25 +74,45 @@ export function pickPool<T>(candidates: Candidate<T>[], ticket: Intent, state: S
     const normal = eligible.filter(c => !c.stock), stock = eligible.filter(c => c.stock)
     eligible = wantStock && stock.length ? stock : normal
   }
+  // Keep the content objective before owner affinity: an editorial match cannot replace
+  // an available trend/recent candidate with an old, unobserved item.
+  const preferred = eligible.filter(c => matchesLane(c, ticket.lane, now))
+  const laneAvailable = preferred.length > 0
+  const pool = laneAvailable ? preferred : eligible
+  const history = state.exposures?.length ? state.exposures : state.visualHistory.map(x => ({
+    type: x.type === 'video' ? 'video' as const : 'image' as const, family: x.family,
+    practices: [], terms: [], ...(x.pattern ? { pattern: x.pattern } : {}),
+  }))
+  const weights = diversityWeights(pool, history)
+  let editorialDiversityRelaxed = false
+  const result = (item: Candidate<T>, branch: Intent['branch']): PoolResult<T> => {
+    const reasons = [
+      ...(!laneAvailable ? ['requested-lane-unavailable'] : []),
+      ...(editorialDiversityRelaxed ? ['editorial-diversity-relaxed'] : []),
+      ...(ticket.branch === 'editorial' && branch !== 'editorial' && !editorialDiversityRelaxed ? ['editorial-match-unavailable'] : []),
+    ]
+    return { item, branch, fallback: reasons.length > 0, selection: {
+      requestedLane: ticket.lane, servedLane: laneAvailable ? ticket.lane : 'any', reasons } }
+  }
   if (ticket.branch === 'editorial') {
     const counts = Object.values(referenceCounts).filter(n => n > 0).sort((a, b) => a - b)
     const median = counts[Math.floor(counts.length / 2)] ?? 1
-    const families = Object.keys(referenceCounts).filter(f => referenceCounts[f] > 0 && eligible.some(c =>
+    const families = Object.keys(referenceCounts).filter(f => referenceCounts[f] > 0 && pool.some(c =>
       c.editorialFamilies?.includes(f) && (!c.directEditorialReference || ticket.allowDirectReference)))
     const family = weighted(families, f => Math.min(Math.sqrt(referenceCounts[f]), 2 * Math.sqrt(median)), random)
     if (family) {
-      const item = byFamily(eligible.filter(c => c.editorialFamilies?.includes(family) &&
-        (!c.directEditorialReference || ticket.allowDirectReference)), state, random)
-      if (item) return { item, branch: 'editorial', fallback: false }
+      const neighbors = pool.filter(c => c.editorialFamilies?.includes(family) &&
+        (!c.directEditorialReference || ticket.allowDirectReference))
+      const best = (items: Candidate<T>[]) => items.reduce((max, c) => Math.max(max, weights.get(c) ?? 1), 0)
+      const accept = Math.min(1, Math.sqrt(best(neighbors) / Math.max(.03, best(pool))))
+      if (accept >= 1 || random() < accept) {
+        const item = pickDiverse(neighbors, weights, random)
+        if (item) return result(item, 'editorial')
+      } else editorialDiversityRelaxed = true
     }
   }
-  const preferred = eligible.filter(c => ticket.lane === 'any' ||
-    (ticket.lane === 'trend' && c.trendObservedAt != null && c.trendObservedAt <= now && c.trendObservedAt >= now - 7 * 86400000) ||
-    (ticket.lane === 'unknown' && c.profile.evidence === 'unknown') ||
-    (ticket.lane === 'described' && c.profile.evidence === 'described'))
-  const item = byFamily(preferred.length ? preferred : eligible, state, random)
-  return item ? { item, branch: ticket.mode === 'cool' ? 'autonomous' : 'general',
-    fallback: ticket.branch === 'editorial' || !preferred.length } : null
+  const item = pickDiverse(pool, weights, random)
+  return item ? result(item, ticket.mode === 'cool' ? 'autonomous' : 'general') : null
 }
 
 /** Project prepared items, but commit only the displayed head. Failure invalidates its successors. */
