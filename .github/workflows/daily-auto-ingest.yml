@@ -11,6 +11,10 @@ on:
         description: "Run profile: auto, morning, evening"
         required: false
         default: "auto"
+      discovery_only:
+        description: "Run only direct YouTube and Dailymotion discovery"
+        required: false
+        default: "false"
   schedule:
     # Europe/Amsterdam rough local times: 09:10 and 21:10.
     # Catch-up runs at 10:40 and 22:40 skip themselves when the same profile already succeeded today.
@@ -26,6 +30,7 @@ on:
 
 jobs:
   daily-auto-ingest:
+    if: ${{ github.event.inputs.discovery_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 65
     outputs:
@@ -63,11 +68,13 @@ jobs:
   discovery-direct:
     needs: daily-auto-ingest
     if: >-
-      ${{ needs.daily-auto-ingest.result == 'success' &&
-          needs.daily-auto-ingest.outputs.ingest_ran == '1' &&
+      ${{ always() &&
           vars.RANDOM_DISCOVERY_ON_GITHUB == '1' &&
           vars.DAILY_AUTO_DISCOVERY_ENABLED != '0' &&
-          github.event.inputs.dry_run != 'true' }}
+          github.event.inputs.dry_run != 'true' &&
+          (github.event.inputs.discovery_only == 'true' ||
+           (needs.daily-auto-ingest.result == 'success' &&
+            needs.daily-auto-ingest.outputs.ingest_ran == '1')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
