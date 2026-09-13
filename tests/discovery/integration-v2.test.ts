@@ -61,6 +61,8 @@ test('Dailymotion partitions keep dates/sort/category across pagination and neve
   const page = await loader(task, new AbortController().signal, async () => true)
   await loader({ ...task, cursor: page.nextCursor }, new AbortController().signal, async () => true)
   for (const key of ['created_after', 'created_before', 'sort', 'channel']) assert.equal(urls[0].searchParams.get(key), urls[1].searchParams.get(key))
+  assert.equal(urls[0].searchParams.has('availability'), false)
+  assert.equal(urls[0].searchParams.has('private'), false)
   assert.equal(urls[1].searchParams.get('page'), '2'); assert.equal(page.videos[0].channelId, 'u123')
   assert.equal(page.videos[0].title, 'MVI 0781'); assert.equal(page.videos[0].viewCount, 10)
 })

@@ -23,7 +23,7 @@ export function dailymotionPageLoader(request: typeof fetch = fetch): PageLoader
     if (spec.sort === 'relevance' && !spec.query) throw new Error('Relevance needs a query')
     if (!await permit('search')) throw new Error('quota-exhausted')
     const page = Math.max(1, Math.min(10, Number(task.cursor) || 1))
-    const params = new URLSearchParams({ limit: '50', page: String(page), sort: spec.sort, availability: 'true', private: 'false',
+    const params = new URLSearchParams({ limit: '50', page: String(page), sort: spec.sort,
       created_after: String(Math.floor(new Date(spec.after).getTime() / 1000)), created_before: String(Math.floor(new Date(spec.before).getTime() / 1000)),
       fields: 'id,title,description,url,thumbnail_url,duration,channel.id,owner.id,owner.screenname,created_time,views_total,private' })
     if (spec.query) params.set('search', spec.query)
