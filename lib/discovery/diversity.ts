@@ -4,7 +4,7 @@ import { isVisual, type Candidate } from './types'
 /** Compact, session-local evidence of exposures, never a visitor preference profile. */
 export type Exposure = {
   type: 'video' | 'image'; family: string; practices: string[]; terms: number[]
-  pattern?: string; publicationYear?: number; author?: number; series?: number
+  pattern?: string; publicationYear?: number; author?: number; series?: number; subject?: number
 }
 export const EXPOSURE_LIMIT = 100
 export function exposureOf(candidate: Candidate): Exposure | null {
@@ -16,6 +16,7 @@ export function exposureOf(candidate: Candidate): Exposure | null {
     practices: [...new Set(candidate.profile.titlePractices ?? [])].slice(0, 6),
     terms: [...new Set((candidate.profile.titleTokens ?? []).slice(0, 12).map(hash))],
     ...(candidate.profile.pattern ? { pattern: candidate.profile.pattern } : {}),
+    ...(candidate.profile.subject?.primary ? { subject: hash(candidate.profile.subject.primary.key) } : {}),
     ...(year != null && Number.isFinite(year) ? { publicationYear: year } : {}),
     ...(candidate.authorKey ? { author: hash(candidate.authorKey) } : {}),
     ...(candidate.seriesKey ? { series: hash(candidate.seriesKey) } : {}),
@@ -37,7 +38,8 @@ function resemblance(a: Exposure, b: Exposure): number {
   const commonPractices = a.practices.filter(p => b.practices.includes(p))
   const practice = commonPractices.some(p => !BROAD_PRACTICES.has(p)) ? .8 : commonPractices.length ? .35 : 0
   // A shared broad family, year or nationality alone never establishes resemblance.
-  let score = Math.max(practice, lexical >= .6 ? lexical : 0)
+  const subject = a.subject != null && a.subject === b.subject ? .8 : 0
+  let score = Math.max(subject, practice, lexical >= .6 ? lexical : 0)
   if (score && a.publicationYear != null && b.publicationYear != null &&
     Math.floor(a.publicationYear / 10) === Math.floor(b.publicationYear / 10)) score = Math.min(1, score + .05)
   return score
@@ -69,6 +71,7 @@ export function diversityWeights<T>(items: readonly Candidate<T>[], history: rea
 }
 
 function cellOf(candidate: Candidate): string {
+  if (candidate.profile.subject?.primary?.kind === 'entity') return `subject:${candidate.profile.subject.primary.key}`
   if (candidate.profile.pattern) return `pattern:${candidate.profile.pattern}`
   const practices = [...new Set(candidate.profile.titlePractices ?? [])].sort()
   return practices.length ? `practice:${practices.join('|')}` : 'unclassified'

@@ -3,6 +3,7 @@ import { profileFromRow, canonicalMediaKey } from './catalog'
 import { buildProfile, SIGNAL_VERSION } from './profile'
 import { assignEditorial, type OwnerReference } from './editorial'
 import type { Candidate } from './types'
+import { SUBJECT_VERSION } from './subjects'
 
 /** Call from authenticated owner tooling only. There is deliberately no public write route here. */
 export async function saveOwnerReference(db: Db, reference: OwnerReference): Promise<void> {
@@ -24,7 +25,8 @@ export async function applyOwnerReferences<T>(db: Db, items: Candidate<T>[], own
     .sort({ rand: 1 }).limit(64 - references.length).maxTimeMS(400).toArray())
   // Old references contain the former permissive profile. Refresh only this bounded
   // sample using source snapshots; no writes and no provider calls are involved.
-  const stale = references.filter(r => r.profile.signalVersion !== SIGNAL_VERSION)
+  const fresh = (r: OwnerReference) => r.profile.signalVersion === SIGNAL_VERSION && r.profile.subject?.version === SUBJECT_VERSION
+  const stale = references.filter(r => !fresh(r))
   const ids = [...new Set(stale.map(r => r.itemId).filter((id): id is string => Boolean(id && ObjectId.isValid(id))))]
   const profiles = new Map<string, { profile: OwnerReference['profile']; key: string }>()
   if (ids.length) {
@@ -37,7 +39,7 @@ export async function applyOwnerReferences<T>(db: Db, items: Candidate<T>[], own
     } catch { /* Stale similarity must fail closed; autonomous selection remains available. */ }
   }
   return assignEditorial(items, references.map(reference => {
-    if (reference.profile.signalVersion === SIGNAL_VERSION) return reference
+    if (fresh(reference)) return reference
     const current = profiles.get(reference.itemId ?? '')
     return { ...reference, profile: current?.profile ?? buildProfile({}), contentKey: current?.key ?? reference.contentKey,
       familyId: current && reference.familyId === reference.profile.family ? current.profile.family : reference.familyId }

@@ -1,4 +1,5 @@
 import { PROFILE_VERSION, type Profile, type SourceMetadata } from './types'
+import { analyseSubject } from './subjects'
 
 // Broad themes balance Random; they are deliberately insufficient to establish a Wave.
 const RULES: Record<string, Record<string, string[]>> = {
@@ -93,9 +94,18 @@ export function buildProfile(source: SourceMetadata): Profile {
   const themes = primary.themes.length ? primary.themes : secondary.themes
   const practices = primary.practices.length ? primary.practices : secondary.practices
   const normalizedTitle = normalize(title)
+  let subject = analyseSubject(title, source.primarySubject)
+  // A camera filename can still have a useful, real description. Do not replace a descriptive title.
+  if (!subject.primary && (!titleTokens.length || /^(?:(?:img|dsc|mov|vid)[ _.-]*\d[\d _.-]*|video(?:[ _.-]*\d+)?|untitled|sans titre)(?:\.[a-z0-9]{2,5})?$/i.test(title.trim()))) {
+    const described = analyseSubject(description.split(/[.!?]\s/u)[0])
+    if (described.primary) subject = { ...subject,
+      primary: { ...described.primary, evidence: 'description' }, secondary: described.secondary,
+      moods: described.moods, treatments: described.treatments }
+  }
   const ai = /(?:^| )(?:ai|ia|ki|generative|generated|ghibli|sora)(?: |$)/u.test(normalizedTitle)
   const narrative = /(?:^| )(?:story|stories|storytelling|novel|romance|roman|histoire|histoires)(?: |$)/u.test(normalizedTitle)
   return { version: PROFILE_VERSION, signalVersion: SIGNAL_VERSION, tokens, titleTokens,
+    subject,
     titlePractices: primary.practices, entities, practices, themes, family: themes[0] ?? 'unknown',
     ...(ai && narrative ? { pattern: 'ai-narrative' } : {}),
     evidence: tokens.length >= 2 || practices.length > 0 || entities.length > 0 ? 'described' : 'unknown' }

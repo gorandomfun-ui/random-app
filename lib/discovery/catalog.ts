@@ -3,6 +3,7 @@ import { hash } from './random'
 import { legacySourceSnapshot } from './backfill'
 import type { Candidate, Format, Profile } from './types'
 import { isOrdinaryRoutineVideo } from '../random/videoEditorial'
+import { SUBJECT_VERSION } from './subjects'
 
 export type CatalogueRow = Record<string, unknown> & { _id?: unknown; type?: string }
 const text = (x: unknown): string | undefined => typeof x === 'string' && x.trim() ? x : undefined
@@ -55,7 +56,7 @@ export function canonicalMediaKey(row: CatalogueRow): string {
 /** Backfill only from a source snapshot. Legacy tags/keywords can contain the search query. */
 export function profileFromRow(row: CatalogueRow): Profile {
   const profile = row.discoveryProfile as Profile | undefined
-  if (row.discoveryVersion === 2 && profile?.version === 2 && profile.signalVersion === SIGNAL_VERSION) return profile
+  if (row.discoveryVersion === 2 && profile?.version === 2 && profile.signalVersion === SIGNAL_VERSION && profile.subject?.version === SUBJECT_VERSION) return profile
   // Bounded read-time refresh only: no writes, no provider calls, no catalogue-wide migration.
   return buildProfile(legacySourceSnapshot(row))
 }

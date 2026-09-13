@@ -1,5 +1,6 @@
 import type { Candidate, Profile } from './types'
 import { SIGNAL_VERSION } from './profile'
+import { matchSubject } from './subjects'
 
 export type Relation = { score: number; reasons: string[] }
 function shared(a: string[], b: string[]): string[] { const set = new Set(b); return a.filter(x => set.has(x)) }
@@ -17,6 +18,8 @@ const PRACTICE_LINKS = new Set(['stone-carving', 'pottery', 'skateboarding', 'su
 /** A generic theme, a hashtag list or common functional words cannot establish a Wave. */
 export function relation(anchor: Profile, candidate: Profile): Relation | null {
   if (anchor.signalVersion !== SIGNAL_VERSION || candidate.signalVersion !== SIGNAL_VERSION) return null
+  const subject = matchSubject(anchor.subject, candidate.subject)
+  if (subject !== undefined) return subject
   const entities = shared(anchor.entities, candidate.entities)
   const meaningful = (values: string[]) => values.filter(x => !BROAD.has(x))
   const titles = shared(meaningful(anchor.titleTokens ?? []), meaningful(candidate.titleTokens ?? []))
@@ -44,6 +47,16 @@ function validSet(items: Candidate[]): boolean {
   if (items.filter(x => x.type === 'image').length > 2 || items.filter(x => x.quiz).length > 1) return false
   return !items.some((x, i) => items.slice(0, i).some(y => duplicates(x, y)))
 }
+function interleaveTreatments<T>(items: Candidate<T>[]): Candidate<T>[] {
+  const groups = new Map<string, Candidate<T>[]>()
+  for (const item of items) {
+    const key = `${item.type}:${item.quiz ? 'quiz' : item.profile.subject?.treatments[0] ?? 'unknown'}`
+    const group = groups.get(key) ?? []; group.push(item); groups.set(key, group)
+  }
+  const result: Candidate<T>[] = []
+  for (let i = 0; result.length < items.length; i++) for (const group of groups.values()) if (group[i]) result.push(group[i])
+  return result
+}
 export type WavePlan<T> = { ready: true; anchorKey: string; trio: Candidate<T>[]; reserves: Candidate<T>[];
   relations: Record<string, Relation> } | { ready: false; anchorKey: string; reason: 'insufficient-related-content' }
 
@@ -56,9 +69,9 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
   const ranks = new Map<string, Relation>()
   const counts = new Map<string, number>()
   const seen = new Set<string>()
-  const ranked = candidates.filter(x => x.available && !x.suppressed && !x.routineEditorial && !excluded.has(x.key) && !duplicates(anchor, x))
+  const ranked = interleaveTreatments(candidates.filter(x => x.available && !x.suppressed && !x.routineEditorial && !excluded.has(x.key) && !duplicates(anchor, x))
     .filter(x => { const rel = relation(anchor.profile, x.profile); if (!rel) return false; ranks.set(x.key, rel); return true })
-    .sort((a, b) => ranks.get(b.key)!.score - ranks.get(a.key)!.score || a.key.localeCompare(b.key))
+    .sort((a, b) => ranks.get(b.key)!.score - ranks.get(a.key)!.score || a.key.localeCompare(b.key)))
     .filter(x => {
       if (seen.has(x.key) || prefix.some(p => duplicates(p, x))) return false
       seen.add(x.key)
@@ -74,10 +87,15 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
     if (!validSet(all)) return
     if (chosen.length === needed) {
       if (anchor.type === 'video' && !all.some(x => x.type === 'video')) return
+      // Three clips of the same artist are not three different discoveries.
+      if (all.every(x => x.type === 'video' && x.profile.subject?.treatments.includes('music-video'))) return
       const priority = 2 * Number(all.some(x => x.type === 'video')) + Number(new Set(all.map(x => x.type)).size >= 2)
       const sum = all.reduce((v, x) => v + (ranks.get(x.key) ?? relation(anchor.profile, x.profile))!.score, 0) / 3
       const red = (redundancy(all[0], all[1]) + redundancy(all[0], all[2]) + redundancy(all[1], all[2])) / 3
-      const score = .8 * sum - .2 * red
+      const treatments = new Set(all.flatMap(x => x.profile.subject?.treatments ?? []))
+      const repeatedTreatment = all.reduce((n, x, i) => n + all.slice(0, i).filter(y =>
+        x.profile.subject?.treatments.some(t => y.profile.subject?.treatments.includes(t))).length, 0)
+      const score = .8 * sum - .2 * red + .08 * Math.min(3, treatments.size) - .08 * repeatedTreatment
       if (priority > bestPriority || priority === bestPriority && score > bestScore) {
         bestPriority = priority; bestScore = score; best = all
       }

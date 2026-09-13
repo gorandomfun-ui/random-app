@@ -29,7 +29,7 @@ export function parseSession(value: unknown): Session | null {
       if (entry.pattern != null && (typeof entry.pattern !== 'string' || entry.pattern.length > 80)) return null
       if (entry.publicationYear != null && (!Number.isSafeInteger(entry.publicationYear) ||
         Number(entry.publicationYear) < 1800 || Number(entry.publicationYear) > 2200)) return null
-      for (const field of ['author', 'series']) if (entry[field] != null &&
+      for (const field of ['author', 'series', 'subject']) if (entry[field] != null &&
         (!Number.isSafeInteger(entry[field]) || Number(entry[field]) < 0 || Number(entry[field]) > 0xffffffff)) return null
     }
   }

@@ -9,6 +9,8 @@ export type SourceMetadata = {
   language?: string
   /** Explicit, verified identifiers only; not inferred from a query. */
   entities?: string[]
+  /** Optional trusted source annotation; never populated from a search query. */
+  primarySubject?: import('./subjects').SubjectHint
 }
 export type Profile = {
   version: typeof PROFILE_VERSION
@@ -16,6 +18,7 @@ export type Profile = {
   signalVersion?: number
   titleTokens?: string[]
   titlePractices?: string[]
+  subject?: import('./subjects').SubjectAnalysis
   /** Conservative classification for session repetition, never a verified series ID. */
   pattern?: string
   tokens: string[]

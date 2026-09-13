@@ -28,6 +28,8 @@ jobs:
   daily-auto-ingest:
     runs-on: ubuntu-latest
     timeout-minutes: 65
+    outputs:
+      ingest_ran: ${{ steps.ingest.outputs.ingest_ran }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +38,7 @@ jobs:
           node-version: "22"
 
       - name: Run daily auto ingest
+        id: ingest
         env:
           RANDOM_INGEST_HOST: ${{ secrets.RANDOM_INGEST_HOST }}
           ADMIN_INGEST_KEY: ${{ secrets.ADMIN_INGEST_KEY }}
@@ -43,7 +46,8 @@ jobs:
           DAILY_AUTO_PROFILE: ${{ github.event.inputs.profile || 'auto' }}
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
           DAILY_AUTO_SKIP_COMPLETED: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
-          DAILY_AUTO_DISCOVERY_ENABLED: ${{ vars.DAILY_AUTO_DISCOVERY_ENABLED || '1' }}
+          # Only the extra discovery phase moves; trends/retro/keyword ingestion stay intact.
+          DAILY_AUTO_DISCOVERY_ENABLED: ${{ vars.RANDOM_DISCOVERY_ON_GITHUB == '1' && '0' || vars.DAILY_AUTO_DISCOVERY_ENABLED || '1' }}
           DAILY_AUTO_VIDEO_MULTIPLIER: ${{ vars.DAILY_AUTO_VIDEO_MULTIPLIER || '2' }}
           DAILY_AUTO_RUNTIME_CEILING_MINUTES: ${{ vars.DAILY_AUTO_RUNTIME_CEILING_MINUTES || '30' }}
           DAILY_AUTO_MIN_VIDEO_INSERTED: ${{ vars.DAILY_AUTO_MIN_VIDEO_INSERTED || '1200' }}
@@ -55,3 +59,48 @@ jobs:
           DAILY_AUTO_WEB_PAGES: ${{ vars.DAILY_AUTO_WEB_PAGES || '3' }}
           DAILY_AUTO_ENRICH_LIMIT: "0"
         run: node scripts/daily-auto-ingest.mjs
+
+  discovery-direct:
+    needs: daily-auto-ingest
+    if: >-
+      ${{ needs.daily-auto-ingest.result == 'success' &&
+          needs.daily-auto-ingest.outputs.ingest_ran == '1' &&
+          vars.RANDOM_DISCOVERY_ON_GITHUB == '1' &&
+          vars.DAILY_AUTO_DISCOVERY_ENABLED != '0' &&
+          github.event.inputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: random-discovery-direct
+      cancel-in-progress: false
+    env:
+      # Same API project and database as Vercel: quotas/cursors stay shared.
+      MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
+      MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      RANDOM_EDITOR_OWNER_ID: ${{ vars.RANDOM_EDITOR_OWNER_ID }}
+      RANDOM_DISCOVERY_WORKER_ENABLED: '1'
+      RANDOM_YOUTUBE_QUOTA_ENABLED: ${{ vars.RANDOM_YOUTUBE_QUOTA_ENABLED || '1' }}
+      RANDOM_YT_SEARCH_DAILY_LIMIT: ${{ vars.RANDOM_YT_SEARCH_DAILY_LIMIT }}
+      RANDOM_YT_OTHER_DAILY_LIMIT: ${{ vars.RANDOM_YT_OTHER_DAILY_LIMIT }}
+      RANDOM_YT_SEARCH_BASE_RESERVE: ${{ vars.RANDOM_YT_SEARCH_BASE_RESERVE }}
+      RANDOM_YT_OTHER_BASE_RESERVE: ${{ vars.RANDOM_YT_OTHER_BASE_RESERVE }}
+      RANDOM_YT_EXTRA_SEARCH_LIMIT: ${{ vars.RANDOM_YT_EXTRA_SEARCH_LIMIT }}
+      # Does not change RANDOM_DM_DISCOVERY_ENABLED on Vercel or player consent.
+      RANDOM_DM_DISCOVERY_ENABLED: ${{ vars.RANDOM_DM_DISCOVERY_ON_GITHUB || '1' }}
+      RANDOM_DM_DISCOVERY_DAILY_LIMIT: ${{ vars.RANDOM_DM_DISCOVERY_DAILY_LIMIT || '60' }}
+      RANDOM_DISCOVERY_GITHUB_MINUTES: ${{ vars.RANDOM_DISCOVERY_GITHUB_MINUTES || '5' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate direct runner configuration
+        run: npm run discovery:explore -- --check
+      - name: Explore YouTube and Dailymotion directly
+        run: npm run discovery:explore

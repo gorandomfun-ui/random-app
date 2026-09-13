@@ -6,7 +6,6 @@ import { candidateFromRow } from '@/lib/discovery/catalog'
 import { legacySourceSnapshot } from '@/lib/discovery/backfill'
 import { buildProfile } from '@/lib/discovery/profile'
 import { saveOwnerReference } from '@/lib/discovery/ownerStore'
-import { enqueue } from '@/lib/discovery/exploration'
 import { refreshTopLikesForItem } from '@/lib/likes/top'
 import { planCurationLikeMutation } from '@/lib/discovery/curationLike'
 export const runtime = 'nodejs'
@@ -78,10 +77,7 @@ export async function POST(req: Request) {
       if (likeDelta !== 0) await refreshTopLikesForItem(objectId).catch(() => undefined)
       throw error
     }
-    // Only original owner likes create seeds; discovered descendants never become reference likes.
-    if (body.active && row.provider === 'youtube' && typeof row.channelId === 'string') {
-      await enqueue(db, { kind: 'channel', channelId: row.channelId }, 0, true).catch(() => undefined)
-    }
+    // The worker explores active references by subject. A like does not crawl the uploader's entire channel.
     return json({ active: body.active, publicLikeSynced: syncPublicLike, changed })
   } catch { return json({ error: 'unavailable' }, 503) }
 }

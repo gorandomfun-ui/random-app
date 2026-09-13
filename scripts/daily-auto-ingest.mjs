@@ -330,6 +330,7 @@ function writeGithubSummary(summary) {
 }
 
 async function main() {
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, 'ingest_ran=0\n')
   const started = Date.now()
   const startedAt = new Date(started).toISOString()
   requestDeadline = started + maxRuntimeMs
@@ -358,6 +359,7 @@ async function main() {
     return
   }
 
+  if (process.env.GITHUB_OUTPUT && !dryRun) fs.appendFileSync(process.env.GITHUB_OUTPUT, 'ingest_ran=1\n')
   let videoInserted = 0
   let webInserted = 0
   let videoEnriched = 0

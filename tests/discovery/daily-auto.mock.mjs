@@ -9,7 +9,14 @@ globalThis.fetch = async (input, init = {}) => {
     fs.writeFileSync(process.env.RANDOM_TEST_REPORT, JSON.stringify({ calls, report: JSON.parse(init.body) }))
     return Response.json({ ok: true })
   }
-  if (url.pathname.endsWith('/status')) return Response.json({ reports: [] })
+  if (url.pathname.endsWith('/status')) {
+    if (scenario === 'already-complete') {
+      const date = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(new Date())
+      return Response.json({ runs: [{ status: 'success', startedAt: `${date}T09:00:00.000Z`,
+        details: { profile: 'morning', videoInserted: 2400, dryRun: false } }] })
+    }
+    return Response.json({ runs: [] })
+  }
   const params = Object.fromEntries(url.searchParams); calls.push(params)
   const phase = params.phase, web = phase === 'web', youtubeOnly = params.providers === 'youtube'
   let inserted = web ? 12 : phase === 'combo-videos' ? 200 : 100

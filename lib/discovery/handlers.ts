@@ -74,11 +74,11 @@ export function waveHandler<T>(deps: Dependencies<T>) {
       const db = await deps.getDb(); if (!db) return json({ error: 'unavailable' }, 503)
       const result = await loadWave(db, body.anchorId, lang, types, deps.decode, Math.random, Date.now(), excluded)
       if (!result?.plan.ready) {
-        const reply = { version: 2, ready: false, reason: 'insufficient-related-content' }
+        const reply = { version: 2, ready: false, reason: 'insufficient-related-content', diagnostics: result?.diagnostics }
         remember(cacheKey, reply, 60_000)
         return json(reply)
       }
-      const reply = { version: 2, anchor: result.anchor, ...result.plan }
+      const reply = { version: 2, anchor: result.anchor, ...result.plan, diagnostics: result.diagnostics }
       remember(cacheKey, reply, 5 * 60_000)
       return json(reply)
     } catch { return json({ error: 'unavailable' }, 503) }
