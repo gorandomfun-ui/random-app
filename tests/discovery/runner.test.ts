@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runDiscoveryLoop, type BatchReport } from '../../lib/discovery/runner'
 import type { DiscoveryBatchOptions } from '../../lib/discovery/worker'
+import { withAbortDeadline } from '../../lib/discovery/exploration'
 
 const report = (extra: Partial<BatchReport> = {}): BatchReport => ({ pages: 1, inserted: 3, failures: 0, quotaDenied: 0,
   errors: { timeout: 0, rateLimit: 0, http: 0, other: 0 }, stopReason: 'time-budget', ...extra })
@@ -56,6 +57,13 @@ test('database or insertion failure is surfaced rather than labelled a provider 
   await assert.rejects(runDiscoveryLoop({ providers: ['youtube', 'dailymotion'], maxMs: 300000,
     runBatch: async () => { throw new Error('database unavailable') },
   }), /database unavailable/)
+})
+
+test('provider deadline settles even when the underlying request ignores abort', async () => {
+  const started = Date.now()
+  await assert.rejects(withAbortDeadline(20, undefined, async () => new Promise(() => undefined)),
+    (error: unknown) => error instanceof DOMException && error.name === 'TimeoutError')
+  assert.ok(Date.now() - started < 500)
 })
 
 function check(env: Record<string, string | undefined>, args: string[] = []) {

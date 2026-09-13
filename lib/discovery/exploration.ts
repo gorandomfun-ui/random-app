@@ -75,6 +75,28 @@ function pageFailure(error: unknown): 'quota' | keyof ExplorationReport['errors'
   return 'other'
 }
 
+export async function withAbortDeadline<T>(milliseconds: number, parent: AbortSignal | undefined,
+  run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController()
+  const relay = () => controller.abort(parent?.reason)
+  if (parent?.aborted) relay()
+  else parent?.addEventListener('abort', relay, { once: true })
+  let onAbort: (() => void) | undefined
+  const aborted = new Promise<T>((_resolve, reject) => {
+    onAbort = () => reject(controller.signal.reason ?? new DOMException('Request aborted', 'AbortError'))
+    if (controller.signal.aborted) onAbort()
+    else controller.signal.addEventListener('abort', onAbort, { once: true })
+  })
+  const timer = setTimeout(() => controller.abort(new DOMException('Provider deadline exceeded', 'TimeoutError')),
+    Math.max(1, milliseconds))
+  try { return await Promise.race([run(controller.signal), aborted]) }
+  finally {
+    clearTimeout(timer)
+    parent?.removeEventListener('abort', relay)
+    if (onAbort) controller.signal.removeEventListener('abort', onAbort)
+  }
+}
+
 export function focusMatchesVideo(video: RawVideo, focus?: DiscoveryFocus): boolean {
   if (!focus) return true
   const source = `${video.title ?? ''}\n${cleanDescription(video.description ?? '')}`
@@ -138,18 +160,17 @@ export async function runExploration(options: {
       phase = 'provider'
       // Real 50-result Dailymotion pages can exceed ten seconds. Keep a provider-specific bound.
       const providerTimeoutMs = provider === 'dailymotion' ? 20000 : 10000
-      const timeout = AbortSignal.timeout(Math.max(1, Math.min(providerTimeoutMs, deadline - now() - 15000)))
-      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
-      const page = await loadPage(task, signal, async bucket => {
-        if (signal.aborted) throw signal.reason
-        if (provider === 'youtube' && !quota) throw new Error('Missing YouTube quota configuration')
-        phase = 'database'
-        const allowed = provider === 'dailymotion' ? await reserveDailymotionQuota(db, now())
-          : await reserveQuota(db, quota!, bucket, task!.editorial ? 'editorial' : 'exploration', now())
-        phase = 'provider'
-        if (!allowed) deniedBucket = bucket
-        return allowed
-      })
+      const pageBudgetMs = Math.max(1, Math.min(providerTimeoutMs, deadline - now() - 15000))
+      const page = await withAbortDeadline(pageBudgetMs, options.signal, signal => loadPage(task!, signal, async bucket => {
+          if (signal.aborted) throw signal.reason
+          if (provider === 'youtube' && !quota) throw new Error('Missing YouTube quota configuration')
+          phase = 'database'
+          const allowed = provider === 'dailymotion' ? await reserveDailymotionQuota(db, now())
+            : await reserveQuota(db, quota!, bucket, task!.editorial ? 'editorial' : 'exploration', now())
+          phase = 'provider'
+          if (!allowed) deniedBucket = bucket
+          return allowed
+        }))
       phase = 'ingest'
       // Do not persist unbounded upstream responses. Inserts must use the existing unique video ID.
       const focused = page.videos.slice(0, 50).filter(video => focusMatchesVideo(video, task!.spec.focus))
