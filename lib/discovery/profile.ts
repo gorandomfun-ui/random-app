@@ -7,7 +7,9 @@ const RULES: Record<string, Record<string, string[]>> = {
   craft: { 'stone-carving': ['stone carving', 'taille de pierre', 'steinmetz', '石彫'], 'pottery': ['pottery', 'poterie', 'töpferei', 'cerámica', '陶芸'] },
   food: { 'cooking': ['cooking', 'cuisine', 'kochen', 'cocinar', '料理'], 'noodle-making': ['noodles', 'nouilles', 'nudeln', '麺'] },
   art: { 'performance-art': ['performance art', 'performance artistique', 'aktionskunst'], 'stop-motion': ['stop motion', 'ストップモーション'] },
-  advertising: { 'commercial': ['commercial', 'commercials', 'tv ads', 'advertisement', 'publicité', 'publicites', 'werbespot', 'werbung', 'anuncio', '広告'] },
+  advertising: { 'advertising-media': ['commercials', 'tv ads', 'television ads', 'tv commercial', 'tv commercials',
+    'television commercial', 'television commercials', 'commercial compilation', 'commercial break',
+    'advertisement', 'advertisements', 'publicité', 'publicites', 'werbespot', 'werbung', 'anuncio', '広告'] },
   cinema: { 'film-trailer': ['trailer', 'bande annonce', '予告編'], 'short-film': ['short film', 'court métrage', 'kurzfilm', '短編映画'] },
   science: { 'experiment': ['experiment', 'expérience scientifique', 'experimento', '実験'], 'astronomy': ['astronomy', 'astronomie', 'astronomía', '天文学'] },
   gaming: { 'speedrunning': ['speedrun', 'speedrunning'], 'gameplay': ['gameplay', 'let s play', '実況プレイ'] },
@@ -44,6 +46,7 @@ function plainText(value: string): string {
 function tagList(value: string): boolean {
   return (value.match(/,/g)?.length ?? 0) >= 8 || (value.match(/#/g)?.length ?? 0) >= 4
 }
+const ADVERTISING_MEDIA_TITLE = /(?:^| )(?:(?:tv|television|radio|vintage|classic|retro) commercials?|[12]\d{3}(?: [\p{L}\p{N}]+){0,6} commercials?|commercials? (?:compilation|break|collection|restored)|(?:ads?|advertisements?) (?:compilation|break|collection|restored))(?: |$)/u
 export function cleanDescription(value: string): string {
   const result: string[] = []
   for (const raw of plainText(value.slice(0, 3500)).split(/[\r\n]+/)) {
@@ -69,6 +72,12 @@ function classify(value: string): { practices: string[]; themes: string[] } {
         practices.push(practice); themes.push(theme)
       }
     }
+  }
+  // “Commercial” alone is polysemous (commercial failure, commercial use, etc.).
+  // Only audiovisual advertising context can create the advertising relation.
+  if (ADVERTISING_MEDIA_TITLE.test(text)) {
+    practices.push('advertising-media')
+    themes.push('advertising')
   }
   return { practices: [...new Set(practices)], themes: [...new Set(themes)] }
 }

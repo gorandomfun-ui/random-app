@@ -54,7 +54,14 @@ const enDictionary = {
     "randomAgain": "Random again",
     "like": "Like",
     "dislike": "Dislike",
-    "share": "Share"
+    "share": "Share",
+    "wave": "Wave",
+    "waveClose": "Close Wave",
+    "wavePreparing": "Preparing Wave",
+    "waveSlow": "Wave is still preparing",
+    "waveEmpty": "No relevant Wave",
+    "waveTimeout": "Wave timed out",
+    "waveError": "Wave unavailable"
   },
   "language": {
     "title": "Language"

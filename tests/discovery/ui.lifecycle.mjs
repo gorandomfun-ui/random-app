@@ -25,7 +25,7 @@ const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></ht
 for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
 window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
 globalThis.requestAnimationFrame=window.requestAnimationFrame.bind(window);globalThis.cancelAnimationFrame=window.cancelAnimationFrame.bind(window)
-let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true
+let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true,waveResponseDelayMs=0
 globalThis.fetch=async(input,init={})=>{
  const url=new URL(String(input),'https://test.invalid')
  if(url.pathname==='/api/discovery/random'){
@@ -38,6 +38,7 @@ globalThis.fetch=async(input,init={})=>{
   waveCalls++
   const req=JSON.parse(init.body);const profile={version:2,signalVersion:3,titleTokens:['stone','carving'],titlePractices:['stone-carving'],tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
   const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
+  if(waveResponseDelayMs)await new Promise(resolve=>setTimeout(resolve,waveResponseDelayMs))
   if(!wavePlansAvailable)return Response.json({ready:false,trio:[],reserves:[]})
   return Response.json({ready:true,anchor:make('fixture:'+parseInt(req.anchorId,16),'video'),trio:[make('wave1001','video'),make('wave1002','image'),make('wave1003','video')],reserves:[make('wave1004','video')]})
  }
@@ -75,7 +76,7 @@ try{
  const afterReload=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
  await until(()=>afterReload&&!afterReload.disabled);afterReload.click()
  await until(()=>snapshot()?.discovery?.displayed===7)
- const waveButton=document.querySelector('button[aria-label="Wave"]')
+ const waveButton=document.querySelector('button[data-wave-status]')
  await until(()=>waveButton&&!waveButton.disabled)
  if(!waveButton.classList.contains('wave-action--available'))throw new Error('Ready Wave is not visibly available')
  waveButton.click()
@@ -117,13 +118,22 @@ try{
  if(publicLikeWrites.length)throw new Error('Curation unlike sent a duplicate public feedback request')
  await until(()=>!likeButton.querySelector('.heart-icon--liked'))
  if(JSON.parse(localStorage.getItem('likes')||'[]').some(x=>x.itemId===likedId))throw new Error('Curation unlike did not leave Your Likes')
- app.unmount();wavePlansAvailable=false
- const waveCallsBeforeUnavailable=waveCalls
+ app.unmount();wavePlansAvailable=true;waveResponseDelayMs=3400
+ const waveCallsBeforeSlow=waveCalls
+ const slowItem={type:'video',_id:'eeeeeeeeeeeeeeeeeeeeeeee',url:'https://example.invalid/slow',provider:'youtube',text:'Slow Wave fixture'}
+ app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{savedItem:slowItem,waveDiscoveryMode:true}))
+ await until(()=>waveCalls>waveCallsBeforeSlow)
+ const slowWaveButton=document.querySelector('button[data-wave-status]')
+ await until(()=>slowWaveButton?.dataset.waveStatus==='slow')
+ if(!slowWaveButton.disabled)throw new Error('Slow Wave button became active before its trio arrived')
+ await until(()=>slowWaveButton?.dataset.waveStatus==='ready'&&!slowWaveButton.disabled)
+ app.unmount();wavePlansAvailable=false;waveResponseDelayMs=0
+  const waveCallsBeforeUnavailable=waveCalls
  const unavailableItem={type:'video',_id:'ffffffffffffffffffffffff',url:'https://example.invalid/unavailable',provider:'youtube',text:'Unavailable Wave fixture'}
  app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{savedItem:unavailableItem,waveDiscoveryMode:true}))
  await until(()=>waveCalls>waveCallsBeforeUnavailable)
- const unavailableWaveButton=document.querySelector('button[aria-label="Wave"]')
- await until(()=>unavailableWaveButton?.classList.contains('wave-action--unavailable'))
- if(!unavailableWaveButton.disabled)throw new Error('Unavailable Wave button remained active')
- console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,waveAvailability:{readyAnimated:true,unavailableGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
+ const unavailableWaveButton=document.querySelector('button[data-wave-status]')
+ await until(()=>unavailableWaveButton?.dataset.waveStatus==='empty'&&unavailableWaveButton.classList.contains('wave-action--unavailable'))
+  if(!unavailableWaveButton.disabled)throw new Error('Unavailable Wave button remained active')
+ console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,waveAvailability:{readyAnimated:true,slowDistinguished:true,lateReadyAccepted:true,emptyGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
 }finally{app.unmount();dom.window.close();fs.rmSync(temporary,{recursive:true,force:true})}

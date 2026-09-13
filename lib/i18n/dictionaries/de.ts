@@ -54,7 +54,14 @@ const deDictionary = {
     "randomAgain": "Nochmal",
     "like": "Gefällt mir",
     "dislike": "Gefällt nicht",
-    "share": "Teilen"
+    "share": "Teilen",
+    "wave": "Wave",
+    "waveClose": "Wave schließen",
+    "wavePreparing": "Wave wird vorbereitet",
+    "waveSlow": "Wave wird noch vorbereitet",
+    "waveEmpty": "Keine passende Wave",
+    "waveTimeout": "Zeitüberschreitung bei Wave",
+    "waveError": "Wave nicht verfügbar"
   },
   "language": {
     "title": "Sprache"

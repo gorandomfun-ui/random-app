@@ -33,6 +33,39 @@
     "related": false
   },
   {
+    "name": "old TV ads → commercial failure of an album",
+    "provenance": "Faux positif observé en production le 13 septembre 2026.",
+    "anchor": {
+      "title": "50 Minutes of Mid 80s TV Ads: Unearthed from the Depths of Betamax Oblivion"
+    },
+    "neighbor": {
+      "title": "This album, now considered to be one of the greatest of all time, was a commercial failure when it was released."
+    },
+    "related": false
+  },
+  {
+    "name": "old TV ads → dated product commercial",
+    "provenance": "Lien positif à préserver après la correction du mot commercial.",
+    "anchor": {
+      "title": "50 Minutes of Mid 80s TV Ads: Unearthed from the Depths of Betamax Oblivion"
+    },
+    "neighbor": {
+      "title": "1968 Ford Falcon Commercial"
+    },
+    "related": true
+  },
+  {
+    "name": "college football → generic big game GIF",
+    "provenance": "Faux positif observé en production le 13 septembre 2026.",
+    "anchor": {
+      "title": "UCF vs. #6 Texas Tech Game Highlights | 2025 Big 12 Football"
+    },
+    "neighbor": {
+      "title": "Big Game Reaction GIF"
+    },
+    "related": false
+  },
+  {
     "name": "youtube:D6dDG9t11Eo → youtube:P4qUjTO6k74",
     "provenance": "Titres exacts des réponses API publiques du 13 septembre 2026 ; pas de description disponible.",
     "anchor": {

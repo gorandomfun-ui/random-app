@@ -111,6 +111,12 @@ const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', '
 const TEXT_ITEM_TYPES: ItemType[] = ['fact', 'joke', 'quote']
 const WAVE_TOTAL_STEPS = 3
 const WAVE_RESERVE_STEPS = 7
+const WAVE_SLOW_NOTICE_MS = 3000
+const WAVE_HARD_TIMEOUT_MS = 20000
+const WAVE_HARD_TIMEOUT_REASON = 'wave-hard-timeout'
+type WavePreparationOutcome = 'ready' | 'empty' | 'timeout' | 'error' | 'cancelled'
+type WaveAvailabilityStatus = 'idle' | 'preparing' | 'slow' | 'ready' | 'empty' | 'timeout' | 'error'
+type WaveAvailabilityState = { key: string | null; status: WaveAvailabilityStatus }
 const RANDOM_READY_TARGET = 3
 const RANDOM_SESSION_TTL_MS = 6 * 60 * 60 * 1000
 const RANDOM_SESSION_VERSION = 1
@@ -2467,7 +2473,7 @@ export function RandomExperience({
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
   const [waveRemaining, setWaveRemaining] = useState(0)
-  const [waveAvailableKey, setWaveAvailableKey] = useState<string | null>(null)
+  const [waveAvailability, setWaveAvailability] = useState<WaveAvailabilityState>({ key: null, status: 'idle' })
   const waveModeRef = useRef(false)
   const waveRemainingRef = useRef(0)
   const [waveTransitionActive, setWaveTransitionActive] = useState(false)
@@ -2478,6 +2484,7 @@ export function RandomExperience({
   const wavePreparationAbortRef = useRef<AbortController | null>(null)
   const wavePreparationPromiseRef = useRef<Promise<boolean> | null>(null)
   const wavePreparationKeyRef = useRef<string | null>(null)
+  const wavePreparationOutcomeRef = useRef<WavePreparationOutcome>('empty')
   const wavePreparedAnchorKeyRef = useRef<string | null>(null)
   const waveHistoryKeysRef = useRef<Set<string>>(new Set())
   const waveHistoryIdsRef = useRef<Set<string>>(new Set())
@@ -3473,6 +3480,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     wavePreparationAbortRef.current = controller
     const generation = wavePreparationGenerationRef.current + 1
     wavePreparationGenerationRef.current = generation
+    wavePreparationOutcomeRef.current = 'empty'
     waveQueueRef.current = []
     waveHistoryKeysRef.current.clear()
     waveHistoryIdsRef.current.clear()
@@ -3494,21 +3502,29 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
     const anchorKey = getContentKey(anchorItem)
     const excludeIds = typeof anchorItem._id === 'string' ? [anchorItem._id] : []
-    const requestTimeout = window.setTimeout(() => controller.abort(), 3000)
+    const requestTimeout = window.setTimeout(() => controller.abort(WAVE_HARD_TIMEOUT_REASON), WAVE_HARD_TIMEOUT_MS)
     try {
       if (waveDiscoveryMode) {
         discoveryWaveRef.current = null
         const response = await fetch('/api/discovery/wave', { method: 'POST', signal: controller.signal,
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ anchorId: anchorItem._id, lang: locale || 'en', types: ALL_ITEM_TYPES, excludeKeys: discoveryRef.current.snapshot().recent.map(x => x.key) }) })
-        if (!response.ok) return false
+        if (!response.ok) {
+          wavePreparationOutcomeRef.current = 'error'
+          return false
+        }
         const plan = await response.json() as WavePlan<RandomContentItem> & { anchor?: Candidate<RandomContentItem> }
-        if (generation !== wavePreparationGenerationRef.current || !plan.ready || !plan.anchor) return false
+        if (generation !== wavePreparationGenerationRef.current) return false
+        if (!plan.ready || !plan.anchor) {
+          wavePreparationOutcomeRef.current = 'empty'
+          return false
+        }
         discoveryWaveRef.current = new WaveSession(plan.anchor, [...plan.trio, ...plan.reserves])
         waveAnchorRef.current = anchor
         waveAnchorItemRef.current = anchorItem
         wavePreparedAnchorKeyRef.current = anchorKey
         const first = discoveryWaveRef.current.next()
         if (first) void warmContentMedia(first.payload)
+        wavePreparationOutcomeRef.current = first ? 'ready' : 'empty'
         return Boolean(first)
       }
       const response = await fetchWave({
@@ -3540,6 +3556,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         waveAnchorItemRef.current = null
         waveQueueRef.current = []
         wavePreparedAnchorKeyRef.current = null
+        wavePreparationOutcomeRef.current = 'empty'
         return false
       }
 
@@ -3551,6 +3568,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       wavePreparedAnchorKeyRef.current = anchorKey
       if (anchorKey) waveHistoryKeysRef.current.add(anchorKey)
       if (typeof anchorItem._id === 'string') waveHistoryIdsRef.current.add(anchorItem._id)
+      wavePreparationOutcomeRef.current = 'ready'
       return true
     } catch {
       if (generation !== wavePreparationGenerationRef.current) return false
@@ -3558,6 +3576,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       waveAnchorItemRef.current = null
       waveQueueRef.current = []
       wavePreparedAnchorKeyRef.current = null
+      wavePreparationOutcomeRef.current = controller.signal.reason === WAVE_HARD_TIMEOUT_REASON
+        ? 'timeout'
+        : controller.signal.aborted ? 'cancelled' : 'error'
       return false
     } finally {
       window.clearTimeout(requestTimeout)
@@ -3578,6 +3599,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         ? Boolean(discoveryWaveRef.current?.next())
         : waveQueueRef.current.length >= WAVE_TOTAL_STEPS)
     ) {
+      wavePreparationOutcomeRef.current = 'ready'
       return Promise.resolve(true)
     }
     if (
@@ -3602,37 +3624,47 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   useEffect(() => {
     if (!currentItem || waveMode || loading || transitionLocked) {
-      if (!waveMode) setWaveAvailableKey(null)
+      if (!waveMode) setWaveAvailability({ key: null, status: 'idle' })
       return undefined
     }
     if (currentItem.type === 'encourage' || currentItem.type === 'minigame') {
-      setWaveAvailableKey(null)
+      setWaveAvailability({ key: null, status: 'empty' })
       return undefined
     }
     const anchorKey = getContentKey(currentItem)
     const eligible = waveDiscoveryMode ? Boolean(currentItem._id) : hasWaveSignal(createWaveHint(currentItem))
     if (!anchorKey || !eligible) {
-      setWaveAvailableKey(null)
+      setWaveAvailability({ key: anchorKey || null, status: 'empty' })
       return undefined
     }
-    setWaveAvailableKey(null)
+    setWaveAvailability({ key: anchorKey, status: 'preparing' })
     let disposed = false
     let timer: number | null = null
+    let slowTimer: number | null = null
     const prepareWhenRandomQueueIsReady = () => {
       if (disposed) return
       if (randomReadyQueueRef.current.length < 2 && randomReadyPromiseRef.current) {
         timer = window.setTimeout(prepareWhenRandomQueueIsReady, 220)
         return
       }
+      slowTimer = window.setTimeout(() => {
+        setWaveAvailability(previous => previous.key === anchorKey && previous.status === 'preparing'
+          ? { key: anchorKey, status: 'slow' }
+          : previous)
+      }, WAVE_SLOW_NOTICE_MS)
       void ensureWaveTrail(currentItem).then((ready) => {
         if (disposed || currentItemRef.current !== currentItem) return
-        setWaveAvailableKey(ready ? anchorKey : null)
+        if (slowTimer != null) window.clearTimeout(slowTimer)
+        const outcome = ready ? 'ready' : wavePreparationOutcomeRef.current
+        if (outcome === 'cancelled') return
+        setWaveAvailability({ key: anchorKey, status: outcome })
       })
     }
     timer = window.setTimeout(prepareWhenRandomQueueIsReady, 450)
     return () => {
       disposed = true
       if (timer != null) window.clearTimeout(timer)
+      if (slowTimer != null) window.clearTimeout(slowTimer)
     }
   }, [currentItem, ensureWaveTrail, getContentKey, loading, transitionLocked, waveDiscoveryMode, waveMode])
 
@@ -4354,8 +4386,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       ? getContentKey(viewItem)
       : null
   ), [getContentKey, viewItem])
-  const waveAvailable = waveMode || Boolean(waveEligible && waveCurrentKey && waveAvailableKey === waveCurrentKey)
+  const waveStatus: WaveAvailabilityStatus = waveMode
+    ? 'ready'
+    : waveCurrentKey && waveAvailability.key === waveCurrentKey ? waveAvailability.status : 'idle'
+  const waveAvailable = waveMode || Boolean(waveEligible && waveStatus === 'ready')
   const waveDisabled = controlsDisabled || transitionLocked || loading || !waveAvailable
+  const waveButtonLabel = waveMode
+    ? t('modal.waveClose', 'Close Wave')
+    : waveStatus === 'ready' ? waveLabel
+      : waveStatus === 'empty' ? t('modal.waveEmpty', 'No relevant Wave')
+        : waveStatus === 'timeout' ? t('modal.waveTimeout', 'Wave timed out')
+          : waveStatus === 'error' ? t('modal.waveError', 'Wave unavailable')
+            : waveStatus === 'slow' ? t('modal.waveSlow', 'Wave is still preparing')
+              : t('modal.wavePreparing', 'Preparing Wave')
 
   const handleLike = useCallback(async () => {
     const item = currentItemRef.current
@@ -4640,8 +4683,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         <button
           type="button"
-          aria-label={waveMode ? 'Close Wave' : waveLabel}
-          title={waveMode ? 'Close Wave' : waveLabel}
+          aria-label={waveButtonLabel}
+          title={waveButtonLabel}
           onClick={() => {
             if (waveModeRef.current) {
               handleRandomAgain()
@@ -4649,12 +4692,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             }
             void handleWave()
           }}
-          className={`wave-action ${waveAvailable ? 'wave-action--available' : 'wave-action--unavailable'}${waveMode ? ' wave-action--active' : ''} flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default`}
+          className={`wave-action wave-action--${waveStatus} ${waveAvailable ? 'wave-action--available' : 'wave-action--unavailable'}${waveMode ? ' wave-action--active' : ''} flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default`}
           disabled={waveDisabled}
           aria-pressed={waveMode}
+          aria-busy={waveStatus === 'preparing' || waveStatus === 'slow'}
+          data-wave-status={waveStatus}
           style={{
             backgroundColor: 'transparent',
-            border: `2px solid ${waveAvailable ? theme.text : '#777777'}`,
+            borderWidth: '2px',
+            borderColor: waveAvailable ? theme.text : '#777777',
+            borderStyle: ['slow', 'timeout', 'error'].includes(waveStatus) ? 'dashed' : 'solid',
             color: waveAvailable ? theme.text : '#777777',
             opacity: 1,
           }}
@@ -5482,6 +5529,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           .wave-action--available:not(.wave-action--active),
           .wave-action--available:not(.wave-action--active) .wave-action__icon,
           .wave-action--available:not(.wave-action--active) .wave-action__echo,
+          .wave-action--preparing .wave-action__icon,
+          .wave-action--slow .wave-action__icon,
           .random-page--wave::before,
           .random-page--effects-overdrive::before,
           .random-page--wave .random-immersive-bg__media,
@@ -6212,6 +6261,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           display: inline-flex;
           transform-origin: center;
         }
+        .wave-action--preparing .wave-action__icon {
+          animation: wave-preparing-icon 1.35s ease-in-out infinite;
+        }
+        .wave-action--slow .wave-action__icon {
+          animation: wave-slow-icon 2.2s ease-in-out infinite;
+        }
         .random-page--wave .wave-action__icon {
           animation: wave-icon-flow 0.72s ease-in-out infinite;
         }
@@ -6369,6 +6424,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         @keyframes wave-ready-icon {
           0%, 100% { transform: translateX(-1px) skewX(-3deg); }
           50% { transform: translateX(2px) skewX(3deg); }
+        }
+        @keyframes wave-preparing-icon {
+          0%, 100% { opacity: 0.42; transform: scale(0.92); }
+          50% { opacity: 0.9; transform: scale(1.04); }
+        }
+        @keyframes wave-slow-icon {
+          0%, 100% { opacity: 0.45; transform: translateX(-1px); }
+          50% { opacity: 0.72; transform: translateX(1px); }
         }
         @keyframes wave-ready-echo {
           0% { transform: scale(0.92); opacity: 0; }

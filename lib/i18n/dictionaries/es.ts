@@ -49,6 +49,13 @@ const esDictionary = {
     like: "Me gusta",
     dislike: "No me gusta",
     share: "Compartir",
+    wave: "Wave",
+    waveClose: "Cerrar Wave",
+    wavePreparing: "Preparando Wave",
+    waveSlow: "Wave sigue preparándose",
+    waveEmpty: "No hay una Wave relevante",
+    waveTimeout: "Wave agotó el tiempo de espera",
+    waveError: "Wave no disponible",
   },
   likes: {
     ...enDictionary.likes,

@@ -8,11 +8,11 @@ function overlap(a: string[], b: string[]): number {
 }
 // Broad media/category words can retrieve candidates but cannot prove a subject match.
 const BROAD = new Set(('film films movie movies trailer trailers bande annonce cinema cinematic video ' +
-  'food cooking cuisine cafe coffee restaurant art performance music song songs tv ads commercial commercials ' +
+  'food cooking cuisine cafe coffee restaurant art performance music song songs tv ads commercial commercials game games gaming big ' +
   'workshop tutorial guide episode series part compilation giphy tenor gif gifs animated animation ' +
   'love life people time day night world man woman boy girl style').split(/\s+/))
 const PRACTICE_LINKS = new Set(['stone-carving', 'pottery', 'skateboarding', 'surfing', 'football',
-  'guitar-performance', 'punk-performance', 'singing', 'noodle-making', 'cooking', 'commercial',
+  'guitar-performance', 'punk-performance', 'singing', 'noodle-making', 'cooking', 'advertising-media',
   'stop-motion', 'astronomy', 'robotics', 'speedrunning', 'walking-tour', 'rail-travel'])
 /** A generic theme, a hashtag list or common functional words cannot establish a Wave. */
 export function relation(anchor: Profile, candidate: Profile): Relation | null {

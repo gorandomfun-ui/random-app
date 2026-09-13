@@ -54,7 +54,14 @@ const jpDictionary = {
     "randomAgain": "もう一度",
     "like": "いいね",
     "dislike": "よくない",
-    "share": "共有"
+    "share": "共有",
+    "wave": "Wave",
+    "waveClose": "Waveを閉じる",
+    "wavePreparing": "Waveを準備中",
+    "waveSlow": "Waveを引き続き準備中",
+    "waveEmpty": "関連するWaveはありません",
+    "waveTimeout": "Waveの待機時間を超えました",
+    "waveError": "Waveを利用できません"
   },
   "language": {
     "title": "言語"

@@ -54,7 +54,14 @@ const frDictionary = {
     "randomAgain": "Encore",
     "like": "J'aime",
     "dislike": "Je n'aime pas",
-    "share": "Partager"
+    "share": "Partager",
+    "wave": "Wave",
+    "waveClose": "Fermer la Wave",
+    "wavePreparing": "Préparation de la Wave",
+    "waveSlow": "La Wave est encore en préparation",
+    "waveEmpty": "Aucune Wave pertinente",
+    "waveTimeout": "Délai de la Wave dépassé",
+    "waveError": "Wave indisponible"
   },
   "language": {
     "title": "Langue"

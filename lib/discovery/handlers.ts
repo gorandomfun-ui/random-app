@@ -48,18 +48,39 @@ export function randomHandler<T>(deps: Dependencies<T>) {
   }
 }
 export function waveHandler<T>(deps: Dependencies<T>) {
+  const cache = new Map<string, { expiresAt: number; body: Record<string, unknown> }>()
+  const remember = (key: string, body: Record<string, unknown>, ttlMs: number) => {
+    cache.delete(key)
+    cache.set(key, { expiresAt: Date.now() + ttlMs, body })
+    while (cache.size > 64) {
+      const oldest = cache.keys().next().value
+      if (typeof oldest !== 'string') break
+      cache.delete(oldest)
+    }
+  }
   return async (req: Request): Promise<Response> => {
     if (!deps.enabled() && !curatorRequestAllowed(req)) return json({ error: 'disabled' }, 404)
     try {
       const body = await bodyOf(req)
       if (!body || typeof body.anchorId !== 'string' || !/^[a-f\d]{24}$/i.test(body.anchorId)) return json({ error: 'invalid-anchor' }, 400)
-      const db = await deps.getDb(); if (!db) return json({ error: 'unavailable' }, 503)
+      const lang = language(body)
       const requested = Array.isArray(body.types) ? body.types : FORMATS
       const types = FORMATS.filter(x => requested.includes(x))
       const excluded = Array.isArray(body.excludeKeys) ? body.excludeKeys.filter((x): x is string => typeof x === 'string' && x.length <= 2048).slice(0, 80) : []
-      const result = await loadWave(db, body.anchorId, language(body), types, deps.decode, Math.random, Date.now(), excluded)
-      if (!result?.plan.ready) return json({ version: 2, ready: false, reason: 'insufficient-related-content' })
-      return json({ version: 2, anchor: result.anchor, ...result.plan })
+      const cacheKey = JSON.stringify([body.anchorId, lang, types, [...new Set(excluded)].sort()])
+      const cached = cache.get(cacheKey)
+      if (cached && cached.expiresAt > Date.now()) return json(cached.body)
+      if (cached) cache.delete(cacheKey)
+      const db = await deps.getDb(); if (!db) return json({ error: 'unavailable' }, 503)
+      const result = await loadWave(db, body.anchorId, lang, types, deps.decode, Math.random, Date.now(), excluded)
+      if (!result?.plan.ready) {
+        const reply = { version: 2, ready: false, reason: 'insufficient-related-content' }
+        remember(cacheKey, reply, 60_000)
+        return json(reply)
+      }
+      const reply = { version: 2, anchor: result.anchor, ...result.plan }
+      remember(cacheKey, reply, 5 * 60_000)
+      return json(reply)
     } catch { return json({ error: 'unavailable' }, 503) }
   }
 }
