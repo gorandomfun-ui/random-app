@@ -1027,6 +1027,19 @@ async function getCollection(): Promise<Collection<VideoDocument>> {
   return cachedCollection;
 }
 
+async function findExistingVideoIds(collection: Collection<VideoDocument>, videoIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(videoIds.filter(Boolean))];
+  const found = new Set<string>();
+  for (let offset = 0; offset < ids.length; offset += 10) {
+    const rows = await Promise.all(ids.slice(offset, offset + 10).map(videoId => collection.findOne(
+      { type: 'video', videoId } as Filter<VideoDocument>,
+      { projection: { videoId: 1 }, hint: 'uniq_video_id', maxTimeMS: 2000 },
+    )));
+    for (const row of rows) if (row?.videoId) found.add(row.videoId);
+  }
+  return found;
+}
+
 export async function finalizeVideoIngest(
   collected: RawVideo[],
   options: {
@@ -1054,13 +1067,11 @@ export async function finalizeVideoIngest(
   const deduplicated = Array.from(map.values());
   onStage?.('ingest-routine');
   const routineIds = deduplicated.filter(isOrdinaryRoutineVideo).map((video) => video.videoId);
-  const existingRoutineRows = routineIds.length
-    ? await collection.find({ type: 'video', videoId: { $in: routineIds } } as Filter<VideoDocument>)
-      .project<{ videoId?: string }>({ videoId: 1 }).hint('uniq_video_id').maxTimeMS(5000).toArray()
-    : [];
-  const existingRoutineIds = new Set(existingRoutineRows
-    .map((document) => document.videoId)
-    .filter((videoId): videoId is string => typeof videoId === 'string'));
+  onStage?.('ingest-existing');
+  const existingIds = await findExistingVideoIds(collection, insertOnly
+    ? deduplicated.map(video => video.videoId)
+    : routineIds);
+  const existingRoutineIds = new Set(routineIds.filter(videoId => existingIds.has(videoId)));
   onStage?.('ingest-admission');
   const admission = await applyRoutineVideoIngestCap(await getDb(), deduplicated, new Date(), {
     dryRun,
@@ -1124,17 +1135,6 @@ export async function finalizeVideoIngest(
   }
   let writeDocuments = documents;
   if (insertOnly) {
-    onStage?.('ingest-existing');
-    const ids = documents.map((doc) => doc.videoId).filter(Boolean);
-    const existing = ids.length
-      ? await collection
-          .find({ type: 'video', videoId: { $in: ids } } as Filter<VideoDocument>)
-          .project<{ videoId?: string }>({ videoId: 1 })
-          .hint('uniq_video_id')
-          .maxTimeMS(5000)
-          .toArray()
-      : [];
-    const existingIds = new Set(existing.map((doc) => doc.videoId).filter((id): id is string => typeof id === 'string'));
     writeDocuments = documents.filter((doc) => !existingIds.has(doc.videoId));
     summary.existingSkipped = documents.length - writeDocuments.length;
   }
