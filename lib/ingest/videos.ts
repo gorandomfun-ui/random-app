@@ -1056,7 +1056,7 @@ export async function finalizeVideoIngest(
   const routineIds = deduplicated.filter(isOrdinaryRoutineVideo).map((video) => video.videoId);
   const existingRoutineRows = routineIds.length
     ? await collection.find({ type: 'video', videoId: { $in: routineIds } } as Filter<VideoDocument>)
-      .project<{ videoId?: string }>({ videoId: 1 }).toArray()
+      .project<{ videoId?: string }>({ videoId: 1 }).hint('uniq_video_id').maxTimeMS(5000).toArray()
     : [];
   const existingRoutineIds = new Set(existingRoutineRows
     .map((document) => document.videoId)
@@ -1130,6 +1130,8 @@ export async function finalizeVideoIngest(
       ? await collection
           .find({ type: 'video', videoId: { $in: ids } } as Filter<VideoDocument>)
           .project<{ videoId?: string }>({ videoId: 1 })
+          .hint('uniq_video_id')
+          .maxTimeMS(5000)
           .toArray()
       : [];
     const existingIds = new Set(existing.map((doc) => doc.videoId).filter((id): id is string => typeof id === 'string'));
@@ -1151,7 +1153,7 @@ export async function finalizeVideoIngest(
       updatedAt: now,
       rand: Math.random(),
     }));
-    const insertResult = await collection.insertMany(insertDocuments, { ordered: false });
+    const insertResult = await collection.insertMany(insertDocuments, { ordered: false, maxTimeMS: 10000 });
     summary.inserted = insertResult.insertedCount || 0;
 
     if (!skipDetails && summary.inserted > 0) {
