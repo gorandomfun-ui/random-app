@@ -43,13 +43,19 @@ async function main() {
     const { runDiscoveryBatch } = await import('../../lib/discovery/worker')
     const result = await runDiscoveryLoop({ ...config, signal: controller.signal,
       runBatch: options => runDiscoveryBatch(database!, options),
-      onStage: event => console.log(JSON.stringify({ discoveryStage: event })),
+      onStage: process.env.RANDOM_DISCOVERY_DEBUG === '1'
+        ? event => console.log(JSON.stringify({ discoveryStage: event }))
+        : undefined,
       onBatch: report => { reports.push(report); console.log(JSON.stringify(report)) },
     })
-    status = result.failures || reports.some(r => r.ownerSchedulingFailed) ? 'partial' : 'completed'
+    const schedulingFailed = reports.some(r => r.ownerSchedulingFailed)
+    const madeProgress = result.pages > 0 || result.inserted > 0
+    status = schedulingFailed ? 'partial'
+      : result.failures ? madeProgress ? 'completed-with-warnings' : 'failed'
+      : 'completed'
     if (result.stopReason === 'cancelled') status = 'cancelled'
     console.log(JSON.stringify({ status, pages: result.pages, inserted: result.inserted, stopReason: result.stopReason }))
-    if (status !== 'completed') process.exitCode = 1
+    if (['partial', 'failed', 'cancelled'].includes(status)) process.exitCode = 1
   } finally {
     try {
       try { if (lock && database) await releaseDiscoveryRun(database, lock) }

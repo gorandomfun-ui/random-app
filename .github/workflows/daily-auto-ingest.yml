@@ -73,7 +73,7 @@ jobs:
           vars.DAILY_AUTO_DISCOVERY_ENABLED != '0' &&
           github.event.inputs.dry_run != 'true' &&
           (github.event.inputs.discovery_only == 'true' ||
-           (needs.daily-auto-ingest.result == 'success' &&
+           (needs.daily-auto-ingest.result != 'cancelled' &&
             needs.daily-auto-ingest.outputs.ingest_ran == '1')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
