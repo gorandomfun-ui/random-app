@@ -5,7 +5,7 @@ import { recordDailyUsage } from '@/lib/metrics/usage'
 import { curatorRequestAllowed } from '@/lib/discovery/curatorAuth'
 export const runtime = 'nodejs'
 export const POST = randomHandler({
-  enabled: () => process.env.RANDOM_POOL_V2_ENABLED === '1', getDb: getDbSafe,
+  enabled: () => process.env.RANDOM_POOL_V2_ENABLED !== '0', getDb: getDbSafe,
   decode: row => normalizeWaveDocument(row as WaveDocument),
   onSelected: async (item, lang, req) => {
     // Same aggregate counting point as the legacy Random API. Private curation is excluded.

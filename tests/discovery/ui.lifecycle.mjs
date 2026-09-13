@@ -25,7 +25,7 @@ const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></ht
 for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
 window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
 globalThis.requestAnimationFrame=window.requestAnimationFrame.bind(window);globalThis.cancelAnimationFrame=window.cancelAnimationFrame.bind(window)
-let serial=0;const calls=[]
+let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0
 globalThis.fetch=async(input,init={})=>{
  const url=new URL(String(input),'https://test.invalid')
  if(url.pathname==='/api/discovery/random'){
@@ -38,6 +38,13 @@ globalThis.fetch=async(input,init={})=>{
   const req=JSON.parse(init.body);const profile={version:2,tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
   const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
   return Response.json({ready:true,anchor:make('fixture:'+parseInt(req.anchorId,16),'video'),trio:[make('wave1001','video'),make('wave1002','image'),make('wave1003','video')],reserves:[make('wave1004','video')]})
+ }
+ if(url.pathname==='/api/discovery/curation'){
+  if((init.method||'GET')==='GET'){curationReads++;return Response.json({active:curated})}
+  const body=JSON.parse(init.body);curated=body.active===true;curationWrites.push(body);return Response.json({ok:true})
+ }
+ if(url.pathname==='/api/feedback/like'){
+  publicLikeWrites.push({method:init.method,body:JSON.parse(init.body)});return Response.json({success:true,likeCount:init.method==='POST'?1:0})
  }
  return Response.json({ok:true})
 }
@@ -80,5 +87,18 @@ try{
  await until(()=>!leave.disabled);leave.click()
  await until(()=>snapshot()?.discovery?.displayed===8)
  if(snapshot().sequence.draws!==8)throw new Error('Sequence not restored after Wave')
- console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,mode:'JSDOM, player/components boundaries stubbed'},null,2))
+ app.unmount();sessionStorage.removeItem('random-curation-v2-en');localStorage.removeItem('likes')
+ app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true,curationMode:true}))
+ const curationSnapshot=()=>{const raw=sessionStorage.getItem('random-curation-v2-en');return raw?JSON.parse(raw):null}
+ await until(()=>curationSnapshot()?.currentItem&&['video','image'].includes(curationSnapshot().currentItem.type))
+ await until(()=>curationReads>0)
+ const likeButton=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='Like')
+ await until(()=>likeButton&&!likeButton.disabled);likeButton.click()
+ await until(()=>curationWrites.some(x=>x.active===true)&&publicLikeWrites.some(x=>x.method==='POST'))
+ const likedId=String(curationSnapshot().currentItem._id)
+ if(!JSON.parse(localStorage.getItem('likes')||'[]').some(x=>x.itemId===likedId))throw new Error('Curation heart did not enter Your Likes')
+ likeButton.click()
+ await until(()=>curationWrites.some(x=>x.active===false)&&publicLikeWrites.some(x=>x.method==='DELETE'))
+ if(JSON.parse(localStorage.getItem('likes')||'[]').some(x=>x.itemId===likedId))throw new Error('Curation unlike did not leave Your Likes')
+ console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,curationHeart:{yourLikes:true,weLike:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
 }finally{app.unmount();dom.window.close();fs.rmSync(temporary,{recursive:true,force:true})}

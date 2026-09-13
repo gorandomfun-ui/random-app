@@ -4,7 +4,7 @@ import { DiscoveryController } from '../../lib/discovery/controller'
 import { newSession } from '../../lib/discovery/pool'
 import { buildProfile } from '../../lib/discovery/profile'
 import { WaveSession } from '../../lib/discovery/waves'
-import { createCuratorToken, validCuratorToken, matchesCuratorSecret, sameOrigin } from '../../lib/discovery/curatorAuth'
+import { CURATOR_TTL, createCuratorToken, validCuratorToken, matchesCuratorSecret, sameOrigin } from '../../lib/discovery/curatorAuth'
 import { dailymotionPageLoader } from '../../lib/discovery/dailymotion'
 import type { Candidate } from '../../lib/discovery/types'
 import type { DiscoveryTask } from '../../lib/discovery/exploration'
@@ -43,7 +43,7 @@ test('private curation requires configured secret, signed nonexpired cookie and 
   try {
     process.env.RANDOM_CURATOR_SECRET = 'test-only-secret-012345678901234567890'; process.env.RANDOM_EDITOR_OWNER_ID = 'test-owner'
     const now = Date.now(), token = createCuratorToken(now)
-    assert.ok(validCuratorToken(token, now)); assert.ok(!validCuratorToken(token, now + 86400001))
+    assert.ok(validCuratorToken(token, now)); assert.ok(!validCuratorToken(token, now + CURATOR_TTL * 1000 + 1))
     assert.ok(!validCuratorToken(token.slice(0, -2) + 'zz', now)); assert.ok(!matchesCuratorSecret('wrong'))
     assert.ok(!sameOrigin(new Request('https://test.invalid/api', { headers: { origin: 'https://outside.invalid' } })))
     delete process.env.RANDOM_CURATOR_SECRET; assert.ok(!validCuratorToken(token, now))

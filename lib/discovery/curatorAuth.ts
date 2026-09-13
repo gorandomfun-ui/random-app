@@ -1,9 +1,11 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const CURATOR_COOKIE = 'random_curator_v2'
-export const CURATOR_TTL = 24 * 60 * 60
+export const CURATOR_TTL = 365 * 24 * 60 * 60
+const DEFAULT_CURATOR_OWNER_ID = 'random-editor-owner-v2'
 const secret = () => process.env.RANDOM_CURATOR_SECRET ?? ''
-export const curatorConfigured = () => secret().length >= 32 && Boolean(process.env.RANDOM_EDITOR_OWNER_ID)
+export const curatorOwnerId = () => process.env.RANDOM_EDITOR_OWNER_ID?.trim() || DEFAULT_CURATOR_OWNER_ID
+export const curatorConfigured = () => secret().length >= 32
 const digest = (value: string) => createHmac('sha256', secret()).update(value).digest('hex')
 function equal(a: string, b: string): boolean {
   const left = Buffer.from(a), right = Buffer.from(b)

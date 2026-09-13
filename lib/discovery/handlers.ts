@@ -11,7 +11,7 @@ type Dependencies<T> = { enabled: () => boolean; getDb: () => Promise<Db | null>
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
 import { parseSession } from './sessionCodec'
 export { parseSession } from './sessionCodec'
-import { curatorRequestAllowed } from './curatorAuth'
+import { curatorOwnerId, curatorRequestAllowed } from './curatorAuth'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
 export async function bodyOf(req: Request): Promise<Record<string, unknown> | null> {
   if (Number(req.headers.get('content-length') ?? '0') > 65536) return null
@@ -39,7 +39,7 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
       const db = await deps.getDb(); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
-      const choice = await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, process.env.RANDOM_EDITOR_OWNER_ID ?? '')
+      const choice = await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const { editorialFamilies: _families, directEditorialReference: _direct, ...publicCandidate } = choice.item

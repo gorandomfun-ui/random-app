@@ -4333,11 +4333,22 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (curationMode) {
       if (curatorPendingRef.current || !['video', 'image'].includes(item.type)) return
       curatorPendingRef.current = true; setCurationError('')
+      const nextLiked = !liked
       try {
-        const response = await fetch('/api/discovery/curation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item._id, active: !liked }) })
+        const response = await fetch('/api/discovery/curation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item._id, active: nextLiked }) })
         if (!response.ok) throw new Error('Référence non enregistrée. Vérifie ton accès et ce contenu.')
-        if (currentItemRef.current === item) setLiked(!liked)
-        if (!liked) triggerHeartGlitch()
+        if (nextLiked) {
+          if (!isLiked(item)) addLike(item, theme)
+          triggerHeartGlitch()
+        } else if (isLiked(item)) {
+          removeLike(item)
+        }
+        if (currentItemRef.current === item) setLiked(nextLiked)
+        try {
+          window.dispatchEvent(new StorageEvent('storage', { key: 'likes' }))
+        } catch {
+          /* ignore */
+        }
       } catch (cause) { setCurationError(cause instanceof Error ? cause.message : 'Erreur de curation') }
       finally { curatorPendingRef.current = false }
       return
@@ -4499,7 +4510,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       style={mainStyle}
     >
       {curationMode ? <aside className="fixed bottom-2 left-2 z-50 bg-black text-white rounded px-3 py-2 text-xs">
-        <span>Curation privée · Les cœurs vidéo/image orientent le Pool Cool.</span>
+        <span>Curation privée · Les cœurs alimentent Your Likes, We Like et Pool Cool.</span>
         <button type="button" className="ml-3 underline" onClick={async () => { await fetch('/api/discovery/curation/access', { method: 'DELETE' }); window.location.reload() }}>Quitter</button>
         {curationError ? <p role="status">{curationError}</p> : null}
       </aside> : null}

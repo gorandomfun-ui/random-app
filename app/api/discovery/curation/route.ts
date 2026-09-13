@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb'
 import { getDb } from '@/lib/db'
 import { bodyOf } from '@/lib/discovery/handlers'
-import { curatorRequestAllowed, sameOrigin } from '@/lib/discovery/curatorAuth'
+import { curatorOwnerId, curatorRequestAllowed, sameOrigin } from '@/lib/discovery/curatorAuth'
 import { candidateFromRow } from '@/lib/discovery/catalog'
 import { legacySourceSnapshot } from '@/lib/discovery/backfill'
 import { buildProfile } from '@/lib/discovery/profile'
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const itemId = new URL(req.url).searchParams.get('itemId') ?? ''
   if (!/^[a-f\d]{24}$/i.test(itemId)) return json({ active: false })
   try {
-    const row = await (await getDb()).collection('discovery_owner_references_v2').findOne({ ownerId: process.env.RANDOM_EDITOR_OWNER_ID, itemId, active: true }, { maxTimeMS: 700 })
+    const row = await (await getDb()).collection('discovery_owner_references_v2').findOne({ ownerId: curatorOwnerId(), itemId, active: true }, { maxTimeMS: 700 })
     return json({ active: Boolean(row) })
   } catch { return json({ error: 'unavailable' }, 503) }
 }
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const profile = buildProfile(legacySourceSnapshot(row))
     const candidate = candidateFromRow({ ...row, discoveryVersion: 2, discoveryProfile: profile }, null, Date.now())
     if (body.active && (candidate.stock || !candidate.available || candidate.suppressed)) return json({ error: 'Ineligible reference' }, 400)
-    await saveOwnerReference(db, { ownerId: process.env.RANDOM_EDITOR_OWNER_ID!, itemId: body.itemId, contentKey: candidate.key,
+    await saveOwnerReference(db, { ownerId: curatorOwnerId(), itemId: body.itemId, contentKey: candidate.key,
       active: body.active, familyId: profile.family, profile, type: row.type as 'video' | 'image', version: 2, updatedAt: new Date() })
     // Only original owner likes create seeds; discovered descendants never become reference likes.
     if (body.active && row.provider === 'youtube' && typeof row.channelId === 'string') {

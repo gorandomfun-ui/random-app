@@ -173,7 +173,7 @@ export async function GET(req: NextRequest) {
     let payload: PhasePayload
 
     if (phase === 'discovery') {
-      if (dryRun || process.env.RANDOM_DISCOVERY_WORKER_ENABLED !== '1') return NextResponse.json({ ok: true, phase, durationMs: 0, result: { inserted: 0, disabled: true } })
+      if (dryRun || process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '0') return NextResponse.json({ ok: true, phase, durationMs: 0, result: { inserted: 0, disabled: true } })
       const { getDb } = await import('@/lib/db')
       const { runDiscoveryBatch } = await import('@/lib/discovery/worker')
       const result = await runDiscoveryBatch(await getDb())
