@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import CookieSettingsLink from '@/components/CookieSettingsLink'
 import LegalDocumentHeader from '@/components/legal/LegalDocumentHeader'
 import {
@@ -44,7 +45,7 @@ export default function PrivacyContent() {
           <p>
             <a href={`mailto:${PRIVACY_CONTACT}`} className="underline">{PRIVACY_CONTACT}</a>
           </p>
-          <a href="/" className="inline-block underline">{copy.home}</a>
+          <Link href="/" className="inline-block underline">{copy.home}</Link>
         </article>
       </div>
     </main>

@@ -35,9 +35,9 @@ async function main() {
   let database: Awaited<ReturnType<typeof import('../../lib/db')['getDb']>> | undefined
   let connection: Promise<import('mongodb').MongoClient> | undefined
   try {
-    const module = await import('../../lib/db')
-    connection = module.default
-    database = await module.getDb()
+    const databaseModule = await import('../../lib/db')
+    connection = databaseModule.default
+    database = await databaseModule.getDb()
     lock = await acquireDiscoveryRun(database, config.maxMs)
     if (!lock) { status = 'already-running'; console.log('Discovery skipped: another direct runner owns the lease.'); return }
     const { runDiscoveryBatch } = await import('../../lib/discovery/worker')

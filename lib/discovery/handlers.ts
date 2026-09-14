@@ -12,6 +12,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 import { parseSession } from './sessionCodec'
 export { parseSession } from './sessionCodec'
 import { curatorOwnerId, curatorRequestAllowed } from './curatorAuth'
+import { withAbortDeadline } from './exploration'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
 export async function bodyOf(req: Request): Promise<Record<string, unknown> | null> {
   if (Number(req.headers.get('content-length') ?? '0') > 65536) return null
@@ -37,12 +38,13 @@ export function randomHandler<T>(deps: Dependencies<T>) {
     try {
       const body = await bodyOf(req), state = body && parseSession(body.session)
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
-      const db = await deps.getDb(); if (!db) return json({ error: 'unavailable' }, 503)
+      const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
       const choice = await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
-      const { editorialFamilies: _families, directEditorialReference: _direct, ...publicCandidate } = choice.item
+      const publicCandidate = { ...choice.item }
+      delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
       return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection })
     } catch { return json({ error: 'unavailable' }, 503) }
   }
@@ -71,11 +73,14 @@ export function waveHandler<T>(deps: Dependencies<T>) {
       const cached = cache.get(cacheKey)
       if (cached && cached.expiresAt > Date.now()) return json(cached.body)
       if (cached) cache.delete(cacheKey)
-      const db = await deps.getDb(); if (!db) return json({ error: 'unavailable' }, 503)
+      const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const result = await loadWave(db, body.anchorId, lang, types, deps.decode, Math.random, Date.now(), excluded)
       if (!result?.plan.ready) {
+        if (result?.diagnostics.cause === 'retrieval-incomplete') return Response.json({ version: 2,
+          ready: false, error: 'retrieval-incomplete', diagnostics: result.diagnostics },
+        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '1' } })
         const reply = { version: 2, ready: false, reason: 'insufficient-related-content', diagnostics: result?.diagnostics }
-        remember(cacheKey, reply, 60_000)
+        remember(cacheKey, reply, 15_000)
         return json(reply)
       }
       const reply = { version: 2, anchor: result.anchor, ...result.plan, diagnostics: result.diagnostics }

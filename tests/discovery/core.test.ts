@@ -104,7 +104,7 @@ test('ordinary news/radio is a hard Pool Cool exclusion but remains available to
   const general = { ...cool, mode: 'random' as const, branch: 'general' as const, lane: 'any' as const }
   assert.equal(pickPool([routine], general, state, seeded(1), NOW)?.item.key, 'routine')
 })
-test('an overwhelmingly large family does not dominate a family-first draw', () => {
+test('nine singleton families cannot monopolise a sample of 909 items', () => {
   const candidates = Array.from({ length: 900 }, (_, i) => item(`game${i}`, 'gameplay'))
   for (const title of ['guitar', 'football', 'pottery', 'cooking', 'trailer', 'astronomy', 'robotics', 'advertisement', 'punk']) {
     candidates.push(item(title, title))
@@ -113,7 +113,7 @@ test('an overwhelmingly large family does not dominate a family-first draw', () 
   const ticket = { ...planDraw(state, 'video'), mode: 'random' as const, branch: 'general' as const, lane: 'any' as const }
   let gaming = 0
   for (let i = 0; i < 4000; i++) if (pickPool(candidates, ticket, state, random, NOW)?.item.profile.family === 'gaming') gaming++
-  assert.ok(gaming / 4000 < .2, `${gaming}/4000 gaming`)
+  assert.ok(gaming / 4000 > .85 && gaming / 4000 < .99, `${gaming}/4000 gaming: minority boosts stay bounded`)
 })
 test('public engagement scores have no effect on V2 selection', () => {
   const candidates = Array.from({ length: 30 }, (_, i) => item(`${i}`, i % 2 ? 'guitar' : 'pottery'))

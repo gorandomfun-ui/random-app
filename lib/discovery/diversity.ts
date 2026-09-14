@@ -5,6 +5,7 @@ import { isVisual, type Candidate } from './types'
 export type Exposure = {
   type: 'video' | 'image'; family: string; practices: string[]; terms: number[]
   pattern?: string; publicationYear?: number; author?: number; series?: number; subject?: number
+  content?: number; metadata?: string
 }
 export const EXPOSURE_LIMIT = 100
 export function exposureOf(candidate: Candidate): Exposure | null {
@@ -12,6 +13,8 @@ export function exposureOf(candidate: Candidate): Exposure | null {
   const year = candidate.publishedAt == null ? undefined : new Date(candidate.publishedAt).getUTCFullYear()
   return {
     type: candidate.type, family: candidate.profile.family,
+    content: hash(candidate.key),
+    ...(candidate.profile.metadataCluster ? { metadata: candidate.profile.metadataCluster } : {}),
     // Only title-grounded practices: incidental description tags do not establish a format.
     practices: [...new Set(candidate.profile.titlePractices ?? [])].slice(0, 6),
     terms: [...new Set((candidate.profile.titleTokens ?? []).slice(0, 12).map(hash))],
@@ -30,6 +33,7 @@ export function appendExposure(history: readonly Exposure[] | undefined, candida
 const BROAD_PRACTICES = new Set(['cooking', 'singing', 'football', 'gameplay', 'commercial', 'film-trailer', 'home-recording'])
 /** One rule for all recognised practices/patterns; no genre-specific rejection list. */
 function resemblance(a: Exposure, b: Exposure): number {
+  if (a.content != null && a.content === b.content || a.metadata && a.metadata === b.metadata) return 1
   if (a.series != null && a.series === b.series) return 1
   if (a.pattern && a.pattern === b.pattern) return .9
   let commonTerms = 0
@@ -71,27 +75,34 @@ export function diversityWeights<T>(items: readonly Candidate<T>[], history: rea
 }
 
 function cellOf(candidate: Candidate): string {
+  if (candidate.profile.metadataCluster) return `metadata:${candidate.profile.metadataCluster}`
   if (candidate.profile.subject?.primary?.kind === 'entity') return `subject:${candidate.profile.subject.primary.key}`
   if (candidate.profile.pattern) return `pattern:${candidate.profile.pattern}`
   const practices = [...new Set(candidate.profile.titlePractices ?? [])].sort()
   return practices.length ? `practice:${practices.join('|')}` : 'unclassified'
 }
 
-/** Equal opportunities for available families and practices, not for database row counts. */
-export function pickDiverse<T>(items: Candidate<T>[], weights: Map<Candidate<T>, number>, random: Rng): Candidate<T> | null {
-  const families = new Map<string, Map<string, Candidate<T>[]>>()
+/** Item-based lottery with a bounded diversity boost. Averaging the weights of
+ * families/cells gave a singleton the same allocation as thousands of items.
+ * Smoothing and the shared 8x ceiling prevent that inverse-size amplification.
+ * Preference and diversity boosts SHARE the ceiling; they never multiply it. */
+export function pickDiverse<T>(items: Candidate<T>[], weights: Map<Candidate<T>, number>, random: Rng,
+  preferences: ReadonlyMap<Candidate<T>, number> = new Map()): Candidate<T> | null {
+  const families = new Map<string, number>(), cells = new Map<string, number>()
+  const keys = new Map<Candidate<T>, string>()
   for (const candidate of items) {
-    let family = families.get(candidate.profile.family)
-    if (!family) { family = new Map(); families.set(candidate.profile.family, family) }
-    const key = cellOf(candidate), cell = family.get(key) ?? []
-    cell.push(candidate); family.set(key, cell)
+    const family = candidate.profile.family, key = `${family}:${cellOf(candidate)}`
+    keys.set(candidate, key)
+    families.set(family, (families.get(family) ?? 0) + 1)
+    cells.set(key, (cells.get(key) ?? 0) + 1)
   }
-  const cellWeight = (cell: Candidate<T>[]) => cell.reduce((sum, item) => sum + (weights.get(item) ?? 1), 0) / cell.length
-  const family = weighted([...families.values()], cells => {
-    const values = [...cells.values()]
-    return values.reduce((sum, cell) => sum + cellWeight(cell), 0) / values.length
+  let largest = 1
+  for (const candidate of items) largest = Math.max(largest,
+    (8 + families.get(candidate.profile.family)!) * (8 + cells.get(keys.get(candidate)!)!))
+  return weighted(items, candidate => {
+    const size = (8 + families.get(candidate.profile.family)!) * (8 + cells.get(keys.get(candidate)!)!)
+    const balance = Math.sqrt(largest / size)
+    const preference = Math.max(1, Math.min(8, preferences.get(candidate) ?? 1))
+    return (weights.get(candidate) ?? 1) * Math.min(8, balance * preference)
   }, random)
-  if (!family) return null
-  const cell = weighted([...family.values()], cellWeight, random)
-  return cell ? weighted(cell, candidate => weights.get(candidate) ?? 1, random) : null
 }

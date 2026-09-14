@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useI18n } from '@/providers/I18nProvider'
 import CookieSettingsLink from '@/components/CookieSettingsLink'
 import { termsCopy, TERMS_UPDATED_AT, TERMS_CONTACT } from '@/lib/legal/terms'
@@ -19,6 +20,6 @@ export default function TermsContent() {
       <p className="leading-relaxed">{section.body}</p>
     </section>)}
     <p><a href={`mailto:${TERMS_CONTACT}`} className="underline">{TERMS_CONTACT}</a></p>
-    <a href="/" className="inline-block underline">{copy.home}</a>
+    <Link href="/" className="inline-block underline">{copy.home}</Link>
   </main>
 }

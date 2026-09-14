@@ -23,7 +23,8 @@ for (const mode of ['normal', 'youtube-rate-limit']) test(`MongoDB: real direct 
       child.stdout.on('data', b => { out += b }); child.stderr.on('data', b => { err += b })
       child.on('error', reject); child.on('exit', code => resolve({ code, out, err }))
     })
-    assert.equal(result.code, mode === 'normal' ? 0 : 1, result.out + result.err)
+    // A provider warning with real progress exits cleanly in 6797fa1; it is still reported.
+    assert.equal(result.code, 0, result.out + result.err)
     const rows = await db.collection('items').find({ type: 'video' }).toArray()
     assert.equal(rows.filter(r => r.provider === 'dailymotion').length, 1)
     assert.equal(rows.filter(r => r.provider === 'youtube').length, mode === 'normal' ? 1 : 0)
@@ -32,7 +33,10 @@ for (const mode of ['normal', 'youtube-rate-limit']) test(`MongoDB: real direct 
     const messages = result.out.split('\n').filter(x => x.startsWith('{')).map(x => JSON.parse(x))
     assert.equal(messages.filter(x => x.provider).length, 2)
     assert.equal(messages.filter(x => x.provider).reduce((n, x) => n + x.inserted, 0), rows.length)
-    if (mode === 'youtube-rate-limit') assert.equal(messages.find(x => x.provider === 'youtube').errors.rateLimit, 3)
+    if (mode === 'youtube-rate-limit') {
+      assert.equal(messages.find(x => x.provider === 'youtube').errors.rateLimit, 3)
+      assert.equal(messages.find(x => x.status)?.status, 'completed-with-warnings')
+    }
     assert.ok(!result.out.includes('FAKE_TEST_KEY') && !result.err.includes('FAKE_TEST_KEY'))
   } finally { await db.dropDatabase(); await client.close() }
 })

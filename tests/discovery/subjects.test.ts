@@ -25,13 +25,13 @@ test('Random reduces repeated subjects across different treatments, without ever
   assert.ok(weights.get(next)! > 0)
   assert.equal(pickDiverse([next], weights, seeded(1)), next)
 })
-test('a thousand Johnny items do not overwhelm another named subject in the same family', () => {
+test('one named-subject item cannot reserve half the draws against a thousand different items', () => {
   const candidates = Array.from({ length: 1000 }, (_, i) => item(`johnny${i}`, `Johnny Hallyday collection ${i}`))
   const other = item('other', 'Nora Legrand collection'); candidates.push(other)
   const weights = diversityWeights(candidates, []), random = seeded(3)
   let selected = 0
   for (let i = 0; i < 300; i++) selected += Number(pickDiverse(candidates, weights, random)?.key === 'other')
-  assert.ok(selected > 90 && selected < 210, String(selected))
+  assert.ok(selected > 0 && selected < 15, `${selected}/300: bounded boost, not a 50% allocation`)
 })
 test('subject exposure survives session restoration, rejects invalid values and accepts pre-correction sessions', () => {
   const state = { ...newSession(1), exposures: appendExposure([], item('one', 'South Park GIF', 'image')) }
@@ -67,7 +67,7 @@ test('unknown multi-word names use the same subject mechanism without adding a r
 })
 test('an incidental named phrase in a poetic subtitle does not hijack an advertising compilation', () => {
   const anchor = buildProfile({ title: '50 Minutes of Mid 80s TV Ads: Unearthed from the Depths of Betamax Oblivion' })
-  assert.equal(anchor.subject?.primary, undefined)
+  assert.equal(anchor.subject?.primary?.key, 'topic:advertising-media')
   assert.ok(relation(anchor, buildProfile({ title: '1968 Ford Falcon Commercial' })))
 })
 test('desert fun retains both the setting and explicitly supported mood', () => {

@@ -2,6 +2,7 @@ import type { Db } from 'mongodb'
 import type { PageLoader } from './exploration'
 import type { RawVideo } from '../ingest/videos'
 import { quotaDay } from './exploration'
+import { providerError } from './providerErrors'
 
 export type DailymotionSpec = { kind: 'dailymotion'; query?: string; category?: string;
   after: string; before: string; sort: 'recent' | 'relevance' | 'old' | 'least-visited' }
@@ -30,7 +31,7 @@ export function dailymotionPageLoader(request: typeof fetch = fetch): PageLoader
     if (spec.query) params.set('search', spec.query)
     if (spec.category) params.set('channel', spec.category)
     const response = await request(`https://api.dailymotion.com/videos?${params}`, { signal })
-    if (!response.ok) throw new Error(`dailymotion-status-${response.status}`)
+    if (!response.ok) throw await providerError(response, 'dailymotion', 'search')
     const body = await response.json() as { has_more?: boolean; list?: Array<Record<string, unknown>> }
     const videos = (body.list ?? []).slice(0, 50).flatMap((row): RawVideo[] => {
       if (typeof row.id !== 'string' || !/^[a-z\d]+$/i.test(row.id) || row.private === true) return []

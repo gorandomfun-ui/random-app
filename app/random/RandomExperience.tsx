@@ -27,6 +27,7 @@ import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controlle
 import { newSession, type Session as DiscoverySession } from '@/lib/discovery/pool'
 import { parseSession as parseDiscoverySession } from '@/lib/discovery/sessionCodec'
 import { WaveSession, type WavePlan } from '@/lib/discovery/waves'
+import { requestWavePlan } from '@/lib/discovery/clientRequest'
 import type { Candidate } from '@/lib/discovery/types'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType, VideoPool } from '@/lib/random/types'
@@ -3506,8 +3507,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     try {
       if (waveDiscoveryMode) {
         discoveryWaveRef.current = null
-        const response = await fetch('/api/discovery/wave', { method: 'POST', signal: controller.signal,
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ anchorId: anchorItem._id, lang: locale || 'en', types: ALL_ITEM_TYPES, excludeKeys: discoveryRef.current.snapshot().recent.map(x => x.key) }) })
+        const response = await requestWavePlan({ anchorId: anchorItem._id, lang: locale || 'en', types: ALL_ITEM_TYPES,
+          excludeKeys: discoveryRef.current.snapshot().recent.map(x => x.key) }, controller.signal)
         if (!response.ok) {
           wavePreparationOutcomeRef.current = 'error'
           return false
@@ -3641,17 +3642,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     let disposed = false
     let timer: number | null = null
     let slowTimer: number | null = null
+    const started = performance.now()
+    slowTimer = window.setTimeout(() => {
+      setWaveAvailability(previous => previous.key === anchorKey && previous.status === 'preparing'
+        ? { key: anchorKey, status: 'slow' } : previous)
+    }, WAVE_SLOW_NOTICE_MS)
     const prepareWhenRandomQueueIsReady = () => {
       if (disposed) return
-      if (randomReadyQueueRef.current.length < 2 && randomReadyPromiseRef.current) {
+      if (randomReadyQueueRef.current.length < 2 && randomReadyPromiseRef.current && performance.now() - started < 1500) {
         timer = window.setTimeout(prepareWhenRandomQueueIsReady, 220)
         return
       }
-      slowTimer = window.setTimeout(() => {
-        setWaveAvailability(previous => previous.key === anchorKey && previous.status === 'preparing'
-          ? { key: anchorKey, status: 'slow' }
-          : previous)
-      }, WAVE_SLOW_NOTICE_MS)
       void ensureWaveTrail(currentItem).then((ready) => {
         if (disposed || currentItemRef.current !== currentItem) return
         if (slowTimer != null) window.clearTimeout(slowTimer)

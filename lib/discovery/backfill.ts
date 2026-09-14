@@ -6,10 +6,14 @@ import type { SourceMetadata } from './types'
 export function legacySourceSnapshot(row: Record<string, unknown>): SourceMetadata {
   const str = (value: unknown) => typeof value === 'string' ? value : undefined
   const apiTags = Array.isArray(row.apiTags) ? row.apiTags.filter((x): x is string => typeof x === 'string') : undefined
-  if (row.sourceMetadata && typeof row.sourceMetadata === 'object') return row.sourceMetadata as SourceMetadata
+  if (row.sourceMetadata && typeof row.sourceMetadata === 'object') {
+    const source = row.sourceMetadata as SourceMetadata
+    return row.provider === 'dailymotion' && row.discoveryProvenance === 'legacy-source-fields' && !row.metadataRefreshedAt
+      ? { ...source, legacyUnverified: true } : source
+  }
   if (row.type === 'video' && row.provider === 'youtube') return { title: str(row.title), description: str(row.description), tags: apiTags }
   // Old DM titles could be the search query, and old channelId could be a category. Do not infer either.
-  if (row.type === 'video' && row.provider === 'dailymotion') return { description: str(row.description) }
+  if (row.type === 'video' && row.provider === 'dailymotion') return { description: str(row.description), legacyUnverified: true }
   if (row.type === 'image' && ['giphy', 'tenor', 'pexels', 'pixabay'].includes(String(row.provider))) return { title: str(row.title), description: str(row.description) }
   if (['quote', 'joke', 'fact'].includes(String(row.type))) {
     const quiz = row.quiz as { question?: string } | undefined

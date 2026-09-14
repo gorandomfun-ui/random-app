@@ -1,5 +1,7 @@
 import { PROFILE_VERSION, type Profile, type SourceMetadata } from './types'
-import { analyseSubject } from './subjects'
+import { analyseSubject, topicSubject, foldSubject } from './subjects'
+import { metadataIntegrity, plainSource } from './integrity'
+import { sourceRevision } from './sourceRevision'
 
 // Broad themes balance Random; they are deliberately insufficient to establish a Wave.
 const RULES: Record<string, Record<string, string[]>> = {
@@ -10,7 +12,7 @@ const RULES: Record<string, Record<string, string[]>> = {
   art: { 'performance-art': ['performance art', 'performance artistique', 'aktionskunst'], 'stop-motion': ['stop motion', 'ストップモーション'] },
   advertising: { 'advertising-media': ['commercials', 'tv ads', 'television ads', 'tv commercial', 'tv commercials',
     'television commercial', 'television commercials', 'commercial compilation', 'commercial break',
-    'advertisement', 'advertisements', 'publicité', 'publicites', 'werbespot', 'werbung', 'anuncio', '広告'] },
+    'publicité', 'publicites', 'werbespot', 'werbung', 'anuncio', '広告'] },
   cinema: { 'film-trailer': ['trailer', 'bande annonce', '予告編'], 'short-film': ['short film', 'court métrage', 'kurzfilm', '短編映画'] },
   science: { 'experiment': ['experiment', 'expérience scientifique', 'experimento', '実験'], 'astronomy': ['astronomy', 'astronomie', 'astronomía', '天文学'] },
   gaming: { 'speedrunning': ['speedrun', 'speedrunning'], 'gameplay': ['gameplay', 'let s play', '実況プレイ'] },
@@ -18,7 +20,7 @@ const RULES: Record<string, Record<string, string[]>> = {
   travel: { 'walking-tour': ['walking tour', 'rain walk', 'walk pov', 'pov walk', 'visite à pied', 'stadtrundgang', '街歩き'], 'rail-travel': ['train journey', 'voyage en train', 'zugfahrt', '鉄道旅行'] },
   everyday: { 'home-recording': ['home video', 'vidéo de famille', 'heimvideo', 'video casero', 'ホームビデオ'] },
 }
-const STOP = new Set(('the and this that with from for your you are was were what have has ' +
+const STOP = new Set(('the and this that with from for your you are was were what have has him himself herself myself ourselves themselves thought every once still said says thing things shown shows someone something ' +
   'les des une dans avec pour sur est qui que pas par du un et de le la au aux ' +
   'der die das ein eine und mit von für ist aus dem den zu ' +
   'los las una con por para del el en y ' +
@@ -28,9 +30,12 @@ const STOP = new Set(('the and this that with from for your you are was were wha
   'comment pourquoi savoir nous vous votre vos notre nos sont etre c est ce ces cette cet ses son sa aussi plus moins tres tous tout toutes comme faire fait dans cette video abonnez merci ' +
   'wie warum wissen nicht auch aber dieser diese dieses sind bitte danke mais porque como voce voces seu sua tudo muito apenas foi este esta aqui gracias esto esta esto solo todo todos' ).split(/\s+/))
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' })
-export const SIGNAL_VERSION = 3
+const CATEGORIES: Record<string, string> = { '20': 'gaming', videogames: 'gaming', '10': 'music', music: 'music',
+  '17': 'sport', sport: 'sport', '28': 'science', school: 'science', '19': 'travel', travel: 'travel',
+  tech: 'technology', '22': 'everyday', people: 'everyday', lifestyle: 'everyday', '1': 'cinema', shortfilms: 'cinema', creation: 'art' }
+export const SIGNAL_VERSION = 6
 export function normalize(text: string): string {
-  return text.normalize('NFKC').toLocaleLowerCase('und').normalize('NFD').replace(/\p{M}+/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  return foldSubject(text)
 }
 export function tokensOf(text: string): string[] {
   return [...new Set([...segmenter.segment(normalize(text).slice(0, 6000))]
@@ -41,13 +46,12 @@ export function tokensOf(text: string): string[] {
 const PROMO = /^(?:(?:tags?|keywords?|hashtags?|related tags?|tegs)(?:\s*[:=-]|\s*$)|copyright\b|all rights\b|disclaimer\b|aviso\b|creditos\b|subscribe\b|follow (?:me|us)\b|support (?:me|us|the)\b|don't forget\b|do not forget\b|abonnez|suivez|merci de|suscrib|inscreva)/iu
 
 function plainText(value: string): string {
-  return value.replace(/<[^>]{0,500}>/g, ' ').replace(/https?:\/\/\S+/g, ' ')
-    .replace(/&(?:amp|quot|apos|lt|gt|nbsp);/g, ' ')
+  return plainSource(value)
 }
 function tagList(value: string): boolean {
   return (value.match(/,/g)?.length ?? 0) >= 8 || (value.match(/#/g)?.length ?? 0) >= 4
 }
-const ADVERTISING_MEDIA_TITLE = /(?:^| )(?:(?:tv|television|radio|vintage|classic|retro) commercials?|[12]\d{3}(?: [\p{L}\p{N}]+){0,6} commercials?|commercials? (?:compilation|break|collection|restored)|(?:ads?|advertisements?) (?:compilation|break|collection|restored))(?: |$)/u
+const ADVERTISING_MEDIA_TITLE = /(?:^| )(?:(?:tv|television|radio|vintage|classic|retro) (?:commercials?|advertisements?)|[12]\d{3}(?: [\p{L}\p{N}]+){0,6} commercials?|commercials? (?:compilation|break|collection|restored)|(?:ads?|advertisements?) (?:compilation|break|collection|restored))(?: |$)/u
 export function cleanDescription(value: string): string {
   const result: string[] = []
   for (const raw of plainText(value.slice(0, 3500)).split(/[\r\n]+/)) {
@@ -82,33 +86,52 @@ function classify(value: string): { practices: string[]; themes: string[] } {
   }
   return { practices: [...new Set(practices)], themes: [...new Set(themes)] }
 }
+
+/** A quoted work named by a quiz/question is an answer option, not the question's subject. */
+function subjectBearingTitle(value: string): string {
+  if (!/(?:known for|which (?:show|film|artist|band)|songs?|tracks?|titled|called)/iu.test(value)) return value
+  return value.replace(/["“”„«»][^"“”„«»]{1,160}["“”„«»]/gu, ' ')
+}
 export function buildProfile(source: SourceMetadata): Profile {
-  const rawTitle = plainText((source.title ?? '').slice(0, 500))
+  const integrity = metadataIntegrity(source.title ?? '', source.description ?? '', source.legacyUnverified)
+  const rawTitle = source.legacyUnverified ? '' : plainText((source.title ?? '').slice(0, 500))
   const title = tagList(rawTitle) ? rawTitle.split(/[#，,]/u)[0] : rawTitle.split(/#[\p{L}_]/u)[0]
-  const description = cleanDescription(source.description ?? '')
-  const primary = classify(title), secondary = classify(description)
+  const semanticTitle = subjectBearingTitle(title)
+  const description = integrity.reliable ? cleanDescription(source.description ?? '') : ''
+  const primary = classify(semanticTitle), secondary = classify(description)
   const titleTokens = tokensOf(title).slice(0, 32)
   const tokens = [...new Set([...titleTokens, ...tokensOf(description)])].slice(0, 64)
   const entities = [...new Set((source.entities ?? []).map(normalize).filter(Boolean))].slice(0, 12)
   // An unambiguous title wins over incidental subjects in the description.
-  const themes = primary.themes.length ? primary.themes : secondary.themes
+  const themes = primary.themes.length ? primary.themes : secondary.themes.length ? secondary.themes
+    : integrity.reliable && source.category && CATEGORIES[source.category] ? [CATEGORIES[source.category]] : []
   const practices = primary.practices.length ? primary.practices : secondary.practices
   const normalizedTitle = normalize(title)
-  let subject = analyseSubject(title, source.primarySubject)
+  let subject = analyseSubject(semanticTitle, source.primarySubject, CATEGORIES[source.category ?? ''] === 'music')
+  // The same explicit practice vocabulary already used by Waves also supplies owner searches.
+  // This covers ordinary topics without inventing a capitalised person or requiring a manual registry entry.
+  const practiceTopics = primary.practices.flatMap(practice => {
+    const aliases = Object.values(RULES).map(rules => rules[practice]).find(Boolean)
+    return aliases ? [topicSubject(practice, aliases)] : []
+  }).filter(topic => topic.key !== subject.primary?.key && !subject.secondary.some(s => s.key === topic.key))
+  if (!subject.primary && practiceTopics.length) subject.primary = practiceTopics.shift()
+  subject.secondary = [...subject.secondary, ...practiceTopics].slice(0, 6)
   // A camera filename can still have a useful, real description. Do not replace a descriptive title.
-  if (!subject.primary && (!titleTokens.length || /^(?:(?:img|dsc|mov|vid)[ _.-]*\d[\d _.-]*|video(?:[ _.-]*\d+)?|untitled|sans titre)(?:\.[a-z0-9]{2,5})?$/i.test(title.trim()))) {
-    const described = analyseSubject(description.split(/[.!?]\s/u)[0])
+  if (!subject.primary && (integrity.sparse || !titleTokens.length)) {
+    const described = analyseSubject(description.split(/[.!?]\s/u)[0], source.primarySubject)
     if (described.primary) subject = { ...subject,
       primary: { ...described.primary, evidence: 'description' }, secondary: described.secondary,
       moods: described.moods, treatments: described.treatments }
   }
   const ai = /(?:^| )(?:ai|ia|ki|generative|generated|ghibli|sora)(?: |$)/u.test(normalizedTitle)
   const narrative = /(?:^| )(?:story|stories|storytelling|novel|romance|roman|histoire|histoires)(?: |$)/u.test(normalizedTitle)
-  return { version: PROFILE_VERSION, signalVersion: SIGNAL_VERSION, tokens, titleTokens,
+  return { version: PROFILE_VERSION, signalVersion: SIGNAL_VERSION, sourceRevision: sourceRevision(source), tokens, titleTokens,
+    metadataQuality: !integrity.reliable ? 'unverified' : integrity.sparse ? 'sparse' : 'usable',
+    ...(integrity.cluster ? { metadataCluster: integrity.cluster } : {}),
     subject,
     titlePractices: primary.practices, entities, practices, themes, family: themes[0] ?? 'unknown',
     ...(ai && narrative ? { pattern: 'ai-narrative' } : {}),
-    evidence: tokens.length >= 2 || practices.length > 0 || entities.length > 0 ? 'described' : 'unknown' }
+    evidence: integrity.reliable && (tokens.length >= 2 || practices.length > 0 || entities.length > 0) ? 'described' : 'unknown' }
 }
 
 export function isStockProvider(provider: string, url = ''): boolean {

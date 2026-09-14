@@ -20,13 +20,13 @@ export function validDate(value?: string | Date): Date | undefined {
   return Number.isFinite(date.getTime()) ? date : undefined
 }
 export function videoDiscoveryFields(raw: {
-  provider: string; title?: string; description?: string; apiTags?: string[]; contextQueries?: string[];
+  provider: string; title?: string; description?: string; apiTags?: string[]; contextQueries?: string[]; categoryId?: string;
   publishedAt?: string | Date; trendObservedAt?: Date; viewCount?: number;
   statsObservedAt?: Date; sourceStatus?: DiscoveryVideoFields['sourceStatus']
 }, now = new Date()): DiscoveryVideoFields {
   // A Reddit post title is not the video's source metadata. Keep it in the legacy display fields only.
   const sourceMetadata: SourceMetadata = raw.provider === 'reddit-youtube' ? {} : {
-    title: raw.title ?? '', description: raw.description ?? '', tags: raw.apiTags ?? [] }
+    title: raw.title ?? '', description: raw.description ?? '', tags: raw.apiTags ?? [], category: raw.categoryId }
   const profile = buildProfile(sourceMetadata)
   const publishedAt = validDate(raw.publishedAt), trendObservedAt = validDate(raw.trendObservedAt)
   const statsObservedAt = validDate(raw.statsObservedAt)

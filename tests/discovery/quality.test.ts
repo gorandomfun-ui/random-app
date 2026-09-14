@@ -65,15 +65,16 @@ test('Giphy variants share identity; unknown image variants are preserved; old h
   assert.equal(state.recent[0].key, ids[0])
   assert.equal(pickPool([candidate(ids[0], 'cooking', { type: 'image' })], planDraw(state, 'image'), state, seeded(1), now), null)
 })
-test('an available observed trend wins over an old editorial neighbor', () => {
+test('trend and owner priorities remain influences; neither makes the other unreachable', () => {
   const state = newSession(1)
   const ticket: Intent = { ...planDraw(state, 'video'), mode: 'cool', branch: 'editorial', lane: 'trend', allowDirectReference: true }
   const old = candidate('old', 'stone carving', { editorialFamilies: ['craft'] })
   const trend = candidate('trend', 'guitar performance', { trendObservedAt: now - 60000 })
-  const selected = pickPool([old, trend], ticket, state, seeded(1), now, { craft: 5 })!
-  assert.equal(selected.item.key, 'trend')
-  assert.equal(selected.selection?.servedLane, 'trend')
-  assert.deepEqual(selected.selection?.reasons, ['editorial-match-unavailable'])
+  const random = seeded(1)
+  const choices = Array.from({ length: 200 }, () => pickPool([old, trend], ticket, state, random, now, { craft: 5 })!)
+  assert.ok(choices.some(c => c.item.key === 'trend') && choices.some(c => c.item.key === 'old'))
+  assert.ok(choices.filter(c => c.item.key === 'trend').every(c => c.selection?.servedLane === 'trend'))
+  assert.ok(choices.filter(c => c.item.key === 'old').every(c => c.selection?.reasons.includes('requested-lane-balanced')))
 })
 test('recent means a real upload date; absent, future or old dates are not fabricated', () => {
   const state = newSession(1), ticket: Intent = { ...planDraw(state, 'video'), branch: 'autonomous', lane: 'recent' }

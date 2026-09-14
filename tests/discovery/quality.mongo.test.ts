@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { MongoClient, ObjectId } from 'mongodb'
 import { randomUUID } from 'node:crypto'
-import { buildProfile } from '../../lib/discovery/profile'
+import { buildProfile, SIGNAL_VERSION } from '../../lib/discovery/profile'
 import { candidateFromRow } from '../../lib/discovery/catalog'
 import { loadWave, selectPool, installDiscoveryIndexes } from '../../lib/discovery/mongo'
 import { saveOwnerReference, applyOwnerReferences, installOwnerIndexes } from '../../lib/discovery/ownerStore'
@@ -45,7 +45,7 @@ test('MongoDB: stale indexed profiles are corrected without writes; owner refere
     const result = await loadWave(db, String(anchor._id), 'en', ['video', 'image'], decode, seeded(1), now)
     assert.ok(result?.plan.ready)
     assert.ok(result.plan.trio.every(x => x.payload.title.startsWith('Stone carving')))
-    assert.ok(result.plan.trio.every(x => x.profile.signalVersion === 3))
+    assert.ok(result.plan.trio.every(x => x.profile.signalVersion === SIGNAL_VERSION))
     const stored = await db.collection('items').findOne({ _id: anchor._id })
     assert.equal(stored?.discoveryProfile.signalVersion, undefined)
     await saveOwnerReference(db, { ownerId: 'owner', contentKey: `youtube:${anchor.videoId}`, itemId: String(anchor._id),
@@ -73,9 +73,14 @@ test('MongoDB: editorial retrieval preserves a trend lane and seen-only trends d
     const decode = (row: Record<string, unknown>) => String(row._id)
     let state = newSession(1)
     const ticket: Intent = { ...planDraw(state, 'video'), branch: 'editorial', lane: 'trend', allowDirectReference: true }
-    const first = await selectPool(db, ticket, state, 'en', decode, seeded(1), now, undefined, 'owner')
-    assert.equal(first?.item.key, 'youtube:trend')
-    state = commitDraw(state, ticket, first!.item)
+    let trendHits = 0
+    for (let i = 0; i < 60; i++) {
+      const choice = await selectPool(db, ticket, state, 'en', decode, seeded(i), now, undefined, 'owner')
+      assert.ok(choice)
+      trendHits += Number(choice.item.key === 'youtube:trend')
+    }
+    assert.ok(trendHits > 20 && trendHits < 58, `${trendHits}/60: trend preference must stay non-exclusive`)
+    state = commitDraw(state, ticket, candidateFromRow(trending, decode(trending), now))
     const next = await selectPool(db, { ...ticket, revision: state.revision }, state, 'en', decode, seeded(1), now, undefined, 'owner')
     assert.equal(next?.item.key, 'youtube:general')
     assert.equal(next?.selection?.servedLane, 'any')

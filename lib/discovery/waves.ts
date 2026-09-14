@@ -7,32 +7,24 @@ function shared(a: string[], b: string[]): string[] { const set = new Set(b); re
 function overlap(a: string[], b: string[]): number {
   return a.length && b.length ? shared(a, b).length / Math.max(1, Math.min(a.length, b.length)) : 0
 }
-// Broad media/category words can retrieve candidates but cannot prove a subject match.
-const BROAD = new Set(('film films movie movies trailer trailers bande annonce cinema cinematic video ' +
-  'food cooking cuisine cafe coffee restaurant art performance music song songs tv ads commercial commercials game games gaming big ' +
-  'workshop tutorial guide episode series part compilation giphy tenor gif gifs animated animation ' +
-  'love life people time day night world man woman boy girl style').split(/\s+/))
-const PRACTICE_LINKS = new Set(['stone-carving', 'pottery', 'skateboarding', 'surfing', 'football',
-  'guitar-performance', 'punk-performance', 'singing', 'noodle-making', 'cooking', 'advertising-media',
-  'stop-motion', 'astronomy', 'robotics', 'speedrunning', 'walking-tour', 'rail-travel'])
 /** A generic theme, a hashtag list or common functional words cannot establish a Wave. */
 export function relation(anchor: Profile, candidate: Profile): Relation | null {
   if (anchor.signalVersion !== SIGNAL_VERSION || candidate.signalVersion !== SIGNAL_VERSION) return null
-  const subject = matchSubject(anchor.subject, candidate.subject)
-  if (subject !== undefined) return subject
-  const entities = shared(anchor.entities, candidate.entities)
-  const meaningful = (values: string[]) => values.filter(x => !BROAD.has(x))
-  const titles = shared(meaningful(anchor.titleTokens ?? []), meaningful(candidate.titleTokens ?? []))
-  const terms = shared(meaningful(anchor.tokens), meaningful(candidate.tokens))
-  // Practice-only matching requires explicit title evidence on BOTH sides.
-  const practices = shared(anchor.titlePractices ?? [], candidate.titlePractices ?? [])
-    .filter(x => PRACTICE_LINKS.has(x))
-  const titleLink = titles.length >= 2 || (meaningful(anchor.titleTokens ?? []).length <= 3 && titles.some(x => x.length >= 7))
-  if (!entities.length && !titleLink && !practices.length) return null
-  const score = entities.length ? .94 : titleLink ? Math.min(.92, .76 + .04 * titles.length)
-    : .62
-  return { score, reasons: [...entities.map(x => `entity:${x}`), ...titles.map(x => `title:${x}`),
-    ...practices.map(x => `title-practice:${x}`), ...terms.filter(x => !titles.includes(x)).slice(0, 3).map(x => `term:${x}`)] }
+  if (anchor.metadataQuality === 'unverified' || candidate.metadataQuality === 'unverified') return null
+  return matchSubject(anchor.subject, candidate.subject)
+}
+
+/** For named subjects, unknown video treatments do not prove that three videos differ.
+ * A mixed-media trio supplies format diversity. A video-only trio needs positive
+ * evidence of two treatments, each represented by a different item. */
+export function hasWaveVariety(anchor: Candidate, items: Candidate[]): boolean {
+  if (items.length !== 3) return false
+  if (!items.every(x => x.type === 'video')) return true
+  if (items.every(x => x.profile.subject?.treatments.includes('music-video'))) return false
+  if (anchor.profile.subject?.primary?.kind !== 'entity') return true
+  const treatments = items.map(x => x.profile.subject?.treatments ?? [])
+  return treatments.some((a, i) => treatments.some((b, j) => i !== j &&
+    a.some(x => !b.includes(x)) && b.some(x => !a.includes(x))))
 }
 
 export function duplicates(a: Candidate, b: Candidate): boolean {
@@ -45,7 +37,8 @@ function redundancy(a: Candidate, b: Candidate): number {
 }
 function validSet(items: Candidate[]): boolean {
   if (items.filter(x => x.type === 'image').length > 2 || items.filter(x => x.quiz).length > 1) return false
-  return !items.some((x, i) => items.slice(0, i).some(y => duplicates(x, y)))
+  return !items.some((x, i) => items.slice(0, i).some(y => duplicates(x, y) || Boolean(
+    x.profile.metadataCluster && x.profile.metadataCluster === y.profile.metadataCluster)))
 }
 function interleaveTreatments<T>(items: Candidate<T>[]): Candidate<T>[] {
   const groups = new Map<string, Candidate<T>[]>()
@@ -88,7 +81,7 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
     if (chosen.length === needed) {
       if (anchor.type === 'video' && !all.some(x => x.type === 'video')) return
       // Three clips of the same artist are not three different discoveries.
-      if (all.every(x => x.type === 'video' && x.profile.subject?.treatments.includes('music-video'))) return
+      if (!hasWaveVariety(anchor, all)) return
       const priority = 2 * Number(all.some(x => x.type === 'video')) + Number(new Set(all.map(x => x.type)).size >= 2)
       const sum = all.reduce((v, x) => v + (ranks.get(x.key) ?? relation(anchor.profile, x.profile))!.score, 0) / 3
       const red = (redundancy(all[0], all[1]) + redundancy(all[0], all[2]) + redundancy(all[1], all[2])) / 3

@@ -11,16 +11,22 @@ export type SourceMetadata = {
   entities?: string[]
   /** Optional trusted source annotation; never populated from a search query. */
   primarySubject?: import('./subjects').SubjectHint
+  /** Unverified legacy fields cannot establish strong semantic relations. */
+  legacyUnverified?: boolean
+  category?: string
 }
 export type Profile = {
   version: typeof PROFILE_VERSION
   /** Matching revision, independent of the persisted catalogue schema version. */
   signalVersion?: number
+  sourceRevision?: string
   titleTokens?: string[]
   titlePractices?: string[]
   subject?: import('./subjects').SubjectAnalysis
   /** Conservative classification for session repetition, never a verified series ID. */
   pattern?: string
+  metadataQuality?: 'usable' | 'sparse' | 'unverified'
+  metadataCluster?: string
   tokens: string[]
   entities: string[]
   practices: string[]

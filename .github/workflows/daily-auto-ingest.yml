@@ -109,5 +109,9 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate direct runner configuration
         run: npm run discovery:explore -- --check
+      - name: Repair a bounded sample of existing video metadata
+        if: ${{ vars.RANDOM_METADATA_REPAIR_ENABLED != '0' }}
+        continue-on-error: true
+        run: node --import tsx scripts/discovery/repair-metadata.ts --apply
       - name: Explore YouTube and Dailymotion directly
         run: npm run discovery:explore

@@ -39,13 +39,13 @@ test('the same repetition rule applies to multiple practices and allows recovery
     assert.ok(recent > 0, title)
   }
 })
-test('crowded subgenres do not swamp another practice in the same family', () => {
+test('a minority practice receives a bounded boost rather than half the traffic regardless of supply', () => {
   const candidates = [...Array.from({ length: 950 }, (_, i) => item(`walk${i}`, 'Walking tour city')),
     ...Array.from({ length: 50 }, (_, i) => item(`train${i}`, 'Train journey mountains'))]
   const random = seeded(92), state = newSession(92), ticket = general(state)
   let walks = 0
   for (let i = 0; i < 1000; i++) walks += Number(pickPool(candidates, ticket, state, random, now)?.item.key.startsWith('walk'))
-  assert.ok(walks > 400 && walks < 600, `${walks}/1000 walks in a 95% walking sample`)
+  assert.ok(walks > 750 && walks < 900, `${walks}/1000 walks in a 95% walking sample`)
 })
 test('Cool, general and actually displayed Wave items share exposure memory', () => {
   let state = newSession(1)

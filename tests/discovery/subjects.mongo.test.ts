@@ -41,7 +41,7 @@ test('Mongo: a rare South Park trio is retrieved among 1200 park/south distracto
   } finally { await db.dropDatabase(); await client.close() }
 })
 
-test('Mongo: active existing likes seed subject searches without a new like or rewriting the reference', { skip: !uri }, async () => {
+test('Mongo: active existing likes seed subject searches without a new like; scheduling refreshes only that reference', { skip: !uri }, async () => {
   const client = new MongoClient(uri!), db = client.db(`random_subject_test_${randomUUID().replaceAll('-', '')}`)
   try {
     await installOwnerIndexes(db)
@@ -54,8 +54,12 @@ test('Mongo: active existing likes seed subject searches without a new like or r
     const tasks = await db.collection<DiscoveryTask>('discovery_tasks_v2').find({}).toArray()
     assert.ok(tasks.every(t => t.spec.kind === 'search' && t.spec.focus?.referenceKey === 'source:johnny'))
     assert.ok(tasks.some(t => t.spec.focus?.branch === 'primary'))
-    assert.ok(tasks.some(t => t.spec.focus?.branch === 'secondary'))
-    assert.deepEqual(await db.collection('discovery_owner_references_v2').findOne({ contentKey: 'source:johnny' }), before)
+    assert.ok(tasks.every(t => t.spec.focus?.branch === 'primary')) // First rotation prioritises the main subject.
+    const refreshed = await db.collection('discovery_owner_references_v2').findOne({ contentKey: 'source:johnny' })
+    assert.equal(refreshed?.active, before?.active)
+    assert.equal(refreshed?.contentKey, before?.contentKey)
+    assert.equal(refreshed?.explorationRotation.youtube, 1)
+    assert.equal(refreshed?.profile.subject.primary.key, 'entity:johnny hallyday')
     await db.collection('discovery_owner_references_v2').updateMany({}, { $set: { active: false } })
     assert.equal(await enqueueOwnerExploration(db, now, 6), 0)
   } finally { await db.dropDatabase(); await client.close() }

@@ -88,8 +88,12 @@ test('MongoDB: actual catalogue sampling, stock exclusions, Wave trios and more 
         title: 'Stone carving daily news parody comedy', sourceMetadata: { title: 'Stone carving daily news parody comedy' },
         discoveryVersion: 2, discoveryProfile: funnyProfile, discoveryFamily: 'music', rand: .4 },
     ])
-    const coolCandidates = await loadPoolCandidates(db, { ...planDraw(newSession(140), 'video'), mode: 'cool', branch: 'autonomous', lane: 'described' },
-      'en', decode, () => .1, now)
+    const coolCandidates = []
+    // The global sample is intentionally random: an eligible parody need not
+    // appear in the first draw. Check eligibility across independent samples.
+    for (let pass = 0; pass < 8; pass++) coolCandidates.push(...await loadPoolCandidates(db,
+      { ...planDraw(newSession(140), 'video'), mode: 'cool', branch: 'autonomous', lane: 'described' },
+      'en', decode, seeded(pass), now))
     assert.ok(!coolCandidates.some(candidate => candidate.key.includes('routine-news')))
     assert.ok(coolCandidates.some(candidate => candidate.key.includes('routine-parody')))
     let state = newSession(14)
@@ -126,9 +130,9 @@ test('MongoDB: enabling exploration reserves its budget even when the base job r
     process.env.RANDOM_DISCOVERY_WORKER_ENABLED = '1'
     const config = { searchDailyLimit: 100, otherDailyLimit: 10000, searchBaseReserve: 80, otherBaseReserve: 9000, extraSearchLimit: 20 }
     const base = await Promise.all(Array.from({ length: 110 }, () => reserveQuota(db, config, 'search', 'base', Date.now())))
-    assert.equal(base.filter(Boolean).length, 95)
-    const extra = await Promise.all(Array.from({ length: 12 }, () => reserveQuota(db, config, 'search', 'exploration', Date.now())))
-    assert.equal(extra.filter(Boolean).length, 5)
+    assert.equal(base.filter(Boolean).length, 80)
+    const extra = await Promise.all(Array.from({ length: 32 }, () => reserveQuota(db, config, 'search', 'exploration', Date.now())))
+    assert.equal(extra.filter(Boolean).length, 20)
   } finally {
     if (before === undefined) delete process.env.RANDOM_DISCOVERY_WORKER_ENABLED; else process.env.RANDOM_DISCOVERY_WORKER_ENABLED = before
     await db.dropDatabase(); await client.close()

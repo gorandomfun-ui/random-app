@@ -1,3 +1,4 @@
+import type { PoolRetrievalReport } from './sampling'
 import { bagValue, weighted, type Rng } from './random'
 import { appendExposure, diversityWeights, pickDiverse, type Exposure } from './diversity'
 import { isVisual, seenOf, type Candidate, type Format, type Seen } from './types'
@@ -51,7 +52,7 @@ export function recordWave(state: Session, item: Candidate): Session {
   return { ...state, revision: state.revision + 1, recent: [...state.recent, seenOf(item)].slice(-40), exposures: appendExposure(state.exposures, item) }
 }
 export type PoolResult<T> = { item: Candidate<T>; branch: Intent['branch']; fallback: boolean;
-  selection?: { requestedLane: Intent['lane']; servedLane: Intent['lane']; reasons: string[] } }
+  selection?: { requestedLane: Intent['lane']; servedLane: Intent['lane']; reasons: string[]; candidateCount?: number; familyCount?: number; retrieval?: PoolRetrievalReport } }
 export function matchesLane(c: Candidate, lane: Intent['lane'], now: number): boolean {
   if (lane === 'trend') return c.trendObservedAt != null && c.trendObservedAt <= now && c.trendObservedAt >= now - 7 * 86400000
   if (lane === 'recent') return c.publishedAt != null && c.publishedAt <= now && c.publishedAt >= now - 90 * 86400000
@@ -74,45 +75,37 @@ export function pickPool<T>(candidates: Candidate<T>[], ticket: Intent, state: S
     const normal = eligible.filter(c => !c.stock), stock = eligible.filter(c => c.stock)
     eligible = wantStock && stock.length ? stock : normal
   }
-  // Keep the content objective before owner affinity: an editorial match cannot replace
-  // an available trend/recent candidate with an old, unobserved item.
-  const preferred = eligible.filter(c => matchesLane(c, ticket.lane, now))
-  const laneAvailable = preferred.length > 0
-  const pool = laneAvailable ? preferred : eligible
+  // One lottery across the full sample: lanes and owner affinity adjust weights,
+  // never discard all alternatives because a single preferred item exists.
+  // Exact exclusions remain the original 40-item protection in hardEligible.
   const history = state.exposures?.length ? state.exposures : state.visualHistory.map(x => ({
     type: x.type === 'video' ? 'video' as const : 'image' as const, family: x.family,
     practices: [], terms: [], ...(x.pattern ? { pattern: x.pattern } : {}),
   }))
-  const weights = diversityWeights(pool, history)
-  let editorialDiversityRelaxed = false
-  const result = (item: Candidate<T>, branch: Intent['branch']): PoolResult<T> => {
-    const reasons = [
-      ...(!laneAvailable ? ['requested-lane-unavailable'] : []),
-      ...(editorialDiversityRelaxed ? ['editorial-diversity-relaxed'] : []),
-      ...(ticket.branch === 'editorial' && branch !== 'editorial' && !editorialDiversityRelaxed ? ['editorial-match-unavailable'] : []),
-    ]
-    return { item, branch, fallback: reasons.length > 0, selection: {
-      requestedLane: ticket.lane, servedLane: laneAvailable ? ticket.lane : 'any', reasons } }
+  const editorialMatch = (candidate: Candidate<T>) => ticket.branch === 'editorial' &&
+    (!candidate.directEditorialReference || ticket.allowDirectReference) &&
+    Boolean(candidate.editorialFamilies?.some(family => (referenceCounts[family] ?? 0) > 0))
+  const preferences = new Map<Candidate<T>, number>()
+  for (const candidate of eligible) {
+    let preference = ticket.mode === 'cool' && ticket.lane !== 'any' && matchesLane(candidate, ticket.lane, now) ? 3 : 1
+    if (ticket.mode === 'cool' && ticket.lane !== 'unknown' && candidate.profile.metadataQuality !== 'unverified') preference *= 1.5
+    if (editorialMatch(candidate)) preference *= 3
+    preferences.set(candidate, Math.min(8, preference))
   }
-  if (ticket.branch === 'editorial') {
-    const counts = Object.values(referenceCounts).filter(n => n > 0).sort((a, b) => a - b)
-    const median = counts[Math.floor(counts.length / 2)] ?? 1
-    const families = Object.keys(referenceCounts).filter(f => referenceCounts[f] > 0 && pool.some(c =>
-      c.editorialFamilies?.includes(f) && (!c.directEditorialReference || ticket.allowDirectReference)))
-    const family = weighted(families, f => Math.min(Math.sqrt(referenceCounts[f]), 2 * Math.sqrt(median)), random)
-    if (family) {
-      const neighbors = pool.filter(c => c.editorialFamilies?.includes(family) &&
-        (!c.directEditorialReference || ticket.allowDirectReference))
-      const best = (items: Candidate<T>[]) => items.reduce((max, c) => Math.max(max, weights.get(c) ?? 1), 0)
-      const accept = Math.min(1, Math.sqrt(best(neighbors) / Math.max(.03, best(pool))))
-      if (accept >= 1 || random() < accept) {
-        const item = pickDiverse(neighbors, weights, random)
-        if (item) return result(item, 'editorial')
-      } else editorialDiversityRelaxed = true
-    }
-  }
-  const item = pickDiverse(pool, weights, random)
-  return item ? result(item, ticket.mode === 'cool' ? 'autonomous' : 'general') : null
+  const item = pickDiverse(eligible, diversityWeights(eligible, history), random, preferences)
+  if (!item) return null
+  const laneAvailable = eligible.some(c => matchesLane(c, ticket.lane, now))
+  const laneServed = matchesLane(item, ticket.lane, now)
+  const editorialServed = editorialMatch(item)
+  const reasons = [
+    ...(!laneAvailable ? ['requested-lane-unavailable'] : !laneServed ? ['requested-lane-balanced'] : []),
+    ...(ticket.branch === 'editorial' && !editorialServed ? [eligible.some(editorialMatch)
+      ? 'editorial-diversity-relaxed' : 'editorial-match-unavailable'] : []),
+  ]
+  return { item, branch: editorialServed ? 'editorial' : ticket.mode === 'cool' ? 'autonomous' : 'general',
+    fallback: reasons.length > 0, selection: { requestedLane: ticket.lane, servedLane: laneServed ? ticket.lane : 'any', reasons,
+      candidateCount: eligible.length, familyCount: new Set(eligible.map(c => c.profile.family)).size } }
+
 }
 
 /** Project prepared items, but commit only the displayed head. Failure invalidates its successors. */

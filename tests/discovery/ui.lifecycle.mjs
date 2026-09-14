@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 const root=process.cwd()
+const require=createRequire(pathToFileURL(path.join(root,'package.json')))
 const temporary=fs.mkdtempSync(path.join(root,'.random-ui-test-'))
 const output=path.join(temporary,'component.cjs')
 await build({entryPoints:[`${root}/app/random/RandomExperience.tsx`],outfile:output,bundle:true,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],tsconfig:`${root}/tsconfig.json`,plugins:[{name:'ui-test-boundaries',setup(build){
@@ -21,6 +22,9 @@ await build({entryPoints:[`${root}/app/random/RandomExperience.tsx`],outfile:out
   return{contents:`import React from 'react'; export default function Stub(p){return React.createElement('span',{className:p.className},p.children||p.label||p.text||null)}`}
  })
 }}]})
+const profileOutput=path.join(temporary,'profile.cjs')
+await build({entryPoints:[`${root}/lib/discovery/profile.ts`],outfile:profileOutput,bundle:true,platform:'node',format:'cjs'})
+const {buildProfile}=require(profileOutput)
 const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',{url:'https://test.invalid/random',pretendToBeVisual:true})
 for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
 window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
@@ -30,13 +34,13 @@ globalThis.fetch=async(input,init={})=>{
  const url=new URL(String(input),'https://test.invalid')
  if(url.pathname==='/api/discovery/random'){
   const req=JSON.parse(init.body);calls.push(req);const n=++serial
-  const profile={version:2,signalVersion:3,titleTokens:['stone','carving'],titlePractices:['stone-carving'],tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
+  const profile=buildProfile({title:'Stone carving workshop'})
   const payload={type:req.type,_id:n.toString(16).padStart(24,'0'),url:`https://example.invalid/${n}`,provider:'youtube',text:`Fixture ${n}`,title:`Fixture ${n}`,variant:req.factVariant==='quiz'?'quiz':'text',question:'Question',options:['a','b'],correctIndex:0}
   return Response.json({candidate:{key:`fixture:${n}`,type:req.type,payload,profile,provider:'youtube',stock:false,available:true}})
  }
  if(url.pathname==='/api/discovery/wave'){
   waveCalls++
-  const req=JSON.parse(init.body);const profile={version:2,signalVersion:3,titleTokens:['stone','carving'],titlePractices:['stone-carving'],tokens:['stone','carving'],entities:[],practices:['stone-carving'],themes:['craft'],family:'craft',evidence:'described'}
+  const req=JSON.parse(init.body);const profile=buildProfile({title:'Stone carving workshop'})
   const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
   if(waveResponseDelayMs)await new Promise(resolve=>setTimeout(resolve,waveResponseDelayMs))
   if(!wavePlansAvailable)return Response.json({ready:false,trio:[],reserves:[]})
@@ -51,7 +55,7 @@ globalThis.fetch=async(input,init={})=>{
  }
  return Response.json({ok:true})
 }
-const require=createRequire(pathToFileURL(path.join(root,'package.json')));const {RandomExperience}=require(output)
+const {RandomExperience}=require(output)
 let app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
 async function until(fn){const end=Date.now()+10000;while(Date.now()<end){if(fn())return;await new Promise(r=>setTimeout(r,40))}throw new Error('UI condition timeout')}
 const snapshot=()=>{const raw=sessionStorage.getItem('random-discovery-v2-en');return raw?JSON.parse(raw):null}

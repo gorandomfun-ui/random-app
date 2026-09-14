@@ -9,11 +9,11 @@ export const SEARCH_AXES: Record<string, string[]> = {
   ru: ['домашнее видео', 'старая реклама', 'любительский концерт', 'научный эксперимент'],
   zh: ['家庭录像', '老广告', '手工制作', '业余比赛', '实验音乐'],
   no: ['lokal tv', 'gammel reklame', 'hjemmevideo', 'amatørkonsert'],
-  en: ['public access television', 'independent animation', 'local sports tournament', 'street performance', 'experimental instrument', 'handmade machine', 'home movie', 'regional television commercial', 'science demonstration', 'underground short film', 'speedrun', 'generative animation'],
-  fr: ['télévision locale', 'animation indépendante', 'tournoi amateur', 'spectacle de rue', 'instrument expérimental', 'machine artisanale', 'film de famille', 'publicité régionale', 'expérience scientifique', 'court métrage expérimental', 'jeu vidéo insolite', 'animation générative'],
-  de: ['Lokalfernsehen', 'unabhängige Animation', 'Amateurturnier', 'Straßenkunst', 'experimentelles Instrument', 'selbstgebaute Maschine', 'Familienfilm', 'regionale Werbung', 'Wissenschaftsexperiment', 'experimenteller Kurzfilm', 'Computerspiel', 'generative Animation'],
-  es: ['televisión local', 'animación independiente', 'torneo amateur', 'espectáculo callejero', 'instrumento experimental', 'máquina casera', 'película familiar', 'publicidad regional', 'experimento científico', 'cortometraje experimental', 'videojuego', 'animación generativa'],
-  ja: ['ローカルテレビ', '自主制作アニメ', 'アマチュア大会', '大道芸', '実験楽器', '自作機械', 'ホームビデオ', 'ローカルCM', '科学実験', '自主制作映画', 'ゲーム実況', '生成アニメ'],
+  en: ['public access television', 'independent animation', 'local sports tournament', 'street performance', 'experimental instrument', 'handmade machine', 'home movie', 'regional television commercial', 'science demonstration', 'underground short film', 'speedrun', 'generative animation', 'gaming challenge', 'creator vlog', 'independent game', 'fan concert recording'],
+  fr: ['télévision locale', 'animation indépendante', 'tournoi amateur', 'spectacle de rue', 'instrument expérimental', 'machine artisanale', 'film de famille', 'publicité régionale', 'expérience scientifique', 'court métrage expérimental', 'jeu vidéo insolite', 'animation générative', 'défi gaming', 'vlog créateur', 'jeu indépendant', 'concert filmé par un fan'],
+  de: ['Lokalfernsehen', 'unabhängige Animation', 'Amateurturnier', 'Straßenkunst', 'experimentelles Instrument', 'selbstgebaute Maschine', 'Familienfilm', 'regionale Werbung', 'Wissenschaftsexperiment', 'experimenteller Kurzfilm', 'Computerspiel', 'generative Animation', 'Gaming Challenge', 'Creator Vlog'],
+  es: ['televisión local', 'animación independiente', 'torneo amateur', 'espectáculo callejero', 'instrumento experimental', 'máquina casera', 'película familiar', 'publicidad regional', 'experimento científico', 'cortometraje experimental', 'videojuego', 'animación generativa', 'reto videojuegos', 'vlog creador'],
+  ja: ['ローカルテレビ', '自主制作アニメ', 'アマチュア大会', '大道芸', '実験楽器', '自作機械', 'ホームビデオ', 'ローカルCM', '科学実験', '自主制作映画', 'ゲーム実況', '生成アニメ', 'ゲームチャレンジ', '日常vlog'],
 }
 export function createSearchSeeds(random: Rng, now: number, limit = 20, axes = SEARCH_AXES, rotation?: number): SearchSpec[] {
   const current = new Date(now), year = current.getUTCFullYear()

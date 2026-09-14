@@ -3,17 +3,20 @@ import type { Db } from 'mongodb'
 import type { RawVideo } from '../ingest/videos'
 import type { Rng } from './random'
 import { reserveDailymotionQuota, type DailymotionSpec } from './dailymotion'
-import { hasPhrase, type Subject } from './subjects'
-import { cleanDescription } from './profile'
+import { SUBJECT_VERSION, subjectInSource, type Subject } from './subjects'
+import { buildProfile, cleanDescription } from './profile'
+import { providerError, ProviderQuotaError } from './providerErrors'
 
-export type DiscoveryFocus = { subject: Subject; ownerId: string; referenceKey: string; branch: 'primary' | 'secondary'; angle: string }
+export type DiscoveryFocus = { subject: Subject; subjectVersion?: number; ownerId: string; referenceKey: string; referenceRevision?: string; branch: 'primary' | 'secondary'; angle: string }
 export type SearchSpec = ({
   kind: 'search'; query: string; language: string; order: 'date' | 'relevance' | 'viewCount';
   after: string; before: string
 } | { kind: 'channel'; channelId: string } | { kind: 'playlist'; playlistId: string } | DailymotionSpec) & { focus?: DiscoveryFocus }
 export type DiscoveryTask = { _id: string; spec: SearchSpec; depth: number; editorial: boolean;
   due: Date; leaseUntil: Date; leaseToken?: string; attempts: number; cursor?: string;
-  pages: number; dryPages: number; priority: number; lastYield?: number }
+  pages: number; dryPages: number; priority: number; lastYield?: number;
+  fetchedTotal?: number; matchedTotal?: number; insertedTotal?: number; duplicateTotal?: number;
+  lastOutcome?: string; lastAttemptAt?: Date }
 export function taskId(spec: SearchSpec): string {
   const stable = Object.fromEntries(Object.entries(spec).sort(([a], [b]) => a.localeCompare(b)))
   return createHash('sha256').update(JSON.stringify(stable)).digest('hex')
@@ -27,7 +30,7 @@ export async function enqueue(db: Db, spec: SearchSpec, depth = 0, editorial = f
 export type QuotaConfig = { searchDailyLimit: number; otherDailyLimit: number;
   /** Capacity reserved for all existing jobs. Configure from actual usage, not a guessed default. */
   searchBaseReserve: number; otherBaseReserve: number; extraSearchLimit: number }
-type Quota = { _id: string; spent: number; exploration: number; editorial: number }
+type Quota = { _id: string; spent: number; exploration: number; editorial: number; remoteExhausted?: boolean }
 export function quotaDay(now: number): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
 }
@@ -37,14 +40,15 @@ export async function reserveQuota(db: Db, config: QuotaConfig, bucket: 'search'
   const base = bucket === 'search' ? config.searchBaseReserve : config.otherBaseReserve
   if (!Number.isSafeInteger(daily) || daily <= 0 || !Number.isSafeInteger(base) || base < 0 || base > daily ||
     !Number.isSafeInteger(config.extraSearchLimit) || config.extraSearchLimit < 0) throw new Error('Invalid explicit quota configuration')
-  const extra = Math.min(Math.floor((daily - base) * .25), bucket === 'search' ? Math.min(20, config.extraSearchLimit) : Infinity)
+  // The configured reserve is already a bound: do not silently quarter it a second time.
+  const extra = bucket === 'search' ? Math.min(daily - base, config.extraSearchLimit) : daily - base
   const collection = db.collection<Quota>('discovery_quota_v2'), _id = `${quotaDay(now)}:youtube:${bucket}`
   try { await collection.updateOne({ _id }, { $setOnInsert: { spent: 0, exploration: 0, editorial: 0 } }, { upsert: true }) }
   catch (error) { if ((error as { code?: number }).code !== 11000) throw error }
-  const result = await collection.findOneAndUpdate({ _id, spent: { $lt: daily },
+  const result = await collection.findOneAndUpdate({ _id, remoteExhausted: { $ne: true }, spent: { $lt: daily },
     ...(actor === 'base' && process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '1' ? { $expr: { $lt: [{ $subtract: ['$spent', '$exploration'] }, daily - extra] } } : {}),
     ...(actor !== 'base' ? { exploration: { $lt: extra } } : {}),
-    ...(actor === 'editorial' ? { editorial: { $lt: Math.floor(extra * .25) } } : {}),
+    ...(actor === 'editorial' ? { editorial: { $lt: extra > 0 ? Math.max(1, Math.floor(extra * .5)) : 0 } } : {}),
   }, { $inc: { spent: 1, exploration: Number(actor !== 'base'), editorial: Number(actor === 'editorial') } }, { returnDocument: 'after' })
   return result != null
 }
@@ -58,11 +62,13 @@ export function quotaConfigFromEnv(): QuotaConfig {
     searchBaseReserve: read('RANDOM_YT_SEARCH_BASE_RESERVE'), otherBaseReserve: read('RANDOM_YT_OTHER_BASE_RESERVE'),
     extraSearchLimit: read('RANDOM_YT_EXTRA_SEARCH_LIMIT') }
 }
-export type Page = { videos: RawVideo[]; nextCursor?: string; children: SearchSpec[] }
+export type Page = { videos: RawVideo[]; nextCursor?: string; children: SearchSpec[]; metadataWarning?: string; remoteOtherExhausted?: boolean }
 export type PageLoader = (task: DiscoveryTask, signal: AbortSignal, permit: (bucket: 'search' | 'other') => Promise<boolean>) => Promise<Page>
 export type DiscoveryProvider = 'youtube' | 'dailymotion'
 export type ExplorationStage = 'claiming' | 'provider' | 'ingesting' | 'recovering'
 export type ExplorationReport = { pages: number; inserted: number; failures: number; quotaDenied: number;
+  metadataWarnings?: number;
+  curation?: { pages: number; fetched: number; matched: number; inserted: number; duplicates: number; rejected: number };
   errors: { timeout: number; rateLimit: number; http: number; other: number };
   stopReason: 'idle' | 'time-budget' | 'task-budget' | 'quota' | 'provider-errors' | 'cancelled' }
 
@@ -100,8 +106,16 @@ export async function withAbortDeadline<T>(milliseconds: number, parent: AbortSi
 
 export function focusMatchesVideo(video: RawVideo, focus?: DiscoveryFocus): boolean {
   if (!focus) return true
-  const source = `${video.title ?? ''}\n${cleanDescription(video.description ?? '')}`
-  return focus.subject.aliases.some(alias => hasPhrase(source, alias))
+  const profile = buildProfile({ title: video.title, description: video.description })
+  if (profile.metadataQuality === 'unverified') return false
+  const title = video.title ?? ''
+  if (subjectInSource(title, focus.subject)) return true
+  // An explicit, different known identity cannot be repaired by a mention in promotional prose.
+  const primary = profile.subject?.primary
+  if (primary?.kind === 'entity' && !primary.tentative && primary.key !== focus.subject.key) return false
+  // Homemade filenames can be discovered through an actual opening description.
+  const description = cleanDescription(video.description ?? '').slice(0, 280)
+  return subjectInSource(description, focus.subject) && subjectInSource(`${title}\n${description}`, focus.subject)
 }
 
 /** One invocation: one worker, bounded runtime. Multiple invocations use leases and atomic quotas. */
@@ -114,6 +128,7 @@ export async function runExploration(options: {
   const { db, quota, random, loadPage, ingest } = options, now = options.now ?? Date.now
   const deadline = now() + Math.min(180000, options.maxMs ?? 180000)
   const report: ExplorationReport = { pages: 0, inserted: 0, failures: 0, quotaDenied: 0,
+    curation: { pages: 0, fetched: 0, matched: 0, inserted: 0, duplicates: 0, rejected: 0 },
     errors: { timeout: 0, rateLimit: 0, http: 0, other: 0 }, stopReason: 'idle' }
   const blockedKinds = new Set<SearchSpec['kind']>()
   const consecutiveFailures: Record<DiscoveryProvider, number> = { youtube: 0, dailymotion: 0 }
@@ -131,8 +146,10 @@ export async function runExploration(options: {
     if (!kinds.length) { report.stopReason = report.failures ? 'provider-errors' : 'quota'; break }
     const saturated = [...pagesByTask].filter(([, pages]) => pages >= 2).map(([id]) => id)
     const claim = async (untried: boolean, rotate = true, actor?: boolean) => tasks.findOneAndUpdate({ due: { $lte: new Date(now()) }, leaseUntil: { $lte: new Date(now()) },
-      // Old owner-channel tasks had no subject or revocation fence. Active likes are reseeded by the worker.
-      $or: [{ editorial: { $ne: true } }, { 'spec.focus.subject.key': { $exists: true } }],
+      // Skip old interpretations during selection, so they cannot consume the
+      // forty worker attempts before freshly planned owner tasks get a turn.
+      $or: [{ editorial: { $ne: true }, 'spec.focus': { $exists: false } },
+        { 'spec.focus.subject.key': { $exists: true }, 'spec.focus.subjectVersion': SUBJECT_VERSION }],
       ...(untried ? { attempts: 0 } : {}),
       ...(actor == null ? {} : { editorial: actor }),
       ...(rotate && saturated.length ? { _id: { $nin: saturated } } : {}),
@@ -154,9 +171,10 @@ export async function runExploration(options: {
         const focus = task.spec.focus
         const active = await db.collection('discovery_owner_references_v2').findOne({
           ownerId: focus.ownerId, contentKey: focus.referenceKey, active: true,
-        }, { projection: { _id: 1 }, maxTimeMS: 500 })
-        if (!active) {
-          await tasks.updateOne(fence, { $set: { due: new Date(now() + 7 * 86400000), leaseUntil: new Date(0) }, $unset: { leaseToken: '' } },
+        }, { projection: { _id: 1, 'profile.sourceRevision': 1 }, maxTimeMS: 500 })
+        if (!active || focus.subjectVersion !== SUBJECT_VERSION || focus.referenceRevision && active.profile?.sourceRevision !== focus.referenceRevision) {
+          await tasks.updateOne(fence, { $set: { due: new Date(now() + 7 * 86400000), leaseUntil: new Date(0),
+            lastOutcome: !active ? 'reference-inactive' : focus.subjectVersion !== SUBJECT_VERSION ? 'subject-version-stale' : 'reference-changed', lastAttemptAt: new Date(now()) }, $unset: { leaseToken: '' } },
             { maxTimeMS: 2000 })
           continue
         }
@@ -178,9 +196,12 @@ export async function runExploration(options: {
         }))
       phase = 'ingest'
       options.onStage?.('ingesting')
+      if (page.metadataWarning) report.metadataWarnings = (report.metadataWarnings ?? 0) + 1
+      if (page.remoteOtherExhausted) await db.collection<Quota>('discovery_quota_v2').updateOne(
+        { _id: `${quotaDay(now())}:youtube:other` }, { $set: { remoteExhausted: true } }, { maxTimeMS: 700 })
       // Do not persist unbounded upstream responses. Inserts must use the existing unique video ID.
       const focused = page.videos.slice(0, 50).filter(video => focusMatchesVideo(video, task!.spec.focus))
-      const result = await ingest(focused)
+      const result = focused.length ? await ingest(focused) : { inserted: 0, existingSkipped: 0 }
       phase = 'database'
       const scanned = page.videos.length, ratio = scanned ? result.inserted / scanned : 0
       const authors = new Set(page.videos.map(x => x.channelId).filter(Boolean)).size
@@ -192,11 +213,19 @@ export async function runExploration(options: {
       await tasks.updateOne(fence, { $set: { cursor: continuePaging ? page.nextCursor : undefined,
         due: new Date(now() + (continuePaging ? 1000 : cooldown)), leaseUntil: new Date(0),
         pages: continuePaging ? task.pages + 1 : 0, dryPages, lastYield: yieldScore,
-        priority: .25 + .75 * yieldScore }, $inc: { attempts: 1 }, $unset: { leaseToken: '' } }, { maxTimeMS: 2000 })
+        priority: .25 + .75 * yieldScore, lastOutcome: focused.length ? 'completed' : 'no-source-match',
+        lastAttemptAt: new Date(now()) }, $inc: { attempts: 1, fetchedTotal: scanned,
+          matchedTotal: focused.length, insertedTotal: result.inserted, duplicateTotal: result.existingSkipped ?? 0 },
+        $unset: { leaseToken: '' } }, { maxTimeMS: 2000 })
       // Descendants remain suggestions. They never become owner references automatically.
       for (const spec of page.children.slice(0, 3)) await enqueue(db, spec, task.depth + 1, task.editorial, now())
       pagesByTask.set(task._id, (pagesByTask.get(task._id) ?? 0) + 1)
       report.pages++; report.inserted += result.inserted
+      if (task.spec.focus && report.curation) {
+        report.curation.pages++; report.curation.fetched += scanned; report.curation.matched += focused.length
+        report.curation.inserted += result.inserted; report.curation.duplicates += result.existingSkipped ?? 0
+        report.curation.rejected += Math.max(0, scanned - focused.length)
+      }
       consecutiveFailures[provider] = 0
     } catch (error) {
       // Database/insert failures are not provider timeouts. Stop rather than hiding a failed write.
@@ -207,9 +236,17 @@ export async function runExploration(options: {
         report.stopReason = 'cancelled'; break
       }
       const reason = pageFailure(error)
+      if (error instanceof ProviderQuotaError && provider === 'youtube') {
+        deniedBucket = error.bucket
+        await db.collection<Quota>('discovery_quota_v2').updateOne(
+          { _id: `${quotaDay(now())}:youtube:${error.bucket}` }, { $set: { remoteExhausted: true } }, { maxTimeMS: 700 })
+        if (error.bucket === 'search') blockedKinds.add('search')
+        else { blockedKinds.add('channel'); blockedKinds.add('playlist') }
+      }
       if (reason === 'quota') report.quotaDenied++
       else { report.failures++; report.errors[reason]++; consecutiveFailures[provider]++ }
-      await tasks.updateOne(fence, { $set: { due: new Date(now() + 86400000), leaseUntil: new Date(0) },
+      await tasks.updateOne(fence, { $set: { due: new Date(now() + (reason === 'quota' ? 3600000 : reason === 'timeout' ? 300000 : 3600000)), leaseUntil: new Date(0),
+        lastOutcome: reason, lastAttemptAt: new Date(now()) },
         $inc: { attempts: 1 }, $unset: { leaseToken: '' } }, { maxTimeMS: 2000 })
       // One exhausted provider must not starve the other provider's queued tasks.
       if (reason === 'quota' && provider === 'dailymotion') blockedKinds.add('dailymotion')
@@ -233,6 +270,7 @@ export async function runExploration(options: {
 export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch): PageLoader {
   if (!apiKey) throw new Error('Missing YOUTUBE_API_KEY')
   return async (task, signal, permit) => {
+    const requestStartedAt = Date.now()
     const spec = task.spec
     // Different discovery angles share the same subject-scoped creator task.
     const creatorFocus = spec.focus ? { ...spec.focus, angle: 'creator' } : undefined
@@ -249,7 +287,7 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
     if (task.cursor && spec.kind !== 'channel') params.set('pageToken', task.cursor)
     if (!await permit(spec.kind === 'search' ? 'search' : 'other')) throw new Error('quota-exhausted')
     const response = await request(`https://www.googleapis.com/youtube/v3/${endpoint}?${params}`, { signal })
-    if (!response.ok) throw new Error(`youtube-status-${response.status}`) // Never log a URL containing the API key.
+    if (!response.ok) throw await providerError(response, 'youtube', spec.kind === 'search' ? 'search' : 'other')
     type ApiItem = { id?: { videoId?: string }; snippet?: { title?: string; description?: string; channelId?: string;
       videoOwnerChannelId?: string; videoOwnerChannelTitle?: string; channelTitle?: string; publishedAt?: string;
       liveBroadcastContent?: string; resourceId?: { videoId?: string } };
@@ -257,7 +295,7 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
     const data = await response.json() as { items?: ApiItem[]; nextPageToken?: string }
     if (spec.kind === 'channel') return { videos: [], children: (data.items ?? []).flatMap(x =>
       x.contentDetails?.relatedPlaylists?.uploads ? [{ kind: 'playlist' as const, playlistId: x.contentDetails.relatedPlaylists.uploads, ...(creatorFocus ? { focus: creatorFocus } : {}) }] : []) }
-    const videos: RawVideo[] = (data.items ?? []).slice(0, 50).flatMap(item => {
+    let videos: RawVideo[] = (data.items ?? []).slice(0, 50).flatMap(item => {
       const id = item.id?.videoId ?? item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId
       if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return []
       const s = item.snippet
@@ -269,11 +307,36 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
         publishedAt: spec.kind === 'playlist' ? item.contentDetails?.videoPublishedAt : s?.publishedAt,
         contextQueries: [`discovery-task:${task._id}`, ...(spec.kind === 'search' ? [spec.query] : [])] }]
     })
+    // One IDs lookup qualifies up to 50 results, without consuming another search call.
+    // An unavailable details budget does not discard a successful search page.
+    let metadataWarning: string | undefined, remoteOtherExhausted = false
+    if (videos.length && Date.now() - requestStartedAt < 8000 && await permit('other')) {
+      try {
+        const { fetchMetadata } = await import('./metadataRepair')
+        const details = await withAbortDeadline(Math.min(5000, Math.max(1, 9000 - (Date.now() - requestStartedAt))), signal, child => fetchMetadata('youtube',
+          [...new Set(videos.map(video => video.videoId))], apiKey, child, request))
+        const indexed = new Map(details.map(detail => [detail.id, detail]))
+        videos = videos.flatMap(video => {
+          const detail = indexed.get(video.videoId)
+          if (!detail) return [video] // Missing entries require a separate availability check.
+          if (detail.sourceStatus?.embeddable === false || detail.sourceStatus?.privacyStatus === 'private' ||
+            ['failed', 'rejected', 'deleted'].includes(detail.sourceStatus?.uploadStatus ?? '')) return []
+          const { id: _id, ...metadata } = detail
+          void _id // Provider identity is already validated; preserve the original canonical videoId.
+          const present = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined))
+          return [{ ...video, ...present, statsObservedAt: new Date() }]
+        })
+      } catch (error) {
+        if (signal.aborted) throw signal.reason
+        remoteOtherExhausted = error instanceof ProviderQuotaError
+        metadataWarning = remoteOtherExhausted ? 'other-quota' : 'details-unavailable'
+      }
+    } else if (videos.length) metadataWarning = Date.now() - requestStartedAt >= 8000 ? 'details-deadline' : 'other-quota'
     const creators = [...new Set(videos.filter(video => focusMatchesVideo(video, spec.focus)).map(x => x.channelId).filter((x): x is string => Boolean(x)))]
     // Rotate the followed creators rather than always exploring the first three ranked channels.
     const start = creators.length ? task.pages % creators.length : 0
     const rotatedCreators = [...creators.slice(start), ...creators.slice(0, start)]
-    return { videos, nextCursor: data.nextPageToken,
+    return { videos, nextCursor: data.nextPageToken, metadataWarning, remoteOtherExhausted,
       children: task.depth < 2 ? rotatedCreators.slice(0, 3).map(channelId => ({ kind: 'channel', channelId, ...(creatorFocus ? { focus: creatorFocus } : {}) })) : [] }
   }
 }
