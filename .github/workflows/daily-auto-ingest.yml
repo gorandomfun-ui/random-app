@@ -136,5 +136,11 @@ jobs:
         if: ${{ vars.RANDOM_METADATA_REPAIR_ENABLED != '0' }}
         continue-on-error: true
         run: node --import tsx scripts/discovery/repair-metadata.ts --apply
+      - name: Refresh subjects and schedule missing related content
+        if: ${{ vars.RANDOM_SUBJECT_MAINTENANCE_ENABLED != '0' }}
+        continue-on-error: true
+        env:
+          RANDOM_METADATA_REPAIR_ENABLED: ${{ vars.RANDOM_METADATA_REPAIR_ENABLED || '0' }}
+        run: node --import tsx scripts/discovery/maintain-subjects.ts --apply
       - name: Explore YouTube and Dailymotion directly
         run: npm run discovery:explore

@@ -1,9 +1,9 @@
 /** Subject identity is independent of the broad families used to balance Random. */
-export const SUBJECT_VERSION = 6 as const
-export type Subject = { key: string; label: string; aliases: string[]; kind: 'entity' | 'topic'; evidence: 'title' | 'description' | 'verified'; tentative?: boolean; domain?: 'fiction' }
+export const SUBJECT_VERSION = 8 as const
+export type Subject = { key: string; label: string; aliases: string[]; kind: 'entity' | 'topic'; evidence: 'title' | 'description' | 'permalink' | 'verified'; tentative?: boolean; domain?: 'fiction'; entityId?: string }
 export type SubjectAnalysis = { version: typeof SUBJECT_VERSION; title: string; primary?: Subject;
   secondary: Subject[]; moods: string[]; treatments: string[] }
-export type SubjectHint = { label: string; aliases?: string[]; kind: 'entity' | 'topic'; domain?: 'fiction' }
+export type SubjectHint = { label: string; aliases?: string[]; kind: 'entity' | 'topic'; domain?: 'fiction'; entityId?: string }
 
 export function foldSubject(value: string): string {
   return value.normalize('NFKC').replace(/(?<=\p{L})\$(?=\p{L})/gu, 's')
@@ -69,6 +69,7 @@ function subject(hint: SubjectHint, evidence: Subject['evidence'] = 'title'): Su
   const label = hint.label.trim().slice(0, 100)
   const bare = foldSubject(label).replace(/^(?:the|le|la|les) /u, '')
   return { key: `${hint.kind}:${foldSubject(label)}`, label, kind: hint.kind, evidence, ...(hint.domain ? { domain: hint.domain } : {}),
+    ...(/^Q[1-9]\d*$/.test(hint.entityId ?? '') ? { entityId: hint.entityId } : {}),
     aliases: [...new Set([label, ...(bare.split(' ').length >= 2 ? [bare] : []), ...(hint.aliases ?? []).slice(0, 8)].map(foldSubject).filter(Boolean))] }
 }
 export function topicSubject(key: string, aliases: string[]): Subject {
@@ -105,9 +106,17 @@ const NOT_NAME = new Set((
   'deutsch english francais french german japanese japan france america american berlin paris tokyo prague boston ' +
   'south north west east park cartoon animation animated business commercial failure success city radio advertisement ' +
   'rare rarest replay replays sport soccer football basketball tennis volleyball swimming running speedrun village seed ' +
-  'every beat thought could embarrassed him some small bowls clips shows learns learning exploring discovered creating new latest greatest coolest').split(/\s+/))
+  'every beat thought could embarrassed him some small bowls clips shows learns learning exploring discovered creating new latest greatest coolest ' +
+  'en chez about starring feat featuring ft presents presente christmas special promo report with interview mit avec con ' +
+  'intense battle map gameplay vhs opening closing home paramount tutorial records league pro happy jump cooking cuisine chef yacht').split(/\s+/))
 
 function inferredNames(rawTitle: string, musicContext = false): Subject[] {
+  // A named participant introduced by a role takes precedence over the programme's boilerplate.
+  // Applied to arbitrary names in several languages, never a list of chefs or celebrities.
+  const participant = rawTitle.match(/(?:\b(?:avec|with|mit|con|starring|featuring)\s+)([\p{Lu}][\p{L}\p{M}'’.-]+(?:\s+[\p{Lu}][\p{L}\p{M}'’.-]+){1,3})(?=\s*(?:[,|:/–—-]|$|\b(?:et|and|und|y)\b))/u)?.[1]
+  if (participant && foldSubject(participant).split(' ').every(w => !NOT_NAME.has(w))) {
+    return [{ ...subject({ label: participant, kind: 'entity' }), tentative: true }]
+  }
   // Elliptical one-name headlines: "X Back — Official Trailer". A multi-word
   // work such as "The Empire Strikes Back" and "Taking Back Sunday" is untouched.
   const returned = rawTitle.match(/^([\p{Lu}][\p{L}\p{M}$'’.-]{2,})\s+back\s*[-–—|:]\s*(?:official\s+)?(?:trailer|teaser|interview)\b/iu)
@@ -125,7 +134,7 @@ function inferredNames(rawTitle: string, musicContext = false): Subject[] {
     }
   }
   // A title's poetic subtitle or uploader suffix must not become its main entity.
-  const lead = rawTitle.split(/[|:!?]/u)[0]
+  const lead = rawTitle.replace(/^(?:POV\s*:\s*|(?:\d{4}\s*[-–—:]\s*)+)/iu, '').split(/[|:!?]/u)[0]
   // A work title or a product code is supported by syntax, independent of capitalisation.
   const work = lead.match(/^(.{2,100}?)\s*(?:\([12]\d{3}\)|[-–—])?\s+(?:bande[- ]annonce|official trailer|trailer officiel|teaser officiel)\b/iu)?.[1]
   const code = lead.match(/\b(?=[A-Za-z\d-]{3,16}\b)(?=[A-Za-z\d-]*\d)(?=[A-Za-z\d-]*[A-Za-z])[A-Za-z\d-]+\b/u)?.[0]
@@ -157,8 +166,13 @@ function inferredNames(rawTitle: string, musicContext = false): Subject[] {
     return [{ ...subject({ label: firstSegment, kind: 'entity' }), tentative: true }]
   }
   const contextualLead = lead.match(/^(.{2,80}?)\s+(?:(?:tv|television)\s+)?(?:commercial|advertisement|werbespot|publicité|interview|entrevista|collection|gameplay|playthrough|fancam|concert|travelogue|official (?:music )?video)\b/iu)?.[1]
-  if (contextualLead && plausible(contextualLead)) {
-    return [{ ...subject({ label: contextualLead.trim(), kind: 'entity' }), tentative: true }]
+  // Capture descriptions are not part of an unfamiliar person's name. Strip them only
+  // at this grammatical boundary; "Fan Bingbing" and "The 1975" keep their actual names.
+  const withoutCapture = contextualLead?.replace(/(?:\s+(?:fan|amateur|audience|bootleg|home|personal|local|unofficial|rare|vintage|archival|recording))+\s*$/iu, '').trim()
+  const contextName = withoutCapture && withoutCapture !== contextualLead?.trim()
+    ? withoutCapture.replace(/\s+(?:19|20)\d{2}$/u, '').trim() : contextualLead?.trim()
+  if (contextName && plausible(contextName)) {
+    return [{ ...subject({ label: contextName, kind: 'entity' }), tentative: true }]
   }
   const words = lead.match(/[\p{L}][\p{L}\p{M}\p{N}$'’./-]*/gu) ?? []
   const groups: string[][] = []; let group: string[] = []
@@ -171,7 +185,7 @@ function inferredNames(rawTitle: string, musicContext = false): Subject[] {
   }
   for (const word of words) {
     const n = foldSubject(word)
-    if (/^\p{Lu}/u.test(word) && n.length >= 2 && !NOT_NAME.has(n) && !topicSubjects.some(s => s.aliases.includes(n))) group.push(word)
+    if (/^\p{Lu}/u.test(word) && !/^[A-Z]{3,6}-TV$/u.test(word) && n.length >= 2 && !NOT_NAME.has(n) && !topicSubjects.some(s => s.aliases.includes(n))) group.push(word)
     else end()
   }
   end()
@@ -204,10 +218,17 @@ export function matchSubject(anchor?: SubjectAnalysis, candidate?: SubjectAnalys
   if (!primary || anchor.version !== SUBJECT_VERSION) return null
   if (!candidate || candidate.version !== SUBJECT_VERSION) return null
   const candidates = [candidate.primary, ...candidate.secondary].filter((s): s is Subject => Boolean(s))
-  const same = (s: Subject) => s.key === primary.key || s.kind === primary.kind && s.aliases.some(alias => primary.aliases.includes(alias))
+  const same = (s: Subject) => primary.entityId && s.entityId ? primary.entityId === s.entityId :
+    s.key === primary.key || s.kind === primary.kind && s.aliases.some(alias => primary.aliases.includes(alias))
   if (primary.kind === 'entity') {
     // An incidental shared activity must never replace the named subject.
-    if (candidate.primary?.kind === 'entity' && !same(candidate.primary)) return null
+    // A heuristic fragment is not stronger evidence than a literal, unambiguous primary name.
+    // Verified/explicit other identities remain a conflict, and secondary mentions alone do not suffice.
+    if (candidate.primary?.kind === 'entity' && !same(candidate.primary)) {
+      const fragmentOfAnchor = candidate.primary.tentative && primary.aliases.some(alias =>
+        containsFolded(alias, foldSubject(candidate.primary!.label)))
+      if (!fragmentOfAnchor || !matches(candidate.title, primary)) return null
+    }
     if (!candidates.some(same) && !matches(candidate.title, primary)) {
       return null
     }

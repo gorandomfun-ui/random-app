@@ -2,7 +2,7 @@ import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 import { candidateFromRow, type CatalogueRow } from './catalog'
 import { shuffled, type Rng } from './random'
 import { pickPool, type Intent, type Session } from './pool'
-import { composeWave, relation, type WavePlan } from './waves'
+import { composeWave, composeAvailableWave, relation, type WavePlan } from './waves'
 import { loadOwnerReferences } from './ownerStore'
 import { assignEditorial, type OwnerReference } from './editorial'
 import { retrieveRelatedRows } from './retrieval'
@@ -138,11 +138,15 @@ export async function loadWave<T>(db: Db, anchorId: string, lang: string, allowe
     plan = composeWave(anchor, candidates, { excluded: new Set(excluded) })
     return plan.ready
   } })
+  // Continue searching for three first; only shorten after bounded retrieval completes.
+  candidates = decodeRows(retrieval.rows, decode, now)
+  plan = composeAvailableWave(anchor, candidates, new Set(excluded))
   const diagnostics = { subjectKey: p.subject?.primary?.key ?? null,
     ...retrieval.diagnostics,
     perType: Object.fromEntries(TYPES.map(type => [type, candidates.filter(c => c.type === type).length])),
     related: candidates.filter(c => relation(p, c.profile)).length,
     unverifiedMetadata: candidates.filter(c => c.profile.metadataQuality === 'unverified').length,
+    selected: plan.ready ? plan.trio.length : 0,
     cause: plan.ready ? 'ready' : !retrieval.diagnostics.complete ? 'retrieval-incomplete'
       : !p.subject?.primary && !p.titlePractices?.length ? 'subject-unresolved' : 'insufficient-related-content',
   }

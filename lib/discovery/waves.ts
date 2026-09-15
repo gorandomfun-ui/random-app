@@ -18,7 +18,9 @@ export function relation(anchor: Profile, candidate: Profile): Relation | null {
  * A mixed-media trio supplies format diversity. A video-only trio needs positive
  * evidence of two treatments, each represented by a different item. */
 export function hasWaveVariety(anchor: Candidate, items: Candidate[]): boolean {
-  if (items.length !== 3) return false
+  if (items.length === 1) return true
+  if (items.length < 1 || items.length > 3) return false
+  if (items.length === 2 && items.every(x => x.type === 'image')) return false
   if (!items.every(x => x.type === 'video')) return true
   if (items.every(x => x.profile.subject?.treatments.includes('music-video'))) return false
   if (anchor.profile.subject?.primary?.kind !== 'entity') return true
@@ -51,14 +53,15 @@ function interleaveTreatments<T>(items: Candidate<T>[]): Candidate<T>[] {
   return result
 }
 export type WavePlan<T> = { ready: true; anchorKey: string; trio: Candidate<T>[]; reserves: Candidate<T>[];
-  relations: Record<string, Relation> } | { ready: false; anchorKey: string; reason: 'insufficient-related-content' }
+  size?: number; relations: Record<string, Relation> } | { ready: false; anchorKey: string; reason: 'insufficient-related-content' }
 
 /** Bounded feasibility search. `prefix` contains successfully displayed Wave items, never failed media. */
 export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
-  options: { prefix?: Candidate<T>[]; excluded?: Set<string> } = {}): WavePlan<T> {
+  options: { prefix?: Candidate<T>[]; excluded?: Set<string>; size?: 1 | 2 | 3 } = {}): WavePlan<T> {
   const prefix = options.prefix ?? [], excluded = options.excluded ?? new Set<string>()
+  const size = options.size ?? 3
   const empty = { ready: false as const, anchorKey: anchor.key, reason: 'insufficient-related-content' as const }
-  if (prefix.length > 3 || !validSet(prefix) || prefix.some(x => duplicates(anchor, x) || !relation(anchor.profile, x.profile))) return empty
+  if (prefix.length > size || !validSet(prefix) || prefix.some(x => duplicates(anchor, x) || !relation(anchor.profile, x.profile))) return empty
   const ranks = new Map<string, Relation>()
   const counts = new Map<string, number>()
   const seen = new Set<string>()
@@ -72,19 +75,20 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
       if (n >= (x.type === 'video' ? 16 : 8)) return false
       counts.set(x.type, n + 1); return true
     }).slice(0, 48)
-  const needed = 3 - prefix.length
+  const needed = size - prefix.length
   if (ranked.length < needed) return empty
   let best: Candidate<T>[] | null = null, bestPriority = -1, bestScore = -Infinity
   const visit = (chosen: Candidate<T>[], start: number): void => {
     const all = [...prefix, ...chosen]
     if (!validSet(all)) return
     if (chosen.length === needed) {
-      if (anchor.type === 'video' && !all.some(x => x.type === 'video')) return
+      if (size > 1 && anchor.type === 'video' && !all.some(x => x.type === 'video')) return
       // Three clips of the same artist are not three different discoveries.
       if (!hasWaveVariety(anchor, all)) return
       const priority = 2 * Number(all.some(x => x.type === 'video')) + Number(new Set(all.map(x => x.type)).size >= 2)
-      const sum = all.reduce((v, x) => v + (ranks.get(x.key) ?? relation(anchor.profile, x.profile))!.score, 0) / 3
-      const red = (redundancy(all[0], all[1]) + redundancy(all[0], all[2]) + redundancy(all[1], all[2])) / 3
+      const sum = all.reduce((v, x) => v + (ranks.get(x.key) ?? relation(anchor.profile, x.profile))!.score, 0) / size
+      const pairs = all.flatMap((x, i) => all.slice(0, i).map(y => redundancy(x, y)))
+      const red = pairs.length ? pairs.reduce((a, b) => a + b, 0) / pairs.length : 0
       const treatments = new Set(all.flatMap(x => x.profile.subject?.treatments ?? []))
       const repeatedTreatment = all.reduce((n, x, i) => n + all.slice(0, i).filter(y =>
         x.profile.subject?.treatments.some(t => y.profile.subject?.treatments.includes(t))).length, 0)
@@ -101,18 +105,28 @@ export function composeWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[],
   const trio: Candidate<T>[] = best
   const reserves = ranked.filter(x => !trio.some(y => duplicates(x, y))).slice(0, 7)
   for (const x of prefix) ranks.set(x.key, relation(anchor.profile, x.profile)!)
-  return { ready: true, anchorKey: anchor.key, trio, reserves,
+  return { ready: true, anchorKey: anchor.key, trio, reserves, size,
     relations: Object.fromEntries([...trio, ...reserves].map(x => [x.key, ranks.get(x.key)!])) }
+}
+
+/** Prefer a complete trio; a scarce subject may supply two or one actual discoveries.
+ * This relaxes length only. Subject identity, duplicate and format checks are unchanged. */
+export function composeAvailableWave<T>(anchor: Candidate<T>, candidates: Candidate<T>[], excluded = new Set<string>()): WavePlan<T> {
+  for (const size of [3, 2, 1] as const) {
+    const plan = composeWave(anchor, candidates, { excluded, size })
+    if (plan.ready) return plan
+  }
+  return { ready: false, anchorKey: anchor.key, reason: 'insufficient-related-content' }
 }
 
 /** Client-side state: reserves never replace an item by a blind queue.shift(). */
 export class WaveSession<T> {
   private shown: Candidate<T>[] = []
   private excluded = new Set<string>()
-  constructor(readonly anchor: Candidate<T>, readonly candidates: Candidate<T>[]) {}
+  constructor(readonly anchor: Candidate<T>, readonly candidates: Candidate<T>[], readonly size: 1 | 2 | 3 = 3) {}
   next(): Candidate<T> | null {
-    if (this.shown.length >= 3) return null
-    const plan = composeWave(this.anchor, this.candidates, { prefix: this.shown, excluded: this.excluded })
+    if (this.shown.length >= this.size) return null
+    const plan = composeWave(this.anchor, this.candidates, { prefix: this.shown, excluded: this.excluded, size: this.size })
     return plan.ready ? plan.trio[this.shown.length] : null
   }
   failed(key: string): void { this.excluded.add(key) }

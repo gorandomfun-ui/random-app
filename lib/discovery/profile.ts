@@ -2,6 +2,7 @@ import { PROFILE_VERSION, type Profile, type SourceMetadata } from './types'
 import { analyseSubject, topicSubject, foldSubject } from './subjects'
 import { metadataIntegrity, plainSource } from './integrity'
 import { sourceRevision } from './sourceRevision'
+import { providerPageWords, permalinkSubject, subjectTitle } from './sourceEvidence'
 
 // Broad themes balance Random; they are deliberately insufficient to establish a Wave.
 const RULES: Record<string, Record<string, string[]>> = {
@@ -33,7 +34,7 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' })
 const CATEGORIES: Record<string, string> = { '20': 'gaming', videogames: 'gaming', '10': 'music', music: 'music',
   '17': 'sport', sport: 'sport', '28': 'science', school: 'science', '19': 'travel', travel: 'travel',
   tech: 'technology', '22': 'everyday', people: 'everyday', lifestyle: 'everyday', '1': 'cinema', shortfilms: 'cinema', creation: 'art' }
-export const SIGNAL_VERSION = 6
+export const SIGNAL_VERSION = 8
 export function normalize(text: string): string {
   return foldSubject(text)
 }
@@ -96,11 +97,12 @@ export function buildProfile(source: SourceMetadata): Profile {
   const integrity = metadataIntegrity(source.title ?? '', source.description ?? '', source.legacyUnverified)
   const rawTitle = source.legacyUnverified ? '' : plainText((source.title ?? '').slice(0, 500))
   const title = tagList(rawTitle) ? rawTitle.split(/[#，,]/u)[0] : rawTitle.split(/#[\p{L}_]/u)[0]
-  const semanticTitle = subjectBearingTitle(title)
+  const semanticTitle = subjectBearingTitle(subjectTitle(title))
   const description = integrity.reliable ? cleanDescription(source.description ?? '') : ''
   const primary = classify(semanticTitle), secondary = classify(description)
   const titleTokens = tokensOf(title).slice(0, 32)
-  const tokens = [...new Set([...titleTokens, ...tokensOf(description)])].slice(0, 64)
+  const pageWords = providerPageWords(source)
+  const tokens = [...new Set([...titleTokens, ...tokensOf(pageWords.join(' ')), ...tokensOf(description)])].slice(0, 64)
   const entities = [...new Set((source.entities ?? []).map(normalize).filter(Boolean))].slice(0, 12)
   // An unambiguous title wins over incidental subjects in the description.
   const themes = primary.themes.length ? primary.themes : secondary.themes.length ? secondary.themes
@@ -108,6 +110,19 @@ export function buildProfile(source: SourceMetadata): Profile {
   const practices = primary.practices.length ? primary.practices : secondary.practices
   const normalizedTitle = normalize(title)
   let subject = analyseSubject(semanticTitle, source.primarySubject, CATEGORIES[source.category ?? ''] === 'music')
+  const permalink = permalinkSubject(source)
+  if (permalink && !subject.primary) {
+    // A provider's literal permalink can identify a GIF whose alt text only describes its pixels.
+    // Creator tags and ingestion queries remain excluded.
+    const recovered = analyseSubject(`${permalink} interview`)
+    if (recovered.primary && (!recovered.primary.tentative || foldSubject(permalink).split(' ').length >= 2)) subject = { ...subject, primary: { ...recovered.primary, evidence: 'permalink' },
+      title: `${subject.title} ${foldSubject(permalink)}` }
+  }
+  // A worker may attach a canonical identity only after literal source verification.
+  if (source.primarySubject && permalink) {
+    const canonical = analyseSubject(`${semanticTitle} ${permalink}`, source.primarySubject)
+    if (canonical.primary?.evidence === 'verified') subject = { ...subject, primary: canonical.primary }
+  }
   // The same explicit practice vocabulary already used by Waves also supplies owner searches.
   // This covers ordinary topics without inventing a capitalised person or requiring a manual registry entry.
   const practiceTopics = primary.practices.flatMap(practice => {
@@ -126,6 +141,7 @@ export function buildProfile(source: SourceMetadata): Profile {
   const ai = /(?:^| )(?:ai|ia|ki|generative|generated|ghibli|sora)(?: |$)/u.test(normalizedTitle)
   const narrative = /(?:^| )(?:story|stories|storytelling|novel|romance|roman|histoire|histoires)(?: |$)/u.test(normalizedTitle)
   return { version: PROFILE_VERSION, signalVersion: SIGNAL_VERSION, sourceRevision: sourceRevision(source), tokens, titleTokens,
+    titleYearHints: [...new Set(rawTitle.match(/\b(?:19|20)\d{2}\b/gu) ?? [])].slice(0, 5),
     metadataQuality: !integrity.reliable ? 'unverified' : integrity.sparse ? 'sparse' : 'usable',
     ...(integrity.cluster ? { metadataCluster: integrity.cluster } : {}),
     subject,

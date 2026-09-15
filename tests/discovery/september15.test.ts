@@ -54,7 +54,8 @@ test('geography uses existing query slots: legacy half, modern/unusual lanes and
 test('a private reference tries all five search languages in five turns while retaining primary/secondary proportions', () => {
   const profile = buildProfile({ title: 'Johnny Hallyday motorcycle road trip désert' })
   const tasks = Array.from({ length: 5 }, (_, i) => createSubjectSearches(profile, { ownerId: 'test', referenceKey: 'ref' }, now, i)).flat()
-  assert.equal(new Set(tasks.flatMap(x => x.kind === 'search' ? [x.language] : [])).size, 5)
+  const languages = new Set(tasks.flatMap(x => x.kind === 'search' ? [x.language] : []))
+  for (const language of ['fr', 'en', 'de', 'es', 'ja']) assert.ok(languages.has(language))
   const ten = Array.from({ length: 10 }, (_, i) => createSubjectSearches(profile, { ownerId: 'test', referenceKey: 'ref' }, now, i)).flat()
   assert.equal(ten.filter(x => x.focus?.branch === 'primary').length, 14)
 })

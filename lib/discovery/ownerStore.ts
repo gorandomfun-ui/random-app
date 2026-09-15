@@ -22,7 +22,7 @@ export async function hydrateOwnerReferences(db: Db, references: OwnerReference[
     const rows = await db.collection('items').find({ _id: { $in: ids.map(id => new ObjectId(id)) } }, {
       projection: { sourceMetadata: 1, discoveryProfile: 1, discoveryVersion: 1, discoveryProvenance: 1,
         metadataRefreshedAt: 1, type: 1, provider: 1, title: 1, description: 1, apiTags: 1, text: 1,
-        quiz: 1, variant: 1, lang: 1, url: 1, videoId: 1 }, timeoutMS: 650,
+        quiz: 1, variant: 1, lang: 1, url: 1, videoId: 1, source: 1, pageUrl: 1 }, timeoutMS: 650,
     }).limit(64).maxTimeMS(400).toArray()
     for (const row of rows) profiles.set(String(row._id), { profile: profileFromRow(row), key: canonicalMediaKey(row) })
   }

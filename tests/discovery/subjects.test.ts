@@ -141,7 +141,9 @@ test('search tasks keep stable pagination IDs during a month, include recent upl
   assert.deepEqual(a.map(taskId), b.map(taskId))
   assert.ok(all.some(s => s.kind === 'search' && new Date(s.before).getTime() > now))
   assert.ok(all.some(s => s.kind === 'search' && s.query === '"johnny hallyday"'))
-  assert.equal(new Set(all.flatMap(s => s.kind === 'search' ? [s.language] : [])).size, 5)
+  const languages = new Set(all.flatMap(s => s.kind === 'search' ? [s.language] : []))
+  for (const language of ['fr', 'en', 'de', 'es', 'ja']) assert.ok(languages.has(language))
+  assert.ok(languages.size > 5, 'geographic searches add languages without replacing the original five')
 })
 test('scope qualification uses actual metadata, including obscure homemade uploads, and ignores search tags', () => {
   const focus = createSubjectSearches(buildProfile({ title: 'Johnny Hallyday' }), scope, now, 0)[0].focus!

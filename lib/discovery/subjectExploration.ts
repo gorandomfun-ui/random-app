@@ -6,6 +6,7 @@ import { hydrateOwnerReferences } from './ownerStore'
 import { enqueue, type SearchSpec, type DiscoveryFocus, type DiscoveryProvider } from './exploration'
 import { SUBJECT_VERSION, type Subject } from './subjects'
 import { curatorOwnerId } from './curatorAuth'
+import { geographicSearch } from './searchGeography'
 
 /** Different treatments of a subject, not a list of hand-picked creators or videos. */
 export const SUBJECT_ANGLES = [
@@ -29,6 +30,16 @@ export const SUBJECT_ANGLES = [
 const LANGUAGES = ['fr', 'en', 'de', 'es', 'ja'] as const
 type OwnerScope = { ownerId: string; referenceKey: string; referenceRevision?: string }
 
+/** An era is a search hypothesis, never an assertion about when a video was filmed.
+ * Years mentioned in the real title are also explored, even when the upload is recent. */
+export function subjectEraTerm(profile: Profile, rotation: number, now: number): string {
+  const ordinal = Math.max(0, Math.floor(rotation)), year = new Date(now).getUTCFullYear()
+  const sourceYears = [...new Set((profile.titleYearHints ?? []).filter(token => /^(?:19|20)\d{2}$/.test(token) && Number(token) <= year))]
+  if (sourceYears.length && ordinal % 2 === 0) return sourceYears[Math.floor(ordinal / 2) % sourceYears.length]
+  const decades = [1960, 1970, 1980, 1990, 2000, 2010, 2020, 1950, 1940].filter(value => value <= year)
+  return String(decades[Math.floor(ordinal / (sourceYears.length ? 2 : 1)) % decades.length])
+}
+
 export function createSubjectSearches(profile: Profile, scope: OwnerScope, now: number, rotation: number): SearchSpec[] {
   const analysis = profile.subject
   if (!analysis?.primary || analysis.version !== SUBJECT_VERSION) return []
@@ -46,22 +57,25 @@ export function createSubjectSearches(profile: Profile, scope: OwnerScope, now: 
     const secondary = slot === 1 && turn % 10 >= 4 && analysis.secondary.length > 0
     const focusSubject: Subject = secondary ? analysis.secondary[Math.floor(turn / 2) % analysis.secondary.length] : analysis.primary!
     const ordinal = turn * 2 + slot
-    const angle = SUBJECT_ANGLES[ordinal % SUBJECT_ANGLES.length]
+    const angle = slot === 0 ? SUBJECT_ANGLES[0] : SUBJECT_ANGLES[1 + turn % (SUBJECT_ANGLES.length - 1)]
+    const geography = slot === 1 && turn % 4 === 3 ? geographicSearch(Math.floor(turn / 4)).coverage : undefined
+    const era = slot === 1 && turn % 4 === 2 ? subjectEraTerm(profile, Math.floor(turn / 4), now) : undefined
     // Angles and languages rotate independently. Previously every reference
     // spent its first eight turns in French before trying a second language.
     const languageIndex = turn % LANGUAGES.length
-    const language = LANGUAGES[languageIndex]
+    const language = geography?.language ?? LANGUAGES[languageIndex]
     // Use one angle term per search. Requiring several words excludes the very sparse titles we seek.
     const variants = angle[languageIndex + 1].split('|').filter(Boolean)
-    const modifier = variants.length ? variants[Math.floor(turn / SUBJECT_ANGLES.length) % variants.length] : ''
+    const modifier = geography?.place ?? era ?? (variants.length ? variants[Math.floor(turn / SUBJECT_ANGLES.length) % variants.length] : '')
     const alias = focusSubject.aliases[Math.floor(ordinal / SUBJECT_ANGLES.length) % focusSubject.aliases.length]
     const query = `${focusSubject.kind === 'entity' ? `"${alias}"` : alias}${modifier ? ` ${modifier}` : ''}`
-    const [after, before] = angle[0] === 'current'
+    // The era belongs in the query. An old performance uploaded yesterday must remain eligible.
+    const [after, before] = era ? windows[0] : slot === 0 ? windows[turn % 3 === 2 ? 1 : 0] : angle[0] === 'current'
       ? [Date.UTC(year, new Date(now).getUTCMonth() - 3, 1), nextMonth]
       : windows[Math.floor(ordinal / 2) % windows.length]
-    const focus: DiscoveryFocus = { subject: focusSubject, subjectVersion: SUBJECT_VERSION, ...scope, branch: secondary ? 'secondary' : 'primary', angle: angle[0] }
-    return { kind: 'search', query, language, order: ordinal % 5 === 0 ? 'viewCount' : ordinal % 3 === 0 ? 'date' : 'relevance',
-      after: new Date(Math.min(after, before - 86400000)).toISOString(), before: new Date(before).toISOString(), focus }
+    const focus: DiscoveryFocus = { subject: focusSubject, subjectVersion: SUBJECT_VERSION, ...scope, branch: secondary ? 'secondary' : 'primary', angle: geography ? 'geographic' : era ? `era-${era}` : slot === 0 ? 'open' : angle[0] }
+    return { kind: 'search', query, language, order: slot === 0 ? (['viewCount', 'relevance', 'date'] as const)[turn % 3] : ordinal % 3 === 0 ? 'date' : 'relevance',
+      after: new Date(Math.min(after, before - 86400000)).toISOString(), before: new Date(before).toISOString(), focus, ...(geography ? { coverage: geography } : {}) }
   })
 }
 
@@ -97,7 +111,7 @@ export async function enqueueOwnerExploration(db: Db, now: number, _rotation: nu
           if (provider === 'youtube') { await enqueue(db, spec, 0, true, now); count++ }
           else if (spec.kind === 'search') {
             await enqueue(db, { kind: 'dailymotion', query: spec.query, after: spec.after, before: spec.before,
-              sort: spec.order === 'date' ? 'recent' : 'relevance', focus: spec.focus }, 0, true, now)
+              sort: spec.order === 'date' ? 'recent' : 'relevance', focus: spec.focus, coverage: spec.coverage }, 0, true, now)
             count++
           }
         }

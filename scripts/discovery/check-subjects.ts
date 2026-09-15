@@ -17,7 +17,7 @@ async function main() {
     try {
       const response = await fetch(new URL('/api/discovery/wave', base), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(25000),
-        body: JSON.stringify({ anchorId, lang: 'fr', types: ['video', 'image', 'fact', 'quote', 'joke', 'web'] }),
+        body: JSON.stringify({ anchorId, auditOnly: true, lang: 'fr', types: ['video', 'image', 'fact', 'quote', 'joke', 'web'] }),
       })
       const body = await response.json() as WavePlan<unknown> & { anchor?: Candidate; diagnostics?: unknown }
       const ms = Math.round(performance.now() - started)
@@ -25,7 +25,7 @@ async function main() {
       if (!body.ready) { empty++; console.log(JSON.stringify({ anchorId, ready: false, ms, diagnostics: body.diagnostics })); continue }
       const anchor = body.anchor
       const valid = anchor?.profile.subject?.version === SUBJECT_VERSION && Boolean(anchor.profile.subject.primary) &&
-        body.trio.length === 3 && composeWave(anchor, body.trio).ready &&
+        body.trio.length >= 1 && body.trio.length <= 3 && composeWave(anchor, body.trio, { size: body.trio.length as 1 | 2 | 3 }).ready &&
         body.trio.every(item => relation(anchor.profile, item.profile)?.reasons.some(reason => reason.startsWith('subject:')))
       if (valid) ready++; else failures++
       console.log(JSON.stringify({ anchorId, ms, verifiedSubjectRules: valid, subject: anchor?.profile.subject?.primary?.key,

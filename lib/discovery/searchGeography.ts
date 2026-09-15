@@ -24,6 +24,12 @@ const AREAS = [
     angles: ['local festival', 'family celebration', 'experimental short film'] },
   { area: 'western-europe', places: ['Portugal', 'Slovenija', 'Norge', 'France'], languages: ['pt', 'sl', 'no', 'fr'],
     angles: ['música experimental', 'amaterski film', 'hjemmevideo', 'spectacle amateur'] },
+  { area: 'north-america', places: ['United States', 'Canada', 'México', 'Louisiana'], languages: ['en', 'en', 'es', 'en'],
+    angles: ['home movie', 'local concert', 'fiesta de pueblo', 'amateur performance'] },
+  { area: 'central-africa', places: ['Cameroun', 'Gabon', 'République démocratique du Congo', 'République centrafricaine'], languages: ['fr', 'fr', 'fr', 'fr'],
+    angles: ['concert amateur', 'fête de quartier', 'archives musicales', 'vidéo de famille'] },
+  { area: 'local-europe', places: ['Jura', 'Alsace', 'Auvergne', 'Wallonie'], languages: ['fr', 'fr', 'fr', 'fr'],
+    angles: ['fête de village', 'concert amateur', 'archives locales', 'film de famille'] },
 ] as const
 export const SEARCH_AREAS = AREAS.map(x => x.area)
 export type SearchCoverage = { area: string; place: string; language: string }

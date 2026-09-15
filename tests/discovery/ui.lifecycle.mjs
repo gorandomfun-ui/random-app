@@ -16,7 +16,10 @@ await build({entryPoints:[`${root}/app/random/RandomExperience.tsx`],outfile:out
   if(path.includes('I18nProvider'))return{contents:`export const useI18n=()=>({dict:{},locale:'en',locales:['en'],setLocale:()=>{},t:(key,fallback)=>fallback||key})`}
   if(path.includes('ScoreProvider'))return{contents:`export const useScore=()=>({addAction:()=>{},addPoints:()=>{},maybeSpawnDiamond:()=>{},quizScore:0,score:0})`}
   if(path.includes('CookieConsent'))return{contents:`export const useCookieConsent=()=>({consent:null})`}
-  if(path==='next/dynamic')return{contents:`export default ()=>()=>null`}
+  if(path.includes('/Encourage3DOverlay'))return{contents:`import React from 'react'; export const preloadEncourage3DEvent=async()=>{};export default function Overlay(p){React.useEffect(()=>{window.testOverlayCompletions=(window.testOverlayCompletions||0)+1;p.onComplete()},[p.onComplete]);return null}`}
+  // Keep the dynamic module's lifecycle: a null overlay never calls onComplete,
+  // leaving Random correctly locked while the simulated animation never ends.
+  if(path==='next/dynamic')return{contents:`import React from 'react';export default loader=>function Dynamic(p){const [Component,setComponent]=React.useState(null);React.useEffect(()=>{let active=true;loader().then(m=>{if(active)setComponent(()=>m.default)});return()=>{active=false}},[]);return Component?React.createElement(Component,p):null}`}
   if(path.includes('/utils/sound'))return{contents:`export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},setMuted=()=>{}`}
   if(path.includes('RandomContentRenderer'))return{contents:`import React from 'react'; export const FactQuizCard=()=>React.createElement('div',null,'Quiz')`}
   return{contents:`import React from 'react'; export default function Stub(p){return React.createElement('span',{className:p.className},p.children||p.label||p.text||null)}`}
@@ -29,7 +32,7 @@ const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></ht
 for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
 window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
 globalThis.requestAnimationFrame=window.requestAnimationFrame.bind(window);globalThis.cancelAnimationFrame=window.cancelAnimationFrame.bind(window)
-let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true,waveResponseDelayMs=0,waveSimulatedErrors=0
+let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true,waveLength=3,waveResponseDelayMs=0,waveSimulatedErrors=0
 globalThis.fetch=async(input,init={})=>{
  const url=new URL(String(input),'https://test.invalid')
  if(url.pathname==='/api/discovery/random'){
@@ -45,7 +48,7 @@ globalThis.fetch=async(input,init={})=>{
   const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
   if(waveResponseDelayMs)await new Promise(resolve=>setTimeout(resolve,waveResponseDelayMs))
   if(!wavePlansAvailable)return Response.json({ready:false,trio:[],reserves:[]})
-  return Response.json({ready:true,anchor:make('fixture:'+parseInt(req.anchorId,16),'video'),trio:[make('wave1001','video'),make('wave1002','image'),make('wave1003','video')],reserves:[make('wave1004','video')]})
+  return Response.json({ready:true,anchor:make('fixture:'+parseInt(req.anchorId,16),'video'),trio:[make(`wave${waveCalls*1000+1}`,'video'),make(`wave${waveCalls*1000+2}`,'image'),make(`wave${waveCalls*1000+3}`,'video')].slice(0,waveLength),reserves:[make(`wave${waveCalls*1000+4}`,'video')]})
  }
  if(url.pathname==='/api/discovery/curation'){
   if((init.method||'GET')==='GET'){curationReads++;return Response.json({active:curated})}
@@ -85,7 +88,7 @@ try{
  await until(()=>waveButton&&!waveButton.disabled)
  if(!waveButton.classList.contains('wave-action--available'))throw new Error('Ready Wave is not visibly available')
  waveButton.click()
- await until(()=>snapshot()?.discovery?.recent.some(x=>x.key.startsWith('wave')))
+ await until(()=>String(snapshot()?.currentItem?.text||'').startsWith('wave'))
  const waveRevision=snapshot().discovery.revision
  for(let i=0;i<2;i++){
   const btn=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
@@ -97,6 +100,25 @@ try{
  await until(()=>!leave.disabled);leave.click()
  await until(()=>snapshot()?.discovery?.displayed===8)
  if(snapshot().sequence.draws!==8)throw new Error('Sequence not restored after Wave')
+ // A scarce subject must finish after its actual one/two related contents, not wait for a fictitious third.
+ for(const length of [1,2]){
+  app.unmount();sessionStorage.removeItem('random-discovery-v2-en');waveLength=length
+  app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
+  await until(()=>snapshot()?.discovery?.displayed>=1)
+  await until(()=>document.querySelector('button[data-wave-status]')?.getAttribute('data-wave-status')==='ready')
+  const count=snapshot().discovery.displayed
+  document.querySelector('button[data-wave-status]').click()
+  await until(()=>String(snapshot()?.currentItem?.text||'').startsWith('wave'))
+  for(let i=1;i<length;i++){
+   const revision=snapshot().discovery.revision
+   const next=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+   await until(()=>!next.disabled);next.click();await until(()=>snapshot().discovery.revision>revision)
+  }
+  if(snapshot().discovery.displayed!==count)throw new Error(JSON.stringify({message:'Short Wave consumed an ordinary Random',length,count,actual:snapshot().discovery.displayed,current:snapshot().currentItem,button:[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))?.textContent}))
+  const next=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+  await until(()=>!next.disabled);next.click();await until(()=>snapshot().discovery.displayed===count+1)
+ }
+ waveLength=3
  app.unmount();sessionStorage.removeItem('random-curation-v2-en');localStorage.removeItem('likes')
  app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true,curationMode:true}))
  const curationSnapshot=()=>{const raw=sessionStorage.getItem('random-curation-v2-en');return raw?JSON.parse(raw):null}
@@ -144,6 +166,17 @@ try{
  app.unmount();sessionStorage.clear();wavePlansAvailable=true;waveResponseDelayMs=0
  app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
  await until(()=>snapshot()?.discovery?.displayed===1)
+ // Restore a due production animation so this lifecycle assertion does not depend
+ // on winning a random event in 24 draws. Keep the real scheduler and transitions.
+ await until(()=>![...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))?.disabled)
+ const resumed=snapshot()
+ if(!resumed.encourage3dSchedule)throw new Error('Production animation schedule not saved')
+ resumed.encourage3dSchedule.nextEligibleDraw=0
+ resumed.encourage3dSchedule.actions=10
+ app.unmount();window.testOverlayCompletions=0
+ sessionStorage.setItem('random-discovery-v2-en',JSON.stringify(resumed))
+ app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
+ await until(()=>document.querySelector('button[data-wave-status]'))
  let readyAfterFirstThree=0
  for(let i=0;i<24;i++){
   const expected=i===14?'empty':'ready'
@@ -163,6 +196,7 @@ try{
  if(!audit.some(x=>x.stage==='response'&&x.ready===false))throw new Error('Unavailable Wave is not diagnosed')
  if(!audit.some(x=>x.stage==='response'&&x.ready===true))throw new Error('Ready Wave is not diagnosed')
  if(audit.length>240)throw new Error('Wave diagnostics grew without a bound')
+ if(!(window.testOverlayCompletions>0))throw new Error('Long session did not exercise a completed 3D overlay')
  const longSessionDisplayed=snapshot().discovery.displayed
- console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:8,longSession:{displayed:longSessionDisplayed,readyAfterFirstThree},reloadPreserved:true,waveAvailability:{readyAnimated:true,slowDistinguished:true,lateReadyAccepted:true,emptyGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
+ console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,shortWaves:[1,2],requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:8,longSession:{displayed:longSessionDisplayed,readyAfterFirstThree,completedOverlays:window.testOverlayCompletions},reloadPreserved:true,waveAvailability:{readyAnimated:true,slowDistinguished:true,lateReadyAccepted:true,emptyGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
 }finally{app.unmount();dom.window.close();fs.rmSync(temporary,{recursive:true,force:true})}

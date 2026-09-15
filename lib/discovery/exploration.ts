@@ -9,13 +9,14 @@ import { providerError, ProviderQuotaError } from './providerErrors'
 import type { SearchCoverage } from './searchGeography'
 import { youtubeBudget, youtubeQuotaWindow } from './youtubeBudget'
 
-export type DiscoveryFocus = { subject: Subject; subjectVersion?: number; ownerId: string; referenceKey: string; referenceRevision?: string; branch: 'primary' | 'secondary'; angle: string }
+export type SubjectScope = { subject: Subject; subjectVersion?: number; branch: 'primary' | 'secondary'; angle: string }
+export type DiscoveryFocus = SubjectScope & { ownerId: string; referenceKey: string; referenceRevision?: string }
 export type SearchSpec = ({
   kind: 'search'; query: string; language: string; order: 'date' | 'relevance' | 'viewCount';
   after: string; before: string
-} | { kind: 'channel'; channelId: string } | { kind: 'playlist'; playlistId: string } | DailymotionSpec) & { focus?: DiscoveryFocus; coverage?: SearchCoverage }
+} | { kind: 'channel'; channelId: string } | { kind: 'playlist'; playlistId: string } | DailymotionSpec) & { focus?: DiscoveryFocus; subjectScope?: SubjectScope; coverage?: SearchCoverage }
 export type DiscoveryTask = { _id: string; spec: SearchSpec; depth: number; editorial: boolean;
-  due: Date; leaseUntil: Date; leaseToken?: string; attempts: number; cursor?: string;
+  due: Date; leaseUntil: Date; leaseToken?: string; attempts: number; cursor?: string | null;
   pages: number; dryPages: number; priority: number; lastYield?: number;
   fetchedTotal?: number; matchedTotal?: number; insertedTotal?: number; duplicateTotal?: number;
   lastOutcome?: string; lastAttemptAt?: Date }
@@ -122,7 +123,7 @@ export async function withAbortDeadline<T>(milliseconds: number, parent: AbortSi
   }
 }
 
-export function focusMatchesVideo(video: RawVideo, focus?: DiscoveryFocus): boolean {
+export function focusMatchesVideo(video: RawVideo, focus?: SubjectScope): boolean {
   if (!focus) return true
   const profile = buildProfile({ title: video.title, description: video.description })
   if (profile.metadataQuality === 'unverified') return false
@@ -166,7 +167,8 @@ export async function runExploration(options: {
     const claim = async (untried: boolean, rotate = true, actor?: boolean) => tasks.findOneAndUpdate({ due: { $lte: new Date(now()) }, leaseUntil: { $lte: new Date(now()) },
       // Skip old interpretations during selection, so they cannot consume the
       // forty worker attempts before freshly planned owner tasks get a turn.
-      $or: [{ editorial: { $ne: true }, 'spec.focus': { $exists: false } },
+      $or: [{ editorial: { $ne: true }, 'spec.focus': { $exists: false }, 'spec.subjectScope': { $exists: false } },
+        { editorial: { $ne: true }, 'spec.subjectScope.subjectVersion': SUBJECT_VERSION },
         { 'spec.focus.subject.key': { $exists: true }, 'spec.focus.subjectVersion': SUBJECT_VERSION }],
       ...(untried ? { attempts: 0 } : {}),
       ...(actor == null ? {} : { editorial: actor }),
@@ -218,18 +220,23 @@ export async function runExploration(options: {
       if (page.remoteOtherExhausted) await db.collection<Quota>('discovery_quota_v2').updateOne(
         { _id: `${quotaDay(now())}:youtube:other` }, { $set: { remoteExhausted: true } }, { maxTimeMS: 700 })
       // Do not persist unbounded upstream responses. Inserts must use the existing unique video ID.
-      const focused = page.videos.slice(0, 50).filter(video => focusMatchesVideo(video, task!.spec.focus))
+      const focused = page.videos.slice(0, 50).filter(video => focusMatchesVideo(video, task!.spec.focus ?? task!.spec.subjectScope))
       const result = focused.length ? await ingest(focused) : { inserted: 0, existingSkipped: 0 }
       phase = 'database'
       const scanned = page.videos.length, ratio = scanned ? result.inserted / scanned : 0
       const authors = new Set(page.videos.map(x => x.channelId).filter(Boolean)).size
-      const dryPages = result.inserted === 0 ? task.dryPages + 1 : 0
+      const dryPages = focused.length === 0 ? task.dryPages + 1 : 0
       // Discovery yield, not visitors' engagement. A small-account video is not penalised for low views.
       const yieldScore = .7 * ratio + .3 * Math.min(1, authors / 5)
+      // Known results are a reason to continue beyond popular pages, not evidence of a bad query.
+      // At most eight pages in one traversal, with a one-day pause after duplicate-only pages.
+      // Persist the NEXT cursor across that pause instead of re-reading page one every day.
       const continuePaging = Boolean(page.nextCursor) && task.pages < 7 && dryPages < 2
-      const cooldown = dryPages >= 2 ? Math.min(7, dryPages) * 86400000 : 86400000
-      await tasks.updateOne(fence, { $set: { cursor: continuePaging ? page.nextCursor : undefined,
-        due: new Date(now() + (continuePaging ? 1000 : cooldown)), leaseUntil: new Date(0),
+      const duplicateOnly = focused.length > 0 && result.inserted === 0
+      const pauseDuplicates = duplicateOnly && (pagesByTask.get(task._id) ?? 0) >= 1
+      const cooldown = dryPages >= 2 ? 3 * 86400000 : 86400000
+      await tasks.updateOne(fence, { $set: { cursor: continuePaging ? page.nextCursor : null,
+        due: new Date(now() + (continuePaging && !pauseDuplicates ? 1000 : cooldown)), leaseUntil: new Date(0),
         pages: continuePaging ? task.pages + 1 : 0, dryPages, lastYield: yieldScore,
         priority: .25 + .75 * yieldScore, lastOutcome: focused.length ? 'completed' : 'no-source-match',
         lastAttemptAt: new Date(now()) }, $inc: { attempts: 1, fetchedTotal: scanned,
@@ -297,6 +304,8 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
     const spec = task.spec
     // Different discovery angles share the same subject-scoped creator task.
     const creatorFocus = spec.focus ? { ...spec.focus, angle: 'creator' } : undefined
+    const creatorScope = spec.subjectScope ? { ...spec.subjectScope, angle: 'creator' } : undefined
+    const childScope = creatorFocus ? { focus: creatorFocus } : creatorScope ? { subjectScope: creatorScope } : {}
     if (spec.kind === 'dailymotion') throw new Error('Wrong provider adapter')
     const endpoint = spec.kind === 'search' ? 'search' : spec.kind === 'channel' ? 'channels' : 'playlistItems'
     const params = new URLSearchParams({ key: apiKey, part: spec.kind === 'channel' ? 'contentDetails' : 'snippet,contentDetails', maxResults: '50' })
@@ -317,7 +326,7 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
       contentDetails?: { videoId?: string; videoPublishedAt?: string; relatedPlaylists?: { uploads?: string } } }
     const data = await response.json() as { items?: ApiItem[]; nextPageToken?: string }
     if (spec.kind === 'channel') return { videos: [], children: (data.items ?? []).flatMap(x =>
-      x.contentDetails?.relatedPlaylists?.uploads ? [{ kind: 'playlist' as const, playlistId: x.contentDetails.relatedPlaylists.uploads, ...(creatorFocus ? { focus: creatorFocus } : {}) }] : []) }
+      x.contentDetails?.relatedPlaylists?.uploads ? [{ kind: 'playlist' as const, playlistId: x.contentDetails.relatedPlaylists.uploads, ...childScope }] : []) }
     let videos: RawVideo[] = (data.items ?? []).slice(0, 50).flatMap(item => {
       const id = item.id?.videoId ?? item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId
       if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return []
@@ -355,12 +364,12 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
         metadataWarning = remoteOtherExhausted ? 'other-quota' : 'details-unavailable'
       }
     } else if (videos.length) metadataWarning = Date.now() - requestStartedAt >= 8000 ? 'details-deadline' : 'other-quota'
-    const creators = [...new Set(videos.filter(video => focusMatchesVideo(video, spec.focus)).map(x => x.channelId).filter((x): x is string => Boolean(x)))]
+    const creators = [...new Set(videos.filter(video => focusMatchesVideo(video, spec.focus ?? spec.subjectScope)).map(x => x.channelId).filter((x): x is string => Boolean(x)))]
     // Rotate the followed creators rather than always exploring the first three ranked channels.
     const start = creators.length ? task.pages % creators.length : 0
     const rotatedCreators = [...creators.slice(start), ...creators.slice(0, start)]
     return { videos, nextCursor: data.nextPageToken, metadataWarning, remoteOtherExhausted,
-      children: task.depth < 2 ? rotatedCreators.slice(0, 3).map(channelId => ({ kind: 'channel', channelId, ...(creatorFocus ? { focus: creatorFocus } : {}) })) : [] }
+      children: task.depth < 2 ? rotatedCreators.slice(0, 3).map(channelId => ({ kind: 'channel', channelId, ...childScope })) : [] }
   }
 }
 

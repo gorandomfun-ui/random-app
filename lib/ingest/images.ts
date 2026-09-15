@@ -364,7 +364,8 @@ function buildImageDocument(source: ImageSource): ImageDocument | null {
     : source.url;
 
   if (!looksLikeImageUrl(url)) return null;
-  const sourceMetadata: SourceMetadata = { title: source.title, description: source.description || source.alt, tags: source.apiTags };
+  const sourceMetadata: SourceMetadata = { title: source.title, description: source.description || source.alt, tags: source.apiTags,
+    provider: source.provider, pageUrl: source.source?.url };
   const profile = buildProfile(sourceMetadata);
 
   return {

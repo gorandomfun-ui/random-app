@@ -40,6 +40,7 @@ export default function CurationStatusPage() {
       {report && <article className="space-y-3 rounded border p-4">
         <h2 className="text-xl">{report.title}</h2>
         <p><strong>Sujet :</strong> {report.subject ?? 'non identifié'}{report.tentative ? ' (déduit des métadonnées)' : ''}</p>
+        <p>Identité : {report.canonicalId ?? 'non résolue'} · Qualification : {report.maintenance ?? 'non demandée'}</p>
         <p><strong>État :</strong> {labels[report.state]}</p>
         <p>{report.sampledTasks} tâches actuelles dans l’échantillon ; {report.measuredTasks} ont des compteurs. {report.inserted} nouvelles vidéos insérées, {report.matched} résultats correspondant au sujet.</p>
         {report.taskSampleCapped && <p>Limite de lecture atteinte : les chiffres ne couvrent pas toutes les tâches.</p>}

@@ -6,15 +6,19 @@ import type { SourceMetadata } from './types'
 export function legacySourceSnapshot(row: Record<string, unknown>): SourceMetadata {
   const str = (value: unknown) => typeof value === 'string' ? value : undefined
   const apiTags = Array.isArray(row.apiTags) ? row.apiTags.filter((x): x is string => typeof x === 'string') : undefined
+  const provider = str(row.provider)
+  const link = row.source && typeof row.source === 'object' ? str((row.source as { url?: unknown }).url) : undefined
+  const page = row.type === 'image' && ['giphy', 'tenor'].includes(provider ?? '')
+    ? { provider, pageUrl: link ?? str(row.pageUrl) ?? str(row.url) } : {}
   if (row.sourceMetadata && typeof row.sourceMetadata === 'object') {
-    const source = row.sourceMetadata as SourceMetadata
+    const source = { ...row.sourceMetadata as SourceMetadata, ...page }
     return row.provider === 'dailymotion' && row.discoveryProvenance === 'legacy-source-fields' && !row.metadataRefreshedAt
       ? { ...source, legacyUnverified: true } : source
   }
   if (row.type === 'video' && row.provider === 'youtube') return { title: str(row.title), description: str(row.description), tags: apiTags }
   // Old DM titles could be the search query, and old channelId could be a category. Do not infer either.
   if (row.type === 'video' && row.provider === 'dailymotion') return { description: str(row.description), legacyUnverified: true }
-  if (row.type === 'image' && ['giphy', 'tenor', 'pexels', 'pixabay'].includes(String(row.provider))) return { title: str(row.title), description: str(row.description) }
+  if (row.type === 'image' && ['giphy', 'tenor', 'pexels', 'pixabay'].includes(String(row.provider))) return { title: str(row.title), description: str(row.description), ...page }
   if (['quote', 'joke', 'fact'].includes(String(row.type))) {
     const quiz = row.quiz as { question?: string } | undefined
     return { title: row.variant === 'quiz' ? str(quiz?.question) ?? str(row.text) : str(row.text), language: str(row.lang) }

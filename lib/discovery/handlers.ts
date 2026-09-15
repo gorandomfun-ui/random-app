@@ -13,6 +13,7 @@ import { parseSession } from './sessionCodec'
 export { parseSession } from './sessionCodec'
 import { curatorOwnerId, curatorRequestAllowed } from './curatorAuth'
 import { withAbortDeadline } from './exploration'
+import { requestSubjectWork } from './subjectWork'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
 export async function bodyOf(req: Request): Promise<Record<string, unknown> | null> {
   if (Number(req.headers.get('content-length') ?? '0') > 65536) return null
@@ -75,6 +76,12 @@ export function waveHandler<T>(deps: Dependencies<T>) {
       if (cached) cache.delete(cacheKey)
       const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const result = await loadWave(db, body.anchorId, lang, types, deps.decode, Math.random, Date.now(), excluded)
+      // This queues only an item ID, with a global cap. No provider call or classification
+      // service runs on this request. Queue latency cannot hold up Wave preparation.
+      if (body.auditOnly !== true && (!result?.plan.ready || result.plan.trio.length < 3)) {
+        await withAbortDeadline(220, req.signal, () => requestSubjectWork(db, body.anchorId as string,
+          result?.diagnostics.cause ?? 'short-wave')).catch(() => false)
+      }
       if (!result?.plan.ready) {
         if (result?.diagnostics.cause === 'retrieval-incomplete') return Response.json({ version: 2,
           ready: false, error: 'retrieval-incomplete', diagnostics: result.diagnostics },
@@ -84,7 +91,7 @@ export function waveHandler<T>(deps: Dependencies<T>) {
         return json(reply)
       }
       const reply = { version: 2, anchor: result.anchor, ...result.plan, diagnostics: result.diagnostics }
-      remember(cacheKey, reply, 5 * 60_000)
+      remember(cacheKey, reply, result.plan.trio.length < 3 ? 30_000 : 5 * 60_000)
       return json(reply)
     } catch { return json({ error: 'unavailable' }, 503) }
   }

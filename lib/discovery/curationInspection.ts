@@ -1,13 +1,14 @@
 import { ObjectId, type Db } from 'mongodb'
 import { profileFromRow } from './catalog'
 import { SIGNAL_VERSION } from './profile'
+import { subjectWorkCollection } from './subjectWork'
 import { SUBJECT_VERSION } from './subjects'
 import { loadOwnerReferences } from './ownerStore'
 import type { OwnerReference } from './editorial'
 
 export type CurationInspection = {
   active: boolean; itemId: string; title: string; subject: string | null;
-  tentative: boolean; evidence: string | null;
+  tentative: boolean; evidence: string | null; canonicalId?: string | null; maintenance?: string | null;
   state: 'inactive' | 'needs-metadata' | 'needs-subject' | 'waiting' | 'scheduled';
   sampledTasks: number; measuredTasks: number; outdatedTasks: number;
   taskSampleCapped: boolean; inserted: number; matched: number;
@@ -23,6 +24,7 @@ export async function inspectCuration(db: Db, ownerId: string, itemId: string): 
     db.collection<OwnerReference>('discovery_owner_references_v2').findOne({ ownerId, itemId }, { timeoutMS: 800 }),
   ])
   if (!row) return null
+  const work = await subjectWorkCollection(db).findOne({ _id: itemId }, { timeoutMS: 300 }).catch(() => null)
   const profile = profileFromRow(row), subject = profile.subject?.primary
   const tasks = ref ? await db.collection('discovery_tasks_v2').find({
     'spec.focus.ownerId': ownerId, 'spec.focus.referenceKey': ref.contentKey,
@@ -35,7 +37,7 @@ export async function inspectCuration(db: Db, ownerId: string, itemId: string): 
   const ordered = [...current].sort((a, b) => Number(b.lastAttemptAt ?? 0) - Number(a.lastAttemptAt ?? 0))
   const last = ordered[0]?.lastAttemptAt
   return { active: Boolean(ref?.active), itemId, title: String(row.title ?? row.text ?? profile.subject?.title ?? '').slice(0, 500),
-    subject: subject?.label ?? null, tentative: Boolean(subject?.tentative), evidence: subject?.evidence ?? null,
+    subject: subject?.label ?? null, canonicalId: subject?.entityId ?? null, maintenance: work?.lastOutcome ?? (work ? 'pending' : null), tentative: Boolean(subject?.tentative), evidence: subject?.evidence ?? null,
     state: !ref?.active ? 'inactive' : profile.metadataQuality === 'unverified' ? 'needs-metadata' : !subject ? 'needs-subject'
       : refreshed && ref.explorationState === 'scheduled' ? 'scheduled' : 'waiting',
     sampledTasks: current.length, measuredTasks: current.filter(t => t.insertedTotal != null).length,

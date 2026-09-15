@@ -3,6 +3,9 @@ export const PROFILE_VERSION = 2 as const
 export type Format = 'video' | 'image' | 'quote' | 'joke' | 'fact' | 'web'
 export type Visual = 'video' | 'image'
 export type SourceMetadata = {
+  provider?: string
+  /** Canonical provider page, never a query URL or a media CDN path. */
+  pageUrl?: string
   title?: string
   description?: string
   tags?: string[]
@@ -21,6 +24,8 @@ export type Profile = {
   signalVersion?: number
   sourceRevision?: string
   titleTokens?: string[]
+  /** Literal years mentioned in the source title; not verified filming dates. */
+  titleYearHints?: string[]
   titlePractices?: string[]
   subject?: import('./subjects').SubjectAnalysis
   /** Conservative classification for session repetition, never a verified series ID. */

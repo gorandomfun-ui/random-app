@@ -3529,11 +3529,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         const plan = body as (WavePlan<RandomContentItem> & { anchor?: Candidate<RandomContentItem> }) | null
         if (generation !== wavePreparationGenerationRef.current) return false
-        if (!plan?.ready || !plan.anchor) {
+        if (!plan?.ready || !plan.anchor || !Array.isArray(plan.trio) || !plan.trio.length || !Array.isArray(plan.reserves)) {
           wavePreparationOutcomeRef.current = 'empty'
           return false
         }
-        discoveryWaveRef.current = new WaveSession(plan.anchor, [...plan.trio, ...plan.reserves])
+        const waveSize = Math.max(1, Math.min(3, plan.trio.length)) as 1 | 2 | 3
+        discoveryWaveRef.current = new WaveSession(plan.anchor, [...plan.trio, ...plan.reserves], waveSize)
         waveAnchorRef.current = anchor
         waveAnchorItemRef.current = anchorItem
         wavePreparedAnchorKeyRef.current = anchorKey
@@ -4557,7 +4558,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         return
       }
 
-      const nextRemaining = enteringWave ? WAVE_TOTAL_STEPS : Math.max(1, waveRemainingRef.current - 1)
+      const nextRemaining = enteringWave ? (waveDiscoveryMode ? discoveryWaveRef.current?.size ?? WAVE_TOTAL_STEPS : WAVE_TOTAL_STEPS) : Math.max(1, waveRemainingRef.current - 1)
       waveModeRef.current = true
       waveRemainingRef.current = nextRemaining
       setWaveMode(true)

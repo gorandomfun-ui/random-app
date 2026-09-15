@@ -1,6 +1,6 @@
 /** Read-only check of the six audited anchors. Never calls ingestion, migration or feedback. */
 import type { Candidate } from '../../lib/discovery/types'
-import type { Relation } from '../../lib/discovery/waves'
+import { composeWave, type Relation } from '../../lib/discovery/waves'
 import { SIGNAL_VERSION } from '../../lib/discovery/profile'
 
 async function main() {
@@ -23,14 +23,14 @@ for (const anchorId of ids) {
   try {
     const response = await fetch(new URL('/api/discovery/wave', base.origin), { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ anchorId, lang: 'fr', types: ['video', 'image', 'quote', 'joke', 'fact', 'web'] }) })
+      body: JSON.stringify({ anchorId, auditOnly: true, lang: 'fr', types: ['video', 'image', 'quote', 'joke', 'fact', 'web'] }) })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const body = await response.json() as Reply
     if (!body.ready) { empty++; console.log(JSON.stringify({ anchorId, ready: false, ms: Date.now() - started })); continue }
     const trio = body.trio ?? []
-    const verified = body.anchor?.profile.signalVersion === SIGNAL_VERSION && trio.length === 3 &&
-      trio.every(item => item.profile.signalVersion === SIGNAL_VERSION) && trio.filter(x => x.type === 'image').length <= 2 &&
-      (body.anchor?.type !== 'video' || trio.some(x => x.type === 'video'))
+    const verified = body.anchor?.profile.signalVersion === SIGNAL_VERSION && trio.length >= 1 && trio.length <= 3 &&
+      trio.every(item => item.profile.signalVersion === SIGNAL_VERSION) &&
+      composeWave(body.anchor, trio, { size: trio.length as 1 | 2 | 3 }).ready
     if (!verified) errors++
     ready++
     console.log(JSON.stringify({ anchorId, verified, ms: Date.now() - started,

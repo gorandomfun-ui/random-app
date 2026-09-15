@@ -7,6 +7,7 @@ export function sourceRevision(source: SourceMetadata): string {
     (source.title ?? '').slice(0, 500), (source.description ?? '').slice(0, 3500),
     (source.entities ?? []).slice(0, 12), source.primarySubject ?? null,
     source.category ?? null, source.language ?? null, Boolean(source.legacyUnverified),
+    source.provider ?? null, source.pageUrl ?? null,
   ])
   return `${hash(value)}:${hash([...value].reverse().join(''))}`
 }
