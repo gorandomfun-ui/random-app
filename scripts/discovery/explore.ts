@@ -1,4 +1,7 @@
 import { appendFileSync } from 'node:fs'
+import type { Db } from 'mongodb'
+import { quotaConfigFromEnv } from '../../lib/discovery/exploration'
+import { youtubeBudget } from '../../lib/discovery/youtubeBudget'
 import { githubDiscoveryConfig, acquireDiscoveryRun, releaseDiscoveryRun, runDiscoveryLoop, type ProviderBatch } from '../../lib/discovery/runner'
 
 function writeSummary(reports: ProviderBatch[], status: string) {
@@ -8,6 +11,34 @@ function writeSummary(reports: ProviderBatch[], status: string) {
     '\n## Exploration directe GitHub', `État : ${status}. Les insertions ci-dessous s’ajoutent à l’ingestion habituelle.`, '',
     '| Fournisseur | Pages | Insérées | Quota refusé | Erreurs | Tâches curation | Planification curation | Durée | Arrêt |',
     '| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |', ...rows, '',
+    '### Recherches issues des likes privés', '',
+    '| Fournisseur | Résultats examinés | Liés au sujet | Nouvelles vidéos | Déjà présents | Rejetés |',
+    '| --- | ---: | ---: | ---: | ---: | ---: |',
+    ...reports.map(r => `| ${r.provider} | ${r.curation?.fetched ?? 0} | ${r.curation?.matched ?? 0} | ${r.curation?.inserted ?? 0} | ${r.curation?.duplicates ?? 0} | ${r.curation?.rejected ?? 0} |`), '',
+    '### Destinations des recherches géographiques',
+    'Ce tableau mesure les recherches effectuées, pas le pays réel des vidéos obtenues.', '',
+    '| Fournisseur | Destination | Pages | Résultats | Insertions |', '| --- | --- | ---: | ---: | ---: |',
+    ...reports.flatMap(r => Object.entries(r.searchCoverage ?? {}).map(([area, c]) =>
+      `| ${r.provider} | ${area} | ${c.pages} | ${c.fetched} | ${c.inserted} |`)), '',
+  ].join('\n'))
+}
+
+async function writeQuotaSummary(db: Db) {
+  if (!process.env.GITHUB_STEP_SUMMARY || process.env.RANDOM_YOUTUBE_QUOTA_ENABLED !== '1') return
+  const config = quotaConfigFromEnv(), now = Date.now()
+  const budgets = (['search', 'other'] as const).map(bucket => ({ bucket,
+    ...youtubeBudget(config, bucket, now, process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '1') }))
+  const rows = await db.collection<{ _id: string; spent: number; retro?: number; trends?: number; remoteExhausted?: boolean }>('discovery_quota_v2')
+    .find({ _id: { $in: budgets.map(b => `${b.day}:youtube:${b.bucket}`) } }, { timeoutMS: 1000 }).maxTimeMS(700).toArray()
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+    '\n### Budget YouTube partagé',
+    'Plafonds internes du projet, pas nombre de vidéos. Le refus peut correspondre à une réserve pour le soir ou pour une autre phase.', '',
+    '| Compteur | Jour Pacifique | Plafond jour | Libéré maintenant | Consommé | Réserve rétro/tendances libérée | Consommation rétro/tendances | Épuisement signalé par YouTube |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |',
+    ...budgets.map(b => {
+      const row = rows.find(r => r._id === `${b.day}:youtube:${b.bucket}`)
+      return `| ${b.bucket} | ${b.day} | ${b.daily} | ${b.released} | ${row?.spent ?? 0} | ${b.protectedReleased} | ${row?.[b.protectedCounter] ?? 0} | ${row?.remoteExhausted ? 'oui' : 'non observé'} |`
+    }), '',
   ].join('\n'))
 }
 
@@ -58,7 +89,10 @@ async function main() {
     if (['partial', 'failed', 'cancelled'].includes(status)) process.exitCode = 1
   } finally {
     try {
-      try { if (lock && database) await releaseDiscoveryRun(database, lock) }
+      try {
+        if (database) await writeQuotaSummary(database).catch(() => console.warn('Quota summary unavailable; no quota value was changed.'))
+        if (lock && database) await releaseDiscoveryRun(database, lock)
+      }
       finally { if (connection) await (await connection).close() }
     } finally {
       clearTimeout(softStop); clearTimeout(hardStop)

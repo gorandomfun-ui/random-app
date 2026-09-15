@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db';
-import { permitBaseYouTube } from './youtubeQuota';
+import { permitBaseYouTube, noteBaseYouTubeQuota, withRetroYouTubeBudget } from './youtubeQuota';
+import { retroSearchPlan, youtubeSearchBatch } from './retroSearchPlan';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildVideoDocument } from './videoDocument';
 export { buildVideoDocument } from './videoDocument';
@@ -89,6 +90,8 @@ type IngestVideosOptions = {
   fast?: boolean;
   skipDetails?: boolean;
   insertOnly?: boolean;
+  youtubeOrder?: 'date' | 'relevance' | 'viewCount';
+  youtubePer?: number;
 };
 
 type IngestResult = {
@@ -139,29 +142,6 @@ const DAILYMOTION_LOCALE: Record<string, string> = {
   AU: 'en_AU',
   AR: 'es_AR',
 };
-
-const RETRO_THEMES = [
-  'retro tv show',
-  'public access',
-  'vintage advertising',
-  'festival documentary',
-  'retro gaming arcade',
-  'city travelogue',
-  'home video',
-  'science documentary',
-  'design showcase',
-  'music performance',
-  'dance competition',
-  'cooking show',
-  'kids program',
-  'news special',
-  'behind the scenes',
-  'talk show',
-  'variety show',
-  'technology expo',
-  'sports recap',
-  'festival recap',
-];
 
 const YT_TRENDING_PER_REGION = 50;
 const RETRO_QUERY_COUNT = 10;
@@ -361,7 +341,7 @@ async function fetchJson<T = unknown>(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     if (!await permitBaseYouTube(url)) {
-      warnings?.push({ label: label || 'youtube', message: 'Shared YouTube quota exhausted' });
+      warnings?.push({ label: 'youtube:budget-unavailable', message: 'Shared YouTube budget unavailable: daily limit, reserved lane, or later window' });
       return null;
     }
     const headers = new Headers(USER_AGENT as HeadersInit);
@@ -382,6 +362,7 @@ async function fetchJson<T = unknown>(
       } catch (readError) {
         body = `(failed to read body: ${readError instanceof Error ? readError.message : String(readError)})`;
       }
+      await noteBaseYouTubeQuota(url, response.status, body);
       console.warn('[ingest:fetch] non-ok response', {
         label: label || url,
         status: response.status,
@@ -422,6 +403,7 @@ async function searchYouTube(
   concurrency = 2,
   maxTimePerQueryMs = 35000,
   expandVariants = false,
+  preferredOrder?: 'date' | 'relevance' | 'viewCount',
 ): Promise<RawVideo[]> {
   const envKey = process.env.YOUTUBE_API_KEY;
   if (!envKey) {
@@ -458,7 +440,7 @@ async function searchYouTube(
         return;
       }
       let pageToken = '';
-      const order = Math.random() < 0.5 ? 'date' : 'relevance';
+      const order = preferredOrder ?? (Math.random() < 0.5 ? 'date' : 'relevance');
       const publishedAfter = days > 0 ? new Date(started - days * 86400000).toISOString() : undefined;
       for (let page = 0; page < pages; page++) {
         const params = new URLSearchParams();
@@ -1260,10 +1242,9 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
           return { provider, results: [] };
         });
 
-    const ytPer = fast ? Math.max(8, Math.min(16, per)) : per;
-    const ytPages = fast ? 1 : pages;
-    const ytConcurrency = fast ? 4 : 2;
-    const ytTimeout = fast ? 25000 : 45000;
+    const batch = youtubeSearchBatch(per, pages, fast);
+    const ytPer = options.youtubePer == null ? batch.per : Math.max(1, Math.min(50, Math.floor(options.youtubePer)));
+    const { pages: ytPages, concurrency: ytConcurrency, timeout: ytTimeout } = batch;
 
     if (providerSet.has('youtube')) {
       providerTasks.push(
@@ -1278,7 +1259,8 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
             fetchWarnings,
             ytConcurrency,
             ytTimeout,
-            fast,
+            false, // One planned query must not silently fan out into six search calls.
+            options.youtubeOrder,
           ),
         ),
       );
@@ -1301,10 +1283,12 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
       collected.push(...results);
     }
 
-    if (!youtubeResults.length && providerSet.has('youtube') && effectiveQueries.some((q) => /\d{4}/.test(q))) {
+    if (!youtubeResults.length && providerSet.has('youtube') &&
+      !fetchWarnings.some(w => w.label === 'youtube:budget-unavailable' || w.status === 403 || w.status === 429) &&
+      effectiveQueries.some((q) => /\d{4}/.test(q))) {
       const relaxedQueries = effectiveQueries
         .map((q) => q.replace(/\b(19|20)\d{2}\b/g, '').replace(/\s+/g, ' ').trim())
-        .filter(Boolean);
+        .filter(Boolean).slice(0, 2);
       if (relaxedQueries.length) {
         collected.push(
           ...await searchYouTube(
@@ -1316,7 +1300,8 @@ export async function ingestVideos(options: IngestVideosOptions): Promise<Ingest
             fetchWarnings,
             ytConcurrency,
             ytTimeout,
-            fast,
+            false,
+            options.youtubeOrder,
           ),
         );
       }
@@ -1465,48 +1450,26 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
   return rows;
 }
 
-export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean; limitPerProvider?: number; skipDetails?: boolean; insertOnly?: boolean } = {}): Promise<IngestResult> {
+export async function ingestTrendingVideos(regions: string[], options: { dryRun?: boolean; limitPerProvider?: number; skipDetails?: boolean; insertOnly?: boolean;
+  providers?: Array<'youtube' | 'dailymotion'>; conservativeRoutineInitialization?: boolean } = {}): Promise<IngestResult> {
   const warnings: FetchWarning[] = [];
   const collected: RawVideo[] = [];
   const limit = Math.min(50, Math.max(10, options.limitPerProvider ?? YT_TRENDING_PER_REGION));
-  const tasks = regions.slice(0, 2).flatMap((region) => [
-    fetchYouTubeTrending(region, limit, warnings),
-    fetchDailymotionTrending(region, limit, warnings),
-  ]);
+  const providers = options.providers ?? ['youtube', 'dailymotion'];
+  const tasks = regions.slice(0, 2).flatMap(region => providers.map(provider => provider === 'youtube'
+    ? fetchYouTubeTrending(region, limit, warnings) : fetchDailymotionTrending(region, limit, warnings)));
   const settled = await Promise.all(tasks);
   for (const rows of settled) collected.push(...rows);
   return finalizeVideoIngest(collected, {
     dryRun: Boolean(options.dryRun),
     sampleSize: Math.min(20, collected.length),
     warnings,
-    providers: ['youtube', 'dailymotion'],
+    providers,
     skipDetails: options.skipDetails ?? true,
     insertOnly: options.insertOnly ?? false,
     routineWarningLabel: 'trending:editorial-quota',
+    conservativeRoutineInitialization: options.conservativeRoutineInitialization,
   });
-}
-
-function seededRandom(seed: number) {
-  return function mulberry32() {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function buildRetroQueries(count: number, date = new Date()): string[] {
-  const daySeed = Number.parseInt(date.toISOString().slice(0, 10).replace(/-/g, ''), 10)
-  const rng = seededRandom(daySeed)
-  const queries: string[] = []
-  for (let i = 0; i < count; i++) {
-    const theme = RETRO_THEMES[i % RETRO_THEMES.length] || 'retro broadcast'
-    const year = 1965 + Math.floor(rng() * 40)
-    const extras = ['full episode', 'highlight', 'archive footage', 'broadcast']
-    const extra = extras[Math.floor(rng() * extras.length)]
-    queries.push(`${theme} ${year} ${extra}`.trim())
-  }
-  return queries
 }
 
 export async function ingestRetroTrendingVideos(options: {
@@ -1517,8 +1480,8 @@ export async function ingestRetroTrendingVideos(options: {
 } = {}): Promise<IngestResult> {
   const queryCount = Math.min(RETRO_QUERY_COUNT, Math.max(2, options.queryCount ?? RETRO_QUERY_COUNT))
   const per = Math.max(8, Math.min(RETRO_RESULTS_PER_QUERY, options.per ?? RETRO_RESULTS_PER_QUERY))
-  const queries = buildRetroQueries(queryCount)
-  return ingestVideos({
+  const { queries, order } = retroSearchPlan(queryCount)
+  return withRetroYouTubeBudget(() => ingestVideos({
     mode: 'search',
     queries,
     per,
@@ -1526,8 +1489,9 @@ export async function ingestRetroTrendingVideos(options: {
     days: 0,
     providers: ['youtube', 'dailymotion'],
     fast: true,
+    youtubeOrder: order,
     dryRun: Boolean(options.dryRun),
     sampleSize: 12,
     skipDetails: options.skipDetails ?? true,
-  })
+  }))
 }

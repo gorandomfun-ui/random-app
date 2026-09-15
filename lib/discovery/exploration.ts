@@ -6,12 +6,14 @@ import { reserveDailymotionQuota, type DailymotionSpec } from './dailymotion'
 import { SUBJECT_VERSION, subjectInSource, type Subject } from './subjects'
 import { buildProfile, cleanDescription } from './profile'
 import { providerError, ProviderQuotaError } from './providerErrors'
+import type { SearchCoverage } from './searchGeography'
+import { youtubeBudget, youtubeQuotaWindow } from './youtubeBudget'
 
 export type DiscoveryFocus = { subject: Subject; subjectVersion?: number; ownerId: string; referenceKey: string; referenceRevision?: string; branch: 'primary' | 'secondary'; angle: string }
 export type SearchSpec = ({
   kind: 'search'; query: string; language: string; order: 'date' | 'relevance' | 'viewCount';
   after: string; before: string
-} | { kind: 'channel'; channelId: string } | { kind: 'playlist'; playlistId: string } | DailymotionSpec) & { focus?: DiscoveryFocus }
+} | { kind: 'channel'; channelId: string } | { kind: 'playlist'; playlistId: string } | DailymotionSpec) & { focus?: DiscoveryFocus; coverage?: SearchCoverage }
 export type DiscoveryTask = { _id: string; spec: SearchSpec; depth: number; editorial: boolean;
   due: Date; leaseUntil: Date; leaseToken?: string; attempts: number; cursor?: string;
   pages: number; dryPages: number; priority: number; lastYield?: number;
@@ -29,27 +31,42 @@ export async function enqueue(db: Db, spec: SearchSpec, depth = 0, editorial = f
 }
 export type QuotaConfig = { searchDailyLimit: number; otherDailyLimit: number;
   /** Capacity reserved for all existing jobs. Configure from actual usage, not a guessed default. */
-  searchBaseReserve: number; otherBaseReserve: number; extraSearchLimit: number }
-type Quota = { _id: string; spent: number; exploration: number; editorial: number; remoteExhausted?: boolean }
+  searchBaseReserve: number; otherBaseReserve: number; extraSearchLimit: number; pacing?: boolean }
+type Quota = { _id: string; spent: number; exploration: number; editorial: number; retro?: number; trends?: number; remoteExhausted?: boolean }
 export function quotaDay(now: number): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  return youtubeQuotaWindow(now).day
 }
 export async function reserveQuota(db: Db, config: QuotaConfig, bucket: 'search' | 'other',
-  actor: 'base' | 'exploration' | 'editorial', now: number): Promise<boolean> {
+  actor: 'base' | 'exploration' | 'editorial', now: number, purpose: 'general' | 'retro' | 'trends' = 'general'): Promise<boolean> {
   const daily = bucket === 'search' ? config.searchDailyLimit : config.otherDailyLimit
   const base = bucket === 'search' ? config.searchBaseReserve : config.otherBaseReserve
   if (!Number.isSafeInteger(daily) || daily <= 0 || !Number.isSafeInteger(base) || base < 0 || base > daily ||
     !Number.isSafeInteger(config.extraSearchLimit) || config.extraSearchLimit < 0) throw new Error('Invalid explicit quota configuration')
-  // The configured reserve is already a bound: do not silently quarter it a second time.
-  const extra = bucket === 'search' ? Math.min(daily - base, config.extraSearchLimit) : daily - base
+  const discovery = process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '1'
+  const budget = youtubeBudget(config, bucket, now, discovery)
+  const expressions: Record<string, unknown>[] = []
+  const protectedRequest = actor === 'base' && purpose === budget.protectedCounter
+  const protectedSpent = { $ifNull: [`$${budget.protectedCounter}`, 0] }
+  if (actor === 'base' && discovery) {
+    const baseSpent = { $subtract: ['$spent', '$exploration'] }
+    expressions.push({ $lt: [baseSpent, budget.base] })
+    if (config.pacing && !protectedRequest) expressions.push({ $lt: [
+      { $subtract: [baseSpent, protectedSpent] }, budget.base - budget.protectedReleased] })
+  }
+  if (config.pacing) {
+    expressions.push(protectedRequest
+      ? { $lt: [protectedSpent, budget.protectedReleased] }
+      : { $lt: [{ $subtract: ['$spent', protectedSpent] }, budget.released - budget.protectedReleased] })
+  }
   const collection = db.collection<Quota>('discovery_quota_v2'), _id = `${quotaDay(now)}:youtube:${bucket}`
-  try { await collection.updateOne({ _id }, { $setOnInsert: { spent: 0, exploration: 0, editorial: 0 } }, { upsert: true }) }
+  try { await collection.updateOne({ _id }, { $setOnInsert: { spent: 0, exploration: 0, editorial: 0 } }, { upsert: true, maxTimeMS: 2000 }) }
   catch (error) { if ((error as { code?: number }).code !== 11000) throw error }
-  const result = await collection.findOneAndUpdate({ _id, remoteExhausted: { $ne: true }, spent: { $lt: daily },
-    ...(actor === 'base' && process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '1' ? { $expr: { $lt: [{ $subtract: ['$spent', '$exploration'] }, daily - extra] } } : {}),
-    ...(actor !== 'base' ? { exploration: { $lt: extra } } : {}),
-    ...(actor === 'editorial' ? { editorial: { $lt: extra > 0 ? Math.max(1, Math.floor(extra * .5)) : 0 } } : {}),
-  }, { $inc: { spent: 1, exploration: Number(actor !== 'base'), editorial: Number(actor === 'editorial') } }, { returnDocument: 'after' })
+  const result = await collection.findOneAndUpdate({ _id, remoteExhausted: { $ne: true }, spent: { $lt: budget.released },
+    ...(expressions.length ? { $expr: { $and: expressions } } : {}),
+    ...(actor !== 'base' ? { exploration: { $lt: budget.extra } } : {}),
+    ...(actor === 'editorial' ? { editorial: { $lt: budget.editorial } } : {}),
+  }, { $inc: { spent: 1, exploration: Number(actor !== 'base'), editorial: Number(actor === 'editorial'),
+    ...(protectedRequest ? { [budget.protectedCounter]: 1 } : {}) } }, { returnDocument: 'after', maxTimeMS: 2000 })
   return result != null
 }
 export function quotaConfigFromEnv(): QuotaConfig {
@@ -60,13 +77,14 @@ export function quotaConfigFromEnv(): QuotaConfig {
   }
   return { searchDailyLimit: read('RANDOM_YT_SEARCH_DAILY_LIMIT'), otherDailyLimit: read('RANDOM_YT_OTHER_DAILY_LIMIT'),
     searchBaseReserve: read('RANDOM_YT_SEARCH_BASE_RESERVE'), otherBaseReserve: read('RANDOM_YT_OTHER_BASE_RESERVE'),
-    extraSearchLimit: read('RANDOM_YT_EXTRA_SEARCH_LIMIT') }
+    extraSearchLimit: read('RANDOM_YT_EXTRA_SEARCH_LIMIT'), pacing: process.env.RANDOM_YT_PACING_ENABLED !== '0' }
 }
 export type Page = { videos: RawVideo[]; nextCursor?: string; children: SearchSpec[]; metadataWarning?: string; remoteOtherExhausted?: boolean }
 export type PageLoader = (task: DiscoveryTask, signal: AbortSignal, permit: (bucket: 'search' | 'other') => Promise<boolean>) => Promise<Page>
 export type DiscoveryProvider = 'youtube' | 'dailymotion'
 export type ExplorationStage = 'claiming' | 'provider' | 'ingesting' | 'recovering'
 export type ExplorationReport = { pages: number; inserted: number; failures: number; quotaDenied: number;
+  searchCoverage?: Record<string, { pages: number; fetched: number; inserted: number }>;
   metadataWarnings?: number;
   curation?: { pages: number; fetched: number; matched: number; inserted: number; duplicates: number; rejected: number };
   errors: { timeout: number; rateLimit: number; http: number; other: number };
@@ -127,7 +145,7 @@ export async function runExploration(options: {
 }): Promise<ExplorationReport> {
   const { db, quota, random, loadPage, ingest } = options, now = options.now ?? Date.now
   const deadline = now() + Math.min(180000, options.maxMs ?? 180000)
-  const report: ExplorationReport = { pages: 0, inserted: 0, failures: 0, quotaDenied: 0,
+  const report: ExplorationReport = { pages: 0, inserted: 0, failures: 0, quotaDenied: 0, searchCoverage: {},
     curation: { pages: 0, fetched: 0, matched: 0, inserted: 0, duplicates: 0, rejected: 0 },
     errors: { timeout: 0, rateLimit: 0, http: 0, other: 0 }, stopReason: 'idle' }
   const blockedKinds = new Set<SearchSpec['kind']>()
@@ -221,6 +239,11 @@ export async function runExploration(options: {
       for (const spec of page.children.slice(0, 3)) await enqueue(db, spec, task.depth + 1, task.editorial, now())
       pagesByTask.set(task._id, (pagesByTask.get(task._id) ?? 0) + 1)
       report.pages++; report.inserted += result.inserted
+      if (task.spec.coverage) {
+        const key = task.spec.coverage.area
+        const bucket = report.searchCoverage![key] ??= { pages: 0, fetched: 0, inserted: 0 }
+        bucket.pages++; bucket.fetched += scanned; bucket.inserted += result.inserted
+      }
       if (task.spec.focus && report.curation) {
         report.curation.pages++; report.curation.fetched += scanned; report.curation.matched += focused.length
         report.curation.inserted += result.inserted; report.curation.duplicates += result.existingSkipped ?? 0

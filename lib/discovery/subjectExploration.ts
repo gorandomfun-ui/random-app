@@ -47,7 +47,9 @@ export function createSubjectSearches(profile: Profile, scope: OwnerScope, now: 
     const focusSubject: Subject = secondary ? analysis.secondary[Math.floor(turn / 2) % analysis.secondary.length] : analysis.primary!
     const ordinal = turn * 2 + slot
     const angle = SUBJECT_ANGLES[ordinal % SUBJECT_ANGLES.length]
-    const languageIndex = Math.floor(ordinal / SUBJECT_ANGLES.length) % LANGUAGES.length
+    // Angles and languages rotate independently. Previously every reference
+    // spent its first eight turns in French before trying a second language.
+    const languageIndex = turn % LANGUAGES.length
     const language = LANGUAGES[languageIndex]
     // Use one angle term per search. Requiring several words excludes the very sparse titles we seek.
     const variants = angle[languageIndex + 1].split('|').filter(Boolean)

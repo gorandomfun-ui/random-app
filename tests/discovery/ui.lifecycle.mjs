@@ -29,7 +29,7 @@ const dom=new JSDOM('<!doctype html><html><body><div id="root"></div></body></ht
 for(const name of ['window','document','navigator','sessionStorage','localStorage','history','CustomEvent','StorageEvent','Event','Image'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true})
 window.scrollTo=()=>{};window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}})
 globalThis.requestAnimationFrame=window.requestAnimationFrame.bind(window);globalThis.cancelAnimationFrame=window.cancelAnimationFrame.bind(window)
-let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true,waveResponseDelayMs=0
+let serial=0;const calls=[],curationWrites=[],publicLikeWrites=[];let curated=false,curationReads=0,waveCalls=0,wavePlansAvailable=true,waveResponseDelayMs=0,waveSimulatedErrors=0
 globalThis.fetch=async(input,init={})=>{
  const url=new URL(String(input),'https://test.invalid')
  if(url.pathname==='/api/discovery/random'){
@@ -40,6 +40,7 @@ globalThis.fetch=async(input,init={})=>{
  }
  if(url.pathname==='/api/discovery/wave'){
   waveCalls++
+  if(waveSimulatedErrors>0){waveSimulatedErrors--;return Response.json({error:'unavailable'},{status:503})}
   const req=JSON.parse(init.body);const profile=buildProfile({title:'Stone carving workshop'})
   const make=(key,type)=>({key,type,profile,provider:'youtube',stock:false,available:true,payload:{type,_id:key.replace(/[^0-9]/g,'').padStart(24,'0'),url:'https://example.invalid/'+key,text:key,provider:'youtube'}})
   if(waveResponseDelayMs)await new Promise(resolve=>setTimeout(resolve,waveResponseDelayMs))
@@ -139,5 +140,29 @@ try{
  const unavailableWaveButton=document.querySelector('button[data-wave-status]')
  await until(()=>unavailableWaveButton?.dataset.waveStatus==='empty'&&unavailableWaveButton.classList.contains('wave-action--unavailable'))
   if(!unavailableWaveButton.disabled)throw new Error('Unavailable Wave button remained active')
- console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:snapshot().sequence.draws,reloadPreserved:true,waveAvailability:{readyAnimated:true,slowDistinguished:true,lateReadyAccepted:true,emptyGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
+ // Exercise availability repeatedly through the actual component, not just selectPool().
+ app.unmount();sessionStorage.clear();wavePlansAvailable=true;waveResponseDelayMs=0
+ app=createRoot(document.getElementById('root'));app.render(React.createElement(RandomExperience,{discoveryMode:true,waveDiscoveryMode:true}))
+ await until(()=>snapshot()?.discovery?.displayed===1)
+ let readyAfterFirstThree=0
+ for(let i=0;i<24;i++){
+  const expected=i===14?'empty':'ready'
+  const button=document.querySelector('button[data-wave-status]')
+  await until(()=>button?.dataset.waveStatus===expected)
+  if(i>2&&expected==='ready')readyAfterFirstThree++
+  if(i===23)break
+  wavePlansAvailable=i+1!==14;waveSimulatedErrors=i+1===6?1:0
+  waveResponseDelayMs=i+1===20?1600:0
+  const prior=snapshot().discovery.displayed
+  const next=[...document.querySelectorAll('button')].find(x=>/random again/i.test(x.textContent))
+  await until(()=>next&&!next.disabled);next.click()
+  await until(()=>snapshot()?.discovery?.displayed>prior)
+ }
+ if(readyAfterFirstThree!==20)throw new Error('Wave availability degraded across repeated Randoms')
+ const audit=window.randomWaveAudit?.()||[]
+ if(!audit.some(x=>x.stage==='response'&&x.ready===false))throw new Error('Unavailable Wave is not diagnosed')
+ if(!audit.some(x=>x.stage==='response'&&x.ready===true))throw new Error('Ready Wave is not diagnosed')
+ if(audit.length>240)throw new Error('Wave diagnostics grew without a bound')
+ const longSessionDisplayed=snapshot().discovery.displayed
+ console.log(JSON.stringify({passed:true,component:'RandomExperience.tsx',committed:8,waveDisplays:3,requests:calls.length,savedPrepared:state.ready.length,sequenceDraws:8,longSession:{displayed:longSessionDisplayed,readyAfterFirstThree},reloadPreserved:true,waveAvailability:{readyAnimated:true,slowDistinguished:true,lateReadyAccepted:true,emptyGrayAndDisabled:true},curationHeart:{yourLikes:true,weLikeSyncDelegated:true,noDuplicatePublicRequest:true,poolCool:true,reversible:true},mode:'JSDOM, player/components boundaries stubbed'},null,2))
 }finally{app.unmount();dom.window.close();fs.rmSync(temporary,{recursive:true,force:true})}

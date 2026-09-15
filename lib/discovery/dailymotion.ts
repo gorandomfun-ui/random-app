@@ -3,17 +3,24 @@ import type { PageLoader } from './exploration'
 import type { RawVideo } from '../ingest/videos'
 import { quotaDay } from './exploration'
 import { providerError } from './providerErrors'
+import type { SearchCoverage } from './searchGeography'
 
 export type DailymotionSpec = { kind: 'dailymotion'; query?: string; category?: string;
+  coverage?: SearchCoverage;
   after: string; before: string; sort: 'recent' | 'relevance' | 'old' | 'least-visited' }
 
-export async function reserveDailymotionQuota(db: Db, now: number): Promise<boolean> {
+export async function reserveDailymotionQuota(db: Db, now: number, actor: 'exploration' | 'maintenance' = 'exploration'): Promise<boolean> {
   const configured = Number(process.env.RANDOM_DM_DISCOVERY_DAILY_LIMIT ?? 60)
   if (!Number.isSafeInteger(configured) || configured < 0 || configured > 200) throw new Error('Invalid Dailymotion exploration budget')
-  const c = db.collection<{ _id: string; spent: number }>('discovery_dm_quota_v2'), _id = quotaDay(now)
+  const reserve = Math.min(4, Math.floor(configured / 10)) // Preserve small custom budgets; reserve at most four ID lookup pages.
+  const c = db.collection<{ _id: string; spent: number; maintenance?: number }>('discovery_dm_quota_v2'), _id = quotaDay(now)
   try { await c.updateOne({ _id }, { $setOnInsert: { spent: 0 } }, { upsert: true, maxTimeMS: 2000 }) }
   catch (error) { if ((error as { code?: number }).code !== 11000) throw error }
-  return Boolean(await c.findOneAndUpdate({ _id, spent: { $lt: configured } }, { $inc: { spent: 1 } },
+  const maintenance = { $ifNull: ['$maintenance', 0] }
+  return Boolean(await c.findOneAndUpdate({ _id, spent: { $lt: configured },
+    $expr: { $lt: [actor === 'maintenance' ? maintenance : { $subtract: ['$spent', maintenance] },
+      actor === 'maintenance' ? reserve : configured - reserve] },
+  }, { $inc: { spent: 1, maintenance: Number(actor === 'maintenance') } },
     { returnDocument: 'after', maxTimeMS: 2000 }))
 }
 

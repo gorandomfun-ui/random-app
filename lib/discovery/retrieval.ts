@@ -26,7 +26,8 @@ export function relatedSignals(profile: Profile): Signal[] {
   if (fallbackWord && aliases.every(words => words.length > 1)) signals.push({
     query: { 'discoveryProfile.tokens': fallbackWord }, index: 'discovery_tokens_v2',
   })
-  return signals.slice(0, 4)
+  // Different aliases can collapse to exactly the same indexed tokens.
+  return [...new Map(signals.map(signal => [JSON.stringify(signal.query), signal])).values()].slice(0, 4)
 }
 
 export type RetrievalDiagnostics = { queries: number; queryFailures: number; elapsedMs: number; complete: boolean; sampled: number }

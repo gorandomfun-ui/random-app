@@ -8,6 +8,8 @@ import { NextResponse } from 'next/server'
 import { enrichRecentYouTubeVideos, ingestTrendingVideos, ingestVideos, pickTrendingRegions } from '@/lib/ingest/videos'
 import { buildDailyRetroQueries, buildDailyVideoQueries, buildDailyWebQueries } from '@/lib/ingest/daily-auto/queries'
 import { logCronRun, type CronTrigger } from '@/lib/metrics/cron'
+import { withRetroYouTubeBudget } from '@/lib/ingest/youtubeQuota'
+import { retroSearchPlan } from '@/lib/ingest/retroSearchPlan'
 
 const PHASES = ['discovery', 'trending', 'retro', 'combo-videos', 'web', 'enrich-videos'] as const
 type DailyAutoPhase = (typeof PHASES)[number]
@@ -201,14 +203,18 @@ export async function GET(req: NextRequest) {
     } else if (phase === 'retro') {
       const queryCount = parseInteger(req.nextUrl.searchParams.get('count'), 8, 2, 24)
       const per = parseInteger(req.nextUrl.searchParams.get('per'), 12, 5, 30)
-      const queries = await buildDailyRetroQueries({
-        count: queryCount,
+      const existing = await buildDailyRetroQueries({
+        count: Math.ceil(queryCount / 2),
         seed: `retro:${new Date().toISOString().slice(0, 10)}:${runKey}:${queryCount}`,
       })
-      const result = await ingestVideos({
+      const retro = retroSearchPlan(Math.ceil(queryCount / 2))
+      const queries = [...new Set(existing.flatMap((q, i) => [q, retro.queries[i % retro.queries.length]]))].slice(0, queryCount)
+      const result = await withRetroYouTubeBudget(() => ingestVideos({
         mode: 'search',
         queries,
         per,
+        youtubePer: 50,
+        youtubeOrder: retro.order,
         pages: 1,
         days: 0,
         providers: parseProviders(req.nextUrl.searchParams.get('providers'), ['youtube', 'dailymotion']),
@@ -218,7 +224,7 @@ export async function GET(req: NextRequest) {
         sampleSize,
         skipDetails: true,
         insertOnly: true,
-      })
+      }))
       payload = {
         ok: true,
         phase,
@@ -245,6 +251,7 @@ export async function GET(req: NextRequest) {
         mode: 'search',
         queries,
         per,
+        youtubePer: 50,
         pages,
         days,
         providers,

@@ -1,5 +1,6 @@
 import { type SearchSpec } from './exploration'
 import { hash, seeded, shuffled, type Rng } from './random'
+import { geographicSearch } from './searchGeography'
 
 /** Starter vocabulary, deliberately configurable. This is search coverage, never proof of a result's subject. */
 export const SEARCH_AXES: Record<string, string[]> = {
@@ -25,12 +26,14 @@ export function createSearchSeeds(random: Rng, now: number, limit = 20, axes = S
   const start = rotating ? (rotation! * size) % pairs.length : 0
   const selected = Array.from({ length: size }, (_, index) => pairs[(start + index) % pairs.length])
   return selected.map(({ language, query }, i) => {
+    const geography = axes === SEARCH_AXES && i % 4 === 0 ? geographicSearch(Math.floor(((rotation ?? 0) * size + i) / 4)) : undefined
     // Rotate actual publication windows. They never claim to be the footage's recording date.
     const fromYear = i % 3 === 0 ? year : i % 3 === 1 ? 2005 + Math.floor(random() * Math.max(1, year - 2010)) : year - 5 + Math.floor(random() * 5)
     const dayBoundary = Date.UTC(year, current.getUTCMonth(), current.getUTCDate())
     const end = Math.min(dayBoundary, Date.UTC(fromYear + 1, 0, 1))
     const after = new Date(Math.min(Date.UTC(fromYear, 0, 1), end - 86400000)).toISOString()
     const before = new Date(end).toISOString()
-    return { kind: 'search', query, language, after, before, order: i % 3 === 0 ? 'date' : 'relevance' }
+    return { kind: 'search', query: geography?.query ?? query, language: geography?.language ?? language,
+      ...(geography ? { coverage: geography.coverage } : {}), after, before, order: i % 3 === 0 ? 'date' : 'relevance' }
   })
 }

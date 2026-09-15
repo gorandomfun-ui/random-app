@@ -2,6 +2,9 @@
 
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { integerSetting, videoRunPolicy, runStopReason } from './lib/daily-auto-policy.mjs'
 
 let host = process.env.HOST || process.env.RANDOM_INGEST_HOST || ''
@@ -408,8 +411,11 @@ async function main() {
     if (Date.now() >= requestDeadline - 1000) return null
     const phaseStarted = Date.now()
     try {
-      const payload = await callDailyAuto(params)
+      const payload = params.phase === 'trending' && !dryRun && readBool('DAILY_AUTO_TRENDS_DIRECT')
+        ? await directTrends() : await callDailyAuto(params)
       remember(payload)
+      if (payload.ok === false) errors.push({ phase: params.phase, run: params.run,
+        error: 'Partial direct trends: inspect provider/region counters' })
       return payload
     } catch (error) {
       rememberFailure(params, error, Date.now() - phaseStarted)
@@ -521,6 +527,8 @@ async function main() {
   }
 
   console.log('Daily auto summary:', summary)
+  if (errors.length && process.env.GITHUB_ACTIONS === 'true') console.warn(
+    `::warning title=Partial ingestion::${errors.length} phase error(s); ${videoInserted} new videos. See the ingestion summary.`)
   // A small, separate reporting allowance does not restart ingestion.
   requestDeadline = Date.now() + 15000
   await submitReport(summary)
@@ -533,6 +541,27 @@ async function main() {
   if (!dryRun && videoInserted < minVideoInserted) {
     console.warn(`Video target not reached: ${videoInserted}/${minVideoInserted}`)
   }
+}
+
+async function directTrends() {
+  const folder = fs.mkdtempSync(join(tmpdir(), 'random-trends-')), file = join(folder, 'report.json')
+  const started = Date.now()
+  try {
+    let stopped = false
+    await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/trending-direct.mjs', file], {
+        env: process.env, stdio: ['ignore', 'inherit', 'inherit'],
+        timeout: Math.max(1, Math.min(180000, requestDeadline - Date.now())), killSignal: 'SIGKILL',
+      })
+      child.once('error', reject)
+      child.once('exit', code => {
+        stopped = code !== 0
+        if (!stopped || fs.existsSync(file)) resolve()
+        else reject(new Error('Direct trends process failed or timed out; see batch counters'))
+      })
+    })
+    return { ...JSON.parse(fs.readFileSync(file, 'utf8')), ...(stopped ? { ok: false } : {}), durationMs: Date.now() - started }
+  } finally { fs.rmSync(folder, { recursive: true, force: true }) }
 }
 
 main().catch((error) => {

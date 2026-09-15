@@ -1,5 +1,5 @@
 /** Subject identity is independent of the broad families used to balance Random. */
-export const SUBJECT_VERSION = 5 as const
+export const SUBJECT_VERSION = 6 as const
 export type Subject = { key: string; label: string; aliases: string[]; kind: 'entity' | 'topic'; evidence: 'title' | 'description' | 'verified'; tentative?: boolean; domain?: 'fiction' }
 export type SubjectAnalysis = { version: typeof SUBJECT_VERSION; title: string; primary?: Subject;
   secondary: Subject[]; moods: string[]; treatments: string[] }
@@ -108,6 +108,22 @@ const NOT_NAME = new Set((
   'every beat thought could embarrassed him some small bowls clips shows learns learning exploring discovered creating new latest greatest coolest').split(/\s+/))
 
 function inferredNames(rawTitle: string, musicContext = false): Subject[] {
+  // Elliptical one-name headlines: "X Back — Official Trailer". A multi-word
+  // work such as "The Empire Strikes Back" and "Taking Back Sunday" is untouched.
+  const returned = rawTitle.match(/^([\p{Lu}][\p{L}\p{M}$'’.-]{2,})\s+back\s*[-–—|:]\s*(?:official\s+)?(?:trailer|teaser|interview)\b/iu)
+  if (returned && /^\p{Lu}/u.test(returned[1]) && !NOT_NAME.has(foldSubject(returned[1]))) {
+    return [{ ...subject({ label: returned[1], kind: 'entity' }), tentative: true }]
+  }
+  // A grammatical predicate is not part of a named subject. This applies to
+  // arbitrary names, not to a registry of artists/games. Require an explicit
+  // predicate boundary; never strip words inside names such as Taking Back Sunday.
+  const predicate = rawTitle.match(/^(.{2,70}?)\s+(?:(?:is|was|est|ist)\s+(?:back|de retour|zurück)\b|(?:answers|answered)\s+(?:the|a|your)\b|(?:returns|returned|revient)\b)/iu)
+  if (predicate) {
+    const name = predicate[1].trim(), words = foldSubject(name).split(' ')
+    if (words.length <= 4 && /^\p{Lu}/u.test(name) && words.every(w => !NOT_NAME.has(w))) {
+      return [{ ...subject({ label: name, kind: 'entity' }), tentative: true }]
+    }
+  }
   // A title's poetic subtitle or uploader suffix must not become its main entity.
   const lead = rawTitle.split(/[|:!?]/u)[0]
   // A work title or a product code is supported by syntax, independent of capitalisation.
@@ -140,7 +156,7 @@ function inferredNames(rawTitle: string, musicContext = false): Subject[] {
     /[\p{Lu}]/u.test(firstSegment))) {
     return [{ ...subject({ label: firstSegment, kind: 'entity' }), tentative: true }]
   }
-  const contextualLead = lead.match(/^(.{2,80}?)\s+(?:(?:tv|television)\s+)?(?:commercial|advertisement|werbespot|publicité|interview|entrevista|collection|gameplay|playthrough|fancam|concert|official (?:music )?video)\b/iu)?.[1]
+  const contextualLead = lead.match(/^(.{2,80}?)\s+(?:(?:tv|television)\s+)?(?:commercial|advertisement|werbespot|publicité|interview|entrevista|collection|gameplay|playthrough|fancam|concert|travelogue|official (?:music )?video)\b/iu)?.[1]
   if (contextualLead && plausible(contextualLead)) {
     return [{ ...subject({ label: contextualLead.trim(), kind: 'entity' }), tentative: true }]
   }
@@ -207,7 +223,7 @@ export function matchSubject(anchor?: SubjectAnalysis, candidate?: SubjectAnalys
 /** Existing token indexes support exact subject words; full phrase checking happens after retrieval. */
 export function subjectSearchTerms(analysis?: SubjectAnalysis): string[][] {
   if (!analysis?.primary) return []
-  return analysis.primary.aliases.slice(0, 4).map(alias => alias.split(/\s+/).filter(word => word.length >= 3)).filter(words => words.length > 0)
+  return analysis.primary.aliases.slice(0, 4).map(alias => alias.split(/\s+/).filter(word => word.length >= 2)).filter(words => words.length > 0)
 }
 
 /** Shared literal evidence, including homonym checks. Never accepts query-derived tags. */

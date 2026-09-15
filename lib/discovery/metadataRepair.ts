@@ -55,7 +55,7 @@ export async function repairMetadataBatch(db: Db, provider: Provider, rows: Cata
   if (!eligible.length) return { provider, checked: 0, updated: 0, status: 'empty' }
   const key = process.env.YOUTUBE_API_KEY ?? ''
   if (provider === 'youtube' && !key && !options.request) return { provider, checked: 0, updated: 0, status: 'missing-key' }
-  const permit = options.permit ?? (() => provider === 'dailymotion' ? reserveDailymotionQuota(db, now)
+  const permit = options.permit ?? (() => provider === 'dailymotion' ? reserveDailymotionQuota(db, now, 'maintenance')
     : reserveQuota(db, quotaConfigFromEnv(), 'other', 'exploration', now))
   // Quota is reserved once BEFORE the request and is never refunded after a timeout.
   if (!await permit()) return { provider, checked: 0, updated: 0, status: 'quota' }
@@ -89,11 +89,11 @@ export async function sampleMetadataRepairs(db: Db, provider: Provider, now: num
   const families = ['unknown', 'music', 'sport', 'craft', 'food', 'art', 'advertising', 'cinema', 'science', 'gaming', 'technology', 'travel', 'everyday']
   const family = families[1 + Math.floor(now / 21600000) % (families.length - 1)]
   const owner = await db.collection('discovery_owner_references_v2').find({ ownerId: curatorOwnerId(), active: true, itemId: { $exists: true } })
-    .sort({ explorationScheduledAt: 1, _id: 1 }).limit(32).maxTimeMS(600).toArray()
+    .sort({ explorationScheduledAt: 1, _id: 1 }).limit(32).maxTimeMS(600).toArray().catch(() => [])
   const ids = owner.flatMap(r => typeof r.itemId === 'string' && ObjectId.isValid(r.itemId) ? [new ObjectId(r.itemId)] : [])
-  const priority = ids.length ? await db.collection('items').find({ _id: { $in: ids }, provider }).limit(32).maxTimeMS(600).toArray() : []
+  const priority = ids.length ? await db.collection('items').find({ _id: { $in: ids }, provider }).limit(32).maxTimeMS(600).toArray().catch(() => []) : []
   const samples = await Promise.allSettled(['unknown', family].map(f => db.collection('items').find({
-    type: 'video', discoveryFamily: f, rand: { $gte: random() },
+    type: 'video', provider, discoveryFamily: f, rand: { $gte: random() },
   }).hint('discovery_family_rand_v2').sort({ rand: 1 }).limit(60).maxTimeMS(600).toArray()))
   const rows = new Map([...priority, ...samples.flatMap(r => r.status === 'fulfilled' ? r.value : [])].map(r => [String(r._id), r]))
   return [...rows.values()].filter(r => {

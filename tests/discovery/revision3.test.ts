@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildProfile } from '../../lib/discovery/profile'
+import { SUBJECT_VERSION } from '../../lib/discovery/subjects'
 import { foldSubject } from '../../lib/discovery/subjects'
 import { relation, composeWave, WaveSession } from '../../lib/discovery/waves'
 import { relatedSignals } from '../../lib/discovery/retrieval'
@@ -101,7 +102,7 @@ test('corrected subjects drive primary exploration while secondary topics stay s
   const profile = buildProfile({ title: 'A$AP Rocky punk interview' })
   const searches = createSubjectSearches(profile, { ownerId: 'owner', referenceKey: 'ref' }, Date.UTC(2026, 8, 14), 0)
   assert.ok(searches.every(s => s.focus?.subject.key === 'entity:asap rocky'))
-  assert.ok(searches.every(s => s.focus?.subjectVersion === 5))
+  assert.ok(searches.every(s => s.focus?.subjectVersion === SUBJECT_VERSION))
   const raw = { provider: 'youtube' as const, videoId: 'abcdefghijk', url: 'https://youtu.be/abcdefghijk' }
   assert.ok(focusMatchesVideo({ ...raw, title: 'A$AP Rocky collection' }, searches[0].focus))
   assert.equal(focusMatchesVideo({ ...raw, title: 'Punk guitar workshop' }, searches[0].focus), false)

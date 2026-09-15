@@ -1,4 +1,5 @@
 import { hash, seeded, shuffled } from '../../discovery/random'
+import { geographicSearch } from '../../discovery/searchGeography'
 
 // Query coverage only: these labels must never become tags or evidence on a result.
 // Each group keeps contemporary and unusual routes into the same broad universe.
@@ -46,6 +47,9 @@ export function planVideoQueries(legacy: string[], options: {
     const vocabulary = chosenLane === 'contemporary' ? route.current : route.unusual
     const cycle = Math.floor(newSlot / routes.length)
     let query = vocabulary[cycle % vocabulary.length]
+    // Half of the additional routes (25% of all queries) rotate through places.
+    // The original 50% remains intact. A query destination is never a result tag.
+    if (newSlot % 2 === 0) query = geographicSearch(Math.floor(newSlot / 2) + hash(options.seed) % 12).query
     // A year is a search hint, not proof of freshness or of being a trend.
     if (chosenLane === 'contemporary' && cycle % 2 === 0) query += ` ${year}`
     if (used.has(query.toLowerCase())) query += ` ${['performance', 'recording', 'creation'][cycle % 3]}`

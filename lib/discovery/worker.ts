@@ -45,7 +45,7 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
     if (providers.includes('dailymotion')) {
       const dailymotionSeeds: DailymotionSpec[] = []
       for (const spec of seeds.slice(0, 6)) if (spec.kind === 'search') dailymotionSeeds.push({
-        kind: 'dailymotion', query: spec.query, after: spec.after, before: spec.before, sort: 'relevance',
+        kind: 'dailymotion', query: spec.query, after: spec.after, before: spec.before, sort: 'relevance', coverage: spec.coverage,
       })
       const categories = ['creation', 'music', 'sport', 'tech', 'travel', 'shortfilms', 'people', 'tv', 'videogames', 'fun', 'lifestyle']
       for (let i = 0; i < 4; i++) {

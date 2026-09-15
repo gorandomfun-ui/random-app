@@ -28,6 +28,7 @@ import { newSession, type Session as DiscoverySession } from '@/lib/discovery/po
 import { parseSession as parseDiscoverySession } from '@/lib/discovery/sessionCodec'
 import { WaveSession, type WavePlan } from '@/lib/discovery/waves'
 import { requestWavePlan } from '@/lib/discovery/clientRequest'
+import { recordWaveAudit } from '@/lib/discovery/waveAudit'
 import type { Candidate } from '@/lib/discovery/types'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType, VideoPool } from '@/lib/random/types'
@@ -3411,6 +3412,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const candidate = pendingWaveRef.current
     if (!candidate || !waveDiscoveryMode) return
     discoveryWaveRef.current?.displayed(candidate.key)
+    recordWaveAudit({ stage: 'display', anchorId: String(candidate.payload._id ?? ''), type: candidate.type })
     pendingWaveRef.current = null
     if (discoveryEnabled) {
       invalidateDiscoveryQueue()
@@ -3502,20 +3504,32 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
 
     const anchorKey = getContentKey(anchorItem)
+    const waveStarted = performance.now()
+    const audit = (entry: Omit<Parameters<typeof recordWaveAudit>[0], 'anchorId' | 'type' | 'elapsedMs'>) =>
+      recordWaveAudit({ anchorId: String(anchorItem._id ?? ''), type: anchorItem.type,
+        elapsedMs: Math.round(performance.now() - waveStarted), ...entry })
     const excludeIds = typeof anchorItem._id === 'string' ? [anchorItem._id] : []
     const requestTimeout = window.setTimeout(() => controller.abort(WAVE_HARD_TIMEOUT_REASON), WAVE_HARD_TIMEOUT_MS)
     try {
       if (waveDiscoveryMode) {
         discoveryWaveRef.current = null
+        audit({ stage: 'request' })
         const response = await requestWavePlan({ anchorId: anchorItem._id, lang: locale || 'en', types: ALL_ITEM_TYPES,
           excludeKeys: discoveryRef.current.snapshot().recent.map(x => x.key) }, controller.signal)
+        const body = await response.json().catch(() => null)
+        const diagnostics = body?.diagnostics
+        audit({ stage: 'response', http: response.status, ready: body?.ready === true,
+          cause: diagnostics?.cause ?? body?.error ?? body?.reason,
+          subjectKey: diagnostics?.subjectKey, sampled: diagnostics?.sampled,
+          related: diagnostics?.related, queryFailures: diagnostics?.queryFailures })
+        if (generation !== wavePreparationGenerationRef.current) return false
         if (!response.ok) {
           wavePreparationOutcomeRef.current = 'error'
           return false
         }
-        const plan = await response.json() as WavePlan<RandomContentItem> & { anchor?: Candidate<RandomContentItem> }
+        const plan = body as (WavePlan<RandomContentItem> & { anchor?: Candidate<RandomContentItem> }) | null
         if (generation !== wavePreparationGenerationRef.current) return false
-        if (!plan.ready || !plan.anchor) {
+        if (!plan?.ready || !plan.anchor) {
           wavePreparationOutcomeRef.current = 'empty'
           return false
         }
@@ -3572,6 +3586,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       wavePreparationOutcomeRef.current = 'ready'
       return true
     } catch {
+      if (waveDiscoveryMode) audit({ stage: controller.signal.aborted ? 'cancelled' : 'failed',
+        cause: controller.signal.reason === WAVE_HARD_TIMEOUT_REASON ? 'client-deadline'
+          : controller.signal.aborted ? 'anchor-changed' : 'network-or-response' })
       if (generation !== wavePreparationGenerationRef.current) return false
       waveAnchorRef.current = null
       waveAnchorItemRef.current = null
@@ -3654,7 +3671,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         return
       }
       void ensureWaveTrail(currentItem).then((ready) => {
-        if (disposed || currentItemRef.current !== currentItem) return
+        const active = currentItemRef.current
+        if (disposed || !active || active.type === 'encourage' || getContentKey(active) !== anchorKey) return
         if (slowTimer != null) window.clearTimeout(slowTimer)
         const outcome = ready ? 'ready' : wavePreparationOutcomeRef.current
         if (outcome === 'cancelled') return
