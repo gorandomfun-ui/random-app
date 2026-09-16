@@ -1,19 +1,12 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { ingestTrendingVideos, pickTrendingRegions } from '@/lib/ingest/videos'
 
 function authorize(req: NextRequest): NextResponse | null {
-  const isCron = Boolean(req.headers.get('x-vercel-cron'))
-  const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
-  const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  if (!expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized', reason: 'missing-expected-key' }, { status: 401 })
-  }
-  if (!isCron && providedKey !== expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized', reason: 'mismatch' }, { status: 401 })
-  }
-  return null
+  if (isAdminRequest(req)) return null
+  return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
 }
 
 export async function GET(req: NextRequest) {

@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
@@ -255,11 +256,8 @@ async function fetchZenQuotes() {
 
 /* ============= Handler ============= */
 export async function GET(req: NextRequest) {
-  // AUTH durcie
-  const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
-  const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  if (!expectedKey || providedKey !== expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   const pagesRaw = Number(req.nextUrl.searchParams.get('pages') || 10)

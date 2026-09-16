@@ -1,12 +1,12 @@
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 
 type ItemType = 'video'
 function checkKey(req: Request) {
-  const reqKey = new URL(req.url).searchParams.get('key')
-  return reqKey && reqKey === (process.env.ADMIN_INGEST_KEY || '')
+  return isAdminRequest(req)
 }
 
 /* --------------------------- DB helpers (light) --------------------------- */
@@ -64,7 +64,7 @@ function extractYouTubeId(url: string): string {
 
 export async function GET(req: Request) {
   if (!checkKey(req)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
   try {
     const res = await fetch('https://www.reddit.com/r/funnyvideos/.json?limit=100', { cache: 'no-store' })

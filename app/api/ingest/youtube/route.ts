@@ -21,6 +21,7 @@ export const runtime = 'nodejs'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 
 // ---------------------------- DB helpers ----------------------------------
@@ -263,10 +264,8 @@ async function redditYouTube(sub = 'funnyvideos', limit = 40) {
 
 // ---------------------------- Handler -------------------------------------
 export async function GET(req: NextRequest) {
-  // Auth
-  const key = req.nextUrl.searchParams.get('key') || ''
-  if (!process.env.ADMIN_INGEST_KEY || key !== process.env.ADMIN_INGEST_KEY) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   const mode = (req.nextUrl.searchParams.get('mode') || 'search').toLowerCase()

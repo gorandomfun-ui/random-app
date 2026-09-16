@@ -1,6 +1,7 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ingestImages, IMAGE_PROVIDERS } from '@/lib/ingest/images';
@@ -68,10 +69,8 @@ function parseBoolean(value: string | null, fallback = false): boolean {
 }
 
 export async function GET(req: Request) {
-  const authKey = req.headers.get('x-admin-ingest-key') || '';
-  const expectedKey = process.env.ADMIN_INGEST_KEY || '';
-  if (!expectedKey || authKey !== expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 });
   }
 
   try {

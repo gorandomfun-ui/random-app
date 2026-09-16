@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { logCronRun } from '@/lib/metrics/cron'
 
 function coerceDate(value: unknown, fallback: Date): Date {
@@ -47,11 +48,8 @@ function reportNameFor(details: Record<string, unknown>): string {
 }
 
 export async function POST(req: NextRequest) {
-  const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
-
-  if (!expectedKey || providedKey !== expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   try {

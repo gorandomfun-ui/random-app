@@ -5,6 +5,7 @@ export const maxDuration = 300
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminRequestKind, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
 import { enrichRecentYouTubeVideos, ingestTrendingVideos, ingestVideos, pickTrendingRegions } from '@/lib/ingest/videos'
 import { buildDailyRetroQueries, buildDailyVideoQueries, buildDailyWebQueries } from '@/lib/ingest/daily-auto/queries'
 import { logCronRun, type CronTrigger } from '@/lib/metrics/cron'
@@ -29,21 +30,17 @@ type PhasePayload = {
 }
 
 function authorize(req: NextRequest): { ok: true; triggeredBy: CronTrigger; key: string } | { ok: false; response: NextResponse } {
-  const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
-  const isCron = Boolean(req.headers.get('x-vercel-cron'))
-
-  if (!expectedKey) {
-    return { ok: false, response: NextResponse.json({ error: 'Unauthorized', reason: 'missing-expected-key' }, { status: 401 }) }
+  const kind = adminRequestKind(req)
+  if (!kind) {
+    return { ok: false, response: NextResponse.json(adminUnauthorizedBody(), { status: 401 }) }
   }
-
-  const cronSecret = process.env.CRON_SECRET
-  const signedCron = Boolean(isCron && cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`)
-  if (!signedCron && providedKey !== expectedKey) {
-    return { ok: false, response: NextResponse.json({ error: 'Unauthorized', reason: 'mismatch' }, { status: 401 }) }
+  // The key is only used for the internal self-calls below; it comes from the
+  // environment, never from the request.
+  return {
+    ok: true,
+    triggeredBy: kind === 'cron-secret' ? 'cron' : 'manual',
+    key: (process.env.ADMIN_INGEST_KEY || '').trim(),
   }
-
-  return { ok: true, triggeredBy: isCron ? 'cron' : 'manual', key: expectedKey }
 }
 
 function parseInteger(value: string | null, fallback: number, min: number, max: number): number {

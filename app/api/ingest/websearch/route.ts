@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { MongoClient, Db } from 'mongodb'
 
 let _client: MongoClient | null = null
@@ -41,11 +42,11 @@ function normalizeUrl(href: string) {
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url)
-    const adminKey = searchParams.get('key') || req.headers.get('x-admin-key')
-    if (!process.env.ADMIN_INGEST_KEY || adminKey !== process.env.ADMIN_INGEST_KEY) {
-      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+    if (!isAdminRequest(req)) {
+      return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
     }
+
+    const { searchParams } = new URL(req.url)
     if (!CSE_KEY || !CSE_CX) {
       return NextResponse.json({ ok: false, error: 'Missing GOOGLE_CSE_KEY / GOOGLE_CSE_CX' }, { status: 400 })
     }

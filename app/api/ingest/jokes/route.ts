@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
@@ -385,12 +386,11 @@ async function pullJokeApi(limit: number): Promise<JokeDoc[]> {
 /* ========================= Handler ========================= */
 export async function GET(request: Request) {
   try {
-    const url = new URL(request.url)
-    const providedKey = (url.searchParams.get('key') || request.headers.get('x-admin-ingest-key') || '').trim()
-    const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-    if (!expectedKey || providedKey !== expectedKey) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!isAdminRequest(request)) {
+      return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
     }
+
+    const url = new URL(request.url)
 
     const limitParam = url.searchParams.get('limit')
     const limit = Math.max(1, Math.min(1000, Number(limitParam || 200)))

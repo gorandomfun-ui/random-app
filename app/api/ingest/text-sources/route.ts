@@ -4,6 +4,7 @@ export const revalidate = 0
 
 import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { AnyBulkWriteOperation, Db, Document } from 'mongodb'
 
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
@@ -787,12 +788,11 @@ function sampleForResponse(docs: StoredTextDoc[]) {
 
 export async function GET(request: Request) {
   try {
-    const url = new URL(request.url)
-    const providedKey = (url.searchParams.get('key') || request.headers.get('x-admin-ingest-key') || '').trim()
-    const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-    if (!expectedKey || providedKey !== expectedKey) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!isAdminRequest(request)) {
+      return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
     }
+
+    const url = new URL(request.url)
 
     const source = (url.searchParams.get('source') || '').trim().toLowerCase() as TextSource
     if (!['wikidata', 'wikiquote', 'jokeapi'].includes(source)) {

@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
 import probe from 'probe-image-size'
@@ -593,11 +594,8 @@ async function pullCurated(limit: number, requireOg = true, region: RegionKey = 
 
 /* -------------------------------- Handler -------------------------------- */
 export async function GET(req: NextRequest) {
-  // Auth (clé ou cron Vercel)
-  const isCron = Boolean(req.headers.get('x-vercel-cron'))
-  const key = req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || ''
-  if (!isCron && (!process.env.ADMIN_INGEST_KEY || key !== process.env.ADMIN_INGEST_KEY)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   const per   = Math.max(1, Math.min(10, Number(req.nextUrl.searchParams.get('per') || 10)))

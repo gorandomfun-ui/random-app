@@ -1,5 +1,6 @@
 // app/api/ingest/route.ts
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,15 +54,14 @@ async function loadDb(): Promise<DbLike> {
 }
 
 function isAuthorized(req: Request) {
-  // Optionnel: protège avec une clé (query ?key=... ou header x-admin-ingest-key)
-  const url = new URL(req.url)
-  const key =
-    url.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || ''
-  const expected = process.env.ADMIN_INGEST_KEY || ''
-  return expected ? key === expected : true
+  return isAdminRequest(req)
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
   try {
     let db: DbLike
     try {
@@ -84,7 +84,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     if (!isAuthorized(req)) {
-      return new NextResponse('Unauthorized', { status: 401 })
+      return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
     }
 
     let db: DbLike
