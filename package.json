@@ -14,7 +14,9 @@
     "discovery:backfill": "node --import tsx scripts/discovery/backfill.ts",
     "discovery:audit": "node --import tsx scripts/discovery/audit.ts",
     "discovery:explore": "node --import tsx scripts/discovery/explore.ts",
-    "test:discovery:ui": "node tests/discovery/ui.lifecycle.mjs"
+    "test:discovery:ui": "node tests/discovery/ui.lifecycle.mjs",
+    "test:v3": "node --test-concurrency=1 --import tsx --test tests/v3/*.test.ts",
+    "test:v3:mongo": "node --env-file=.env.local --test-concurrency=1 --import tsx --test tests/v3/*.mongo.test.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.6.1",
