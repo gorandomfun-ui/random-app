@@ -29,11 +29,14 @@ export default function AdminStats() {
   async function refresh() {
     setLoading(true); setErr(null); setData(null)
     try {
-      const q = new URLSearchParams({ key, limit: String(limit) })
+      const q = new URLSearchParams({ limit: String(limit) })
       if (type) q.set('type', type)
       if (provider) q.set('provider', provider)
       if (sample) q.set('sample', 'true')
-      const res = await fetch(`/api/admin/cache-stats?${q}`, { cache: 'no-store' })
+      const res = await fetch(`/api/admin/cache-stats?${q}`, {
+        cache: 'no-store',
+        headers: { 'x-admin-ingest-key': key.trim() },
+      })
       const json = (await res.json()) as unknown
       const stats = (json && typeof json === 'object') ? (json as Stats) : { ok: false, error: 'invalid response' }
       if (!res.ok || stats.ok === false) throw new Error(stats.error || `HTTP ${res.status}`)

@@ -1,9 +1,14 @@
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { getDatabase } from '@/lib/mongodb'
 
-export async function GET() {
+export async function GET(req: Request) {
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
   try {
     const db = await getDatabase()
     const names = await db.listCollections().toArray()

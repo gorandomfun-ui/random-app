@@ -2,19 +2,13 @@ export const runtime = 'nodejs'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 import { importAiContent } from '@/lib/ingest/ai'
 
-function getAdminKey(): string {
-  return (process.env.ADMIN_INGEST_KEY || '').trim()
-}
-
 export async function POST(req: NextRequest) {
-  const providedKey = (req.headers.get('x-admin-ingest-key') || '').trim()
-  const expectedKey = getAdminKey()
-
-  if (!expectedKey || !providedKey || providedKey !== expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   let payload: unknown

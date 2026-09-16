@@ -1,6 +1,7 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
+import { adminRequestKind, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { logCronRun } from '@/lib/metrics/cron';
@@ -36,7 +37,11 @@ type IngestImagesResponse = {
 
 export async function GET(req: Request) {
   const startedAt = new Date();
-  const triggeredBy = req.headers.get('x-vercel-cron') ? 'cron' : 'manual';
+  const kind = adminRequestKind(req);
+  if (!kind) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 });
+  }
+  const triggeredBy = kind === 'cron-secret' ? 'cron' : 'manual';
   let queries: string[] = [];
   let targetUrl = '';
 

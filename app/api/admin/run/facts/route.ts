@@ -1,9 +1,14 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
+import { adminAuthHeaders, adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 type FactsRunRequest = { n?: number; sites?: string }
 
 export async function POST(req: Request) {
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
   const rawBody = await req.json().catch(() => ({} as unknown))
   const body: FactsRunRequest = typeof rawBody === 'object' && rawBody !== null
     ? (rawBody as FactsRunRequest)
@@ -15,10 +20,10 @@ export async function POST(req: Request) {
   const sites = (body.sites || 'useless,numbers,cat,meow,dog')
 
   const url = new URL('/api/ingest/facts', req.url)
-  url.search = new URLSearchParams({ key, n:String(n), sites }).toString()
+  url.search = new URLSearchParams({ n:String(n), sites }).toString()
 
   try {
-    const res = await fetch(url, { cache:'no-store', headers: { 'x-admin-ingest-key': key } })
+    const res = await fetch(url, { cache:'no-store', headers: adminAuthHeaders() })
     const text = await res.text()
     let payload: unknown
     try {

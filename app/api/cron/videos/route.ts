@@ -6,6 +6,7 @@ export const maxDuration = 300
 import { randomUUID } from 'node:crypto'
 import type { Collection, Db } from 'mongodb'
 import { NextResponse } from 'next/server'
+import { adminRequestKind } from '@/lib/auth/adminAuth'
 import { getDb } from '@/lib/db'
 import { sendMail } from '@/lib/email/mailer'
 import { logCronRun } from '@/lib/metrics/cron'
@@ -65,32 +66,10 @@ function getTrendingLimit() {
   return parseIntegerEnv('CRON_VIDEO_TRENDING_LIMIT', DEFAULT_TRENDING_LIMIT, 10, 50)
 }
 
-function isVercelCron(req: Request): boolean {
-  const userAgent = req.headers.get('user-agent') || ''
-  return Boolean(req.headers.get('x-vercel-cron')) || userAgent.includes('vercel-cron/1.0')
-}
-
 function authorize(req: Request): { ok: true; triggeredBy: 'cron' | 'manual' } | { ok: false; status: number; error: string } {
-  const url = new URL(req.url)
-  const cronSecret = (process.env.CRON_SECRET || '').trim()
-  const adminKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const authHeader = (req.headers.get('authorization') || '').trim()
-  const providedAdminKey = (url.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
-  const vercelCron = isVercelCron(req)
-
-  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
-    return { ok: true, triggeredBy: 'cron' }
-  }
-
-  if (adminKey && providedAdminKey === adminKey) {
-    return { ok: true, triggeredBy: vercelCron ? 'cron' : 'manual' }
-  }
-
-  if (!cronSecret && vercelCron) {
-    return { ok: true, triggeredBy: 'cron' }
-  }
-
-  return { ok: false, status: 401, error: 'unauthorized' }
+  const kind = adminRequestKind(req)
+  if (!kind) return { ok: false, status: 401, error: 'Unauthorized' }
+  return { ok: true, triggeredBy: kind === 'cron-secret' ? 'cron' : 'manual' }
 }
 
 function serializeError(error: unknown): string {

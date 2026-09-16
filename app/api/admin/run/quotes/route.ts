@@ -1,9 +1,14 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
+import { adminAuthHeaders, adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 type QuotesRunRequest = { pages?: number; sites?: string }
 
 export async function POST(req: Request) {
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
   const rawBody = await req.json().catch(() => ({} as unknown))
   const body: QuotesRunRequest = typeof rawBody === 'object' && rawBody !== null ? (rawBody as QuotesRunRequest) : {}
   const key = (process.env.ADMIN_INGEST_KEY || '').trim()
@@ -13,10 +18,10 @@ export async function POST(req: Request) {
   const sites  = (body.sites || 'toscrape,typefit,passiton')
 
   const url = new URL('/api/ingest/quotes', req.url)
-  url.search = new URLSearchParams({ key, pages:String(pages), sites }).toString()
+  url.search = new URLSearchParams({ pages:String(pages), sites }).toString()
 
   try {
-    const res = await fetch(url, { cache:'no-store', headers: { 'x-admin-ingest-key': key } })
+    const res = await fetch(url, { cache:'no-store', headers: adminAuthHeaders() })
     const text = await res.text()
     let payload: unknown
     try {

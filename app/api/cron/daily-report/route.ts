@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
+import { adminRequestKind, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
 import { logCronRun } from '@/lib/metrics/cron'
 import { buildDailyReport } from '@/lib/reports/dailyReport'
 import type { UsageDocument } from '@/lib/metrics/usage'
@@ -155,14 +156,11 @@ function buildEmail(report: DailyReport) {
 
 export async function GET(req: Request) {
   const startedAt = new Date()
-  const triggeredBy = req.headers.get('x-vercel-cron') ? 'cron' : 'manual'
-  const url = new URL(req.url)
-  const providedKey = (url.searchParams.get('key') || req.headers.get('x-admin-report-key') || req.headers.get('x-admin-ingest-key') || '').trim()
-  const expectedKey = (process.env.REPORT_CRON_KEY || process.env.ADMIN_REPORT_KEY || process.env.ADMIN_INGEST_KEY || '').trim()
-
-  if (!triggeredBy && expectedKey && providedKey !== expectedKey) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const kind = adminRequestKind(req)
+  if (!kind) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
+  const triggeredBy = kind === 'cron-secret' ? 'cron' : 'manual'
 
   try {
     const report = await buildDailyReport()

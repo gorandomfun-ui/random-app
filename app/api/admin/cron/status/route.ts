@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { getDb } from '@/lib/db'
 
 const DEFAULT_LIMIT = 6
@@ -63,11 +64,8 @@ function serializeEntry(entry: Record<string, unknown>) {
 }
 
 export async function GET(req: NextRequest) {
-  const expectedKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const providedKey = (req.nextUrl.searchParams.get('key') || req.headers.get('x-admin-ingest-key') || '').trim()
-
-  if (!expectedKey || providedKey !== expectedKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   const limit = normalizeLimit(req.nextUrl.searchParams.get('limit'))

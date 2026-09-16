@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 
 type ItemSummary = {
@@ -37,9 +38,8 @@ function strip(doc: ItemSummary): ItemSummary {
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const key = url.searchParams.get('key') || ''
-  if (!key || key !== (process.env.ADMIN_INGEST_KEY || '')) {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   const type = url.searchParams.get('type') || undefined

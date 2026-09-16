@@ -4,25 +4,18 @@ export const revalidate = 0
 export const maxDuration = 120
 
 import { NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 import { getDb } from '@/lib/db'
 import { backfillWaveProfiles } from '@/lib/random/waveBackfill'
 
 function isAuthorized(request: Request): boolean {
-  const url = new URL(request.url)
-  const auth = request.headers.get('authorization') || ''
-  const cronSecret = (process.env.CRON_SECRET || '').trim()
-  const adminKey = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const providedAdminKey = (url.searchParams.get('key') || request.headers.get('x-admin-ingest-key') || '').trim()
-  const vercelCron = Boolean(request.headers.get('x-vercel-cron'))
-  if (cronSecret && auth === `Bearer ${cronSecret}`) return true
-  if (adminKey && providedAdminKey === adminKey) return true
-  return !cronSecret && vercelCron
+  return isAdminRequest(request)
 }
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
   try {
     const db = await getDb()

@@ -1,9 +1,14 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
+import { adminAuthHeaders, adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 type WebRunRequest = { q?: string; per?: number | string; pages?: number | string }
 
 export async function POST(req: Request) {
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
   try {
     const key = (process.env.ADMIN_INGEST_KEY || '').trim()
     if (!key) return NextResponse.json({ error: 'missing ADMIN_INGEST_KEY' }, { status: 500 })
@@ -19,13 +24,12 @@ export async function POST(req: Request) {
 
     const url = new URL('/api/ingest/web', req.url)
     url.search = new URLSearchParams({
-      key,
       q,
       per: String(per),
       pages: String(pages),
     }).toString()
 
-    const res = await fetch(url, { cache: 'no-store', headers: { 'x-admin-ingest-key': key } })
+    const res = await fetch(url, { cache: 'no-store', headers: adminAuthHeaders() })
     const text = await res.text()
     let payload: unknown
     try {

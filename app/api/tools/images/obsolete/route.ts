@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { ObjectId, type Db } from 'mongodb'
 import { getDbSafe } from '@/lib/random/data'
 
@@ -52,17 +53,11 @@ const GIPHY_BATCH_SIZE = 50
 let imageScanIndexPromise: Promise<void> | null = null
 
 function isAuthorized(req: NextRequest): boolean {
-  const expected = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const provided =
-    req.nextUrl.searchParams.get('key')?.trim() ||
-    req.headers.get('x-admin-ingest-key')?.trim() ||
-    ''
-  if (!expected) return false
-  return provided === expected
+  return isAdminRequest(req)
 }
 
 function unauthorized() {
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
 }
 
 function headersToObject(headers: HeadersInit | undefined): Record<string, string> {

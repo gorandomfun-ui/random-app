@@ -1,23 +1,18 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { getDbSafe } from '@/lib/random/data'
 import { isBlockedJoke } from '@/lib/random/jokes'
 import { ObjectId } from 'mongodb'
 
 function isAuthorized(req: NextRequest): boolean {
-  const expected = (process.env.ADMIN_INGEST_KEY || '').trim()
-  const provided =
-    req.nextUrl.searchParams.get('key')?.trim() ||
-    req.headers.get('x-admin-ingest-key')?.trim() ||
-    ''
-  if (!expected) return false
-  return provided === expected
+  return isAdminRequest(req)
 }
 
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
   }
 
   const db = await getDbSafe()

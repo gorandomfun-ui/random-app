@@ -1,5 +1,6 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
+import { adminAuthHeaders, adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 
 type VideosRunRequest = {
   mode?: string
@@ -30,6 +31,10 @@ const toStringValue = (value: unknown): string | null => {
 }
 
 export async function POST(req: Request) {
+  if (!isAdminRequest(req)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
   const rawBody = await req.json().catch(() => ({} as unknown))
   const body: VideosRunRequest = typeof rawBody === 'object' && rawBody !== null
     ? (rawBody as VideosRunRequest)
@@ -38,7 +43,6 @@ export async function POST(req: Request) {
   if (!key) return NextResponse.json({ error: 'missing ADMIN_INGEST_KEY' }, { status: 500 })
 
   const params = new URLSearchParams()
-  params.set('key', key)
   const mode = toStringValue(body.mode)
   if (mode) params.set('mode', mode)
 
@@ -76,7 +80,7 @@ export async function POST(req: Request) {
   url.search = params.toString()
 
   try {
-    const res = await fetch(url, { cache:'no-store', headers: { 'x-admin-ingest-key': key } })
+    const res = await fetch(url, { cache:'no-store', headers: adminAuthHeaders() })
     const text = await res.text()
     let payload: unknown
     try {
