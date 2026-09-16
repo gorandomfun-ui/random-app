@@ -4,8 +4,11 @@ import { NextResponse } from 'next/server'
 import { ObjectId, type AnyBulkWriteOperation, type Document } from 'mongodb'
 
 import { getDatabase } from '@/lib/mongodb'
-import { checkRateLimit } from '@/lib/utils/rate-limit'
+import { consumeRateLimit, registerFeedbackEffect } from '@/lib/v3/rateLimit'
 import { buildWaveProfile, type WaveProfile, type WaveProfileSource } from '@/lib/random/waveProfile'
+
+const ACTIONS_PER_IP_PER_HOUR = 60
+const HOUR_MS = 60 * 60 * 1000
 
 type WaveFeedbackAction = 'continue' | 'complete' | 'exit' | 'like'
 
@@ -50,9 +53,14 @@ function rewardFor(action: WaveFeedbackAction, dwellMs: number): number {
 
 export async function POST(request: Request) {
   try {
-    const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
-    if (!checkRateLimit(`wave-feedback:${forwarded}`, 90, 60_000)) {
-      return NextResponse.json({ success: true, skipped: true }, { status: 202 })
+    const limit = await consumeRateLimit({
+      req: request,
+      route: 'feedback/wave',
+      limit: ACTIONS_PER_IP_PER_HOUR,
+      windowMs: HOUR_MS,
+    })
+    if (!limit.allowed) {
+      return NextResponse.json({ success: false, error: 'Too many requests' }, { status: 429 })
     }
     const body = await request.json().catch(() => null) as WaveFeedbackPayload | null
     const anchorId = parseId(body?.anchorId)
@@ -70,6 +78,15 @@ export async function POST(request: Request) {
     const candidateDoc = docs.find((doc) => doc._id.equals(candidateId))
     if (!anchorDoc || !candidateDoc) {
       return NextResponse.json({ success: true, skipped: true }, { status: 202 })
+    }
+
+    // One address influences a given pair once per 24 h.
+    const effect = await registerFeedbackEffect({
+      req: request,
+      scope: `wave:${anchorId.toHexString()}:${candidateId.toHexString()}`,
+    })
+    if (!effect.first) {
+      return NextResponse.json({ success: true, counted: false })
     }
 
     const now = new Date()

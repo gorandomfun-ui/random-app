@@ -4,6 +4,17 @@ import { NextResponse } from 'next/server'
 import { ObjectId, type Collection, type Filter } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { refreshTopLikesForItem } from '@/lib/likes/top'
+import { consumeRateLimit, registerFeedbackEffect, releaseFeedbackEffect } from '@/lib/v3/rateLimit'
+
+const ACTIONS_PER_IP_PER_HOUR = 60
+const HOUR_MS = 60 * 60 * 1000
+
+/**
+ * A like is a state, not an event: the marker records that this address
+ * currently holds a like on this item, so repeated POSTs count once while
+ * unlike-then-like still works.
+ */
+const likeScope = (objectId: ObjectId) => `like:${objectId.toHexString()}`
 
 type LikePayload = {
   itemId?: unknown
@@ -109,12 +120,33 @@ async function resolveObjectId(
 
 export async function POST(request: Request) {
   try {
+    const limit = await consumeRateLimit({
+      req: request,
+      route: 'feedback/like',
+      limit: ACTIONS_PER_IP_PER_HOUR,
+      windowMs: HOUR_MS,
+    })
+    if (!limit.allowed) {
+      return respondError('Too many requests', 429)
+    }
+
     const body = (await request.json().catch(() => null)) as LikePayload | null
     const db = await getDatabase()
     const collection = db.collection<ItemLookupDoc>('items')
     const objectId = await resolveObjectId(collection, body)
     if (!objectId) {
       return respondError('Valid item target is required')
+    }
+
+    const effect = await registerFeedbackEffect({ req: request, scope: likeScope(objectId) })
+    if (!effect.first) {
+      const current = await collection.findOne({ _id: objectId }, { projection: { likeCount: 1 } })
+      if (!current) return respondError('Item not found', 404)
+      return NextResponse.json({
+        success: true,
+        counted: false,
+        likeCount: typeof current.likeCount === 'number' ? current.likeCount : 0,
+      })
     }
 
     const updated = await collection.findOneAndUpdate(
@@ -144,6 +176,16 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const limit = await consumeRateLimit({
+      req: request,
+      route: 'feedback/like',
+      limit: ACTIONS_PER_IP_PER_HOUR,
+      windowMs: HOUR_MS,
+    })
+    if (!limit.allowed) {
+      return respondError('Too many requests', 429)
+    }
+
     const body = (await request.json().catch(() => null)) as LikePayload | null
     const db = await getDatabase()
     const collection = db.collection<ItemLookupDoc>('items')
@@ -151,6 +193,8 @@ export async function DELETE(request: Request) {
     if (!objectId) {
       return respondError('Valid item target is required')
     }
+
+    await releaseFeedbackEffect({ req: request, scope: likeScope(objectId) })
 
     const existing = await collection.findOne(
       { _id: objectId },

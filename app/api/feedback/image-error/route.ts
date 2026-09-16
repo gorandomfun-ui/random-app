@@ -3,6 +3,10 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
+import { consumeRateLimit, registerFeedbackEffect } from '@/lib/v3/rateLimit'
+
+const REPORTS_PER_IP_PER_HOUR = 60
+const HOUR_MS = 60 * 60 * 1000
 
 type ImageErrorPayload = {
   itemId?: unknown
@@ -33,6 +37,16 @@ function cleanString(value: unknown, maxLength = 500): string | null {
 
 export async function POST(request: Request) {
   try {
+    const limit = await consumeRateLimit({
+      req: request,
+      route: 'feedback/image-error',
+      limit: REPORTS_PER_IP_PER_HOUR,
+      windowMs: HOUR_MS,
+    })
+    if (!limit.allowed) {
+      return NextResponse.json({ success: false, error: 'Too many reports' }, { status: 429 })
+    }
+
     const body = (await request.json().catch(() => null)) as ImageErrorPayload | null
     const objectId = parseObjectId(body?.itemId)
     const url = cleanString(body?.url, 2000)
@@ -56,6 +70,14 @@ export async function POST(request: Request) {
     if (failedUrl) setFields.obsoleteImageLastErrorUrl = failedUrl
     if (provider) setFields.obsoleteImageSuspectProvider = provider
     if (sourceUrl) setFields.obsoleteImageSuspectSourceUrl = sourceUrl
+
+    const effect = await registerFeedbackEffect({
+      req: request,
+      scope: `image-error:${objectId ? objectId.toHexString() : url}`,
+    })
+    if (!effect.first) {
+      return NextResponse.json({ success: true, counted: false })
+    }
 
     const db = await getDatabase()
     const result = await db.collection('items').updateOne(

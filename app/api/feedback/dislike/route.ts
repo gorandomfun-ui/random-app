@@ -3,6 +3,10 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
+import { consumeRateLimit, registerFeedbackEffect } from '@/lib/v3/rateLimit'
+
+const ACTIONS_PER_IP_PER_HOUR = 60
+const HOUR_MS = 60 * 60 * 1000
 
 function parseObjectId(value: unknown): ObjectId | null {
   if (typeof value !== 'string') return null
@@ -21,11 +25,30 @@ function respondError(message: string, status = 400) {
 
 export async function POST(request: Request) {
   try {
+    const limit = await consumeRateLimit({
+      req: request,
+      route: 'feedback/dislike',
+      limit: ACTIONS_PER_IP_PER_HOUR,
+      windowMs: HOUR_MS,
+    })
+    if (!limit.allowed) {
+      return respondError('Too many requests', 429)
+    }
+
     const body = await request.json().catch(() => null)
     const objectId = parseObjectId((body as { itemId?: unknown } | null)?.itemId)
 
     if (!objectId) {
       return respondError('Valid itemId is required')
+    }
+
+    // One address counts once per item per 24 h; repeats are accepted and ignored.
+    const effect = await registerFeedbackEffect({
+      req: request,
+      scope: `dislike:${objectId.toHexString()}`,
+    })
+    if (!effect.first) {
+      return NextResponse.json({ success: true, counted: false })
     }
 
     const db = await getDatabase()
