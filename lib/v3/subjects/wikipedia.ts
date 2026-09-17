@@ -38,30 +38,57 @@ export function looksLikeSubject(title: string): boolean {
   return !NOT_A_SUBJECT.some((pattern) => pattern.test(title))
 }
 
-/** One day of one edition. Returns [] rather than throwing, so a sweep continues. */
+export class RateLimited extends Error {
+  constructor(public readonly retryAfterMs: number) {
+    super(`Wikimedia rate limit; retry in ${Math.round(retryAfterMs / 1000)}s`)
+    this.name = 'RateLimited'
+  }
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * One day of one edition.
+ *
+ * Throws rather than returning an empty list: an earlier version swallowed
+ * every error, so a run where six languages out of nine were rate limited
+ * still reported success and wrote a third of the dictionary it should have.
+ * A caller that wants to continue past a failure has to say so explicitly.
+ */
 export async function fetchTopArticles(
   language: WikiLanguage,
   date: Date,
   signal?: AbortSignal,
+  attempt = 0,
 ): Promise<TopArticle[]> {
   const year = date.getUTCFullYear()
   const month = String(date.getUTCMonth() + 1).padStart(2, '0')
   const day = String(date.getUTCDate()).padStart(2, '0')
   const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/${language}.wikipedia/all-access/${year}/${month}/${day}`
 
-  try {
-    const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal })
-    if (!response.ok) return []
-    const payload = (await response.json()) as {
-      items?: Array<{ articles?: Array<{ article?: string; views?: number }> }>
-    }
-    const articles = payload.items?.[0]?.articles ?? []
-    return articles
-      .map((entry) => ({ title: (entry.article ?? '').trim(), views: entry.views ?? 0, language }))
-      .filter((entry) => entry.title && looksLikeSubject(entry.title))
-  } catch {
-    return []
+  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal })
+
+  if (response.status === 429) {
+    const headerSeconds = Number(response.headers.get('retry-after'))
+    const backoffMs = Number.isFinite(headerSeconds) && headerSeconds > 0
+      ? headerSeconds * 1000
+      : Math.min(60_000, 2_000 * 2 ** attempt)
+    if (attempt >= 4) throw new RateLimited(backoffMs)
+    await wait(backoffMs)
+    return fetchTopArticles(language, date, signal, attempt + 1)
   }
+
+  // A day with no data is normal for some editions; that is not a failure.
+  if (response.status === 404) return []
+  if (!response.ok) throw new Error(`Wikimedia ${language} ${year}-${month}-${day}: HTTP ${response.status}`)
+
+  const payload = (await response.json()) as {
+    items?: Array<{ articles?: Array<{ article?: string; views?: number }> }>
+  }
+  const articles = payload.items?.[0]?.articles ?? []
+  return articles
+    .map((entry) => ({ title: (entry.article ?? '').trim(), views: entry.views ?? 0, language }))
+    .filter((entry) => entry.title && looksLikeSubject(entry.title))
 }
 
 /** Random days spread across the years the API covers. */

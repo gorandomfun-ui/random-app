@@ -16,7 +16,8 @@ import { WIKI_LANGUAGES, fetchTopArticles, sampleDates, type WikiLanguage } from
 import { fetchWikidataSubjects } from '@/lib/v3/subjects/wikidata'
 import { duplicateThemeSlugs } from '@/lib/v3/subjects/themes'
 
-const PAUSE_MS = 120
+/** Wikimedia rate-limits hard; 120ms silently lost six languages out of nine. */
+const PAUSE_MS = 1_100
 
 function numericFlag(name: string, fallback: number): number {
   const raw = process.argv.find((argument) => argument.startsWith(`--${name}=`))
@@ -27,42 +28,59 @@ function numericFlag(name: string, fallback: number): number {
 
 const pause = () => new Promise((resolve) => setTimeout(resolve, PAUSE_MS))
 
-async function collectEntities(daysPerLanguage: number): Promise<BuiltSubject[]> {
+async function collectEntities(daysPerLanguage: number): Promise<{ subjects: BuiltSubject[]; failures: string[] }> {
   const collected: BuiltSubject[] = []
+  const failures: string[] = []
 
   for (const language of WIKI_LANGUAGES) {
     const dates = sampleDates(daysPerLanguage)
     const titles = new Set<string>()
+    let dayErrors = 0
 
     for (const date of dates) {
-      const articles = await fetchTopArticles(language as WikiLanguage, date)
-      for (const article of articles) titles.add(article.title)
+      try {
+        const articles = await fetchTopArticles(language as WikiLanguage, date)
+        for (const article of articles) titles.add(article.title)
+      } catch (error) {
+        dayErrors += 1
+        if (dayErrors === 1) console.log(`  ${language} : ${(error as Error).message}`)
+      }
       await pause()
     }
 
-    const batches: string[][] = []
     const list = Array.from(titles)
+    const batches: string[][] = []
     for (let index = 0; index < list.length; index += 50) {
       batches.push(list.slice(index, index + 50))
     }
 
     let found = 0
+    let batchErrors = 0
     for (const batch of batches) {
-      const entities = await fetchWikidataSubjects(language, batch)
-      for (const entity of entities) {
-        const subject = buildEntitySubject(entity)
-        if (subject) {
-          collected.push(subject)
-          found += 1
+      try {
+        const entities = await fetchWikidataSubjects(language, batch)
+        for (const entity of entities) {
+          const subject = buildEntitySubject(entity)
+          if (subject) {
+            collected.push(subject)
+            found += 1
+          }
         }
+      } catch (error) {
+        batchErrors += 1
+        if (batchErrors === 1) console.log(`  ${language} : ${(error as Error).message}`)
       }
       await pause()
     }
 
-    console.log(`  ${language} : ${titles.size} articles vus, ${found} sujets retenus`)
+    const note = dayErrors || batchErrors ? ` — ${dayErrors} jours et ${batchErrors} lots en échec` : ''
+    console.log(`  ${language} : ${titles.size} articles vus, ${found} sujets retenus${note}`)
+
+    // Silence here is what hid the previous failed run.
+    if (!found) failures.push(`${language} n_a produit aucun sujet`)
   }
 
-  return collected
+  return { subjects: collected, failures }
 }
 
 function summarise(subjects: BuiltSubject[]): void {
@@ -102,10 +120,15 @@ async function main(): Promise<void> {
   console.log(`Thèmes écrits à la main : ${themes.length}`)
 
   console.log(`\nWikipédia — ${days} journées échantillonnées par langue :`)
-  const entities = await collectEntities(days)
+  const { subjects: entities, failures } = await collectEntities(days)
 
   const all = mergeSubjects([...themes, ...entities])
   console.log(`\nTotal après dédoublonnage : ${all.length} sujets (${themes.length + entities.length} avant)`)
+
+  if (failures.length) {
+    console.log(`\n⚠️  ${failures.length} langue(s) sans résultat :`)
+    for (const failure of failures) console.log(`   - ${failure}`)
+  }
   summarise(all)
 
   console.log('\nÉchantillon de 15 sujets :')
@@ -117,6 +140,12 @@ async function main(): Promise<void> {
   if (!apply) {
     console.log('\nRelancer avec --apply pour écrire dans subjects_v3.')
     return
+  }
+
+  // Writing a third of the dictionary and calling it done is worse than
+  // stopping: 5.B would measure a coverage that means nothing.
+  if (failures.length > WIKI_LANGUAGES.length / 3) {
+    throw new Error(`Trop de langues en échec (${failures.length}/${WIKI_LANGUAGES.length}) ; réessayer plus tard.`)
   }
 
   const uri = process.env.MONGODB_URI || process.env.MONGO_URI

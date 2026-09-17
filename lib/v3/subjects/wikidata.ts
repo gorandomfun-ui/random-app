@@ -237,33 +237,29 @@ export async function fetchWikidataSubjects(
     origin: '*',
   })
 
-  try {
-    const response = await fetch(`https://www.wikidata.org/w/api.php?${params}`, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal,
-    })
-    if (!response.ok) return []
-    const payload = (await response.json()) as { entities?: Record<string, Entity> }
-    const entities = payload.entities ?? {}
+  const response = await fetch(`https://www.wikidata.org/w/api.php?${params}`, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal,
+  })
+  if (!response.ok) throw new Error(`Wikidata ${language}: HTTP ${response.status}`)
+  const payload = (await response.json()) as { entities?: Record<string, Entity> }
+  const entities = payload.entities ?? {}
 
-    const results: WikidataSubject[] = []
-    for (const [qid, entity] of Object.entries(entities)) {
-      if (!qid.startsWith('Q')) continue
-      const label = entity.labels?.en?.value ?? entity.labels?.fr?.value
-      if (!label) continue
-      const sourceTitle = entity.sitelinks?.[`${language}wiki`]?.title ?? label
-      const { universe, isHuman } = pickUniverse(entity)
-      results.push({
-        sourceTitle,
-        qid,
-        label,
-        aliases: collectAliases(entity, label),
-        universe,
-        isHuman,
-      })
-    }
-    return results
-  } catch {
-    return []
+  const results: WikidataSubject[] = []
+  for (const [qid, entity] of Object.entries(entities)) {
+    if (!qid.startsWith('Q')) continue
+    const label = entity.labels?.en?.value ?? entity.labels?.fr?.value
+    if (!label) continue
+    const sourceTitle = entity.sitelinks?.[`${language}wiki`]?.title ?? label
+    const { universe, isHuman } = pickUniverse(entity)
+    results.push({
+      sourceTitle,
+      qid,
+      label,
+      aliases: collectAliases(entity, label),
+      universe,
+      isHuman,
+    })
   }
+  return results
 }
