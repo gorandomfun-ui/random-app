@@ -163,6 +163,13 @@ const IMMERSIVE_ACCENTS: Record<string, string> = {
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
+/** Below this, a viewport is short whatever its width (a tablet in landscape). */
+const SHORT_VIEWPORT_HEIGHT = 900
+/**
+ * Everything above and below the content: header, logo, score, buttons and
+ * margins. Used to cap the content so the buttons cannot fall behind the ad.
+ */
+const CHROME_BUDGET_PX = 280
 const VISUAL_READY_TIMEOUT_MS = 2400
 const VISUAL_READY_CACHE_LIMIT = 80
 
@@ -2456,6 +2463,7 @@ export function RandomExperience({
   const playbackRecoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const [effectsProfile, setEffectsProfile] = useState<EffectsProfile>('standard')
   const [effectsTestStep, setEffectsTestStep] = useState(0)
   const effectsTestStepRef = useRef(0)
@@ -2496,6 +2504,9 @@ export function RandomExperience({
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
   const [soundMuted, setSoundMuted] = useState(false)
+  // Video audio follows the Sound FX preference, but unmuting a single video
+  // must not rewrite that preference. Session-only, never persisted.
+  const [videoMuted, setVideoMuted] = useState(false)
   const fullscreenTriggerRef = useRef(trigger)
   const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
   const adsAllowed = consent?.ads === true
@@ -2562,11 +2573,13 @@ export function RandomExperience({
     }
     const initial = readSoundPref()
     setSoundMuted(initial)
+    setVideoMuted(initial)
     setMuted(initial)
     const handler = (event: StorageEvent) => {
       if (event.key === SOUND_STORAGE_KEY && event.newValue != null) {
         const next = event.newValue === 'true'
         setSoundMuted(next)
+        setVideoMuted(next)
         setMuted(next)
       }
     }
@@ -2577,6 +2590,7 @@ export function RandomExperience({
   const toggleSound = () => {
     setSoundMuted((prev) => {
       const next = !prev
+      setVideoMuted(next)
       setMuted(next)
       try {
         localStorage.setItem(SOUND_STORAGE_KEY, String(next))
@@ -2587,26 +2601,37 @@ export function RandomExperience({
     })
   }
 
+  /**
+   * The speaker on a video unmutes that video, and the ones after it in this
+   * session. It used to also flip the global Sound FX preference and write it
+   * to storage, so turning sound off and then unmuting one video silently
+   * turned the setting back on.
+   */
   const unlockVideoSound = useCallback(() => {
-    setSoundMuted(false)
-    setMuted(false)
-    try {
-      localStorage.setItem(SOUND_STORAGE_KEY, 'false')
-    } catch {
-      /* ignore */
-    }
+    setVideoMuted(false)
   }, [])
 
   const theme = THEMES[themeIdx]
   const contentHeight = useMemo(() => {
     const base = 'clamp(260px, 45vh, 560px)'
     if (viewportWidth == null) return base
-    if (viewportWidth >= 1400) return 'clamp(357px, 61vh, 697px)'
-    if (viewportWidth >= 1200) return 'clamp(323px, 57.8vh, 646px)'
-    if (viewportWidth >= 992) return 'clamp(289px, 53vh, 595px)'
-    if (viewportWidth >= 768) return 'clamp(300px, 55vh, 640px)'
-    return base
-  }, [viewportWidth])
+    const preferred =
+      viewportWidth >= 1400 ? 'clamp(357px, 61vh, 697px)'
+      : viewportWidth >= 1200 ? 'clamp(323px, 57.8vh, 646px)'
+      : viewportWidth >= 992 ? 'clamp(289px, 53vh, 595px)'
+      : viewportWidth >= 768 ? 'clamp(300px, 55vh, 640px)'
+      : base
+
+    if (viewportHeight == null) return preferred
+
+    // Rather than guess which devices are short, cap the content at what is
+    // actually left once the chrome and the ad have taken their share. A
+    // tablet in landscape is as wide as a laptop but 250px shorter, and a
+    // small laptop has the same problem.
+    const bannerHeight = viewportWidth >= 1024 && viewportHeight >= SHORT_VIEWPORT_HEIGHT ? 90 : 50
+    const available = Math.max(220, Math.round(viewportHeight - CHROME_BUDGET_PX - bannerHeight))
+    return `min(${preferred}, ${available}px)`
+  }, [viewportHeight, viewportWidth])
 
   const contentFrameStyle = useMemo(() => ({
     height: contentHeight,
@@ -2625,7 +2650,10 @@ export function RandomExperience({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const update = () => setViewportWidth(window.innerWidth)
+    const update = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
     update()
     window.addEventListener('resize', update)
     window.addEventListener('orientationchange', update)
@@ -4390,7 +4418,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (isQuizView) return false
     return false
   }, [isQuizView, viewItem])
-  const isDesktopAd = (viewportWidth ?? 0) >= 1024
+  // The 728x90 banner costs 40px more than the 320x50 one. On a short
+  // viewport those 40px are what hides the button.
+  const isDesktopAd = (viewportWidth ?? 0) >= 1024 && (viewportHeight ?? 0) >= SHORT_VIEWPORT_HEIGHT
   const adHeight = isDesktopAd ? 90 : 50
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
@@ -4792,7 +4822,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               theme={theme}
               frameHeight={contentHeight}
               viewportWidth={viewportWidth}
-              soundMuted={soundMuted}
+              soundMuted={videoMuted}
               fullscreenLabel={fullscreenLabel}
               disableFullscreen={disableFullscreenButton}
               isFullscreenActive={Boolean(fullscreenVideo)}
