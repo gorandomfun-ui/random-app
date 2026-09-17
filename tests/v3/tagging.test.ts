@@ -169,3 +169,73 @@ test('tout angle produit par les règles appartient à la liste fermée', () => 
     assert.ok(isAngle(detectAngle(sample)), `${JSON.stringify(sample)} a produit un angle hors liste`)
   }
 })
+
+// ---------------------------------------------------------------------------
+// Le dictionnaire de sujets
+// ---------------------------------------------------------------------------
+
+test('les thèmes écrits à la main sont cohérents', async () => {
+  const { THEMES, duplicateThemeSlugs } = await import('@/lib/v3/subjects/themes')
+  assert.deepEqual(duplicateThemeSlugs(), [], 'aucun slug en double')
+  for (const theme of THEMES) {
+    assert.ok(theme.aliases.length >= 1, `${theme.slug} doit avoir au moins un alias`)
+    assert.ok(isUniverse(theme.universe), `${theme.slug} a un univers hors liste`)
+    assert.match(theme.slug, /^[a-z0-9-]+$/, `${theme.slug} doit être un slug simple`)
+  }
+})
+
+test('les pages Wikipédia qui ne sont pas des sujets sont écartées', async () => {
+  const { looksLikeSubject } = await import('@/lib/v3/subjects/wikipedia')
+  for (const rejected of [
+    'Wikipédia:Accueil_principal',
+    'Spécial:Recherche',
+    'Special:Search',
+    'Category:Films',
+    'Catégorie:Cinéma',
+    'Liste_des_présidents',
+    'List_of_films',
+    'Deaths_in_2020',
+    'Décès_en_2020',
+    'Main_Page',
+    '2020',
+    'Paris_(disambiguation)',
+  ]) {
+    assert.equal(looksLikeSubject(rejected), false, `${rejected} ne devrait pas être un sujet`)
+  }
+  for (const accepted of ['South_Park', 'Johnny_Hallyday', 'Zinedine_Zidane', 'Cookie_(informatique)']) {
+    assert.equal(looksLikeSubject(accepted), true, `${accepted} devrait être accepté`)
+  }
+})
+
+test('un thème devient un sujet correctement formé', async () => {
+  const { buildThemeSubjects } = await import('@/lib/v3/subjects/build')
+  const subjects = buildThemeSubjects()
+  const poterie = subjects.find((subject) => subject._id === 'topic:poterie')
+  assert.ok(poterie, 'le thème poterie doit exister')
+  assert.equal(poterie?.kind, 'topic')
+  assert.equal(poterie?.universe, 'craft')
+  assert.ok(poterie?.aliases.includes('pottery'))
+  assert.ok(poterie?.aliases.includes('陶芸'), 'les graphies japonaises sont conservées')
+  // Les alias sont normalisés, donc comparables à un titre normalisé.
+  assert.ok(poterie?.aliases.every((alias) => alias === alias.toLowerCase()))
+})
+
+test('la fusion réunit les alias sans perdre de source', async () => {
+  const { mergeSubjects } = await import('@/lib/v3/subjects/build')
+  const base = {
+    kind: 'entity' as const,
+    label: 'South Park',
+    universe: 'animation' as const,
+    counts: {},
+    angleCounts: {},
+    createdAt: new Date(),
+    ambiguous: false,
+  }
+  const merged = mergeSubjects([
+    { ...base, _id: 'entity:south-park', aliases: ['south park'], sources: ['mainstream'] },
+    { ...base, _id: 'entity:south-park', aliases: ['サウスパーク'], sources: ['trend'] },
+  ])
+  assert.equal(merged.length, 1, 'le même sujet vu deux fois reste un seul sujet')
+  assert.deepEqual(merged[0]?.aliases.sort(), ['south park', 'サウスパーク'].sort())
+  assert.deepEqual(merged[0]?.sources.sort(), ['mainstream', 'trend'])
+})

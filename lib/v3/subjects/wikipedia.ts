@@ -19,6 +19,10 @@ const NOT_A_SUBJECT = [
   /^(?:wikipedia|wikipédia|wikipedia_talk|portal|portail|category|catégorie|kategorie|categoría|file|fichier|datei|help|aide|hilfe|template|modèle|vorlage|special|spécial|spezial|especial|talk|discussion|module|draft)[:：]/i,
   /^(?:main_page|accueil|hauptseite|portada|メインページ|wikipedia|pagina_principale|pagina_principal)/i,
   /^(?:list[ae]?_(?:of|de|des|von)|liste_)/i,
+  // "Deaths in 2020", "Décès en 2020" — a running index, not a subject.
+  /^(?:deaths?|décès|deces|todesfälle|todesfalle|muertes|morti|mortes)_(?:in|en|im|de)_/i,
+  /^\d{4}(?:_|$)/,
+  /_(?:season|saison|staffel|temporada)_\d+$/i,
   /_\(disambiguation\)$|_\(homonymie\)$|_\(begriffsklärung\)$|_\(desambiguación\)$/i,
   /^\d{4}$/,
 ]

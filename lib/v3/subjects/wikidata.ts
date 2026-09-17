@@ -42,6 +42,32 @@ const INSTANCE_UNIVERSE: Record<string, Universe> = {
   Q11032: 'news-society', // newspaper
   Q4830453: 'news-society', // business
   Q43229: 'news-society', // organization
+  Q3464665: 'cinema-tv', // television series season
+  Q21191270: 'cinema-tv', // television series episode
+  Q117467246: 'cinema-tv', // animated television series
+  Q506240: 'cinema-tv', // television film
+  Q24856: 'cinema-tv', // film series
+  Q1667921: 'art', // novel series
+  Q8261: 'art', // novel
+  Q49084: 'art', // short story
+  Q5292: 'history', // religious text
+  Q179461: 'history', // religious text (holy book)
+  Q13417114: 'history', // historical event
+  Q198: 'history', // war
+  Q178561: 'history', // battle
+  Q1190554: 'news-society', // occurrence
+  Q1656682: 'news-society', // event
+  Q3001412: 'news-society', // legal case
+  Q2334719: 'news-society', // legal case (court)
+  Q515: 'travel', // city
+  Q6256: 'travel', // country
+  Q23413: 'travel', // castle
+  Q839954: 'history', // archaeological site
+  Q16521: 'nature-animals', // taxon
+  Q55983715: 'nature-animals', // organisms known by a particular common name
+  Q2095: 'food', // food
+  Q746549: 'food', // dish
+  Q44: 'food', // beer
 }
 
 /** P106 "occupation" — used when the entity is a human (P31 = Q5). */
@@ -89,6 +115,20 @@ const OCCUPATION_UNIVERSE: Record<string, Universe> = {
   Q3499072: 'food', // cook
 }
 
+/** Checked in this order when a person has several occupations. */
+const OCCUPATION_PRIORITY: Universe[] = [
+  'music',
+  'sport',
+  'humor-memes',
+  'cinema-tv',
+  'art',
+  'food',
+  'fashion',
+  'science',
+  'tech',
+  'news-society',
+]
+
 export type WikidataSubject = {
   /** The Wikipedia title we asked about. */
   sourceTitle: string
@@ -119,9 +159,15 @@ function pickUniverse(entity: Entity): { universe: Universe; isHuman: boolean } 
   const isHuman = instances.includes('Q5')
 
   if (isHuman) {
+    // Wikidata lists occupations in no useful order: Johnny Hallyday is filed
+    // as an actor before a singer. Pick by what the person is best known for.
+    const found = new Set<Universe>()
     for (const occupation of claimIds(entity, 'P106')) {
       const universe = OCCUPATION_UNIVERSE[occupation]
-      if (universe) return { universe, isHuman }
+      if (universe) found.add(universe)
+    }
+    for (const universe of OCCUPATION_PRIORITY) {
+      if (found.has(universe)) return { universe, isHuman }
     }
     return { universe: 'people-everyday', isHuman }
   }
@@ -133,18 +179,57 @@ function pickUniverse(entity: Entity): { universe: Universe; isHuman: boolean } 
   return { universe: 'other', isHuman }
 }
 
+/**
+ * Labels are the authoritative name of the thing in each language, so every
+ * one is kept — that is where "ジョニー・アリディ" comes from.
+ *
+ * The alias list is looser and sometimes wrong: Wikidata had
+ * "ヘレナ アーカンソー州" (a town in Arkansas) filed under Hunter Biden. An alias
+ * is therefore only kept when it shares a word with one of the labels, which
+ * covers real variants ("Joseph Robinette Biden Jr") and rejects unrelated
+ * entries.
+ */
 function collectAliases(entity: Entity, canonical: string): string[] {
-  const collected = new Set<string>()
-  for (const label of Object.values(entity.labels ?? {})) {
-    if (label.value) collected.add(label.value)
-  }
-  for (const list of Object.values(entity.aliases ?? {})) {
-    for (const alias of list) {
-      if (alias.value) collected.add(alias.value)
+  const labels = Object.values(entity.labels ?? {})
+    .map((label) => label.value)
+    .filter((value): value is string => Boolean(value))
+
+  const labelWords = new Set<string>()
+  for (const label of [...labels, canonical]) {
+    for (const word of label.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+      if (word.length >= 3) labelWords.add(word)
     }
   }
+
+  /**
+   * Sharing one word is not enough: "South America" shares "south" with
+   * "South Park" and would drag every South America video into South Park.
+   * A same-script alias must therefore have *all* of its significant words
+   * present in a label — which keeps "Beatles" for "The Beatles" and rejects
+   * both "South America" and the initialism "SP".
+   */
+  const relatedToLabel = (alias: string): boolean => {
+    // A disambiguated page title, never a name someone would write in a video
+    // title: "ヘレナ (アーカンソー州)" was filed under Hunter Biden.
+    if (/[(（\[]/u.test(alias)) return false
+
+    // Written in another script entirely: a transliteration, which shares no
+    // words with the Latin label by definition. Length alone guards against
+    // initialisms.
+    if (!/\p{Script=Latin}/u.test(alias)) return alias.trim().length >= 3
+    const words = alias.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 3)
+    if (!words.length) return false
+    return words.every((word) => labelWords.has(word))
+  }
+
+  const collected = new Set<string>(labels)
+  for (const list of Object.values(entity.aliases ?? {})) {
+    for (const alias of list) {
+      if (alias.value && relatedToLabel(alias.value)) collected.add(alias.value)
+    }
+  }
+
   collected.delete(canonical)
-  // Keep it bounded: the longest spellings are the most distinctive.
   return Array.from(collected)
     .filter((alias) => alias.length >= 2 && alias.length <= 80)
     .slice(0, 12)
