@@ -115,19 +115,6 @@ const OCCUPATION_UNIVERSE: Record<string, Universe> = {
   Q3499072: 'food', // cook
 }
 
-/** Checked in this order when a person has several occupations. */
-const OCCUPATION_PRIORITY: Universe[] = [
-  'music',
-  'sport',
-  'humor-memes',
-  'cinema-tv',
-  'art',
-  'food',
-  'fashion',
-  'science',
-  'tech',
-  'news-society',
-]
 
 export type WikidataSubject = {
   /** The Wikipedia title we asked about. */
@@ -159,15 +146,13 @@ function pickUniverse(entity: Entity): { universe: Universe; isHuman: boolean } 
   const isHuman = instances.includes('Q5')
 
   if (isHuman) {
-    // Wikidata lists occupations in no useful order: Johnny Hallyday is filed
-    // as an actor before a singer. Pick by what the person is best known for.
-    const found = new Set<Universe>()
+    // Wikidata lists occupations roughly by prominence, so the first one that
+    // maps is the best guess. Reordering by a fixed preference was tried and
+    // was far worse: putting music first filed Pelé, Fernandel and Henry VIII
+    // under music, because each has some musical credit somewhere.
     for (const occupation of claimIds(entity, 'P106')) {
       const universe = OCCUPATION_UNIVERSE[occupation]
-      if (universe) found.add(universe)
-    }
-    for (const universe of OCCUPATION_PRIORITY) {
-      if (found.has(universe)) return { universe, isHuman }
+      if (universe) return { universe, isHuman }
     }
     return { universe: 'people-everyday', isHuman }
   }
