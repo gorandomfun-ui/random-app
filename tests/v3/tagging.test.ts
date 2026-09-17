@@ -239,3 +239,95 @@ test('la fusion réunit les alias sans perdre de source', async () => {
   assert.deepEqual(merged[0]?.aliases.sort(), ['south park', 'サウスパーク'].sort())
   assert.deepEqual(merged[0]?.sources.sort(), ['mainstream', 'trend'])
 })
+
+// ---------------------------------------------------------------------------
+// L'étiqueteur complet
+// ---------------------------------------------------------------------------
+
+const DICTIONARY = [
+  { _id: 'entity:south-park', label: 'South Park', universe: 'animation', kind: 'entity', aliases: ['south park', 'サウスパーク'], ambiguous: false },
+  { _id: 'entity:johnny-hallyday', label: 'Johnny Hallyday', universe: 'music', kind: 'entity', aliases: ['johnny hallyday'], ambiguous: false },
+  { _id: 'topic:moto', label: 'moto', universe: 'vehicles', kind: 'topic', aliases: ['moto', 'motorcycle'], ambiguous: true },
+  { _id: 'topic:road-trip', label: 'road trip', universe: 'travel', kind: 'topic', aliases: ['road trip'], ambiguous: false },
+  { _id: 'entity:cars', label: 'Cars', universe: 'animation', kind: 'entity', aliases: ['cars'], ambiguous: true },
+]
+
+test('index: une recherche ne compare que les alias plausibles', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const index = buildSubjectIndex(DICTIONARY)
+  assert.ok(index.aliasCount >= 7)
+  assert.ok(index.byFirstWord.has('south'), 'les alias latins sont indexés par premier mot')
+  assert.equal(index.unspaced.length, 1, 'les alias japonais vont dans la liste à part')
+})
+
+test('étiquetage: sujet principal, secondaires, univers, angle', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+
+  const tags = tagItem(
+    {
+      type: 'video',
+      title: 'Johnny Hallyday en road trip, reportage',
+      provider: 'youtube',
+      channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw',
+      viewCount: 2_000_000,
+      publishedAt: new Date('2012-05-01T00:00:00Z'),
+    },
+    index,
+    new Date('2026-09-17T00:00:00Z'),
+  )
+
+  assert.equal(tags.subjects[0]?.id, 'entity:johnny-hallyday', 'l_alias le plus précis devient le sujet principal')
+  assert.equal(tags.subjects[0]?.role, 'primary')
+  assert.ok(tags.subjects.some((subject) => subject.id === 'topic:road-trip'))
+  assert.equal(tags.universe, 'music')
+  assert.equal(tags.popularity, 'mainstream')
+  assert.equal(tags.era, 'retro')
+  assert.equal(tags.channelKey, 'youtube:UCuAXFkgsw1L7xaCfnd5JJOw')
+  assert.equal(tags.usable, true)
+  assert.equal(tags.tagVersion, 1)
+})
+
+test('étiquetage: le japonais est reconnu sans espaces', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+  const tags = tagItem({ type: 'image', title: '今日のサウスパークの回が最高だった' }, index)
+  assert.equal(tags.subjects[0]?.id, 'entity:south-park')
+})
+
+test('étiquetage: un mot courant exige un second indice', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+
+  // "cars" en minuscule au milieu d_une phrase : pas d_indice, donc ignoré.
+  const sans = tagItem({ type: 'video', title: 'washing my cars in the rain' }, index)
+  assert.equal(sans.subjects.length, 0, '"cars" seul ne doit pas devenir le film Cars')
+
+  // Majuscule dans le titre d_origine : indice accepté.
+  const avec = tagItem({ type: 'video', title: 'Cars 2 bande annonce' }, index)
+  assert.equal(avec.subjects[0]?.id, 'entity:cars')
+})
+
+test('étiquetage: un contenu inexploitable ne reçoit aucun sujet', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+  const tags = tagItem({ type: 'video', title: 'VID_20190812' }, index)
+  assert.equal(tags.usable, false)
+  assert.equal(tags.subjects.length, 0)
+})
+
+test('étiquetage: une catégorie Dailymotion ne devient jamais une clé d_auteur', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+  const tags = tagItem(
+    { type: 'video', title: 'South Park épisode culte', provider: 'dailymotion', channelId: 'news', channelTitle: 'Nieuws' },
+    index,
+  )
+  assert.equal(tags.channelKey, undefined)
+  assert.equal(tags.subjects[0]?.id, 'entity:south-park', 'le sujet reste correct malgré la chaîne inutilisable')
+})
