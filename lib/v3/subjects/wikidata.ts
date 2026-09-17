@@ -221,10 +221,13 @@ function collectAliases(entity: Entity, canonical: string): string[] {
 }
 
 /** One batch of at most 50 Wikipedia titles from a single edition. */
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 export async function fetchWikidataSubjects(
   language: string,
   titles: string[],
   signal?: AbortSignal,
+  attempt = 0,
 ): Promise<WikidataSubject[]> {
   if (!titles.length) return []
   const params = new URLSearchParams({
@@ -241,6 +244,17 @@ export async function fetchWikidataSubjects(
     headers: { 'User-Agent': USER_AGENT },
     signal,
   })
+  // Wikidata rate-limits like Wikimedia does; back off and retry rather than
+  // losing a whole batch of fifty entities.
+  if (response.status === 429 || response.status === 503) {
+    const headerSeconds = Number(response.headers.get('retry-after'))
+    const backoffMs = Number.isFinite(headerSeconds) && headerSeconds > 0
+      ? headerSeconds * 1000
+      : Math.min(60_000, 3_000 * 2 ** attempt)
+    if (attempt >= 4) throw new Error(`Wikidata ${language}: HTTP ${response.status} après ${attempt + 1} essais`)
+    await wait(backoffMs)
+    return fetchWikidataSubjects(language, titles, signal, attempt + 1)
+  }
   if (!response.ok) throw new Error(`Wikidata ${language}: HTTP ${response.status}`)
   const payload = (await response.json()) as { entities?: Record<string, Entity> }
   const entities = payload.entities ?? {}
