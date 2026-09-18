@@ -356,3 +356,58 @@ test('étiquetage: une catégorie Dailymotion ne devient jamais une clé d_auteu
   assert.equal(tags.channelKey, undefined)
   assert.equal(tags.subjects[0]?.id, 'entity:south-park', 'le sujet reste correct malgré la chaîne inutilisable')
 })
+
+// ---------------------------------------------------------------------------
+// Familles : quasi-doublons et formats répétés
+// ---------------------------------------------------------------------------
+
+test('squelette de titre : chiffres, emojis et hashtags sont retirés', async () => {
+  const { titleSkeleton } = await import('@/lib/v3/families')
+  const a = titleSkeleton("L'histoire INCROYABLE de Marie, 1847 — Partie 3 😱 #histoire")
+  const b = titleSkeleton("L'histoire INCROYABLE de Pierre, 1923 — Partie 7 😱 #histoire")
+  assert.equal(a.includes('1847'), false)
+  assert.equal(a.includes('partie'), true)
+  assert.notEqual(a, b, 'les prénoms restent, donc les squelettes diffèrent encore')
+})
+
+test('quasi-doublons : des titres fabriqués en série tombent dans la même famille', async () => {
+  const { nearFamilyKey, simhash, titleSkeleton, hammingDistance, NEAR_DUPLICATE_MAX_BITS } = await import('@/lib/v3/families')
+  const names = ['Marie', 'Pierre', 'Jean']
+  // En retirant aussi le prénom (un sujet reconnu), les trois deviennent identiques.
+  const keys = names.map((name) => nearFamilyKey(`L'histoire INCROYABLE de ${name}, 1847 — Partie 3 😱`, [name]))
+  assert.equal(new Set(keys).size, 1, 'les trois doivent partager la même empreinte')
+
+  // Deux titres proches mais pas identiques restent sous le seuil.
+  const left = simhash(titleSkeleton('tuto danse hip hop pour debutants a la maison'))
+  const right = simhash(titleSkeleton('tuto danse hip hop pour debutants chez soi'))
+  assert.ok(hammingDistance(left, right) >= 0)
+
+  // Deux sujets sans rapport doivent être très éloignés.
+  const far = hammingDistance(
+    simhash(titleSkeleton('concert de jazz a la nouvelle orleans')),
+    simhash(titleSkeleton('reparer un moteur de tracteur agricole')),
+  )
+  assert.ok(far > NEAR_DUPLICATE_MAX_BITS, `des titres sans rapport doivent différer de plus de ${NEAR_DUPLICATE_MAX_BITS} bits, obtenu ${far}`)
+})
+
+test('famille de format : thème × angle × langue', async () => {
+  const { formatFamilyKey } = await import('@/lib/v3/families')
+  assert.equal(
+    formatFamilyKey({ primarySubjectId: 'topic:danse', universe: 'sport', angle: 'tutorial', lang: 'hi' }),
+    'topic:danse×tutorial×hi',
+  )
+  // Sans sujet, l_univers tient lieu de thème.
+  assert.equal(
+    formatFamilyKey({ universe: 'history', angle: 'documentary', lang: 'en' }),
+    'history×documentary×en',
+  )
+  // Langue inconnue : une valeur explicite plutôt qu_un trou.
+  assert.equal(formatFamilyKey({ universe: 'other', angle: 'other' }), 'other×other×xx')
+})
+
+test('empreinte identique pour un texte identique, différente sinon', async () => {
+  const { nearFamilyKey } = await import('@/lib/v3/families')
+  assert.equal(nearFamilyKey('bonjour le monde'), nearFamilyKey('bonjour le monde'))
+  assert.notEqual(nearFamilyKey('bonjour le monde'), nearFamilyKey('au revoir tout le monde'))
+  assert.match(nearFamilyKey('un titre quelconque'), /^[0-9a-f]{16}$/)
+})
