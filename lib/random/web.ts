@@ -59,6 +59,20 @@ function computeKeywords(text: string, limit = 10): string[] {
   return unique
 }
 
+/**
+ * A website is only worth showing if it still has a preview image and has not
+ * been found dead.
+ *
+ * The ingest already refuses a site without an og:image, but nothing checked
+ * that again at draw time, so anything ingested before that rule — or whose
+ * image died since — was still served, and appeared as an empty card.
+ */
+const SERVABLE_WEB: Filter<Record<string, unknown>> = {
+  ogImage: { $exists: true, $nin: [null, ''] },
+  webLinkDead: { $ne: true },
+  isSuppressed: { $ne: true },
+}
+
 async function pickFromDb(
   exclude: string[],
   attempts = 15,
@@ -66,6 +80,7 @@ async function pickFromDb(
 ): Promise<Record<string, unknown> | null> {
   for (let i = 0; i < attempts; i++) {
     const filter = {
+      ...SERVABLE_WEB,
       ...(exclude.length ? { url: { $nin: exclude } } : {}),
       ...extraMatch,
     } as Filter<Record<string, unknown>>

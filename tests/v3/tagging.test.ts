@@ -458,3 +458,37 @@ test('un résultat Giphy ne compte que s_il mentionne le sujet demandé', async 
   assert.equal(mentionsSubject('Southern cooking GIF', 'South Park'), false)
   assert.equal(mentionsSubject('', 'South Park'), false)
 })
+
+// ---------------------------------------------------------------------------
+// Sites web : liens morts et pages marchandes
+// ---------------------------------------------------------------------------
+
+test('page marchande : reconnue par l_adresse', async () => {
+  const { looksMerchant } = await import('@/lib/v3/web/linkCheck')
+  for (const url of [
+    'https://example.com/shop/tshirt',
+    'https://example.com/boutique',
+    'https://example.com/products/42',
+    'https://example.com/panier',
+    'https://example.com/checkout?step=1',
+    'https://shop.example.com/',
+    'https://www.etsy.com/listing/123',
+  ]) {
+    assert.equal(looksMerchant(url), true, url)
+  }
+  for (const url of [
+    'https://www.earth.nullschool.net/',
+    'https://experiments.mozilla.org/',
+    'https://example.com/workshop',
+    'https://example.com/a-propos',
+  ]) {
+    assert.equal(looksMerchant(url), false, `${url} ne doit PAS être pris pour une boutique`)
+  }
+})
+
+test('page marchande : "workshop" ne doit pas déclencher "shop"', async () => {
+  const { looksMerchant } = await import('@/lib/v3/web/linkCheck')
+  // Le mot doit être un segment d_URL entier, pas une sous-chaîne.
+  assert.equal(looksMerchant('https://example.com/workshop/pottery'), false)
+  assert.equal(looksMerchant('https://example.com/shop/pottery'), true)
+})
