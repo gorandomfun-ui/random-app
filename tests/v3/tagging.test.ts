@@ -297,18 +297,43 @@ test('étiquetage: le japonais est reconnu sans espaces', async () => {
   assert.equal(tags.subjects[0]?.id, 'entity:south-park')
 })
 
-test('étiquetage: un mot courant exige un second indice', async () => {
+test('étiquetage: un alias d_un seul mot courant n_est jamais utilisé pour une entité', async () => {
   const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
   const { tagItem } = await import('@/lib/v3/tagging/tagItem')
   const index = buildSubjectIndex(DICTIONARY)
 
-  // "cars" en minuscule au milieu d_une phrase : pas d_indice, donc ignoré.
-  const sans = tagItem({ type: 'video', title: 'washing my cars in the rain' }, index)
-  assert.equal(sans.subjects.length, 0, '"cars" seul ne doit pas devenir le film Cars')
+  // Les titres anglais sont en Majuscules À Chaque Mot, donc la majuscule ne
+  // prouve rien. Sur la vraie base, "magic" faisait passer un épisode de série
+  // pour Magic: The Gathering, et "video" pour "Video recording".
+  assert.equal(tagItem({ type: 'video', title: 'washing my cars in the rain' }, index).subjects.length, 0)
+  assert.equal(
+    tagItem({ type: 'video', title: 'Cars 2 bande annonce' }, index).subjects.length,
+    0,
+    'même avec une majuscule, un mot seul ne suffit pas pour une entité',
+  )
+})
 
-  // Majuscule dans le titre d_origine : indice accepté.
-  const avec = tagItem({ type: 'video', title: 'Cars 2 bande annonce' }, index)
-  assert.equal(avec.subjects[0]?.id, 'entity:cars')
+test('étiquetage: un thème écrit à la main garde ses alias courts', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+  // "moto" est court mais choisi à la main : il reste utilisable, avec indice.
+  const tags = tagItem({ type: 'video', title: 'Balade en Moto dans les Alpes', categoryId: 'vehicles' }, index)
+  assert.ok(tags.subjects.some((subject) => subject.id === 'topic:moto'))
+})
+
+test('étiquetage: un nom long fait taire les noms courts qu_il contient', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex([
+    ...DICTIONARY,
+    { _id: 'entity:creed-ii', label: 'Creed II', universe: 'cinema-tv', kind: 'entity', aliases: ['creed ii'], ambiguous: false },
+    { _id: 'entity:assassin-s-creed', label: "Assassin's Creed", universe: 'gaming', kind: 'entity', aliases: ['assassin s creed'], ambiguous: false },
+  ])
+  const tags = tagItem({ type: 'video', title: "Assassin's Creed II Brotherhood intro" }, index)
+  const ids = tags.subjects.map((subject) => subject.id)
+  assert.ok(ids.includes('entity:assassin-s-creed'))
+  assert.ok(!ids.includes('entity:creed-ii'), '"Creed II" est déjà décrit par "Assassin_s Creed"')
 })
 
 test('étiquetage: un contenu inexploitable ne reçoit aucun sujet', async () => {

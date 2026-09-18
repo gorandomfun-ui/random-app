@@ -25,6 +25,12 @@ export type SubjectAlias = {
   subject: IndexedSubject
   /** Number of words, so the most specific match can win. */
   words: number
+  /**
+   * Whether *this spelling* needs a second clue — not whether the subject
+   * does. "Magic: The Gathering" is a specific name, but its alias "magic"
+   * is not, and matching on it tagged an Urdu drama episode as a card game.
+   */
+  ambiguous: boolean
 }
 
 export type SubjectIndex = {
@@ -68,15 +74,25 @@ export function buildSubjectIndex(rows: SubjectRow[]): SubjectIndex {
       if (alias.length < 2) continue
       aliasCount += 1
 
+      // A single common word is never a usable name for an entity. Wikidata
+      // lists "magic" for Magic: The Gathering and "video" for Video
+      // recording; capitalisation cannot rescue them either, since English
+      // titles are written in Title Case and every word looks like a name.
+      // Curated themes keep theirs: "moto" and "café" were chosen to be safe.
+      const shortSingleWord = needsSecondClue(alias)
+      if (shortSingleWord && subject.kind === 'entity') continue
+
+      const ambiguous = subject.ambiguous || shortSingleWord
+
       if (UNSPACED_SCRIPT.test(alias)) {
-        unspaced.push({ alias, subject, words: 1 })
+        unspaced.push({ alias, subject, words: 1, ambiguous })
         continue
       }
 
       const firstWord = alias.split(' ')[0]
       if (!firstWord) continue
       const bucket = byFirstWord.get(firstWord)
-      const entry: SubjectAlias = { alias, subject, words: alias.split(' ').length }
+      const entry: SubjectAlias = { alias, subject, words: alias.split(' ').length, ambiguous }
       if (bucket) bucket.push(entry)
       else byFirstWord.set(firstWord, [entry])
     }
@@ -89,6 +105,10 @@ export type AliasMatch = {
   subject: IndexedSubject
   alias: string
   words: number
+  ambiguous: boolean
+  /** Where the alias was found, so overlapping matches can be resolved. */
+  start: number
+  end: number
 }
 
 /**
@@ -114,28 +134,45 @@ export function matchSubjects(
     const candidates = index.byFirstWord.get(word)
     if (!candidates) continue
     for (const candidate of candidates) {
-      if (!padded.includes(` ${candidate.alias} `)) continue
-      keepBest(found, candidate)
+      const at = padded.indexOf(` ${candidate.alias} `)
+      if (at < 0) continue
+      keepBest(found, candidate, at, at + candidate.alias.length + 2)
     }
   }
 
   if (UNSPACED_SCRIPT.test(normalized)) {
     for (const candidate of index.unspaced) {
-      if (normalized.includes(candidate.alias)) keepBest(found, candidate)
+      const at = normalized.indexOf(candidate.alias)
+      if (at < 0) continue
+      keepBest(found, candidate, at, at + candidate.alias.length)
     }
   }
 
-  return Array.from(found.values()).filter((match) => !match.subject.ambiguous || secondClue(match))
+  const kept = Array.from(found.values()).filter((match) => !match.ambiguous || secondClue(match))
+
+  // "Assassin's Creed II" also matches "Creed II". The two names claim
+  // overlapping words of the same title, and only the longer one is right, so
+  // a match covered by a longer one that shares any of its span is dropped.
+  return kept.filter((match) => {
+    return !kept.some((other) => {
+      if (other === match) return false
+      if (other.alias.length <= match.alias.length) return false
+      return other.start < match.end && match.start < other.end
+    })
+  })
 }
 
 /** One subject, matched by its most specific alias. */
-function keepBest(found: Map<string, AliasMatch>, candidate: SubjectAlias): void {
+function keepBest(found: Map<string, AliasMatch>, candidate: SubjectAlias, start: number, end: number): void {
   const existing = found.get(candidate.subject.id)
   if (!existing || candidate.words > existing.words) {
     found.set(candidate.subject.id, {
       subject: candidate.subject,
       alias: candidate.alias,
       words: candidate.words,
+      ambiguous: candidate.ambiguous,
+      start,
+      end,
     })
   }
 }
