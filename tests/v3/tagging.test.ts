@@ -411,3 +411,50 @@ test('empreinte identique pour un texte identique, différente sinon', async () 
   assert.notEqual(nearFamilyKey('bonjour le monde'), nearFamilyKey('au revoir tout le monde'))
   assert.match(nearFamilyKey('un titre quelconque'), /^[0-9a-f]{16}$/)
 })
+
+// ---------------------------------------------------------------------------
+// Giphy
+// ---------------------------------------------------------------------------
+
+test('titre Giphy : séparer le sujet du studio', async () => {
+  const { parseGiphyTitle } = await import('@/lib/v3/giphy')
+  assert.deepEqual(parseGiphyTitle('Fps Platformer GIF by Annapurna Interactive'), {
+    subjectText: 'Fps Platformer',
+    studio: 'Annapurna Interactive',
+  })
+  assert.deepEqual(parseGiphyTitle('Music Video Wow GIF by Apple Music'), {
+    subjectText: 'Music Video Wow',
+    studio: 'Apple Music',
+  })
+  // Sans studio
+  assert.deepEqual(parseGiphyTitle('asian food GIF'), { subjectText: 'asian food', studio: null })
+  // Giphy utilise aussi "Sticker" pour la même forme
+  assert.deepEqual(parseGiphyTitle('Happy Birthday Sticker by Tenor'), {
+    subjectText: 'Happy Birthday',
+    studio: 'Tenor',
+  })
+  // Titre libre : tout est considéré comme sujet
+  assert.deepEqual(parseGiphyTitle('Pink Frog'), { subjectText: 'Pink Frog', studio: null })
+  assert.deepEqual(parseGiphyTitle(''), { subjectText: null, studio: null })
+  assert.deepEqual(parseGiphyTitle(null), { subjectText: null, studio: null })
+})
+
+test('texte Giphy à étiqueter : sujet, studio, auteur et slug', async () => {
+  const { giphySearchableText } = await import('@/lib/v3/giphy')
+  const text = giphySearchableText({
+    title: 'Trending Its Gone Viral GIF by One Chicago',
+    slug: 'onechicago-nbc-chicago-fire-xYz123AbC',
+    username: 'onechicago',
+  })
+  assert.ok(text.includes('Trending Its Gone Viral'))
+  assert.ok(text.includes('One Chicago'), 'le studio est un sujet potentiel')
+  assert.ok(text.includes('chicago fire'), 'les mots du slug sont récupérés')
+  assert.ok(!text.includes('xYz123AbC'), 'l_identifiant en fin de slug est écarté')
+})
+
+test('un résultat Giphy ne compte que s_il mentionne le sujet demandé', async () => {
+  const { mentionsSubject } = await import('@/lib/v3/giphy')
+  assert.equal(mentionsSubject('South Park Cartman GIF', 'South Park'), true)
+  assert.equal(mentionsSubject('Southern cooking GIF', 'South Park'), false)
+  assert.equal(mentionsSubject('', 'South Park'), false)
+})
