@@ -19,6 +19,8 @@ import {
   mergeToneHintsIntoTags,
   mergeToneSignalsIntoKeywords,
 } from '@/lib/ingest/tone'
+import { getDbSafe } from '@/lib/random/data'
+import { rememberQuizzes } from '@/lib/v3/quiz/persist'
 
 const RECENT_LIMIT = 10
 const recentFacts: string[] = []
@@ -674,6 +676,16 @@ async function fillQuizQueue(exclusion: QuizExclusionContext): Promise<boolean> 
       currentIds,
       servedQuizHistory,
     )
+    // Free content already in hand: keep it so the quiz base grows with use
+    // and each question becomes available to a Wave. Fire and forget.
+    if (fetchedDocs.length) {
+      void getDbSafe()
+        .then((db: import('mongodb').Db | null) => {
+          if (db) rememberQuizzes(db, fetchedDocs as never)
+        })
+        .catch(() => undefined)
+    }
+
     for (const fetched of fetchedDocs) {
       if (!fetched.quiz) continue
       const normalizedQuestion = fetched.quiz.question.toLowerCase()
