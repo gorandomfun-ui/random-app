@@ -34,7 +34,14 @@ export type WaveAnchor = {
 }
 
 const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
-const MAX_VIDEOS = 2
+/**
+ * Never three of the same format, whichever it is.
+ *
+ * Two videos and an image, two images and a video, a video with a text — all
+ * fine. Three images is not a Wave, it is more of the same. Capping only
+ * videos let three GIFs through.
+ */
+const MAX_PER_TYPE = 2
 
 function normalisedTitle(title: string | null | undefined): string {
   return (title ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
@@ -67,9 +74,7 @@ export function accepts(
     if (chosen.some((item) => item.v3.channelKey === author)) return false
   }
 
-  if (candidate.type === 'video' && chosen.filter((item) => item.type === 'video').length >= MAX_VIDEOS) {
-    return false
-  }
+  if (chosen.filter((item) => item.type === candidate.type).length >= MAX_PER_TYPE) return false
 
   // Texts only carry a Wave when the subject match is exact, which levels 1
   // and 2 guarantee and level 3 does not.

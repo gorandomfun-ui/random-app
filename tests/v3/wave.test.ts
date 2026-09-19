@@ -50,6 +50,26 @@ function candidate(
   }
 }
 
+test('jamais trois fois le même format, quel qu_il soit', () => {
+  // Trois images, ce n_est pas une Wave, c_est la même chose trois fois.
+  const troisImages = buildWave(anchor({ angle: 'photo-image' }), [
+    candidate('image', 'meme-gif'),
+    candidate('image', 'fan-art'),
+    candidate('image', 'photo-image'),
+  ])
+  assert.ok(troisImages.items.filter((item) => item.type === 'image').length <= 2)
+
+  // Les combinaisons que le propriétaire décrit doivent rester possibles.
+  const deuxImagesUneVideo = buildWave(anchor({ angle: 'official-clip' }), [
+    candidate('image', 'meme-gif'),
+    candidate('image', 'fan-art'),
+    candidate('video', 'live-concert'),
+  ])
+  assert.equal(deuxImagesUneVideo.items.length, 3)
+  assert.equal(deuxImagesUneVideo.items.filter((item) => item.type === 'image').length, 2)
+  assert.equal(deuxImagesUneVideo.items.filter((item) => item.type === 'video').length, 1)
+})
+
 test('la Wave mélange les formats plutôt que d_empiler des vidéos', () => {
   const { items } = buildWave(anchor(), [
     candidate('video', 'episode-extract'),
