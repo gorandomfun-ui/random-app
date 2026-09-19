@@ -75,7 +75,14 @@ export const ANGLES = [
 
 export type Angle = (typeof ANGLES)[number]
 
-export type Popularity = 'niche' | 'mid' | 'mainstream' | 'unknown'
+/**
+ * Four tiers rather than the brief's three.
+ *
+ * Measured on the catalogue: 6,303 videos sit between 1M and 2M views and are
+ * not big hits, while 437 are above 100M. A single ">1M = mainstream" line put
+ * those in the same bucket, so `known` was split out.
+ */
+export type Popularity = 'niche' | 'mid' | 'known' | 'mainstream' | 'unknown'
 
 export type Era = 'trend' | 'recent' | 'retro' | 'unknown'
 

@@ -50,12 +50,19 @@ test('identifiants de sujets et de combos', () => {
   assert.equal(comboId('topic:desert', 'topic:road-trip'), 'combo:desert+road-trip')
 })
 
-test('popularité: les trois seuils du plan', () => {
+test('popularité : quatre paliers, tirés de la répartition réelle', () => {
   assert.equal(classifyPopularity(0), 'niche')
   assert.equal(classifyPopularity(999), 'niche')
   assert.equal(classifyPopularity(1_000), 'mid')
-  assert.equal(classifyPopularity(1_000_000), 'mid')
-  assert.equal(classifyPopularity(1_000_001), 'mainstream')
+  assert.equal(classifyPopularity(99_999), 'mid')
+  // "known" existe parce que 6 303 vidéos sont entre 1 et 2 M : ce ne sont
+  // pas des gros succès, et les mélanger aux 437 vidéos au-dessus de 100 M
+  // n_avait pas de sens.
+  assert.equal(classifyPopularity(100_000), 'known')
+  assert.equal(classifyPopularity(1_500_000), 'known')
+  assert.equal(classifyPopularity(2_000_000), 'known')
+  assert.equal(classifyPopularity(2_000_001), 'mainstream')
+  assert.equal(classifyPopularity(500_000_000), 'mainstream')
   assert.equal(classifyPopularity(null), 'unknown')
   assert.equal(classifyPopularity(undefined), 'unknown')
 })
@@ -271,7 +278,7 @@ test('étiquetage: sujet principal, secondaires, univers, angle', async () => {
       title: 'Johnny Hallyday en road trip, reportage',
       provider: 'youtube',
       channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw',
-      viewCount: 2_000_000,
+      viewCount: 8_000_000,
       publishedAt: new Date('2012-05-01T00:00:00Z'),
     },
     index,

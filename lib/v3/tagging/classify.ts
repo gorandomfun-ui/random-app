@@ -5,8 +5,14 @@
 
 import type { Era, ItemType, Popularity } from '../types'
 
+/**
+ * Thresholds taken from the catalogue's real distribution rather than round
+ * numbers: 78% of videos are under 1,000 views, and the >1M bucket held both
+ * modest 1.2M videos and 500M mega-hits.
+ */
 const NICHE_CEILING = 1_000
-const MAINSTREAM_FLOOR = 1_000_000
+const MID_CEILING = 100_000
+const KNOWN_CEILING = 2_000_000
 
 /** A trend observation older than this no longer makes an item "trending". */
 const TREND_WINDOW_DAYS = 14
@@ -17,8 +23,9 @@ const RETRO_YEARS = 5
 export function classifyPopularity(viewCount: number | null | undefined): Popularity {
   if (typeof viewCount !== 'number' || !Number.isFinite(viewCount) || viewCount < 0) return 'unknown'
   if (viewCount < NICHE_CEILING) return 'niche'
-  if (viewCount > MAINSTREAM_FLOOR) return 'mainstream'
-  return 'mid'
+  if (viewCount < MID_CEILING) return 'mid'
+  if (viewCount <= KNOWN_CEILING) return 'known'
+  return 'mainstream'
 }
 
 /** A four-digit year in the title, when it is a plausible one. */
