@@ -183,3 +183,58 @@ test('accepts refuse le contenu de départ et ceux déjà vus', () => {
   assert.equal(accepts(a, [], vu, new Set([vu.id])), false)
   assert.equal(accepts(a, [], vu, new Set()), true)
 })
+
+// ---------------------------------------------------------------------------
+// Disponibilité de la Wave, sans requête au clic
+// ---------------------------------------------------------------------------
+
+function fakeDb(rows: Array<{ _id: string; counts: Record<string, number> }>) {
+  return {
+    collection: () => ({ find: () => ({ toArray: async () => rows }) }),
+  } as unknown as import('mongodb').Db
+}
+
+test('le bouton Wave s_affiche selon les compteurs, sans interroger le catalogue', async () => {
+  const { hasWave, resetWaveAvailability } = await import('@/lib/v3/wave/available')
+  resetWaveAvailability()
+
+  const db = fakeDb([
+    { _id: 'entity:south-park', counts: { video: 40, image: 12 } },
+    { _id: 'topic:poterie', counts: { video: 2 } },
+    { _id: 'entity:trop-rare', counts: { video: 1 } },
+  ])
+
+  assert.equal(await hasWave(db, [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }]), true)
+  assert.equal(await hasWave(db, [{ id: 'topic:poterie', role: 'primary', evidence: 'alias' }]), true)
+  assert.equal(
+    await hasWave(db, [{ id: 'entity:trop-rare', role: 'primary', evidence: 'alias' }]),
+    false,
+    'un seul contenu ne fait pas une Wave',
+  )
+  assert.equal(await hasWave(db, []), false)
+  assert.equal(await hasWave(db, undefined), false)
+})
+
+test('un sujet secondaire suffit à proposer la Wave', async () => {
+  const { hasWave, resetWaveAvailability } = await import('@/lib/v3/wave/available')
+  resetWaveAvailability()
+  const db = fakeDb([{ _id: 'topic:moto', counts: { video: 30 } }])
+
+  assert.equal(
+    await hasWave(db, [
+      { id: 'entity:inconnu', role: 'primary', evidence: 'alias' },
+      { id: 'topic:moto', role: 'secondary', evidence: 'alias' },
+    ]),
+    true,
+  )
+})
+
+test('des compteurs illisibles cachent le bouton plutôt que de promettre une Wave vide', async () => {
+  const { hasWave, resetWaveAvailability } = await import('@/lib/v3/wave/available')
+  resetWaveAvailability()
+  const broken = {
+    collection: () => ({ find: () => ({ toArray: async () => { throw new Error('indisponible') } }) }),
+  } as unknown as import('mongodb').Db
+
+  assert.equal(await hasWave(broken, [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }]), false)
+})
