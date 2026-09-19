@@ -151,6 +151,79 @@ export const THEMES: ThemeSeed[] = [
   { slug: 'maquillage', label: 'maquillage', universe: 'fashion', aliases: ['makeup', 'make-up', 'schminke', 'maquillaje', 'メイク'] },
   { slug: 'mode-vintage', label: 'mode vintage', universe: 'fashion', aliases: ['vintage fashion', 'thrift', 'friperie', 'segunda mano', '古着'] },
 
+  // ---- deuxième vague ------------------------------------------------
+  // Choisis d'après les mots réellement fréquents dans les contenus que la
+  // première vague ne reconnaissait pas, et non inventés : `nature` (109
+  // occurrences sur 6 166 titres), `music` (100), `cartoon` (91), `food` (70),
+  // `festival` (56), `street` (52), `city` (51), `fashion` (46), `radio` (45).
+
+  // ---- nature-animals -------------------------------------------------
+  { slug: 'nature', label: 'nature', universe: 'nature-animals', aliases: ['naturaleza', 'natur', 'natureza', '自然'] },
+  { slug: 'paysage', label: 'paysage', universe: 'nature-animals', aliases: ['landscape', 'landschaft', 'paisaje', 'paisagem', '風景'] },
+  { slug: 'coucher-de-soleil', label: 'coucher de soleil', universe: 'nature-animals', aliases: ['sunset', 'sonnenuntergang', 'atardecer', 'por do sol', '夕日'] },
+  { slug: 'lac', label: 'lac', universe: 'nature-animals', aliases: ['lake', 'see', 'lago', '湖'] },
+  { slug: 'riviere', label: 'rivière', universe: 'nature-animals', aliases: ['river', 'fluss', 'rio', 'rivière', '川'] },
+  { slug: 'fleur', label: 'fleur', universe: 'nature-animals', aliases: ['flower', 'blume', 'flor', '花'] },
+  { slug: 'arbre', label: 'arbre', universe: 'nature-animals', aliases: ['tree', 'baum', 'arbol', 'árvore', '木'] },
+  { slug: 'neige', label: 'neige', universe: 'nature-animals', aliases: ['snow', 'schnee', 'nieve', 'neve', '雪'] },
+  { slug: 'pluie', label: 'pluie', universe: 'nature-animals', aliases: ['rain', 'regen', 'lluvia', 'chuva', '雨'] },
+  { slug: 'papillon', label: 'papillon', universe: 'nature-animals', aliases: ['butterfly', 'schmetterling', 'mariposa', '蝶'] },
+  { slug: 'poisson', label: 'poisson', universe: 'nature-animals', aliases: ['fish', 'aquarium', 'fisch', 'pez', '魚'] },
+  { slug: 'lapin', label: 'lapin', universe: 'nature-animals', aliases: ['rabbit', 'bunny', 'kaninchen', 'conejo', 'うさぎ'] },
+  { slug: 'renard', label: 'renard', universe: 'nature-animals', aliases: ['fox', 'fuchs', 'zorro', 'raposa', 'きつね'] },
+  { slug: 'ours', label: 'ours', universe: 'nature-animals', aliases: ['bear', 'baer', 'bär', 'oso', 'urso', '熊'] },
+
+  // ---- travel / city --------------------------------------------------
+  { slug: 'ville', label: 'ville', universe: 'travel', aliases: ['cityscape', 'skyline', 'stadt', 'ciudad', 'cidade', '都市'] },
+  { slug: 'architecture', label: 'architecture', universe: 'art', aliases: ['arquitectura', 'arquitetura', 'architektur', '建築'] },
+  { slug: 'rue', label: 'rue', universe: 'travel', aliases: ['street photography', 'photo de rue', 'strasse', 'calle', '街角'] },
+  { slug: 'pont', label: 'pont', universe: 'travel', aliases: ['bridge', 'bruecke', 'brücke', 'puente', 'ponte', '橋'] },
+  { slug: 'gratte-ciel', label: 'gratte-ciel', universe: 'travel', aliases: ['skyscraper', 'wolkenkratzer', 'rascacielos', '超高層ビル'] },
+  { slug: 'vue-aerienne', label: 'vue aérienne', universe: 'travel', aliases: ['aerial view', 'drone shot', 'luftaufnahme', 'vista aerea', '空撮'] },
+
+  // ---- animation / cinema ---------------------------------------------
+  { slug: 'dessin-anime', label: 'dessin animé', universe: 'animation', aliases: ['cartoon', 'zeichentrick', 'dibujos animados', 'desenho animado', 'アニメ'] },
+  { slug: 'pixel-art', label: 'pixel art', universe: 'art', aliases: ['pixelart', 'ドット絵'] },
+  { slug: 'bande-annonce', label: 'bande-annonce', universe: 'cinema-tv', aliases: ['official trailer', 'trailer', 'teaser', 'avance', '予告編'] },
+  { slug: 'court-metrage', label: 'court métrage', universe: 'cinema-tv', aliases: ['short film', 'kurzfilm', 'cortometraje', 'curta metragem', '短編映画'] },
+  { slug: 'serie-dramatique', label: 'série dramatique', universe: 'cinema-tv', aliases: ['short drama', 'drama series', 'telenovela', 'ドラマ'] },
+  { slug: 'film-muet', label: 'film muet', universe: 'cinema-tv', aliases: ['silent film', 'stummfilm', 'cine mudo', '無声映画'] },
+
+  // ---- music ----------------------------------------------------------
+  { slug: 'radio', label: 'radio', universe: 'music', aliases: ['radioshow', 'emission de radio', 'ラジオ'] },
+  { slug: 'vinyle', label: 'vinyle', universe: 'music', aliases: ['vinyl', 'turntable', 'platine disque', 'schallplatte', 'レコード'] },
+  { slug: 'violon', label: 'violon', universe: 'music', aliases: ['violin', 'geige', 'violin', 'violino', 'バイオリン'] },
+  { slug: 'saxophone', label: 'saxophone', universe: 'music', aliases: ['saxofon', 'saxofone', 'サックス'] },
+  { slug: 'accordeon', label: 'accordéon', universe: 'music', aliases: ['accordion', 'akkordeon', 'acordeon', 'アコーディオン'] },
+
+  // ---- food -----------------------------------------------------------
+  { slug: 'petit-dejeuner', label: 'petit déjeuner', universe: 'food', aliases: ['breakfast', 'fruehstueck', 'frühstück', 'desayuno', '朝食'] },
+  { slug: 'dessert', label: 'dessert', universe: 'food', aliases: ['postre', 'sobremesa', 'nachtisch', 'デザート'] },
+  { slug: 'glace', label: 'glace', universe: 'food', aliases: ['ice cream', 'eiscreme', 'helado', 'sorvete', 'アイスクリーム'] },
+  { slug: 'burger', label: 'burger', universe: 'food', aliases: ['hamburger', 'ハンバーガー'] },
+  { slug: 'cocktail', label: 'cocktail', universe: 'food', aliases: ['coctel', 'カクテル'] },
+  { slug: 'biere', label: 'bière', universe: 'food', aliases: ['beer', 'bier', 'cerveza', 'cerveja', 'ビール'] },
+
+  // ---- fashion / people -----------------------------------------------
+  { slug: 'portrait', label: 'portrait', universe: 'art', aliases: ['retrato', 'portraet', 'porträt', 'ポートレート'] },
+  { slug: 'defile-de-mode', label: 'défilé de mode', universe: 'fashion', aliases: ['fashion show', 'runway', 'modenschau', 'desfile de moda', 'ファッションショー'] },
+  { slug: 'lunettes-de-soleil', label: 'lunettes de soleil', universe: 'fashion', aliases: ['sunglasses', 'sonnenbrille', 'gafas de sol', 'サングラス'] },
+  { slug: 'tatouage-eclair', label: 'flash tattoo', universe: 'fashion', aliases: ['flash tatouage'] },
+
+  // ---- events ---------------------------------------------------------
+  { slug: 'festival-de-musique', label: 'festival de musique', universe: 'events-parties', aliases: ['music festival', 'musikfestival', 'festival de musica', '音楽フェス'] },
+  { slug: 'anniversaire', label: 'anniversaire', universe: 'events-parties', aliases: ['birthday', 'geburtstag', 'cumpleanos', 'aniversario', '誕生日'] },
+  { slug: 'noel', label: 'Noël', universe: 'events-parties', aliases: ['christmas', 'weihnachten', 'navidad', 'natal', 'クリスマス'] },
+  { slug: 'halloween', label: 'Halloween', universe: 'events-parties', aliases: ['ハロウィン'] },
+  { slug: 'nouvel-an', label: 'nouvel an', universe: 'events-parties', aliases: ['new year', 'neujahr', 'ano nuevo', 'ano novo', '正月'] },
+
+  // ---- sport / gaming --------------------------------------------------
+  { slug: 'football', label: 'football', universe: 'sport', aliases: ['soccer', 'fussball', 'fútbol', 'futebol', 'サッカー'] },
+  { slug: 'basketball', label: 'basketball', universe: 'sport', aliases: ['basket', 'baloncesto', 'basquete', 'バスケットボール'] },
+  { slug: 'cricket', label: 'cricket', universe: 'sport', aliases: ['クリケット'] },
+  { slug: 'yoga', label: 'yoga', universe: 'sport', aliases: ['ヨガ'] },
+  { slug: 'echecs', label: 'échecs', universe: 'gaming', aliases: ['chess', 'schach', 'ajedrez', 'xadrez', 'チェス'] },
+
   // ---- humour ---------------------------------------------------------
   { slug: 'blague-camera-cachee', label: 'caméra cachée', universe: 'humor-memes', aliases: ['hidden camera', 'prank', 'versteckte kamera', 'camara oculta', 'ドッキリ'] },
   { slug: 'fail', label: 'fail', universe: 'humor-memes', aliases: ['bêtisier', 'betisier', 'bloopers', 'panne', 'fracaso', '失敗'] },
