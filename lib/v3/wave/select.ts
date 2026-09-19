@@ -33,7 +33,7 @@ export type WaveAnchor = {
   v3: Pick<ItemTags, 'subjects' | 'universe' | 'angle'> & { channelKey?: string }
 }
 
-const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
+export const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
 /**
  * Two of a format is comfortable, three is a last resort.
  *
