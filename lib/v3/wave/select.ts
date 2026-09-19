@@ -35,13 +35,15 @@ export type WaveAnchor = {
 
 const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
 /**
- * Never three of the same format, whichever it is.
+ * Two of a format is comfortable, three is a last resort.
  *
- * Two videos and an image, two images and a video, a video with a text — all
- * fine. Three images is not a Wave, it is more of the same. Capping only
- * videos let three GIFs through.
+ * Two videos and an image, two images and a video, a video with a text are
+ * the good shapes. Three of the same is allowed only when nothing else can
+ * fill the slot — a subject with videos and no image should still get a
+ * Wave rather than a short one.
  */
-const MAX_PER_TYPE = 2
+const COMFORTABLE_PER_TYPE = 2
+const MAX_PER_TYPE = 3
 
 function normalisedTitle(title: string | null | undefined): string {
   return (title ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
@@ -59,6 +61,8 @@ export function accepts(
   chosen: WaveCandidate[],
   candidate: WaveCandidate,
   excludeKeys: Set<string>,
+  /** Raised only on the fallback pass, when the strict shape found nothing. */
+  perType: number = COMFORTABLE_PER_TYPE,
 ): boolean {
   if (candidate.id === anchor.id) return false
   if (excludeKeys.has(candidate.id)) return false
@@ -74,7 +78,7 @@ export function accepts(
     if (chosen.some((item) => item.v3.channelKey === author)) return false
   }
 
-  if (chosen.filter((item) => item.type === candidate.type).length >= MAX_PER_TYPE) return false
+  if (chosen.filter((item) => item.type === candidate.type).length >= perType) return false
 
   // Texts only carry a Wave when the subject match is exact, which levels 1
   // and 2 guarantee and level 3 does not.
@@ -113,10 +117,14 @@ export function buildWave(
   const excluded = new Set(excludeKeys)
   const chosen: WaveCandidate[] = []
 
-  for (const level of [1, 2, 3] as WaveLevel[]) {
+  // First pass keeps the comfortable shape; the second only runs if the Wave
+  // is still short, and is what allows a third video when there is no image.
+  for (const perType of [COMFORTABLE_PER_TYPE, MAX_PER_TYPE]) {
+    if (chosen.length >= WAVE_SIZE) break
+    for (const level of [1, 2, 3] as WaveLevel[]) {
     const pool = candidates.filter((candidate) => candidate.level === level)
     while (chosen.length < WAVE_SIZE) {
-      const usable = pool.filter((candidate) => accepts(anchor, chosen, candidate, excluded))
+      const usable = pool.filter((candidate) => accepts(anchor, chosen, candidate, excluded, perType))
       if (!usable.length) break
       usable.sort(
         (left, right) =>
@@ -127,7 +135,8 @@ export function buildWave(
       chosen.push(best)
       excluded.add(best.id)
     }
-    if (chosen.length >= WAVE_SIZE) break
+      if (chosen.length >= WAVE_SIZE) break
+    }
   }
 
   // The level reported is the loosest link used, so callers can tell how close

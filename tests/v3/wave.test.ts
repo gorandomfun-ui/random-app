@@ -50,24 +50,34 @@ function candidate(
   }
 }
 
-test('jamais trois fois le même format, quel qu_il soit', () => {
-  // Trois images, ce n_est pas une Wave, c_est la même chose trois fois.
-  const troisImages = buildWave(anchor({ angle: 'photo-image' }), [
-    candidate('image', 'meme-gif'),
-    candidate('image', 'fan-art'),
-    candidate('image', 'photo-image'),
-  ])
-  assert.ok(troisImages.items.filter((item) => item.type === 'image').length <= 2)
-
-  // Les combinaisons que le propriétaire décrit doivent rester possibles.
-  const deuxImagesUneVideo = buildWave(anchor({ angle: 'official-clip' }), [
+test('trois fois le même format : seulement en dernier recours', () => {
+  // Il y a de quoi mélanger : la Wave doit mélanger.
+  const melange = buildWave(anchor({ angle: 'official-clip' }), [
     candidate('image', 'meme-gif'),
     candidate('image', 'fan-art'),
     candidate('video', 'live-concert'),
   ])
-  assert.equal(deuxImagesUneVideo.items.length, 3)
-  assert.equal(deuxImagesUneVideo.items.filter((item) => item.type === 'image').length, 2)
-  assert.equal(deuxImagesUneVideo.items.filter((item) => item.type === 'video').length, 1)
+  assert.equal(melange.items.length, 3)
+  assert.equal(melange.items.filter((item) => item.type === 'image').length, 2, 'deux images et une vidéo')
+
+  // Un sujet qui n_a que des vidéos vaut mieux qu_une Wave courte.
+  const queDesVideos = buildWave(anchor({ angle: 'meme-gif' }), [
+    candidate('video', 'live-concert'),
+    candidate('video', 'interview'),
+    candidate('video', 'documentary'),
+  ])
+  assert.equal(queDesVideos.items.length, 3, 'faute de mieux, trois vidéos valent mieux que deux')
+})
+
+test('deux images et un texte reste possible', () => {
+  const { items } = buildWave(anchor({ angle: 'official-clip' }), [
+    candidate('image', 'meme-gif'),
+    candidate('image', 'fan-art'),
+    candidate('joke', 'text-joke'),
+  ])
+  assert.equal(items.length, 3)
+  assert.equal(items.filter((item) => item.type === 'image').length, 2)
+  assert.equal(items.filter((item) => item.type === 'joke').length, 1)
 })
 
 test('la Wave mélange les formats plutôt que d_empiler des vidéos', () => {
