@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { looksMerchant } from '@/lib/v3/web/linkCheck'
 import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
@@ -210,7 +211,9 @@ function filterBlockedRows(rows: WebRow[]): { rows: WebRow[]; filtered: number }
   let filtered = 0
   for (const row of rows) {
     const host = row?.host || hostFromUrl(row?.url || '')
-    if (isHostBlocked(host) || isLikelyForum({ ...row, host })) {
+    // Product pages sell rather than show. Existing ones stay in the
+    // catalogue by decision; this only stops new ones arriving.
+    if (isHostBlocked(host) || isLikelyForum({ ...row, host }) || looksMerchant(row.url)) {
       filtered += 1
       continue
     }
@@ -386,7 +389,7 @@ async function runGoogleCSE(
           const host = hostFromUrl(link)
           const title = (it?.title || '').trim() || host || link
           const snippet = (it?.snippet || '').trim()
-          if (isHostBlocked(host) || isLikelyForum({ url: link, title, text: snippet, host })) {
+          if (isHostBlocked(host) || isLikelyForum({ url: link, title, text: snippet, host }) || looksMerchant(link)) {
             filteredLocal += 1
             continue
           }
