@@ -7,13 +7,6 @@ import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
 import { buildContentLanguageMatch, combineContentMatches } from '@/lib/random/language'
 import {
-  markGlobalItem,
-  markGlobalKeywords,
-  markGlobalOrigin,
-  markGlobalProvider,
-  markGlobalTopics,
-} from '@/lib/random/globalState'
-import {
   deriveToneAugmentation,
   flattenToneSegments,
   mergeToneHintsIntoTags,
@@ -831,11 +824,6 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
         registerRecent(item.text)
         const updatedExclusion = buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))
         void touchLastShown('fact', doc.hash ? { hash: doc.hash } : { text: doc.text })
-        markGlobalItem('fact', item.text)
-        markGlobalProvider(item.provider)
-        markGlobalOrigin(doc._id ? 'db-random' : 'network')
-        markGlobalTopics(Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [])
-        markGlobalKeywords(Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [])
         servedQuizHistory.add(item.id)
         if (servedQuizHistory.size > QUIZ_HISTORY_LIMIT) {
           const oldest = servedQuizHistory.values().next()
@@ -859,11 +847,6 @@ export async function selectFact(options: RandomSelectOptions = {}): Promise<Fac
       registerRecent(text)
       const lookupKey = doc.hash ? { hash: doc.hash } : { text }
       void touchLastShown('fact', lookupKey)
-      markGlobalItem('fact', text)
-      markGlobalProvider(provider)
-      markGlobalOrigin(doc._id ? 'db-random' : 'network')
-      markGlobalTopics(Array.isArray(doc.tags) ? doc.tags.filter((tag): tag is string => typeof tag === 'string') : [])
-      markGlobalKeywords(Array.isArray(doc.keywords) ? doc.keywords.filter((word): word is string => typeof word === 'string') : [])
       lastFactWasQuiz = false
       ensureQuizPreloaded(buildQuizExclusion(recentFacts.slice(-RECENT_LIMIT))).catch(() => undefined)
       return {

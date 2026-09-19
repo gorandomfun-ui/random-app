@@ -5,13 +5,6 @@ import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
 import { buildContentLanguageMatch, combineContentMatches } from './language'
 import {
-  markGlobalItem,
-  markGlobalKeywords,
-  markGlobalOrigin,
-  markGlobalProvider,
-  markGlobalTopics,
-} from './globalState'
-import {
   deriveToneAugmentation,
   flattenToneSegments,
   mergeToneHintsIntoTags,
@@ -260,11 +253,6 @@ export async function selectJoke(options: RandomSelectOptions = {}): Promise<Jok
 
   registerRecent(text)
   void touchLastShown('joke', { text })
-  markGlobalItem('joke', text)
-  markGlobalProvider(provider)
-  markGlobalOrigin(doc ? 'db-random' : 'fallback')
-  markGlobalTopics(tags)
-  markGlobalKeywords(keywords)
 
   return {
     _id: itemId,

@@ -2,13 +2,6 @@ import { sampleFromCache, touchLastShown } from '@/lib/random/data'
 import { STRONG_POOL_MAX_TIME_MS, buildStrongPoolMatch } from '@/lib/random/strongPool'
 import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
-import {
-  markGlobalItem,
-  markGlobalKeywords,
-  markGlobalOrigin,
-  markGlobalProvider,
-  markGlobalTopics,
-} from './globalState'
 import type { WebItem } from './clientTypes'
 import { deriveToneAugmentation, flattenToneSegments } from '@/lib/ingest/tone'
 
@@ -152,11 +145,6 @@ export async function selectWeb(options: RandomSelectOptions = {}): Promise<WebI
 
   registerRecent(urlRaw)
   void touchLastShown('web', { url: urlRaw })
-  markGlobalItem('web', urlRaw)
-  markGlobalProvider(provider)
-  markGlobalOrigin('db-random')
-  markGlobalTopics(tags)
-  markGlobalKeywords(keywords)
 
   return {
     _id: itemId,

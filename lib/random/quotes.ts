@@ -4,13 +4,6 @@ import type { RandomSelectOptions } from '@/lib/random/types'
 import type { Filter } from 'mongodb'
 import { buildContentLanguageMatch, combineContentMatches } from './language'
 import {
-  markGlobalItem,
-  markGlobalKeywords,
-  markGlobalOrigin,
-  markGlobalProvider,
-  markGlobalTopics,
-} from './globalState'
-import {
   deriveToneAugmentation,
   flattenToneSegments,
   mergeToneHintsIntoTags,
@@ -238,11 +231,6 @@ export async function selectQuote(options: RandomSelectOptions = {}): Promise<Qu
 
   registerRecent(text, author)
   void touchLastShown('quote', { text, author })
-  markGlobalItem('quote', key(text, author))
-  markGlobalProvider(provider)
-  markGlobalOrigin(doc ? 'db-random' : 'fallback')
-  markGlobalTopics(tags)
-  markGlobalKeywords(keywords)
 
   return {
     _id: itemId,

@@ -6,16 +6,7 @@ import type { Filter } from 'mongodb'
 import {
   routineVideoSelectionMatch,
 } from '@/lib/random/videoEditorial'
-import {
-  markGlobalItem,
-  markGlobalKeywords,
-  markGlobalOrigin,
-  markGlobalProvider,
-  markGlobalTopics,
-} from './globalState'
 
-const RECENT_LIMIT = 10
-const recentVideoIds: string[] = []
 
 type VideoRecord = {
   videoId?: string | null
@@ -122,16 +113,7 @@ function buildVideoPoolMatches(pool: VideoPool): Filter<VideoRecord>[] {
   return [strongFresh, anyFresh]
 }
 
-function registerRecent(id: string) {
-  if (!id) return
-  const idx = recentVideoIds.indexOf(id)
-  if (idx >= 0) recentVideoIds.splice(idx, 1)
-  recentVideoIds.push(id)
-  while (recentVideoIds.length > RECENT_LIMIT) recentVideoIds.shift()
-}
-
 async function pickFromDb(
-  exclude: string[],
   attempts = 12,
   extraMatch: Filter<VideoRecord> = {},
 ): Promise<(VideoRecord & { _id?: unknown }) | null> {
@@ -147,7 +129,6 @@ async function pickFromDb(
             { obsoleteVideoRuntimeBlockedUntil: { $lte: new Date() } },
           ],
         },
-        ...(exclude.length ? [{ videoId: { $nin: exclude } }] : []),
         ...(Object.keys(extraMatch).length ? [extraMatch] : []),
       ],
     } as Filter<VideoRecord>
@@ -157,7 +138,6 @@ async function pickFromDb(
     if (!doc) return null
     const resolved = resolveUrl(doc)
     if (!resolved) continue
-    if (exclude.includes(resolved.id)) continue
     return doc
   }
   return null
@@ -171,18 +151,17 @@ function resolveUrl(doc: VideoRecord): { url: string; id: string } | null {
 }
 
 export async function selectVideo(options: RandomSelectOptions = {}): Promise<VideoItem | null> {
-  const exclude = recentVideoIds.slice(-RECENT_LIMIT)
   const strongMatch = options.strong ? buildStrongPoolMatch<VideoRecord>() : null
   let doc: (VideoRecord & { _id?: unknown }) | null = null
   if (options.videoPool) {
     for (const match of buildVideoPoolMatches(options.videoPool)) {
-      doc = await pickFromDb(exclude, 24, match)
+      doc = await pickFromDb(24, match)
       if (doc) break
     }
   } else if (strongMatch) {
-    doc = (await pickFromDb(exclude, 24, strongMatch)) ?? (await pickFromDb(exclude))
+    doc = (await pickFromDb(24, strongMatch)) ?? (await pickFromDb())
   } else {
-    doc = await pickFromDb(exclude)
+    doc = await pickFromDb()
   }
   if (!doc && options.videoPool) {
     const editorialFallback = coolEditorialMatch()
@@ -190,8 +169,8 @@ export async function selectVideo(options: RandomSelectOptions = {}): Promise<Vi
       ? ({ $and: [strongMatch, editorialFallback] } as Filter<VideoRecord>)
       : editorialFallback
     doc =
-      (await pickFromDb(exclude, 24, strongEditorialFallback)) ??
-      (await pickFromDb(exclude, 24, editorialFallback))
+      (await pickFromDb(24, strongEditorialFallback)) ??
+      (await pickFromDb(24, editorialFallback))
   }
   if (!doc) return null
 
@@ -203,7 +182,7 @@ export async function selectVideo(options: RandomSelectOptions = {}): Promise<Vi
     : undefined
   const resolved = resolveUrl(doc)
   if (!resolved) return null
-  const { url, id } = resolved
+  const { url } = resolved
 
   const provider = typeof doc.provider === 'string' && doc.provider.trim() ? doc.provider.trim() : 'video'
   const rawSource = doc.source && typeof doc.source === 'object' ? doc.source : null
@@ -219,13 +198,7 @@ export async function selectVideo(options: RandomSelectOptions = {}): Promise<Vi
     ? doc.toneSignals.filter((entry): entry is string => typeof entry === 'string')
     : undefined
 
-  registerRecent(id)
   void touchLastShownById(rawItemId)
-  markGlobalItem('video', id)
-  markGlobalProvider(provider)
-  markGlobalOrigin('db-random')
-  markGlobalTopics(tags)
-  markGlobalKeywords(keywords)
 
   return {
     _id: itemId,
