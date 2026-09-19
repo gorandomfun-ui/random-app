@@ -49,14 +49,17 @@ async function main(): Promise<void> {
     const items = db.collection('items')
     const checkpointId = `video-stats-${provider}`
 
-    // Only the videos actually missing something.
-    const scope = {
-      type: 'video',
-      provider,
-      $or: [{ viewCount: { $exists: false } }, { publishedAt: { $exists: false } }],
-    }
-    const total = await items.countDocuments(scope)
-    console.log(`${provider} : ${count(total)} vidéos sans vues ou sans date`)
+    /**
+     * Walked by _id so the index carries the sort.
+     *
+     * Filtering on "viewCount missing OR publishedAt missing" inside the query
+     * was tried first and never returned: no index covers that shape, so it
+     * scanned half a million documents before the first batch. The check is
+     * cheap in memory, so it is done here instead.
+     */
+    const scope = { type: 'video', provider }
+    const total = await items.estimatedDocumentCount()
+    console.log(`${provider} : parcours de ${count(total)} contenus, vidéos incomplètes traitées au passage`)
     console.log(apply ? 'Mode : ÉCRITURE\n' : 'Mode : rapport à blanc\n')
 
     const checkpoint = await db.collection(CHECKPOINT_COLLECTION).findOne({ _id: checkpointId as never })
@@ -69,10 +72,21 @@ async function main(): Promise<void> {
     const started = Date.now()
 
     while (units < maxUnits) {
-      const rows = (await items
-        .find({ ...scope, ...(afterId ? { _id: { $gt: afterId } } : {}) }, { projection: { videoId: 1, title: 1 }, sort: { _id: 1 }, limit: BATCH })
-        .toArray()) as unknown as Row[]
-      if (!rows.length) break
+      const page = (await items
+        .find(
+          { ...scope, ...(afterId ? { _id: { $gt: afterId } } : {}) },
+          { projection: { videoId: 1, title: 1, viewCount: 1, publishedAt: 1 }, sort: { _id: 1 }, limit: BATCH },
+        )
+        .toArray()) as unknown as Array<Row & { viewCount?: number; publishedAt?: Date }>
+      if (!page.length) break
+
+      const lastSeen = page[page.length - 1]._id
+      const rows = page.filter((row) => row.viewCount == null || row.publishedAt == null)
+      if (!rows.length) {
+        afterId = lastSeen
+        done += page.length
+        continue
+      }
 
       const ids = rows.map((row) => bareId(row.videoId)).filter((id): id is string => Boolean(id))
       let stats: VideoStats[] = []
@@ -102,14 +116,14 @@ async function main(): Promise<void> {
       })
 
       if (apply && operations.length) await items.bulkWrite(operations, { ordered: false })
-      afterId = rows[rows.length - 1]._id
+      afterId = lastSeen
       if (apply) {
         await db
           .collection(CHECKPOINT_COLLECTION)
           .updateOne({ _id: checkpointId as never }, { $set: { lastId: afterId, updatedAt: new Date() } }, { upsert: true })
       }
 
-      done += rows.length
+      done += page.length
       if (done % 2500 === 0) {
         const perMinute = Math.round((done / (Date.now() - started)) * 60000)
         console.log(`  ${count(done)} traités · ${count(filled)} complétés · ${count(gone)} indisponibles · ~${count(perMinute)}/min`)
