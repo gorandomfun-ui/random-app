@@ -14,6 +14,14 @@ export type TaggableItem = {
   type: ItemType
   title?: string | null
   description?: string | null
+  /**
+   * Words the provider supplies outside the title. Giphy puts real subject
+   * words in its slug ("onechicago-nbc-chicago-fire") and its username, which
+   * the tagger never saw because it only read title and description.
+   */
+  apiTags?: string[] | null
+  creatorId?: string | null
+  slug?: string | null
   text?: string | null
   provider?: string | null
   channelId?: string | null
@@ -69,12 +77,26 @@ function toSubjectRefs(matches: AliasMatch[], evidence: Evidence): SubjectRef[] 
   }))
 }
 
+/** Subject words a provider files outside the title. */
+function providerExtras(item: TaggableItem): string {
+  const parts: string[] = []
+  if (item.slug) {
+    // A Giphy slug ends with a random id, which is noise.
+    parts.push(item.slug.split('-').slice(0, -1).join(' '))
+  }
+  if (Array.isArray(item.apiTags)) parts.push(item.apiTags.join(' '))
+  if (item.creatorId) parts.push(item.creatorId)
+  return parts.filter(Boolean).join(' ')
+}
+
 export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date()): ItemTags {
   const usable = isUsableItem(item)
-  const haystack = searchableText({
-    title: item.title,
-    description: item.description ?? item.text,
-  })
+  const haystack = [
+    searchableText({ title: item.title, description: item.description ?? item.text }),
+    providerExtras(item),
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   const matches = usable
     ? matchSubjects(index, haystack, (match) => hasSecondClue(item, match))

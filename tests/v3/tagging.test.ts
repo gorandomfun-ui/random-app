@@ -492,3 +492,33 @@ test('page marchande : "workshop" ne doit pas déclencher "shop"', async () => {
   assert.equal(looksMerchant('https://example.com/workshop/pottery'), false)
   assert.equal(looksMerchant('https://example.com/shop/pottery'), true)
 })
+
+test('étiquetage : les mots fournis hors du titre sont lus', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex([
+    ...DICTIONARY,
+    { _id: 'entity:chicago-fire', label: 'Chicago Fire', universe: 'cinema-tv', kind: 'entity', aliases: ['chicago fire'], ambiguous: false },
+  ])
+
+  // Le titre seul ne dit rien, mais le slug Giphy porte le vrai sujet.
+  const sansSlug = tagItem({ type: 'image', title: 'Trending Its Gone Viral GIF' }, index)
+  assert.equal(sansSlug.subjects.length, 0)
+
+  const avecSlug = tagItem(
+    { type: 'image', title: 'Trending Its Gone Viral GIF', slug: 'onechicago-nbc-chicago-fire-xYz123' },
+    index,
+  )
+  assert.equal(avecSlug.subjects[0]?.id, 'entity:chicago-fire')
+})
+
+test('étiquetage : l_identifiant aléatoire du slug n_est pas pris pour un sujet', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex([
+    ...DICTIONARY,
+    { _id: 'entity:moto-gp', label: 'MotoGP', universe: 'sport', kind: 'entity', aliases: ['moto gp'], ambiguous: false },
+  ])
+  const tags = tagItem({ type: 'image', title: 'un gif', slug: 'danse-party-moto-gp-AbC999' }, index)
+  assert.ok(tags.subjects.some((subject) => subject.id === 'entity:moto-gp'))
+})
