@@ -4,6 +4,7 @@ import { buildTagList, mergeKeywordSources } from './extract';
 import { buildProfile } from '../discovery/profile';
 import type { Profile, SourceMetadata } from '../discovery/types';
 import { deriveToneAugmentation, flattenToneSegments } from './tone';
+import { tagForInsert } from '@/lib/v3/tagging/atInsert';
 
 export const IMAGE_PROVIDERS = ['giphy', 'pixabay', 'tenor', 'pexels'] as const;
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
@@ -499,15 +500,18 @@ export async function ingestImages({
 
   if (insertOnly) {
     const now = new Date();
-    const result = await coll.insertMany(
+    // Giphy files real subject words in its slug and uploader name, which the
+    // tagger reads; tagging here keeps new GIFs eligible for a Wave.
+    const tagged = await tagForInsert(
+      await getDb(),
       writeDocs.map((doc) => ({
         ...doc,
         createdAt: now,
         updatedAt: now,
         rand: Math.random(),
       })),
-      { ordered: false },
     );
+    const result = await coll.insertMany(tagged, { ordered: false });
     summary.inserted = result.insertedCount || 0;
     return summary;
   }
