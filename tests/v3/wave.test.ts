@@ -69,6 +69,22 @@ test('trois fois le même format : seulement en dernier recours', () => {
   assert.equal(queDesVideos.items.length, 3, 'faute de mieux, trois vidéos valent mieux que deux')
 })
 
+test('jamais trois images ni trois textes, même faute de mieux', () => {
+  const troisImages = buildWave(anchor({ angle: 'official-clip' }), [
+    candidate('image', 'meme-gif'),
+    candidate('image', 'fan-art'),
+    candidate('image', 'photo-image'),
+  ])
+  assert.equal(troisImages.items.length, 2, 'une Wave courte vaut mieux que trois images')
+
+  const troisTextes = buildWave(anchor({ angle: 'official-clip' }), [
+    candidate('joke', 'text-joke'),
+    candidate('quote', 'text-quote'),
+    candidate('fact', 'text-fact'),
+  ])
+  assert.ok(troisTextes.items.length <= 2, 'idem pour les textes')
+})
+
 test('deux images et un texte reste possible', () => {
   const { items } = buildWave(anchor({ angle: 'official-clip' }), [
     candidate('image', 'meme-gif'),

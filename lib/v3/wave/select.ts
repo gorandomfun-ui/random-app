@@ -44,6 +44,12 @@ const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
  */
 const COMFORTABLE_PER_TYPE = 2
 const MAX_PER_TYPE = 3
+/**
+ * Only video gets the third slot. Three images or three texts in a row is
+ * never worth serving, however thin the subject — and video is what the draw
+ * shows most anyway.
+ */
+const MAY_FILL_THREE: ItemType[] = ['video']
 
 function normalisedTitle(title: string | null | undefined): string {
   return (title ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
@@ -78,7 +84,13 @@ export function accepts(
     if (chosen.some((item) => item.v3.channelKey === author)) return false
   }
 
-  if (chosen.filter((item) => item.type === candidate.type).length >= perType) return false
+  // Quote, joke and fact are three types but one experience: three of them is
+  // three walls of text, so they are counted together.
+  const sameKind = TEXT_TYPES.includes(candidate.type)
+    ? chosen.filter((item) => TEXT_TYPES.includes(item.type)).length
+    : chosen.filter((item) => item.type === candidate.type).length
+  const allowed = MAY_FILL_THREE.includes(candidate.type) ? perType : COMFORTABLE_PER_TYPE
+  if (sameKind >= allowed) return false
 
   // Texts only carry a Wave when the subject match is exact, which levels 1
   // and 2 guarantee and level 3 does not.
