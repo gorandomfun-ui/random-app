@@ -28,11 +28,24 @@ function numericFlag(name: string, fallback: number): number {
 
 const pause = () => new Promise((resolve) => setTimeout(resolve, PAUSE_MS))
 
-async function collectEntities(daysPerLanguage: number): Promise<{ subjects: BuiltSubject[]; failures: string[] }> {
+/**
+ * Saves what one language produced, as soon as it is produced.
+ *
+ * The run takes hours, and it used to write only at the very end: a closed lid
+ * or a dropped connection threw away everything it had gathered. Subjects are
+ * upserted, so a partial dictionary only ever adds to the one already in place.
+ */
+type LanguageWriter = (language: string, subjects: BuiltSubject[]) => Promise<void>
+
+async function collectEntities(
+  daysPerLanguage: number,
+  onLanguageDone?: LanguageWriter,
+): Promise<{ subjects: BuiltSubject[]; failures: string[] }> {
   const collected: BuiltSubject[] = []
   const failures: string[] = []
 
   for (const language of WIKI_LANGUAGES) {
+    const startOfLanguage = collected.length
     const dates = sampleDates(daysPerLanguage)
     const titles = new Set<string>()
     let dayErrors = 0
@@ -78,6 +91,10 @@ async function collectEntities(daysPerLanguage: number): Promise<{ subjects: Bui
 
     // Silence here is what hid the previous failed run.
     if (!found) failures.push(`${language} n_a produit aucun sujet`)
+
+    if (onLanguageDone && found) {
+      await onLanguageDone(language, collected.slice(startOfLanguage))
+    }
   }
 
   return { subjects: collected, failures }
@@ -119,8 +136,25 @@ async function main(): Promise<void> {
   const themes = buildThemeSubjects()
   console.log(`Thèmes écrits à la main : ${themes.length}`)
 
-  console.log(`\nWikipédia — ${days} journées échantillonnées par langue :`)
-  const { subjects: entities, failures } = await collectEntities(days)
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI
+  if (apply && !uri) throw new Error('MONGODB_URI manquant')
+  const dbName = process.env.MONGODB_DB || process.env.MONGO_DB || 'randomdb'
+  const client = apply ? new MongoClient(uri as string, { serverSelectionTimeoutMS: 20000 }) : null
+  if (client) await client.connect()
+
+  try {
+    if (client) {
+      const written = await writeSubjects(client.db(dbName), mergeSubjects(themes))
+      console.log(`  thèmes enregistrés : ${written.inserted} créés, ${written.updated} mis à jour`)
+    }
+
+    console.log(`\nWikipédia — ${days} journées échantillonnées par langue :`)
+    const { subjects: entities, failures } = await collectEntities(days, client
+      ? async (language, subjects) => {
+          const written = await writeSubjects(client.db(dbName), mergeSubjects(subjects))
+          console.log(`     ↳ ${language} enregistré : ${written.inserted} créés, ${written.updated} mis à jour`)
+        }
+      : undefined)
 
   const all = mergeSubjects([...themes, ...entities])
   console.log(`\nTotal après dédoublonnage : ${all.length} sujets (${themes.length + entities.length} avant)`)
@@ -137,27 +171,23 @@ async function main(): Promise<void> {
     console.log(`     univers : ${subject.universe} · alias : ${subject.aliases.slice(0, 5).join(', ')}`)
   }
 
-  if (!apply) {
-    console.log('\nRelancer avec --apply pour écrire dans subjects_v3.')
-    return
-  }
+    if (!client) {
+      console.log('\nRelancer avec --apply pour écrire dans subjects_v3.')
+      return
+    }
 
-  // Writing a third of the dictionary and calling it done is worse than
-  // stopping: 5.B would measure a coverage that means nothing.
-  if (failures.length > WIKI_LANGUAGES.length / 3) {
-    throw new Error(`Trop de langues en échec (${failures.length}/${WIKI_LANGUAGES.length}) ; réessayer plus tard.`)
-  }
-
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI
-  if (!uri) throw new Error('MONGODB_URI manquant')
-  const dbName = process.env.MONGODB_DB || process.env.MONGO_DB || 'randomdb'
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 20000 })
-  await client.connect()
-  try {
+    // Each language was saved as it finished; this last pass is what merges the
+    // aliases a subject picked up in several languages.
     const result = await writeSubjects(client.db(dbName), all)
     console.log(`\nÉcrit dans ${dbName}.subjects_v3 : ${result.inserted} créés, ${result.updated} mis à jour.`)
+
+    // Said at the end rather than thrown, because the subjects are already in
+    // place and throwing them away would help nobody.
+    if (failures.length > WIKI_LANGUAGES.length / 3) {
+      console.log(`\nATTENTION : ${failures.length}/${WIKI_LANGUAGES.length} langues en échec ; le dictionnaire est incomplet.`)
+    }
   } finally {
-    await client.close()
+    if (client) await client.close()
   }
 }
 
