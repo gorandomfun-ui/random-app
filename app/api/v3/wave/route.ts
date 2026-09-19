@@ -6,6 +6,15 @@ import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { findCandidates, loadAnchor } from '@/lib/v3/wave/find'
 import { buildWave } from '@/lib/v3/wave/select'
+import { normalizeWaveDocument, type WaveDocument } from '@/lib/random/waveEngine'
+
+/**
+ * The interface shows three contents and keeps a few in hand, in case one of
+ * them turns out to be unplayable or was seen a moment ago. The three that the
+ * Wave composed come first; the rest are only spares, in the order the levels
+ * offered them.
+ */
+const RESERVES = 7
 
 /**
  * The Wave: three contents linked to the one on screen.
@@ -48,17 +57,30 @@ export async function POST(request: Request) {
     const candidates = await findCandidates(db, loaded.anchor, itemId)
     const { items, level } = buildWave(loaded.anchor, candidates, parseExcludes(body?.excludeKeys))
 
+    const chosenIds = items.map((item) => item.id)
+    const spareIds = candidates
+      .map((candidate) => candidate.id)
+      .filter((id) => !chosenIds.includes(id))
+      .slice(0, RESERVES)
+
+    // The Wave decides on labels alone, but the interface needs something it can
+    // actually show, so the full documents are read once the choice is made.
+    const order = [...chosenIds, ...spareIds]
+    const docs = (await db
+      .collection('items')
+      .find({ _id: { $in: order.map((id) => new ObjectId(id)) } })
+      .toArray()) as unknown as WaveDocument[]
+
+    const byId = new Map(docs.map((doc) => [String(doc._id), doc]))
+    const shown = order
+      .map((id) => byId.get(id))
+      .map((doc) => (doc ? normalizeWaveDocument(doc) : null))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+
     return NextResponse.json({
-      items: items.map((item) => ({
-        id: item.id,
-        type: item.type,
-        title: item.title,
-        level: item.level,
-        angle: item.v3.angle,
-        universe: item.v3.universe,
-        popularity: item.v3.popularity,
-      })),
+      items: shown,
       level,
+      chosen: chosenIds.length,
       tookMs: Date.now() - started,
     })
   } catch (error) {

@@ -1,8 +1,6 @@
 // lib/api.ts
 import type { RandomApiResponse, RandomContentItem } from './random/clientTypes'
 import type { VideoPool } from './random/types'
-import type { ItemType } from './random/types'
-import type { WaveSimilarityHint } from './random/wave'
 
 export type RandomTypes = Array<'image' | 'quote' | 'fact' | 'joke' | 'video' | 'web'>
 
@@ -46,29 +44,25 @@ export async function fetchRandom({
 }
 
 export async function fetchWave({
-  anchor,
   anchorId,
-  lang,
   excludeIds = [],
-  limit = 10,
-  types,
-  factVariant,
   signal,
 }: {
-  anchor: WaveSimilarityHint
   anchorId?: string
-  lang: 'en' | 'fr' | 'de' | 'jp' | 'es'
   excludeIds?: string[]
-  limit?: number
-  types?: ItemType[]
-  factVariant?: 'quiz' | 'text'
   signal?: AbortSignal
 }): Promise<{ items: RandomContentItem[] }> {
-  const res = await fetch('/api/wave', {
+  // The Wave is composed from the labels of the content on screen, so it needs
+  // that content's id and nothing else. Without one there is no Wave to build:
+  // the caller treats an empty answer as "this content has no Wave", which is
+  // what the button already expects.
+  if (!anchorId) return { items: [] }
+
+  const res = await fetch('/api/v3/wave', {
     method: 'POST',
     cache: 'no-store',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ anchor, anchorId, lang, excludeIds, limit, types, factVariant }),
+    body: JSON.stringify({ itemId: anchorId, excludeKeys: excludeIds }),
     signal,
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
