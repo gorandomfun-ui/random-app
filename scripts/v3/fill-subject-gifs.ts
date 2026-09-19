@@ -20,6 +20,13 @@ import { count } from './reportFormat'
 
 const PAUSE_MS = 900
 
+/**
+ * How many refusals in a row before giving up. A first run marched through
+ * 4,378 subjects while Giphy answered "API rate limit exceeded" to every call,
+ * and recorded each one as a subject with no GIF.
+ */
+const REFUSALS_BEFORE_STOPPING = 5
+
 function numericFlag(name: string, fallback: number): number {
   const raw = process.argv.find((argument) => argument.startsWith(`--${name}=`))
   if (!raw) return fallback
@@ -49,6 +56,9 @@ async function main(): Promise<void> {
 
     let inserted = 0
     let covered = 0
+    let refusedInARow = 0
+    let refusedTotal = 0
+    let stoppedAt = 0
     const started = Date.now()
 
     for (const [index, gap] of gaps.entries()) {
@@ -60,6 +70,27 @@ async function main(): Promise<void> {
         insertOnly: true,
       })
       inserted += result.inserted
+
+      const refusal = result.refusals?.[0]
+      if (refusal) {
+        refusedInARow += 1
+        refusedTotal += 1
+        console.log(
+          `  ${String(index + 1).padStart(3)}. ${gap.label.slice(0, 32).padEnd(32)} ` +
+            `refusé par ${refusal.provider} (HTTP ${refusal.status})`,
+        )
+        if (refusedInARow >= REFUSALS_BEFORE_STOPPING) {
+          stoppedAt = index + 1
+          console.log(
+            `\nArrêt : ${REFUSALS_BEFORE_STOPPING} refus de suite. ` +
+              'Les sujets suivants ne sont pas « sans GIF », ils n_ont pas été demandés.',
+          )
+          break
+        }
+        await pause()
+        continue
+      }
+      refusedInARow = 0
 
       const now = apply ? await imagesFor(db, gap.id) : 0
       if (now > 0) covered += 1
@@ -74,7 +105,10 @@ async function main(): Promise<void> {
     }
 
     const minutes = (Date.now() - started) / 60000
-    console.log(`\nInsérés : ${count(inserted)} · sujets désormais couverts : ${count(covered)} / ${gaps.length}`)
+    const attempted = stoppedAt || gaps.length
+    console.log(`\nInsérés : ${count(inserted)} · sujets désormais couverts : ${count(covered)} / ${count(attempted)} demandés`)
+    if (refusedTotal) console.log(`Refusés par le fournisseur : ${count(refusedTotal)}`)
+    if (stoppedAt) console.log(`Non demandés : ${count(gaps.length - stoppedAt)} sujets restants.`)
     console.log(`Cadence : ${(gaps.length / minutes).toFixed(1)} sujets par minute.`)
     if (!apply) console.log('\nRelancer avec --apply pour ingérer.')
   } finally {

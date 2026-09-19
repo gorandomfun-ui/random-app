@@ -130,11 +130,26 @@ type IngestImagesOptions = {
 
 type ProviderCounts = Record<string, number>;
 
+/**
+ * A provider that refused the call. Kept apart from "found nothing": a rate
+ * limit answered as an empty list once had a Giphy run record 4,378 subjects
+ * as having no GIF at all, when Giphy had simply stopped answering.
+ */
+export type ProviderRefusal = { provider: ImageProvider; status: number; query: string };
+
+export class ImageProviderError extends Error {
+  constructor(readonly provider: ImageProvider, readonly status: number) {
+    super(`${provider} a refusé la requête (HTTP ${status})`);
+    this.name = 'ImageProviderError';
+  }
+}
+
 type IngestResult = {
   scanned: number;
   unique: number;
   inserted: number;
   updated: number;
+  refusals?: ProviderRefusal[];
   dryRun?: boolean;
   sample?: ImageDocument[];
   providerCounts?: ProviderCounts;
@@ -175,7 +190,7 @@ async function fetchPixabay(query: string, per: number): Promise<ImageSource[]> 
   search.searchParams.set('safesearch', 'true');
   search.searchParams.set('per_page', String(per));
   const res = await fetch(search, { cache: 'no-store' });
-  if (!res.ok) return [];
+  if (!res.ok) throw new ImageProviderError('pixabay', res.status);
   const json = (await res.json()) as PixabayResponse;
   const hits = json.hits ?? [];
   return hits.flatMap((hit): ImageSource[] => {
@@ -203,7 +218,7 @@ async function fetchGiphy(query: string, per: number): Promise<ImageSource[]> {
   search.searchParams.set('limit', String(per));
   search.searchParams.set('rating', 'pg-13');
   const res = await fetch(search, { cache: 'no-store' });
-  if (!res.ok) return [];
+  if (!res.ok) throw new ImageProviderError('giphy', res.status);
   const json = (await res.json()) as GiphyResponse;
   const data = json.data ?? [];
   return data.flatMap((item): ImageSource[] => {
@@ -238,7 +253,7 @@ async function fetchTenor(query: string, per: number): Promise<ImageSource[]> {
   search.searchParams.set('media_filter', 'gif');
   search.searchParams.set('random', 'true');
   const res = await fetch(search, { cache: 'no-store' });
-  if (!res.ok) return [];
+  if (!res.ok) throw new ImageProviderError('tenor', res.status);
   const json = (await res.json()) as TenorResponse;
   const results = json.results ?? [];
   return results.flatMap((item): ImageSource[] => {
@@ -273,7 +288,7 @@ async function fetchPexels(query: string, per: number): Promise<ImageSource[]> {
     headers: { Authorization: key },
     cache: 'no-store',
   });
-  if (!res.ok) return [];
+  if (!res.ok) throw new ImageProviderError('pexels', res.status);
   const json = (await res.json()) as PexelsResponse;
   const photos = json.photos ?? [];
   return photos.flatMap((photo): ImageSource[] => {
@@ -424,6 +439,7 @@ export async function ingestImages({
   };
 
   const collected: ImageSource[] = [];
+  const refusals: ProviderRefusal[] = [];
   const providerList = providers && providers.length ? providers : DEFAULT_PROVIDERS;
   for (const query of queries) {
     const trimmed = query.trim();
@@ -435,7 +451,11 @@ export async function ingestImages({
         return fetcher(trimmed, perQuery)
           .then((results) => ({ provider, results }))
           .catch((error) => {
-            console.error(`[ingest:images] ${provider} failed`, error);
+            if (error instanceof ImageProviderError) {
+              refusals.push({ provider, status: error.status, query: trimmed });
+            } else {
+              console.error(`[ingest:images] ${provider} failed`, error);
+            }
             return { provider, results: [] };
           });
       })
@@ -466,6 +486,7 @@ export async function ingestImages({
   const summary: IngestResult = {
     scanned: collected.length,
     unique: uniqueDocs.length,
+    refusals: refusals.length ? refusals : undefined,
     inserted: 0,
     updated: 0,
     dryRun,
