@@ -2,8 +2,6 @@
 
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { integerSetting, videoRunPolicy, runStopReason } from './lib/daily-auto-policy.mjs'
 
@@ -411,22 +409,7 @@ async function main() {
     if (Date.now() >= requestDeadline - 1000) return null
     const phaseStarted = Date.now()
     try {
-      let payload
-      if (params.phase === 'trending' && !dryRun && readBool('DAILY_AUTO_TRENDS_DIRECT')) {
-        try {
-          payload = await directTrends()
-        } catch (directError) {
-          // The direct child has been dying instantly since 11 September and
-          // the trending line has inserted nothing since, because the failure
-          // was recorded and the phase abandoned. The HTTP path still works,
-          // so fall back to it rather than losing the day's trends.
-          console.warn(`Direct trends unavailable (${directError.message}); falling back to the HTTP route.`)
-          errors.push({ phase: params.phase, run: params.run, error: `direct trends fell back: ${directError.message}` })
-          payload = await callDailyAuto(params)
-        }
-      } else {
-        payload = await callDailyAuto(params)
-      }
+      const payload = await callDailyAuto(params)
       remember(payload)
       if (payload.ok === false) errors.push({ phase: params.phase, run: params.run,
         error: 'Partial direct trends: inspect provider/region counters' })
@@ -557,34 +540,6 @@ async function main() {
   }
 }
 
-async function directTrends() {
-  const folder = fs.mkdtempSync(join(tmpdir(), 'random-trends-')), file = join(folder, 'report.json')
-  const started = Date.now()
-  try {
-    let stopped = false
-    await new Promise((resolve, reject) => {
-      const allowedMs = Math.min(180000, requestDeadline - Date.now())
-      // Below this there is no point starting: the child would be killed
-      // before it could reach a provider, which is what "failed in 33ms"
-      // looked like in the reports.
-      if (allowedMs < 20000) {
-        reject(new Error(`only ${Math.max(0, allowedMs)}ms left, too little for a trends pass`))
-        return
-      }
-      const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/trending-direct.mjs', file], {
-        env: process.env, stdio: ['ignore', 'inherit', 'inherit'],
-        timeout: allowedMs, killSignal: 'SIGKILL',
-      })
-      child.once('error', reject)
-      child.once('exit', (code, signal) => {
-        stopped = code !== 0
-        if (!stopped || fs.existsSync(file)) resolve()
-        else reject(new Error(`trends child exited with code ${code}${signal ? ` (${signal})` : ''} after ${Date.now() - started}ms`))
-      })
-    })
-    return { ...JSON.parse(fs.readFileSync(file, 'utf8')), ...(stopped ? { ok: false } : {}), durationMs: Date.now() - started }
-  } finally { fs.rmSync(folder, { recursive: true, force: true }) }
-}
 
 main().catch((error) => {
   console.error('Daily auto ingest failed:', error)

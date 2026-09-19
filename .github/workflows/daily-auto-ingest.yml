@@ -47,13 +47,11 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies for direct trends
-        if: ${{ vars.DAILY_AUTO_TRENDS_DIRECT != '0' }}
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Run daily auto ingest
         id: ingest
         env:
-          DAILY_AUTO_TRENDS_DIRECT: ${{ vars.DAILY_AUTO_TRENDS_DIRECT || '1' }}
           # Same API project and database as Vercel: quotas/cursors stay shared.
           MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
           MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
