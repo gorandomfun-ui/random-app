@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react'
  * says so — that state is what hid a dead trending line for eight days.
  */
 
-type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number; providers: Record<string, number> }
+type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number; providers: Record<string, number>; searches: string[] }
 type DayRow = { day: string; lines: LineRow[]; total: number }
 type HealthRow = { line: string; lastRunAt: string; hoursAgo: number; state: 'active' | 'sans insertion' | 'arrêtée' }
 
@@ -157,6 +157,11 @@ export default function IngestReportsPage() {
                           .join(' · ')}
                       </div>
                     )}
+                    {row.searches?.length > 0 && (
+                      <div style={S.searches}>
+                        {row.searches.join(' · ')}
+                      </div>
+                    )}
                   </td>
                   <td style={{ ...S.td, textAlign: 'right' }}>{row.runs}</td>
                   <td style={{ ...S.td, textAlign: 'right', color: '#777' }}>{row.scanned.toLocaleString('fr-FR')}</td>
@@ -197,6 +202,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   dayTotal: { fontSize: 13, fontWeight: 500, color: '#777', textTransform: 'none' },
   providers: { fontSize: 11, color: '#999', marginTop: 2 },
+  searches: { fontSize: 11, color: '#555', marginTop: 4, lineHeight: 1.5, maxWidth: 460 },
   dayTitle: {
     fontSize: 17, fontWeight: 700, color: '#1a1a1a', textTransform: 'capitalize',
     display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
