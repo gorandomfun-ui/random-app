@@ -411,8 +411,22 @@ async function main() {
     if (Date.now() >= requestDeadline - 1000) return null
     const phaseStarted = Date.now()
     try {
-      const payload = params.phase === 'trending' && !dryRun && readBool('DAILY_AUTO_TRENDS_DIRECT')
-        ? await directTrends() : await callDailyAuto(params)
+      let payload
+      if (params.phase === 'trending' && !dryRun && readBool('DAILY_AUTO_TRENDS_DIRECT')) {
+        try {
+          payload = await directTrends()
+        } catch (directError) {
+          // The direct child has been dying instantly since 11 September and
+          // the trending line has inserted nothing since, because the failure
+          // was recorded and the phase abandoned. The HTTP path still works,
+          // so fall back to it rather than losing the day's trends.
+          console.warn(`Direct trends unavailable (${directError.message}); falling back to the HTTP route.`)
+          errors.push({ phase: params.phase, run: params.run, error: `direct trends fell back: ${directError.message}` })
+          payload = await callDailyAuto(params)
+        }
+      } else {
+        payload = await callDailyAuto(params)
+      }
       remember(payload)
       if (payload.ok === false) errors.push({ phase: params.phase, run: params.run,
         error: 'Partial direct trends: inspect provider/region counters' })
@@ -549,15 +563,23 @@ async function directTrends() {
   try {
     let stopped = false
     await new Promise((resolve, reject) => {
+      const allowedMs = Math.min(180000, requestDeadline - Date.now())
+      // Below this there is no point starting: the child would be killed
+      // before it could reach a provider, which is what "failed in 33ms"
+      // looked like in the reports.
+      if (allowedMs < 20000) {
+        reject(new Error(`only ${Math.max(0, allowedMs)}ms left, too little for a trends pass`))
+        return
+      }
       const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/trending-direct.mjs', file], {
         env: process.env, stdio: ['ignore', 'inherit', 'inherit'],
-        timeout: Math.max(1, Math.min(180000, requestDeadline - Date.now())), killSignal: 'SIGKILL',
+        timeout: allowedMs, killSignal: 'SIGKILL',
       })
       child.once('error', reject)
-      child.once('exit', code => {
+      child.once('exit', (code, signal) => {
         stopped = code !== 0
         if (!stopped || fs.existsSync(file)) resolve()
-        else reject(new Error('Direct trends process failed or timed out; see batch counters'))
+        else reject(new Error(`trends child exited with code ${code}${signal ? ` (${signal})` : ''} after ${Date.now() - started}ms`))
       })
     })
     return { ...JSON.parse(fs.readFileSync(file, 'utf8')), ...(stopped ? { ok: false } : {}), durationMs: Date.now() - started }
