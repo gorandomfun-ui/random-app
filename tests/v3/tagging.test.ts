@@ -529,3 +529,54 @@ test('étiquetage : l_identifiant aléatoire du slug n_est pas pris pour un suje
   const tags = tagItem({ type: 'image', title: 'un gif', slug: 'danse-party-moto-gp-AbC999' }, index)
   assert.ok(tags.subjects.some((subject) => subject.id === 'entity:moto-gp'))
 })
+
+// ---------------------------------------------------------------------------
+// Étiquetage à l'insertion
+// ---------------------------------------------------------------------------
+
+test('à l_insertion : chaque document reçoit son bloc v3', async () => {
+  const { tagForInsert } = await import('@/lib/v3/tagging/atInsert')
+  const { resetSubjectIndexCache } = await import('@/lib/v3/tagging/indexCache')
+  resetSubjectIndexCache()
+
+  // Une base factice qui rend le dictionnaire de test.
+  const fakeDb = {
+    collection: () => ({
+      find: () => ({ toArray: async () => DICTIONARY }),
+    }),
+  } as unknown as import('mongodb').Db
+
+  const documents = [
+    { type: 'video' as const, title: 'Johnny Hallyday en concert', provider: 'youtube', channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw', viewCount: 5_000_000 },
+    { type: 'video' as const, title: 'VID_20190812', provider: 'youtube' },
+  ]
+  const tagged = await tagForInsert(fakeDb, documents, 'trend')
+
+  const first = tagged[0] as typeof documents[0] & { v3: Record<string, unknown> }
+  assert.equal(first.v3.line, 'trend', 'la ligne d_ingestion est enregistrée')
+  assert.equal((first.v3.subjects as unknown[]).length, 1)
+  assert.equal(first.v3.popularity, 'mainstream')
+  assert.equal(first.v3.channelKey, 'youtube:UCuAXFkgsw1L7xaCfnd5JJOw')
+  assert.match(String(first.v3.nearFamily), /^[0-9a-f]{16}$/)
+  assert.ok(String(first.v3.formatFamily).includes('×'))
+
+  const second = tagged[1] as typeof documents[1] & { v3: Record<string, unknown> }
+  assert.equal(second.v3.usable, false, 'un titre inexploitable reste marqué comme tel')
+})
+
+test('à l_insertion : un dictionnaire illisible ne bloque pas l_ingestion', async () => {
+  const { tagForInsert } = await import('@/lib/v3/tagging/atInsert')
+  const { resetSubjectIndexCache } = await import('@/lib/v3/tagging/indexCache')
+  resetSubjectIndexCache()
+
+  const brokenDb = {
+    collection: () => ({
+      find: () => ({ toArray: async () => { throw new Error('base indisponible') } }),
+    }),
+  } as unknown as import('mongodb').Db
+
+  const documents = [{ type: 'video' as const, title: 'une vidéo', provider: 'youtube' }]
+  const result = await tagForInsert(brokenDb, documents)
+  assert.equal(result.length, 1)
+  assert.equal('v3' in result[0], false, 'le document passe sans étiquettes plutôt que de faire échouer la run')
+})

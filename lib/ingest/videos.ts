@@ -3,6 +3,7 @@ import { permitBaseYouTube, noteBaseYouTubeQuota, withRetroYouTubeBudget } from 
 import { retroSearchPlan, youtubeSearchBatch } from './retroSearchPlan';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildVideoDocument } from './videoDocument';
+import { tagForInsert } from '@/lib/v3/tagging/atInsert';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
 import {
@@ -1124,12 +1125,17 @@ export async function finalizeVideoIngest(
   const now = new Date();
   if (insertOnly) {
     onStage?.('ingest-write');
-    const insertDocuments = writeDocuments.map((doc) => ({
-      ...doc,
-      createdAt: now,
-      updatedAt: now,
-      rand: Math.random(),
-    }));
+    // Tag as we insert. Without this a new video arrives with no subject and
+    // can never appear in a Wave until the next full pass runs.
+    const insertDocuments = await tagForInsert(
+      await getDb(),
+      writeDocuments.map((doc) => ({
+        ...doc,
+        createdAt: now,
+        updatedAt: now,
+        rand: Math.random(),
+      })),
+    );
     let insertedIndexes = insertDocuments.map((_doc, index) => index);
     try {
       const insertResult = await collection.insertMany(insertDocuments, { ordered: false, maxTimeMS: 20000 });
