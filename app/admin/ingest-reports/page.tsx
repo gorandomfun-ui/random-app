@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react'
  * says so — that state is what hid a dead trending line for eight days.
  */
 
-type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number }
+type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number; providers: Record<string, number> }
 type DayRow = { day: string; lines: LineRow[]; total: number }
 type HealthRow = { line: string; lastRunAt: string; hoursAgo: number; state: 'active' | 'sans insertion' | 'arrêtée' }
 
@@ -130,7 +130,7 @@ export default function IngestReportsPage() {
 
       {days.map((day) => (
         <section key={day.day} style={S.section}>
-          <h2 style={S.sectionTitle}>
+          <h2 style={S.dayTitle}>
             {formatDay(day.day)}
             <span style={S.dayTotal}>{day.total.toLocaleString('fr-FR')} insérés</span>
           </h2>
@@ -147,7 +147,17 @@ export default function IngestReportsPage() {
             <tbody>
               {day.lines.map((row) => (
                 <tr key={row.line}>
-                  <td style={S.td}>{label(row.line)}</td>
+                  <td style={S.td}>
+                    <div>{label(row.line)}</div>
+                    {Object.keys(row.providers).length > 0 && (
+                      <div style={S.providers}>
+                        {Object.entries(row.providers)
+                          .sort((left, right) => right[1] - left[1])
+                          .map(([provider, n]) => `${provider} ${n.toLocaleString('fr-FR')}`)
+                          .join(' · ')}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ ...S.td, textAlign: 'right' }}>{row.runs}</td>
                   <td style={{ ...S.td, textAlign: 'right', color: '#777' }}>{row.scanned.toLocaleString('fr-FR')}</td>
                   <td style={{ ...S.td, textAlign: 'right', fontWeight: 600, color: row.inserted ? '#1b5e20' : '#b71c1c' }}>
@@ -167,20 +177,31 @@ export default function IngestReportsPage() {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  page: { maxWidth: 900, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif', color: '#1a1a1a' },
+  // An explicit background as well as a colour: the first version set only the
+  // colour, and in a dark-mode browser every title and row label vanished.
+  page: {
+    maxWidth: 980, margin: '0 auto', padding: 24, minHeight: '100vh',
+    fontFamily: 'system-ui, sans-serif', color: '#1a1a1a', background: '#ffffff',
+  },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 },
-  title: { fontSize: 26, fontWeight: 700, margin: 0 },
-  input: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, width: 240 },
+  title: { fontSize: 26, fontWeight: 700, margin: 0, color: '#1a1a1a' },
+  input: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, width: 240, background: '#fff', color: '#1a1a1a' },
   hint: { color: '#777', fontSize: 14 },
   alerts: { display: 'grid', gap: 8, marginBottom: 24 },
   alert: { padding: '10px 14px', borderRadius: 8, fontSize: 14 },
   section: { marginBottom: 32 },
   sectionTitle: {
-    fontSize: 15, fontWeight: 600, textTransform: 'capitalize',
+    fontSize: 15, fontWeight: 600, textTransform: 'capitalize', color: '#1a1a1a',
     display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
     borderBottom: '1px solid #eee', paddingBottom: 8, marginBottom: 12,
   },
   dayTotal: { fontSize: 13, fontWeight: 500, color: '#777', textTransform: 'none' },
+  providers: { fontSize: 11, color: '#999', marginTop: 2 },
+  dayTitle: {
+    fontSize: 17, fontWeight: 700, color: '#1a1a1a', textTransform: 'capitalize',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+    borderBottom: '2px solid #1a1a1a', paddingBottom: 8, marginBottom: 12,
+  },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 },
   card: { padding: 12, borderRadius: 10 },
   cardLine: { fontWeight: 600, fontSize: 14 },
@@ -188,5 +209,5 @@ const S: Record<string, React.CSSProperties> = {
   cardAgo: { fontSize: 12, opacity: 0.7, marginTop: 4 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
   th: { textAlign: 'left', padding: '6px 8px', color: '#777', fontWeight: 500, fontSize: 12 },
-  td: { padding: '7px 8px', borderTop: '1px solid #f2f2f2' },
+  td: { padding: '7px 8px', borderTop: '1px solid #f2f2f2', color: '#1a1a1a' },
 }

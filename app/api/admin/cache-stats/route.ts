@@ -3,7 +3,10 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
-import type { Db } from 'mongodb'
+import { getDb } from '@/lib/db'
+
+/** No admin page is worth blocking a database connection for minutes. */
+const MAX_QUERY_MS = 15_000
 
 type ItemSummary = {
   _id?: unknown
@@ -17,18 +20,6 @@ type ItemSummary = {
   createdAt?: Date
   updatedAt?: Date
   lastShownAt?: Date
-}
-
-async function getDb(): Promise<Db | null> {
-  try {
-    const { MongoClient } = await import('mongodb')
-    const uri = process.env.MONGODB_URI || process.env.MONGO_URI
-    const dbName = process.env.MONGODB_DB || 'randomdb'
-    if (!uri) return null
-    const client = new MongoClient(uri)
-    await client.connect()
-    return client.db(dbName)
-  } catch { return null }
 }
 
 function strip(doc: ItemSummary): ItemSummary {
@@ -47,40 +38,68 @@ export async function GET(req: Request) {
   const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '20', 10)))
   const wantSample = url.searchParams.get('sample') === 'true'
 
-  const db = await getDb()
-  if (!db) return NextResponse.json({ ok: false, error: 'no-db' }, { status: 500 })
+  let db
+  try {
+    db = await getDb()
+  } catch {
+    return NextResponse.json({ ok: false, error: 'no-db' }, { status: 500 })
+  }
 
   const items = db.collection('items')
 
-  const byType = await items.aggregate([
-    { $group: { _id: '$type', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]).toArray()
+  try {
+    // One pass over the (type, provider) index, so nothing reads the 1.7M documents
+    // themselves. The per-type totals are the same numbers added up, not a second pass.
+    const byProviderAll = await items.aggregate<{ _id: { type?: string; provider?: string }; count: number }>(
+      [
+        { $group: { _id: { type: '$type', provider: '$provider' }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ],
+      { hint: 'type_provider_counts', maxTimeMS: MAX_QUERY_MS }
+    ).toArray()
 
-  const byProviderAll = await items.aggregate([
-    { $group: { _id: { type: '$type', provider: '$provider' }, count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]).toArray()
+    const perType = new Map<string, number>()
+    for (const row of byProviderAll) {
+      const key = row._id?.type ?? 'inconnu'
+      perType.set(key, (perType.get(key) ?? 0) + row.count)
+    }
+    const byType = [...perType.entries()]
+      .map(([_id, count]) => ({ _id, count }))
+      .sort((left, right) => right.count - left.count)
 
-  const videosTotal = await items.countDocuments({ type: 'video' })
-  const distinctIds = await items.distinct('videoId', { type: 'video' })
-  const videos = { totalDocs: videosTotal, distinctVideoIds: distinctIds.filter(Boolean).length }
+    // uniq_video_id is a unique index on (type, videoId) restricted to videos with a
+    // string id, so a video id cannot repeat: counting the videos that carry one gives
+    // the number of distinct ids exactly, without listing them.
+    const videosTotal = await items.countDocuments({ type: 'video' }, { maxTimeMS: MAX_QUERY_MS })
+    const withVideoId = await items.countDocuments(
+      { type: 'video', videoId: { $type: 'string' } },
+      { maxTimeMS: MAX_QUERY_MS }
+    )
+    const videos = { totalDocs: videosTotal, distinctVideoIds: withVideoId }
 
-  const match: Record<string, unknown> = {}
-  if (type) match.type = type
-  if (provider) match.provider = provider
+    const match: Record<string, unknown> = {}
+    if (type) match.type = type
+    if (provider) match.provider = provider
 
-  const recent = await items.find(match).sort({ updatedAt: -1 }).limit(limit).toArray()
-  const neverShown = wantSample
-    ? await items.find({ ...match, lastShownAt: { $exists: false } }).limit(limit).toArray()
-    : []
+    // Sorting on updatedAt has no index behind it and would sort the whole collection;
+    // _id descending is the insertion order, which is the "latest arrivals" we want here.
+    const recent = await items.find(match, { maxTimeMS: MAX_QUERY_MS })
+      .sort({ _id: -1 }).limit(limit).toArray()
+    const neverShown = wantSample
+      ? await items.find({ ...match, lastShownAt: { $exists: false } }, { maxTimeMS: MAX_QUERY_MS })
+          .limit(limit).toArray()
+      : []
 
-  return NextResponse.json({
-    ok: true,
-    counts: { byType, byProviderAll, videos },
-    samples: {
-      recent: recent.map(strip),
-      neverShown: neverShown.map(strip),
-    },
-  })
+    return NextResponse.json({
+      ok: true,
+      counts: { byType, byProviderAll, videos },
+      samples: {
+        recent: recent.map(strip),
+        neverShown: neverShown.map(strip),
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+  }
 }

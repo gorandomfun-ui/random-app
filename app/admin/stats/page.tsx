@@ -1,98 +1,253 @@
 'use client'
+
 import React from 'react'
 
 type ByType = { _id: string; count: number }[]
-type ByProv = { _id: { type: string; provider?: string }; count: number }[]
-type Item = { _id?: string; type?: string; provider?: string; url?: string; videoId?: string; title?: string; thumb?: string; host?: string; updatedAt?: string; lastShownAt?: string }
+type ByProvider = { _id: { type?: string; provider?: string }; count: number }[]
+type Item = {
+  _id?: string
+  type?: string
+  provider?: string
+  url?: string
+  videoId?: string
+  title?: string
+  host?: string
+}
 type Stats = {
   ok?: boolean
-  counts?: { byType?: ByType; byProviderAll?: ByProv; videos?: { totalDocs: number; distinctVideoIds: number } }
+  counts?: { byType?: ByType; byProviderAll?: ByProvider; videos?: { totalDocs: number; distinctVideoIds: number } }
   samples?: { recent?: Item[]; neverShown?: Item[] }
   error?: string
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  image: 'Images',
+  video: 'Vidéos',
+  web: 'Sites',
+  fact: 'Anecdotes',
+  quote: 'Citations',
+  joke: 'Blagues',
+}
+
 const TYPES = ['', 'image', 'video', 'quote', 'joke', 'fact', 'web']
 
+function label(type: string | undefined): string {
+  if (!type) return 'Inconnu'
+  return TYPE_LABELS[type] ?? type
+}
+
+function count(n: number | undefined): string {
+  return (n ?? 0).toLocaleString('fr-FR')
+}
+
+// An explicit background as well as a colour: with only a colour set, a dark-mode
+// browser turns every title and row label invisible.
+const S: Record<string, React.CSSProperties> = {
+  page: {
+    maxWidth: 980, margin: '0 auto', padding: 24, minHeight: '100vh',
+    fontFamily: 'system-ui, sans-serif', color: '#1a1a1a', background: '#ffffff',
+  },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 8 },
+  title: { fontSize: 26, fontWeight: 700, margin: 0, color: '#1a1a1a' },
+  intro: { color: '#777', fontSize: 14, marginBottom: 20 },
+  controls: { display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  input: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fff', color: '#1a1a1a' },
+  button: { padding: '8px 18px', borderRadius: 8, border: 0, background: '#1a1a1a', color: '#fff', fontSize: 14, cursor: 'pointer' },
+  error: { padding: '10px 14px', borderRadius: 8, background: '#ffebee', color: '#b71c1c', fontSize: 14, marginBottom: 20 },
+  section: { marginBottom: 32 },
+  sectionTitle: {
+    fontSize: 17, fontWeight: 700, color: '#1a1a1a',
+    borderBottom: '2px solid #1a1a1a', paddingBottom: 8, marginBottom: 12,
+  },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
+  th: { textAlign: 'left', padding: '6px 8px', color: '#777', fontWeight: 500, fontSize: 12 },
+  td: { padding: '7px 8px', borderTop: '1px solid #f2f2f2', color: '#1a1a1a' },
+  num: { textAlign: 'right', padding: '7px 8px', borderTop: '1px solid #f2f2f2', color: '#1a1a1a', fontVariantNumeric: 'tabular-nums' },
+  bar: { height: 6, borderRadius: 3, background: '#1a1a1a', minWidth: 2 },
+  link: { color: '#1a1a1a' },
+  note: { fontSize: 13, color: '#777', marginTop: 8 },
+}
+
 export default function AdminStats() {
+  // The key stays in component state only: writing it to localStorage left it
+  // readable by anything running on the page.
   const [key, setKey] = React.useState('')
   const [type, setType] = React.useState('')
   const [provider, setProvider] = React.useState('')
-  const [limit, setLimit] = React.useState(20)
-  const [sample, setSample] = React.useState(true)
   const [loading, setLoading] = React.useState(false)
   const [data, setData] = React.useState<Stats | null>(null)
-  const [err, setErr] = React.useState<string | null>(null)
-
-  React.useEffect(() => { setKey(localStorage.getItem('admin_key') || '') }, [])
-  React.useEffect(() => { localStorage.setItem('admin_key', key) }, [key])
+  const [error, setError] = React.useState<string | null>(null)
 
   async function refresh() {
-    setLoading(true); setErr(null); setData(null)
+    setLoading(true)
+    setError(null)
+    setData(null)
     try {
-      const q = new URLSearchParams({ limit: String(limit) })
-      if (type) q.set('type', type)
-      if (provider) q.set('provider', provider)
-      if (sample) q.set('sample', 'true')
-      const res = await fetch(`/api/admin/cache-stats?${q}`, {
+      const query = new URLSearchParams({ limit: '20', sample: 'true' })
+      if (type) query.set('type', type)
+      if (provider) query.set('provider', provider)
+      const res = await fetch(`/api/admin/cache-stats?${query}`, {
         cache: 'no-store',
         headers: { 'x-admin-ingest-key': key.trim() },
       })
-      const json = (await res.json()) as unknown
-      const stats = (json && typeof json === 'object') ? (json as Stats) : { ok: false, error: 'invalid response' }
-      if (!res.ok || stats.ok === false) throw new Error(stats.error || `HTTP ${res.status}`)
-      setData(stats)
-    } catch (error: unknown) {
-      setErr(error instanceof Error ? error.message : 'Failed')
+      const json = (await res.json()) as Stats
+      if (!res.ok || json.ok === false) throw new Error(json.error || `HTTP ${res.status}`)
+      setData(json)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Échec de la requête')
+    } finally {
+      setLoading(false)
     }
-    finally { setLoading(false) }
   }
 
+  const byType = data?.counts?.byType ?? []
+  const total = byType.reduce((sum, row) => sum + row.count, 0)
+  const biggest = byType[0]?.count ?? 1
+  const byProvider = data?.counts?.byProviderAll ?? []
+  const videos = data?.counts?.videos
+
   return (
-    <div className="mx-auto max-w-6xl p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin · Cache stats</h1>
-        <button className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
-                onClick={refresh} disabled={!key || loading}>
-          {loading ? 'Loading…' : 'Refresh'}
+    <div style={S.page}>
+      <div style={S.header}>
+        <h1 style={S.title}>Ce que contient la base</h1>
+        <button style={S.button} onClick={refresh} disabled={!key || loading}>
+          {loading ? 'Chargement…' : 'Afficher'}
         </button>
       </div>
+      <p style={S.intro}>
+        L’inventaire complet des contenus stockés, par type et par fournisseur. Pour savoir ce qui a été
+        ajouté chaque jour, voir <a href="/admin/ingest-reports" style={S.link}>le rapport d’ingestion</a>.
+      </p>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <input type="password" value={key} onChange={e=>setKey(e.target.value)}
-               placeholder="ADMIN_INGEST_KEY" className="border p-2 rounded" />
-        <select value={type} onChange={e=>setType(e.target.value)} className="border p-2 rounded">
-          {TYPES.map(t => <option key={t} value={t}>{t || 'all types'}</option>)}
+      <div style={S.controls}>
+        <input
+          type="password"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="Clé d’administration"
+          style={{ ...S.input, width: 240 }}
+        />
+        <select value={type} onChange={(e) => setType(e.target.value)} style={S.input}>
+          {TYPES.map((t) => (
+            <option key={t} value={t}>{t ? label(t) : 'Tous les types'}</option>
+          ))}
         </select>
-        <input value={provider} onChange={e=>setProvider(e.target.value)}
-               placeholder="provider (optional)" className="border p-2 rounded" />
-        <input type="number" value={limit}
-               onChange={e=>setLimit(Math.max(1, Math.min(100, parseInt(e.target.value||'20',10))))}
-               className="border p-2 rounded" />
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={sample} onChange={e=>setSample(e.target.checked)} /> samples
-        </label>
+        <input
+          value={provider}
+          onChange={(e) => setProvider(e.target.value)}
+          placeholder="Fournisseur (facultatif)"
+          style={{ ...S.input, width: 200 }}
+        />
       </div>
 
-      {err && <div className="text-red-600">{err}</div>}
+      {error && <div style={S.error}>{error}</div>}
 
       {data && (
         <>
-          <section>
-            <h2 className="font-semibold mb-2">By type</h2>
-            <pre className="bg-black/5 p-3 rounded">{JSON.stringify(data.counts?.byType, null, 2)}</pre>
+          <section style={S.section}>
+            <h2 style={S.sectionTitle}>Par type · {count(total)} contenus au total</h2>
+            <table style={S.table}>
+              <tbody>
+                {byType.map((row) => (
+                  <tr key={row._id}>
+                    <td style={{ ...S.td, width: 140 }}>{label(row._id)}</td>
+                    <td style={{ ...S.num, width: 110 }}>{count(row.count)}</td>
+                    <td style={{ ...S.td, width: 70, color: '#777' }}>
+                      {total ? `${Math.round((row.count / total) * 100)} %` : '—'}
+                    </td>
+                    <td style={S.td}>
+                      <div style={{ ...S.bar, width: `${Math.max(2, (row.count / biggest) * 100)}%` }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
-          <section>
-            <h2 className="font-semibold mb-2">By provider</h2>
-            <pre className="bg-black/5 p-3 rounded">{JSON.stringify(data.counts?.byProviderAll, null, 2)}</pre>
+
+          <section style={S.section}>
+            <h2 style={S.sectionTitle}>Par fournisseur</h2>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Type</th>
+                  <th style={S.th}>Fournisseur</th>
+                  <th style={{ ...S.th, textAlign: 'right' }}>Contenus</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byProvider.map((row) => (
+                  <tr key={`${row._id?.type}-${row._id?.provider}`}>
+                    <td style={S.td}>{label(row._id?.type)}</td>
+                    <td style={S.td}>{row._id?.provider ?? '—'}</td>
+                    <td style={S.num}>{count(row.count)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
-          <section>
-            <h2 className="font-semibold mb-2">Videos</h2>
-            <pre className="bg-black/5 p-3 rounded">{JSON.stringify(data.counts?.videos, null, 2)}</pre>
+
+          {videos && (
+            <section style={S.section}>
+              <h2 style={S.sectionTitle}>Doublons de vidéos</h2>
+              <table style={S.table}>
+                <tbody>
+                  <tr>
+                    <td style={S.td}>Vidéos stockées</td>
+                    <td style={S.num}>{count(videos.totalDocs)}</td>
+                  </tr>
+                  <tr>
+                    <td style={S.td}>Identifiants distincts</td>
+                    <td style={S.num}>{count(videos.distinctVideoIds)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p style={S.note}>
+                {videos.totalDocs === videos.distinctVideoIds
+                  ? 'Aucun doublon : la base refuse d’enregistrer deux fois la même vidéo.'
+                  : `${count(videos.totalDocs - videos.distinctVideoIds)} vidéos sans identifiant, donc non protégées contre les doublons.`}
+              </p>
+            </section>
+          )}
+
+          <section style={S.section}>
+            <h2 style={S.sectionTitle}>Les 20 derniers ajoutés</h2>
+            <table style={S.table}>
+              <tbody>
+                {(data.samples?.recent ?? []).map((item) => (
+                  <tr key={String(item._id)}>
+                    <td style={{ ...S.td, width: 90, color: '#777' }}>{label(item.type)}</td>
+                    <td style={{ ...S.td, width: 110, color: '#777' }}>{item.provider ?? '—'}</td>
+                    <td style={S.td}>
+                      {item.url
+                        ? <a href={item.url} target="_blank" rel="noreferrer" style={S.link}>{item.title || item.host || item.url}</a>
+                        : (item.title || '—')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
-          <section>
-            <h2 className="font-semibold mb-2">Samples</h2>
-            <pre className="bg-black/5 p-3 rounded">{JSON.stringify(data.samples, null, 2)}</pre>
-          </section>
+
+          {(data.samples?.neverShown ?? []).length > 0 && (
+            <section style={S.section}>
+              <h2 style={S.sectionTitle}>Jamais montrés à personne</h2>
+              <table style={S.table}>
+                <tbody>
+                  {(data.samples?.neverShown ?? []).map((item) => (
+                    <tr key={String(item._id)}>
+                      <td style={{ ...S.td, width: 90, color: '#777' }}>{label(item.type)}</td>
+                      <td style={{ ...S.td, width: 110, color: '#777' }}>{item.provider ?? '—'}</td>
+                      <td style={S.td}>
+                        {item.url
+                          ? <a href={item.url} target="_blank" rel="noreferrer" style={S.link}>{item.title || item.host || item.url}</a>
+                          : (item.title || '—')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
         </>
       )}
     </div>

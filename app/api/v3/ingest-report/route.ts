@@ -19,7 +19,7 @@ const PARIS = 'Europe/Paris'
 /** Past this, a line is treated as stopped rather than quiet. */
 const STALE_HOURS = 26
 
-type PhaseRow = { phase?: string; result?: { inserted?: number; scanned?: number }; error?: string }
+type PhaseRow = { phase?: string; result?: { inserted?: number; scanned?: number; providerCounts?: Record<string, number> }; error?: string }
 
 function dayKey(date: Date): string {
   return new Intl.DateTimeFormat('fr-CA', { timeZone: PARIS, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       .toArray()
 
     // One bucket per day, per line — never a running total across days.
-    const days = new Map<string, Map<string, { inserted: number; scanned: number; runs: number; errors: number }>>()
+    const days = new Map<string, Map<string, { inserted: number; scanned: number; runs: number; errors: number; providers: Record<string, number> }>>()
     const lastSeen = new Map<string, { at: Date; inserted: number }>()
 
     for (const run of runs) {
@@ -49,27 +49,35 @@ export async function GET(request: Request) {
       const byLine = days.get(key) ?? new Map()
 
       const phases: PhaseRow[] = Array.isArray(run.details?.phases) ? run.details.phases : []
-      const rows: Array<{ line: string; inserted: number; scanned: number; error?: string }> = phases.length
+      type Row = { line: string; inserted: number; scanned: number; error?: string; providers: Record<string, number> }
+      const rows: Row[] = phases.length
         ? phases.map((phase) => ({
             line: String(phase.phase ?? 'inconnu'),
             inserted: Number(phase.result?.inserted ?? 0),
             scanned: Number(phase.result?.scanned ?? 0),
             error: phase.error,
+            providers: (phase.result?.providerCounts ?? {}) as Record<string, number>,
           }))
         : [{
             line: String(run.name ?? 'inconnu').replace(/^cron:daily-auto:?/, '') || 'résumé',
             inserted: Number(run.details?.result?.inserted ?? run.details?.videoInserted ?? 0),
             scanned: Number(run.details?.result?.scanned ?? 0),
             error: run.error,
+            providers: (run.details?.result?.providerCounts ?? run.details?.providerCounts ?? {}) as Record<string, number>,
           }]
 
       for (const row of rows) {
         if (row.line === 'résumé' || row.line === 'summary' || row.line === 'enrich-summary') continue
-        const bucket = byLine.get(row.line) ?? { inserted: 0, scanned: 0, runs: 0, errors: 0 }
+        const bucket = byLine.get(row.line) ?? { inserted: 0, scanned: 0, runs: 0, errors: 0, providers: {} }
         bucket.inserted += row.inserted
         bucket.scanned += row.scanned
         bucket.runs += 1
         if (row.error) bucket.errors += 1
+        // Which provider actually supplied the results: "1 648 examinés" says
+        // nothing without knowing whether it was YouTube or Dailymotion.
+        for (const [provider, n] of Object.entries(row.providers)) {
+          bucket.providers[provider] = (bucket.providers[provider] ?? 0) + Number(n || 0)
+        }
         byLine.set(row.line, bucket)
 
         const previous = lastSeen.get(row.line)

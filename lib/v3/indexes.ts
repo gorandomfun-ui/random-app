@@ -41,6 +41,12 @@ export const V3_INDEXES: PlannedIndex[] = [
   },
   {
     collection: ITEMS,
+    name: 'type_provider_counts',
+    key: { type: 1, provider: 1 },
+    purpose: 'Admin stats: count by type and provider without reading every document.',
+  },
+  {
+    collection: ITEMS,
     name: 'v3_channel_key',
     key: { 'v3.channelKey': 1 },
     purpose: 'Per-author caps and the "never twice the same author" rules.',
