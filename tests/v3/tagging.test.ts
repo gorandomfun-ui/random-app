@@ -580,3 +580,35 @@ test('à l_insertion : un dictionnaire illisible ne bloque pas l_ingestion', asy
   assert.equal(result.length, 1)
   assert.equal('v3' in result[0], false, 'le document passe sans étiquettes plutôt que de faire échouer la run')
 })
+
+test('un quiz reçoit l_angle quiz, pas text-fact', async () => {
+  const { detectAngle } = await import('@/lib/v3/tagging/angle')
+  assert.equal(detectAngle({ type: 'fact', variant: 'quiz' }), 'quiz')
+  assert.equal(detectAngle({ type: 'fact' }), 'text-fact')
+})
+
+test('un nom fait de mots courants exige un second indice', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex([
+    { _id: 'entity:the-wall', label: 'The Wall', universe: 'music', kind: 'entity', aliases: ['the wall'], ambiguous: false },
+    { _id: 'entity:the-following', label: 'The Following', universe: 'cinema-tv', kind: 'entity', aliases: ['the following'], ambiguous: false },
+    { _id: 'entity:south-park', label: 'South Park', universe: 'animation', kind: 'entity', aliases: ['south park'], ambiguous: false },
+  ])
+
+  // Une blague qui parle d_un mur, pas de Pink Floyd.
+  const blague = tagItem({ type: 'joke', text: "C writes something on the wall and says D" }, index)
+  assert.equal(blague.subjects.length, 0, '"the wall" dans une phrase ordinaire ne doit rien étiqueter')
+
+  // Un quiz qui dit "which of the following", pas la série.
+  const quiz = tagItem(
+    { type: 'fact', variant: 'quiz', quiz: { question: 'PIIGS refers to which of the following countries?' } },
+    index,
+  )
+  assert.equal(quiz.subjects.length, 0)
+  assert.equal(quiz.angle, 'quiz', 'et il est bien reconnu comme quiz')
+
+  // Un vrai nom propre passe toujours.
+  const vrai = tagItem({ type: 'joke', text: 'une blague sur South Park' }, index)
+  assert.equal(vrai.subjects[0]?.id, 'entity:south-park')
+})

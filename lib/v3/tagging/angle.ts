@@ -89,6 +89,8 @@ const AMATEUR_VIEW_CEILING = 1_000
 
 export type AngleInput = {
   type: ItemType
+  /** Facts stored as a quiz carry their question in `quiz`, not the title. */
+  variant?: string | null
   title?: string | null
   description?: string | null
   channelTitle?: string | null
@@ -99,6 +101,9 @@ export type AngleInput = {
 
 /** Non-video types carry their angle in the type itself. */
 function angleFromType(input: AngleInput): Angle | null {
+  // 4,293 of the 6,171 "facts" are quiz questions; calling them text-fact hid
+  // them from the one angle the Wave could have used them for.
+  if (input.variant === 'quiz') return 'quiz'
   if (input.type === 'quote') return 'text-quote'
   if (input.type === 'joke') return 'text-joke'
   if (input.type === 'fact') return 'text-fact'

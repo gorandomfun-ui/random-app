@@ -10,6 +10,7 @@ import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
 import { createJokeDocument, looksLikeCategoryLabel, type JokeDocument } from '@/lib/random/jokes'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
+import { tagForInsert, type TaggableDocument } from '@/lib/v3/tagging/atInsert'
 
 /* =========================== DB =========================== */
 let _db: Db | null = null
@@ -72,6 +73,17 @@ async function upsertManyJokes(rows: Omit<JokeDoc, 'createdAt' | 'updatedAt'>[])
       upsert: true,
     },
   }))
+  // Same labels as the automatic ingestion: content added from the local
+  // panel must be eligible for a Wave like everything else.
+  const tagged = await tagForInsert(
+    db,
+    ops.map((op) => op.updateOne.update.$set as unknown as TaggableDocument),
+  )
+  ops.forEach((op, index) => {
+    const v3 = (tagged[index] as { v3?: unknown }).v3
+    if (v3) (op.updateOne.update.$set as Record<string, unknown>).v3 = v3
+  })
+
   const res = await db.collection('items').bulkWrite(ops, { ordered: false })
   return { inserted: res.upsertedCount || 0, updated: res.modifiedCount || 0 }
 }

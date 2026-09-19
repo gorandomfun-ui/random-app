@@ -31,6 +31,9 @@ export type TaggableItem = {
   trendObservedAt?: Date | null
   categoryId?: string | null
   isAnimated?: boolean
+  /** Facts stored as a quiz: the question is the subject-bearing text. */
+  variant?: string | null
+  quiz?: { question?: string | null } | null
 }
 
 /** At most this many subjects per item: beyond that they stop meaning anything. */
@@ -92,7 +95,10 @@ function providerExtras(item: TaggableItem): string {
 export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date()): ItemTags {
   const usable = isUsableItem(item)
   const haystack = [
-    searchableText({ title: item.title, description: item.description ?? item.text }),
+    searchableText({
+      title: item.title ?? item.quiz?.question ?? item.text,
+      description: item.description ?? item.text,
+    }),
     providerExtras(item),
   ]
     .filter(Boolean)
@@ -112,6 +118,7 @@ export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date(
     moods: [],
     angle: detectAngle({
       type: item.type,
+      variant: item.variant,
       title: item.title,
       description: item.description,
       channelTitle: item.channelTitle,

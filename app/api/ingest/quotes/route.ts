@@ -9,6 +9,7 @@ import { createHash } from 'crypto'
 import * as cheerio from 'cheerio'
 import { createQuoteDocument, type QuoteDocument } from '@/lib/random/quotes'
 import { DEFAULT_INGEST_HEADERS, fetchJson, fetchText } from '@/lib/ingest/http'
+import { tagForInsert, type TaggableDocument } from '@/lib/v3/tagging/atInsert'
 
 const ROUTE_HEADERS = { ...DEFAULT_INGEST_HEADERS, 'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)' }
 
@@ -47,6 +48,17 @@ async function upsertManyQuotes(rows: Omit<QuoteDoc,'createdAt'|'updatedAt'>[]) 
       upsert: true,
     }
   }))
+  // Same labels as the automatic ingestion: content added from the local
+  // panel must be eligible for a Wave like everything else.
+  const tagged = await tagForInsert(
+    db,
+    ops.map((op) => op.updateOne.update.$set as unknown as TaggableDocument),
+  )
+  ops.forEach((op, index) => {
+    const v3 = (tagged[index] as { v3?: unknown }).v3
+    if (v3) (op.updateOne.update.$set as Record<string, unknown>).v3 = v3
+  })
+
   const res = await db.collection('items').bulkWrite(ops, { ordered: false })
   return { inserted: res.upsertedCount || 0, updated: res.modifiedCount || 0 }
 }

@@ -53,11 +53,40 @@ export function containsAlias(haystack: string, alias: string): boolean {
  * The plan only accepts them with a second, independent clue, so they are
  * flagged here and the caller decides.
  */
+/**
+ * Words ordinary sentences are made of.
+ *
+ * Wikidata holds real subjects called "The Wall", "The Following", "The King"
+ * and "Non-Stop". Matching them on phrase alone tagged a joke about Java and C
+ * as Pink Floyd, and a quiz asking "which of the following" as a TV series.
+ * An entity whose every word is in this list therefore needs a second clue.
+ * Words that merely *feel* common are left out — "park" and "south" are here
+ * absent on purpose, so South Park keeps working.
+ */
+const EVERYDAY_WORDS = new Set(
+  ('the a an and or of in on at to for with from by is are was were be this that it its ' +
+    'wall king queen following stop thing things world life time way day night man woman ' +
+    'boy girl people house home room door water fire air land show movie film game play ' +
+    'story end start first last new old good bad big small long short high low right left ' +
+    'one two three non all some any every other another same different next back front ' +
+    'le la les des du un une et ou de dans sur avec pour par est sont ce cette qui que ' +
+    'mur roi reine chose monde vie temps jour nuit homme femme maison jeu fin debut')
+    .split(' '),
+)
+
+/** True when every word of the alias is an everyday one. */
+export function isEverydayPhrase(alias: string): boolean {
+  const words = normalize(alias).split(' ').filter(Boolean)
+  if (!words.length) return true
+  return words.every((word) => EVERYDAY_WORDS.has(word))
+}
+
 export function needsSecondClue(alias: string): boolean {
   const normalized = normalize(alias)
   if (!normalized) return true
   if (UNSPACED_SCRIPT.test(normalized)) return normalized.length <= 2
-  return !normalized.includes(' ') && normalized.length <= 12
+  if (!normalized.includes(' ') && normalized.length <= 12) return true
+  return isEverydayPhrase(normalized)
 }
 
 /** Was the word capitalised in the untouched title? One of the accepted clues. */
