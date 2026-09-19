@@ -1,404 +1,192 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
-type CronRun = {
-  id?: string
-  name?: string
-  status?: string
-  startedAt?: string
-  finishedAt?: string
-  durationMs?: number
-  details?: Record<string, unknown>
-  error?: string
+/**
+ * What the ingestion did, day by day.
+ *
+ * The page it replaces summed the last thirty runs, so an outage disappeared
+ * behind the days before it, and it stored the admin key in the browser.
+ * Here each day stands alone, and a line that ran without inserting anything
+ * says so — that state is what hid a dead trending line for eight days.
+ */
+
+type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number }
+type DayRow = { day: string; lines: LineRow[]; total: number }
+type HealthRow = { line: string; lastRunAt: string; hoursAgo: number; state: 'active' | 'sans insertion' | 'arrêtée' }
+
+const STATE_STYLE: Record<HealthRow['state'], { background: string; color: string }> = {
+  active: { background: '#e8f5e9', color: '#1b5e20' },
+  'sans insertion': { background: '#fff8e1', color: '#8d6e00' },
+  arrêtée: { background: '#ffebee', color: '#b71c1c' },
 }
 
-type CronStatusResponse = {
-  ok?: boolean
-  error?: string
-  runs?: CronRun[]
+const LINE_LABEL: Record<string, string> = {
+  trending: 'Tendances',
+  retro: 'Rétro',
+  combo: 'Combinaisons',
+  'combo-videos': 'Combinaisons',
+  web: 'Sites web',
+  discovery: 'Découverte',
+  enrich: 'Enrichissement',
+  'enrich-videos': 'Enrichissement',
+  images: 'Images',
 }
 
-type PhaseReport = {
-  phase?: string
-  ok?: boolean
-  durationMs?: number
-  inserted?: number
-  updated?: number
-  existingSkipped?: number
-  checked?: number
-  remaining?: number
-  providerCounts?: Record<string, number>
-  result?: Record<string, unknown>
-  error?: string
-}
+const label = (line: string) => LINE_LABEL[line] ?? line
 
-function asNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-function formatDuration(value: unknown): string {
-  const ms = asNumber(value)
-  if (!ms) return '-'
-  const totalSeconds = Math.round(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  if (!minutes) return `${seconds}s`
-  return `${minutes}m ${String(seconds).padStart(2, '0')}s`
-}
-
-function formatDate(value: unknown): string {
-  if (typeof value !== 'string') return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString('fr-FR', {
-    timeZone: 'Europe/Paris',
-    dateStyle: 'short',
-    timeStyle: 'medium',
+function formatDay(day: string): string {
+  const [year, month, date] = day.split('-')
+  return new Date(Number(year), Number(month) - 1, Number(date)).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
   })
 }
 
-function readStoredKey(): string {
-  const direct = localStorage.getItem('ingest_report_key') || localStorage.getItem('admin_key') || ''
-  if (direct) return direct
-
-  try {
-    const saved = JSON.parse(localStorage.getItem('ingest_admin_state_v3') || '{}') as { key?: unknown }
-    return typeof saved.key === 'string' ? saved.key : ''
-  } catch {
-    return ''
-  }
-}
-
-function providerSummary(value: unknown): string {
-  if (!value || typeof value !== 'object') return '-'
-  const entries = Object.entries(value as Record<string, unknown>)
-    .map(([provider, count]) => `${provider}: ${asNumber(count)}`)
-  return entries.length ? entries.join(' · ') : '-'
-}
-
-function normalizePhases(value: unknown): PhaseReport[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((entry): entry is PhaseReport => Boolean(entry) && typeof entry === 'object')
-}
-
-function phaseNumber(phase: PhaseReport, key: string): number {
-  const flat = asNumber((phase as Record<string, unknown>)[key])
-  if (flat) return flat
-  return asNumber(phase.result?.[key])
-}
-
-const STYLES: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    padding: 32,
-    background: '#f6f4eb',
-    color: '#171713',
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  },
-  shell: {
-    maxWidth: 1180,
-    margin: '0 auto',
-    display: 'grid',
-    gap: 20,
-  },
-  title: {
-    margin: 0,
-    fontSize: 'clamp(28px, 4vw, 46px)',
-    lineHeight: 1,
-    letterSpacing: 0,
-  },
-  subtitle: {
-    margin: '8px 0 0',
-    color: 'rgba(23, 23, 19, 0.66)',
-    fontSize: 15,
-  },
-  panel: {
-    border: '1px solid rgba(23, 23, 19, 0.12)',
-    borderRadius: 8,
-    background: '#fffdf5',
-    padding: 16,
-  },
-  authRow: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(220px, 1fr) auto',
-    gap: 12,
-    alignItems: 'end',
-  },
-  label: {
-    display: 'grid',
-    gap: 6,
-    color: 'rgba(23, 23, 19, 0.72)',
-    fontSize: 13,
-    fontWeight: 650,
-  },
-  input: {
-    width: '100%',
-    minHeight: 42,
-    border: '1px solid rgba(23, 23, 19, 0.22)',
-    borderRadius: 6,
-    padding: '0 12px',
-    background: '#fff',
-    color: '#171713',
-    font: 'inherit',
-  },
-  button: {
-    minHeight: 42,
-    border: 0,
-    borderRadius: 6,
-    padding: '0 16px',
-    background: '#171713',
-    color: '#fffdf5',
-    font: 'inherit',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-  error: {
-    borderColor: 'rgba(185, 28, 28, 0.24)',
-    background: '#fff0f0',
-    color: '#9f1239',
-  },
-  metrics: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: 12,
-  },
-  metric: {
-    border: '1px solid rgba(23, 23, 19, 0.1)',
-    borderRadius: 8,
-    background: '#fffdf5',
-    padding: 14,
-  },
-  metricLabel: {
-    color: 'rgba(23, 23, 19, 0.55)',
-    fontSize: 12,
-    fontWeight: 650,
-  },
-  metricValue: {
-    marginTop: 4,
-    fontSize: 20,
-    fontWeight: 800,
-  },
-  tableWrap: {
-    overflowX: 'auto',
-    border: '1px solid rgba(23, 23, 19, 0.12)',
-    borderRadius: 8,
-    background: '#fffdf5',
-  },
-  table: {
-    width: '100%',
-    minWidth: 940,
-    borderCollapse: 'collapse',
-    fontSize: 13,
-  },
-  th: {
-    padding: 12,
-    borderTop: 0,
-    background: 'rgba(23, 23, 19, 0.04)',
-    color: 'rgba(23, 23, 19, 0.62)',
-    fontSize: 11,
-    fontWeight: 800,
-    textTransform: 'uppercase',
-    textAlign: 'left',
-  },
-  td: {
-    padding: 12,
-    borderTop: '1px solid rgba(23, 23, 19, 0.1)',
-    textAlign: 'left',
-    verticalAlign: 'top',
-  },
-  phaseTd: {
-    padding: 12,
-    borderTop: '1px solid rgba(23, 23, 19, 0.1)',
-    background: 'rgba(23, 23, 19, 0.025)',
-    color: 'rgba(23, 23, 19, 0.62)',
-    fontSize: 12,
-  },
-  phase: {
-    display: 'inline-block',
-    margin: '0 14px 4px 0',
-    whiteSpace: 'nowrap',
-  },
-  empty: {
-    color: 'rgba(23, 23, 19, 0.62)',
-  },
-}
-
 export default function IngestReportsPage() {
+  const [days, setDays] = useState<DayRow[]>([])
+  const [health, setHealth] = useState<HealthRow[]>([])
   const [key, setKey] = useState('')
-  const [runs, setRuns] = useState<CronRun[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
 
-  useEffect(() => {
-    setKey(readStoredKey())
-  }, [])
-
-  useEffect(() => {
-    if (!key) return
-    localStorage.setItem('ingest_report_key', key)
-  }, [key])
-
-  const loadReports = useCallback(async () => {
-    const authKey = key.trim()
-    if (!authKey) {
-      setError('Entre la clé admin pour afficher les rapports.')
-      setRuns([])
-      return
-    }
-
+  const load = useCallback(async (adminKey: string) => {
+    if (!adminKey.trim()) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/cron/status?target=daily-auto-summary&target=daily-auto-enrich-summary&limit=30', {
+      const response = await fetch('/api/v3/ingest-report', {
         cache: 'no-store',
-        headers: { 'x-admin-ingest-key': authKey },
+        headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
-      const data = (await res.json().catch(() => ({}))) as CronStatusResponse
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || `Erreur HTTP ${res.status}`)
-      }
-      setRuns(Array.isArray(data.runs) ? data.runs : [])
-      setLoaded(true)
-    } catch (err) {
-      setRuns([])
-      setError(err instanceof Error ? err.message : 'Impossible de charger les rapports.')
+      if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[] }
+      setDays(payload.days ?? [])
+      setHealth(payload.health ?? [])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
       setLoading(false)
     }
-  }, [key])
+  }, [])
 
-  const totalInserted = useMemo(() => {
-    return runs.reduce((sum, run) => sum + asNumber(run.details?.videoInserted), 0)
-  }, [runs])
+  // The key is held for this page view only. The previous version wrote it to
+  // localStorage, where it stayed readable long after.
+  useEffect(() => {
+    if (key.trim().length >= 8) void load(key)
+  }, [key, load])
 
-  const totalEnriched = useMemo(() => {
-    return runs.reduce((sum, run) => sum + asNumber(run.details?.videoEnriched), 0)
-  }, [runs])
+  const stopped = health.filter((row) => row.state === 'arrêtée')
+  const silent = health.filter((row) => row.state === 'sans insertion')
 
   return (
-    <main style={STYLES.page}>
-      <div style={STYLES.shell}>
-        <header>
-          <h1 style={STYLES.title}>Rapports d’ingestion automatique</h1>
-          <p style={STYLES.subtitle}>Lecture seule. Aucun lancement d’ingestion depuis cette page.</p>
-        </header>
+    <main style={S.page}>
+      <header style={S.header}>
+        <h1 style={S.title}>Ingestion</h1>
+        <input
+          type="password"
+          value={key}
+          onChange={(event) => setKey(event.target.value)}
+          placeholder="Clé d'administration"
+          style={S.input}
+          autoComplete="off"
+        />
+      </header>
 
-        <section style={{ ...STYLES.panel, ...STYLES.authRow }}>
-          <label style={STYLES.label}>
-            Clé admin
-            <input
-              type="password"
-              value={key}
-              onChange={(event) => setKey(event.target.value)}
-              placeholder="ADMIN_INGEST_KEY"
-              style={STYLES.input}
-            />
-          </label>
-          <button type="button" onClick={loadReports} disabled={loading} style={{ ...STYLES.button, opacity: loading ? 0.55 : 1 }}>
-            {loading ? 'Chargement...' : 'Charger les rapports'}
-          </button>
+      {!key && <p style={S.hint}>Colle la clé d&apos;administration pour voir le rapport. Elle n&apos;est pas enregistrée.</p>}
+      {loading && <p style={S.hint}>Chargement…</p>}
+      {error && <p style={{ ...S.hint, color: '#b71c1c' }}>{error}</p>}
+
+      {(stopped.length > 0 || silent.length > 0) && (
+        <section style={S.alerts}>
+          {stopped.map((row) => (
+            <div key={row.line} style={{ ...S.alert, ...STATE_STYLE.arrêtée }}>
+              <strong>{label(row.line)}</strong> n&apos;a rien fait depuis {row.hoursAgo} h
+            </div>
+          ))}
+          {silent.map((row) => (
+            <div key={row.line} style={{ ...S.alert, ...STATE_STYLE['sans insertion'] }}>
+              <strong>{label(row.line)}</strong> tourne mais n&apos;insère rien
+            </div>
+          ))}
         </section>
+      )}
 
-        {error ? <div style={{ ...STYLES.panel, ...STYLES.error }}>{error}</div> : null}
+      {health.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.sectionTitle}>État des lignes</h2>
+          <div style={S.cards}>
+            {health.map((row) => (
+              <div key={row.line} style={{ ...S.card, ...STATE_STYLE[row.state] }}>
+                <div style={S.cardLine}>{label(row.line)}</div>
+                <div style={S.cardState}>{row.state}</div>
+                <div style={S.cardAgo}>il y a {row.hoursAgo} h</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-        {runs.length ? (
-          <section style={STYLES.metrics}>
-            <div style={STYLES.metric}>
-              <div style={STYLES.metricLabel}>Runs affichés</div>
-              <div style={STYLES.metricValue}>{runs.length}</div>
-            </div>
-            <div style={STYLES.metric}>
-              <div style={STYLES.metricLabel}>Vidéos insérées</div>
-              <div style={STYLES.metricValue}>{totalInserted}</div>
-            </div>
-            <div style={STYLES.metric}>
-              <div style={STYLES.metricLabel}>Vidéos enrichies</div>
-              <div style={STYLES.metricValue}>{totalEnriched}</div>
-            </div>
-            <div style={STYLES.metric}>
-              <div style={STYLES.metricLabel}>Dernier run</div>
-              <div style={STYLES.metricValue}>{formatDate(runs[0]?.startedAt)}</div>
-            </div>
-            <div style={STYLES.metric}>
-              <div style={STYLES.metricLabel}>Dernier statut</div>
-              <div style={STYLES.metricValue}>{runs[0]?.status || '-'}</div>
-            </div>
-            <div style={STYLES.metric}>
-              <div style={STYLES.metricLabel}>Dernière durée</div>
-              <div style={STYLES.metricValue}>{formatDuration(runs[0]?.durationMs || runs[0]?.details?.durationMs)}</div>
-            </div>
-          </section>
-        ) : null}
-
-        {loaded && !runs.length && !error ? (
-          <div style={{ ...STYLES.panel, ...STYLES.empty }}>Aucun rapport enregistré pour l’instant.</div>
-        ) : null}
-
-        {runs.length ? (
-          <section style={STYLES.tableWrap}>
-            <table style={STYLES.table}>
-              <thead>
-                <tr>
-                  <th style={STYLES.th}>Début</th>
-                  <th style={STYLES.th}>Statut</th>
-                  <th style={STYLES.th}>Profil</th>
-                  <th style={STYLES.th}>Durée</th>
-                  <th style={STYLES.th}>Vidéos</th>
-                  <th style={STYLES.th}>Web</th>
-                  <th style={STYLES.th}>Enrichies</th>
-                  <th style={STYLES.th}>Doublons</th>
-                  <th style={STYLES.th}>Providers</th>
+      {days.map((day) => (
+        <section key={day.day} style={S.section}>
+          <h2 style={S.sectionTitle}>
+            {formatDay(day.day)}
+            <span style={S.dayTotal}>{day.total.toLocaleString('fr-FR')} insérés</span>
+          </h2>
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={S.th}>Ligne</th>
+                <th style={{ ...S.th, textAlign: 'right' }}>Passages</th>
+                <th style={{ ...S.th, textAlign: 'right' }}>Examinés</th>
+                <th style={{ ...S.th, textAlign: 'right' }}>Insérés</th>
+                <th style={{ ...S.th, textAlign: 'right' }}>Erreurs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {day.lines.map((row) => (
+                <tr key={row.line}>
+                  <td style={S.td}>{label(row.line)}</td>
+                  <td style={{ ...S.td, textAlign: 'right' }}>{row.runs}</td>
+                  <td style={{ ...S.td, textAlign: 'right', color: '#777' }}>{row.scanned.toLocaleString('fr-FR')}</td>
+                  <td style={{ ...S.td, textAlign: 'right', fontWeight: 600, color: row.inserted ? '#1b5e20' : '#b71c1c' }}>
+                    {row.inserted.toLocaleString('fr-FR')}
+                  </td>
+                  <td style={{ ...S.td, textAlign: 'right', color: row.errors ? '#b71c1c' : '#bbb' }}>{row.errors || '—'}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {runs.map((run, index) => {
-                  const details = run.details || {}
-                  const phases = normalizePhases(details.phases)
-                  return (
-                    <React.Fragment key={run.id || `${run.startedAt}-${index}`}>
-                      <tr>
-                        <td style={STYLES.td}>{formatDate(run.startedAt)}</td>
-                        <td style={STYLES.td}>{run.status || '-'}</td>
-                        <td style={STYLES.td}>{String(details.profile || '-')}</td>
-                        <td style={STYLES.td}>{formatDuration(run.durationMs || details.durationMs)}</td>
-                        <td style={STYLES.td}><strong>{asNumber(details.videoInserted)}</strong></td>
-                        <td style={STYLES.td}>{asNumber(details.webInserted)}</td>
-                        <td style={STYLES.td}>{asNumber(details.videoEnriched)}</td>
-                        <td style={STYLES.td}>{asNumber(details.existingSkipped)}</td>
-                        <td style={STYLES.td}>{providerSummary(details.providerCounts)}</td>
-                      </tr>
-                      {phases.length ? (
-                        <tr>
-                          <td colSpan={9} style={STYLES.phaseTd}>
-                            {phases.map((phase, phaseIndex) => {
-                              const inserted = phaseNumber(phase, 'inserted')
-                              const updated = phaseNumber(phase, 'updated')
-                              const checked = phaseNumber(phase, 'checked')
-                              const remaining = phaseNumber(phase, 'remaining')
-                              return (
-                                <span key={`${run.id}-${phase.phase}-${phaseIndex}`} style={STYLES.phase}>
-                                  {phase.phase || 'phase'}: {phase.error || phase.ok === false ? 'erreur' : 'ok'}
-                                  {' '}· {formatDuration(phase.durationMs)}
-                                  {' '}· insérées {inserted}
-                                  {checked ? ` · vérifiées ${checked}` : ''}
-                                  {updated ? ` · enrichies ${updated}` : ''}
-                                  {remaining ? ` · restantes ${remaining}` : ''}
-                                </span>
-                              )
-                            })}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </React.Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </section>
-        ) : null}
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ))}
+
+      {key && !loading && !days.length && !error && <p style={S.hint}>Aucun passage sur les 14 derniers jours.</p>}
     </main>
   )
+}
+
+const S: Record<string, React.CSSProperties> = {
+  page: { maxWidth: 900, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif', color: '#1a1a1a' },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20 },
+  title: { fontSize: 26, fontWeight: 700, margin: 0 },
+  input: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, width: 240 },
+  hint: { color: '#777', fontSize: 14 },
+  alerts: { display: 'grid', gap: 8, marginBottom: 24 },
+  alert: { padding: '10px 14px', borderRadius: 8, fontSize: 14 },
+  section: { marginBottom: 32 },
+  sectionTitle: {
+    fontSize: 15, fontWeight: 600, textTransform: 'capitalize',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+    borderBottom: '1px solid #eee', paddingBottom: 8, marginBottom: 12,
+  },
+  dayTotal: { fontSize: 13, fontWeight: 500, color: '#777', textTransform: 'none' },
+  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 },
+  card: { padding: 12, borderRadius: 10 },
+  cardLine: { fontWeight: 600, fontSize: 14 },
+  cardState: { fontSize: 13, marginTop: 2 },
+  cardAgo: { fontSize: 12, opacity: 0.7, marginTop: 4 },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
+  th: { textAlign: 'left', padding: '6px 8px', color: '#777', fontWeight: 500, fontSize: 12 },
+  td: { padding: '7px 8px', borderTop: '1px solid #f2f2f2' },
 }
