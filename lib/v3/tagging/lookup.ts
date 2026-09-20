@@ -55,34 +55,59 @@ export function aliasCandidates(texts: string[]): string[] {
 }
 
 /**
+ * Aliases asked for in one query. A batch of forty titles yields thousands of
+ * word runs, and asking for all of them at once was a single huge query that
+ * this database could not answer inside any sensible budget.
+ */
+const CANDIDATES_PER_QUERY = 1200
+
+/** Per query. Reads on this database average 277ms, so this is generous. */
+const QUERY_BUDGET_MS = 12_000
+
+export type LookupResult = {
+  index: SubjectIndex
+  /** True when at least one chunk failed, so the labels may be incomplete. */
+  partial: boolean
+}
+
+/**
  * The subjects whose aliases appear in these texts.
+ *
+ * Asked for in chunks, and a chunk that fails costs only its own aliases: the
+ * rest still label what they can. Returning nothing on the first timeout is
+ * what let four thousand videos be stored with no labels at all in one
+ * afternoon.
  *
  * Aliases written without spaces — Japanese and Korean above all — cannot be
  * rebuilt from words, so they are not found here. The periodic pass over the
- * whole catalogue still uses the complete dictionary and catches them; what
- * this protects is the ingestion's time budget.
+ * whole catalogue still uses the complete dictionary and catches them.
  */
-export async function lookupSubjectIndex(db: Db, texts: string[]): Promise<SubjectIndex | null> {
+export async function lookupSubjectIndex(db: Db, texts: string[]): Promise<LookupResult> {
   const candidates = aliasCandidates(texts)
-  if (!candidates.length) return buildSubjectIndex([])
+  if (!candidates.length) return { index: buildSubjectIndex([]), partial: false }
 
-  try {
-    const rows = (await db
-      .collection(SUBJECTS_COLLECTION)
-      .find(
-        { aliases: { $in: candidates } },
-        {
-          projection: { label: 1, universe: 1, kind: 1, aliases: 1, ambiguous: 1 },
-          maxTimeMS: 4000,
-        },
-      )
-      .toArray()) as unknown as SubjectRow[]
+  const rows: SubjectRow[] = []
+  let partial = false
 
-    return buildSubjectIndex(rows)
-  } catch (error) {
-    // An ingestion run that cannot read the dictionary still stores its
-    // contents; the next tagging pass labels them.
-    console.error('[v3] recherche de sujets impossible, ingestion sans étiquettes', error)
-    return null
+  for (let offset = 0; offset < candidates.length; offset += CANDIDATES_PER_QUERY) {
+    const chunk = candidates.slice(offset, offset + CANDIDATES_PER_QUERY)
+    try {
+      const found = (await db
+        .collection(SUBJECTS_COLLECTION)
+        .find(
+          { aliases: { $in: chunk } },
+          {
+            projection: { label: 1, universe: 1, kind: 1, aliases: 1, ambiguous: 1 },
+            maxTimeMS: QUERY_BUDGET_MS,
+          },
+        )
+        .toArray()) as unknown as SubjectRow[]
+      rows.push(...found)
+    } catch (error) {
+      partial = true
+      console.error('[v3] un lot d_alias n_a pas pu être lu, étiquetage partiel', error)
+    }
   }
+
+  return { index: buildSubjectIndex(rows), partial }
 }

@@ -564,10 +564,8 @@ test('à l_insertion : chaque document reçoit son bloc v3', async () => {
   assert.equal(second.v3.usable, false, 'un titre inexploitable reste marqué comme tel')
 })
 
-test('à l_insertion : un dictionnaire illisible ne bloque pas l_ingestion', async () => {
+test('à l_insertion : un dictionnaire illisible étiquette quand même, sans sujet', async () => {
   const { tagForInsert } = await import('@/lib/v3/tagging/atInsert')
-  const { resetSubjectIndexCache } = await import('@/lib/v3/tagging/indexCache')
-  resetSubjectIndexCache()
 
   const brokenDb = {
     collection: () => ({
@@ -578,7 +576,11 @@ test('à l_insertion : un dictionnaire illisible ne bloque pas l_ingestion', asy
   const documents = [{ type: 'video' as const, title: 'une vidéo', provider: 'youtube' }]
   const result = await tagForInsert(brokenDb, documents)
   assert.equal(result.length, 1)
-  assert.equal('v3' in result[0], false, 'le document passe sans étiquettes plutôt que de faire échouer la run')
+  const tagged = result[0] as { v3?: { subjects: unknown[]; universe: string; formatFamily: string } }
+  assert.ok(tagged.v3, 'le contenu reçoit un bloc v3 même sans dictionnaire')
+  assert.equal(tagged.v3!.subjects.length, 0, 'aucun sujet, faute de dictionnaire')
+  assert.ok(tagged.v3!.universe, 'l_univers est déduit du contenu lui-même')
+  assert.ok(tagged.v3!.formatFamily, 'la famille de format aussi')
 })
 
 test('un quiz reçoit l_angle quiz, pas text-fact', async () => {

@@ -38,8 +38,17 @@ export async function tagForInsert<T extends TaggableDocument>(
   if (!documents.length) return documents
   // Only the subjects these documents could possibly mention, rather than the
   // whole dictionary: the cost follows the batch, not the catalogue.
-  const index = await lookupSubjectIndex(db, documents.map(taggableText))
-  if (!index) return documents
+  //
+  // Whatever comes back, every document is labelled. A lookup that fails only
+  // costs the subjects; the universe, the angle, the era and the two family
+  // fingerprints are read from the document itself and are what the draw rules
+  // and the Wave's looser levels work on. Returning the documents untouched
+  // instead stored four thousand videos with no v3 block at all, invisible to
+  // everything, until a full pass over the catalogue picked them up.
+  const { index, partial } = await lookupSubjectIndex(db, documents.map(taggableText))
+  if (partial) {
+    console.warn(`[v3] étiquetage partiel pour ${documents.length} contenus : sujets possiblement manquants`)
+  }
 
   return documents.map((document) => {
     const tags = tagItem(document, index, now)
