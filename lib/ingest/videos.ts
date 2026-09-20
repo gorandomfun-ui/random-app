@@ -144,6 +144,9 @@ const DAILYMOTION_LOCALE: Record<string, string> = {
   AR: 'es_AR',
 };
 
+/** How long a "seen trending" mark stays good enough to leave alone. */
+const TREND_MARK_FRESH_MS = 20 * 60 * 60 * 1000;
+
 const YT_TRENDING_PER_REGION = 50;
 const RETRO_QUERY_COUNT = 10;
 const RETRO_RESULTS_PER_QUERY = 10;
@@ -1118,8 +1121,16 @@ export async function finalizeVideoIngest(
       (latest, doc) => (doc.trendObservedAt! > latest ? doc.trendObservedAt! : latest),
       observedTrends[0].trendObservedAt!,
     );
+    // And only for the videos whose mark is stale. The same videos trend all day
+    // long, so refreshing a timestamp that already says "today" rewrote almost
+    // every row of the batch for nothing — and a row costs seconds here.
+    const staleBefore = new Date(observedAt.getTime() - TREND_MARK_FRESH_MS);
     const refreshed = await collection.updateMany(
-      { type: 'video', videoId: { $in: videoIds } } as Filter<VideoDocument>,
+      {
+        type: 'video',
+        videoId: { $in: videoIds },
+        $or: [{ trendObservedAt: { $exists: false } }, { trendObservedAt: { $lt: staleBefore } }],
+      } as Filter<VideoDocument>,
       { $max: { trendObservedAt: observedAt } },
     );
     summary.updated += refreshed.modifiedCount;
