@@ -18,6 +18,10 @@ const POOL_PER_LEVEL = 60
 /** The indexes these queries are built for, named so Mongo does not go looking. */
 const SUBJECT_INDEX = 'v3_subject_type_rand'
 const UNIVERSE_INDEX = 'v3_universe_type_rand'
+const KEYWORD_INDEX = 'idx_wave_keywords_type'
+
+/** How many of the anchor's words to match on. The rarest carry the meaning. */
+const WORDS_USED = 8
 
 type ItemRow = Document & {
   _id: ObjectId
@@ -46,6 +50,17 @@ function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
 }
 
 /** Only content a visitor should be served. */
+/**
+ * Stock photographs were never tagged, so requiring labels shut them out of the
+ * Wave entirely — both as anchors and as candidates. On words alone they work
+ * exactly as an image library does, so the word level asks only that the
+ * content be showable.
+ */
+const SHOWABLE: Filter<Document> = {
+  isSuppressed: { $ne: true },
+  obsoleteVideoStatus: { $ne: 'obsolete' },
+}
+
 const SERVABLE: Filter<Document> = {
   'v3.usable': true,
   isSuppressed: { $ne: true },
@@ -87,7 +102,7 @@ async function fetchLevel(
         .collection('items')
         .find(
           {
-            ...SERVABLE,
+            ...(level === 4 ? SHOWABLE : SERVABLE),
             ...match,
             type: types.length === 1 ? types[0] : { $in: types },
             ...randomWindow(),
@@ -99,7 +114,9 @@ async function fetchLevel(
             // Naming the index skips plan selection, which on its own ate the
             // whole budget and made the query fail before reading a row.
             hint,
-            maxTimeMS: 250,
+            // Reads on this database average 277ms, so a 250ms budget refused
+            // more often than it protected anything.
+            maxTimeMS: 1200,
           },
         )
         .toArray()) as ItemRow[]
@@ -119,12 +136,40 @@ async function fetchLevel(
 
 export type AnchorRow = ItemRow
 
+/**
+ * The anchor's own descriptive words. Stock photographs carry no subject —
+ * "a woman wearing a blue shirt" names nobody — but they do carry words, and
+ * those words are what an image library links its pictures by.
+ */
+function anchorWords(row: ItemRow): string[] {
+  const raw = [...(row.keywords ?? []), ...(row.tags ?? [])]
+  const words = raw
+    .filter((word): word is string => typeof word === 'string')
+    .map((word) => word.trim().toLowerCase())
+    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word))
+  return [...new Set(words)].slice(0, WORDS_USED)
+}
+
+/** Words shared by so much of the catalogue that they link nothing. */
+const STOP_WORDS = new Set([
+  'video', 'image', 'photo', 'gif', 'youtube', 'dailymotion', 'giphy', 'tenor',
+  'pexels', 'pixabay', 'free', 'stock', 'the', 'and', 'for', 'with', 'full',
+  'new', 'hd', 'official', 'tone-neutral',
+])
+
 /** The anchor, with the labels the Wave needs. */
 export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: WaveAnchor; row: AnchorRow } | null> {
   const row = (await db
     .collection('items')
-    .findOne({ _id: itemId }, { projection: { type: 1, title: 1, v3: 1 } })) as ItemRow | null
-  if (!row?.v3) return null
+    .findOne(
+      { _id: itemId },
+      { projection: { type: 1, title: 1, v3: 1, keywords: 1, tags: 1 } },
+    )) as ItemRow | null
+  if (!row) return null
+
+  const words = anchorWords(row)
+  // No labels and no words is the only case with nothing to go on.
+  if (!row.v3 && !words.length) return null
 
   return {
     row,
@@ -133,11 +178,14 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
       type: row.type,
       title: row.title,
       v3: {
-        subjects: row.v3.subjects ?? [],
-        universe: row.v3.universe,
-        angle: row.v3.angle,
-        channelKey: row.v3.channelKey,
+        subjects: row.v3?.subjects ?? [],
+        // An untagged stock photograph belongs to no world and treats no
+        // subject; it is linked by its words alone.
+        universe: row.v3?.universe ?? 'other',
+        angle: row.v3?.angle ?? 'other',
+        channelKey: row.v3?.channelKey,
       },
+      words,
     },
   }
 }
@@ -186,6 +234,15 @@ export async function findCandidates(
 
   if (anchor.v3.universe && anchor.v3.universe !== 'other') {
     collected.push(...(await fetchLevel(db, { 'v3.universe': anchor.v3.universe }, 3, anchorId, UNIVERSE_INDEX)))
+    if (collected.length >= needed * 4 && kindsIn(collected) >= WAVE_SIZE) return collected
+  }
+
+  // Last resort, and the reason every content can carry a Wave: match on the
+  // words themselves.
+  if (anchor.words?.length) {
+    collected.push(...(await fetchLevel(
+      db, { keywords: { $in: anchor.words } }, 4, anchorId, KEYWORD_INDEX,
+    )))
   }
 
   return collected

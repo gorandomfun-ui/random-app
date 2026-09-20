@@ -13,7 +13,13 @@ import type { Angle, ItemTags, ItemType, Popularity } from '../types'
 
 export const WAVE_SIZE = 3
 /** Level 1 is the same primary subject, 2 a secondary one, 3 the same universe. */
-export type WaveLevel = 1 | 2 | 3
+/**
+ * How the Wave found a content. Level 4 is the image-bank rule: no subject in
+ * common, only words. Click a grey tree on a stock library and you get other
+ * grey trees — that is a Wave, less precise but never absent, and it is what
+ * lets every content carry one.
+ */
+export type WaveLevel = 1 | 2 | 3 | 4
 
 export type WaveCandidate = {
   id: string
@@ -31,6 +37,8 @@ export type WaveAnchor = {
   type: ItemType
   title?: string | null
   v3: Pick<ItemTags, 'subjects' | 'universe' | 'angle'> & { channelKey?: string }
+  /** Plain descriptive words, which every content has even when it has no subject. */
+  words?: string[]
 }
 
 export const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
@@ -94,7 +102,7 @@ export function accepts(
 
   // Texts only carry a Wave when the subject match is exact, which levels 1
   // and 2 guarantee and level 3 does not.
-  if (TEXT_TYPES.includes(candidate.type) && candidate.level === 3) return false
+  if (TEXT_TYPES.includes(candidate.type) && candidate.level >= 3) return false
 
   const title = normalisedTitle(candidate.title)
   if (title && chosen.some((item) => normalisedTitle(item.title) === title)) return false
@@ -133,7 +141,7 @@ export function buildWave(
   // is still short, and is what allows a third video when there is no image.
   for (const perType of [COMFORTABLE_PER_TYPE, MAX_PER_TYPE]) {
     if (chosen.length >= WAVE_SIZE) break
-    for (const level of [1, 2, 3] as WaveLevel[]) {
+    for (const level of [1, 2, 3, 4] as WaveLevel[]) {
     const pool = candidates.filter((candidate) => candidate.level === level)
     while (chosen.length < WAVE_SIZE) {
       const usable = pool.filter((candidate) => accepts(anchor, chosen, candidate, excluded, perType))
@@ -153,7 +161,7 @@ export function buildWave(
 
   // The level reported is the loosest link used, so callers can tell how close
   // the Wave really is.
-  const level = (chosen.length ? Math.max(...chosen.map((item) => item.level)) : 3) as WaveLevel
+  const level = (chosen.length ? Math.max(...chosen.map((item) => item.level)) : 4) as WaveLevel
   return { items: chosen, level }
 }
 

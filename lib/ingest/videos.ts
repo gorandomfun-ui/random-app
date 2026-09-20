@@ -1109,10 +1109,19 @@ export async function finalizeVideoIngest(
 
   const observedTrends = documents.filter(doc => doc.trendObservedAt);
   if (insertOnly && observedTrends.length) {
-    const refreshed = await collection.bulkWrite(observedTrends.map(doc => ({ updateOne: {
-      filter: { type: 'video' as const, videoId: doc.videoId },
-      update: { $max: { trendObservedAt: doc.trendObservedAt! } },
-    } })), { ordered: false });
+    // One write for the whole batch, not one per video. These timestamps all
+    // come from the same fetch, so a single $max over the list says exactly the
+    // same thing. As a hundred separate updates it was three minutes of work on
+    // our database, which is why the trending line stopped finishing at all.
+    const videoIds = [...new Set(observedTrends.map(doc => doc.videoId).filter(Boolean))] as string[];
+    const observedAt = observedTrends.reduce<Date>(
+      (latest, doc) => (doc.trendObservedAt! > latest ? doc.trendObservedAt! : latest),
+      observedTrends[0].trendObservedAt!,
+    );
+    const refreshed = await collection.updateMany(
+      { type: 'video', videoId: { $in: videoIds } } as Filter<VideoDocument>,
+      { $max: { trendObservedAt: observedAt } },
+    );
     summary.updated += refreshed.modifiedCount;
   }
   const writeDocuments = documents;
