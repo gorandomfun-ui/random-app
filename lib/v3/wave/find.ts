@@ -9,6 +9,7 @@
 import type { Db, Document, Filter, ObjectId } from 'mongodb'
 
 import { TEXT_TYPES, WAVE_SIZE } from './select'
+import commonWords from './commonWords.json'
 import type { WaveAnchor, WaveCandidate, WaveLevel } from './select'
 import type { ItemTags, ItemType } from '../types'
 
@@ -223,19 +224,23 @@ export type AnchorRow = ItemRow
  */
 function anchorWords(row: ItemRow): string[] {
   const raw = [...(row.keywords ?? []), ...(row.tags ?? [])]
-  const words = raw
+  const all = [...new Set(raw
     .filter((word): word is string => typeof word === 'string')
     .map((word) => word.trim().toLowerCase())
-    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word))
-  return [...new Set(words)].slice(0, WORDS_USED)
+    .filter((word) => word.length >= 3))]
+  // "Red lifebuoy on a stand by a frozen lake" is about a lifebuoy and a lake,
+  // not about red. The common words go, and what is left keeps its order, so
+  // the first of them are still the ones a title names first. A caption made
+  // only of common words keeps them rather than have no Wave at all.
+  const telling = all.filter((word) => !COMMON_WORDS.has(word))
+  return (telling.length ? telling : all).slice(0, WORDS_USED)
 }
 
-/** Words shared by so much of the catalogue that they link nothing. */
-const STOP_WORDS = new Set([
-  'video', 'image', 'photo', 'gif', 'youtube', 'dailymotion', 'giphy', 'tenor',
-  'pexels', 'pixabay', 'free', 'stock', 'the', 'and', 'for', 'with', 'full',
-  'new', 'hd', 'official', 'tone-neutral',
-])
+/**
+ * Words carried by so much of the catalogue that they link nothing — measured
+ * on the catalogue itself by scripts/v3/common-words.ts, not decided by hand.
+ */
+const COMMON_WORDS = new Set<string>(commonWords as string[])
 
 /** The anchor, with the labels the Wave needs. */
 export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: WaveAnchor; row: AnchorRow } | null> {
