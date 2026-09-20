@@ -85,11 +85,14 @@ export type OwnerSchedulingReport = {
   references: { key: string; subject: string | null; state: string; tasks: number; label?: string }[]
 }
 
+/** A queued task older than this no longer holds its like back: its provider may simply be off. */
+const PENDING_GRACE_MS = 3 * 86400000
+
 /** Whether the tasks of the previous turn have all run, and whether they brought anything. */
-async function previousTurn(tasks: import('mongodb').Collection<DiscoveryTask>, ids: string[]): Promise<'none' | 'pending' | 'dry' | 'productive'> {
+async function previousTurn(tasks: import('mongodb').Collection<DiscoveryTask>, ids: string[], now: number): Promise<'none' | 'pending' | 'dry' | 'productive'> {
   if (!ids.length) return 'none'
-  const rows = await tasks.find({ _id: { $in: ids } }, { projection: { lastAttemptAt: 1, insertedTotal: 1 }, maxTimeMS: 700 }).toArray()
-  if (rows.length < ids.length || rows.some(row => !row.lastAttemptAt)) return 'pending'
+  const rows = await tasks.find({ _id: { $in: ids } }, { projection: { lastAttemptAt: 1, insertedTotal: 1, due: 1 }, maxTimeMS: 700 }).toArray()
+  if (rows.some(row => !row.lastAttemptAt && now - new Date(row.due).getTime() < PENDING_GRACE_MS)) return 'pending'
   return rows.reduce((sum, row) => sum + (row.insertedTotal ?? 0), 0) > 0 ? 'productive' : 'dry'
 }
 
@@ -127,9 +130,14 @@ async function wordsAround(db: Db, itemId: string, seedWords: Set<string>): Prom
  * turn have run: a like whose searches are still queued is not handed more.
  * Past the first steps a like that brought nothing is done. The timestamp
  * records scheduling, never a fabricated discovery.
+ *
+ * A step is queued for both providers whatever this run is allowed to fetch.
+ * The job runs the worker once per provider in turn, and queuing only the
+ * provider of the moment advanced a like's turn with its YouTube searches and
+ * never its Dailymotion ones. A task for a provider that is off simply waits.
  */
 export async function enqueueOwnerExploration(db: Db, now: number, _rotation: number,
-  providers: readonly DiscoveryProvider[] = ['youtube', 'dailymotion'], onReport?: (report: OwnerSchedulingReport) => void): Promise<number> {
+  _providers: readonly DiscoveryProvider[] = ['youtube', 'dailymotion'], onReport?: (report: OwnerSchedulingReport) => void): Promise<number> {
   const ownerId = curatorOwnerId()
   const c = db.collection<OwnerReference>('discovery_owner_references_v2')
   const tasks = db.collection<DiscoveryTask>('discovery_tasks_v2')
@@ -149,7 +157,7 @@ export async function enqueueOwnerExploration(db: Db, now: number, _rotation: nu
 
     if (state === 'scheduled' && subject) {
       const turn = original.explorationPlanTurn ?? 0
-      const previous = await previousTurn(tasks, original.explorationLastTaskIds ?? [])
+      const previous = await previousTurn(tasks, original.explorationLastTaskIds ?? [], now)
       if (served >= LIKES_PER_PASS || previous === 'pending') {
         state = 'waiting'
       } else if (previous === 'dry' && turn >= 2) {
@@ -176,13 +184,9 @@ export async function enqueueOwnerExploration(db: Db, now: number, _rotation: nu
           set.explorationDoneAt = new Date(now)
         } else {
           const ids: string[] = []
-          const specs = [
-            ...(providers.includes('youtube') ? step.youtube : []),
-            ...(providers.includes('dailymotion') ? step.dailymotion : []),
-          ]
-          for (const spec of specs) { await enqueue(db, spec, 0, true, now); ids.push(taskId(spec)); count++ }
+          for (const spec of [...step.youtube, ...step.dailymotion]) { await enqueue(db, spec, 0, true, now); ids.push(taskId(spec)); count++ }
           // The uploader's own channel, on the first turn only: the surest "more like this".
-          if (turn === 0 && providers.includes('youtube') && row?.provider === 'youtube'
+          if (turn === 0 && row?.provider === 'youtube'
             && typeof row.channelId === 'string' && /^UC[\w-]{22}$/.test(row.channelId)) {
             const focus = { subject, subjectVersion: SUBJECT_VERSION, ...scope, branch: 'primary' as const, angle: 'creator' }
             const spec: SearchSpec = { kind: 'channel', channelId: row.channelId, focus }

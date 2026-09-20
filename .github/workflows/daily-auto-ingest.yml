@@ -107,6 +107,8 @@ jobs:
       MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
       MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      # Images around the owner's likes are fetched from Giphy in this job.
+      GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
       RANDOM_EDITOR_OWNER_ID: ${{ vars.RANDOM_EDITOR_OWNER_ID }}
       RANDOM_DISCOVERY_WORKER_ENABLED: '1'
       RANDOM_YOUTUBE_QUOTA_ENABLED: ${{ vars.RANDOM_YOUTUBE_QUOTA_ENABLED || '1' }}
