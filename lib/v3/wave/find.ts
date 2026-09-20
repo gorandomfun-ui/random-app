@@ -110,7 +110,7 @@ function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
 }
 
 /** Only content a visitor should be served. */
-const SERVABLE: Filter<Document> = {
+export const SERVABLE: Filter<Document> = {
   'v3.usable': true,
   isSuppressed: { $ne: true },
   obsoleteVideoStatus: { $ne: 'obsolete' },
@@ -121,7 +121,7 @@ const SERVABLE: Filter<Document> = {
  * Wave entirely. On words alone they work exactly as an image library does, so
  * the word steps ask only that the content be showable.
  */
-const SHOWABLE: Filter<Document> = {
+export const SHOWABLE: Filter<Document> = {
   isSuppressed: { $ne: true },
   obsoleteVideoStatus: { $ne: 'obsolete' },
 }
