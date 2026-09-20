@@ -8,8 +8,8 @@
 
 import type { Db } from 'mongodb'
 
-import { getSubjectIndex } from './indexCache'
-import { tagItem, type TaggableItem } from './tagItem'
+import { lookupSubjectIndex } from './lookup'
+import { tagItem, taggableText, type TaggableItem } from './tagItem'
 import { formatFamilyKey, nearFamilyKey } from '../families'
 import type { ItemTags, Line } from '../types'
 
@@ -36,7 +36,9 @@ export async function tagForInsert<T extends TaggableDocument>(
   now = new Date(),
 ): Promise<Array<T | TaggedDocument<T>>> {
   if (!documents.length) return documents
-  const index = await getSubjectIndex(db)
+  // Only the subjects these documents could possibly mention, rather than the
+  // whole dictionary: the cost follows the batch, not the catalogue.
+  const index = await lookupSubjectIndex(db, documents.map(taggableText))
   if (!index) return documents
 
   return documents.map((document) => {

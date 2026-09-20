@@ -92,9 +92,9 @@ function providerExtras(item: TaggableItem): string {
   return parts.filter(Boolean).join(' ')
 }
 
-export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date()): ItemTags {
-  const usable = isUsableItem(item)
-  const haystack = [
+/** Exactly the text tagItem searches, so a lookup asks for the right aliases. */
+export function taggableText(item: TaggableItem): string {
+  return [
     searchableText({
       title: item.title ?? item.quiz?.question ?? item.text,
       description: item.description ?? item.text,
@@ -103,6 +103,11 @@ export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date(
   ]
     .filter(Boolean)
     .join(' ')
+}
+
+export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date()): ItemTags {
+  const usable = isUsableItem(item)
+  const haystack = taggableText(item)
 
   const matches = usable
     ? matchSubjects(index, haystack, (match) => hasSecondClue(item, match))
