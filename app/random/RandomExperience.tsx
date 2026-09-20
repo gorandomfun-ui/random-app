@@ -35,7 +35,6 @@ import type { ItemType, VideoPool } from '@/lib/random/types'
 import {
   areWaveItemsFromSameSeries,
   createWaveHint,
-  hasWaveSignal,
   hasSameWaveIdentity,
   type WaveSimilarityHint,
 } from '@/lib/random/wave'
@@ -3524,7 +3523,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
 
     const anchor = createWaveHint(anchorItem)
-    if (!waveDiscoveryMode && !hasWaveSignal(anchor)) {
+    // The Wave is composed from the content's own labels and, failing those,
+    // its words. Every content that has an id has one, so the old "is there
+    // enough signal to bother" test only hid the button.
+    if (!anchorItem._id) {
       waveAnchorRef.current = null
       waveAnchorItemRef.current = null
       wavePreparedAnchorKeyRef.current = null
@@ -3675,7 +3677,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       return undefined
     }
     const anchorKey = getContentKey(currentItem)
-    const eligible = waveDiscoveryMode ? Boolean(currentItem._id) : hasWaveSignal(createWaveHint(currentItem))
+    const eligible = Boolean(currentItem._id)
     if (!anchorKey || !eligible) {
       setWaveAvailability({ key: anchorKey || null, status: 'empty' })
       return undefined
@@ -4425,8 +4427,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const randomAgainDisabled = !viewItem || transitionLocked || encourage3dPending || Boolean(encourage3dEvent)
   const waveEligible = useMemo(() => {
     if (!viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame') return false
-    return waveDiscoveryMode ? Boolean(viewItem._id) : hasWaveSignal(createWaveHint(viewItem))
-  }, [viewItem, waveDiscoveryMode])
+    return Boolean(viewItem._id)
+  }, [viewItem])
   const waveCurrentKey = useMemo(() => (
     viewItem && viewItem.type !== 'encourage' && viewItem.type !== 'minigame'
       ? getContentKey(viewItem)
