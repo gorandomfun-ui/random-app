@@ -5,7 +5,7 @@ export default function CurationRandomPage() {
   return (
     <RandomExperience
       discoveryMode
-      waveDiscoveryMode
+      waveDiscoveryMode={false}
       curationMode
       navigationPaths={CURATION_APP_PATHS}
     />
