@@ -8,9 +8,9 @@ import { composeCoolThread } from '@/lib/v3/cool/thread'
 import { normalizeWaveDocument, type WaveDocument } from '@/lib/random/waveEngine'
 
 /**
- * The cool pool: a thread of three — a seed someone vouched for and two of
- * its Wave neighbours, one proven content and two discoveries among the
- * three. The seeds are refreshed daily; the thread is composed live.
+ * The cool pool: a thread of three — a content drawn live from the registers
+ * or around a like, and two of its Wave neighbours, one proven content and
+ * two discoveries among the three.
  */
 
 type Payload = {
@@ -28,12 +28,12 @@ async function thread(excludeKeys: string[]) {
     const db = await getDatabase()
     const composed = await composeCoolThread(db, { excludeKeys })
     if (!composed) {
-      return NextResponse.json({ items: [], reason: 'aucune graine' })
+      return NextResponse.json({ items: [], reason: 'rien à tirer' })
     }
 
     // The thread decides on labels alone; the interface needs something it can
     // show, so the full documents are read once the choice is made.
-    const order = [composed.seed.id, ...composed.neighbours.map((item) => item.id)]
+    const order = [composed.start.id, ...composed.neighbours.map((item) => item.id)]
     const docs = (await db
       .collection('items')
       .find({ _id: { $in: order.map((id) => new ObjectId(id)) } })
@@ -48,12 +48,12 @@ async function thread(excludeKeys: string[]) {
       items,
       engine: 'cool-thread',
       build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
-      seed: { id: composed.seed.id, kind: composed.seed.kind, popularity: composed.seed.popularity },
+      start: { id: composed.start.id, source: composed.start.source, popularity: composed.start.popularity },
       neighbours: composed.neighbours.map((item) => ({
         id: item.id, type: item.type, level: item.level, popularity: item.v3.popularity,
       })),
       dose: { wanted: composed.wanted, dosed: composed.dosed },
-      level: composed.seed.level,
+      level: composed.start.level,
       attempts: composed.attempts,
       tookMs: Date.now() - started,
     })

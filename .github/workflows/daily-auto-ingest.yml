@@ -145,27 +145,3 @@ jobs:
       - name: Explore YouTube and Dailymotion directly
         run: npm run discovery:explore
 
-  cool-seeds:
-    needs: daily-auto-ingest
-    if: >-
-      ${{ always() &&
-          github.event.inputs.dry_run != 'true' &&
-          vars.RANDOM_COOL_SEEDS_ENABLED != '0' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
-      MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Install locked dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      # The curator's likes and forty proven cool videos a day; the threads are composed live.
-      - name: Refresh the seeds of the cool pool
-        run: node --import tsx scripts/v3/cool-seeds.ts --apply --editorial=40

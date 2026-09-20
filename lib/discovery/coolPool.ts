@@ -1,10 +1,10 @@
 /**
  * The cool pool inside the live random.
  *
- * A cool visual ticket is served from a thread: a seed someone vouched for —
- * a curation like, or a video with a real audience among the cool words — then
- * two of its Wave neighbours, dosed so the three hold one proven content and
- * two discoveries. The format sequence stays in charge of what type comes
+ * A cool visual ticket is served from a thread: a content drawn live from the
+ * whole catalogue — one of the registers, or a zone around a curation like —
+ * then two of its Wave neighbours, dosed so the three hold one proven content
+ * and two discoveries. The format sequence stays in charge of what type comes
  * next, so the members of a thread arrive on the visitor's next cool draws,
  * whatever else the sequence shows in between.
  *
@@ -18,10 +18,8 @@ import { candidateFromRow, type CatalogueRow } from './catalog'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
 import type { Rng } from './random'
 import type { Candidate, Seen } from './types'
-import {
-  COOL_SEEDS_COLLECTION, THREAD_PREFIX, chooseSeed, isProven, loadSeeds, wantedAround,
-  type Dose, type SeedKind,
-} from '../v3/cool/thread'
+import { THREAD_PREFIX, isProven, wantedAround, type Dose } from '../v3/cool/thread'
+import { drawStart, type StartSource } from '../v3/cool/start'
 import { composeWave, loadAnchor } from '../v3/wave/find'
 import type { WaveCandidate } from '../v3/wave/select'
 import type { Popularity } from '../v3/types'
@@ -35,7 +33,7 @@ export const THREAD_SIZE = 3
 export const THREAD_REACH = 6
 /** Documents read for one neighbour draw: enough for the eligibility rules to refuse a few. */
 const NEIGHBOUR_ROWS = 8
-const SEED_ATTEMPTS = 3
+const START_ATTEMPTS = 3
 const QUERY_BUDGET_MS = 1500
 
 export type ThreadProgress = {
@@ -62,7 +60,7 @@ export function currentThread(recent: readonly Seen[]): ThreadProgress | null {
 export type CoolChoice = {
   seed: string
   role: 'seed' | 'neighbour'
-  kind?: SeedKind
+  source?: StartSource
   popularity: Popularity
   level?: number
   dose?: Dose
@@ -84,15 +82,12 @@ const doseOf = (candidate: WaveCandidate): Dose => (isProven(candidate.v3.popula
 async function continueThread<T>(
   db: Db, thread: ThreadProgress, ticket: Intent, state: Session, decode: Decoder<T>, now: number,
 ): Promise<CoolResult<T> | null> {
-  const seed = await db
-    .collection(COOL_SEEDS_COLLECTION)
-    .findOne({ contentKey: thread.seedKey }, { projection: { popularity: 1 }, maxTimeMS: QUERY_BUDGET_MS })
-  if (!seed) return null
-  const seedId = seed._id as ObjectId
+  if (!ObjectId.isValid(thread.seedKey)) return null
+  const seedId = new ObjectId(thread.seedKey)
   const loaded = await loadAnchor(db, seedId)
   if (!loaded) return null
 
-  const popularity = (loaded.row.v3?.popularity ?? seed.popularity ?? 'unknown') as Popularity
+  const popularity = (loaded.row.v3?.popularity ?? 'unknown') as Popularity
   const dose = wantedAround(popularity)[thread.served - 1] ?? 'discovery'
   const wave = await composeWave(db, loaded.anchor, seedId, [])
   // Only the requested format, never an author the thread already showed.
@@ -126,27 +121,22 @@ async function continueThread<T>(
 async function startThread<T>(
   db: Db, ticket: Intent, state: Session, decode: Decoder<T>, random: Rng, now: number,
 ): Promise<CoolResult<T> | null> {
-  const seeds = (await loadSeeds(db, now)).filter((seed) => seed.type === ticket.type)
-  const seen = new Set(state.recent.map((entry) => entry.key))
-  for (let attempt = 0; attempt < SEED_ATTEMPTS; attempt += 1) {
-    const seed = chooseSeed(seeds, seen, random)
-    if (!seed) return null
-    seen.add(seed.id)
-    if (seed.contentKey) seen.add(seed.contentKey)
-
-    const row = (await db
-      .collection('items')
-      .findOne({ _id: new ObjectId(seed.id) }, { maxTimeMS: QUERY_BUDGET_MS })) as CatalogueRow | null
-    if (!row) continue
-    const payload = decode(row)
-    if (payload == null) continue
-    const plain = candidateFromRow(row, payload, now)
-    const candidate: Candidate<T> = { ...plain, seriesKey: `${THREAD_PREFIX}${plain.key}` }
-    if (!hardEligible(candidate, ticket, state)) continue
-    return {
-      item: candidate, branch: seed.kind === 'like' ? 'editorial' : 'autonomous', fallback: false,
-      selection: { requestedLane: ticket.lane, servedLane: 'any', reasons: [] },
-      cool: { seed: plain.key, role: 'seed', kind: seed.kind, popularity: seed.popularity, served: 1 },
+  const type = ticket.type === 'image' ? 'image' : 'video'
+  for (let attempt = 0; attempt < START_ATTEMPTS; attempt += 1) {
+    const drawn = await drawStart(db, { type, random, now })
+    if (!drawn) continue
+    for (const row of drawn.rows as CatalogueRow[]) {
+      const payload = decode(row)
+      if (payload == null) continue
+      const plain = candidateFromRow(row, payload, now)
+      const candidate: Candidate<T> = { ...plain, seriesKey: `${THREAD_PREFIX}${String(row._id)}` }
+      if (!hardEligible(candidate, ticket, state)) continue
+      const popularity = ((row.v3 as { popularity?: Popularity } | undefined)?.popularity ?? 'unknown') as Popularity
+      return {
+        item: candidate, branch: drawn.source.startsWith('like') ? 'editorial' : 'autonomous', fallback: false,
+        selection: { requestedLane: ticket.lane, servedLane: 'any', reasons: [] },
+        cool: { seed: String(row._id), role: 'seed', source: drawn.source, popularity, served: 1 },
+      }
     }
   }
   return null
@@ -154,7 +144,7 @@ async function startThread<T>(
 
 /**
  * What a cool visual ticket gets: the next member of the visitor's thread,
- * or the seed of a new one. Null when the pool holds nothing eligible, and
+ * or the start of a new one. Null when the pool holds nothing eligible, and
  * the caller falls back to the lanes.
  */
 export async function selectCool<T>(

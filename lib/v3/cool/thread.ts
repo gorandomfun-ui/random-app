@@ -1,48 +1,32 @@
 /**
  * The cool pool: a thread of three around a seed.
  *
- * A seed is a content someone vouched for — a curation like, or a video with
- * a real audience among the cool words — and the thread is the seed followed
- * by two of its Wave neighbours, dosed so the three hold one proven content
- * and two discoveries. Nothing is precomputed but the seeds: the neighbours
- * come from the same Wave the visitor can open on any content.
+ * A thread starts from a content drawn live from the whole catalogue — one
+ * of the registers, or a zone around a curation like — and goes on with two
+ * of its Wave neighbours, dosed so the three hold one proven content and two
+ * discoveries. Nothing is precomputed: the neighbours come from the same
+ * Wave the visitor can open on any content.
  */
 
 import { ObjectId, type Db } from 'mongodb'
 
 import { composeWave, loadAnchor } from '../wave/find'
 import { accepts, type WaveAnchor, type WaveCandidate, type WaveLevel } from '../wave/select'
+import { drawStart, type StartSource, type StartType } from './start'
 import type { ItemType, Popularity } from '../types'
 
-export const COOL_SEEDS_COLLECTION = 'cool_seeds'
+export type Rng = () => number
+export type Dose = 'proven' | 'discovery'
 
-export type SeedKind = 'like' | 'editorial'
-export type CoolSeed = {
-  id: string
-  kind: SeedKind
-  type: ItemType
-  popularity: Popularity
-  /** The key a visitor's session knows the content by — "youtube:ID" — so a seed already seen is not served again. */
-  contentKey?: string
-}
+/** Two contents around the start: a thread is three, like a Wave. */
+export const NEIGHBOURS = 2
 
 /**
- * A thread is named after its seed's session key and carried by its members
+ * A thread is named after its first content's id and carried by its members
  * as their series, so the live random can tell where a visitor is in it from
  * what they were served — no other state.
  */
 export const THREAD_PREFIX = 'thread:'
-export type Rng = () => number
-export type Dose = 'proven' | 'discovery'
-
-/** Two contents around the seed: a thread is three, like a Wave. */
-export const NEIGHBOURS = 2
-
-/**
- * One thread in three starts from a like. The owner's taste is the point of
- * the cool pool, but forty likes cannot carry every thread.
- */
-export const LIKE_SHARE = 1 / 3
 
 /**
  * Proven: a real audience where it was published. Everything else — niche,
@@ -53,17 +37,6 @@ export const isProven = (popularity: Popularity): boolean => PROVEN.includes(pop
 
 /** The thread is visual: a text carries a language, and the thread has none. */
 const THREAD_TYPES: ItemType[] = ['video', 'image', 'web']
-
-export function chooseSeed(seeds: CoolSeed[], excludeKeys: Set<string>, random: Rng): CoolSeed | null {
-  const usable = seeds.filter(
-    (seed) => !excludeKeys.has(seed.id) && !(seed.contentKey && excludeKeys.has(seed.contentKey)),
-  )
-  const likes = usable.filter((seed) => seed.kind === 'like')
-  const editorial = usable.filter((seed) => seed.kind === 'editorial')
-  const fromLikes = likes.length > 0 && (editorial.length === 0 || random() < LIKE_SHARE)
-  const bag = fromLikes ? likes : editorial
-  return bag[Math.floor(random() * bag.length)] ?? null
-}
 
 /** What the neighbours must bring so the three hold one proven content and two discoveries. */
 export function wantedAround(seedPopularity: Popularity): Dose[] {
@@ -123,66 +96,42 @@ export function doseNeighbours(
 }
 
 export type CoolThread = {
-  seed: CoolSeed & { level: WaveLevel }
+  start: { id: string; source: StartSource; popularity: Popularity; level: WaveLevel }
   neighbours: WaveCandidate[]
   wanted: Dose[]
   dosed: boolean
   attempts: number
 }
 
-/** Seeds are few and change once a day: one read a minute per server is plenty. */
-const SEEDS_TTL_MS = 60_000
-const SEEDS_MAX = 2000
-let seedCache: { at: number; seeds: CoolSeed[] } | null = null
-
-export async function loadSeeds(db: Db, now = Date.now()): Promise<CoolSeed[]> {
-  if (seedCache && now - seedCache.at < SEEDS_TTL_MS) return seedCache.seeds
-  const rows = await db
-    .collection(COOL_SEEDS_COLLECTION)
-    .find({}, { projection: { kind: 1, type: 1, popularity: 1, contentKey: 1 }, limit: SEEDS_MAX, maxTimeMS: 1500 })
-    .toArray()
-  const seeds = rows.map((row) => ({
-    id: String(row._id),
-    kind: row.kind as SeedKind,
-    type: row.type as ItemType,
-    popularity: (row.popularity ?? 'unknown') as Popularity,
-    ...(typeof row.contentKey === 'string' ? { contentKey: row.contentKey } : {}),
-  }))
-  seedCache = { at: now, seeds }
-  return seeds
-}
-
-/** A seed whose Wave is short makes a poor thread; a few others are tried before settling. */
-const SEED_ATTEMPTS = 3
+/** A start whose Wave is short makes a poor thread; a few others are tried before settling. */
+const START_ATTEMPTS = 3
 
 export async function composeCoolThread(
   db: Db,
-  options: { excludeKeys?: string[]; random?: Rng; now?: number } = {},
+  options: { excludeKeys?: string[]; random?: Rng; now?: number; type?: StartType } = {},
 ): Promise<CoolThread | null> {
   const random = options.random ?? Math.random
   const excludeKeys = options.excludeKeys ?? []
-  const seeds = await loadSeeds(db, options.now)
+  const type: StartType = options.type ?? (random() < 2 / 3 ? 'video' : 'image')
   const tried = new Set(excludeKeys)
   let best: CoolThread | null = null
 
-  for (let attempt = 1; attempt <= SEED_ATTEMPTS; attempt += 1) {
-    const seed = chooseSeed(seeds, tried, random)
-    if (!seed) break
-    tried.add(seed.id)
+  for (let attempt = 1; attempt <= START_ATTEMPTS; attempt += 1) {
+    const drawn = await drawStart(db, { type, excludeIds: tried, random, now: options.now })
+    const row = drawn?.rows[0]
+    if (!drawn || !row) continue
+    const startId = new ObjectId(String(row._id))
+    tried.add(String(row._id))
 
-    const seedId = new ObjectId(seed.id)
-    const loaded = await loadAnchor(db, seedId)
+    const loaded = await loadAnchor(db, startId)
     if (!loaded) continue
-
-    // The labels are read live: a seed whose audience was measured since it
-    // was planted is dosed on what is known today.
-    const popularity = loaded.row.v3?.popularity ?? seed.popularity
-    const wave = await composeWave(db, loaded.anchor, seedId, excludeKeys)
+    const popularity = loaded.row.v3?.popularity ?? 'unknown'
+    const wave = await composeWave(db, loaded.anchor, startId, excludeKeys)
     const { neighbours, wanted, dosed } = doseNeighbours(
       loaded.anchor, popularity, [...wave.items, ...wave.spares], excludeKeys,
     )
     const level = (neighbours.length ? Math.max(...neighbours.map((item) => item.level)) : 5) as WaveLevel
-    const thread: CoolThread = { seed: { ...seed, popularity, level }, neighbours, wanted, dosed, attempts: attempt }
+    const thread: CoolThread = { start: { id: String(row._id), source: drawn.source, popularity, level }, neighbours, wanted, dosed, attempts: attempt }
     if (neighbours.length === NEIGHBOURS) return thread
     if (!best || neighbours.length > best.neighbours.length) best = thread
   }

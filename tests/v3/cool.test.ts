@@ -1,13 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { chooseSeed, doseNeighbours, wantedAround, LIKE_SHARE, type CoolSeed } from '@/lib/v3/cool/thread'
+import { doseNeighbours, wantedAround } from '@/lib/v3/cool/thread'
 import type { WaveAnchor, WaveCandidate } from '@/lib/v3/wave/select'
 import type { Angle, ItemType, Popularity } from '@/lib/v3/types'
-
-function seed(id: string, kind: 'like' | 'editorial'): CoolSeed {
-  return { id, kind, type: 'video', popularity: 'mid' }
-}
 
 function anchor(type: ItemType = 'video', channelKey = 'youtube:graine'): WaveAnchor {
   return {
@@ -114,19 +110,4 @@ test('pas trois vidéos quand une image peut prendre la place', () => {
   // Faute d_image, trois vidéos valent mieux qu_un fil court.
   const onlyVideos = doseNeighbours(anchor('video'), 'known', [video1, video2], [])
   assert.equal(onlyVideos.neighbours.length, 2)
-})
-
-test('la graine : un like une fois sur trois, jamais une graine déjà vue', () => {
-  const seeds = [seed('l1', 'like'), seed('l2', 'like'), seed('e1', 'editorial'), seed('e2', 'editorial')]
-  const rolls = (values: number[]) => { let index = 0; return () => values[index++ % values.length] }
-
-  assert.equal(chooseSeed(seeds, new Set(), rolls([LIKE_SHARE - 0.01, 0.99]))?.id, 'l2')
-  assert.equal(chooseSeed(seeds, new Set(), rolls([LIKE_SHARE, 0]))?.id, 'e1')
-  assert.equal(chooseSeed(seeds, new Set(['e1', 'e2']), rolls([0]))?.id, 'l1', 'sans éditorial, un like')
-  assert.equal(chooseSeed(seeds, new Set(['l1', 'l2', 'e1', 'e2']), rolls([0])), null)
-  assert.equal(chooseSeed(seeds, new Set(['l1']), rolls([0, 0]))?.id, 'l2', 'la graine vue est passée')
-
-  // Le visiteur connaît les contenus par leur clé de session, pas par leur id.
-  const keyed = [{ ...seed('l1', 'like'), contentKey: 'youtube:abc' }, seed('l2', 'like')]
-  assert.equal(chooseSeed(keyed, new Set(['youtube:abc']), rolls([0, 0]))?.id, 'l2', 'la graine vue par sa clé est passée')
 })
