@@ -94,6 +94,25 @@ export function searchableWords(words: string[], title?: string | null): string[
   return words.filter((word) => /^\p{L}{2,}$/u.test(word) && !codeFragments.has(word))
 }
 
+const MONTHS = new Set([
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+  'janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre',
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  'januar', 'februar', 'marz', 'juni', 'juli', 'oktober', 'dezember',
+  'gennaio', 'febbraio', 'aprile', 'maggio', 'giugno', 'luglio', 'settembre', 'ottobre', 'dicembre',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+])
+
+/**
+ * A date is not a subject. The analysis behind the likes reads "September 23"
+ * out of "TNT Commercials Compilation September 23, 2003" and offers it as the
+ * subject; searched by name it brings back whatever happened on that day.
+ */
+export function looksLikeDate(label: string): boolean {
+  const words = normalize(label).split(' ').filter(Boolean)
+  return words.length > 0 && words.every((word) => /^\d+$/.test(word) || MONTHS.has(word))
+}
+
 /** The steps a seed offers before any expansion word: name, pair, then each word alone. */
 export function baseSteps(seed: LikeSeed, now: number): LikeStep[] {
   const steps: LikeStep[] = []
@@ -101,7 +120,7 @@ export function baseSteps(seed: LikeSeed, now: number): LikeStep[] {
   const exact = seed.subject.kind === 'entity' ? `"${alias}"` : alias
 
   // The name, most seen first and most recent second: the proven, then the long tail.
-  steps.push({
+  if (!looksLikeDate(alias)) steps.push({
     label: `name:${alias}`,
     youtube: [
       youtube(seed, seed.subject, 'name', exact, 'viewCount', now),

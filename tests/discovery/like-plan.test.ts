@@ -38,6 +38,15 @@ test('un mot court reste un mot, un fragment de code non', () => {
   assert.deepEqual(searchableWords(['black', 'car', 'red', 'tail'], 'a black car with a red tail light'), ['black', 'car', 'red', 'tail'])
 })
 
+test('une date n_est pas un sujet : le plan démarre à la paire', () => {
+  const dated: LikeSeed = {
+    subject: { key: 'entity:september-23', label: 'September 23', aliases: ['september 23'], kind: 'entity', evidence: 'title' },
+    words: ['tnt', 'commercials', 'compilation'], title: 'TNT Commercials Compilation September 23, 2003',
+    scope: { ownerId: 'owner', referenceKey: 'youtube:tnt' },
+  }
+  assert.deepEqual(baseSteps(dated, NOW).map(s => s.label), ['pair:tnt commercials', 'word:tnt', 'word:commercials'])
+})
+
 test('un sujet sans mots n_a que le nom', () => {
   assert.deepEqual(baseSteps(seed([]), NOW).map(s => s.label), ['name:pioneer dvl v888 laserdisc'])
 })
