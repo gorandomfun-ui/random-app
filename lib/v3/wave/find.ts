@@ -31,22 +31,50 @@ type ItemRow = Document & {
 }
 
 function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
-  if (!row.v3) return null
+  // At the word level the answers are stock photographs too, and those were
+  // never tagged. Refusing them here left the level with nothing to offer.
+  if (!row.v3 && level !== 4) return null
   return {
     id: String(row._id),
     type: row.type,
     title: row.title,
     level,
     v3: {
-      subjects: row.v3.subjects ?? [],
-      universe: row.v3.universe,
-      angle: row.v3.angle,
-      popularity: row.v3.popularity,
-      era: row.v3.era,
-      channelKey: row.v3.channelKey,
-      nearFamily: row.v3.nearFamily,
+      subjects: row.v3?.subjects ?? [],
+      universe: row.v3?.universe ?? 'other',
+      angle: row.v3?.angle ?? 'other',
+      popularity: row.v3?.popularity ?? 'unknown',
+      era: row.v3?.era ?? 'unknown',
+      channelKey: row.v3?.channelKey,
+      nearFamily: row.v3?.nearFamily,
     },
   }
+}
+
+/**
+ * How many of the anchor's words a row repeats.
+ *
+ * One word in common is not a link. A video of rain carries "rain", "weather",
+ * "clouds" and also "background", and matching on "background" alone answered
+ * it with "Cool Jazz Study Mix for Background Concentration". Two words is the
+ * difference between a subject and a coincidence.
+ */
+const WORDS_IN_COMMON_NEEDED = 2
+
+function wordsShared(row: ItemRow, anchorWords: string[]): number {
+  if (!anchorWords.length) return 0
+  const wanted = new Set(anchorWords)
+  const own = [...(row.keywords ?? []), ...(row.tags ?? [])]
+  let shared = 0
+  const seen = new Set<string>()
+  for (const raw of own) {
+    if (typeof raw !== 'string') continue
+    const word = raw.trim().toLowerCase()
+    if (seen.has(word) || !wanted.has(word)) continue
+    seen.add(word)
+    shared += 1
+  }
+  return shared
 }
 
 /** Only content a visitor should be served. */
@@ -95,6 +123,7 @@ async function fetchLevel(
   level: WaveLevel,
   anchorId: ObjectId,
   hint: string,
+  anchorWords: string[] = [],
 ): Promise<WaveCandidate[]> {
   const perGroup = await Promise.all(FORMAT_GROUPS.map(async (types) => {
     try {
@@ -109,7 +138,7 @@ async function fetchLevel(
             _id: { $ne: anchorId },
           },
           {
-            projection: { type: 1, title: 1, v3: 1, rand: 1 },
+            projection: { type: 1, title: 1, v3: 1, rand: 1, keywords: 1, tags: 1 },
             limit: POOL_PER_FORMAT,
             // Naming the index skips plan selection, which on its own ate the
             // whole budget and made the query fail before reading a row.
@@ -128,9 +157,19 @@ async function fetchLevel(
     }
   }))
 
-  return perGroup
-    .flat()
-    .map((row) => toCandidate(row, level))
+  const rows = perGroup.flat()
+  if (level !== 4) {
+    return rows
+      .map((row) => toCandidate(row, level))
+      .filter((candidate): candidate is WaveCandidate => Boolean(candidate))
+  }
+
+  // Strongest links first, and nothing that shares a single word.
+  return rows
+    .map((row) => ({ row, shared: wordsShared(row, anchorWords) }))
+    .filter((entry) => entry.shared >= WORDS_IN_COMMON_NEEDED)
+    .sort((left, right) => right.shared - left.shared)
+    .map((entry) => toCandidate(entry.row, level))
     .filter((candidate): candidate is WaveCandidate => Boolean(candidate))
 }
 
@@ -241,7 +280,7 @@ export async function findCandidates(
   // words themselves.
   if (anchor.words?.length) {
     collected.push(...(await fetchLevel(
-      db, { keywords: { $in: anchor.words } }, 4, anchorId, KEYWORD_INDEX,
+      db, { keywords: { $in: anchor.words } }, 4, anchorId, KEYWORD_INDEX, anchor.words,
     )))
   }
 
