@@ -68,6 +68,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       items: shown,
       engine: 'narrow-first',
+      // Which commit answered: Vercel sets this on every deployment, so what
+      // runs in production is never again a matter of guessing.
+      build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
       level,
       chosen: chosenIds.length,
       tookMs: Date.now() - started,

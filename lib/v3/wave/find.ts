@@ -223,7 +223,12 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
     .collection('items')
     .findOne(
       { _id: itemId },
-      { projection: { type: 1, title: 1, v3: 1, keywords: 1, tags: 1 } },
+      {
+        projection: {
+          type: 1, title: 1, v3: 1, keywords: 1, tags: 1,
+          creatorId: 1, channelId: 1, channelTitle: 1, provider: 1,
+        },
+      },
     )) as ItemRow | null
   if (!row) return null
 
@@ -241,7 +246,10 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
         subjects: row.v3?.subjects ?? [],
         universe: row.v3?.universe ?? 'other',
         angle: row.v3?.angle ?? 'other',
-        channelKey: row.v3?.channelKey,
+        // Derived the same way as for the candidates. Read from the labels
+        // alone, a Giphy anchor had no author, and "never the anchor's author"
+        // let its own uploader answer.
+        channelKey: channelOf(row),
       },
       words,
     },

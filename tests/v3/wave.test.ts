@@ -135,6 +135,11 @@ test('un angle qui ne nomme qu_un format ne compte pas comme une répétition', 
   assert.ok(items.some((item) => item.type === 'video'), 'le troisième est une vidéo')
 })
 
+test('jamais le contenu de départ sous un autre identifiant : même titre, refusé', () => {
+  const twin = candidate('image', 'meme-gif', { title: 'Cartman crie GIF', channelKey: 'giphy:autre' })
+  assert.equal(accepts(anchor(), [], twin, new Set()), false)
+})
+
 test('jamais deux contenus du même auteur, ni celui du départ', () => {
   const { items } = buildWave(anchor(), [
     candidate('video', 'episode-extract', { channelKey: 'giphy:southpark' }), // auteur de l_ancre

@@ -89,6 +89,11 @@ export function accepts(
   if (candidate.id === anchor.id) return false
   if (excludeKeys.has(candidate.id)) return false
 
+  // Nor the anchor under another id. The same GIF is sometimes stored twice,
+  // and "Moonwalk Macron" was answered with "Moonwalk Macron".
+  const anchorTitle = normalisedTitle(anchor.title)
+  if (anchorTitle && normalisedTitle(candidate.title) === anchorTitle) return false
+
   // A treatment already on screen — including the anchor's — adds nothing: a
   // live concert after a live concert. Angles that only name a format say
   // nothing about treatment and are left to the format caps.
