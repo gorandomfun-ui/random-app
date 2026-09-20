@@ -3,7 +3,8 @@ import { ObjectId } from 'mongodb'
 import type { Profile } from './types'
 import type { OwnerReference } from './editorial'
 import { hydrateOwnerReferences } from './ownerStore'
-import { enqueue, type SearchSpec, type DiscoveryFocus, type DiscoveryProvider } from './exploration'
+import { enqueue, taskId, type SearchSpec, type DiscoveryFocus, type DiscoveryProvider, type DiscoveryTask } from './exploration'
+import { baseSteps, planLikeTurn, LIKES_PER_PASS, type LikeSeed } from './likePlan'
 import { SUBJECT_VERSION, type Subject } from './subjects'
 import { curatorOwnerId } from './curatorAuth'
 import { geographicSearch } from './searchGeography'
@@ -80,63 +81,142 @@ export function createSubjectSearches(profile: Profile, scope: OwnerScope, now: 
 }
 
 export type OwnerSchedulingReport = {
-  sampled: number; scheduled: number; needsMetadata: number; needsSubject: number;
-  references: { key: string; subject: string | null; state: string; tasks: number }[]
+  sampled: number; scheduled: number; waiting: number; done: number; images: number; needsMetadata: number; needsSubject: number;
+  references: { key: string; subject: string | null; state: string; tasks: number; label?: string }[]
 }
-/** Fair, resumable owner rotation. The timestamp records scheduling, never a fabricated discovery. */
+
+/** Whether the tasks of the previous turn have all run, and whether they brought anything. */
+async function previousTurn(tasks: import('mongodb').Collection<DiscoveryTask>, ids: string[]): Promise<'none' | 'pending' | 'dry' | 'productive'> {
+  if (!ids.length) return 'none'
+  const rows = await tasks.find({ _id: { $in: ids } }, { projection: { lastAttemptAt: 1, insertedTotal: 1 }, maxTimeMS: 700 }).toArray()
+  if (rows.length < ids.length || rows.some(row => !row.lastAttemptAt)) return 'pending'
+  return rows.reduce((sum, row) => sum + (row.insertedTotal ?? 0), 0) > 0 ? 'productive' : 'dry'
+}
+
+/**
+ * The words that recur around the content in the catalogue, read from its
+ * Wave: what a person would search next after looking at the results.
+ *
+ * Only titles that carry one of the seed's own words are read — a Pioneer
+ * LaserDisc player led to "CLD" from other Pioneer players, and to "India"
+ * from a spare that had nothing to do with it. And only words seen at least
+ * three times count; fewer is a coincidence of captions.
+ */
+async function wordsAround(db: Db, itemId: string, seedWords: Set<string>): Promise<string[]> {
+  const { loadAnchor, composeWave, wordsOfTitle } = await import('../v3/wave/find')
+  const oid = new ObjectId(itemId)
+  const loaded = await loadAnchor(db, oid)
+  if (!loaded) return []
+  const wave = await composeWave(db, loaded.anchor, oid)
+  const counts = new Map<string, number>()
+  for (const candidate of [...wave.items, ...wave.spares]) {
+    const words = wordsOfTitle(candidate.title)
+    if (!words.some(word => seedWords.has(word))) continue
+    for (const word of words) {
+      if (seedWords.has(word)) continue
+      counts.set(word, (counts.get(word) ?? 0) + 1)
+    }
+  }
+  return [...counts].filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]).map(([word]) => word)
+}
+
+/**
+ * Fair, resumable owner rotation, following the like plan.
+ *
+ * A like advances one turn per pass, and only once the tasks of its previous
+ * turn have run: a like whose searches are still queued is not handed more.
+ * Past the first steps a like that brought nothing is done. The timestamp
+ * records scheduling, never a fabricated discovery.
+ */
 export async function enqueueOwnerExploration(db: Db, now: number, _rotation: number,
   providers: readonly DiscoveryProvider[] = ['youtube', 'dailymotion'], onReport?: (report: OwnerSchedulingReport) => void): Promise<number> {
   const ownerId = curatorOwnerId()
   const c = db.collection<OwnerReference>('discovery_owner_references_v2')
-  const refs = await c.find({ ownerId, active: true }, { timeoutMS: 1000 })
+  const tasks = db.collection<DiscoveryTask>('discovery_tasks_v2')
+  const refs = await c.find({ ownerId, active: true, explorationDone: { $exists: false } }, { timeoutMS: 1000 })
     .sort({ explorationScheduledAt: 1, _id: 1 }).limit(8).maxTimeMS(700).toArray()
   const hydrated = await hydrateOwnerReferences(db, refs)
-  const report: OwnerSchedulingReport = { sampled: refs.length, scheduled: 0, needsMetadata: 0, needsSubject: 0, references: [] }
-  const used = new Set<string>(); let enqueued = 0
+  const report: OwnerSchedulingReport = { sampled: refs.length, scheduled: 0, waiting: 0, done: 0, images: 0, needsMetadata: 0, needsSubject: 0, references: [] }
+  let enqueued = 0, served = 0
+
   for (let index = 0; index < hydrated.length; index++) {
     const ref = hydrated[index], original = refs[index], profile = ref.profile
     const subject = profile.subject?.primary
-    const state: OwnerReference['explorationState'] = profile.metadataQuality === 'unverified' ? 'needs-metadata'
+    let state: OwnerReference['explorationState'] = profile.metadataQuality === 'unverified' ? 'needs-metadata'
       : subject ? 'scheduled' : 'needs-subject'
-    let count = 0
-    const nextRotation = { ...original.explorationRotation }
-    if (state === 'scheduled' && subject && !used.has(subject.key)) {
-      used.add(subject.key)
-      for (const provider of providers) {
-        if (provider === 'dailymotion' && process.env.RANDOM_DM_DISCOVERY_ENABLED !== '1') continue
-        const turn = nextRotation[provider] ?? 0
-        const specs = createSubjectSearches(profile, { ownerId, referenceKey: ref.contentKey,
-          referenceRevision: profile.sourceRevision }, now, turn)
-        for (const spec of specs) {
-          if (provider === 'youtube') { await enqueue(db, spec, 0, true, now); count++ }
-          else if (spec.kind === 'search') {
-            await enqueue(db, { kind: 'dailymotion', query: spec.query, after: spec.after, before: spec.before,
-              sort: spec.order === 'date' ? 'recent' : 'relevance', focus: spec.focus, coverage: spec.coverage }, 0, true, now)
-            count++
-          }
+    let count = 0, label: string | undefined
+    const set: Partial<OwnerReference> = { profile, familyId: ref.familyId, profileRefreshedAt: new Date(now) }
+
+    if (state === 'scheduled' && subject) {
+      const turn = original.explorationPlanTurn ?? 0
+      const previous = await previousTurn(tasks, original.explorationLastTaskIds ?? [])
+      if (served >= LIKES_PER_PASS || previous === 'pending') {
+        state = 'waiting'
+      } else if (previous === 'dry' && turn >= 2) {
+        state = 'done'
+        set.explorationDone = 'dry'
+        set.explorationDoneAt = new Date(now)
+      } else {
+        const row = ref.itemId && ObjectId.isValid(ref.itemId)
+          ? await db.collection('items').findOne({ _id: new ObjectId(ref.itemId) },
+              { projection: { title: 1, keywords: 1, tags: 1, channelId: 1, provider: 1 }, maxTimeMS: 700 })
+          : null
+        const { tellingWordsOf } = await import('../v3/wave/find')
+        const words = row ? tellingWordsOf(row as { title?: string | null; keywords?: unknown; tags?: unknown }) : []
+        const scope = { ownerId, referenceKey: ref.contentKey, referenceRevision: profile.sourceRevision }
+        const seed: LikeSeed = { subject, words, title: typeof row?.title === 'string' ? row.title : null, scope }
+        if (turn >= baseSteps(seed, now).length && ref.itemId) {
+          const seedWords = new Set([...words, ...subject.aliases.flatMap(alias => alias.toLowerCase().split(/\s+/))])
+          seed.expansion = await wordsAround(db, ref.itemId, seedWords).catch(() => [])
         }
-        // Known source channel -> uploads uses the other quota bucket even when search is exhausted.
-        if (provider === 'youtube' && ref.itemId && ObjectId.isValid(ref.itemId)) {
-          const row = await db.collection('items').findOne({ _id: new ObjectId(ref.itemId), provider: 'youtube' },
-            { projection: { channelId: 1 }, maxTimeMS: 400, timeoutMS: 650 })
-          if (typeof row?.channelId === 'string' && /^UC[\w-]{22}$/.test(row.channelId)) {
-            const focus = { subject, subjectVersion: SUBJECT_VERSION, ownerId, referenceKey: ref.contentKey, referenceRevision: profile.sourceRevision,
-              branch: 'primary' as const, angle: 'creator' }
-            await enqueue(db, { kind: 'channel', channelId: row.channelId, focus }, 0, true, now); count++
+        const step = planLikeTurn(seed, turn, now)
+        if (!step) {
+          state = 'done'
+          set.explorationDone = 'exhausted'
+          set.explorationDoneAt = new Date(now)
+        } else {
+          const ids: string[] = []
+          const specs = [
+            ...(providers.includes('youtube') ? step.youtube : []),
+            ...(providers.includes('dailymotion') ? step.dailymotion : []),
+          ]
+          for (const spec of specs) { await enqueue(db, spec, 0, true, now); ids.push(taskId(spec)); count++ }
+          // The uploader's own channel, on the first turn only: the surest "more like this".
+          if (turn === 0 && providers.includes('youtube') && row?.provider === 'youtube'
+            && typeof row.channelId === 'string' && /^UC[\w-]{22}$/.test(row.channelId)) {
+            const focus = { subject, subjectVersion: SUBJECT_VERSION, ...scope, branch: 'primary' as const, angle: 'creator' }
+            const spec: SearchSpec = { kind: 'channel', channelId: row.channelId, focus }
+            await enqueue(db, spec, 0, true, now); ids.push(taskId(spec)); count++
           }
+          if (step.images.length) {
+            // Images are direct: one Giphy question per step, tagged as they are stored.
+            try {
+              const { ingestImages } = await import('../ingest/images')
+              const result = await ingestImages({ queries: step.images, perQuery: 25, providers: ['giphy'], insertOnly: true })
+              report.images += result.inserted
+            } catch { /* the provider refused or is down; the videos still go ahead */ }
+          }
+          set.explorationScheduledAt = new Date(now)
+          set.explorationPlanTurn = turn + 1
+          set.explorationLastTaskIds = ids
+          set.explorationLastLabel = step.label
+          label = step.label
+          served++
         }
-        nextRotation[provider] = turn + 1
       }
-      report.scheduled++
-    } else if (state === 'needs-metadata') report.needsMetadata++
+    }
+
+    if (state === 'scheduled') report.scheduled++
+    else if (state === 'waiting') report.waiting++
+    else if (state === 'done') report.done++
+    else if (state === 'needs-metadata') report.needsMetadata++
     else if (state === 'needs-subject') report.needsSubject++
+
     // Unlike/edit racing with the worker must not be undone by this refresh.
     await c.updateOne({ ownerId, contentKey: original.contentKey, active: true, ...(original.updatedAt ? { updatedAt: original.updatedAt } : { updatedAt: { $exists: false } }) },
-      { $set: { profile, familyId: ref.familyId, profileRefreshedAt: new Date(now),
-        explorationScheduledAt: new Date(now), explorationRotation: nextRotation, explorationState: state } }, { maxTimeMS: 700 })
-    report.references.push({ key: ref.contentKey, subject: subject?.key ?? null, state, tasks: count })
+      { $set: { ...set, explorationState: state } }, { maxTimeMS: 700 })
+    report.references.push({ key: ref.contentKey, subject: subject?.key ?? null, state: state ?? 'scheduled', tasks: count, label })
     enqueued += count
-    if (used.size >= 2) break
   }
   onReport?.(report)
   return enqueued

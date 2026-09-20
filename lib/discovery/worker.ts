@@ -5,6 +5,7 @@ import { enqueue, quotaConfigFromEnv, runExploration, youtubePageLoader, type Di
 import { dailymotionPageLoader, type DailymotionSpec } from './dailymotion'
 import { createSearchSeeds } from './seeds'
 import { enqueueOwnerExploration, type OwnerSchedulingReport } from './subjectExploration'
+import { capPerSource } from './likeCaps'
 
 export type DiscoveryStage = 'seeding' | 'exploring' | 'completed' | ExplorationStage | VideoIngestStage
 export type DiscoveryBatchOptions = { provider?: DiscoveryProvider; seed?: boolean; maxMs?: number; signal?: AbortSignal;
@@ -66,8 +67,12 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
   const report = await runExploration({ db, quota, random, maxMs: Math.max(0, maxMs - (Date.now() - started)),
     provider: options.provider ?? (providers.length === 1 ? providers[0] : undefined), signal: options.signal,
     onStage: options.onStage,
-    loadPage: (task, signal, permit) => task.spec.kind === 'dailymotion' ? dailymotion(task, signal, permit)
-      : youtube ? youtube(task, signal, permit) : Promise.reject(new Error('youtube-unconfigured')),
+    loadPage: async (task, signal, permit) => {
+      const page = task.spec.kind === 'dailymotion' ? await dailymotion(task, signal, permit)
+        : youtube ? await youtube(task, signal, permit) : await Promise.reject(new Error('youtube-unconfigured'))
+      // A page fetched for a like keeps a few videos per channel and per family.
+      return task.spec.focus?.ownerId ? { ...page, videos: capPerSource(page.videos) } : page
+    },
     ingest: videos => finalizeVideoIngest(videos, { dryRun: false, sampleSize: 0, warnings: [], skipDetails: true,
       insertOnly: true, onStage: options.onStage, conservativeRoutineInitialization: true }) })
   options.onStage?.('completed')

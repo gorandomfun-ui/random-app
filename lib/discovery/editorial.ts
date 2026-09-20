@@ -5,7 +5,10 @@ export type OwnerReference = { contentKey: string; ownerId: string; active: bool
   familyId: string; profile: Profile; type: 'video' | 'image'; version: number; itemId?: string;
   publicLikeCounted?: boolean; updatedAt?: Date; rand?: number;
   explorationScheduledAt?: Date; explorationRotation?: Partial<Record<'youtube' | 'dailymotion', number>>;
-  explorationState?: 'scheduled' | 'needs-metadata' | 'needs-subject'; profileRefreshedAt?: Date }
+  explorationState?: 'scheduled' | 'needs-metadata' | 'needs-subject' | 'waiting' | 'done'; profileRefreshedAt?: Date;
+  /** The like plan: which turn comes next, which tasks the last turn created, and why it stopped. */
+  explorationPlanTurn?: number; explorationLastTaskIds?: string[]; explorationLastLabel?: string;
+  explorationDone?: 'exhausted' | 'dry'; explorationDoneAt?: Date }
 /** Offline assignment. References are explicitly owner-scoped and only original likes are seeds. */
 export function assignEditorial<T>(items: Candidate<T>[], references: OwnerReference[], ownerId: string) {
   if (!ownerId) throw new Error('Owner identity required')

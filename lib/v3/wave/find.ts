@@ -194,6 +194,20 @@ async function fetchStep(
  * index holds; the title decides their order, so the first ones are what the
  * content is called. A caption with no title keeps the keywords' own order.
  */
+/** The telling words of any stored content: what the like plan searches for. */
+export function tellingWordsOf(row: { title?: string | null; keywords?: unknown; tags?: unknown }): string[] {
+  return tellingWords(row as ItemRow)
+}
+
+/** The telling words of a bare title, for counting what recurs around a content. */
+export function wordsOfTitle(title: string | null | undefined): string[] {
+  const seen = new Set<string>()
+  for (const token of normalize(title ?? '').split(' ')) {
+    if (token.length >= 2 && !NOISE_WORDS.has(token)) seen.add(token)
+  }
+  return [...seen]
+}
+
 function tellingWords(row: ItemRow): string[] {
   const own: string[] = []
   const byNormalised = new Map<string, string>()

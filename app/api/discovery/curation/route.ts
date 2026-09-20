@@ -11,9 +11,41 @@ import { planCurationLikeMutation } from '@/lib/discovery/curationLike'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
+/**
+ * The owner's likes, from the server. They live under one identity whatever
+ * the device, and never expire — unlike the browser's own list, which is what
+ * the likes page used to show and which differs between a phone and a laptop.
+ */
+async function listOwnerLikes() {
+  try {
+    const db = await getDb()
+    const refs = await db.collection('discovery_owner_references_v2')
+      .find({ ownerId: curatorOwnerId(), active: true },
+        { projection: { contentKey: 1, itemId: 1, type: 1, updatedAt: 1 }, sort: { updatedAt: -1 }, limit: 500, maxTimeMS: 1500 })
+      .toArray()
+    const ids = refs.map(ref => ref.itemId).filter((id): id is string => typeof id === 'string' && ObjectId.isValid(id))
+    const rows = ids.length
+      ? await db.collection('items').find({ _id: { $in: ids.map(id => new ObjectId(id)) } },
+          { projection: { type: 1, url: 1, text: 1, title: 1, thumb: 1, thumbUrl: 1, ogImage: 1, provider: 1 }, maxTimeMS: 2000 }).toArray()
+      : []
+    const byId = new Map(rows.map(row => [String(row._id), row]))
+    const items = refs.map(ref => {
+      const row = byId.get(String(ref.itemId))
+      return {
+        id: ref.contentKey, itemId: ref.itemId, type: row?.type ?? ref.type,
+        url: row?.url, text: row?.text, title: row?.title,
+        thumbUrl: row?.thumb ?? row?.thumbUrl ?? null, ogImage: row?.ogImage ?? null, provider: row?.provider,
+        likedAt: ref.updatedAt instanceof Date ? ref.updatedAt.getTime() : Date.now(),
+      }
+    })
+    return json({ items })
+  } catch { return json({ error: 'unavailable' }, 503) }
+}
+
 export async function GET(req: Request) {
   if (!curatorRequestAllowed(req)) return json({ error: 'Unauthorized' }, 401)
   const itemId = new URL(req.url).searchParams.get('itemId') ?? ''
+  if (!itemId) return listOwnerLikes()
   if (!/^[a-f\d]{24}$/i.test(itemId)) return json({ active: false })
   try {
     const row = await (await getDb()).collection('discovery_owner_references_v2').findOne({ ownerId: curatorOwnerId(), itemId, active: true }, { maxTimeMS: 700 })

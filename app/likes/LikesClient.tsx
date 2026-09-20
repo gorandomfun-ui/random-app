@@ -292,7 +292,20 @@ export default function LikesClient({
 
   const load = () => {
     try { clearExpired() } catch {}
-    setItems(getAll())
+    const local = getAll()
+    setItems(local)
+    if (!curationMode) return
+    // The owner's likes live on the server, under one identity: the same list
+    // on the phone and on the computer, and it does not expire. The browser's
+    // own likes are kept after them, for anything not yet synced.
+    void fetch('/api/discovery/curation', { cache: 'no-store', credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { items?: LikeItem[] } | null) => {
+        if (!body?.items?.length) return
+        const seen = new Set(body.items.map((item) => item.itemId ?? item.id))
+        setItems([...body.items, ...local.filter((item) => !seen.has(item.itemId ?? item.id))])
+      })
+      .catch(() => undefined)
   }
 
   useEffect(() => {
@@ -900,7 +913,9 @@ export default function LikesClient({
           onSavedRandom={() => router.push(`${navigationPaths.random}?next=1`)}
           curationMode={curationMode}
           discoveryMode={curationMode}
-          waveDiscoveryMode={curationMode || process.env.NEXT_PUBLIC_RANDOM_WAVE_V2 === '1'}
+          // The same Wave as the site. Curation used to force the discovery
+          // wave, so the owner never saw what visitors see.
+          waveDiscoveryMode={false}
           navigationPaths={navigationPaths}
         />
       ) : null}
