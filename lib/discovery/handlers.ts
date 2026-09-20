@@ -2,8 +2,8 @@ import type { Db } from 'mongodb'
 import type { CatalogueRow } from './catalog'
 import { loadWave, selectPool } from './mongo'
 import { planDraw } from './pool'
-import type { Format } from './types'
-import type { Candidate } from './types'
+import { isVisual, type Candidate, type Format } from './types'
+import { selectCool } from './coolPool'
 
 const FORMATS: Format[] = ['video', 'image', 'quote', 'joke', 'fact', 'web']
 type Dependencies<T> = { enabled: () => boolean; getDb: () => Promise<Db | null>; decode: (row: CatalogueRow) => T | null;
@@ -31,6 +31,8 @@ export async function bodyOf(req: Request): Promise<Record<string, unknown> | nu
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
   try { const body: unknown = JSON.parse(new TextDecoder().decode(bytes)); return isObject(body) ? body : null } catch { return null }
 }
+/** One switch on Vercel turns the cool pool off without a deployment. */
+const coolPoolEnabled = () => process.env.RANDOM_COOL_POOL_ENABLED !== '0'
 function language(body: Record<string, unknown>): string { return ['en', 'fr', 'de', 'es', 'jp'].includes(String(body.lang)) ? String(body.lang) : 'en' }
 
 export function randomHandler<T>(deps: Dependencies<T>) {
@@ -41,12 +43,17 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
       const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
-      const choice = await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
+      // The cool pool: a cool visual ticket is served from a thread — a seed someone vouched for, then two of
+      // its Wave neighbours. The lanes remain the fallback when the pool holds nothing eligible for this visitor.
+      const cool = coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
+        ? await selectCool(db, ticket, state, deps.decode, Math.random, Date.now()).catch(() => null) : null
+      const choice = cool ?? await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
-      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection })
+      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection,
+        ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }
   }
 }

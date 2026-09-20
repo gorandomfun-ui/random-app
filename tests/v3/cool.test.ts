@@ -125,4 +125,8 @@ test('la graine : un like une fois sur trois, jamais une graine déjà vue', () 
   assert.equal(chooseSeed(seeds, new Set(['e1', 'e2']), rolls([0]))?.id, 'l1', 'sans éditorial, un like')
   assert.equal(chooseSeed(seeds, new Set(['l1', 'l2', 'e1', 'e2']), rolls([0])), null)
   assert.equal(chooseSeed(seeds, new Set(['l1']), rolls([0, 0]))?.id, 'l2', 'la graine vue est passée')
+
+  // Le visiteur connaît les contenus par leur clé de session, pas par leur id.
+  const keyed = [{ ...seed('l1', 'like'), contentKey: 'youtube:abc' }, seed('l2', 'like')]
+  assert.equal(chooseSeed(keyed, new Set(['youtube:abc']), rolls([0, 0]))?.id, 'l2', 'la graine vue par sa clé est passée')
 })

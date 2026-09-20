@@ -61,7 +61,7 @@ const NOISE_WORDS = new Set([
   'youtube', 'dailymotion', 'giphy', 'tenor', 'pexels', 'pixabay',
 ])
 
-type ItemRow = Document & {
+export type ItemRow = Document & {
   _id: ObjectId
   type: ItemType
   title?: string | null
@@ -76,7 +76,7 @@ type ItemRow = Document & {
  * author the "never twice the same" rule had nothing to compare, and answered
  * a GIF from the Frisian film archive with three more from the same archive.
  */
-function channelOf(row: ItemRow): string | undefined {
+export function channelOf(row: ItemRow): string | undefined {
   if (row.v3?.channelKey) return row.v3.channelKey
   const owner = row.creatorId ?? row.channelId ?? row.channelTitle
   if (typeof owner === 'string' && owner.trim()) return `${row.provider ?? 'source'}:${owner.trim().toLowerCase()}`

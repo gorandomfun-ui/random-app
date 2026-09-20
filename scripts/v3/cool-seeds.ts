@@ -1,6 +1,6 @@
 /**
  * Refreshes the seeds of the cool pool: the curator's likes, and a daily
- * handful of proven videos among the cool words.
+ * handful of proven videos and cool images among the cool words, per format.
  *
  *   node --env-file=.env.local --import tsx scripts/v3/cool-seeds.ts
  *   node --env-file=.env.local --import tsx scripts/v3/cool-seeds.ts --apply --editorial=40
@@ -31,16 +31,20 @@ async function main(): Promise<void> {
 
     const report = await refreshCoolSeeds(db, { apply, editorialWanted })
     const { likes, editorial } = report
+    if (report.replanted) console.log(`Graines sans clé de fil, replantées : ${count(report.replanted)}`)
     console.log(
       `Likes du curateur : ${count(likes.references)} références · ${count(likes.resolved)} retrouvées en base · ` +
         `${count(likes.added)} graines ajoutées · ${count(likes.removed)} retirées`,
     )
     for (const key of likes.unresolved) console.log(`  non retrouvé : ${key}`)
-    console.log(
-      `Graines éditoriales : ${count(editorial.kept)} gardées · ${count(editorial.expired)} expirées · ` +
-        `${count(editorial.added)} ajoutées sur ${count(editorial.wanted)} demandées ` +
-        `(${count(editorial.found)} vidéos cool à audience vues en ${editorial.windows} fenêtre(s))`,
-    )
+    for (const type of ['video', 'image'] as const) {
+      const line = editorial[type]
+      console.log(
+        `Graines éditoriales (${type}) : ${count(line.kept)} gardées · ${count(line.expired)} expirées · ` +
+          `${count(line.added)} ajoutées sur ${count(line.wanted)} demandées ` +
+          `(${count(line.found)} contenus cool vus en ${line.windows} fenêtre(s))`,
+      )
+    }
     if (!apply) console.log('\nRelancer avec --apply pour écrire.')
   } finally {
     await client.close()

@@ -2,29 +2,36 @@
  * The seeds of the cool pool, refreshed once a day.
  *
  * Two kinds. A like: a content the curator vouched for, whatever its
- * audience. An editorial seed: a video among the cool words — vintage, weird,
- * surreal… — with a real audience, so a thread starts from something proven
- * and digs from there. The collection stays small, a few hundred seeds that
- * rotate; the threads themselves are composed live from the Wave.
+ * audience. An editorial seed: a video with a real audience, or an image,
+ * among the cool words — vintage, weird, surreal… — so a thread starts from
+ * something cool and digs from there. The collection stays small, a few
+ * hundred seeds that rotate; the threads themselves are composed live from
+ * the Wave.
  */
 
 import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
+import { canonicalMediaKey } from '@/lib/discovery/catalog'
 import { buildStrongPoolMatch } from '@/lib/random/strongPool'
-import { SERVABLE, SHOWABLE, tellingWordsOf } from '../wave/find'
+import { SERVABLE, SHOWABLE, channelOf, tellingWordsOf, type ItemRow } from '../wave/find'
 import { COOL_SEEDS_COLLECTION, type Rng, type SeedKind } from './thread'
-import type { ItemTags, ItemType, Popularity } from '../types'
+import type { ItemType, Popularity } from '../types'
 
 const OWNER_REFERENCES = 'discovery_owner_references_v2'
 
 /** Editorial seeds rotate: after this many days one is dropped and another found. */
 export const EDITORIAL_TTL_DAYS = 14
-/** Whatever the day brings, the editorial seeds never grow past this. */
+/** Per format: whatever the day brings, the editorial seeds never grow past this. */
 export const EDITORIAL_CAP = 600
-/** Editorial seeds are proven videos: only videos carry a view count. */
+/** Editorial videos are proven: only videos carry a view count. */
 const PROVEN: Popularity[] = ['known', 'mainstream']
+/** Stock photographs are never cool. */
+const STOCK_PROVIDERS = ['pexels', 'pixabay']
 
-/** Each window walks the random order until it holds this many proven cool videos. */
+export type EditorialType = 'video' | 'image'
+export const EDITORIAL_TYPES: EditorialType[] = ['video', 'image']
+
+/** Each window walks the random order until it holds this many cool contents. */
 const WINDOW_LIMIT = 40
 const MAX_WINDOWS = 8
 const QUERY_BUDGET_MS = 8_000
@@ -35,38 +42,42 @@ export type SeedDocument = {
   kind: SeedKind
   type: ItemType
   popularity: Popularity
+  /** The key a visitor's session knows the content by — "youtube:ID", "giphy:ID". A thread is named after its seed's. */
+  contentKey: string
   channelKey?: string
   title?: string
-  /** For a like: the reference it came from, so it can be dropped when the like is. */
-  contentKey?: string
+  /** For a like: the reference it came from, so the seed goes when the like does. */
+  referenceKey?: string
   addedAt: Date
 }
 
+type EditorialReport = { wanted: number; found: number; added: number; expired: number; windows: number; kept: number }
 export type SeedsReport = {
   likes: { references: number; resolved: number; added: number; removed: number; unresolved: string[] }
-  editorial: { wanted: number; found: number; added: number; expired: number; windows: number; kept: number }
+  editorial: Record<EditorialType, EditorialReport>
+  /** Seeds planted before threads had a key, replanted with one. */
+  replanted: number
   written: boolean
 }
 
-type ItemRow = Document & {
-  _id: ObjectId
-  type: ItemType
-  title?: string | null
-  videoId?: string | null
-  v3?: ItemTags
+type Row = ItemRow & { videoId?: string | null }
+
+const ROW_PROJECTION = {
+  type: 1, title: 1, videoId: 1, url: 1, provider: 1, creatorId: 1, channelId: 1, channelTitle: 1,
+  v3: 1, keywords: 1, tags: 1,
 }
 
-const ROW_PROJECTION = { type: 1, title: 1, videoId: 1, v3: 1, keywords: 1, tags: 1 }
-
-function seedOf(row: ItemRow, kind: SeedKind, now: Date, contentKey?: string): SeedDocument {
+function seedOf(row: Row, kind: SeedKind, now: Date, referenceKey?: string): SeedDocument {
+  const channelKey = channelOf(row)
   return {
     _id: row._id,
     kind,
     type: row.type,
     popularity: row.v3?.popularity ?? 'unknown',
-    ...(row.v3?.channelKey ? { channelKey: row.v3.channelKey } : {}),
+    contentKey: canonicalMediaKey(row),
+    ...(channelKey ? { channelKey } : {}),
     ...(row.title ? { title: String(row.title).slice(0, 120) } : {}),
-    ...(contentKey ? { contentKey } : {}),
+    ...(referenceKey ? { referenceKey } : {}),
     addedAt: now,
   }
 }
@@ -86,9 +97,9 @@ function videoIdsOf(contentKey: string): string[] {
 type Reference = { contentKey: string; itemId?: string }
 
 /** The curator's likes, as stored contents: two queries, whatever their number. */
-async function resolveLikes(db: Db, references: Reference[]): Promise<Map<string, ItemRow>> {
+async function resolveLikes(db: Db, references: Reference[]): Promise<Map<string, Row>> {
   const items = db.collection('items')
-  const resolved = new Map<string, ItemRow>()
+  const resolved = new Map<string, Row>()
 
   const byItemId = references.filter((reference) => reference.itemId && ObjectId.isValid(reference.itemId))
   if (byItemId.length) {
@@ -97,7 +108,7 @@ async function resolveLikes(db: Db, references: Reference[]): Promise<Map<string
         { _id: { $in: byItemId.map((reference) => new ObjectId(reference.itemId)) }, ...SHOWABLE },
         { projection: ROW_PROJECTION, maxTimeMS: QUERY_BUDGET_MS },
       )
-      .toArray()) as ItemRow[]
+      .toArray()) as Row[]
     const byId = new Map(rows.map((row) => [String(row._id), row]))
     for (const reference of byItemId) {
       const row = byId.get(String(reference.itemId))
@@ -105,9 +116,9 @@ async function resolveLikes(db: Db, references: Reference[]): Promise<Map<string
     }
   }
 
-  const byVideo = references.filter((reference) => !resolved.has(reference.contentKey))
   const wanted = new Map<string, string>()
-  for (const reference of byVideo) {
+  for (const reference of references) {
+    if (resolved.has(reference.contentKey)) continue
     for (const id of videoIdsOf(reference.contentKey)) wanted.set(id, reference.contentKey)
   }
   if (wanted.size) {
@@ -116,7 +127,7 @@ async function resolveLikes(db: Db, references: Reference[]): Promise<Map<string
         { type: 'video', videoId: { $in: [...wanted.keys()] }, ...SHOWABLE },
         { projection: ROW_PROJECTION, maxTimeMS: QUERY_BUDGET_MS },
       )
-      .toArray()) as ItemRow[]
+      .toArray()) as Row[]
     for (const row of rows) {
       const contentKey = row.videoId ? wanted.get(row.videoId) : undefined
       if (contentKey && !resolved.has(contentKey)) resolved.set(contentKey, row)
@@ -126,39 +137,37 @@ async function resolveLikes(db: Db, references: Reference[]): Promise<Map<string
 }
 
 /** A seed must give the Wave something to go on: labels, or at least words. */
-function anchorable(row: ItemRow): boolean {
+function anchorable(row: Row): boolean {
   return Boolean(row.v3) || tellingWordsOf(row).length > 0
 }
 
 async function findEditorialSeeds(
   db: Db,
+  type: EditorialType,
   wanted: number,
   taken: { ids: Set<string>; channels: Set<string> },
   random: Rng,
   now: Date,
-  report: SeedsReport['editorial'],
+  report: EditorialReport,
 ): Promise<SeedDocument[]> {
   const found: SeedDocument[] = []
-  const strong = buildStrongPoolMatch<Document>()
+  const strong = buildStrongPoolMatch<Document>() as Filter<Document>
+  const shape: Filter<Document> = type === 'video'
+    ? { type: 'video', 'v3.popularity': { $in: PROVEN } }
+    : { type: 'image', provider: { $nin: STOCK_PROVIDERS } }
   for (let window = 0; window < MAX_WINDOWS && found.length < wanted; window += 1) {
     const rows = (await db
       .collection('items')
       .find(
-        {
-          $and: [
-            strong as Filter<Document>,
-            SERVABLE,
-            { type: 'video', 'v3.popularity': { $in: PROVEN }, rand: { $gte: random() * 0.9 } },
-          ],
-        },
+        { $and: [strong, SERVABLE, shape, { rand: { $gte: random() * 0.9 } }] },
         { projection: ROW_PROJECTION, sort: { rand: 1 }, limit: WINDOW_LIMIT, hint: RANDOM_INDEX, maxTimeMS: QUERY_BUDGET_MS },
       )
-      .toArray()) as ItemRow[]
+      .toArray()) as Row[]
     report.windows += 1
     report.found += rows.length
     for (const row of rows) {
       const id = String(row._id)
-      const channel = row.v3?.channelKey
+      const channel = channelOf(row)
       // One seed per author: a channel with two hundred cool videos is one taste, not two hundred.
       if (taken.ids.has(id) || (channel && taken.channels.has(channel))) continue
       taken.ids.add(id)
@@ -178,15 +187,21 @@ export async function refreshCoolSeeds(
   const now = options.now ?? new Date()
   const random = options.random ?? Math.random
   const seeds = db.collection<SeedDocument>(COOL_SEEDS_COLLECTION)
+  const emptyReport = (): EditorialReport => ({ wanted: options.editorialWanted, found: 0, added: 0, expired: 0, windows: 0, kept: 0 })
   const report: SeedsReport = {
     likes: { references: 0, resolved: 0, added: 0, removed: 0, unresolved: [] },
-    editorial: { wanted: options.editorialWanted, found: 0, added: 0, expired: 0, windows: 0, kept: 0 },
+    editorial: { video: emptyReport(), image: emptyReport() },
+    replanted: 0,
     written: false,
   }
 
-  const existing = await seeds
-    .find({}, { projection: { kind: 1, contentKey: 1, channelKey: 1, addedAt: 1 }, maxTimeMS: QUERY_BUDGET_MS })
+  const stored = await seeds
+    .find({}, { projection: { kind: 1, type: 1, contentKey: 1, referenceKey: 1, channelKey: 1, addedAt: 1 }, maxTimeMS: QUERY_BUDGET_MS })
     .toArray()
+  // A seed without a key cannot name a thread: it is replanted with one.
+  const stale = stored.filter((seed) => !seed.contentKey)
+  report.replanted = stale.length
+  const existing = stored.filter((seed) => Boolean(seed.contentKey))
 
   // Likes: every active reference becomes a seed; a like withdrawn takes its seed with it.
   const references: Reference[] = await db
@@ -207,32 +222,38 @@ export async function refreshCoolSeeds(
     likeSeeds.push(seedOf(row, 'like', now, reference.contentKey))
   }
   report.likes.resolved = likeSeeds.length
-  const existingLikeKeys = new Set(existing.filter((seed) => seed.kind === 'like').map((seed) => seed.contentKey))
-  const likesToAdd = likeSeeds.filter((seed) => !existingLikeKeys.has(seed.contentKey))
-  const likesToRemove = existing.filter((seed) => seed.kind === 'like' && !activeKeys.has(seed.contentKey ?? ''))
+  const likeKeyOf = (seed: { referenceKey?: string; contentKey: string }) => seed.referenceKey ?? seed.contentKey
+  const existingLikeKeys = new Set(existing.filter((seed) => seed.kind === 'like').map(likeKeyOf))
+  const likesToAdd = likeSeeds.filter((seed) => !existingLikeKeys.has(likeKeyOf(seed)))
+  const likesToRemove = existing.filter((seed) => seed.kind === 'like' && !activeKeys.has(likeKeyOf(seed)))
   report.likes.added = likesToAdd.length
   report.likes.removed = likesToRemove.length
 
-  // Editorial: drop the seeds past their time, then find as many as the day asks for, within the cap.
+  // Editorial, per format: drop the seeds past their time, then find as many as the day asks for, within the cap.
   const expiry = new Date(now.getTime() - EDITORIAL_TTL_DAYS * 86_400_000)
   const editorial = existing.filter((seed) => seed.kind === 'editorial')
   const expired = editorial.filter((seed) => seed.addedAt < expiry)
   const kept = editorial.filter((seed) => seed.addedAt >= expiry)
-  report.editorial.expired = expired.length
-  report.editorial.kept = kept.length
-  const room = Math.max(0, Math.min(options.editorialWanted, EDITORIAL_CAP - kept.length))
   const taken = {
     ids: new Set(existing.map((seed) => String(seed._id))),
     channels: new Set(
       [...kept, ...likeSeeds].map((seed) => seed.channelKey).filter((key): key is string => Boolean(key)),
     ),
   }
-  const editorialToAdd = room > 0 ? await findEditorialSeeds(db, room, taken, random, now, report.editorial) : []
-  report.editorial.added = editorialToAdd.length
+  const editorialToAdd: SeedDocument[] = []
+  for (const type of EDITORIAL_TYPES) {
+    const line = report.editorial[type]
+    line.expired = expired.filter((seed) => seed.type === type).length
+    line.kept = kept.filter((seed) => seed.type === type).length
+    const room = Math.max(0, Math.min(options.editorialWanted, EDITORIAL_CAP - line.kept))
+    const found = room > 0 ? await findEditorialSeeds(db, type, room, taken, random, now, line) : []
+    line.added = found.length
+    editorialToAdd.push(...found)
+  }
 
   if (!options.apply) return report
 
-  const toRemove = [...likesToRemove, ...expired].map((seed) => seed._id)
+  const toRemove = [...stale, ...likesToRemove, ...expired].map((seed) => seed._id)
   if (toRemove.length) await seeds.deleteMany({ _id: { $in: toRemove } })
   const toAdd = [...likesToAdd, ...editorialToAdd]
   if (toAdd.length) await seeds.insertMany(toAdd, { ordered: false })

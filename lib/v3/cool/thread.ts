@@ -17,7 +17,21 @@ import type { ItemType, Popularity } from '../types'
 export const COOL_SEEDS_COLLECTION = 'cool_seeds'
 
 export type SeedKind = 'like' | 'editorial'
-export type CoolSeed = { id: string; kind: SeedKind; type: ItemType; popularity: Popularity }
+export type CoolSeed = {
+  id: string
+  kind: SeedKind
+  type: ItemType
+  popularity: Popularity
+  /** The key a visitor's session knows the content by — "youtube:ID" — so a seed already seen is not served again. */
+  contentKey?: string
+}
+
+/**
+ * A thread is named after its seed's session key and carried by its members
+ * as their series, so the live random can tell where a visitor is in it from
+ * what they were served — no other state.
+ */
+export const THREAD_PREFIX = 'thread:'
 export type Rng = () => number
 export type Dose = 'proven' | 'discovery'
 
@@ -41,7 +55,9 @@ export const isProven = (popularity: Popularity): boolean => PROVEN.includes(pop
 const THREAD_TYPES: ItemType[] = ['video', 'image', 'web']
 
 export function chooseSeed(seeds: CoolSeed[], excludeKeys: Set<string>, random: Rng): CoolSeed | null {
-  const usable = seeds.filter((seed) => !excludeKeys.has(seed.id))
+  const usable = seeds.filter(
+    (seed) => !excludeKeys.has(seed.id) && !(seed.contentKey && excludeKeys.has(seed.contentKey)),
+  )
   const likes = usable.filter((seed) => seed.kind === 'like')
   const editorial = usable.filter((seed) => seed.kind === 'editorial')
   const fromLikes = likes.length > 0 && (editorial.length === 0 || random() < LIKE_SHARE)
@@ -123,13 +139,14 @@ export async function loadSeeds(db: Db, now = Date.now()): Promise<CoolSeed[]> {
   if (seedCache && now - seedCache.at < SEEDS_TTL_MS) return seedCache.seeds
   const rows = await db
     .collection(COOL_SEEDS_COLLECTION)
-    .find({}, { projection: { kind: 1, type: 1, popularity: 1 }, limit: SEEDS_MAX, maxTimeMS: 1500 })
+    .find({}, { projection: { kind: 1, type: 1, popularity: 1, contentKey: 1 }, limit: SEEDS_MAX, maxTimeMS: 1500 })
     .toArray()
   const seeds = rows.map((row) => ({
     id: String(row._id),
     kind: row.kind as SeedKind,
     type: row.type as ItemType,
     popularity: (row.popularity ?? 'unknown') as Popularity,
+    ...(typeof row.contentKey === 'string' ? { contentKey: row.contentKey } : {}),
   }))
   seedCache = { at: now, seeds }
   return seeds
