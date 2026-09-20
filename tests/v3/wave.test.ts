@@ -30,7 +30,6 @@ function candidate(
     title?: string
     nearFamily?: string
     universe?: Universe
-    sharedWords?: number
   } = {},
 ): WaveCandidate {
   counter += 1
@@ -39,7 +38,6 @@ function candidate(
     type,
     title: options.title ?? `contenu ${counter}`,
     level: options.level ?? 1,
-    sharedWords: options.sharedWords ?? 0,
     v3: {
       subjects: [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }],
       universe: options.universe ?? 'animation',
@@ -111,16 +109,30 @@ test('la Wave mélange les formats plutôt que d_empiler des vidéos', () => {
   assert.ok(new Set(items.map((item) => item.type)).size >= 2, 'au moins deux formats')
 })
 
-test('jamais deux fois le même angle, ni celui du contenu de départ', () => {
-  const { items } = buildWave(anchor(), [
-    candidate('image', 'meme-gif'), // même angle que l_ancre → refusé
+test('jamais deux fois le même traitement, ni celui du contenu de départ', () => {
+  const { items } = buildWave(anchor({ angle: 'live-concert' }), [
+    candidate('video', 'live-concert'), // même traitement que l_ancre → refusé
     candidate('video', 'episode-extract'),
-    candidate('video', 'episode-extract'), // doublon d_angle → refusé
-    candidate('image', 'photo-image'),
+    candidate('video', 'episode-extract'), // doublon de traitement → refusé
+    candidate('image', 'fan-art'),
+    candidate('fact' as ItemType, 'text-fact'),
   ])
   const angles = items.map((item) => item.v3.angle)
-  assert.equal(new Set(angles).size, angles.length, 'tous les angles sont différents')
-  assert.ok(!angles.includes('meme-gif'), 'l_angle de départ est exclu')
+  assert.equal(new Set(angles).size, angles.length, 'tous les traitements sont différents')
+  assert.ok(!angles.includes('live-concert'), 'le traitement de départ est exclu')
+})
+
+test('un angle qui ne nomme qu_un format ne compte pas comme une répétition', () => {
+  // Un GIF South Park mène à d_autres GIF South Park : c_est la logique d_une
+  // banque d_images. Le plafond de deux par format garde la variété.
+  const { items } = buildWave(anchor(), [
+    candidate('image', 'meme-gif', { channelKey: 'giphy:a' }),
+    candidate('image', 'meme-gif', { channelKey: 'giphy:b' }),
+    candidate('image', 'meme-gif', { channelKey: 'giphy:c' }),
+    candidate('video', 'episode-extract'),
+  ])
+  assert.equal(items.filter((item) => item.type === 'image').length, 2, 'deux images, pas trois')
+  assert.ok(items.some((item) => item.type === 'video'), 'le troisième est une vidéo')
 })
 
 test('jamais deux contenus du même auteur, ni celui du départ', () => {
@@ -174,7 +186,8 @@ test('les niveaux sont descendus dans l_ordre, et le niveau rendu est le plus l�
 })
 
 test('aucun candidat valide donne une Wave vide, jamais un contenu sans lien', () => {
-  const { items } = buildWave(anchor(), [candidate('image', 'meme-gif')])
+  // Le seul candidat est du même auteur que le contenu de départ.
+  const { items } = buildWave(anchor(), [candidate('image', 'meme-gif', { channelKey: 'giphy:southpark' })])
   assert.equal(items.length, 0)
 })
 

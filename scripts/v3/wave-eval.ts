@@ -6,8 +6,7 @@
 
 import { MongoClient, type ObjectId } from 'mongodb'
 
-import { findCandidates, loadAnchor } from '@/lib/v3/wave/find'
-import { buildWave } from '@/lib/v3/wave/select'
+import { composeWave, loadAnchor } from '@/lib/v3/wave/find'
 import { count, percent, table } from './reportFormat'
 
 function numericFlag(name: string, fallback: number): number {
@@ -51,8 +50,7 @@ async function main(): Promise<void> {
       const started = Date.now()
       const loaded = await loadAnchor(db, row._id)
       if (!loaded) continue
-      const candidates = await findCandidates(db, loaded.anchor, row._id)
-      const { items, level } = buildWave(loaded.anchor, candidates)
+      const { items, level } = await composeWave(db, loaded.anchor, row._id)
       durations.push(Date.now() - started)
 
       if (items.length) withWave += 1

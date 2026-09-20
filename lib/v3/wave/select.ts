@@ -12,21 +12,18 @@
 import type { Angle, ItemTags, ItemType, Popularity } from '../types'
 
 export const WAVE_SIZE = 3
-/** Level 1 is the same primary subject, 2 a secondary one, 3 the same universe. */
 /**
- * How the Wave found a content. Level 4 is the image-bank rule: no subject in
- * common, only words. Click a grey tree on a stock library and you get other
- * grey trees — that is a Wave, less precise but never absent, and it is what
- * lets every content carry one.
+ * How the Wave found a content, narrowest first: a subject named in the title
+ * (1), the title's first two telling words together (2), its first telling word
+ * alone (3), a subject the title does not name (4), the same universe (5). A
+ * looser level is only used when the tighter ones could not fill the Wave.
  */
-export type WaveLevel = 1 | 2 | 3 | 4
+export type WaveLevel = 1 | 2 | 3 | 4 | 5
 
 export type WaveCandidate = {
   id: string
   type: ItemType
   title?: string | null
-  /** How many of the anchor's own words this content repeats. */
-  sharedWords: number
   v3: Pick<ItemTags, 'subjects' | 'universe' | 'angle' | 'popularity' | 'era'> & {
     channelKey?: string
     nearFamily?: string
@@ -39,11 +36,20 @@ export type WaveAnchor = {
   type: ItemType
   title?: string | null
   v3: Pick<ItemTags, 'subjects' | 'universe' | 'angle'> & { channelKey?: string }
-  /** Plain descriptive words, which every content has even when it has no subject. */
+  /** Its telling words in title order; every content has some, even with no subject. */
   words?: string[]
 }
 
 export const TEXT_TYPES: ItemType[] = ['quote', 'joke', 'fact']
+
+/**
+ * Angles that only name a format. Two contents sharing one are not repeating a
+ * treatment — every stock photograph is a "photo-image" — so the angle rule
+ * leaves them to the format caps.
+ */
+const GENERIC_ANGLES = new Set<Angle>([
+  'other', 'photo-image', 'meme-gif', 'website', 'text-quote', 'text-joke', 'text-fact', 'quiz',
+])
 /**
  * Two of a format is comfortable, three is a last resort.
  *
@@ -83,9 +89,13 @@ export function accepts(
   if (candidate.id === anchor.id) return false
   if (excludeKeys.has(candidate.id)) return false
 
-  // An angle already on screen — including the anchor's — adds nothing.
-  if (candidate.v3.angle === anchor.v3.angle) return false
-  if (chosen.some((item) => item.v3.angle === candidate.v3.angle)) return false
+  // A treatment already on screen — including the anchor's — adds nothing: a
+  // live concert after a live concert. Angles that only name a format say
+  // nothing about treatment and are left to the format caps.
+  if (!GENERIC_ANGLES.has(candidate.v3.angle)) {
+    if (candidate.v3.angle === anchor.v3.angle) return false
+    if (chosen.some((item) => item.v3.angle === candidate.v3.angle)) return false
+  }
 
   // Never the anchor's author, never the same author twice.
   const author = candidate.v3.channelKey
@@ -102,8 +112,9 @@ export function accepts(
   const allowed = MAY_FILL_THREE.includes(candidate.type) ? perType : COMFORTABLE_PER_TYPE
   if (sameKind >= allowed) return false
 
-  // Texts only carry a Wave when the subject match is exact, which levels 1
-  // and 2 guarantee and level 3 does not.
+  // A text only carries a Wave on a precise link — a named subject or the
+  // word pair. On a single word or a universe it is a wall of text about
+  // something else.
   if (TEXT_TYPES.includes(candidate.type) && candidate.level >= 3) return false
 
   const title = normalisedTitle(candidate.title)
@@ -128,8 +139,10 @@ function formatSpread(chosen: WaveCandidate[], candidate: WaveCandidate): number
 }
 
 /**
- * Builds the Wave by walking down the levels: level 1 first, then 2, then 3,
- * so the closest links are used before the loosest.
+ * Builds the Wave by walking down the levels, tightest first, and never taking
+ * from a looser level while a tighter one can still fill a slot. The second
+ * pass, which allows a third video, runs only when the first found no other
+ * format anywhere.
  */
 export function buildWave(
   anchor: WaveAnchor,
@@ -139,39 +152,29 @@ export function buildWave(
   const excluded = new Set(excludeKeys)
   const chosen: WaveCandidate[] = []
 
-  // A level is not proof. A video of a Vietnamese fire-eater was labelled with
-  // the subject "19 June", caught on the word "June" in its description, and
-  // the Wave dutifully answered with three contents about the 19th of June.
-  // Words the anchor actually uses outweigh a subject it shares with nothing
-  // else, so the pool is ranked on both before anything is picked.
-  const strength = (candidate: WaveCandidate): number => {
-    const byLevel = candidate.level === 1 ? 3 : candidate.level === 2 ? 2 : candidate.level === 3 ? 1 : 0
-    return candidate.sharedWords * 2 + byLevel
-  }
-
-  // First pass keeps the comfortable shape; the second only runs if the Wave
-  // is still short, and is what allows a third video when there is no image.
-  const ranked = [...candidates].sort((left, right) => strength(right) - strength(left))
-
   for (const perType of [COMFORTABLE_PER_TYPE, MAX_PER_TYPE]) {
-    while (chosen.length < WAVE_SIZE) {
-      const usable = ranked.filter((candidate) => accepts(anchor, chosen, candidate, excluded, perType))
-      if (!usable.length) break
-      usable.sort(
-        (left, right) =>
-          strength(right) + formatSpread(chosen, right) + popularitySpread(chosen, right) -
-          (strength(left) + formatSpread(chosen, left) + popularitySpread(chosen, left)),
-      )
-      const best = usable[0]
-      chosen.push(best)
-      excluded.add(best.id)
+    for (const level of [1, 2, 3, 4, 5] as WaveLevel[]) {
+      const pool = candidates.filter((candidate) => candidate.level === level)
+      while (chosen.length < WAVE_SIZE) {
+        const usable = pool.filter((candidate) => accepts(anchor, chosen, candidate, excluded, perType))
+        if (!usable.length) break
+        usable.sort(
+          (left, right) =>
+            formatSpread(chosen, right) + popularitySpread(chosen, right) -
+            (formatSpread(chosen, left) + popularitySpread(chosen, left)),
+        )
+        const best = usable[0]
+        chosen.push(best)
+        excluded.add(best.id)
+      }
+      if (chosen.length >= WAVE_SIZE) break
     }
     if (chosen.length >= WAVE_SIZE) break
   }
 
   // The level reported is the loosest link used, so callers can tell how close
   // the Wave really is.
-  const level = (chosen.length ? Math.max(...chosen.map((item) => item.level)) : 4) as WaveLevel
+  const level = (chosen.length ? Math.max(...chosen.map((item) => item.level)) : 5) as WaveLevel
   return { items: chosen, level }
 }
 
