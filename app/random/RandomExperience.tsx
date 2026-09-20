@@ -33,7 +33,6 @@ import type { Candidate } from '@/lib/discovery/types'
 import { createMiniGameItem, MINI_GAME_IDS } from '@/lib/minigames/registry'
 import type { ItemType, VideoPool } from '@/lib/random/types'
 import {
-  areWaveItemsFromSameSeries,
   createWaveHint,
   hasSameWaveIdentity,
   type WaveSimilarityHint,
@@ -3588,7 +3587,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         const key = getContentKey(candidate)
         if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) continue
         if (hasSameWaveIdentity(anchorItem, candidate)) continue
-        if (candidates.some((existing) => areWaveItemsFromSameSeries(existing, candidate))) continue
+        // No "same series" test between the answers any more. It rejected two
+        // contents from one provider that shared keywords — which is exactly
+        // what the word-based Wave produces on purpose, so it threw away most
+        // of what the server had just composed. The server already refuses the
+        // same author twice and three of one format.
         keys.add(key)
         candidates.push(candidate)
       }
