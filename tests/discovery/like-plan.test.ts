@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { baseSteps, planLikeTurn, MAX_TURNS, type LikeSeed } from '@/lib/discovery/likePlan'
+import { baseSteps, planLikeTurn, searchableWords, MAX_TURNS, type LikeSeed } from '@/lib/discovery/likePlan'
 import { capPerSource, MAX_PER_CHANNEL, MAX_PER_FAMILY } from '@/lib/discovery/likeCaps'
 
 const NOW = Date.UTC(2026, 8, 20, 12)
@@ -33,7 +33,6 @@ test('les tours suivants suivent les mots qui reviennent autour, puis le like es
 })
 
 test('un mot court reste un mot, un fragment de code non', () => {
-  const { searchableWords } = require('@/lib/discovery/likePlan') as typeof import('@/lib/discovery/likePlan')
   assert.deepEqual(searchableWords(['tnt', 'commercials', 'compilation', 'september', '23', '2003'], 'TNT Commercials Compilation September 23, 2003'), ['tnt', 'commercials', 'compilation', 'september'])
   assert.deepEqual(searchableWords(['black', 'car', 'red', 'tail'], 'a black car with a red tail light'), ['black', 'car', 'red', 'tail'])
 })
