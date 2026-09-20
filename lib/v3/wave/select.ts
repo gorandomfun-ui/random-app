@@ -25,6 +25,8 @@ export type WaveCandidate = {
   id: string
   type: ItemType
   title?: string | null
+  /** How many of the anchor's own words this content repeats. */
+  sharedWords: number
   v3: Pick<ItemTags, 'subjects' | 'universe' | 'angle' | 'popularity' | 'era'> & {
     channelKey?: string
     nearFamily?: string
@@ -137,26 +139,34 @@ export function buildWave(
   const excluded = new Set(excludeKeys)
   const chosen: WaveCandidate[] = []
 
+  // A level is not proof. A video of a Vietnamese fire-eater was labelled with
+  // the subject "19 June", caught on the word "June" in its description, and
+  // the Wave dutifully answered with three contents about the 19th of June.
+  // Words the anchor actually uses outweigh a subject it shares with nothing
+  // else, so the pool is ranked on both before anything is picked.
+  const strength = (candidate: WaveCandidate): number => {
+    const byLevel = candidate.level === 1 ? 3 : candidate.level === 2 ? 2 : candidate.level === 3 ? 1 : 0
+    return candidate.sharedWords * 2 + byLevel
+  }
+
   // First pass keeps the comfortable shape; the second only runs if the Wave
   // is still short, and is what allows a third video when there is no image.
+  const ranked = [...candidates].sort((left, right) => strength(right) - strength(left))
+
   for (const perType of [COMFORTABLE_PER_TYPE, MAX_PER_TYPE]) {
-    if (chosen.length >= WAVE_SIZE) break
-    for (const level of [1, 2, 3, 4] as WaveLevel[]) {
-    const pool = candidates.filter((candidate) => candidate.level === level)
     while (chosen.length < WAVE_SIZE) {
-      const usable = pool.filter((candidate) => accepts(anchor, chosen, candidate, excluded, perType))
+      const usable = ranked.filter((candidate) => accepts(anchor, chosen, candidate, excluded, perType))
       if (!usable.length) break
       usable.sort(
         (left, right) =>
-          formatSpread(chosen, right) + popularitySpread(chosen, right) -
-          (formatSpread(chosen, left) + popularitySpread(chosen, left)),
+          strength(right) + formatSpread(chosen, right) + popularitySpread(chosen, right) -
+          (strength(left) + formatSpread(chosen, left) + popularitySpread(chosen, left)),
       )
       const best = usable[0]
       chosen.push(best)
       excluded.add(best.id)
     }
-      if (chosen.length >= WAVE_SIZE) break
-    }
+    if (chosen.length >= WAVE_SIZE) break
   }
 
   // The level reported is the loosest link used, so callers can tell how close

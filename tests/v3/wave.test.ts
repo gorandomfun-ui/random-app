@@ -30,6 +30,7 @@ function candidate(
     title?: string
     nearFamily?: string
     universe?: Universe
+    sharedWords?: number
   } = {},
 ): WaveCandidate {
   counter += 1
@@ -38,6 +39,7 @@ function candidate(
     type,
     title: options.title ?? `contenu ${counter}`,
     level: options.level ?? 1,
+    sharedWords: options.sharedWords ?? 0,
     v3: {
       subjects: [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }],
       universe: options.universe ?? 'animation',

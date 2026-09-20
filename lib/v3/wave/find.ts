@@ -23,6 +23,12 @@ const KEYWORD_INDEX = 'idx_wave_keywords_type'
 /** How many of the anchor's words to match on. The rarest carry the meaning. */
 const WORDS_USED = 8
 
+/**
+ * The words asked about on their own. A title names its subject early, so the
+ * first words are the ones worth a query of their own.
+ */
+const WORDS_QUERIED_ALONE = 3
+
 type ItemRow = Document & {
   _id: ObjectId
   type: ItemType
@@ -30,7 +36,22 @@ type ItemRow = Document & {
   v3?: ItemTags & { nearFamily?: string; formatFamily?: string }
 }
 
-function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
+/**
+ * Who published it, even when the content carries no labels.
+ *
+ * A Giphy archive uploads thousands of GIFs stamped with its own name, so its
+ * name is in their words and the Wave links them to each other. Without an
+ * author the "never twice the same" rule had nothing to compare, and answered
+ * a GIF from the Frisian film archive with three more from the same archive.
+ */
+function channelOf(row: ItemRow): string | undefined {
+  if (row.v3?.channelKey) return row.v3.channelKey
+  const owner = row.creatorId ?? row.channelId ?? row.channelTitle
+  if (typeof owner === 'string' && owner.trim()) return `${row.provider ?? 'source'}:${owner.trim().toLowerCase()}`
+  return undefined
+}
+
+function toCandidate(row: ItemRow, level: WaveLevel, sharedWords = 0): WaveCandidate | null {
   // At the word level the answers are stock photographs too, and those were
   // never tagged. Refusing them here left the level with nothing to offer.
   if (!row.v3 && level !== 4) return null
@@ -39,13 +60,14 @@ function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
     type: row.type,
     title: row.title,
     level,
+    sharedWords,
     v3: {
       subjects: row.v3?.subjects ?? [],
       universe: row.v3?.universe ?? 'other',
       angle: row.v3?.angle ?? 'other',
       popularity: row.v3?.popularity ?? 'unknown',
       era: row.v3?.era ?? 'unknown',
-      channelKey: row.v3?.channelKey,
+      channelKey: channelOf(row),
       nearFamily: row.v3?.nearFamily,
     },
   }
@@ -61,18 +83,39 @@ function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
  */
 const WORDS_IN_COMMON_NEEDED = 2
 
+/** Whether the content repeats one of the anchor's most telling words. */
+function sharesSalient(row: ItemRow, salient: Set<string>): boolean {
+  if (!salient.size) return false
+  for (const raw of [...(row.keywords ?? []), ...(row.tags ?? [])]) {
+    if (typeof raw === 'string' && salient.has(raw.trim().toLowerCase())) return true
+  }
+  return false
+}
+
+/**
+ * Not all words weigh the same.
+ *
+ * A title names its subject first, so "vietnamese" in first place says far more
+ * than "burning" and "display" further down. Counting every word alike answered
+ * a Vietnamese fire-eater with Burning Man, on two common words, while the
+ * contents actually about Vietnam shared only the one that mattered.
+ */
+const SALIENT_WEIGHT = 3
+
 function wordsShared(row: ItemRow, anchorWords: string[]): number {
   if (!anchorWords.length) return 0
-  const wanted = new Set(anchorWords)
+  const weight = new Map(anchorWords.map((word, rank) => [word, rank < WORDS_QUERIED_ALONE ? SALIENT_WEIGHT : 1]))
   const own = [...(row.keywords ?? []), ...(row.tags ?? [])]
   let shared = 0
   const seen = new Set<string>()
   for (const raw of own) {
     if (typeof raw !== 'string') continue
     const word = raw.trim().toLowerCase()
-    if (seen.has(word) || !wanted.has(word)) continue
+    if (seen.has(word)) continue
+    const value = weight.get(word)
+    if (!value) continue
     seen.add(word)
-    shared += 1
+    shared += value
   }
   return shared
 }
@@ -138,7 +181,7 @@ async function fetchLevel(
             _id: { $ne: anchorId },
           },
           {
-            projection: { type: 1, title: 1, v3: 1, rand: 1, keywords: 1, tags: 1 },
+            projection: { type: 1, title: 1, v3: 1, rand: 1, keywords: 1, tags: 1, creatorId: 1, channelId: 1, channelTitle: 1, provider: 1 },
             limit: POOL_PER_FORMAT,
             // Naming the index skips plan selection, which on its own ate the
             // whole budget and made the query fail before reading a row.
@@ -157,19 +200,17 @@ async function fetchLevel(
     }
   }))
 
-  const rows = perGroup.flat()
-  if (level !== 4) {
-    return rows
-      .map((row) => toCandidate(row, level))
-      .filter((candidate): candidate is WaveCandidate => Boolean(candidate))
-  }
+  const scored = perGroup.flat().map((row) => ({ row, shared: wordsShared(row, anchorWords) }))
 
-  // Strongest links first, and nothing that shares a single word.
-  return rows
-    .map((row) => ({ row, shared: wordsShared(row, anchorWords) }))
-    .filter((entry) => entry.shared >= WORDS_IN_COMMON_NEEDED)
-    .sort((left, right) => right.shared - left.shared)
-    .map((entry) => toCandidate(entry.row, level))
+  // At the word level a single word in common is a coincidence, not a link.
+  // Elsewhere the count is kept as evidence and the ranking uses it.
+  const salient = new Set(anchorWords.slice(0, WORDS_QUERIED_ALONE))
+  const kept = level === 4
+    ? scored.filter((entry) => entry.shared >= WORDS_IN_COMMON_NEEDED || sharesSalient(entry.row, salient))
+    : scored
+
+  return kept
+    .map((entry) => toCandidate(entry.row, level, entry.shared))
     .filter((candidate): candidate is WaveCandidate => Boolean(candidate))
 }
 
@@ -263,24 +304,38 @@ export async function findCandidates(
   // of two formats, and its videos are often the anchor's own channel, which
   // the Wave refuses. Both are index seeks on the subject, so the pair is cheap.
   const [close, related] = await Promise.all([
-    primary ? fetchLevel(db, { 'v3.subjects.id': primary }, 1, anchorId, SUBJECT_INDEX) : Promise.resolve([]),
+    primary ? fetchLevel(db, { 'v3.subjects.id': primary }, 1, anchorId, SUBJECT_INDEX, anchor.words ?? []) : Promise.resolve([]),
     secondary.length
-      ? fetchLevel(db, { 'v3.subjects.id': { $in: secondary } }, 2, anchorId, SUBJECT_INDEX)
+      ? fetchLevel(db, { 'v3.subjects.id': { $in: secondary } }, 2, anchorId, SUBJECT_INDEX, anchor.words ?? [])
       : Promise.resolve([]),
   ])
   collected.push(...close, ...related)
   if (collected.length >= needed * 4 && kindsIn(collected) >= WAVE_SIZE) return collected
 
-  if (anchor.v3.universe && anchor.v3.universe !== 'other') {
-    collected.push(...(await fetchLevel(db, { 'v3.universe': anchor.v3.universe }, 3, anchorId, UNIVERSE_INDEX)))
-    if (collected.length >= needed * 4 && kindsIn(collected) >= WAVE_SIZE) return collected
+  // Words are fetched with the subjects, not after them: asking only when the
+  // subjects came up short let a wrong subject win by default.
+  //
+  // And asked for one at a time, most telling first. Asking for all eight at
+  // once returned whatever the index offered, which is the contents sharing the
+  // common words — "street", "display" — never the ones sharing "vietnamese".
+  // A fire-eater in Vietnam was answered with a German pop video.
+  const words = anchor.words ?? []
+  if (words.length) {
+    const perWord = await Promise.all(
+      words.slice(0, WORDS_QUERIED_ALONE).map((word) =>
+        fetchLevel(db, { keywords: word }, 4, anchorId, KEYWORD_INDEX, words)),
+    )
+    for (const found of perWord) collected.push(...found)
+    collected.push(...(await fetchLevel(
+      db, { keywords: { $in: words } }, 4, anchorId, KEYWORD_INDEX, words,
+    )))
   }
 
-  // Last resort, and the reason every content can carry a Wave: match on the
-  // words themselves.
-  if (anchor.words?.length) {
+  if (collected.length >= needed * 4 && kindsIn(collected) >= WAVE_SIZE) return collected
+
+  if (anchor.v3.universe && anchor.v3.universe !== 'other') {
     collected.push(...(await fetchLevel(
-      db, { keywords: { $in: anchor.words } }, 4, anchorId, KEYWORD_INDEX, anchor.words,
+      db, { 'v3.universe': anchor.v3.universe }, 3, anchorId, UNIVERSE_INDEX, anchor.words ?? [],
     )))
   }
 

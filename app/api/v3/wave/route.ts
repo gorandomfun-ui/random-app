@@ -5,7 +5,7 @@ import { ObjectId } from 'mongodb'
 
 import { getDatabase } from '@/lib/mongodb'
 import { findCandidates, loadAnchor } from '@/lib/v3/wave/find'
-import { buildWave } from '@/lib/v3/wave/select'
+import { accepts, buildWave } from '@/lib/v3/wave/select'
 import { normalizeWaveDocument, type WaveDocument } from '@/lib/random/waveEngine'
 
 /**
@@ -58,10 +58,20 @@ export async function POST(request: Request) {
     const { items, level } = buildWave(loaded.anchor, candidates, parseExcludes(body?.excludeKeys))
 
     const chosenIds = items.map((item) => item.id)
-    const spareIds = candidates
-      .map((candidate) => candidate.id)
-      .filter((id) => !chosenIds.includes(id))
-      .slice(0, RESERVES)
+
+    // The spares go through the same rules as the three. They used not to, and
+    // the interface — which falls back to them whenever one of the three cannot
+    // be shown — ended up displaying three GIFs from a single archive.
+    const kept = [...items]
+    const excluded = new Set(chosenIds)
+    const spareIds: string[] = []
+    for (const candidate of candidates) {
+      if (spareIds.length >= RESERVES) break
+      if (!accepts(loaded.anchor, kept, candidate, excluded, 3)) continue
+      kept.push(candidate)
+      excluded.add(candidate.id)
+      spareIds.push(candidate.id)
+    }
 
     // The Wave decides on labels alone, but the interface needs something it can
     // actually show, so the full documents are read once the choice is made.
