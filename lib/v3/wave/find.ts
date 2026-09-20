@@ -80,6 +80,10 @@ function channelOf(row: ItemRow): string | undefined {
   if (row.v3?.channelKey) return row.v3.channelKey
   const owner = row.creatorId ?? row.channelId ?? row.channelTitle
   if (typeof owner === 'string' && owner.trim()) return `${row.provider ?? 'source'}:${owner.trim().toLowerCase()}`
+  // Giphy names the uploader in the title itself — "Moonwalk Macron GIF by
+  // systaime" — and its older documents carry it nowhere else.
+  const byline = /\bGIF by (.+)$/i.exec(row.title ?? '')
+  if (byline) return `giphy:${byline[1].trim().toLowerCase()}`
   return undefined
 }
 
