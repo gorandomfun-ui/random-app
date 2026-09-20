@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { baseSteps, planLikeTurn, searchableWords, MAX_TURNS, type LikeSeed } from '@/lib/discovery/likePlan'
-import { capPerSource, MAX_PER_CHANNEL, MAX_PER_FAMILY } from '@/lib/discovery/likeCaps'
+import { capPerSource, keepTitled, MAX_PER_CHANNEL, MAX_PER_FAMILY } from '@/lib/discovery/likeCaps'
 
 const NOW = Date.UTC(2026, 8, 20, 12)
 const seed = (words: string[], expansion?: string[]): LikeSeed => ({
@@ -64,4 +64,15 @@ test('une page ne garde que quelques vidéos par chaîne et par famille', () => 
   assert.equal(kept.filter(v => v.channelId === 'UCb').length, 2, 'les autres passent')
   const twins = Array.from({ length: 5 }, () => ({ channelId: `UC${Math.random()}`, title: 'Exact same repost title' }))
   assert.ok(capPerSource(twins).length <= MAX_PER_FAMILY, 'les quasi-doublons sont plafonnés même sur des chaînes différentes')
+})
+
+test('autour d_un like, le sujet doit être dans le titre : la fouille passe, les fermes non', () => {
+  const santana = { key: 'words:santana', label: 'santana', aliases: ['santana'], kind: 'topic' as const, evidence: 'title' as const }
+  const kept = keepTitled([
+    { title: 'Santana live 1982 filmed from the crowd', description: '' },
+    { title: 'Santana dos Garrotes: aves apreendidas são devolvidas', description: '' },
+    { title: 'Más Que Noticias – 04 setiembre 2026 [Full Movie]', description: 'noticias santana costa rica' },
+    { title: 'Steamhammer — Mountains 1970 (UK, Progressive, Blues Rock)', description: 'santana era rock' },
+  ], santana)
+  assert.deepEqual(kept.map(v => v.title.slice(0, 12)), ['Santana live', 'Santana dos '])
 })

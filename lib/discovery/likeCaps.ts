@@ -8,6 +8,7 @@
  */
 
 import { nearFamilyKey } from '../v3/families'
+import { subjectInSource, type Subject } from './subjects'
 
 export const MAX_PER_CHANNEL = 3
 export const MAX_PER_FAMILY = 2
@@ -27,4 +28,18 @@ export function capPerSource<T extends Sourced>(videos: T[]): T[] {
     byFamily.set(family, familyCount + 1)
     return true
   })
+}
+
+/**
+ * Only videos that name the subject in their title.
+ *
+ * Reupload farms slip the searched word into the description of whatever they
+ * post — a Costa Rican news bulletin, four copies of a 1970 record — and a
+ * search on a bare name brings them back by the page. Genuine finds name the
+ * subject: a concert filmed from the crowd is called "Santana live", a report
+ * on the town is called "Santana dos Garrotes". The digging is untouched; the
+ * padding is not.
+ */
+export function keepTitled<T extends { title?: string }>(videos: T[], subject: Subject): T[] {
+  return videos.filter((video) => Boolean(video.title) && subjectInSource(video.title ?? '', subject))
 }
