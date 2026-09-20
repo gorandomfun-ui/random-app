@@ -86,6 +86,14 @@ export type Popularity = 'niche' | 'mid' | 'known' | 'mainstream' | 'unknown'
 
 export type Era = 'trend' | 'recent' | 'retro' | 'unknown'
 
+/**
+ * The registers of the cool pool: what a content is, read from its labels
+ * and its title, so a cool draw is an index seek and not a scan. Rules in
+ * `lib/v3/cool/registers.ts`.
+ */
+export const COOL_REGISTERS = ['gaming', 'archive', 'music', 'elsewhere', 'cool-words'] as const
+export type CoolRegister = (typeof COOL_REGISTERS)[number]
+
 /** Which ingestion line brought the item in. */
 export type Line = 'trend' | 'retro-trend' | 'mainstream' | 'combo' | 'like-dig' | 'subject-dig' | 'legacy'
 
@@ -137,6 +145,8 @@ export type ItemTags = {
   year?: number
   /** "youtube:UCxxx" or "dailymotion:xxxxx" — the real author, never a category. */
   channelKey?: string
+  /** The cool registers this content belongs to; absent when none. */
+  registers?: CoolRegister[]
   line: Line
   usable: boolean
   tagVersion: 1

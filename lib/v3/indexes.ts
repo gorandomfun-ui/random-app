@@ -41,6 +41,12 @@ export const V3_INDEXES: PlannedIndex[] = [
   },
   {
     collection: ITEMS,
+    name: 'v3_register_type_rand',
+    key: { 'v3.registers': 1, type: 1, rand: 1 },
+    purpose: 'Cool pool: a content of a register, drawn at random across the whole catalogue.',
+  },
+  {
+    collection: ITEMS,
     name: 'type_provider_counts',
     key: { type: 1, provider: 1 },
     purpose: 'Admin stats: count by type and provider without reading every document.',

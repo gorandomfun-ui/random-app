@@ -5,6 +5,7 @@
 
 import type { Evidence, ItemTags, ItemType, Line, SubjectRef, Universe } from '../types'
 import { TAG_VERSION, isUniverse } from '../types'
+import { computeRegisters } from '../cool/registers'
 import { detectAngle } from './angle'
 import { channelKey, classifyEra, classifyPopularity, isUsableItem, yearFromTitle } from './classify'
 import { appearsCapitalised, searchableText } from './normalize'
@@ -106,6 +107,14 @@ export function taggableText(item: TaggableItem): string {
 }
 
 export function tagItem(item: TaggableItem, index: SubjectIndex, now = new Date()): ItemTags {
+  const tags = labelItem(item, index, now)
+  // The cool registers are read from the labels just written and the title,
+  // so a content is part of the cool pool the moment it is stored.
+  const registers = computeRegisters({ type: item.type, title: item.title, provider: item.provider, v3: tags })
+  return registers.length ? { ...tags, registers } : tags
+}
+
+function labelItem(item: TaggableItem, index: SubjectIndex, now: Date): ItemTags {
   const usable = isUsableItem(item)
   const haystack = taggableText(item)
 

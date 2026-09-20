@@ -1,6 +1,6 @@
 import type { Document, Filter } from 'mongodb'
 
-const STRONG_TERMS = [
+export const STRONG_TERMS = [
   'absurd',
   'analog',
   'archive',
@@ -43,7 +43,7 @@ const STRONG_TERMS = [
 ]
 
 const STRONG_REGEXES = STRONG_TERMS.map((term) => new RegExp(term.replace(/\s+/g, '\\s+'), 'i'))
-const STRONG_BLOCKED_TERMS = [
+export const STRONG_BLOCKED_TERMS = [
   'porn',
   'porno',
   'pornhub',
