@@ -1125,14 +1125,23 @@ export async function finalizeVideoIngest(
     // long, so refreshing a timestamp that already says "today" rewrote almost
     // every row of the batch for nothing — and a row costs seconds here.
     const staleBefore = new Date(observedAt.getTime() - TREND_MARK_FRESH_MS);
-    const refreshed = await collection.updateMany(
-      {
-        type: 'video',
-        videoId: { $in: videoIds },
-        $or: [{ trendObservedAt: { $exists: false } }, { trendObservedAt: { $lt: staleBefore } }],
-      } as Filter<VideoDocument>,
-      { $max: { trendObservedAt: observedAt } },
-    );
+    // Two steps, each a plain index seek. As one update with an $or of
+    // "missing" and "older" marks, the planner left the video-id index and
+    // walked every video without a mark — twelve minutes for a hundred ids,
+    // and the phase never finished. Reading the ids first costs nothing and
+    // leaves the planner no choice.
+    const known = await collection
+      .find(
+        { type: 'video', videoId: { $in: videoIds } } as Filter<VideoDocument>,
+        { projection: { _id: 1, trendObservedAt: 1 }, hint: 'uniq_video_id', maxTimeMS: 20000 },
+      )
+      .toArray();
+    const staleIds = known
+      .filter((row) => !(row.trendObservedAt instanceof Date) || row.trendObservedAt < staleBefore)
+      .map((row) => row._id);
+    const refreshed = staleIds.length
+      ? await collection.updateMany({ _id: { $in: staleIds } } as Filter<VideoDocument>, { $max: { trendObservedAt: observedAt } })
+      : { modifiedCount: 0 };
     summary.updated += refreshed.modifiedCount;
   }
   const writeDocuments = documents;

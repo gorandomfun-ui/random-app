@@ -49,9 +49,28 @@ jobs:
       - name: Install dependencies for direct trends
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      # The trending line, without Vercel's five minutes: journaled, twelve minutes at most.
+      - name: Run the trending line directly
+        if: ${{ github.event.inputs.dry_run != 'true' && vars.DAILY_AUTO_TRENDS_ON_GITHUB != '0' }}
+        continue-on-error: true
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
+          MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          RANDOM_YOUTUBE_QUOTA_ENABLED: ${{ vars.RANDOM_YOUTUBE_QUOTA_ENABLED || '1' }}
+          RANDOM_YT_SEARCH_DAILY_LIMIT: ${{ vars.RANDOM_YT_SEARCH_DAILY_LIMIT }}
+          RANDOM_YT_OTHER_DAILY_LIMIT: ${{ vars.RANDOM_YT_OTHER_DAILY_LIMIT }}
+          RANDOM_YT_SEARCH_BASE_RESERVE: ${{ vars.RANDOM_YT_SEARCH_BASE_RESERVE }}
+          RANDOM_YT_OTHER_BASE_RESERVE: ${{ vars.RANDOM_YT_OTHER_BASE_RESERVE }}
+          RANDOM_YT_EXTRA_SEARCH_LIMIT: ${{ vars.RANDOM_YT_EXTRA_SEARCH_LIMIT }}
+          RANDOM_YT_PACING_ENABLED: ${{ vars.RANDOM_YT_PACING_ENABLED || '1' }}
+          RANDOM_TRENDING_MINUTES: ${{ vars.RANDOM_TRENDING_MINUTES || '12' }}
+        run: node --import tsx scripts/v3/trending-direct.ts
+
       - name: Run daily auto ingest
         id: ingest
         env:
+          DAILY_AUTO_TRENDS_ON_GITHUB: ${{ vars.DAILY_AUTO_TRENDS_ON_GITHUB != '0' && '1' || '0' }}
           # Same API project and database as Vercel: quotas/cursors stay shared.
           MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
           MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
