@@ -169,11 +169,11 @@ test('200-draw sessions preserve format/mode planning and remain random with bou
       const start = performance.now(), result = pickPool(pool, ticket, state, random, now)
       durations.push(performance.now() - start)
       assert.ok(result); assert.equal(result.item.type, type)
-      if (i >= 10 && type !== 'quote') { visuals++; cool += Number(ticket.mode === 'cool') }
+      if (type !== 'quote') { visuals++; cool += Number(ticket.mode === 'cool') }
       counts[result.item.profile.family] = (counts[result.item.profile.family] ?? 0) + 1
       sequence.push(result.item.key); state = commitDraw(state, ticket, result.item)
     }
-    assert.ok(Math.abs(cool - visuals / 2) <= 5)
+    assert.ok(Math.abs(cool - visuals / 3) <= 2, `${cool} cool sur ${visuals} visuels`)
     sequences.push(sequence.join(','))
   }
   assert.equal(new Set(sequences).size, 10)

@@ -48,7 +48,7 @@ async function thread(excludeKeys: string[]) {
       items,
       engine: 'cool-thread',
       build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
-      start: { id: composed.start.id, source: composed.start.source, popularity: composed.start.popularity },
+      start: { id: composed.start.id, source: composed.start.source, asked: composed.start.asked, fallback: composed.start.fallback, popularity: composed.start.popularity },
       neighbours: composed.neighbours.map((item) => ({
         id: item.id, type: item.type, level: item.level, popularity: item.v3.popularity,
       })),

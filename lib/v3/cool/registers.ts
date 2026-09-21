@@ -29,6 +29,8 @@ export type Register = {
   angles?: Angle[]
   /** At least one of these must appear in the title, as a whole word. */
   titleWords?: string[]
+  /** For images only, when the videos are told apart by their angle and a GIF has none. */
+  imageTitleWords?: string[]
   /** A title written in another script counts as being from elsewhere. */
   titleScript?: RegExp
   /** "both": every condition given must hold; "any": one of them is enough. */
@@ -70,9 +72,11 @@ export const REGISTERS: Register[] = [
   {
     id: 'gaming', label: 'Gaming niche',
     universes: ['gaming'],
-    titleWords: ['speedrun', 'retro', 'longplay', 'demoscene', 'demo', 'tas', 'mod', 'mods', 'indie', 'arcade', 'glitch', 'glitches', 'world record', 'any%', '100%',
-      'nes', 'snes', 'sega', 'genesis', 'mega drive', 'atari', 'amiga', 'commodore', 'c64', 'msx', 'ms-dos', 'dos', 'ps1', 'psx', 'dreamcast', 'n64', 'gamecube', 'game boy', 'gameboy',
-      'emulator', 'pixel art', 'chiptune', 'quake', 'doom', 'homebrew', 'romhack', 'rom hack', 'fan game', 'jam', 'itch.io', 'prototype', 'unreleased', 'beta', 'cancelled', 'lost', 'mame'],
+    titleWords: ['speedrun', 'speedrunner', 'retro', 'longplay', 'demoscene', 'demo', 'tas', 'mod', 'mods', 'modding', 'indie', 'indie game', 'arcade', 'glitch', 'glitches', 'world record', 'any%', '100%',
+      'nes', 'snes', 'sega', 'genesis', 'mega drive', 'atari', 'amiga', 'commodore', 'c64', 'msx', 'ms-dos', 'dos', 'ps1', 'psx', 'ps2', 'dreamcast', 'n64', 'gamecube', 'game boy', 'gameboy', 'psp', 'pico-8',
+      'emulator', 'pixel art', 'chiptune', 'quake', 'doom', 'homebrew', 'romhack', 'rom hack', 'fan game', 'jam', 'game jam', 'ludum dare', 'itch.io', 'prototype', 'unreleased', 'beta', 'cancelled', 'lost', 'mame',
+      'roguelike', 'metroidvania', 'platformer', 'shmup', 'bullet hell', 'fighting game', 'rhythm game', 'point and click', 'text adventure', 'visual novel', 'devlog', 'postmortem', 'gdc', 'making of',
+      'easter egg', 'easter eggs', 'cut content', 'developer commentary', 'tool-assisted', 'no hit', 'no damage', 'blindfolded', 'lan party', 'esport', 'esports', 'tournament', 'evo', 'grand finals'],
     combine: 'both', minPopularity: 'mid',
     excludeWords: ['roblox', 'minecraft', 'fortnite', 'gta 5', 'gta v', 'free fire', 'brawl stars', 'fnaf', 'among us', 'fifa', 'ea fc', 'call of duty', 'warzone', 'valorant', 'skibidi', 'brainrot',
       'stream', 'new class', 'preview', 'update', 'patch', 'explored'],
@@ -89,6 +93,10 @@ export const REGISTERS: Register[] = [
   {
     id: 'music', label: 'Musical',
     universes: ['music'], angles: ['live-concert', 'official-clip', 'amateur-cover', 'tv-archive', 'fan-footage', 'local-event'],
+    // A GIF has no angle: it must say something musical itself, or every reaction GIF of a singer counts.
+    imageTitleWords: ['music', 'musique', 'musica', 'concert', 'live', 'guitar', 'guitare', 'bass', 'drums', 'drummer', 'batterie', 'piano', 'synth', 'dj', 'vinyl', 'vinyle', 'turntable',
+      'band', 'singer', 'singing', 'chanteur', 'chanteuse', 'rapper', 'rap', 'hip hop', 'hiphop', 'jazz', 'rock', 'punk', 'metal', 'techno', 'house music', 'disco', 'funk', 'soul', 'reggae', 'ska', 'blues',
+      'orchestra', 'orchestre', 'opera', 'opéra', 'choir', 'symphony', 'album', 'on tour', 'on stage', 'festival', 'gig', 'rehearsal', 'music video', 'clip', 'sax', 'saxophone', 'trumpet', 'violin', 'cello', 'accordion', 'accordéon'],
     combine: 'both', minPopularity: 'mid',
     excludeWords: ['1 hour', 'one hour', '2 hours', '10 hours', 'mix', 'megamix', 'mashup', 'remix', 'instrumental', 'backing track', 'lesson', 'cover art', 'vaquejada'],
   },
@@ -126,7 +134,8 @@ export function registerMatch(register: Register, type: 'video' | 'image'): Filt
   if (register.universes?.length) labels.push({ 'v3.universe': { $in: register.universes } })
   if (type === 'video' && register.angles?.length) labels.push({ 'v3.angle': { $in: register.angles } })
   const title: Filter<Document>[] = []
-  if (register.titleWords?.length) title.push({ title: { $regex: wordsRegex(register.titleWords).source, $options: 'iu' } })
+  const words = type === 'image' && register.imageTitleWords?.length ? register.imageTitleWords : register.titleWords
+  if (words?.length) title.push({ title: { $regex: wordsRegex(words).source, $options: 'iu' } })
   if (register.titleScript) title.push({ title: { $regex: register.titleScript.source } })
 
   const conditions: Filter<Document>[] = [
@@ -166,6 +175,7 @@ export type LabelableRow = {
 const COMPILED = REGISTERS.map((register) => ({
   register,
   words: register.titleWords?.length ? wordsRegex(register.titleWords) : null,
+  imageWords: register.imageTitleWords?.length ? wordsRegex(register.imageTitleWords) : null,
   exclude: register.excludeWords?.length ? wordsRegex(register.excludeWords) : null,
 }))
 
@@ -175,19 +185,31 @@ const rank = (popularity: Popularity) => POPULARITY_ORDER.indexOf(popularity)
  * The registers a stored content belongs to — the same rules as
  * `registerMatch`, evaluated on the row. Empty for most of the catalogue.
  */
-export function computeRegisters(row: LabelableRow): CoolRegister[] {
-  if (row.type !== 'video' && row.type !== 'image') return []
+/**
+ * What every cool content must be, whatever its register: showable, not
+ * stock, not news, a real title. The trend source draws contents that carry
+ * no register label and asks this of them.
+ */
+export function isCoolCandidate(row: LabelableRow): boolean {
+  if (row.type !== 'video' && row.type !== 'image') return false
   const v3 = row.v3
-  if (!v3?.usable) return []
-  if (row.isSuppressed || row.obsoleteVideoStatus === 'obsolete' || row.editorialRoutine) return []
-  if (row.provider && STOCK_PROVIDERS.includes(row.provider.toLowerCase())) return []
+  if (!v3?.usable) return false
+  if (row.isSuppressed || row.obsoleteVideoStatus === 'obsolete' || row.editorialRoutine) return false
+  if (row.provider && STOCK_PROVIDERS.includes(row.provider.toLowerCase())) return false
   const title = (row.title ?? '').trim()
-  if (!title || HASHTAG_SPAM.test(title) || GLOBAL_EXCLUDE.test(title) || BLOCKED_WORDS.test(title)) return []
-  if (EXCLUDED_UNIVERSES.includes(v3.universe) || EXCLUDED_ANGLES.includes(v3.angle)) return []
+  if (!title || HASHTAG_SPAM.test(title) || GLOBAL_EXCLUDE.test(title) || BLOCKED_WORDS.test(title)) return false
+  if (EXCLUDED_UNIVERSES.includes(v3.universe) || EXCLUDED_ANGLES.includes(v3.angle)) return false
+  return true
+}
+
+export function computeRegisters(row: LabelableRow): CoolRegister[] {
+  if (!isCoolCandidate(row)) return []
+  const v3 = row.v3!
+  const title = (row.title ?? '').trim()
 
   const video = row.type === 'video'
   const found: CoolRegister[] = []
-  for (const { register, words, exclude } of COMPILED) {
+  for (const { register, words, imageWords, exclude } of COMPILED) {
     if (register.excludeUniverses?.includes(v3.universe)) continue
     if (exclude?.test(title)) continue
     if (video && rank(v3.popularity) < rank(register.minPopularity)) continue
@@ -196,8 +218,9 @@ export function computeRegisters(row: LabelableRow): CoolRegister[] {
     const checks: boolean[] = []
     if (register.universes) checks.push(register.universes.includes(v3.universe))
     if (video && register.angles) checks.push(register.angles.includes(v3.angle))
-    if (words || register.titleScript) {
-      checks.push(Boolean(words?.test(title)) || Boolean(register.titleScript?.test(title)))
+    const titleRegex = !video && imageWords ? imageWords : words
+    if (titleRegex || register.titleScript) {
+      checks.push(Boolean(titleRegex?.test(title)) || Boolean(register.titleScript?.test(title)))
     }
     if (!checks.length) continue
     if (register.combine === 'both' ? checks.every(Boolean) : checks.some(Boolean)) found.push(register.id)

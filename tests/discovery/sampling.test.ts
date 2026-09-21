@@ -26,7 +26,8 @@ test('a sole trend/owner match improves its chances without monopolising a fresh
   const preferred = { ...make('preferred'), trendObservedAt: now, editorialFamilies: ['craft'] }
   items.push(preferred)
   const random = seeded(11), state = newSession(11)
-  const ticket = { ...planDraw(state, 'video'), lane: 'trend' as const, branch: 'editorial' as const }
+  // The first draw of a session is no longer always cool: the test asks for a cool ticket outright.
+  const ticket = { ...planDraw(state, 'video'), mode: 'cool' as const, lane: 'trend' as const, branch: 'editorial' as const }
   let hits = 0, alternatives = 0
   for (let i = 0; i < 10000; i++) {
     const selected = pickPool(items, ticket, state, random, now, { craft: 1000 })!

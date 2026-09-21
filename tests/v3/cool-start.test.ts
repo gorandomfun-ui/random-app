@@ -1,18 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { pickSource, pickZone } from '@/lib/v3/cool/start'
+import { nicheFallback, pickZone, registerFor } from '@/lib/v3/cool/start'
 import type { LikeZone } from '@/lib/v3/cool/likes'
 
 const rolls = (values: number[]) => { let index = 0; return () => values[index++ % values.length] }
 
-test('une source au hasard : les registres et les likes pèsent pareil', () => {
-  assert.equal(pickSource('video', true, rolls([0])), 'gaming')
-  assert.equal(pickSource('video', true, rolls([0.99])), 'like', 'un like : la cinquième source d_une vidéo')
-  assert.equal(pickSource('video', false, rolls([0.99])), 'elsewhere', 'sans like, les quatre registres')
-  assert.equal(pickSource('image', true, rolls([0.99])), 'like', 'la sixième source d_une image')
-  assert.equal(pickSource('image', false, rolls([0.99])), 'cool-words', 'les GIFs cool sont un registre d_image')
-  assert.equal(pickSource('video', false, rolls([0.5])), 'music')
+test('ce qu_une source du sac veut dire pour un format', () => {
+  assert.equal(registerFor('gaming', 'video', rolls([0])), 'gaming')
+  assert.equal(registerFor('music', 'image', rolls([0])), 'music')
+  assert.equal(registerFor('oldschool', 'video', rolls([0.9])), 'archive', 'une vidéo old school est une archive')
+  assert.equal(registerFor('oldschool', 'image', rolls([0.2])), 'archive')
+  assert.equal(registerFor('oldschool', 'image', rolls([0.8])), 'cool-words', 'une image old school peut être un GIF vintage')
+})
+
+test('quand une source n_a rien, le repli n_est jamais gaming', () => {
+  for (const roll of [0, 0.3, 0.6, 0.99]) {
+    assert.notEqual(nicheFallback('video', rolls([roll])), 'gaming')
+    assert.notEqual(nicheFallback('image', rolls([roll])), 'gaming')
+  }
+  assert.equal(nicheFallback('image', rolls([0.99])), 'cool-words')
+  assert.equal(nicheFallback('video', rolls([0.99])), 'elsewhere')
 })
 
 test('la zone d_un like : son sujet nommé, son auteur ou son genre, selon ce qu_il a', () => {

@@ -41,6 +41,14 @@ test('ailleurs : une autre écriture ou un mot de pays, dans un univers de diver
   assert.deepEqual(computeRegisters(video('पेडू में दर्द: pregnancy tips', { universe: 'people-everyday', popularity: 'known' })), [], 'la santé est exclue')
 })
 
+test('gaming élargi au-delà de l_arcade ; un GIF musical doit dire quelque chose de musical', () => {
+  assert.deepEqual(computeRegisters(video('Ludum Dare 54 – our game jam entry', { universe: 'gaming', popularity: 'mid' })), ['gaming'])
+  assert.deepEqual(computeRegisters(video('Hollow Knight metroidvania no hit run', { universe: 'gaming', popularity: 'mid' })), ['gaming'])
+  assert.deepEqual(computeRegisters(image('Katy Perry Dancing GIF by Stefanie Shank', 'music')), [], 'l_univers musique ne suffit plus à un GIF')
+  assert.deepEqual(computeRegisters(image('Heavy Metal 80S GIF', 'music')), ['music'])
+  assert.deepEqual(computeRegisters(image('Reggae Music GIF by Cidade Verde Sounds', 'music')), ['music'])
+})
+
 test('les GIFs cool : un des quarante mots dans le titre, jamais un mot bloqué', () => {
   assert.deepEqual(computeRegisters(image('Vintage Bubbling GIF')), ['archive', 'cool-words'], 'un GIF vintage est aussi une archive')
   assert.deepEqual(computeRegisters(image('Arcade Frogger GIF by NakNick', 'gaming')), ['gaming'])

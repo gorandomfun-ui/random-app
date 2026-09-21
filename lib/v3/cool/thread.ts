@@ -12,6 +12,7 @@ import { ObjectId, type Db } from 'mongodb'
 
 import { composeWave, loadAnchor } from '../wave/find'
 import { accepts, type WaveAnchor, type WaveCandidate, type WaveLevel } from '../wave/select'
+import { DEFAULT_BAG, type CoolSource } from './bag'
 import { drawStart, type StartSource, type StartType } from './start'
 import type { ItemType, Popularity } from '../types'
 
@@ -96,7 +97,7 @@ export function doseNeighbours(
 }
 
 export type CoolThread = {
-  start: { id: string; source: StartSource; popularity: Popularity; level: WaveLevel }
+  start: { id: string; source: StartSource; asked: CoolSource; fallback: boolean; popularity: Popularity; level: WaveLevel }
   neighbours: WaveCandidate[]
   wanted: Dose[]
   dosed: boolean
@@ -108,16 +109,17 @@ const START_ATTEMPTS = 3
 
 export async function composeCoolThread(
   db: Db,
-  options: { excludeKeys?: string[]; random?: Rng; now?: number; type?: StartType } = {},
+  options: { excludeKeys?: string[]; random?: Rng; now?: number; type?: StartType; source?: CoolSource } = {},
 ): Promise<CoolThread | null> {
   const random = options.random ?? Math.random
   const excludeKeys = options.excludeKeys ?? []
   const type: StartType = options.type ?? (random() < 2 / 3 ? 'video' : 'image')
+  const source: CoolSource = options.source ?? DEFAULT_BAG[Math.floor(random() * DEFAULT_BAG.length)]
   const tried = new Set(excludeKeys)
   let best: CoolThread | null = null
 
   for (let attempt = 1; attempt <= START_ATTEMPTS; attempt += 1) {
-    const drawn = await drawStart(db, { type, excludeIds: tried, random, now: options.now })
+    const drawn = await drawStart(db, { type, source, excludeIds: tried, random, now: options.now })
     const row = drawn?.rows[0]
     if (!drawn || !row) continue
     const startId = new ObjectId(String(row._id))
@@ -131,7 +133,7 @@ export async function composeCoolThread(
       loaded.anchor, popularity, [...wave.items, ...wave.spares], excludeKeys,
     )
     const level = (neighbours.length ? Math.max(...neighbours.map((item) => item.level)) : 5) as WaveLevel
-    const thread: CoolThread = { start: { id: String(row._id), source: drawn.source, popularity, level }, neighbours, wanted, dosed, attempts: attempt }
+    const thread: CoolThread = { start: { id: String(row._id), source: drawn.source, asked: drawn.asked, fallback: drawn.fallback, popularity, level }, neighbours, wanted, dosed, attempts: attempt }
     if (neighbours.length === NEIGHBOURS) return thread
     if (!best || neighbours.length > best.neighbours.length) best = thread
   }

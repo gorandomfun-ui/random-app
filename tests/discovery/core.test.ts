@@ -132,8 +132,8 @@ test('500 sessions of 100 Randoms keep stock, repetition and mode invariants', (
     for (let draw = 0; draw < 100; draw++) {
       const type = draw % 10 === 9 ? 'quote' : draw % 3 === 0 ? 'image' : 'video'
       const ticket = planDraw(state, type)
-      if (draw < 10 && type !== 'quote') assert.equal(ticket.mode, 'cool')
-      if (draw >= 10 && type !== 'quote') { mixed++; coolMixed += Number(ticket.mode === 'cool') }
+      // One visual draw in three is cool, from the first draw on.
+      if (type !== 'quote') { mixed++; coolMixed += Number(ticket.mode === 'cool') }
       const pool = type === 'quote' ? [item(`q${session}:${draw}`, 'text', 'quote')] : candidates
       const selected = pickPool(pool, ticket, state, random, NOW)
       assert.ok(selected)
@@ -142,7 +142,7 @@ test('500 sessions of 100 Randoms keep stock, repetition and mode invariants', (
       assert.ok(state.visualHistory.slice(-20).filter(x => x.stock).length <= 1)
       displays++
     }
-    assert.ok(Math.abs(coolMixed - mixed / 2) <= 5)
+    assert.ok(Math.abs(coolMixed - mixed / 3) <= 2, `${coolMixed} cool sur ${mixed} visuels`)
   }
   console.log(JSON.stringify({ simulation: 'pool', sessions: 500, displays, durationMs: Math.round(performance.now() - started) }))
 })

@@ -16,8 +16,9 @@ export function newSession(seed: number): Session {
 }
 export function planDraw(state: Session, type: Format): Intent {
   const visual = isVisual(type)
-  const cool = visual && (state.displayed < 10 || bagValue(state.seed, 'mode', state.mixedVisuals,
-    [true, true, true, true, true, false, false, false, false, false]))
+  // One visual draw in three is cool. The first ten used to be all cool and
+  // then one in two: with threads of three, that was the same taste in loops.
+  const cool = visual && bagValue(state.seed, 'mode', state.visuals, [true, false, false])
   const editorial = cool && bagValue(state.seed, 'editorial', state.coolTickets,
     [true, true, true, true, true, false, false, false, false, false])
   const lane = cool ? bagValue(state.seed, 'autonomous', editorial ? state.coolTickets : state.autonomousTickets,
