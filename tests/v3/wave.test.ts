@@ -1,14 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildWave, accepts, type WaveAnchor, type WaveCandidate } from '@/lib/v3/wave/select'
-import type { Angle, ItemType, Popularity, Universe } from '@/lib/v3/types'
+import { buildWave, accepts, textFits, type WaveAnchor, type WaveCandidate } from '@/lib/v3/wave/select'
+import { durationSeconds } from '@/lib/v3/wave/find'
+import type { Angle, Era, ItemType, Popularity, Universe } from '@/lib/v3/types'
 
-function anchor(overrides: Partial<WaveAnchor['v3']> = {}): WaveAnchor {
+function anchor(overrides: Partial<WaveAnchor['v3']> = {}, extra: Partial<Pick<WaveAnchor, 'title' | 'type' | 'duration'>> = {}): WaveAnchor {
   return {
     id: 'ancre',
     type: 'image',
     title: 'Cartman crie GIF',
+    ...extra,
     v3: {
       subjects: [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }],
       universe: 'animation',
@@ -30,6 +32,10 @@ function candidate(
     title?: string
     nearFamily?: string
     universe?: Universe
+    era?: Era
+    lang?: string
+    languageScope?: string
+    duration?: number
   } = {},
 ): WaveCandidate {
   counter += 1
@@ -38,12 +44,15 @@ function candidate(
     type,
     title: options.title ?? `contenu ${counter}`,
     level: options.level ?? 1,
+    ...(options.lang ? { lang: options.lang } : {}),
+    ...(options.languageScope ? { languageScope: options.languageScope } : {}),
+    ...(options.duration !== undefined ? { duration: options.duration } : {}),
     v3: {
       subjects: [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }],
       universe: options.universe ?? 'animation',
       angle,
       popularity: options.popularity ?? 'mid',
-      era: 'recent',
+      era: options.era ?? 'recent',
       channelKey: options.channelKey,
       nearFamily: options.nearFamily,
     },
@@ -205,56 +214,73 @@ test('accepts refuse le contenu de départ et ceux déjà vus', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Disponibilité de la Wave, sans requête au clic
+// Phase 1 : la langue des textes
 // ---------------------------------------------------------------------------
 
-function fakeDb(rows: Array<{ _id: string; counts: Record<string, number> }>) {
-  return {
-    collection: () => ({ find: () => ({ toArray: async () => rows }) }),
-  } as unknown as import('mongodb').Db
-}
+test('un texte n_entre dans la Wave que si le visiteur peut le lire ; l_anglais passe partout', () => {
+  const japonais = candidate('joke', 'text-joke', { lang: 'ja', languageScope: 'localized' })
+  const anglais = candidate('quote', 'text-quote', { lang: 'en', languageScope: 'localized' })
+  const universel = candidate('fact', 'text-fact', { languageScope: 'universal' })
+  const sansLangue = candidate('joke', 'text-joke')
 
-test('le bouton Wave s_affiche selon les compteurs, sans interroger le catalogue', async () => {
-  const { hasWave, resetWaveAvailability } = await import('@/lib/v3/wave/available')
-  resetWaveAvailability()
+  assert.equal(accepts(anchor(), [], japonais, new Set(), undefined, 'fr'), false, 'un texte japonais pour un visiteur français')
+  assert.equal(accepts(anchor(), [], japonais, new Set(), undefined, 'jp'), true, 'le même pour un visiteur japonais')
+  assert.equal(accepts(anchor(), [], anglais, new Set(), undefined, 'fr'), true, 'l_anglais n_est jamais bloqué')
+  assert.equal(accepts(anchor(), [], universel, new Set(), undefined, 'de'), true)
+  assert.equal(accepts(anchor(), [], sansLangue, new Set(), undefined, 'es'), true, 'sans langue connue : traité comme anglais')
+  assert.equal(textFits({ lang: 'ja', languageScope: 'localized' }, 'jp'), true, 'jp et ja sont la même langue')
 
-  const db = fakeDb([
-    { _id: 'entity:south-park', counts: { video: 40, image: 12 } },
-    { _id: 'topic:poterie', counts: { video: 2 } },
-    { _id: 'entity:trop-rare', counts: { video: 1 } },
-  ])
-
-  assert.equal(await hasWave(db, [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }]), true)
-  assert.equal(await hasWave(db, [{ id: 'topic:poterie', role: 'primary', evidence: 'alias' }]), true)
-  assert.equal(
-    await hasWave(db, [{ id: 'entity:trop-rare', role: 'primary', evidence: 'alias' }]),
-    false,
-    'un seul contenu ne fait pas une Wave',
-  )
-  assert.equal(await hasWave(db, []), false)
-  assert.equal(await hasWave(db, undefined), false)
+  const wave = buildWave(anchor(), [japonais, candidate('video', 'live-concert'), candidate('image', 'fan-art')], [], 'fr')
+  assert.ok(!wave.items.includes(japonais), 'buildWave transmet la langue')
 })
 
-test('un sujet secondaire suffit à proposer la Wave', async () => {
-  const { hasWave, resetWaveAvailability } = await import('@/lib/v3/wave/available')
-  resetWaveAvailability()
-  const db = fakeDb([{ _id: 'topic:moto', counts: { video: 30 } }])
+// ---------------------------------------------------------------------------
+// Phase 1 : la même vidéo republiée par un autre compte
+// ---------------------------------------------------------------------------
 
-  assert.equal(
-    await hasWave(db, [
-      { id: 'entity:inconnu', role: 'primary', evidence: 'alias' },
-      { id: 'topic:moto', role: 'secondary', evidence: 'alias' },
-    ]),
-    true,
-  )
+test('la même captation republiée sous un autre titre est refusée ; deux captations différentes passent', () => {
+  const live = anchor({ angle: 'live-concert', nearFamily: '00000000000000ff' }, { type: 'video', title: 'Allumer le feu – Johnny live 98', duration: 245 })
+
+  const republiee = candidate('video', 'interview', { title: 'Johnny Hallyday Allumer le feu (Live 1998)', nearFamily: '00000000000000ff', duration: 246 })
+  assert.equal(accepts(live, [], republiee, new Set()), false, 'même empreinte, même durée : la même vidéo')
+
+  const presque = candidate('video', 'interview', { title: 'Allumer le feu Johnny Hallyday live 1998 HD', nearFamily: '00000000000000fc', duration: 244 })
+  assert.equal(accepts(live, [], presque, new Set()), false, 'empreinte à 2 bits, durée à ± 2 s : la même vidéo')
+
+  const autreCaptation = candidate('video', 'interview', { title: 'Allumer le feu – Johnny live 98 (autre soir)', nearFamily: '00000000000000ff', duration: 301 })
+  assert.equal(accepts(live, [], autreCaptation, new Set()), true, 'même chanson, autre soir, autre durée : une découverte')
+
+  const lointaine = candidate('video', 'interview', { title: 'Johnny en interview', nearFamily: '0000000000ff00ff', duration: 245 })
+  assert.equal(accepts(live, [], lointaine, new Set()), true, 'empreinte loin : un autre contenu, même s_il dure pareil')
+
+  const gifRepublie = candidate('image', 'fan-art', { title: 'Cartman crie – GIF', nearFamily: 'abcdef0123456789' })
+  const gifAncre = anchor({ nearFamily: 'abcdef0123456789' })
+  assert.equal(accepts(gifAncre, [], gifRepublie, new Set()), false, 'sans durée, l_empreinte seule tranche')
 })
 
-test('des compteurs illisibles cachent le bouton plutôt que de promettre une Wave vide', async () => {
-  const { hasWave, resetWaveAvailability } = await import('@/lib/v3/wave/available')
-  resetWaveAvailability()
-  const broken = {
-    collection: () => ({ find: () => ({ toArray: async () => { throw new Error('indisponible') } }) }),
-  } as unknown as import('mongodb').Db
+// ---------------------------------------------------------------------------
+// Phase 1 : deux concerts du même artiste, d_époques différentes
+// ---------------------------------------------------------------------------
 
-  assert.equal(await hasWave(broken, [{ id: 'entity:south-park', role: 'primary', evidence: 'alias' }]), false)
+test('le même angle que l_ancre revient si l_ère diffère, jamais deux fois parmi les trois', () => {
+  const liveRecent = anchor({ angle: 'live-concert', era: 'recent' }, { type: 'video' })
+
+  assert.equal(accepts(liveRecent, [], candidate('video', 'live-concert', { era: 'retro' }), new Set()), true, 'un live de 1975 après un live de 2019')
+  assert.equal(accepts(liveRecent, [], candidate('video', 'live-concert', { era: 'recent' }), new Set()), false, 'un live après un live de la même époque')
+  assert.equal(accepts(liveRecent, [], candidate('video', 'live-concert', { era: 'unknown' }), new Set()), false, 'une ère inconnue ne compte pas comme différente')
+
+  const dejaUnLive = [candidate('video', 'live-concert', { era: 'retro' })]
+  assert.equal(accepts(liveRecent, dejaUnLive, candidate('image', 'live-concert', { era: 'retro' }), new Set()), false, 'jamais deux fois le même angle parmi les trois')
+
+  const sansEre = anchor({ angle: 'live-concert' }, { type: 'video' })
+  assert.equal(accepts(sansEre, [], candidate('video', 'live-concert', { era: 'retro' }), new Set()), false, 'sans ère sur l_ancre, la règle d_avant tient')
+})
+
+test('la durée des vidéos se lit dans ce que les fournisseurs stockent', () => {
+  assert.equal(durationSeconds('PT1H2M3S'), 3723)
+  assert.equal(durationSeconds('PT45S'), 45)
+  assert.equal(durationSeconds('95'), 95)
+  assert.equal(durationSeconds(95), 95)
+  assert.equal(durationSeconds('n_importe quoi'), undefined)
+  assert.equal(durationSeconds(undefined), undefined)
 })

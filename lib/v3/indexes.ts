@@ -41,6 +41,12 @@ export const V3_INDEXES: PlannedIndex[] = [
   },
   {
     collection: ITEMS,
+    name: 'v3_keywords_type_rand',
+    key: { keywords: 1, type: 1, rand: 1 },
+    purpose: 'Wave levels 2 and 3: items sharing a word, drawn at random — the old word index had no rand and always answered with the oldest.',
+  },
+  {
+    collection: ITEMS,
     name: 'v3_register_type_rand',
     key: { 'v3.registers': 1, type: 1, rand: 1 },
     purpose: 'Cool pool: a content of a register, drawn at random across the whole catalogue.',

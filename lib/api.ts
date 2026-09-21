@@ -46,10 +46,13 @@ export async function fetchRandom({
 export async function fetchWave({
   anchorId,
   excludeIds = [],
+  lang,
   signal,
 }: {
   anchorId?: string
   excludeIds?: string[]
+  /** The visitor's language: a text joins the Wave only if they can read it. */
+  lang?: string
   signal?: AbortSignal
 }): Promise<{ items: RandomContentItem[] }> {
   // The Wave is composed from the labels of the content on screen, so it needs
@@ -62,7 +65,7 @@ export async function fetchWave({
     method: 'POST',
     cache: 'no-store',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ itemId: anchorId, excludeKeys: excludeIds }),
+    body: JSON.stringify({ itemId: anchorId, excludeKeys: excludeIds, lang }),
     signal,
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)

@@ -87,7 +87,6 @@ function ensureWaveIndexes(collection: Collection<WaveDocument>) {
   if (!waveIndexPromise) {
     waveIndexPromise = Promise.all([
       collection.createIndex({ tags: 1, type: 1 }, { name: 'idx_wave_tags_type' }),
-      collection.createIndex({ keywords: 1, type: 1 }, { name: 'idx_wave_keywords_type' }),
       collection.createIndex({ 'waveProfile.anchors': 1, type: 1 }, { name: 'idx_wave_profile_anchors_type' }),
       collection.createIndex({ 'waveProfile.phrases': 1, type: 1 }, { name: 'idx_wave_profile_phrases_type' }),
       collection.createIndex({ 'waveProfile.concepts': 1, type: 1 }, { name: 'idx_wave_profile_concepts_type' }),

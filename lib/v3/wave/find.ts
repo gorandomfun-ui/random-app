@@ -42,7 +42,7 @@ const QUERY_BUDGET_MS = 1200
 /** The indexes these queries are built for, named so Mongo does not go looking. */
 const SUBJECT_INDEX = 'v3_subject_type_rand'
 const UNIVERSE_INDEX = 'v3_universe_type_rand'
-const KEYWORD_INDEX = 'idx_wave_keywords_type'
+const KEYWORD_INDEX = 'v3_keywords_type_rand'
 
 /**
  * Words that carry no subject: grammar, in the site's languages, and words that
@@ -90,13 +90,31 @@ export function channelOf(row: ItemRow): string | undefined {
 /** The word steps link untagged stock photographs too; the others need labels. */
 const WORD_LEVELS: WaveLevel[] = [2, 3]
 
+/**
+ * A video's length in seconds, from what the providers store: seconds as a
+ * number or a numeric string, or YouTube's "PT1H2M3S".
+ */
+export function durationSeconds(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  if (/^\d+(\.\d+)?$/.test(value.trim())) return Number(value)
+  const iso = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i.exec(value.trim())
+  if (!iso) return undefined
+  const [, days, hours, minutes, seconds] = iso
+  return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes ?? 0) * 60 + Number(seconds ?? 0)
+}
+
 function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
   if (!row.v3 && !WORD_LEVELS.includes(level)) return null
+  const duration = durationSeconds(row.duration)
   return {
     id: String(row._id),
     type: row.type,
     title: row.title,
     level,
+    ...(typeof row.lang === 'string' ? { lang: row.lang } : {}),
+    ...(typeof row.languageScope === 'string' ? { languageScope: row.languageScope } : {}),
+    ...(duration !== undefined ? { duration } : {}),
     v3: {
       subjects: row.v3?.subjects ?? [],
       universe: row.v3?.universe ?? 'other',
@@ -168,7 +186,11 @@ async function fetchStep(
             projection: {
               type: 1, title: 1, v3: 1, rand: 1,
               creatorId: 1, channelId: 1, channelTitle: 1, provider: 1,
+              lang: 1, languageScope: 1, duration: 1,
             },
+            // The window is real only when the rows come in rand order: the
+            // old word index had no rand and answered with the oldest rows.
+            sort: { rand: 1 },
             limit: POOL_PER_FORMAT,
             hint,
             maxTimeMS: QUERY_BUDGET_MS,
@@ -244,7 +266,7 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
       {
         projection: {
           type: 1, title: 1, v3: 1, keywords: 1, tags: 1,
-          creatorId: 1, channelId: 1, channelTitle: 1, provider: 1,
+          creatorId: 1, channelId: 1, channelTitle: 1, provider: 1, duration: 1,
         },
       },
     )) as ItemRow | null
@@ -254,6 +276,7 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
   // No labels and no words is the only case with nothing to go on.
   if (!row.v3 && !words.length) return null
 
+  const duration = durationSeconds(row.duration)
   return {
     row,
     anchor: {
@@ -264,12 +287,15 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
         subjects: row.v3?.subjects ?? [],
         universe: row.v3?.universe ?? 'other',
         angle: row.v3?.angle ?? 'other',
+        ...(row.v3?.era ? { era: row.v3.era } : {}),
+        ...(row.v3?.nearFamily ? { nearFamily: row.v3.nearFamily } : {}),
         // Derived the same way as for the candidates. Read from the labels
         // alone, a Giphy anchor had no author, and "never the anchor's author"
         // let its own uploader answer.
         channelKey: channelOf(row),
       },
       words,
+      ...(duration !== undefined ? { duration } : {}),
     },
   }
 }
@@ -320,14 +346,14 @@ async function subjectsNamedInTitle(db: Db, subjects: SubjectRef[], title: strin
 }
 
 /** Spares the interface may substitute for one of the three without breaking the rules. */
-function pickSpares(anchor: WaveAnchor, trio: WaveCandidate[], pool: WaveCandidate[]): WaveCandidate[] {
+function pickSpares(anchor: WaveAnchor, trio: WaveCandidate[], pool: WaveCandidate[], lang?: string): WaveCandidate[] {
   const taken = new Set(trio.map((item) => item.id))
   const spares: WaveCandidate[] = []
   const byLevel = [...pool].sort((left, right) => left.level - right.level)
   for (const candidate of byLevel) {
     if (spares.length >= SPARES) break
     if (taken.has(candidate.id)) continue
-    if (!accepts(anchor, trio, candidate, taken)) continue
+    if (!accepts(anchor, trio, candidate, taken, undefined, lang)) continue
     taken.add(candidate.id)
     spares.push(candidate)
   }
@@ -355,7 +381,10 @@ export async function composeWave(
   anchor: WaveAnchor,
   anchorId: ObjectId,
   excludeKeys: string[] = [],
+  /** The visitor's language: a text is offered only if they can read it. */
+  options: { lang?: string } = {},
 ): Promise<ComposedWave> {
+  const { lang } = options
   const subjectIds = anchor.v3.subjects.map((subject) => subject.id)
   const words = anchor.words ?? []
   const none = Promise.resolve([] as WaveCandidate[])
@@ -376,8 +405,8 @@ export async function composeWave(
   }
 
   let pool = [...subjectPool, ...pairPool, ...firstWordPool]
-  let wave = buildWave(anchor, pool, excludeKeys)
-  let spares = pickSpares(anchor, wave.items, pool)
+  let wave = buildWave(anchor, pool, excludeKeys, lang)
+  let spares = pickSpares(anchor, wave.items, pool, lang)
 
   if (wave.items.length < WAVE_SIZE || spares.length < SPARES_WANTED) {
     const from = subjectIds.length ? 0 : 1
@@ -386,8 +415,8 @@ export async function composeWave(
       fetchStep(db, { 'v3.universe': anchor.v3.universe }, 5, anchorId, UNIVERSE_INDEX),
     ])
     pool = [...pool, ...more.flat()]
-    wave = buildWave(anchor, pool, excludeKeys)
-    spares = pickSpares(anchor, wave.items, pool)
+    wave = buildWave(anchor, pool, excludeKeys, lang)
+    spares = pickSpares(anchor, wave.items, pool, lang)
   }
 
   return { items: wave.items, spares, level: wave.level }

@@ -49,3 +49,4 @@ next-env.d.ts
 # v3 refonte brief and reports (describe security issues; keep out of the public repo)
 /docs/RANDOM-REFONTE-V3.md
 /docs/reports/
+/docs/RANDOM-INGESTION-V3.md
