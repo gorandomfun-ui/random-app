@@ -642,3 +642,14 @@ test('un alias qui n_est qu_un nombre ne nomme rien : « 1/3 » n_est pas le 1er
   assert.ok(!aliasCandidates(['Japan 1-3 Italy']).includes('1 3'), 'le dictionnaire n_est pas interrogé pour un nombre')
   assert.ok(aliasCandidates(['Japan 1-3 Italy']).includes('japan'))
 })
+
+test('le dictionnaire ne prend ni un nombre ni une date nue pour un sujet', async () => {
+  const { acceptableSubjectLabel } = await import('@/lib/v3/subjects/wikidata')
+  assert.equal(acceptableSubjectLabel('March 1'), false)
+  assert.equal(acceptableSubjectLabel('19 juin'), false)
+  assert.equal(acceptableSubjectLabel('2.0'), false)
+  assert.equal(acceptableSubjectLabel('6-7'), false)
+  assert.equal(acceptableSubjectLabel('Nineteen Eighty-Four'), true)
+  assert.equal(acceptableSubjectLabel('HTTP 404'), true)
+  assert.equal(acceptableSubjectLabel('Mars'), true, 'la planète, pas le mois')
+})
