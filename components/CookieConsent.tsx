@@ -15,10 +15,12 @@ import {
   denied,
   grantMediaConsent,
   hasOptionalConsent,
+  impliedConsent,
   normalizeConsent,
   recordConsent,
   type Consent,
   type ConsentRecord,
+  type ConsentRegion,
 } from '@/lib/privacy/consent'
 import {
   browserConsentStores,
@@ -30,7 +32,7 @@ import {
 } from '@/lib/privacy/storage'
 
 export type { Consent } from '@/lib/privacy/consent'
-export type Region = 'eu' | 'us' | 'other'
+export type Region = ConsentRegion
 
 type Ctx = {
   consent: Consent | null
@@ -187,10 +189,14 @@ export function CookieConsentProvider({
   const rejectAll = useCallback(() => save(denied()), [save])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
-  const consent = useMemo(
-    () => (record ? normalizeConsent(record.choices, gpc) : null),
-    [record, gpc],
-  )
+  // A stored choice always wins. Without one, a visitor outside the EU is
+  // taken to allow the optional services (see impliedConsent); in the EU,
+  // nothing runs until the banner is answered.
+  const consent = useMemo(() => {
+    if (record) return normalizeConsent(record.choices, gpc)
+    const implied = impliedConsent(region)
+    return implied ? normalizeConsent(implied, gpc) : null
+  }, [record, gpc, region])
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('cookie:ads-changed', { detail: consent?.ads === true }))

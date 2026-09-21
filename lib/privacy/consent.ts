@@ -25,6 +25,24 @@ export const denied = (): Consent => ({
   media: false,
 })
 
+export type ConsentRegion = 'eu' | 'us' | 'other'
+
+/**
+ * What a visitor who has decided nothing is taken to allow.
+ *
+ * In the EU (and the EEA, the UK and Switzerland) nothing optional runs
+ * before a choice. Elsewhere there is no such requirement, and asking
+ * anyway had a cost: the A-ADS banner is only mounted after a choice, so
+ * their verification bot found no ad on the page and the units went
+ * "Not found" — no revenue counted. Outside the EU the ads and the players
+ * are allowed until the visitor says otherwise; the settings stay one click
+ * away, and a Global Privacy Control signal still turns the ads off.
+ */
+export function impliedConsent(region: ConsentRegion): Consent | null {
+  if (region === 'eu') return null
+  return { ...denied(), ads: true, media: true }
+}
+
 export function normalizeConsent(value: Consent, gpc = false): Consent {
   return {
     necessary: true,
