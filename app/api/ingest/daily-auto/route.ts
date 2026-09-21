@@ -11,9 +11,58 @@ import { buildDailyRetroQueries, buildDailyVideoQueries, buildDailyWebQueries } 
 import { logCronRun, type CronTrigger } from '@/lib/metrics/cron'
 import { withRetroYouTubeBudget } from '@/lib/ingest/youtubeQuota'
 import { retroSearchPlan } from '@/lib/ingest/retroSearchPlan'
+import { closeRun, emptyCounters, judge, openRun, type JournalLine, type RunCounters } from '@/lib/v3/ingest/journal'
 
 const PHASES = ['discovery', 'trending', 'retro', 'combo-videos', 'web', 'enrich-videos'] as const
 type DailyAutoPhase = (typeof PHASES)[number]
+
+/** The journal's name for each phase of this pipeline. */
+const LINE_OF: Record<DailyAutoPhase, JournalLine> = {
+  discovery: 'subject-dig', trending: 'trend', retro: 'retro-trend', 'combo-videos': 'combo', web: 'web', 'enrich-videos': 'enrich',
+}
+
+/**
+ * The journal is written when a phase starts and completed when it ends, so
+ * a phase killed at Vercel's five minutes — what silenced the trending line
+ * for eight days — is on record as interrupted. It never blocks the phase:
+ * a journal failure is a lost line of report, not a lost run.
+ */
+type Journal = { db: import('mongodb').Db; id: import('mongodb').ObjectId } | null
+
+async function openJournal(line: JournalLine, startedAt: Date, dryRun: boolean): Promise<Journal> {
+  try {
+    const { getDatabase } = await import('@/lib/mongodb')
+    const db = await getDatabase()
+    return { db, id: await openRun(db, { line, startedAt, host: 'vercel', dryRun }) }
+  } catch {
+    return null
+  }
+}
+
+async function closeJournal(journal: Journal, end: { finishedAt: Date; counters: RunCounters; errors: string[] }): Promise<void> {
+  if (!journal) return
+  await closeRun(journal.db, journal.id, { ...end, status: judge(end.counters, end.errors, false) }).catch(() => undefined)
+}
+
+/** What a phase's result means in the journal's counters; the enrichment's work is what it updated. */
+function countersOf(phase: DailyAutoPhase, result: Record<string, unknown> | undefined): RunCounters {
+  const number = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+  if (!result) return emptyCounters()
+  if (phase === 'enrich-videos') {
+    return { scanned: number(result.checked) || number(result.scanned), inserted: number(result.updated), duplicates: 0, rejected: {} }
+  }
+  return {
+    scanned: number(result.scanned),
+    inserted: number(result.inserted),
+    duplicates: number(result.existingSkipped),
+    rejected: { ...(number(result.skippedInvalid) ? { invalid: number(result.skippedInvalid) } : {}) },
+  }
+}
+
+function warningsOf(result: Record<string, unknown> | undefined): string[] {
+  const warnings = result?.warnings
+  return Array.isArray(warnings) ? warnings.map(String).slice(0, 10) : []
+}
 
 type SearchProvider = 'youtube' | 'dailymotion' | 'pixabay' | 'pexels'
 type DurationToken = 'any' | 'short' | 'medium' | 'long'
@@ -168,14 +217,24 @@ export async function GET(req: NextRequest) {
     .replace(/[^\w:-]+/g, '-')
     .slice(0, 80) || 'default'
 
+  if (phase === 'discovery' && (dryRun || process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '0')) {
+    // Disabled by configuration: not a run, so nothing for the journal.
+    return NextResponse.json({ ok: true, phase, durationMs: 0, result: { inserted: 0, disabled: true } })
+  }
+  const journal = await openJournal(LINE_OF[phase], startedAt, dryRun)
+
   try {
     let payload: PhasePayload
 
     if (phase === 'discovery') {
-      if (dryRun || process.env.RANDOM_DISCOVERY_WORKER_ENABLED === '0') return NextResponse.json({ ok: true, phase, durationMs: 0, result: { inserted: 0, disabled: true } })
       const { getDb } = await import('@/lib/db')
       const { runDiscoveryBatch } = await import('@/lib/discovery/worker')
       const result = await runDiscoveryBatch(await getDb())
+      await closeJournal(journal, {
+        finishedAt: new Date(),
+        counters: { scanned: result.pages, inserted: result.inserted, duplicates: 0, rejected: {} },
+        errors: result.failures ? [`${result.failures} pages en échec`] : [],
+      })
       return NextResponse.json({ ok: true, phase, durationMs: Date.now() - startedAt.getTime(), result })
     }
 
@@ -310,6 +369,7 @@ export async function GET(req: NextRequest) {
     }
 
     const finishedAt = new Date()
+    await closeJournal(journal, { finishedAt, counters: countersOf(phase, payload.result), errors: warningsOf(payload.result) })
     await logCronRun({
       name: `cron:daily-auto:${phase}`,
       status: 'success',
@@ -327,6 +387,7 @@ export async function GET(req: NextRequest) {
   } catch (error: unknown) {
     const finishedAt = new Date()
     const message = error instanceof Error ? error.message : 'daily auto ingest failed'
+    await closeJournal(journal, { finishedAt, counters: emptyCounters(), errors: [message] })
     await logCronRun({
       name: `cron:daily-auto:${phase}`,
       status: 'failure',

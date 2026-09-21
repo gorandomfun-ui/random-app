@@ -6,6 +6,7 @@ import { dailymotionPageLoader, type DailymotionSpec } from './dailymotion'
 import { createSearchSeeds } from './seeds'
 import { enqueueOwnerExploration, type OwnerSchedulingReport } from './subjectExploration'
 import { capPerSource, keepTitled } from './likeCaps'
+import { recordSearch } from '../v3/ingest/journal'
 
 export type DiscoveryStage = 'seeding' | 'exploring' | 'completed' | ExplorationStage | VideoIngestStage
 export type DiscoveryBatchOptions = { provider?: DiscoveryProvider; seed?: boolean; maxMs?: number; signal?: AbortSignal;
@@ -67,6 +68,7 @@ export async function runDiscoveryBatch(db: Db, options: DiscoveryBatchOptions =
   const report = await runExploration({ db, quota, random, maxMs: Math.max(0, maxMs - (Date.now() - started)),
     provider: options.provider ?? (providers.length === 1 ? providers[0] : undefined), signal: options.signal,
     onStage: options.onStage,
+    recordSearch: search => recordSearch(db, search),
     loadPage: async (task, signal, permit) => {
       const page = task.spec.kind === 'dailymotion' ? await dailymotion(task, signal, permit)
         : youtube ? await youtube(task, signal, permit) : await Promise.reject(new Error('youtube-unconfigured'))

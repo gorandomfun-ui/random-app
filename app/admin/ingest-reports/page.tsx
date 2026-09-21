@@ -11,27 +11,43 @@ import React, { useCallback, useEffect, useState } from 'react'
  * says so — that state is what hid a dead trending line for eight days.
  */
 
-type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number; providers: Record<string, number>; searches: string[] }
+type StatusCounts = Partial<Record<'ok' | 'partial' | 'skipped' | 'failed' | 'interrompu' | 'en cours', number>>
+type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number | string[]; providers?: Record<string, number>; searches: string[]; statuses?: StatusCounts; duplicates?: number }
 type DayRow = { day: string; lines: LineRow[]; total: number }
-type HealthRow = { line: string; lastRunAt: string; hoursAgo: number; state: 'active' | 'sans insertion' | 'arrêtée' }
+type HealthState = 'active' | 'sans insertion' | 'arrêtée' | 'muette' | 'en cours'
+type HealthRow = { line: string; lastRunAt: string | null; hoursAgo?: number; hoursSinceRun?: number | null; hoursSinceInsert?: number | null; state: HealthState }
 
-const STATE_STYLE: Record<HealthRow['state'], { background: string; color: string }> = {
+const STATE_STYLE: Record<HealthState, { background: string; color: string }> = {
   active: { background: '#e8f5e9', color: '#1b5e20' },
+  'en cours': { background: '#e3f2fd', color: '#0d47a1' },
   'sans insertion': { background: '#fff8e1', color: '#8d6e00' },
+  muette: { background: '#ffebee', color: '#b71c1c' },
   arrêtée: { background: '#ffebee', color: '#b71c1c' },
 }
 
+const STATUS_STYLE: Record<keyof StatusCounts, string> = {
+  ok: '#1b5e20', partial: '#8d6e00', skipped: '#8d6e00', failed: '#b71c1c', interrompu: '#b71c1c', 'en cours': '#0d47a1',
+}
+
 const LINE_LABEL: Record<string, string> = {
+  trend: 'Tendances',
   trending: 'Tendances',
+  'retro-trend': 'Rétro',
   retro: 'Rétro',
   combo: 'Combinaisons',
   'combo-videos': 'Combinaisons',
+  'like-dig': 'Fouille des likes',
+  'subject-dig': 'Fouille des sujets',
   web: 'Sites web',
+  texts: 'Textes',
   discovery: 'Découverte',
   enrich: 'Enrichissement',
   'enrich-videos': 'Enrichissement',
+  repair: 'Réparations',
   images: 'Images',
 }
+
+const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
 
 const label = (line: string) => LINE_LABEL[line] ?? line
 
@@ -78,6 +94,7 @@ export default function IngestReportsPage() {
   }, [key, load])
 
   const stopped = health.filter((row) => row.state === 'arrêtée')
+  const mute = health.filter((row) => row.state === 'muette')
   const silent = health.filter((row) => row.state === 'sans insertion')
 
   return (
@@ -98,11 +115,16 @@ export default function IngestReportsPage() {
       {loading && <p style={S.hint}>Chargement…</p>}
       {error && <p style={{ ...S.hint, color: '#b71c1c' }}>{error}</p>}
 
-      {(stopped.length > 0 || silent.length > 0) && (
+      {(stopped.length > 0 || mute.length > 0 || silent.length > 0) && (
         <section style={S.alerts}>
           {stopped.map((row) => (
             <div key={row.line} style={{ ...S.alert, ...STATE_STYLE.arrêtée }}>
-              <strong>{label(row.line)}</strong> n&apos;a rien fait depuis {row.hoursAgo} h
+              <strong>{label(row.line)}</strong> n&apos;a pas tourné depuis {hoursOf(row)} h
+            </div>
+          ))}
+          {mute.map((row) => (
+            <div key={row.line} style={{ ...S.alert, ...STATE_STYLE.muette }}>
+              <strong>{label(row.line)}</strong> tourne mais n&apos;a rien inséré depuis {row.hoursSinceInsert ?? '+ de 26'} h
             </div>
           ))}
           {silent.map((row) => (
@@ -121,7 +143,7 @@ export default function IngestReportsPage() {
               <div key={row.line} style={{ ...S.card, ...STATE_STYLE[row.state] }}>
                 <div style={S.cardLine}>{label(row.line)}</div>
                 <div style={S.cardState}>{row.state}</div>
-                <div style={S.cardAgo}>il y a {row.hoursAgo} h</div>
+                <div style={S.cardAgo}>passage il y a {hoursOf(row)} h{row.hoursSinceInsert != null ? ` · insertion il y a ${row.hoursSinceInsert} h` : ''}</div>
               </div>
             ))}
           </div>
@@ -139,6 +161,7 @@ export default function IngestReportsPage() {
               <tr>
                 <th style={S.th}>Ligne</th>
                 <th style={{ ...S.th, textAlign: 'right' }}>Passages</th>
+                <th style={S.th}>Statut</th>
                 <th style={{ ...S.th, textAlign: 'right' }}>Examinés</th>
                 <th style={{ ...S.th, textAlign: 'right' }}>Insérés</th>
                 <th style={{ ...S.th, textAlign: 'right' }}>Erreurs</th>
@@ -149,7 +172,7 @@ export default function IngestReportsPage() {
                 <tr key={row.line}>
                   <td style={S.td}>
                     <div>{label(row.line)}</div>
-                    {Object.keys(row.providers).length > 0 && (
+                    {row.providers && Object.keys(row.providers).length > 0 && (
                       <div style={S.providers}>
                         {Object.entries(row.providers)
                           .sort((left, right) => right[1] - left[1])
@@ -164,11 +187,25 @@ export default function IngestReportsPage() {
                     )}
                   </td>
                   <td style={{ ...S.td, textAlign: 'right' }}>{row.runs}</td>
+                  <td style={S.td}>
+                    {row.statuses && Object.keys(row.statuses).length > 0
+                      ? Object.entries(row.statuses).map(([status, n]) => (
+                          <span key={status} style={{ color: STATUS_STYLE[status as keyof StatusCounts], marginRight: 8, fontSize: 12, fontWeight: 600 }}>
+                            {status} {n}
+                          </span>
+                        ))
+                      : <span style={{ color: '#bbb', fontSize: 12 }}>—</span>}
+                    {Array.isArray(row.errors) && row.errors.length > 0 && (
+                      <div style={{ fontSize: 11, color: '#b71c1c', marginTop: 2 }}>{row.errors.join(' · ')}</div>
+                    )}
+                  </td>
                   <td style={{ ...S.td, textAlign: 'right', color: '#777' }}>{row.scanned.toLocaleString('fr-FR')}</td>
                   <td style={{ ...S.td, textAlign: 'right', fontWeight: 600, color: row.inserted ? '#1b5e20' : '#b71c1c' }}>
                     {row.inserted.toLocaleString('fr-FR')}
                   </td>
-                  <td style={{ ...S.td, textAlign: 'right', color: row.errors ? '#b71c1c' : '#bbb' }}>{row.errors || '—'}</td>
+                  <td style={{ ...S.td, textAlign: 'right', color: (Array.isArray(row.errors) ? row.errors.length : row.errors) ? '#b71c1c' : '#bbb' }}>
+                    {(Array.isArray(row.errors) ? row.errors.length : row.errors) || '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>

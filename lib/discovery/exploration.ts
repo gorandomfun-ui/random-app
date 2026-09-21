@@ -8,6 +8,7 @@ import { buildProfile, cleanDescription } from './profile'
 import { providerError, ProviderQuotaError } from './providerErrors'
 import type { SearchCoverage } from './searchGeography'
 import { youtubeBudget, youtubeQuotaWindow } from './youtubeBudget'
+import type { SearchRecord } from '../v3/ingest/journal'
 
 export type SubjectScope = { subject: Subject; subjectVersion?: number; branch: 'primary' | 'secondary'; angle: string }
 export type DiscoveryFocus = SubjectScope & { ownerId: string; referenceKey: string; referenceRevision?: string }
@@ -142,7 +143,9 @@ export async function runExploration(options: {
   db: Db; quota?: QuotaConfig; random: Rng; loadPage: PageLoader;
   ingest: (videos: RawVideo[]) => Promise<{ inserted: number; existingSkipped?: number }>;
   now?: () => number; maxMs?: number; provider?: DiscoveryProvider; signal?: AbortSignal;
-  onStage?: (stage: ExplorationStage) => void
+  onStage?: (stage: ExplorationStage) => void;
+  /** The journal: each page fetched, with the exact query, so a poor one can be recognised and retired. */
+  recordSearch?: (search: SearchRecord) => Promise<void>
 }): Promise<ExplorationReport> {
   const { db, quota, random, loadPage, ingest } = options, now = options.now ?? Date.now
   const deadline = now() + Math.min(180000, options.maxMs ?? 180000)
@@ -246,6 +249,14 @@ export async function runExploration(options: {
       for (const spec of page.children.slice(0, 3)) await enqueue(db, spec, task.depth + 1, task.editorial, now())
       pagesByTask.set(task._id, (pagesByTask.get(task._id) ?? 0) + 1)
       report.pages++; report.inserted += result.inserted
+      // The journal never holds up the exploration: a failed write is a lost line of report, not a lost page.
+      await options.recordSearch?.({
+        line: task.spec.focus ? 'like-dig' : 'subject-dig', provider, query: describeSpec(task.spec),
+        subjectId: task.spec.focus?.subject?.key ?? task.spec.subjectScope?.subject?.key,
+        likeItemId: task.spec.focus?.referenceKey, scanned, kept: focused.length, inserted: result.inserted,
+        duplicates: result.existingSkipped ?? 0, rejected: { 'no-source-match': Math.max(0, scanned - focused.length) },
+        quotaUnits: provider === 'youtube' ? (task.spec.kind === 'search' ? 100 : 1) : 0, at: new Date(now()),
+      }).catch(() => undefined)
       if (task.spec.coverage) {
         const key = task.spec.coverage.area
         const bucket = report.searchCoverage![key] ??= { pages: 0, fetched: 0, inserted: 0 }
@@ -375,4 +386,12 @@ export function youtubePageLoader(apiKey: string, request: typeof fetch = fetch)
 
 export async function installExplorationIndexes(db: Db): Promise<void> {
   await db.collection('discovery_tasks_v2').createIndex({ due: 1, leaseUntil: 1, priority: -1 }, { name: 'discovery_tasks_due_v2' })
+}
+
+/** What a task asked its provider, in words a report can show. */
+export function describeSpec(spec: SearchSpec): string {
+  if (spec.kind === 'search') return `${spec.query} [${spec.order}]`
+  if (spec.kind === 'channel') return `channel ${spec.channelId}`
+  if (spec.kind === 'playlist') return `playlist ${spec.playlistId}`
+  return `${spec.query ?? `category ${spec.category ?? '?'}`} [${spec.sort ?? 'relevance'}]`
 }
