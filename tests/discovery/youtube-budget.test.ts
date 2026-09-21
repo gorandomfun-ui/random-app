@@ -15,8 +15,9 @@ test('YouTube allowance is cumulative across retries and preserves an evening sh
   assert.deepEqual([b.released, b.base, b.extra, b.protectedReleased], [100, 80, 20, 16])
   assert.deepEqual(youtubeBudget(config, 'search', morning + 3600000, true), a, 'a manual retry does not unlock another allocation')
   const other = youtubeBudget(config, 'other', morning, true)
-  assert.equal(other.released, 5000); assert.equal(other.protectedReleased, 4)
-  assert.equal(youtubeBudget(config, 'other', evening, true).protectedReleased, 8)
+  // The trends lane: two hundred units a day, half of it before noon Pacific.
+  assert.equal(other.released, 5000); assert.equal(other.protectedReleased, 100)
+  assert.equal(youtubeBudget(config, 'other', evening, true).protectedReleased, 200)
   assert.equal(youtubeBudget({ ...config, pacing: false }, 'search', morning, true).released, 100)
 })
 test('Pacific quota day and noon release handle winter/summer time and reset exactly once', () => {

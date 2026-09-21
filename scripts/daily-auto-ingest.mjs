@@ -420,8 +420,12 @@ async function main() {
     }
   }
 
+  // Trending runs directly on GitHub (scripts/v3/trending-direct.ts) when this
+  // is set: through Vercel it was cut at 240 s before a hundred slow inserts
+  // could finish, and looked active while inserting nothing.
+  const trendsOnGitHub = process.env.DAILY_AUTO_TRENDS_ON_GITHUB === '1'
   const fixedPhases = [
-    { phase: 'trending', limit: 50, run: `${runProfile}:trending` },
+    ...(trendsOnGitHub ? [] : [{ phase: 'trending', limit: 50, run: `${runProfile}:trending` }]),
     { phase: 'retro', count: 12, per: 16, providers: 'youtube,dailymotion', run: `${runProfile}:retro` },
   ]
 

@@ -83,7 +83,7 @@ async function readLikeZones(db: Db, now: number): Promise<LikeZone[]> {
   if (videoIds.length) {
     rows.push(...(await db
       .collection('items')
-      .find({ type: 'video', videoId: { $in: videoIds } }, { projection, hint: 'uniq_video_id', maxTimeMS: QUERY_BUDGET_MS })
+      .find({ type: 'video', videoId: { $in: videoIds } }, { projection, hint: 'video_id_lookup', maxTimeMS: QUERY_BUDGET_MS })
       .toArray()))
   }
 

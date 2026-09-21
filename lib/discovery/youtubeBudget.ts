@@ -9,6 +9,9 @@ export function youtubeQuotaWindow(now: number) {
 }
 
 /** Cumulative envelopes, not a fresh allocation on each run/retry. No quota refund. */
+/** mostPopular costs one unit per call; two runs of two regions a day is four, and the rest is room to grow. */
+export const TRENDS_DAILY_UNITS = 200
+
 export function youtubeBudget(config: QuotaConfig, bucket: 'search' | 'other', now: number, discovery: boolean) {
   const daily = bucket === 'search' ? config.searchDailyLimit : config.otherDailyLimit
   const reserve = bucket === 'search' ? config.searchBaseReserve : config.otherBaseReserve
@@ -17,7 +20,10 @@ export function youtubeBudget(config: QuotaConfig, bucket: 'search' | 'other', n
   const window = youtubeQuotaWindow(now)
   const release = (limit: number) => config.pacing && !window.afternoon ? Math.floor(limit / 2) : limit
   // Retro has its own search envelope. Trends need only a few videos.list calls.
-  const protectedDaily = !config.pacing ? 0 : bucket === 'search' ? Math.floor(base * .2) : Math.min(8, base)
+  // The trends lane had eight units a day — four mostPopular calls — while the
+  // "other" bucket spent a hundred of its ten thousand. Two hundred leaves room
+  // for a real trending line without touching the search bucket.
+  const protectedDaily = !config.pacing ? 0 : bucket === 'search' ? Math.floor(base * .2) : Math.min(TRENDS_DAILY_UNITS, base)
   return { day: window.day, stage: config.pacing && !window.afternoon ? 'first-half' : 'full-day',
     daily, released: release(daily), base: release(base), extra: release(extra),
     editorial: release(extra > 0 ? Math.max(1, Math.floor(extra * .5)) : 0),
