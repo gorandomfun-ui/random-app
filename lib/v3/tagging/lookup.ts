@@ -15,7 +15,7 @@
 
 import type { Db } from 'mongodb'
 
-import { normalize } from './normalize'
+import { namesSomething, normalize } from './normalize'
 import { buildSubjectIndex, type SubjectIndex, type SubjectRow } from './subjectIndex'
 import { SUBJECTS_COLLECTION } from '../subjects/build'
 
@@ -46,7 +46,10 @@ export function aliasCandidates(texts: string[]): string[] {
     for (let start = 0; start < words.length; start += 1) {
       for (let length = 1; length <= MAX_ALIAS_WORDS; length += 1) {
         if (start + length > words.length) break
-        candidates.add(words.slice(start, start + length).join(' '))
+        const run = words.slice(start, start + length).join(' ')
+        // A run of digits is never a name: asking the dictionary for it only
+        // finds the subjects that should not exist.
+        if (namesSomething(run)) candidates.add(run)
       }
     }
   }

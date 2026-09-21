@@ -614,3 +614,31 @@ test('un nom fait de mots courants exige un second indice', async () => {
   const vrai = tagItem({ type: 'joke', text: 'une blague sur South Park' }, index)
   assert.equal(vrai.subjects[0]?.id, 'entity:south-park')
 })
+
+// ---------------------------------------------------------------------------
+// Phase 1 : un alias sans lettre ne nomme rien
+// ---------------------------------------------------------------------------
+
+test('un alias qui n_est qu_un nombre ne nomme rien : « 1/3 » n_est pas le 1er mars', async () => {
+  const { containsAlias, namesSomething } = await import('@/lib/v3/tagging/normalize')
+  const { buildSubjectIndex, matchSubjects } = await import('@/lib/v3/tagging/subjectIndex')
+  const { aliasCandidates } = await import('@/lib/v3/tagging/lookup')
+
+  assert.equal(namesSomething('1 3'), false)
+  assert.equal(namesSomething('007'), false)
+  assert.equal(namesSomething('james bond'), true)
+  assert.equal(containsAlias('House on Hunted Hill (1959) 1/3', '1 3'), false, 'une partie d_épisode n_est pas une date')
+  assert.equal(containsAlias('Highlights: Japan 1-3 Italy', '1 3'), false, 'un score non plus')
+  assert.equal(containsAlias('James Bond 007', 'james bond'), true)
+
+  const index = buildSubjectIndex([
+    { _id: 'entity:march-1', label: 'March 1', aliases: ['March 1', '1 3', '01 03'], universe: 'other', kind: 'entity' },
+    { _id: 'entity:james-bond', label: 'James Bond', aliases: ['James Bond', '007'], universe: 'cinema-tv', kind: 'entity' },
+  ] as never)
+  const found = matchSubjects(index, 'Highlights: Japan 1-3 Italy — 007 style', () => true)
+  assert.deepEqual(found.map((m) => m.subject.id), [], 'ni « 1 3 » ni « 007 » ne suffisent')
+  assert.deepEqual(matchSubjects(index, 'James Bond returns', () => true).map((m) => m.subject.id), ['entity:james-bond'])
+
+  assert.ok(!aliasCandidates(['Japan 1-3 Italy']).includes('1 3'), 'le dictionnaire n_est pas interrogé pour un nombre')
+  assert.ok(aliasCandidates(['Japan 1-3 Italy']).includes('japan'))
+})
