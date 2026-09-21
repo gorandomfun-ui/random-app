@@ -174,6 +174,22 @@ function pickUniverse(entity: Entity): { universe: Universe; isHuman: boolean } 
  * covers real variants ("Joseph Robinette Biden Jr") and rejects unrelated
  * entries.
  */
+const MONTHS =
+  'january|february|march|april|may|june|july|august|september|october|november|december|' +
+  'janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre'
+const BARE_DATE = new RegExp(`^(?:(?:${MONTHS})\\s+\\d{1,2}|\\d{1,2}\\s+(?:${MONTHS}))$`, 'i')
+
+/**
+ * Whether a label can be a subject at all. "March 1", "2.0" and "6-7" came
+ * from Wikipedia's most-read pages and answered to every episode part and
+ * every score in a title; a subject needs a letter in its name, and a bare
+ * date is a calendar entry, not something a content is about.
+ */
+export function acceptableSubjectLabel(label: string): boolean {
+  const trimmed = label.trim()
+  return /\p{L}/u.test(trimmed) && !BARE_DATE.test(trimmed)
+}
+
 function collectAliases(entity: Entity, canonical: string): string[] {
   const labels = Object.values(entity.labels ?? {})
     .map((label) => label.value)
@@ -215,8 +231,9 @@ function collectAliases(entity: Entity, canonical: string): string[] {
   }
 
   collected.delete(canonical)
+  // An alias with no letter — "007", "1984", "9 11" — names nothing on its own.
   return Array.from(collected)
-    .filter((alias) => alias.length >= 2 && alias.length <= 80)
+    .filter((alias) => alias.length >= 2 && alias.length <= 80 && /\p{L}/u.test(alias))
     .slice(0, 12)
 }
 
@@ -263,7 +280,7 @@ export async function fetchWikidataSubjects(
   for (const [qid, entity] of Object.entries(entities)) {
     if (!qid.startsWith('Q')) continue
     const label = entity.labels?.en?.value ?? entity.labels?.fr?.value
-    if (!label) continue
+    if (!label || !acceptableSubjectLabel(label)) continue
     const sourceTitle = entity.sitelinks?.[`${language}wiki`]?.title ?? label
     const { universe, isHuman } = pickUniverse(entity)
     results.push({
