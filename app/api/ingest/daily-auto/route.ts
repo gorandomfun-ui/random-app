@@ -59,9 +59,19 @@ function countersOf(phase: DailyAutoPhase, result: Record<string, unknown> | und
   }
 }
 
+/** The pipeline's warnings are objects — `{ label, message }` — and the journal wants a line each. */
 function warningsOf(result: Record<string, unknown> | undefined): string[] {
   const warnings = result?.warnings
-  return Array.isArray(warnings) ? warnings.map(String).slice(0, 10) : []
+  if (!Array.isArray(warnings)) return []
+  return warnings.slice(0, 10).map((warning) => {
+    if (typeof warning === 'string') return warning
+    if (warning && typeof warning === 'object') {
+      const { label, message } = warning as { label?: unknown; message?: unknown }
+      const text = [label, message].filter((part) => typeof part === 'string' && part).join(' : ')
+      return text || JSON.stringify(warning).slice(0, 160)
+    }
+    return String(warning)
+  })
 }
 
 type SearchProvider = 'youtube' | 'dailymotion' | 'pixabay' | 'pexels'
