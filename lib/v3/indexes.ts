@@ -41,6 +41,12 @@ export const V3_INDEXES: PlannedIndex[] = [
   },
   {
     collection: ITEMS,
+    name: 'video_id_lookup',
+    key: { videoId: 1 },
+    purpose: 'Any lookup by video id. The unique index is partial on `$type: "string"`, which the planner cannot prove from an equality, so it scanned every video (634k keys for one id).',
+  },
+  {
+    collection: ITEMS,
     name: 'v3_keywords_type_rand',
     key: { keywords: 1, type: 1, rand: 1 },
     purpose: 'Wave levels 2 and 3: items sharing a word, drawn at random — the old word index had no rand and always answered with the oldest.',

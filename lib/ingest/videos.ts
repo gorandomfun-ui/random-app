@@ -1019,7 +1019,9 @@ async function findExistingVideoIds(collection: Collection<VideoDocument>, video
   for (let offset = 0; offset < ids.length; offset += 10) {
     const rows = await Promise.all(ids.slice(offset, offset + 10).map(videoId => collection.findOne(
       { type: 'video', videoId } as Filter<VideoDocument>,
-      { projection: { videoId: 1 }, hint: 'uniq_video_id', maxTimeMS: 2000 },
+      // Not the unique index: it is partial on `$type: 'string'`, which the
+      // planner cannot prove from an equality, so it scanned every video.
+      { projection: { videoId: 1 }, hint: 'video_id_lookup', maxTimeMS: 2000 },
     )));
     for (const row of rows) if (row?.videoId) found.add(row.videoId);
   }
@@ -1133,7 +1135,7 @@ export async function finalizeVideoIngest(
     const known = await collection
       .find(
         { type: 'video', videoId: { $in: videoIds } } as Filter<VideoDocument>,
-        { projection: { _id: 1, trendObservedAt: 1 }, hint: 'uniq_video_id', maxTimeMS: 20000 },
+        { projection: { _id: 1, trendObservedAt: 1 }, hint: 'video_id_lookup', maxTimeMS: 20000 },
       )
       .toArray();
     const staleIds = known
