@@ -17,6 +17,13 @@ import { normalizeWaveDocument, type WaveDocument } from '@/lib/random/waveEngin
 type Payload = {
   itemId?: unknown
   excludeKeys?: unknown
+  lang?: unknown
+}
+
+const LANGS = new Set(['en', 'fr', 'de', 'es', 'jp'])
+function parseLang(value: unknown): string {
+  const lang = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return LANGS.has(lang) ? lang : 'en'
 }
 
 function parseId(value: unknown): ObjectId | null {
@@ -45,7 +52,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ items: [], level: 5, reason: 'rien à lier' })
     }
 
-    const { items, spares, level } = await composeWave(db, loaded.anchor, itemId, parseExcludes(body?.excludeKeys))
+    const { items, spares, level } = await composeWave(db, loaded.anchor, itemId, parseExcludes(body?.excludeKeys), {
+      lang: parseLang(body?.lang),
+    })
     const chosenIds = items.map((item) => item.id)
     // The spares went through the same rules as the three: the interface may
     // substitute one for a content it cannot show or saw a moment ago.

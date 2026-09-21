@@ -3575,6 +3575,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       const response = await fetchWave({
         anchorId: typeof anchorItem._id === 'string' ? anchorItem._id : undefined,
         excludeIds,
+        lang: locale || 'en',
         signal: controller.signal,
       })
       if (generation !== wavePreparationGenerationRef.current) return false
