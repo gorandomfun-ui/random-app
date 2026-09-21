@@ -3,21 +3,39 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 
+import type { Db } from 'mongodb'
+
 import { getDatabase } from '@/lib/mongodb'
 import { isAdminRequest, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
+import { RUNS, SEARCHES } from '@/lib/v3/ingest/journal'
+import { assessHealth, summariseDays, type DaySummary, type JournalRun, type JournalSearch, type LineHealth } from '@/lib/v3/ingest/report'
 
 /**
  * What the ingestion did, by day.
  *
- * The old page summed the last thirty runs, which mixed days together and
- * hid an outage behind the days before it. Everything here is grouped by
- * calendar day in Paris time, and a line that ran without inserting anything
- * is shown as such rather than as a success.
+ * The journal (`ingest_runs_v3`) is the truth: every run is written when it
+ * starts and judged when it ends, so a run that never returned is on record.
+ * `cron_runs`, which said "ok" through eight days of a dead trending line,
+ * only fills the days the journal does not cover yet, and goes away after a
+ * fortnight of journal.
  */
 
 const PARIS = 'Europe/Paris'
 /** Past this, a line is treated as stopped rather than quiet. */
 const STALE_HOURS = 26
+const WINDOW_DAYS = 14
+
+async function journalReport(db: Db, since: Date, now: number): Promise<{ days: DaySummary[]; health: LineHealth[] }> {
+  const runs = (await db
+    .collection(RUNS)
+    .find({ startedAt: { $gte: since } }, { sort: { startedAt: -1 }, limit: 2000, maxTimeMS: 5000 })
+    .toArray()) as unknown as JournalRun[]
+  const searches = (await db
+    .collection(SEARCHES)
+    .find({ at: { $gte: since } }, { projection: { line: 1, query: 1, at: 1 }, sort: { at: -1 }, limit: 3000, maxTimeMS: 5000 })
+    .toArray()) as unknown as JournalSearch[]
+  return { days: summariseDays(runs, searches, now), health: assessHealth(runs, now, STALE_HOURS) }
+}
 
 type PhaseRow = {
   phase?: string
@@ -46,15 +64,8 @@ function dayKey(date: Date): string {
   return new Intl.DateTimeFormat('fr-CA', { timeZone: PARIS, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 }
 
-export async function GET(request: Request) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
-  }
-
-  try {
-    const db = await getDatabase()
-    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
-
+/** The old report, from `cron_runs`: kept for the days the journal does not cover. */
+async function legacyReport(db: Db, since: Date) {
     const runs = await db
       .collection('cron_runs')
       .find({ startedAt: { $gte: since } }, { sort: { startedAt: -1 }, limit: 800 })
@@ -129,7 +140,7 @@ export async function GET(request: Request) {
       })
       .sort((left, right) => right.hoursAgo - left.hoursAgo)
 
-    return NextResponse.json({
+    return {
       days: [...days.entries()]
         .sort((left, right) => (left[0] < right[0] ? 1 : -1))
         .map(([day, byLine]) => ({
@@ -140,6 +151,33 @@ export async function GET(request: Request) {
           total: [...byLine.values()].reduce((sum, bucket) => sum + bucket.inserted, 0),
         })),
       health,
+    }
+}
+
+export async function GET(request: Request) {
+  if (!isAdminRequest(request)) {
+    return NextResponse.json(adminUnauthorizedBody(), { status: 401 })
+  }
+
+  try {
+    const db = await getDatabase()
+    const now = Date.now()
+    const since = new Date(now - WINDOW_DAYS * 24 * 60 * 60 * 1000)
+
+    const journal = await journalReport(db, since, now)
+    const legacy = await legacyReport(db, since).catch(() => ({ days: [], health: [] }))
+    const covered = new Set(journal.days.map((day) => day.day))
+    // The journal's days first; the old report only for the days before it existed.
+    const days = [...journal.days, ...legacy.days.filter((day) => !covered.has(day.day))]
+      .sort((left, right) => (left.day < right.day ? 1 : -1))
+    const health = journal.health.length ? journal.health : legacy.health
+    const alerts = journal.health.filter((row) => row.state === 'arrêtée' || row.state === 'muette')
+
+    return NextResponse.json({
+      source: journal.health.length ? 'journal' : 'cron_runs',
+      days,
+      health,
+      alerts,
     })
   } catch (error) {
     console.error('[v3/ingest-report] échec', error)

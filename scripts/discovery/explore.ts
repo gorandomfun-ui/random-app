@@ -3,6 +3,22 @@ import type { Db } from 'mongodb'
 import { quotaConfigFromEnv } from '../../lib/discovery/exploration'
 import { youtubeBudget } from '../../lib/discovery/youtubeBudget'
 import { githubDiscoveryConfig, acquireDiscoveryRun, releaseDiscoveryRun, runDiscoveryLoop, type ProviderBatch } from '../../lib/discovery/runner'
+import { judge, recordRun } from '../../lib/v3/ingest/journal'
+
+/** The journal's view of one provider's batch: judged on what it inserted, never asserted. */
+async function journalBatch(db: Db, report: ProviderBatch, finishedAt: Date): Promise<void> {
+  const errors = Object.entries(report.errors ?? {}).filter(([, n]) => n > 0).map(([kind, n]) => `${kind} ×${n}`)
+  const counters = {
+    scanned: Math.max(report.pages, report.curation?.fetched ?? 0),
+    inserted: report.inserted,
+    duplicates: report.curation?.duplicates ?? 0,
+    rejected: { 'no-source-match': report.curation?.rejected ?? 0, ...(report.quotaDenied ? { quota: report.quotaDenied } : {}) },
+  }
+  await recordRun(db, {
+    line: 'like-dig', startedAt: new Date(finishedAt.getTime() - report.durationMs), finishedAt,
+    status: judge(counters, errors, report.stopReason === 'time-budget'), counters, errors, host: 'github',
+  }).catch(() => console.warn('Journal unavailable for this batch; the batch itself is unaffected.'))
+}
 
 function writeSummary(reports: ProviderBatch[], status: string) {
   if (!process.env.GITHUB_STEP_SUMMARY) return
@@ -53,7 +69,7 @@ async function main() {
     process.exitCode = 1; return
   }
   if (process.argv.includes('--check')) { console.log(JSON.stringify({ configured: true, providers: config.providers, maxMs: config.maxMs })); return }
-  const controller = new AbortController(), reports: ProviderBatch[] = []
+  const controller = new AbortController(), reports: ProviderBatch[] = [], journalWrites: Promise<void>[] = []
   const stop = () => controller.abort()
   process.once('SIGINT', stop); process.once('SIGTERM', stop)
   // Covers a stuck DB/socket/cleanup as well as the normal provider deadlines.
@@ -77,7 +93,7 @@ async function main() {
       onStage: process.env.RANDOM_DISCOVERY_DEBUG === '1'
         ? event => console.log(JSON.stringify({ discoveryStage: event }))
         : undefined,
-      onBatch: report => { reports.push(report); console.log(JSON.stringify(report)) },
+      onBatch: report => { reports.push(report); console.log(JSON.stringify(report)); journalWrites.push(journalBatch(database!, report, new Date())) },
     })
     const schedulingFailed = reports.some(r => r.ownerSchedulingFailed)
     const madeProgress = result.pages > 0 || result.inserted > 0
@@ -90,6 +106,7 @@ async function main() {
   } finally {
     try {
       try {
+        await Promise.allSettled(journalWrites)
         if (database) await writeQuotaSummary(database).catch(() => console.warn('Quota summary unavailable; no quota value was changed.'))
         if (lock && database) await releaseDiscoveryRun(database, lock)
       }

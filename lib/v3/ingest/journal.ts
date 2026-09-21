@@ -9,12 +9,23 @@
  * Two collections, as the plan asks: one document per run, one per search.
  */
 
-import type { Db } from 'mongodb'
+import type { Db, ObjectId } from 'mongodb'
 
 import type { Line } from '../types'
 
 export const RUNS = 'ingest_runs_v3'
 export const SEARCHES = 'ingest_searches_v3'
+
+/** The lines of ingestion as the journal names them: the v3 lines, and what the current pipeline still runs. */
+export type JournalLine = Line | 'web' | 'texts' | 'enrich' | 'repair'
+
+/**
+ * A run still marked "running" past this was killed — by Vercel's five
+ * minutes, or a crash. The run is written when it starts precisely so that
+ * a run which never returns leaves a trace: that is how the trending line
+ * died for eight days with a report saying "ok".
+ */
+export const INTERRUPTED_AFTER_MS = 15 * 60_000
 
 /**
  * `partial` exists so a run stopped by its own deadline is not called a
@@ -37,7 +48,7 @@ export type RunCounters = {
 export const emptyCounters = (): RunCounters => ({ scanned: 0, inserted: 0, duplicates: 0, rejected: {} })
 
 export type RunRecord = {
-  line: Line | 'enrich' | 'repair'
+  line: JournalLine
   startedAt: Date
   finishedAt: Date
   status: RunStatus
@@ -46,7 +57,12 @@ export type RunRecord = {
   quotaUnits?: number
   errors?: string[]
   host?: string
+  /** A rehearsal: recorded, never counted as the line's work. */
+  dryRun?: boolean
 }
+
+/** What the collection holds: a run opened and not yet closed has no end and the status "running". */
+export type StoredRun = Omit<RunRecord, 'finishedAt' | 'status'> & { finishedAt?: Date; status: RunStatus | 'running' }
 
 /**
  * A run is only `ok` when it did something. Claiming success on zero
@@ -65,8 +81,22 @@ export async function recordRun(db: Db, run: RunRecord): Promise<void> {
   await db.collection(RUNS).insertOne({ ...run, createdAt: new Date() })
 }
 
+/** Writes the run as it starts, so a run that never ends is still on record. */
+export async function openRun(db: Db, run: { line: JournalLine; startedAt: Date; host?: string; dryRun?: boolean }): Promise<ObjectId> {
+  const result = await db.collection(RUNS).insertOne({ ...run, status: 'running', createdAt: new Date() })
+  return result.insertedId
+}
+
+export async function closeRun(
+  db: Db,
+  id: ObjectId,
+  end: { finishedAt: Date; status: RunStatus; counters: RunCounters; errors?: string[]; quotaUnits?: number },
+): Promise<void> {
+  await db.collection(RUNS).updateOne({ _id: id }, { $set: end })
+}
+
 export type SearchRecord = {
-  line: Line | 'enrich' | 'repair'
+  line: JournalLine
   provider: string
   /** The exact query sent, so a poor one can be recognised and retired. */
   query: string
