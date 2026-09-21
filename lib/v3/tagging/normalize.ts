@@ -40,10 +40,19 @@ export function comboId(firstTopicId: string, secondTopicId: string): string {
  * match "Carson". For Japanese, Chinese and Korean, which do not separate
  * words with spaces, a plain substring match is the correct behaviour.
  */
+/**
+ * Whether an alias names anything on its own. "007", "0 0" and "1 3" do not:
+ * "March 1" answered to every "1/3" episode part and every "1-3" score, and
+ * the Wave linked a 1959 horror film to a football match.
+ */
+export function namesSomething(alias: string): boolean {
+  return /\p{L}/u.test(alias)
+}
+
 export function containsAlias(haystack: string, alias: string): boolean {
   const text = normalize(haystack)
   const needle = normalize(alias)
-  if (!text || !needle) return false
+  if (!text || !needle || !namesSomething(needle)) return false
   if (UNSPACED_SCRIPT.test(needle)) return text.includes(needle)
   return ` ${text} `.includes(` ${needle} `)
 }

@@ -9,7 +9,7 @@
  * that way and are kept in a separate, much smaller list.
  */
 
-import { containsAlias, needsSecondClue, normalize } from './normalize'
+import { containsAlias, namesSomething, needsSecondClue, normalize } from './normalize'
 
 export type IndexedSubject = {
   id: string
@@ -71,7 +71,7 @@ export function buildSubjectIndex(rows: SubjectRow[]): SubjectIndex {
 
     for (const rawAlias of row.aliases ?? []) {
       const alias = normalize(rawAlias)
-      if (alias.length < 2) continue
+      if (alias.length < 2 || !namesSomething(alias)) continue
       aliasCount += 1
 
       // A single common word is never a usable name for an entity. Wikidata
