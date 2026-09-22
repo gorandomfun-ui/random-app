@@ -422,43 +422,6 @@ function progressionForStep(step: number): number {
 
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
-type PrefetchedBundle = {
-  lang?: Lang
-  item?: RandomContentItem
-  items?: RandomContentItem[]
-}
-
-const buildPrefetchStorageKeys = (lang: Lang | null | undefined, type: ItemType) => {
-  const keys: string[] = []
-  if (lang) keys.push(`${PREFETCH_STORAGE_PREFIX}${lang}-${type}`)
-  keys.push(`${PREFETCH_STORAGE_PREFIX}${type}`)
-  return keys
-}
-
-const parsePrefetchEntry = (raw: string): PrefetchedBundle | null => {
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (parsed && typeof parsed === 'object') {
-      if ('items' in (parsed as Record<string, unknown>)) {
-        const bundle = parsed as { items?: RandomContentItem[]; lang?: Lang }
-        if (Array.isArray(bundle.items) && bundle.items.length) {
-          return { lang: bundle.lang, items: bundle.items }
-        }
-      } else if ('item' in (parsed as Record<string, unknown>)) {
-        const bundle = parsed as { item?: RandomContentItem; lang?: Lang }
-        if (bundle.item && typeof bundle.item === 'object') {
-          return { lang: bundle.lang, items: [bundle.item] }
-        }
-      } else if ('type' in (parsed as Record<string, unknown>)) {
-        return { item: parsed as RandomContentItem }
-      }
-    }
-  } catch {
-    return null
-  }
-  return null
-}
-
 const cloneSequenceState = (state: RandomSequenceState): RandomSequenceState => ({
   ...state,
   cycle: state.cycle.map((entry) => ({ ...entry })),
@@ -1022,8 +985,6 @@ function randDiffIdx(max: number, not: number) {
   if (i === not) i = (i + 1 + randIdx(max - 1)) % max
   return i
 }
-
-const PREFETCH_STORAGE_PREFIX = 'random-prefetch-'
 
 function shortenText(text: string, maxWords: number) {
   const words = text.trim().split(/\s+/)
@@ -3321,83 +3282,6 @@ const sequenceStateRef = useRef<RandomSequenceState>(createInitialSequenceState(
     ])
   }, [effectsProfile, warmContentMedia])
 
-  const drainPrefetchedItems = useCallback((type: ItemType) => {
-    if (typeof window === 'undefined') return
-    const langKey = (locale || 'en') as Lang
-    const queue = preloadQueuesRef.current[type]
-    const keys = buildPrefetchStorageKeys(langKey, type)
-    for (const key of keys) {
-      let bundle: PrefetchedBundle | null = null
-      try {
-        const raw = sessionStorage.getItem(key)
-        if (!raw) continue
-        bundle = parsePrefetchEntry(raw)
-      } catch {
-        bundle = null
-      }
-      if (!bundle) {
-        try {
-          sessionStorage.removeItem(key)
-        } catch {
-          /* ignore */
-        }
-        continue
-      }
-      if (bundle.lang && bundle.lang !== langKey) continue
-
-      const consumeFromBundle = (): RandomContentItem | null => {
-        if (Array.isArray(bundle.items) && bundle.items.length) {
-          while (bundle.items.length) {
-            const next = bundle.items.shift()
-            if (next && next.type === type) return next
-          }
-          return null
-        }
-        if (bundle.item && bundle.item.type === type) return bundle.item
-        return null
-      }
-
-      const item = consumeFromBundle()
-      if (!item) {
-        try {
-          sessionStorage.removeItem(key)
-        } catch {
-          /* ignore */
-        }
-        continue
-      }
-      const candidateKey = getContentKey(item)
-      if (!candidateKey) {
-        try {
-          sessionStorage.removeItem(key)
-        } catch {
-          /* ignore */
-        }
-        continue
-      }
-      const exists = queue.some((entry) => getContentKey(entry) === candidateKey)
-      if (exists) {
-        try {
-          sessionStorage.removeItem(key)
-        } catch {
-          /* ignore */
-        }
-        continue
-      }
-      queue.push(item)
-      try {
-        if (Array.isArray(bundle.items) && bundle.items.length) {
-          sessionStorage.setItem(key, JSON.stringify({ lang: bundle.lang, items: bundle.items }))
-        } else {
-          sessionStorage.removeItem(key)
-        }
-      } catch {
-        /* ignore */
-      }
-      break
-    }
-  }, [getContentKey, locale])
-
 const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   if (!MINIGAMES_ENABLED || MINI_GAME_FREQUENCY <= 0) return null
   const state = miniGameStateRef.current
@@ -3953,10 +3837,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     notifyRandomReady()
     clearPreloadedCaches()
   }, [clearPreloadedCaches, locale, notifyRandomReady])
-
-  useEffect(() => {
-    if (!savedMode && !discoveryEnabled) selectedTypes.forEach((type) => drainPrefetchedItems(type))
-  }, [savedMode, drainPrefetchedItems, selectedTypes, discoveryEnabled])
 
   const updateTheme = useCallback(() => {
     setThemeIdx((idx) => randDiffIdx(THEMES.length, idx))

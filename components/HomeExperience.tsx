@@ -23,14 +23,12 @@ import { useI18n } from '@/providers/I18nProvider'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { THEMES } from '@/lib/theme'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
-import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
-import { startRandomPrefetch, startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
+import { startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
 import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
 
-const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
@@ -387,11 +385,6 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
       return next
     })
   }
-
-  useEffect(() => {
-    const lang = (locale || 'en') as Lang
-    startRandomPrefetch(lang, ALL_ITEM_TYPES)
-  }, [locale])
 
   useEffect(() => {
     startWeLikePrefetch()
