@@ -23,14 +23,13 @@ import { useI18n } from '@/providers/I18nProvider'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { THEMES } from '@/lib/theme'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
-import type { ItemType } from '@/lib/random/types'
 import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
-import { startRandomPrefetch, startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
-import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
+import { startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
+import { startHomePrefetch } from '@/lib/discovery/homePrefetch'
+import { CURATION_APP_PATHS, PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
 
-const ALL_ITEM_TYPES: ItemType[] = ['image', 'video', 'quote', 'joke', 'fact', 'web']
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
@@ -388,10 +387,12 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
     })
   }
 
+  // The Random advance: the first draws of the session, made here so the first click is instant. Stops on leaving.
   useEffect(() => {
     const lang = (locale || 'en') as Lang
-    startRandomPrefetch(lang, ALL_ITEM_TYPES)
-  }, [locale])
+    const advance = startHomePrefetch(lang, { curation: navigationPaths.random === CURATION_APP_PATHS.random })
+    return advance.stop
+  }, [locale, navigationPaths.random])
 
   useEffect(() => {
     startWeLikePrefetch()

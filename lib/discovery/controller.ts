@@ -1,9 +1,9 @@
-import { planDraw, ReservationQueue, recordWave, type Intent, type Session } from './pool'
+import { PREFETCH_LIMIT, planDraw, ReservationQueue, recordWave, restartRhythm, type Intent, type Session } from './pool'
 import type { Candidate, Format } from './types'
 
 export type Prepared<T> = { candidate: Candidate<T>; item: T }
 export type RandomLoader<T> = (session: Session, type: Format, signal: AbortSignal, factVariant?: 'quiz' | 'text') => Promise<Candidate<T> | null>
-/** Integrates with RandomExperience's existing three-item queue. It does not replace media preloading. */
+/** Integrates with RandomExperience's ready queue. It does not replace media preloading. */
 export class DiscoveryController<T> {
   private queue: ReservationQueue<T>
   private epoch = 0
@@ -12,7 +12,7 @@ export class DiscoveryController<T> {
   snapshot(): Session { return structuredClone(this.queue.committed) }
   get projected(): Session { return structuredClone(this.queue.projected) }
   async prepare(type: Format, load: RandomLoader<T>, factVariant?: 'quiz' | 'text'): Promise<Prepared<T> | null> {
-    if (this.pending || this.queue.length >= 3) return null
+    if (this.pending || this.queue.length >= PREFETCH_LIMIT) return null
     const controller = new AbortController(), epoch = this.epoch
     this.pending = controller
     const state = this.queue.projected, ticket: Intent = planDraw(state, type)
@@ -34,6 +34,12 @@ export class DiscoveryController<T> {
   waveDisplayed(item: Candidate<T>): void {
     this.invalidate(); this.queue.reset(recordWave(this.queue.committed, item))
   }
+  /** The visitor is back: the score restarts at the hook, and what was prepared under the old position is dropped. */
+  restartRhythm(): void {
+    this.invalidate(); this.queue.reset(restartRhythm(this.queue.committed))
+  }
+  /** A draw made elsewhere — the home's advance — takes its place in the queue, in order. */
+  adopt(ticket: Intent, candidate: Candidate<T>): void { this.queue.reserve(ticket, candidate) }
 }
 
 export function makeRandomLoader<T>(lang: string, request: typeof fetch = fetch): RandomLoader<T> {

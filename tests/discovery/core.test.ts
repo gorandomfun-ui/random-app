@@ -15,6 +15,7 @@ import { DiscoveryController } from '../../lib/discovery/controller'
 import { parseSession, randomHandler } from '../../lib/discovery/handlers'
 import type { Candidate, Format } from '../../lib/discovery/types'
 import { isOrdinaryRoutineVideo } from '../../lib/random/videoEditorial'
+import { beats } from '../../lib/v3/cool/score'
 
 const NOW = Date.UTC(2026, 8, 9)
 function item(key: string, title = 'stone carving workshop', type: Format = 'video', extra: Partial<Candidate<string>> = {}): Candidate<string> {
@@ -132,7 +133,7 @@ test('500 sessions of 100 Randoms keep stock, repetition and mode invariants', (
     for (let draw = 0; draw < 100; draw++) {
       const type = draw % 10 === 9 ? 'quote' : draw % 3 === 0 ? 'image' : 'video'
       const ticket = planDraw(state, type)
-      // One visual draw in three is cool, from the first draw on.
+      // The score says which visuals are cool; texts do not move it.
       if (type !== 'quote') { mixed++; coolMixed += Number(ticket.mode === 'cool') }
       const pool = type === 'quote' ? [item(`q${session}:${draw}`, 'text', 'quote')] : candidates
       const selected = pickPool(pool, ticket, state, random, NOW)
@@ -142,7 +143,7 @@ test('500 sessions of 100 Randoms keep stock, repetition and mode invariants', (
       assert.ok(state.visualHistory.slice(-20).filter(x => x.stock).length <= 1)
       displays++
     }
-    assert.ok(Math.abs(coolMixed - mixed / 3) <= 2, `${coolMixed} cool sur ${mixed} visuels`)
+    assert.equal(coolMixed, beats(session, mixed).filter(beat => beat === 'cool').length, `${coolMixed} cool sur ${mixed} visuels`)
   }
   console.log(JSON.stringify({ simulation: 'pool', sessions: 500, displays, durationMs: Math.round(performance.now() - started) }))
 })
@@ -250,6 +251,9 @@ test('disabled routes never call the database and malformed state fails validati
   assert.ok(parseSession(newSession(3)))
   assert.equal(parseSession({ ...newSession(3), recent: new Array(41).fill({}) }), null)
   assert.equal(parseSession({ ...newSession(3), visuals: 10, displayed: 0 }), null)
+  assert.equal(parseSession({ ...newSession(3), displayed: 1, visuals: 1, beat: 2 }), null, 'la position dans la partition ne dépasse pas les visuels')
+  const beforeScore: Record<string, unknown> = { ...newSession(3) }; delete beforeScore.beat
+  assert.equal(parseSession(beforeScore)?.beat, 0, 'une session d_avant la partition repart au début')
 })
 test('30 varied anchors compose bounded, related trios, never three images', () => {
   const started = performance.now()

@@ -1,60 +1,52 @@
 export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
-import { ObjectId } from 'mongodb'
 
 import { getDatabase } from '@/lib/mongodb'
-import { composeCoolThread } from '@/lib/v3/cool/thread'
+import { COOL_SOURCES, DEFAULT_BAG, NICHE_SOURCES, type CoolSource, type NicheSource } from '@/lib/v3/cool/bag'
+import { drawStart, type StartType } from '@/lib/v3/cool/start'
 import { normalizeWaveDocument, type WaveDocument } from '@/lib/random/waveEngine'
 
 /**
- * The cool pool: a thread of three — a content drawn live from the registers
- * or around a like, and two of its Wave neighbours, one proven content and
- * two discoveries among the three.
+ * One cool content, drawn live, for a look in the browser:
+ * /api/v3/cool?type=image&source=trend — or source=music for one niche. The
+ * live random draws the same way, through /api/discovery/random, with the
+ * session's bag choosing the source.
  */
 
-type Payload = {
-  excludeKeys?: unknown
-}
+type Payload = { excludeIds?: unknown; type?: unknown; source?: unknown }
 
 function parseExcludes(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is string => typeof entry === 'string').slice(0, 300)
 }
 
-async function thread(excludeKeys: string[]) {
+const parseType = (value: unknown): StartType => (value === 'image' ? 'image' : 'video')
+
+function parseSource(value: unknown): { source: CoolSource; niche?: NicheSource } {
+  if (typeof value === 'string' && NICHE_SOURCES.includes(value as NicheSource)) return { source: 'niche', niche: value as NicheSource }
+  if (typeof value === 'string' && COOL_SOURCES.includes(value as CoolSource)) return { source: value as CoolSource }
+  return { source: DEFAULT_BAG[Math.floor(Math.random() * DEFAULT_BAG.length)] }
+}
+
+async function draw(type: StartType, { source, niche }: { source: CoolSource; niche?: NicheSource }, excludeIds: string[]) {
   const started = Date.now()
   try {
     const db = await getDatabase()
-    const composed = await composeCoolThread(db, { excludeKeys })
-    if (!composed) {
-      return NextResponse.json({ items: [], reason: 'rien à tirer' })
-    }
-
-    // The thread decides on labels alone; the interface needs something it can
-    // show, so the full documents are read once the choice is made.
-    const order = [composed.start.id, ...composed.neighbours.map((item) => item.id)]
-    const docs = (await db
-      .collection('items')
-      .find({ _id: { $in: order.map((id) => new ObjectId(id)) } })
-      .toArray()) as unknown as WaveDocument[]
-    const byId = new Map(docs.map((doc) => [String(doc._id), doc]))
-    const items = order
-      .map((id) => byId.get(id))
-      .map((doc) => (doc ? normalizeWaveDocument(doc) : null))
-      .filter((item): item is NonNullable<typeof item> => Boolean(item))
-
+    const drawn = await drawStart(db, { type, source, niche, excludeIds })
+    const row = drawn?.rows[0]
+    if (!drawn || !row) return NextResponse.json({ items: [], reason: 'rien à tirer', asked: source, tookMs: Date.now() - started })
+    const item = normalizeWaveDocument(row as WaveDocument)
     return NextResponse.json({
-      items,
-      engine: 'cool-thread',
+      items: item ? [item] : [],
+      engine: 'cool-draw',
       build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
-      start: { id: composed.start.id, source: composed.start.source, asked: composed.start.asked, fallback: composed.start.fallback, popularity: composed.start.popularity },
-      neighbours: composed.neighbours.map((item) => ({
-        id: item.id, type: item.type, level: item.level, popularity: item.v3.popularity,
-      })),
-      dose: { wanted: composed.wanted, dosed: composed.dosed },
-      level: composed.start.level,
-      attempts: composed.attempts,
+      id: String(row._id),
+      source: drawn.source,
+      asked: drawn.asked,
+      ...(drawn.niche ? { niche: drawn.niche } : {}),
+      fallback: drawn.fallback,
+      popularity: (row.v3 as { popularity?: string } | undefined)?.popularity ?? 'unknown',
       tookMs: Date.now() - started,
     })
   } catch (error) {
@@ -65,10 +57,10 @@ async function thread(excludeKeys: string[]) {
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Payload | null
-  return thread(parseExcludes(body?.excludeKeys))
+  return draw(parseType(body?.type), parseSource(body?.source), parseExcludes(body?.excludeIds))
 }
 
-/** A thread with no memory, for a look in the browser. */
-export async function GET() {
-  return thread([])
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  return draw(parseType(url.searchParams.get('type')), parseSource(url.searchParams.get('source')), [])
 }

@@ -2,23 +2,27 @@ import type { PoolRetrievalReport } from './sampling'
 import { bagValue, weighted, type Rng } from './random'
 import { appendExposure, diversityWeights, pickDiverse, type Exposure } from './diversity'
 import { isVisual, seenOf, type Candidate, type Format, type Seen } from './types'
+import { beatAt } from '../v3/cool/score'
 
 export type Session = {
   version: 2; seed: number; revision: number; displayed: number; visuals: number
   mixedVisuals: number; coolTickets: number; editorialTickets: number; autonomousTickets: number
+  /** Position in the cool/random score: visuals since the rhythm (re)started. Lives in the page; a restored session starts it over. */
+  beat: number
   recent: Seen[]; visualHistory: Seen[]; exposures?: Exposure[]
 }
+/** Draws a session may hold ahead of display: the home's advance, the page's queue. */
+export const PREFETCH_LIMIT = 8
 export type Intent = { revision: number; type: Format; mode: 'random' | 'cool';
   branch: 'editorial' | 'autonomous' | 'general'; lane: 'trend' | 'recent' | 'unknown' | 'described' | 'any'; allowStock: boolean; allowDirectReference: boolean }
 export function newSession(seed: number): Session {
   return { version: 2, seed, revision: 0, displayed: 0, visuals: 0, mixedVisuals: 0,
-    coolTickets: 0, editorialTickets: 0, autonomousTickets: 0, recent: [], visualHistory: [], exposures: [] }
+    coolTickets: 0, editorialTickets: 0, autonomousTickets: 0, beat: 0, recent: [], visualHistory: [], exposures: [] }
 }
 export function planDraw(state: Session, type: Format): Intent {
   const visual = isVisual(type)
-  // One visual draw in three is cool. The first ten used to be all cool and
-  // then one in two: with threads of three, that was the same taste in loops.
-  const cool = visual && bagValue(state.seed, 'mode', state.visuals, [true, false, false])
+  // The score says which visuals are cool; a text passes through without moving it.
+  const cool = visual && beatAt(state.seed, state.beat) === 'cool'
   const editorial = cool && bagValue(state.seed, 'editorial', state.coolTickets,
     [true, true, true, true, true, false, false, false, false, false])
   const lane = cool ? bagValue(state.seed, 'autonomous', editorial ? state.coolTickets : state.autonomousTickets,
@@ -37,17 +41,30 @@ export function hardEligible(c: Candidate, intent: Intent, state: Session): bool
     (!c.stock || intent.allowStock) && !(intent.mode === 'cool' && c.routineEditorial) &&
     !state.recent.some(x => same(x, c))
 }
+/** The counters a draw of this type advances, before its content is known: what asking for several draws at once needs. */
+export function projectDraw(state: Session, ticket: Intent, type: Format): Session {
+  const visual = isVisual(type)
+  return { ...state, revision: state.revision + 1, displayed: state.displayed + 1,
+    visuals: state.visuals + Number(visual), mixedVisuals: state.mixedVisuals + Number(visual && state.displayed >= 10),
+    beat: state.beat + Number(visual),
+    coolTickets: state.coolTickets + Number(ticket.mode === 'cool'),
+    editorialTickets: state.editorialTickets + Number(ticket.branch === 'editorial'),
+    autonomousTickets: state.autonomousTickets + Number(ticket.branch === 'autonomous') }
+}
 export function commitDraw<T>(state: Session, ticket: Intent, item: Candidate<T>): Session {
   if (ticket.revision !== state.revision || !hardEligible(item, ticket, state)) throw new Error('Stale or invalid Random reservation')
   const visual = isVisual(item.type), entry = seenOf(item)
-  return { ...state, revision: state.revision + 1, displayed: state.displayed + 1,
-    visuals: state.visuals + Number(visual), mixedVisuals: state.mixedVisuals + Number(visual && state.displayed >= 10),
-    coolTickets: state.coolTickets + Number(ticket.mode === 'cool'),
-    editorialTickets: state.editorialTickets + Number(ticket.branch === 'editorial'),
-    autonomousTickets: state.autonomousTickets + Number(ticket.branch === 'autonomous'),
+  return { ...projectDraw(state, ticket, item.type),
     recent: [...state.recent, entry].slice(-40), exposures: appendExposure(state.exposures, item),
     visualHistory: visual ? [...state.visualHistory, entry].slice(-40) : state.visualHistory }
 }
+/** Back to the hook: the visitor came back to the page, or left it idle for an hour. What was seen stays excluded. */
+export function restartRhythm(state: Session): Session {
+  return { ...state, revision: state.revision + 1, beat: 0 }
+}
+/** An hour without a draw, the page left open: the next draw starts the score over. */
+export const RHYTHM_IDLE_MS = 60 * 60 * 1000
+export const rhythmIdle = (lastInteractionAt: number, now: number): boolean => now - lastInteractionAt > RHYTHM_IDLE_MS
 /** Wave views affect repetition only: never the introductory 10/40 or the format sequence. */
 export function recordWave(state: Session, item: Candidate): Session {
   return { ...state, revision: state.revision + 1, recent: [...state.recent, seenOf(item)].slice(-40), exposures: appendExposure(state.exposures, item) }
@@ -116,7 +133,7 @@ export class ReservationQueue<T> {
   get projected(): Session { return this.entries.at(-1)?.after ?? this.committed }
   get length(): number { return this.entries.length }
   reserve(ticket: Intent, item: Candidate<T>): void {
-    if (this.entries.length >= 3) throw new Error('Prefetch limit is three')
+    if (this.entries.length >= PREFETCH_LIMIT) throw new Error(`Prefetch limit is ${PREFETCH_LIMIT}`)
     this.entries.push({ ticket, item, after: commitDraw(this.projected, ticket, item) })
   }
   displayed(key: string): void {

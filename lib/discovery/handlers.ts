@@ -43,8 +43,8 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
       const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
-      // The cool pool: a cool visual ticket is served from a thread — a seed someone vouched for, then two of
-      // its Wave neighbours. The lanes remain the fallback when the pool holds nothing eligible for this visitor.
+      // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
+      // The lanes remain the fallback when the pool holds nothing eligible for this visitor.
       const cool = coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
         ? await selectCool(db, ticket, state, deps.decode, Math.random, Date.now()).catch(() => null) : null
       const choice = cool ?? await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())

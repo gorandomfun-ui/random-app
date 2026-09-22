@@ -653,3 +653,21 @@ test('le dictionnaire ne prend ni un nombre ni une date nue pour un sujet', asyn
   assert.equal(acceptableSubjectLabel('HTTP 404'), true)
   assert.equal(acceptableSubjectLabel('Mars'), true, 'la planète, pas le mois')
 })
+
+test('à l_insertion, sans ligne donnée, la ligne lue par l_étiqueteur reste : une vidéo tendance est « trend »', async () => {
+  // L_appel réel de l_ingestion ne passe pas de ligne ; une valeur par défaut
+  // « legacy » écrasait « trend » sur toutes les vidéos tendance depuis le 19/09.
+  const { tagForInsert } = await import('@/lib/v3/tagging/atInsert')
+  const { resetSubjectIndexCache } = await import('@/lib/v3/tagging/indexCache')
+  resetSubjectIndexCache()
+  const fakeDb = { collection: () => ({ find: () => ({ toArray: async () => DICTIONARY }) }) } as unknown as import('mongodb').Db
+  const documents = [
+    { type: 'video' as const, title: 'Johnny Hallyday en concert', provider: 'youtube', trendObservedAt: new Date() },
+    { type: 'video' as const, title: 'Johnny Hallyday interview', provider: 'youtube' },
+  ]
+  const tagged = (await tagForInsert(fakeDb, documents)) as Array<{ v3: { line: string } }>
+  assert.equal(tagged[0].v3.line, 'trend')
+  assert.equal(tagged[1].v3.line, 'legacy')
+  const forced = (await tagForInsert(fakeDb, documents, 'combo')) as Array<{ v3: { line: string } }>
+  assert.equal(forced[0].v3.line, 'combo', 'une ligne donnée par l_appelant l_emporte')
+})
