@@ -461,7 +461,7 @@ const deDictionary = {
 
     privacy: {
       title: "Cookies & Datenschutz",
-      bodyPrefix: "Optionale Videoplayer und A-ADS-Werbung werden entsprechend Ihrer ausdrücklichen Auswahl geladen. Ein Standardplayer von Dailymotion kann nur in dem in unserer Datenschutzerklärung beschriebenen geprüften Modus verfügbar bleiben.",
+      bodyPrefix: "Optionale Videoplayer werden entsprechend Ihrer ausdrücklichen Auswahl geladen. A-ADS-Werbung wird ohne Cookies oder Tracking angezeigt. Ein Standard-Dailymotion-Player kann nur im in unserer Datenschutzerklärung beschriebenen geprüften Modus verfügbar bleiben.",
       manageCookies: "Cookies verwalten",
       privacyPolicy: "Datenschutzerklärung",
       termsOfUse: "Nutzungsbedingungen"

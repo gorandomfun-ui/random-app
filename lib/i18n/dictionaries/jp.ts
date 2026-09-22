@@ -461,7 +461,7 @@ const jpDictionary = {
 
     privacy: {
       title: "クッキーとプライバシー",
-      bodyPrefix: "任意の動画プレーヤーとA-ADS広告は、利用者の明示的な選択に従って読み込まれます。Dailymotionの標準プレーヤーは、プライバシーポリシーに記載した確認済みのモードでのみ許可なしで利用できる場合があります。",
+      bodyPrefix: "任意の動画プレーヤーは利用者の明示的な選択に従って読み込まれます。A-ADS広告はCookieや追跡なしで表示されます。Dailymotionの標準プレーヤーは、プライバシーポリシーに記載した確認済みのモードでのみ利用できる場合があります。",
       manageCookies: "クッキーを管理",
       privacyPolicy: "プライバシーポリシー",
       termsOfUse: "利用規約"

@@ -461,7 +461,7 @@ const enDictionary = {
 
     privacy: {
       title: "Cookies & privacy",
-      bodyPrefix: "Optional video players and A-ADS advertising are loaded according to your explicit choices. A standard Dailymotion player may remain available only in the verified mode described in our privacy policy.",
+      bodyPrefix: "Optional video players are loaded according to your explicit choices. A-ADS advertising is shown without cookies or tracking. A standard Dailymotion player may remain available only in the verified mode described in our privacy policy.",
       manageCookies: "Manage my cookies",
       privacyPolicy: "Privacy policy",
       termsOfUse: "Terms of use"

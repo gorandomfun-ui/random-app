@@ -9,7 +9,6 @@ import {
   type AadsSlotStatus,
   mountAadsSlot,
 } from '@/lib/aads'
-import { useCookieConsent } from './CookieConsent'
 
 const FOOTER_DESKTOP_ID = process.env.NEXT_PUBLIC_AADS_BANNER_DESKTOP_ID
 const FOOTER_MOBILE_ID = process.env.NEXT_PUBLIC_AADS_BANNER_MOBILE_ID
@@ -32,10 +31,12 @@ export default function AadsFooterSlot({
   refreshTarget = 'footer',
   onVisibleChange,
 }: Props) {
-  const { consent } = useCookieConsent()
   const unitId = variant === 'desktop' ? FOOTER_DESKTOP_ID : FOOTER_MOBILE_ID
   const size = variant === 'desktop' ? '728x90' : '320x50'
-  const effectiveEnabled = enabled && consent?.ads === true
+  // A-ADS sets no cookie and tracks nobody, so the banner does not wait for
+  // the privacy dialog: gated behind it, A-ADS's own bot found no ad unit on
+  // the page and stopped counting anything.
+  const effectiveEnabled = enabled
   const containerRef = useRef<HTMLDivElement | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const lastRefreshRef = useRef(0)

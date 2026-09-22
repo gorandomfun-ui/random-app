@@ -58,19 +58,13 @@ export default function CookieSettingsModal() {
             {copy.mediaText}
           </span>
         </label>
-        <label className="flex gap-3">
-          <input
-            type="checkbox"
-            checked={!gpc && local.ads}
-            disabled={gpc}
-            onChange={(event) => setLocal((value) => ({ ...value, ads: event.target.checked }))}
-          />
+        <p className="flex gap-3">
           <span>
             <strong>{copy.ads}</strong>
             <br />
             {copy.adsText}
           </span>
-        </label>
+        </p>
         <p className="text-sm">{copy.standardMediaText}</p>
         <p className="text-sm">{copy.remembered}</p>
         {gpc && <p>{copy.gpc}</p>}

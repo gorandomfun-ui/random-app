@@ -122,7 +122,7 @@ const esDictionary = {
     privacy: {
       ...enDictionary.legal.privacy,
       title: "Cookies y privacidad",
-      bodyPrefix: "Los reproductores de vídeo opcionales y la publicidad A-ADS se cargan según tus elecciones explícitas. Un reproductor estándar de Dailymotion puede seguir disponible únicamente en el modo verificado descrito en nuestra política de privacidad.",
+      bodyPrefix: "Los reproductores de vídeo opcionales se cargan según tus elecciones explícitas. La publicidad A-ADS se muestra sin cookies ni rastreo. Un reproductor Dailymotion estándar puede seguir disponible solo en el modo verificado descrito en nuestra política de privacidad.",
       manageCookies: "Gestionar cookies",
       privacyPolicy: "Politica de privacidad",
       termsOfUse: "Condiciones de uso",

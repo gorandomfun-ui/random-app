@@ -9,7 +9,6 @@ import {
   type AadsSlotStatus,
   mountAadsSlot,
 } from '@/lib/aads'
-import { useCookieConsent } from './CookieConsent'
 
 const INLINE_DESKTOP_ID = process.env.NEXT_PUBLIC_AADS_INFEED_DESKTOP_ID
 const INLINE_MOBILE_ID = process.env.NEXT_PUBLIC_AADS_INFEED_MOBILE_ID
@@ -46,7 +45,6 @@ export default function AadsInlineContentAd({
   refreshTarget = 'inline',
   onStatusChange,
 }: Props) {
-  const { consent } = useCookieConsent()
   const slotIdRef = useRef(`inline-${Math.random().toString(36).slice(2)}`)
   const [intersecting, setIntersecting] = useState(forceVisible)
   const [active, setActive] = useState(forceVisible)
@@ -55,7 +53,8 @@ export default function AadsInlineContentAd({
   const cleanupRef = useRef<(() => void) | null>(null)
   const lastRefreshRef = useRef(0)
   const unitId = getUnitId(variant)
-  const effectiveEnabled = consent?.ads === true
+  // A-ADS is cookieless and shown without a consent gate, in every region.
+  const effectiveEnabled = true
   const [status, setStatus] = useState<AadsSlotStatus>(() => (effectiveEnabled && unitId ? 'idle' : 'empty'))
 
   const size = useMemo(() => {
