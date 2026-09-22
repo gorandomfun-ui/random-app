@@ -15,12 +15,7 @@ on:
         description: "Videos per batch"
         required: false
         default: "50"
-  schedule:
-    # Europe/Amsterdam rough local times: 09:55 and 21:55, after daily ingest.
-    - cron: "55 7 * 4-10 *"
-    - cron: "55 8 * 1-3,11-12 *"
-    - cron: "55 19 * 4-10 *"
-    - cron: "55 20 * 1-3,11-12 *"
+  # The schedules moved to the ingestion server (systemd timers, server/units): GitHub keeps the manual trigger only.
 
 jobs:
   daily-video-enrich:
