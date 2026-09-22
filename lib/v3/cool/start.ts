@@ -30,6 +30,8 @@ const ROWS = 4
 const CHANNEL_ROWS = 30
 /** The trend line carries no register label, so more rows are read and sifted. */
 const TREND_ROWS = 12
+/** A genre is universe + angle + era, and the index names the universe only: this many rows are read from the point and sifted, no more. */
+const GENRE_SCAN = 100
 const QUERY_BUDGET_MS = 1_500
 const REGISTER_INDEX = 'v3_register_type_rand'
 const SUBJECT_INDEX = 'v3_subject_type_rand'
@@ -76,6 +78,24 @@ async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng,
   return rows.filter((row) => !excluded.has(String(row._id)))
 }
 
+/**
+ * A random point in an index, then at most `scan` rows read from it and
+ * sifted in memory. For a zone the index does not name in full, the cost
+ * stays bounded: a rare combination falls back rather than walking a whole
+ * universe until the query budget runs out.
+ */
+async function seekAmong(
+  db: Db, filter: Filter<Document>, hint: string, random: Rng, excluded: Set<string>, scan: number, keep: (row: Document) => boolean,
+): Promise<Document[]> {
+  const items = db.collection('items')
+  const point = random() * 0.9
+  const read = (range: Filter<Document>) =>
+    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: scan, hint, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  let rows = await read({ rand: { $gte: point } })
+  if (!rows.length) rows = await read({ rand: { $lt: point } })
+  return rows.filter((row) => !excluded.has(String(row._id)) && keep(row)).slice(0, ROWS)
+}
+
 function drawRegister(db: Db, register: CoolRegister, type: StartType, random: Rng, excluded: Set<string>): Promise<Document[]> {
   return seek(db, { 'v3.registers': register, type, ...SERVABLE }, REGISTER_INDEX, random, excluded)
 }
@@ -100,10 +120,13 @@ async function drawLike(db: Db, zones: LikeZone[], type: StartType, random: Rng,
     }
     return usable.length ? { rows: usable.slice(0, ROWS), kind } : null
   }
-  const rows = await seek(
-    db,
-    { 'v3.universe': zone.universe, 'v3.angle': zone.angle, 'v3.era': zone.era, type, 'v3.usable': true, ...SERVABLE },
-    UNIVERSE_INDEX, random, excluded,
+  // The universe is in the index; the angle and the era are sifted from a bounded batch.
+  const rows = await seekAmong(
+    db, { 'v3.universe': zone.universe, type, ...SERVABLE }, UNIVERSE_INDEX, random, excluded, GENRE_SCAN,
+    (row) => {
+      const v3 = row.v3 as { angle?: string; era?: string; usable?: boolean } | undefined
+      return v3?.angle === zone.angle && v3?.era === zone.era && v3?.usable === true
+    },
   )
   return rows.length ? { rows, kind } : null
 }

@@ -30,6 +30,11 @@ export type LikeZone = {
 
 let cache: { at: number; zones: LikeZone[] } | null = null
 
+/** For tests only: the zones the next draws see, or null to forget them. */
+export function __setLikeZonesForTests(zones: LikeZone[] | null): void {
+  cache = zones ? { at: Number.MAX_SAFE_INTEGER / 2, zones } : null
+}
+
 /** A like is stored as "youtube:ID" or "dailymotion:ID"; the video keeps its id under either spelling. */
 function videoIdsOf(contentKey: string): string[] {
   const separator = contentKey.indexOf(':')

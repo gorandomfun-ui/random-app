@@ -61,3 +61,29 @@ test('la tendance retombe en niche quand la ligne est mince ; une niche ne retom
   const gaming = await drawStart(fakeDb([...registers, trending]), { type: 'video', source: 'niche', niche: 'gaming', random: rolls([0.1]) })
   assert.equal(gaming?.source, 'gaming', 'une niche gaming demandée par le sac est servie')
 })
+
+test('la zone genre d_un like lit un lot borné de l_univers et n_en garde que l_angle et l_époque du like', async () => {
+  const { drawStart } = await import('@/lib/v3/cool/start')
+  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
+  const { __setLikeZonesForTests } = await import('@/lib/v3/cool/likes')
+  __setLikeZonesForTests([{ id: 'like-1', type: 'video', subjectIds: [], universe: 'music', angle: 'live-concert', era: 'retro' }])
+  try {
+    const rows = [
+      fakeVideo('music', { v3: { registers: ['music'], universe: 'music', angle: 'official-clip', era: 'recent', usable: true } }),
+      fakeVideo('music', { v3: { registers: ['music'], universe: 'music', angle: 'live-concert', era: 'retro', usable: true } }),
+      fakeVideo('music', { v3: { registers: ['music'], universe: 'music', angle: 'live-concert', era: 'recent', usable: true } }),
+      fakeVideo('archive'),
+    ]
+    const drawn = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0, 0.99, 0]) })
+    assert.ok(drawn)
+    assert.equal(drawn.source, 'like-genre')
+    assert.equal(drawn.fallback, false)
+    for (const row of drawn.rows) {
+      const v3 = row.v3 as { angle: string; era: string }
+      assert.equal(v3.angle, 'live-concert')
+      assert.equal(v3.era, 'retro')
+    }
+  } finally {
+    __setLikeZonesForTests(null)
+  }
+})
