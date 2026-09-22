@@ -27,7 +27,8 @@ import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
-import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
+import { startHomePrefetch } from '@/lib/discovery/homePrefetch'
+import { CURATION_APP_PATHS, PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
 
@@ -385,6 +386,13 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
       return next
     })
   }
+
+  // The Random advance: the first draws of the session, made here so the first click is instant. Stops on leaving.
+  useEffect(() => {
+    const lang = (locale || 'en') as Lang
+    const advance = startHomePrefetch(lang, { curation: navigationPaths.random === CURATION_APP_PATHS.random })
+    return advance.stop
+  }, [locale, navigationPaths.random])
 
   useEffect(() => {
     startWeLikePrefetch()

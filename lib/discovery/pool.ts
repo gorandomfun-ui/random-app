@@ -62,6 +62,9 @@ export function commitDraw<T>(state: Session, ticket: Intent, item: Candidate<T>
 export function restartRhythm(state: Session): Session {
   return { ...state, revision: state.revision + 1, beat: 0 }
 }
+/** An hour without a draw, the page left open: the next draw starts the score over. */
+export const RHYTHM_IDLE_MS = 60 * 60 * 1000
+export const rhythmIdle = (lastInteractionAt: number, now: number): boolean => now - lastInteractionAt > RHYTHM_IDLE_MS
 /** Wave views affect repetition only: never the introductory 10/40 or the format sequence. */
 export function recordWave(state: Session, item: Candidate): Session {
   return { ...state, revision: state.revision + 1, recent: [...state.recent, seenOf(item)].slice(-40), exposures: appendExposure(state.exposures, item) }
