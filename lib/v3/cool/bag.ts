@@ -1,31 +1,32 @@
 /**
- * What a session's cool draws start from, dosed for what the visitor sees.
+ * What a session's cool draws ask for: the trend, the likes, or a niche.
  *
- * Drawing each source with the same weight put video games in a third of
- * the threads — gaming is one register, but the curator's likes lean that
- * way too, and every start brings two neighbours of the same subject. The
- * bag says how the starts of a session split, ten at a time, shuffled once
- * per session like the other bags of the draw: one gaming, two old school
- * (archives and vintage GIFs together, since they taste the same), two
- * music, two from elsewhere, two around the likes, one trend. Never the same
- * source twice in a row.
+ * Ten tickets per session, in an order the seed decides once: four for the
+ * trend (what the trending lines brought in), three around the curator's
+ * likes (a zone around a like, never the like itself), three niches — the
+ * four registers in turn: gaming, old school, music, elsewhere. Never the
+ * same source twice in a row, the previous bag's last ticket included; never
+ * gaming twice in a row among the niches. A source with nothing to give is
+ * served as a niche, never the other way round (`start.ts`).
  */
 
-import { bagValue } from '@/lib/discovery/random'
+import { hash, seeded, shuffled, type Rng } from '@/lib/discovery/random'
 
-export type CoolSource = 'gaming' | 'oldschool' | 'music' | 'elsewhere' | 'like' | 'trend'
-export const COOL_SOURCES: CoolSource[] = ['gaming', 'oldschool', 'music', 'elsewhere', 'like', 'trend']
+export type CoolSource = 'trend' | 'like' | 'niche'
+export const COOL_SOURCES: CoolSource[] = ['trend', 'like', 'niche']
+export type NicheSource = 'gaming' | 'oldschool' | 'music' | 'elsewhere'
+export const NICHE_SOURCES: NicheSource[] = ['gaming', 'oldschool', 'music', 'elsewhere']
 
 export const DEFAULT_BAG: CoolSource[] = [
-  'gaming', 'oldschool', 'oldschool', 'music', 'music', 'elsewhere', 'elsewhere', 'like', 'like', 'trend',
+  'trend', 'trend', 'trend', 'trend', 'like', 'like', 'like', 'niche', 'niche', 'niche',
 ]
 /** The trend is where the bubble is; Random's point is to leave it. */
 const MAX_TREND_TICKETS = 5
 
 /**
- * The bag, from `RANDOM_COOL_BAG` when set — "gaming:1,oldschool:2,music:2,
- * elsewhere:2,like:2,trend:1" — else the default. A setting that names no
- * known source, or more than five trend tickets, is ignored.
+ * The bag, from `RANDOM_COOL_BAG` when set — "trend:4,like:3,niche:3" — else
+ * the default. A setting that names no known source, or more than five
+ * trend tickets, is ignored.
  */
 export function coolBag(setting: string | undefined = process.env.RANDOM_COOL_BAG): CoolSource[] {
   if (!setting?.trim()) return DEFAULT_BAG
@@ -40,20 +41,69 @@ export function coolBag(setting: string | undefined = process.env.RANDOM_COOL_BA
   return bag
 }
 
-/**
- * The source of the session's next start. The bag is shuffled once per
- * session by the seed; `index` walks it. When the position repeats the
- * previous start's source, the next position is taken instead — two gaming
- * threads in a row is what the bag exists to prevent.
- */
-export function pickBagSource(seed: number, index: number, previous: CoolSource | null, bag: CoolSource[] = coolBag()): CoolSource {
-  const at = Math.max(0, Math.floor(index))
-  const first = bagValue(seed, 'cool-source', at, bag)
-  if (first !== previous || new Set(bag).size === 1) return first
-  // Walk on to the next position that differs; the bag holds at most ten, so this ends.
-  for (let step = 1; step <= bag.length; step += 1) {
-    const next = bagValue(seed, 'cool-source', at + step, bag)
-    if (next !== previous) return next
+const noRepeat = <T>(order: readonly T[], previous: T | null) =>
+  order.every((source, index) => source !== (index ? order[index - 1] : previous))
+
+/** Most-remaining-first, the previous ticket set aside: always an order without repeats when one exists. */
+function greedy<T>(bag: readonly T[], previous: T | null, random: Rng): T[] {
+  const remaining = new Map<T, number>()
+  for (const source of bag) remaining.set(source, (remaining.get(source) ?? 0) + 1)
+  const order: T[] = []
+  let last = previous
+  while (order.length < bag.length) {
+    const choices = [...remaining.entries()].filter(([, count]) => count > 0)
+    const allowed = choices.filter(([source]) => source !== last)
+    const from = allowed.length ? allowed : choices
+    const most = Math.max(...from.map(([, count]) => count))
+    const best = from.filter(([, count]) => count === most)
+    const [source] = best[Math.floor(random() * best.length)]
+    order.push(source)
+    remaining.set(source, (remaining.get(source) ?? 1) - 1)
+    last = source
   }
-  return first
+  return order
+}
+
+/**
+ * One bag's tickets in order — the `ordinal`-th bag of the session —
+ * shuffled by the seed and drawn again until no ticket repeats the one
+ * before it, the previous bag's last ticket included.
+ */
+function arrangement<T>(seed: number, name: string, ordinal: number, bag: readonly T[], previous: T | null): T[] {
+  if (new Set(bag).size === 1) return [...bag]
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const order = shuffled(bag, seeded(hash(`${seed}:${name}:${ordinal}:${attempt}`)))
+    if (noRepeat(order, previous)) return order
+  }
+  return greedy(bag, previous, seeded(hash(`${seed}:${name}:${ordinal}:greedy`)))
+}
+
+/** The first `count` tickets of a session, bag after bag. Restoring a session does not change its next ticket. */
+export function bagSequence(seed: number, count: number, bag: CoolSource[] = coolBag()): CoolSource[] {
+  const sequence: CoolSource[] = []
+  for (let ordinal = 0; sequence.length < count; ordinal += 1) {
+    sequence.push(...arrangement(seed, 'cool-source', ordinal, bag, sequence[sequence.length - 1] ?? null))
+  }
+  return sequence.slice(0, count)
+}
+
+/** What the session's cool ticket at `index` asks for. */
+export function bagSourceAt(seed: number, index: number, bag: CoolSource[] = coolBag()): CoolSource {
+  const at = Math.max(0, Math.floor(index))
+  return bagSequence(seed, at + 1, bag)[at]
+}
+
+/**
+ * The register a niche ticket means: the four in turn, in an order the seed
+ * decides, never the same one twice in a row. The ticket at `index` is the
+ * k-th niche of the session, k counted over the bag sequence.
+ */
+export function nicheAt(seed: number, index: number, bag: CoolSource[] = coolBag()): NicheSource {
+  const at = Math.max(0, Math.floor(index))
+  const rank = bagSequence(seed, at, bag).filter((source) => source === 'niche').length
+  const niches: NicheSource[] = []
+  for (let ordinal = 0; niches.length <= rank; ordinal += 1) {
+    niches.push(...arrangement(seed, 'cool-niche', ordinal, NICHE_SOURCES, niches[niches.length - 1] ?? null))
+  }
+  return niches[rank]
 }

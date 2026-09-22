@@ -3,14 +3,15 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 
 import { getDatabase } from '@/lib/mongodb'
-import { COOL_SOURCES, DEFAULT_BAG, type CoolSource } from '@/lib/v3/cool/bag'
+import { COOL_SOURCES, DEFAULT_BAG, NICHE_SOURCES, type CoolSource, type NicheSource } from '@/lib/v3/cool/bag'
 import { drawStart, type StartType } from '@/lib/v3/cool/start'
 import { normalizeWaveDocument, type WaveDocument } from '@/lib/random/waveEngine'
 
 /**
  * One cool content, drawn live, for a look in the browser:
- * /api/v3/cool?type=image&source=trend. The live random draws the same way,
- * through /api/discovery/random, with the session's bag choosing the source.
+ * /api/v3/cool?type=image&source=trend — or source=music for one niche. The
+ * live random draws the same way, through /api/discovery/random, with the
+ * session's bag choosing the source.
  */
 
 type Payload = { excludeIds?: unknown; type?: unknown; source?: unknown }
@@ -22,16 +23,17 @@ function parseExcludes(value: unknown): string[] {
 
 const parseType = (value: unknown): StartType => (value === 'image' ? 'image' : 'video')
 
-function parseSource(value: unknown): CoolSource {
-  if (typeof value === 'string' && COOL_SOURCES.includes(value as CoolSource)) return value as CoolSource
-  return DEFAULT_BAG[Math.floor(Math.random() * DEFAULT_BAG.length)]
+function parseSource(value: unknown): { source: CoolSource; niche?: NicheSource } {
+  if (typeof value === 'string' && NICHE_SOURCES.includes(value as NicheSource)) return { source: 'niche', niche: value as NicheSource }
+  if (typeof value === 'string' && COOL_SOURCES.includes(value as CoolSource)) return { source: value as CoolSource }
+  return { source: DEFAULT_BAG[Math.floor(Math.random() * DEFAULT_BAG.length)] }
 }
 
-async function draw(type: StartType, source: CoolSource, excludeIds: string[]) {
+async function draw(type: StartType, { source, niche }: { source: CoolSource; niche?: NicheSource }, excludeIds: string[]) {
   const started = Date.now()
   try {
     const db = await getDatabase()
-    const drawn = await drawStart(db, { type, source, excludeIds })
+    const drawn = await drawStart(db, { type, source, niche, excludeIds })
     const row = drawn?.rows[0]
     if (!drawn || !row) return NextResponse.json({ items: [], reason: 'rien à tirer', asked: source, tookMs: Date.now() - started })
     const item = normalizeWaveDocument(row as WaveDocument)
@@ -42,6 +44,7 @@ async function draw(type: StartType, source: CoolSource, excludeIds: string[]) {
       id: String(row._id),
       source: drawn.source,
       asked: drawn.asked,
+      ...(drawn.niche ? { niche: drawn.niche } : {}),
       fallback: drawn.fallback,
       popularity: (row.v3 as { popularity?: string } | undefined)?.popularity ?? 'unknown',
       tookMs: Date.now() - started,

@@ -17,7 +17,7 @@ import { candidateFromRow, type CatalogueRow } from './catalog'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
 import type { Rng } from './random'
 import { drawStart, type StartSource } from '../v3/cool/start'
-import { pickBagSource, type CoolSource } from '../v3/cool/bag'
+import { bagSourceAt, nicheAt, type CoolSource, type NicheSource } from '../v3/cool/bag'
 import type { Popularity } from '../v3/types'
 
 /** A draw whose few rows are all refused is tried again from another point. */
@@ -30,6 +30,8 @@ export type CoolChoice = {
   source: StartSource
   /** What the bag asked for, and whether the answer had to come from elsewhere. */
   asked: CoolSource
+  /** Which register a niche ticket meant. */
+  niche?: NicheSource
   fallback: boolean
   popularity: Popularity
 }
@@ -47,9 +49,10 @@ export async function selectCool<T>(
 ): Promise<CoolResult<T> | null> {
   const type = ticket.type === 'image' ? 'image' : 'video'
   // The session's bag says what this ticket is for; the ticket count walks it.
-  const asked = pickBagSource(state.seed, state.coolTickets, null)
+  const asked = bagSourceAt(state.seed, state.coolTickets)
+  const niche = asked === 'niche' ? nicheAt(state.seed, state.coolTickets) : undefined
   for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
-    const drawn = await drawStart(db, { type, source: asked, random, now })
+    const drawn = await drawStart(db, { type, source: asked, niche, random, now })
     if (!drawn) continue
     for (const row of drawn.rows as CatalogueRow[]) {
       const payload = decode(row)
@@ -60,7 +63,7 @@ export async function selectCool<T>(
       return {
         item: candidate, branch: drawn.source.startsWith('like') ? 'editorial' : 'autonomous', fallback: false,
         selection: { requestedLane: ticket.lane, servedLane: 'any', reasons: [] },
-        cool: { id: String(row._id), source: drawn.source, asked, fallback: drawn.fallback, popularity },
+        cool: { id: String(row._id), source: drawn.source, asked, ...(niche ? { niche } : {}), fallback: drawn.fallback, popularity },
       }
     }
   }

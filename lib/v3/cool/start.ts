@@ -1,18 +1,19 @@
 /**
- * Where a thread starts: a content drawn live, at random, from the whole
- * catalogue, for the source the session's bag asked for.
+ * A cool content: drawn live, at random, from the whole catalogue, for the
+ * source the session's bag asked for.
  *
  * No stock, nothing computed ahead: a cool draw seeks a random point in the
  * index of a register, of a zone around a curation like, or of the trend
  * line. The population is everything in the catalogue that fits, enriched
- * by every day's ingestion. A source with nothing to give is served as
- * "niche" — a register that is not gaming, so the cap on games holds even
- * then — and the answer says so.
+ * by every day's ingestion. A source with nothing to give — a thin trend
+ * line, a like with no zone — is served as a niche: a register that is not
+ * gaming, so the cap on games holds even then; the answer says so. A niche
+ * never falls back to the trend or the likes.
  */
 
 import { type Db, type Document, type Filter } from 'mongodb'
 
-import type { CoolSource } from './bag'
+import type { CoolSource, NicheSource } from './bag'
 import { loadLikeZones, type LikeZone } from './likes'
 import { EXCLUDED_ANGLES, EXCLUDED_UNIVERSES, isCoolCandidate, type LabelableRow } from './registers'
 import type { CoolRegister } from '../types'
@@ -22,7 +23,7 @@ export type StartType = 'video' | 'image'
 export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like-genre'
 /** What a start actually came from: a register, a zone around a like, or the trend. */
 export type StartSource = CoolRegister | LikeZoneKind | 'trend'
-export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; fallback: boolean }
+export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; niche?: NicheSource; fallback: boolean }
 
 /** Rows read per draw: enough for the eligibility rules to refuse a few. */
 const ROWS = 4
@@ -37,8 +38,8 @@ const LINE_INDEX = 'v3_line_type_rand'
 /** Only content a visitor should be served; the labels settled the rest when they were written. */
 const SERVABLE: Filter<Document> = { isSuppressed: { $ne: true }, obsoleteVideoStatus: { $ne: 'obsolete' } }
 
-/** The register a bag source means for a format: old school is the archives for a video, the archives or the vintage GIFs for an image. */
-export function registerFor(source: Exclude<CoolSource, 'like' | 'trend'>, type: StartType, random: Rng): CoolRegister {
+/** The register a niche means for a format: old school is the archives for a video, the archives or the vintage GIFs for an image. */
+export function registerFor(source: NicheSource, type: StartType, random: Rng): CoolRegister {
   if (source === 'oldschool') return type === 'video' || random() < 0.5 ? 'archive' : 'cool-words'
   return source
 }
@@ -119,7 +120,7 @@ async function drawTrend(db: Db, type: StartType, random: Rng, excluded: Set<str
 
 export async function drawStart(
   db: Db,
-  options: { type: StartType; source: CoolSource; excludeIds?: Iterable<string>; random?: Rng; now?: number },
+  options: { type: StartType; source: CoolSource; niche?: NicheSource; excludeIds?: Iterable<string>; random?: Rng; now?: number },
 ): Promise<Start | null> {
   const random = options.random ?? Math.random
   const zones = await loadLikeZones(db, options.now).catch(() => [] as LikeZone[])
@@ -134,12 +135,14 @@ export async function drawStart(
     const rows = await drawTrend(db, type, random, excluded)
     if (rows.length) return { rows, source: 'trend', asked: source, fallback: false }
   } else {
-    const register = registerFor(source, type, random)
+    // A niche ticket names its register; without one, any register but gaming.
+    const niche = options.niche
+    const register = niche ? registerFor(niche, type, random) : nicheFallback(type, random)
     const rows = await drawRegister(db, register, type, random, excluded)
-    if (rows.length) return { rows, source: register, asked: source, fallback: false }
+    if (rows.length) return { rows, source: register, asked: source, ...(niche ? { niche } : {}), fallback: false }
   }
 
   const register = nicheFallback(type, random)
   const rows = await drawRegister(db, register, type, random, excluded)
-  return rows.length ? { rows, source: register, asked: source, fallback: true } : null
+  return rows.length ? { rows, source: register, asked: source, ...(options.niche ? { niche: options.niche } : {}), fallback: true } : null
 }
