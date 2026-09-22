@@ -14,7 +14,7 @@
 
 import { appendFileSync } from 'node:fs'
 
-import { closeRun, emptyCounters, judge, openRun, type RunCounters } from '@/lib/v3/ingest/journal'
+import { closeRun, emptyCounters, journalHost, judge, openRun, type RunCounters } from '@/lib/v3/ingest/journal'
 import { ingestTrendingVideos, pickTrendingRegions } from '@/lib/ingest/videos'
 import { count } from './reportFormat'
 
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   const { getDb } = await import('@/lib/db')
   const db = await getDb()
   const startedAt = new Date()
-  const runId = await openRun(db, { line: 'trend', startedAt, host: 'github', dryRun }).catch(() => null)
+  const runId = await openRun(db, { line: 'trend', startedAt, host: journalHost(), dryRun }).catch(() => null)
   console.log(JSON.stringify({ trending: 'start', regions: chosen, limit, dryRun }))
 
   let counters: RunCounters = emptyCounters()

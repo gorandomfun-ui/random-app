@@ -1,0 +1,11 @@
+[Unit]
+Description=RANDOM ingestion server health, written to the database
+
+[Service]
+Type=oneshot
+User=random
+Group=random
+WorkingDirectory=/opt/random-app
+Environment=HOME=/home/random
+ExecStart=/bin/bash -c 'set -a; . /opt/random-app/.env.ingest; set +a; exec node --import tsx scripts/server/status.ts'
+Nice=15

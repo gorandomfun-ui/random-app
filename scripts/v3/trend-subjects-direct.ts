@@ -13,7 +13,7 @@ import { appendFileSync } from 'node:fs'
 
 import { directContext, installTrendIndexes, LineLocked } from '@/lib/v3/ingest/direct'
 import { run } from '@/lib/v3/ingest/lines/trend-subjects'
-import { emptyCounters } from '@/lib/v3/ingest/journal'
+import { emptyCounters, journalHost } from '@/lib/v3/ingest/journal'
 import type { LineResult } from '@/lib/v3/ingest/context'
 import { count } from './reportFormat'
 
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   if (!dryRun) await installTrendIndexes(db).catch((error) => console.warn('Indexes not installed:', error instanceof Error ? error.message : error))
   let direct
   try {
-    direct = await directContext(db, { line: 'trend', journalLine: 'trend-subjects', minutes: MAX_MINUTES, dryRun, host: 'github', youtubeDailyUnits: DAILY_UNITS })
+    direct = await directContext(db, { line: 'trend', journalLine: 'trend-subjects', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: DAILY_UNITS })
   } catch (error) {
     if (error instanceof LineLocked) { console.log(JSON.stringify({ trendSubjects: 'skipped', reason: 'locked' })); process.exit(0) }
     throw error

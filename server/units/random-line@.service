@@ -1,0 +1,24 @@
+# One ingestion pass of one line, run by its timer. The instance name is the
+# line: random-line@daily-auto-morning, random-line@video-enrich…
+# Never two passes of the same line at once (flock), never longer than
+# RuntimeMaxSec: what the GitHub jobs allowed, so the server behaves the same.
+[Unit]
+Description=RANDOM ingestion line %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=random
+Group=random
+WorkingDirectory=/opt/random-app
+Environment=NODE_ENV=production
+Environment=HOME=/home/random
+ExecStart=/usr/bin/flock -n /home/random/locks/%i.lock /bin/bash /opt/random-app/server/run-line.sh %i
+RuntimeMaxSec=3900
+Nice=10
+MemoryMax=700M
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/random-app /home/random

@@ -172,12 +172,15 @@ export async function GET(request: Request) {
       .sort((left, right) => (left.day < right.day ? 1 : -1))
     const health = journal.health.length ? journal.health : legacy.health
     const alerts = journal.health.filter((row) => row.state === 'arrêtée' || row.state === 'muette')
+    // The ingestion server's own word on itself, written every ten minutes by scripts/server/status.ts.
+    const server = await db.collection('ingest_server_status').findOne({ _id: 'random-ingest' } as never, { maxTimeMS: 2000 }).catch(() => null)
 
     return NextResponse.json({
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,
       alerts,
+      server,
     })
   } catch (error) {
     console.error('[v3/ingest-report] échec', error)
