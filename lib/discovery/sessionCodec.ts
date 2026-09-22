@@ -6,8 +6,11 @@ const FORMATS: Format[] = ['video', 'image', 'quote', 'joke', 'fact', 'web']
 function isObject(value: unknown): value is Record<string, unknown> { return value != null && typeof value === 'object' && !Array.isArray(value) }
 export function parseSession(value: unknown): Session | null {
   if (!isObject(value) || value.version !== 2) return null
-  for (const key of ['seed', 'revision', 'displayed', 'visuals', 'mixedVisuals', 'coolTickets', 'editorialTickets', 'autonomousTickets']) {
-    const n = value[key]; if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0 || n > 0xffffffff) return null
+  for (const key of ['seed', 'revision', 'displayed', 'visuals', 'mixedVisuals', 'coolTickets', 'editorialTickets', 'autonomousTickets', 'beat']) {
+    const n = value[key]
+    // A session from before the score carries no beat: its rhythm starts over.
+    if (key === 'beat' && n === undefined) continue
+    if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0 || n > 0xffffffff) return null
   }
   for (const key of ['recent', 'visualHistory']) {
     if (!Array.isArray(value[key]) || value[key].length > 40) return null
@@ -34,8 +37,8 @@ export function parseSession(value: unknown): Session | null {
         (!Number.isSafeInteger(entry[field]) || Number(entry[field]) < 0 || Number(entry[field]) > 0xffffffff)) return null
     }
   }
-  const s = value as unknown as Session
-  if (s.visuals > s.displayed || s.mixedVisuals > s.visuals || s.coolTickets > s.visuals ||
+  const s: Session = { ...(value as unknown as Session), beat: typeof value.beat === 'number' ? value.beat : 0 }
+  if (s.visuals > s.displayed || s.mixedVisuals > s.visuals || s.coolTickets > s.visuals || s.beat > s.visuals ||
     s.editorialTickets + s.autonomousTickets !== s.coolTickets) return null
   const canonical = (entry: Session['recent'][number]) => entry.type === 'image' && entry.key.startsWith('image:http')
     ? { ...entry, key: canonicalMediaKey({ type: 'image', url: entry.key.slice(6) }) } : entry
