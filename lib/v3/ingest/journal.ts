@@ -17,7 +17,7 @@ export const RUNS = 'ingest_runs_v3'
 export const SEARCHES = 'ingest_searches_v3'
 
 /** The lines of ingestion as the journal names them: the v3 lines, and what the current pipeline still runs. */
-export type JournalLine = Line | 'web' | 'texts' | 'enrich' | 'repair'
+export type JournalLine = Line | 'trend-subjects' | 'web' | 'texts' | 'enrich' | 'repair'
 
 /**
  * A run still marked "running" past this was killed — by Vercel's five

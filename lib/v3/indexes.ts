@@ -81,6 +81,19 @@ export const V3_INDEXES: PlannedIndex[] = [
     key: { sources: 1, 'dig.status': 1 },
     purpose: 'Ingestion: find subjects waiting to be dug into.',
   },
+  {
+    collection: SUBJECTS,
+    name: 'subject_trend',
+    key: { 'trend.lastSeen': -1, 'trend.score': -1 },
+    options: { partialFilterExpression: { 'trend.lastSeen': { $exists: true } } },
+    purpose: 'Trend-subjects line and reports: the subjects of a day, best scores first.',
+  },
+  {
+    collection: 'trend_signals_v3',
+    name: 'signals_day_key',
+    key: { day: 1, key: 1 },
+    purpose: 'Trend-subjects line: was this name seen on the previous days.',
+  },
 ]
 
 export type IndexReport = {

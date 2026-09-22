@@ -33,6 +33,7 @@ const MAX_SEARCHES_SHOWN = 24
 
 export const LINE_LABELS: Record<string, string> = {
   trend: 'Tendances',
+  'trend-subjects': 'Tendances-sujets',
   'retro-trend': 'Rétro',
   combo: 'Combinaisons',
   mainstream: 'Mainstream',
