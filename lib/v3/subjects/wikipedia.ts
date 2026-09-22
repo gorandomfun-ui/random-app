@@ -60,13 +60,14 @@ export async function fetchTopArticles(
   date: Date,
   signal?: AbortSignal,
   attempt = 0,
+  request: typeof fetch = fetch,
 ): Promise<TopArticle[]> {
   const year = date.getUTCFullYear()
   const month = String(date.getUTCMonth() + 1).padStart(2, '0')
   const day = String(date.getUTCDate()).padStart(2, '0')
   const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/${language}.wikipedia/all-access/${year}/${month}/${day}`
 
-  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal })
+  const response = await request(url, { headers: { 'User-Agent': USER_AGENT }, signal })
 
   if (response.status === 429) {
     const headerSeconds = Number(response.headers.get('retry-after'))
@@ -75,7 +76,7 @@ export async function fetchTopArticles(
       : Math.min(60_000, 2_000 * 2 ** attempt)
     if (attempt >= 4) throw new RateLimited(backoffMs)
     await wait(backoffMs)
-    return fetchTopArticles(language, date, signal, attempt + 1)
+    return fetchTopArticles(language, date, signal, attempt + 1, request)
   }
 
   // A day with no data is normal for some editions; that is not a failure.

@@ -5,6 +5,7 @@ import { buildProfile } from '../discovery/profile';
 import type { Profile, SourceMetadata } from '../discovery/types';
 import { deriveToneAugmentation, flattenToneSegments } from './tone';
 import { tagForInsert } from '@/lib/v3/tagging/atInsert';
+import type { Line } from '@/lib/v3/types';
 
 export const IMAGE_PROVIDERS = ['giphy', 'pixabay', 'tenor', 'pexels'] as const;
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
@@ -80,7 +81,7 @@ type PexelsResponse = {
   photos?: PexelsPhoto[];
 };
 
-type ImageSource = {
+export type ImageSource = {
   url: string;
   thumb?: string | null;
   provider: ImageProvider;
@@ -419,6 +420,85 @@ async function getCollection(): Promise<Collection<ImageDocument>> {
   return cachedCollection;
 }
 
+export type ImageAdmission = {
+  scanned: number;
+  unique: number;
+  inserted: number;
+  existingSkipped: number;
+  skippedInvalid: number;
+  insertedIds: string[];
+};
+
+/**
+ * Inserts image documents that are new, tagged with the line that brought
+ * them. The one write path for images an ingestion line admits.
+ */
+export async function admitImageDocuments(
+  documents: ImageDocument[],
+  options: { dryRun?: boolean; line?: Line } = {},
+): Promise<ImageAdmission> {
+  const admission: ImageAdmission = { scanned: documents.length, unique: documents.length, inserted: 0, existingSkipped: 0, skippedInvalid: 0, insertedIds: [] };
+  if (options.dryRun || !documents.length) return admission;
+  const coll = await getCollection();
+  const urls = documents.map((doc) => doc.url).filter(Boolean);
+  const existing = urls.length
+    ? await coll
+        .find({ type: 'image', url: { $in: urls } } as Filter<ImageDocument>)
+        .project<{ url?: string }>({ url: 1 })
+        .toArray()
+    : [];
+  const existingUrls = new Set(existing.map((doc) => doc.url).filter((url): url is string => typeof url === 'string'));
+  const writeDocs = documents.filter((doc) => !existingUrls.has(doc.url));
+  admission.existingSkipped = documents.length - writeDocs.length;
+  if (!writeDocs.length) return admission;
+
+  const now = new Date();
+  // Giphy files real subject words in its slug and uploader name, which the
+  // tagger reads; tagging here keeps new GIFs eligible for a Wave.
+  const tagged = await tagForInsert(
+    await getDb(),
+    writeDocs.map((doc) => ({
+      ...doc,
+      createdAt: now,
+      updatedAt: now,
+      rand: Math.random(),
+    })),
+    options.line,
+  );
+  try {
+    const result = await coll.insertMany(tagged, { ordered: false });
+    admission.inserted = result.insertedCount || 0;
+    admission.insertedIds = Object.values(result.insertedIds ?? {}).map((id) => String(id));
+  } catch (error) {
+    const bulk = error as { writeErrors?: Array<{ code?: number; index?: number }>; result?: { insertedCount?: number; insertedIds?: Record<number, unknown> } };
+    const writeErrors = bulk.writeErrors ?? [];
+    if (!writeErrors.length || writeErrors.some((entry) => entry.code !== 11000)) throw error;
+    admission.inserted = bulk.result?.insertedCount ?? 0;
+    admission.existingSkipped += writeErrors.length;
+    admission.insertedIds = Object.values(bulk.result?.insertedIds ?? {}).map((id) => String(id));
+  }
+  return admission;
+}
+
+/** Sources a line fetched itself, turned into documents, deduplicated by url, then admitted. */
+export async function admitImageSources(
+  sources: ImageSource[],
+  options: { dryRun?: boolean; line?: Line } = {},
+): Promise<ImageAdmission> {
+  const map = new Map<string, ImageDocument>();
+  let skippedInvalid = 0;
+  for (const entry of sources) {
+    const doc = buildImageDocument(entry);
+    if (!doc) {
+      skippedInvalid += 1;
+      continue;
+    }
+    if (!map.has(doc.url)) map.set(doc.url, doc);
+  }
+  const admission = await admitImageDocuments(Array.from(map.values()), options);
+  return { ...admission, scanned: sources.length, skippedInvalid };
+}
+
 export async function ingestImages({
   queries,
   perQuery = 40,
@@ -520,20 +600,9 @@ export async function ingestImages({
   }
 
   if (insertOnly) {
-    const now = new Date();
-    // Giphy files real subject words in its slug and uploader name, which the
-    // tagger reads; tagging here keeps new GIFs eligible for a Wave.
-    const tagged = await tagForInsert(
-      await getDb(),
-      writeDocs.map((doc) => ({
-        ...doc,
-        createdAt: now,
-        updatedAt: now,
-        rand: Math.random(),
-      })),
-    );
-    const result = await coll.insertMany(tagged, { ordered: false });
-    summary.inserted = result.insertedCount || 0;
+    const admitted = await admitImageDocuments(writeDocs);
+    summary.inserted = admitted.inserted;
+    summary.existingSkipped = (summary.existingSkipped ?? 0) + admitted.existingSkipped;
     return summary;
   }
 

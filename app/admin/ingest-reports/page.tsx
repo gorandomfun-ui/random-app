@@ -32,6 +32,7 @@ const STATUS_STYLE: Record<keyof StatusCounts, string> = {
 const LINE_LABEL: Record<string, string> = {
   trend: 'Tendances',
   trending: 'Tendances',
+  'trend-subjects': 'Tendances-sujets',
   'retro-trend': 'Rétro',
   retro: 'Rétro',
   combo: 'Combinaisons',

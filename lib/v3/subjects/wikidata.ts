@@ -124,12 +124,17 @@ export type WikidataSubject = {
   aliases: string[]
   universe: Universe
   isHuman: boolean
+  /** P31 "instance of", raw: what the thing is, for rules the universe does not carry. */
+  instances: string[]
+  /** The short English or French description, when Wikidata has one. */
+  description?: string
 }
 
 type Snak = { mainsnak?: { datavalue?: { value?: { id?: string } } } }
 
 type Entity = {
   labels?: Record<string, { value?: string }>
+  descriptions?: Record<string, { value?: string }>
   aliases?: Record<string, Array<{ value?: string }>>
   claims?: Record<string, Snak[]>
   sitelinks?: Record<string, { title?: string }>
@@ -237,60 +242,105 @@ function collectAliases(entity: Entity, canonical: string): string[] {
     .slice(0, 12)
 }
 
-/** One batch of at most 50 Wikipedia titles from a single edition. */
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-export async function fetchWikidataSubjects(
-  language: string,
-  titles: string[],
-  signal?: AbortSignal,
-  attempt = 0,
-): Promise<WikidataSubject[]> {
-  if (!titles.length) return []
+type EntityQuery = { sites: string; titles: string } | { ids: string }
+
+/** One `wbgetentities` call, backing off on rate limits rather than losing a batch of fifty. */
+async function fetchEntities(query: EntityQuery, signal?: AbortSignal, request: typeof fetch = fetch, attempt = 0): Promise<Record<string, Entity>> {
   const params = new URLSearchParams({
     action: 'wbgetentities',
-    sites: `${language}wiki`,
-    titles: titles.slice(0, 50).join('|'),
-    props: 'labels|aliases|claims|sitelinks',
+    ...query,
+    props: 'labels|aliases|descriptions|claims|sitelinks',
     languages: LANGUAGES,
     format: 'json',
     origin: '*',
   })
-
-  const response = await fetch(`https://www.wikidata.org/w/api.php?${params}`, {
+  const response = await request(`https://www.wikidata.org/w/api.php?${params}`, {
     headers: { 'User-Agent': USER_AGENT },
     signal,
   })
-  // Wikidata rate-limits like Wikimedia does; back off and retry rather than
-  // losing a whole batch of fifty entities.
   if (response.status === 429 || response.status === 503) {
     const headerSeconds = Number(response.headers.get('retry-after'))
     const backoffMs = Number.isFinite(headerSeconds) && headerSeconds > 0
       ? headerSeconds * 1000
       : Math.min(60_000, 3_000 * 2 ** attempt)
-    if (attempt >= 4) throw new Error(`Wikidata ${language}: HTTP ${response.status} après ${attempt + 1} essais`)
+    if (attempt >= 4) throw new Error(`Wikidata: HTTP ${response.status} après ${attempt + 1} essais`)
     await wait(backoffMs)
-    return fetchWikidataSubjects(language, titles, signal, attempt + 1)
+    return fetchEntities(query, signal, request, attempt + 1)
   }
-  if (!response.ok) throw new Error(`Wikidata ${language}: HTTP ${response.status}`)
+  if (!response.ok) throw new Error(`Wikidata: HTTP ${response.status}`)
   const payload = (await response.json()) as { entities?: Record<string, Entity> }
-  const entities = payload.entities ?? {}
+  return payload.entities ?? {}
+}
 
-  const results: WikidataSubject[] = []
-  for (const [qid, entity] of Object.entries(entities)) {
-    if (!qid.startsWith('Q')) continue
-    const label = entity.labels?.en?.value ?? entity.labels?.fr?.value
-    if (!label || !acceptableSubjectLabel(label)) continue
-    const sourceTitle = entity.sitelinks?.[`${language}wiki`]?.title ?? label
-    const { universe, isHuman } = pickUniverse(entity)
-    results.push({
-      sourceTitle,
-      qid,
-      label,
-      aliases: collectAliases(entity, label),
-      universe,
-      isHuman,
-    })
+function toSubject(qid: string, entity: Entity, site?: string): WikidataSubject | null {
+  if (!qid.startsWith('Q')) return null
+  const label = entity.labels?.en?.value ?? entity.labels?.fr?.value
+  if (!label || !acceptableSubjectLabel(label)) return null
+  const sourceTitle = (site ? entity.sitelinks?.[site]?.title : undefined) ?? entity.sitelinks?.enwiki?.title ?? label
+  const { universe, isHuman } = pickUniverse(entity)
+  const description = entity.descriptions?.en?.value ?? entity.descriptions?.fr?.value
+  return {
+    sourceTitle,
+    qid,
+    label,
+    aliases: collectAliases(entity, label),
+    universe,
+    isHuman,
+    instances: claimIds(entity, 'P31'),
+    ...(description ? { description } : {}),
   }
-  return results
+}
+
+/** One batch of at most 50 Wikipedia titles from a single edition. */
+export async function fetchWikidataSubjects(
+  language: string,
+  titles: string[],
+  signal?: AbortSignal,
+  request: typeof fetch = fetch,
+): Promise<WikidataSubject[]> {
+  if (!titles.length) return []
+  const site = `${language}wiki`
+  const entities = await fetchEntities({ sites: site, titles: titles.slice(0, 50).join('|') }, signal, request)
+  return Object.entries(entities)
+    .map(([qid, entity]) => toSubject(qid, entity, site))
+    .filter((subject): subject is WikidataSubject => subject !== null)
+}
+
+/** At most 50 entities by id. */
+export async function fetchWikidataByIds(ids: string[], signal?: AbortSignal, request: typeof fetch = fetch): Promise<WikidataSubject[]> {
+  const wanted = [...new Set(ids.filter((id) => /^Q\d+$/.test(id)))].slice(0, 50)
+  if (!wanted.length) return []
+  const entities = await fetchEntities({ ids: wanted.join('|') }, signal, request)
+  return Object.entries(entities)
+    .map(([qid, entity]) => toSubject(qid, entity))
+    .filter((subject): subject is WikidataSubject => subject !== null)
+}
+
+/** Pages that are not things: a search that lands on one has found nothing. */
+const NOT_A_THING = /disambiguation|homonymie|begriffskl|desambiguaci|曖昧さ回避|wikimedia (?:category|list|template|project)/i
+
+/**
+ * The entity a free-text query names, in a language, or null. The first hit
+ * that is a thing rather than a disambiguation page: "laury thilleman" →
+ * Q2446503, not "Miss France 2011".
+ */
+export async function searchWikidataEntity(query: string, language: string, signal?: AbortSignal, request: typeof fetch = fetch, attempt = 0): Promise<string | null> {
+  const text = query.trim()
+  if (!text) return null
+  const params = new URLSearchParams({ action: 'wbsearchentities', search: text.slice(0, 200), language, uselang: language, limit: '5', format: 'json', origin: '*' })
+  const response = await request(`https://www.wikidata.org/w/api.php?${params}`, { headers: { 'User-Agent': USER_AGENT }, signal })
+  // Sixty searches in a row meet the rate limit; a pause and a retry keep the rest of the names.
+  if (response.status === 429 || response.status === 503) {
+    const headerSeconds = Number(response.headers.get('retry-after'))
+    const backoffMs = Number.isFinite(headerSeconds) && headerSeconds > 0 ? headerSeconds * 1000 : Math.min(30_000, 2_000 * 2 ** attempt)
+    if (attempt >= 3) throw new Error(`Wikidata search: HTTP ${response.status} après ${attempt + 1} essais`)
+    await wait(backoffMs)
+    return searchWikidataEntity(query, language, signal, request, attempt + 1)
+  }
+  if (!response.ok) throw new Error(`Wikidata search: HTTP ${response.status}`)
+  const payload = (await response.json()) as { search?: Array<{ id?: string; description?: string }> }
+  const hit = (payload.search ?? []).find((entry) => entry.id?.startsWith('Q') && !NOT_A_THING.test(entry.description ?? ''))
+  return hit?.id ?? null
 }

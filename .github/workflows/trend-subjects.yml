@@ -1,0 +1,43 @@
+name: Trend Subjects
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List the subjects of the day without digging or writing"
+        required: false
+        default: "false"
+  schedule:
+    # 06:30 Paris: 04:30 UTC in summer, 05:30 UTC in winter.
+    - cron: "30 4 * 4-10 *"
+    - cron: "30 5 * 1-3,11-12 *"
+
+concurrency:
+  group: random-trend-subjects
+  cancel-in-progress: false
+
+jobs:
+  trend-subjects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Same database and API project as Vercel: the journal and the quota buckets are shared.
+      MONGODB_URI: ${{ secrets.MONGODB_URI || secrets.MONGO_URI }}
+      MONGODB_DB: ${{ vars.MONGODB_DB || vars.MONGO_DB }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
+      # The line's own YouTube bucket, apart from search/other: leave it room in RANDOM_YT_SEARCH_* on the other workflows.
+      RANDOM_YT_TREND_DAILY_UNITS: ${{ vars.RANDOM_YT_TREND_DAILY_UNITS || '2000' }}
+      RANDOM_TREND_SUBJECTS_MINUTES: ${{ vars.RANDOM_TREND_SUBJECTS_MINUTES || '25' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run the trend-subjects line directly
+        run: node --import tsx scripts/v3/trend-subjects-direct.ts ${{ github.event.inputs.dry_run == 'true' && '--dry' || '' }}
