@@ -233,7 +233,8 @@ export default function LikesClient({
   const previousActiveTabRef = useRef<'you' | 'we'>('you')
   const [vw, setVw] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1200)
   const [footerAdVisible, setFooterAdVisible] = useState(false)
-  const adsAllowed = consent?.ads === true && !saved.view
+  // A-ADS is cookieless and shown without a consent gate, in every region.
+  const adsAllowed = !saved.view
 
   const cacheWeLikes = useCallback((entries: GlobalLikeItem[], timestamp: number) => {
     if (!timestamp) return

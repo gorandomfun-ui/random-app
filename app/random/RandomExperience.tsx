@@ -2507,7 +2507,8 @@ export function RandomExperience({
   const [videoMuted, setVideoMuted] = useState(false)
   const fullscreenTriggerRef = useRef(trigger)
   const [disableFullscreenButton, setDisableFullscreenButton] = useState(false)
-  const adsAllowed = consent?.ads === true
+  // A-ADS is cookieless and shown without a consent gate, in every region.
+  const adsAllowed = true
 
   const progressionIntensity = useMemo(
     () => effectsTestMode

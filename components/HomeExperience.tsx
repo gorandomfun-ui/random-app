@@ -338,7 +338,8 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
   const [homeGlitchImage, setHomeGlitchImage] = useState<string | null>(null)
   const [homeGlitchSeed, setHomeGlitchSeed] = useState('home-empty')
   const [homeGlitchPatternTick, setHomeGlitchPatternTick] = useState(0)
-  const adsAllowed = consent?.ads === true
+  // A-ADS is cookieless and shown without a consent gate, in every region.
+  const adsAllowed = true
   const burgerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const theme = THEMES[themeIdx]

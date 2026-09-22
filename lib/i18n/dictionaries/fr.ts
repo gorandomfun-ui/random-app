@@ -461,7 +461,7 @@ const frDictionary = {
 
     privacy: {
       title: "Cookies & vie privée",
-      bodyPrefix: "Les lecteurs vidéo optionnels et la publicité A-ADS sont chargés selon vos choix explicites. Un lecteur Dailymotion standard peut rester accessible uniquement dans le mode vérifié décrit dans notre politique de confidentialité.",
+      bodyPrefix: "Les lecteurs vidéo optionnels sont chargés selon vos choix explicites. La publicité A-ADS s'affiche sans cookie ni pistage. Un lecteur Dailymotion standard peut rester disponible uniquement dans le mode vérifié décrit dans notre politique de confidentialité.",
       manageCookies: "Gérer mes cookies",
       privacyPolicy: "Politique de confidentialité",
       termsOfUse: "Conditions d’utilisation"
