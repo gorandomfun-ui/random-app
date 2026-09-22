@@ -17,7 +17,7 @@ import { lookupSubjectIndex } from '../../tagging/lookup'
 import { matchSubjects } from '../../tagging/subjectIndex'
 import { needsSecondClue, normalize, subjectId } from '../../tagging/normalize'
 import { SUBJECTS_COLLECTION } from '../../subjects/build'
-import { DAILY_CAP, displayLabel, mergeCandidates, refusalOf, selectSubjects, textKey, type Candidate, type CandidatePiece } from '../../trend/candidates'
+import { DAILY_CAP, displayLabel, mergeCandidates, qualifies, refusalOf, textKey, type Candidate, type CandidatePiece } from '../../trend/candidates'
 import { digSteps, keepForStep, searchDailymotion, searchGiphy, searchYouTube, YOUTUBE_SEARCH_UNITS, type DigSubject } from '../../trend/dig'
 import { TREND_COUNTRIES, dayOf, fetchGiphyTrending, fetchTrendsSignals, fetchWikipediaSignals, fetchYouTubeMostPopular, type Signal } from '../../trend/signals'
 import { emptyCounters } from '../journal'
@@ -154,6 +154,46 @@ async function resolveUnknown(ctx: LineContext, candidates: Candidate[], errors:
   return { resolved, unresolved: unknown.length - byCandidate.size }
 }
 
+/** Names the selection may examine before giving up on filling the day. */
+const VERIFY_AT_MOST = 40
+
+/**
+ * Every subject of the day gets its Wikidata check: a dictionary entity
+ * carries a universe but no description and no class, and "Aileen Wuornos"
+ * or "Die Linke" only show what they are once Wikidata says so. Refused
+ * ones give their place to the next in score, up to the cap.
+ */
+async function verifySelected(ctx: LineContext, kept: Candidate[], counters: LineResult['counters'], errors: string[]): Promise<Candidate[]> {
+  const http = ctx.http ?? fetch
+  const ordered = kept.filter(qualifies).sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)).slice(0, VERIFY_AT_MOST)
+  const selected: Candidate[] = []
+  for (const candidate of ordered) {
+    if (selected.length >= DAILY_CAP) break
+    let verified = candidate
+    if (!candidate.qid) {
+      try {
+        const lang = candidate.signals[0]?.lang ?? 'en'
+        const qid = await searchWikidataEntity(candidate.label, lang, undefined, http)
+        if (!ctx.http) await new Promise((resolve) => setTimeout(resolve, SEARCH_SPACING_MS))
+        const entity = qid ? (await fetchWikidataByIds([qid], undefined, http))[0] : undefined
+        if (entity) {
+          verified = {
+            ...candidate, qid: entity.qid, isHuman: entity.isHuman, instances: entity.instances, description: entity.description,
+            universe: candidate.universe && candidate.universe !== 'other' ? candidate.universe : entity.universe,
+            aliases: [...new Set([...(candidate.aliases ?? []), ...entity.aliases])],
+          }
+        }
+      } catch (error) {
+        errors.push(`wikidata vérification "${candidate.label}" : ${message(error)}`)
+      }
+    }
+    const reason = refusalOf(verified)
+    if (reason) { counters.rejected[reason] = (counters.rejected[reason] ?? 0) + 1; continue }
+    selected.push(verified)
+  }
+  return selected
+}
+
 /** How many past days each key was seen on, from the signal journal. */
 async function daysSeen(ctx: LineContext, keys: string[], today: string): Promise<Map<string, number>> {
   const since = dayOf(new Date(Date.parse(today) - PERSISTENCE_DAYS * 86_400_000))
@@ -283,7 +323,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     const days = persistence.get(candidate.key) ?? 0
     kept.push({ ...candidate, daysSeen: days, score: candidate.score + days * 2 })
   }
-  const selected = selectSubjects(kept, DAILY_CAP)
+  const selected = await verifySelected(ctx, kept, counters, errors)
   ctx.log(`${signals.length} signaux, ${candidates.length} candidats, ${kept.length} recevables, ${selected.length} sujets du jour`)
 
   const keyOf = new Map<Signal, string>()

@@ -11,7 +11,7 @@
  * days scores higher and ends up rising.
  */
 
-import { needsSecondClue, normalize } from '../tagging/normalize'
+import { normalize } from '../tagging/normalize'
 import type { Universe } from '../types'
 import type { Signal, SignalSource } from './signals'
 
@@ -150,8 +150,8 @@ export function refusalOf(candidate: Candidate): Refusal | null {
   if ((candidate.instances ?? []).some((instance) => SENSITIVE_CLASSES.has(instance))) return 'sensitive-class'
   const news = candidate.signals.flatMap((signal) => signal.news ?? [])
   if (looksSensitive({ title: candidate.label, description: candidate.description, news })) return 'sensitive'
-  // A bare common word with nothing behind it — "hacker", "記事" — names no subject.
-  if ((candidate.universe ?? 'other') === 'other' && !candidate.isHuman && needsSecondClue(candidate.label)) return 'vague'
+  // A thing with no world of its own — "hacker", "music video", "television series" — names no subject a visitor would follow.
+  if ((candidate.universe ?? 'other') === 'other' && !candidate.isHuman) return 'vague'
   return null
 }
 

@@ -85,6 +85,8 @@ test('refus : actualité-société, classes sensibles, mots sensibles, personne 
   assert.equal(refusalOf({ ...base, label: '千葉小3女児殺害事件', universe: 'other' }), 'sensitive', 'un titre japonais dit lui-même qu_il s_agit d_un meurtre')
   assert.equal(refusalOf({ ...base, label: 'Attack on Titan', universe: 'animation', description: 'Japanese manga series' }), null, 'un mot du titre ne condamne pas une œuvre')
   assert.equal(refusalOf({ ...base, label: 'hacker', universe: 'other' }), 'vague')
+  assert.equal(refusalOf({ ...base, label: 'Music video', universe: 'other' }), 'vague', 'une notion sans monde à elle n_est pas un sujet du jour')
+  assert.equal(refusalOf({ ...base, label: 'Someone', universe: 'other', isHuman: true }), null, 'une personne l_est toujours')
   assert.equal(refusalOf({ ...base, label: 'Lizzie Borden', universe: 'people-everyday', isHuman: true, description: 'American woman (1860–1927)' }), null)
   assert.equal(looksSensitive({ news: ['Élections municipales : les résultats'] }), true)
 })
@@ -138,8 +140,9 @@ const ENTITIES: Record<string, ReturnType<typeof entity>> = {
   Q50: entity('Q50', 'Tagesschau', { instances: ['Q11032'], sitelinks: { dewiki: 'Tagesschau' } }),
   Q60: entity('Q60', 'Ars-sur-Moselle', { instances: ['Q515'], description: 'commune in Moselle, France', sitelinks: { frwiki: 'Ars-sur-Moselle' } }),
   Q70: entity('Q70', 'Meme', { instances: [], description: 'idea that spreads by imitation' }),
+  Q80: entity('Q80', 'Cindy Crawford', { instances: ['Q5'], occupations: ['Q4610556'], description: 'American model' }),
 }
-const SEARCH: Record<string, string> = { 'laury thilleman': 'Q2', 'ars-sur-moselle': 'Q60', hacker: 'Q3', 'lizzie borden': 'Q1', meme: 'Q70' }
+const SEARCH: Record<string, string> = { 'laury thilleman': 'Q2', 'ars-sur-moselle': 'Q60', hacker: 'Q3', 'lizzie borden': 'Q1', meme: 'Q70', 'cindy crawford': 'Q80' }
 
 function fakeHttp(counts: Record<string, number>) {
   const json = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body, text: async () => JSON.stringify(body) }) as unknown as Response
@@ -225,7 +228,8 @@ test('la ligne : des signaux aux sujets du jour, puis la fouille dans le budget'
   const labels = subjects.map((s) => s.label)
   assert.ok(labels.includes('Lizzie Borden'), `Lizzie Borden : deux sources, deux pays (${labels.join(', ')})`)
   assert.ok(labels.includes('Laury Thilleman'), 'tendance FR n°2 + Wikipédia fr')
-  assert.ok(labels.includes('Cindy Crawford'), 'un nom du dictionnaire en tête de Wikipédia')
+  assert.ok(labels.includes('Cindy Crawford'), 'un nom du dictionnaire en tête de Wikipédia, vérifié sur Wikidata')
+  assert.ok((fake.counts['wikidata-search'] ?? 0) >= 1, 'les sujets du dictionnaire passent aussi par Wikidata')
   assert.ok(labels.includes('Ars-sur-Moselle'), 'une tendance forte seule suffit')
   assert.ok(!labels.some((label) => /murder|Chiba/.test(label)), 'un meurtre n_est pas un sujet')
   assert.ok(!labels.includes('Tagesschau'), 'actualité-société refusée')
