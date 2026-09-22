@@ -144,6 +144,7 @@ const ENTITIES: Record<string, ReturnType<typeof entity>> = {
 }
 const SEARCH: Record<string, string> = { 'laury thilleman': 'Q2', 'ars-sur-moselle': 'Q60', hacker: 'Q3', 'lizzie borden': 'Q1', meme: 'Q70', 'cindy crawford': 'Q80' }
 
+let giphyRefuses = false
 function fakeHttp(counts: Record<string, number>) {
   const json = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body, text: async () => JSON.stringify(body) }) as unknown as Response
   const text = (body: string) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => body }) as unknown as Response
@@ -157,6 +158,7 @@ function fakeHttp(counts: Record<string, number>) {
       return json({ items: [{ articles: (WORLD.wikipedia[language] ?? []).map((article, index) => ({ article, views: 1000 - index })) }] })
     }
     if (url.hostname === 'api.giphy.com' && url.pathname.endsWith('/trending')) { hit('giphy-trending'); return json({ data: WORLD.giphyTrending.map((title) => ({ title })) }) }
+    if (url.hostname === 'api.giphy.com' && giphyRefuses) { hit('giphy-search'); return { ok: false, status: 429, headers: { get: () => null }, json: async () => ({ meta: { status: 429 } }), text: async () => '' } as unknown as Response }
     if (url.hostname === 'api.giphy.com') { hit('giphy-search'); return json({ data: [{ title: `${url.searchParams.get('q')} GIF`, url: 'https://giphy.com/gifs/x', images: { original: { url: `https://media.giphy.com/media/${counts['giphy-search']}/giphy.gif` } } }] }) }
     if (url.hostname === 'www.googleapis.com' && url.pathname.endsWith('/videos')) { hit('youtube-popular'); return json({ items: (WORLD.mostPopular[url.searchParams.get('regionCode') ?? ''] ?? []).map((title) => ({ snippet: { title } })) }) }
     if (url.hostname === 'www.googleapis.com' && url.pathname.endsWith('/search')) {
@@ -270,6 +272,20 @@ test('le budget YouTube arrête la fouille YouTube, pas la ligne', async () => {
   assert.ok(fake.searches.filter((s) => s.provider === 'dailymotion').length >= 3, 'Dailymotion continue sans YouTube')
   assert.ok(fake.logs.some((line) => line.includes('budget du jour atteint')))
   assert.deepEqual(result.errors, [])
+})
+
+test('Giphy : une image par sujet, et plus aucune après un refus horaire ; la ligne continue', async () => {
+  giphyRefuses = true
+  try {
+    const fake = fakeContext()
+    const result = await run(fake.ctx)
+    assert.equal(fake.counts['giphy-search'], 1, 'un seul appel après le 429')
+    assert.equal(result.errors.filter((line) => line.startsWith('giphy')).length, 1)
+    assert.ok(fake.logs.some((line) => line.includes('limite horaire')))
+    assert.ok(result.counters.inserted > 0, 'les vidéos continuent')
+  } finally {
+    giphyRefuses = false
+  }
 })
 
 test('à blanc : les sujets sont listés, rien n_est fouillé ni écrit', async () => {
