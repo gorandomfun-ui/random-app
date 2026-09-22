@@ -242,6 +242,8 @@ async function dig(ctx: LineContext, digs: Dig[], signalDay: Date, counters: Lin
   const youtubeKey = process.env.YOUTUBE_API_KEY
   let youtubeStopped = !youtubeKey
   if (!youtubeKey) ctx.log('youtube : pas de clé, fouille vidéo YouTube ignorée')
+  // Giphy's free keys allow a few dozen calls an hour: one image search per subject, and none after a refusal.
+  let giphyStopped = !process.env.GIPHY_API_KEY
   for (let turn = 0; turn < 3; turn += 1) {
     for (const current of digs) {
       const step = current.steps[turn]
@@ -276,9 +278,9 @@ async function dig(ctx: LineContext, digs: Dig[], signalDay: Date, counters: Lin
           errors.push(`dailymotion "${spec.query}" : ${message(error)}`)
         }
       }
-      for (const query of step.images.slice(0, 1)) {
+      for (const query of turn === 0 ? step.images.slice(0, 1) : []) {
         const giphyKey = process.env.GIPHY_API_KEY
-        if (!giphyKey) break
+        if (!giphyKey || giphyStopped) break
         try {
           const images = await searchGiphy(giphyKey, query, GIPHY_PER_QUERY, http)
           const result = await ctx.admit({ subjectId, images })
@@ -286,6 +288,7 @@ async function dig(ctx: LineContext, digs: Dig[], signalDay: Date, counters: Lin
           await ctx.search({ provider: 'giphy', query, subjectId, scanned: images.length, kept: images.length, inserted: result.inserted, duplicates: result.duplicates, rejected: result.rejected, quotaUnits: 0, insertedIds: result.insertedIds })
         } catch (error) {
           errors.push(`giphy "${query}" : ${message(error)}`)
+          if (/HTTP 429/.test(message(error))) { giphyStopped = true; ctx.log('giphy : limite horaire atteinte, plus d_images ce passage') }
         }
       }
       current.turn = turn + 1
