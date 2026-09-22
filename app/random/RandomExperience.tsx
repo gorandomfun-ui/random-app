@@ -1324,6 +1324,12 @@ function isDailymotionMessageOrigin(origin: string): boolean {
 
 /** After the frame loaded, this long without the player saying anything means the video inside is dead. */
 const DAILYMOTION_READY_TIMEOUT_MS = 8000
+/**
+ * Whether a Dailymotion frame has ever spoken to this page. Silence only
+ * means a dead video once the player is known to talk: treating every
+ * silent frame as dead replaced videos that were playing fine.
+ */
+let dailymotionPlayerTalks = false
 /** An image that has not painted after this is treated as broken. */
 const IMAGE_LOAD_TIMEOUT_MS = 8000
 
@@ -1817,6 +1823,7 @@ function DailymotionEmbed({
       if (!iframeWindow || event.source !== iframeWindow || !isDailymotionMessageOrigin(event.origin)) return
       const message = parseDailymotionMessage(event.data)
       if (!message) return
+      dailymotionPlayerTalks = true
       if (message.event === 'apiready' || message.event === 'playback_ready' || message.event === 'video_start' || message.event === 'start' || message.event === 'playing') {
         playerReadyRef.current = true
         markLoaded()
@@ -1830,7 +1837,8 @@ function DailymotionEmbed({
   useEffect(() => {
     if (!iframeLoaded || playerReadyRef.current) return undefined
     const timer = window.setTimeout(() => {
-      if (playerReadyRef.current || playerIssueReportedRef.current) return
+      // Silence is only a verdict when the player has proven it talks on this page.
+      if (!dailymotionPlayerTalks || playerReadyRef.current || playerIssueReportedRef.current) return
       playerIssueReportedRef.current = true
       onPlaybackIssue?.(item, { reason: 'dailymotion-player-error' })
     }, DAILYMOTION_READY_TIMEOUT_MS)
