@@ -44,6 +44,7 @@ import type {
   FactQuizItem,
   DisplayItem,
   EncourageItem as EncourageContentItem,
+  ImageItem as ImageContentItem,
   MiniGameItem,
   MiniGameId,
   RandomContentItem,
@@ -51,9 +52,9 @@ import type {
   VideoItem as VideoContentItem,
 } from '@/lib/random/clientTypes'
 import { addLike, isLiked, removeLike } from '@/utils/likes'
-import { reportImageLoadIssue } from '@/utils/imageSuspects'
+import { reportImageLoadIssue, type ImageLoadIssue } from '@/utils/imageSuspects'
+import { isMediaBlockedThisSession } from '@/utils/mediaSuspects'
 import {
-  isVideoBlockedThisSession,
   reportVideoPlaybackIssue,
   type VideoPlaybackIssue,
 } from '@/utils/videoSuspects'
@@ -1035,13 +1036,31 @@ function ImageBlock({
   src,
   alt,
   height,
-  onError,
+  onIssue,
 }: {
   src: string
   alt?: string
   height: string
-  onError?: () => void
+  /** Once per image: the file failed, or it never painted in time. */
+  onIssue?: (reason: ImageLoadIssue['reason']) => void
 }) {
+  const imageRef = useRef<HTMLImageElement | null>(null)
+  const settledRef = useRef(false)
+  const issueRef = useRef(onIssue)
+  issueRef.current = onIssue
+
+  useEffect(() => {
+    settledRef.current = false
+    const timer = window.setTimeout(() => {
+      if (settledRef.current) return
+      const image = imageRef.current
+      if (image && image.complete && image.naturalWidth > 0) return
+      settledRef.current = true
+      issueRef.current?.('image-load-timeout')
+    }, IMAGE_LOAD_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [src])
+
   return (
     <div
       className="overflow-hidden"
@@ -1049,12 +1068,18 @@ function ImageBlock({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
+        ref={imageRef}
         src={src}
         alt={alt || 'image'}
         className="block h-full w-full object-cover select-none"
         loading="eager"
         decoding="async"
-        onError={onError}
+        onLoad={() => { settledRef.current = true }}
+        onError={() => {
+          if (settledRef.current) return
+          settledRef.current = true
+          issueRef.current?.('image-load-error')
+        }}
       />
     </div>
   )
@@ -1265,6 +1290,42 @@ function parseEmbedMessage(value: unknown): Record<string, unknown> | null {
   }
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
 }
+
+/** Player messages from the Dailymotion frame: `event=apiready&...` strings with api=postMessage, JSON with the newer player. */
+function parseDailymotionMessage(value: unknown): { event: string; code?: number } | null {
+  const withCode = (event: string, raw: unknown) => {
+    const code = Number(raw)
+    return { event, ...(raw !== undefined && raw !== null && Number.isFinite(code) ? { code } : {}) }
+  }
+  if (typeof value === 'string') {
+    if (value.startsWith('{')) {
+      const parsed = parseEmbedMessage(value)
+      return parsed && typeof parsed.event === 'string' ? withCode(parsed.event, parsed.code) : null
+    }
+    const params = new URLSearchParams(value)
+    const event = params.get('event')
+    return event ? withCode(event, params.get('code') ?? undefined) : null
+  }
+  if (value && typeof value === 'object' && typeof (value as { event?: unknown }).event === 'string') {
+    const record = value as { event: string; code?: unknown }
+    return withCode(record.event, record.code)
+  }
+  return null
+}
+
+function isDailymotionMessageOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase()
+    return host === 'dailymotion.com' || host.endsWith('.dailymotion.com')
+  } catch {
+    return false
+  }
+}
+
+/** After the frame loaded, this long without the player saying anything means the video inside is dead. */
+const DAILYMOTION_READY_TIMEOUT_MS = 8000
+/** An image that has not painted after this is treated as broken. */
+const IMAGE_LOAD_TIMEOUT_MS = 8000
 
 function isYouTubeMessageOrigin(origin: string): boolean {
   try {
@@ -1724,6 +1785,8 @@ function DailymotionEmbed({
       params.set('ui-start-screen-controls', 'true')
       params.set('quality', '480')
       params.set('playsinline', '1')
+      // The player tells the page what happens inside the frame: a dead video is an error event, or no ready event at all.
+      params.set('api', 'postMessage')
       return videoId
         ? `https://www.dailymotion.com/embed/video/${videoId}?${params.toString()}`
         : url
@@ -1733,6 +1796,46 @@ function DailymotionEmbed({
   }, [embedMuted, url])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
+  const playerReadyRef = useRef(false)
+  const playerIssueReportedRef = useRef(false)
+
+  useEffect(() => {
+    playerReadyRef.current = false
+    playerIssueReportedRef.current = false
+  }, [embedUrl, reloadNonce])
+
+  // A frame that loads and shows "video unavailable" inside used to count as a success: nothing listened to the player.
+  // A pause, a refused autoplay or a consent prompt all send apiready; only an error, or silence after the frame loaded, is a dead video.
+  useEffect(() => {
+    const report = (issue: VideoPlaybackIssue) => {
+      if (playerIssueReportedRef.current) return
+      playerIssueReportedRef.current = true
+      onPlaybackIssue?.(item, issue)
+    }
+    const handleMessage = (event: MessageEvent) => {
+      const iframeWindow = iframeRef.current?.contentWindow
+      if (!iframeWindow || event.source !== iframeWindow || !isDailymotionMessageOrigin(event.origin)) return
+      const message = parseDailymotionMessage(event.data)
+      if (!message) return
+      if (message.event === 'apiready' || message.event === 'playback_ready' || message.event === 'video_start' || message.event === 'start' || message.event === 'playing') {
+        playerReadyRef.current = true
+        markLoaded()
+      }
+      if (message.event === 'error') report({ reason: 'dailymotion-player-error', ...(message.code !== undefined ? { playerCode: message.code } : {}) })
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [embedUrl, item, markLoaded, onPlaybackIssue])
+
+  useEffect(() => {
+    if (!iframeLoaded || playerReadyRef.current) return undefined
+    const timer = window.setTimeout(() => {
+      if (playerReadyRef.current || playerIssueReportedRef.current) return
+      playerIssueReportedRef.current = true
+      onPlaybackIssue?.(item, { reason: 'dailymotion-player-error' })
+    }, DAILYMOTION_READY_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [iframeLoaded, item, onPlaybackIssue, reloadNonce])
 
   useEffect(() => {
     if (!iframeLoaded) {
@@ -2048,6 +2151,7 @@ function ContentRenderer({
   onCloseFullscreen,
   onVideoSoundUnlocked,
   onPlaybackIssue,
+  onImageIssue,
 }: {
   item: DisplayItem
   theme: { cream: string; text: string; deep: string; bg: string }
@@ -2060,6 +2164,7 @@ function ContentRenderer({
   onOpenFullscreen?: (payload: FullscreenVideoPayload) => void
   onCloseFullscreen?: () => void
   onVideoSoundUnlocked?: () => void
+  onImageIssue?: (item: ImageContentItem, issue: ImageLoadIssue) => void
   onPlaybackIssue?: PlaybackIssueHandler
 }) {
   if (item.type === 'encourage') {
@@ -2128,7 +2233,7 @@ function ContentRenderer({
           src={src}
           alt={alt}
           height={frameHeight}
-          onError={() => reportImageLoadIssue(item, 'image-load-error', src)}
+          onIssue={(reason) => onImageIssue ? onImageIssue(item, { reason }) : reportImageLoadIssue(item, reason, src)}
         />
       </div>
     )
@@ -3088,7 +3193,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
     const advance = readHomeAdvance(langKey, curationMode)
     clearHomeAdvance(langKey, curationMode)
     if (!advance) return false
-    const { controller, entries } = adoptHomeAdvance(advance, (candidate) => candidate.payload.type !== 'video' || !isVideoBlockedThisSession(candidate.payload))
+    const { controller, entries } = adoptHomeAdvance(advance, (candidate) => !isMediaBlockedThisSession(candidate.payload))
     discoveryRef.current.invalidate()
     discoveryRef.current = controller
     committedSequenceRef.current = cloneSequenceState(advance.sequence)
@@ -3131,12 +3236,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
       setProgressionDraws(restored.progressionDraws)
       encourage3dScheduleRef.current = restored.encourage3dSchedule
       randomReadyQueueRef.current = restored.ready.filter((entry) => (
-        entry.item.type !== 'video' || !isVideoBlockedThisSession(entry.item)
+        !isMediaBlockedThisSession(entry.item)
       ))
       recentKeysRef.current = restored.recentKeys
       recentKeySetRef.current = new Set(restored.recentKeys)
       if (!restored.currentItem) return false
-      if (restored.currentItem.type === 'video' && isVideoBlockedThisSession(restored.currentItem)) return false
+      if (isMediaBlockedThisSession(restored.currentItem)) return false
       currentItemRef.current = restored.currentItem
       setCurrentItem(restored.currentItem)
       resetWindowScrollPosition()
@@ -3236,7 +3341,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     for (let index = 0; index < iterations; index++) {
       const next = queue.shift()
       if (!next) continue
-      if (next.type === 'video' && isVideoBlockedThisSession(next)) continue
+      if (isMediaBlockedThisSession(next)) continue
       const key = getContentKey(next)
       if (key && isRecentKey(key)) continue
       if (predicate && !predicate(next)) {
@@ -3262,7 +3367,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (!next) return null
         const item = next.payload
         const key = getContentKey(item)
-        if (item.type === 'minigame' || (item.type === 'video' && isVideoBlockedThisSession(item)) || (key && isRecentKey(key))) { wave.failed(next.key); continue }
+        if (item.type === 'minigame' || isMediaBlockedThisSession(item) || (key && isRecentKey(key))) { wave.failed(next.key); continue }
         pendingWaveRef.current = next
         if (key) registerRecentKey(key)
         return item
@@ -3272,7 +3377,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     while (waveQueueRef.current.length) {
       const candidate = waveQueueRef.current.shift()
       if (!candidate || candidate.type === 'minigame') continue
-      if (candidate.type === 'video' && isVideoBlockedThisSession(candidate)) continue
+      if (isMediaBlockedThisSession(candidate)) continue
       if (waveAnchorItemRef.current && hasSameWaveIdentity(waveAnchorItemRef.current, candidate)) continue
       const key = getContentKey(candidate)
       if (!key || isRecentKey(key) || waveHistoryKeysRef.current.has(key)) continue
@@ -3368,7 +3473,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       const candidates: Exclude<RandomContentItem, MiniGameItem>[] = []
       for (const candidate of response.items) {
         if (!candidate || candidate.type === 'minigame') continue
-        if (candidate.type === 'video' && isVideoBlockedThisSession(candidate)) continue
+        if (isMediaBlockedThisSession(candidate)) continue
         const key = getContentKey(candidate)
         if (!key || key === anchorKey || keys.has(key) || isRecentKey(key)) continue
         if (hasSameWaveIdentity(anchorItem, candidate)) continue
@@ -3529,7 +3634,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         })
         const item = res?.item
         if (!item || item.type !== type) continue
-        if (item.type === 'video' && isVideoBlockedThisSession(item)) continue
+        if (isMediaBlockedThisSession(item)) continue
         const key = getContentKey(item)
         if (key && isRecentKey(key)) continue
         if (predicate && !predicate(item)) continue
@@ -3565,7 +3670,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const prepared = await discoveryRef.current.prepare(slot.itemType, async (session, type, signal, variant) => {
           const candidate = await load(session, type, signal, variant)
-          if (!candidate || candidate.payload.type !== type || (candidate.payload.type === 'video' && isVideoBlockedThisSession(candidate.payload))) return null
+          if (!candidate || candidate.payload.type !== type || isMediaBlockedThisSession(candidate.payload)) return null
           return candidate
         }, slot.itemType === 'fact' ? slot.requireQuiz ? 'quiz' : 'text' : undefined)
         if (languageVersion !== langVersionRef.current || discoveryGeneration !== randomReadyGenerationRef.current) return null
@@ -3622,7 +3727,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (
           fallbackItem
           && fallbackItem.type !== 'minigame'
-          && (fallbackItem.type !== 'video' || !isVideoBlockedThisSession(fallbackItem))
+          && !isMediaBlockedThisSession(fallbackItem)
         ) {
           const fallbackKey = getContentKey(fallbackItem)
           if (fallbackKey && !isRecentKey(fallbackKey)) {
@@ -3707,7 +3812,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const takeRandomReadyEntry = useCallback(() => {
     let entry = randomReadyQueueRef.current.shift() ?? null
-    while (entry?.item.type === 'video' && isVideoBlockedThisSession(entry.item)) {
+    while (entry && isMediaBlockedThisSession(entry.item)) {
       if (discoveryEnabled) { invalidateDiscoveryQueue(); return null }
       entry = randomReadyQueueRef.current.shift() ?? null
     }
@@ -3899,24 +4004,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
   }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle, discoveryEnabled, getContentKey, registerRecentKey, invalidateDiscoveryQueue, restartRhythmIfIdle])
 
-  const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
-    if (savedMode) return
-    const current = currentItemRef.current
-    if (!current || current.type !== 'video') return
-
-    const key = getContentKey(item)
-    const currentKey = getContentKey(current)
-    if (!key || key !== currentKey) return
-
-    const attempts = playbackIssueCountsRef.current[key] ?? 0
-    if (attempts >= 1) return
-
-    playbackIssueCountsRef.current[key] = attempts + 1
-    reportVideoPlaybackIssue(item, issue)
-
+  /**
+   * The content on screen is dead: replaced by a reserve of the Wave when in
+   * a Wave, else by the next content. Videos and images take the same road.
+   */
+  const recoverFromDeadContent = useCallback((key: string) => {
     const recover = () => {
       const active = currentItemRef.current
-      if (!active || active.type !== 'video' || getContentKey(active) !== key) return
+      if (!active || (active.type !== 'video' && active.type !== 'image') || getContentKey(active) !== key) return
       if (transitionLockedRef.current || loadPendingRef.current) {
         if (playbackRecoveryTimeoutRef.current) clearTimeout(playbackRecoveryTimeoutRef.current)
         playbackRecoveryTimeoutRef.current = setTimeout(() => {
@@ -3972,7 +4067,43 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
 
     recover()
-  }, [savedMode, getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
+  }, [getContentKey, loadNext, persistRandomSession, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
+
+  const handlePlaybackIssue = useCallback((item: VideoContentItem, issue: VideoPlaybackIssue) => {
+    if (savedMode) return
+    const current = currentItemRef.current
+    if (!current || current.type !== 'video') return
+
+    const key = getContentKey(item)
+    const currentKey = getContentKey(current)
+    if (!key || key !== currentKey) return
+
+    const attempts = playbackIssueCountsRef.current[key] ?? 0
+    if (attempts >= 1) return
+
+    playbackIssueCountsRef.current[key] = attempts + 1
+    reportVideoPlaybackIssue(item, issue)
+    recoverFromDeadContent(key)
+  }, [savedMode, getContentKey, recoverFromDeadContent])
+
+  /** A broken GIF used to stay on screen and come back in later draws; it now goes the way of a dead video. */
+  const handleImageIssue = useCallback((item: ImageContentItem, issue: ImageLoadIssue) => {
+    const src = item.url || item.thumbUrl || ''
+    reportImageLoadIssue(item, issue.reason, src)
+    if (savedMode) return
+    const current = currentItemRef.current
+    if (!current || current.type !== 'image') return
+
+    const key = getContentKey(item)
+    const currentKey = getContentKey(current)
+    if (!key || key !== currentKey) return
+
+    const attempts = playbackIssueCountsRef.current[key] ?? 0
+    if (attempts >= 1) return
+
+    playbackIssueCountsRef.current[key] = attempts + 1
+    recoverFromDeadContent(key)
+  }, [savedMode, getContentKey, recoverFromDeadContent])
 
   useEffect(() => {
     if (savedMode || initialLoadTriggeredRef.current) return
@@ -4615,6 +4746,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               onCloseFullscreen={closeFullscreen}
               onVideoSoundUnlocked={unlockVideoSound}
               onPlaybackIssue={handlePlaybackIssue}
+              onImageIssue={handleImageIssue}
             />
           )}
         </div>

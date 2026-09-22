@@ -86,11 +86,13 @@ export async function consumeRateLimit(options: {
   limit: number
   windowMs: number
   now?: number
+  /** `global`: one counter for everyone, for calls to a provider that has its own limit. */
+  scope?: 'ip' | 'global'
 }): Promise<RateLimitDecision> {
   const { req, route, limit, windowMs } = options
   const now = options.now ?? Date.now()
   const window = Math.floor(now / windowMs)
-  const key = hash(`${clientIp(req)}|${route}|${window}`)
+  const key = hash(`${options.scope === 'global' ? 'global' : clientIp(req)}|${route}|${window}`)
 
   try {
     const db = await getDatabase()

@@ -6,6 +6,7 @@ import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { consumeRateLimit, registerFeedbackEffect } from '@/lib/v3/rateLimit'
 import { checkYouTubeAvailability, youtubeVideoId } from '@/lib/v3/videoAvailability'
+import { checkDailymotionAvailability, dailymotionVideoId } from '@/lib/v3/mediaAvailability'
 
 /**
  * Public endpoint: the player reports that a video failed to play.
@@ -38,6 +39,7 @@ type VideoDocument = {
   _id: ObjectId
   url?: string
   videoId?: string
+  provider?: string
   obsoleteVideoServerCheckedAt?: Date
 }
 
@@ -95,7 +97,7 @@ export async function POST(request: Request) {
     const items = db.collection<VideoDocument>('items')
     const selector = objectId ? { _id: objectId, type: 'video' } : { type: 'video', url: url as string }
     const video = await items.findOne(selector, {
-      projection: { url: 1, videoId: 1, obsoleteVideoServerCheckedAt: 1 },
+      projection: { url: 1, videoId: 1, provider: 1, obsoleteVideoServerCheckedAt: 1 },
     })
     if (!video) return accepted()
 
@@ -130,13 +132,14 @@ export async function POST(request: Request) {
     const lastCheck = video.obsoleteVideoServerCheckedAt?.getTime() ?? 0
     const checkDue = now.getTime() - lastCheck >= SERVER_CHECK_INTERVAL_MS
     if (!obsoleteReason && effect.first && checkDue) {
-      const videoId = youtubeVideoId(video)
-      if (videoId) {
-        const verdict = await checkYouTubeAvailability(videoId)
-        if (verdict.checked) {
-          setFields.obsoleteVideoServerCheckedAt = now
-          if (!verdict.available) obsoleteReason = `server-${verdict.reason}`
-        }
+      // Dailymotion's public API needs no key and no quota; YouTube's check spends a unit.
+      const isDailymotion = video.provider === 'dailymotion' || /dailymotion\.com|dai\.ly/i.test(video.url ?? '')
+      const dailymotionId = isDailymotion ? dailymotionVideoId(video) : null
+      const youtubeId = dailymotionId ? null : youtubeVideoId(video)
+      const verdict = dailymotionId ? await checkDailymotionAvailability(dailymotionId) : youtubeId ? await checkYouTubeAvailability(youtubeId) : null
+      if (verdict?.checked) {
+        setFields.obsoleteVideoServerCheckedAt = now
+        if (!verdict.available) obsoleteReason = `server-${verdict.reason}`
       }
     }
 

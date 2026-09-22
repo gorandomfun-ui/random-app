@@ -12,7 +12,8 @@ import { randomWindow, sampleCatalogue, sampleWindow, type PoolRetrievalReport }
 const FAMILIES = ['music', 'sport', 'craft', 'food', 'art', 'advertising', 'cinema', 'science', 'gaming', 'technology', 'travel', 'everyday', 'unknown']
 const TYPES: Format[] = ['video', 'image', 'web', 'quote', 'joke', 'fact']
 type Decoder<T> = (row: CatalogueRow) => T | null
-function base(type: Format, lang: string, now: number): Filter<Document> {
+/** What every draw of the live random starts from: never a suppressed content, never an obsolete or blocked video. */
+export function base(type: Format, lang: string, now: number): Filter<Document> {
   const visual = type === 'video' || type === 'image'
   return { type, isSuppressed: { $ne: true }, ...(type === 'video' ? {
     obsoleteVideoStatus: { $ne: 'obsolete' },

@@ -38,7 +38,7 @@ const SUBJECT_INDEX = 'v3_subject_type_rand'
 const UNIVERSE_INDEX = 'v3_universe_type_rand'
 const LINE_INDEX = 'v3_line_type_rand'
 /** Only content a visitor should be served; the labels settled the rest when they were written. */
-const SERVABLE: Filter<Document> = { isSuppressed: { $ne: true }, obsoleteVideoStatus: { $ne: 'obsolete' } }
+export const SERVABLE: Filter<Document> = { isSuppressed: { $ne: true }, obsoleteVideoStatus: { $ne: 'obsolete' } }
 
 /** The register a niche means for a format: old school is the archives for a video, the archives or the vintage GIFs for an image. */
 export function registerFor(source: NicheSource, type: StartType, random: Rng): CoolRegister {

@@ -4,9 +4,33 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { consumeRateLimit, registerFeedbackEffect } from '@/lib/v3/rateLimit'
+import { checkImageAvailability } from '@/lib/v3/mediaAvailability'
+
+/**
+ * Public endpoint: the page reports that an image failed to show.
+ *
+ * A report marks the image suspect and, for a new reporter, asks the
+ * provider by identifier whether the image still exists — Giphy answers
+ * 404 for a deleted GIF even when its CDN serves a stand-in file. A media
+ * the provider says is gone is suppressed (`isSuppressed`, `media-gone`) and
+ * never drawn again. Provider calls are capped per hour for everyone.
+ */
 
 const REPORTS_PER_IP_PER_HOUR = 60
 const HOUR_MS = 60 * 60 * 1000
+/** Provider checks per hour, all visitors together. */
+const PROVIDER_CHECKS_PER_HOUR = 120
+/** At most one provider check per image in this window. */
+const SERVER_CHECK_INTERVAL_MS = 6 * HOUR_MS
+
+type ImageDocument = {
+  _id: ObjectId
+  url?: string
+  pageUrl?: string | null
+  provider?: string
+  source?: { url?: string | null } | null
+  obsoleteImageServerCheckedAt?: Date
+}
 
 type ImageErrorPayload = {
   itemId?: unknown
@@ -80,19 +104,42 @@ export async function POST(request: Request) {
     }
 
     const db = await getDatabase()
-    const result = await db.collection('items').updateOne(
-      objectId ? { _id: objectId, type: 'image' } : { type: 'image', url },
+    const items = db.collection<ImageDocument>('items')
+    const image = await items.findOne(objectId ? { _id: objectId, type: 'image' } : { type: 'image', url: url as string }, {
+      projection: { url: 1, pageUrl: 1, provider: 1, source: 1, obsoleteImageServerCheckedAt: 1 },
+    })
+    if (!image) {
+      return NextResponse.json({ success: true, skipped: true }, { status: 202 })
+    }
+
+    let gone: string | null = null
+    const lastCheck = image.obsoleteImageServerCheckedAt?.getTime() ?? 0
+    if (now.getTime() - lastCheck >= SERVER_CHECK_INTERVAL_MS) {
+      const checks = await consumeRateLimit({ req: request, route: 'feedback/image-check', limit: PROVIDER_CHECKS_PER_HOUR, windowMs: HOUR_MS, scope: 'global' })
+      if (checks.allowed) {
+        const verdict = await checkImageAvailability(image)
+        if (verdict.checked) {
+          setFields.obsoleteImageServerCheckedAt = now
+          if (!verdict.available) gone = verdict.reason
+        }
+      }
+    }
+    if (gone) {
+      setFields.isSuppressed = true
+      setFields.suppressedReason = 'media-gone'
+      setFields.suppressedAt = now
+      setFields.suppressedDetail = `server-${gone}`
+    }
+
+    await items.updateOne(
+      { _id: image._id },
       {
         $set: setFields,
         $inc: { obsoleteImageSuspectCount: 1 },
       },
     )
 
-    if (!result.matchedCount) {
-      return NextResponse.json({ success: true, skipped: true }, { status: 202 })
-    }
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, suppressed: Boolean(gone) })
   } catch (error) {
     console.error('[feedback/image-error] Failed to mark image suspect', error)
     return NextResponse.json({ success: true, skipped: true }, { status: 202 })
