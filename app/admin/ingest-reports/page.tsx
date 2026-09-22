@@ -50,6 +50,20 @@ const LINE_LABEL: Record<string, string> = {
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
 
+type ServerStatus = {
+  host: string
+  at: string
+  uptimeHours: number
+  load1: number
+  memory?: { totalMB: number; freeMB: number }
+  disk?: { totalGB: number; freeGB: number }
+  lastRun?: { line: string; status: string; inserted: number } | null
+  hoursSinceSuccess?: number | null
+  trouble?: string | null
+}
+
+const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000))
+
 const label = (line: string) => LINE_LABEL[line] ?? line
 
 function formatDay(day: string): string {
@@ -64,6 +78,7 @@ function formatDay(day: string): string {
 export default function IngestReportsPage() {
   const [days, setDays] = useState<DayRow[]>([])
   const [health, setHealth] = useState<HealthRow[]>([])
+  const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,9 +93,10 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[] }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
+      setServer(payload.server ?? null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -133,6 +149,19 @@ export default function IngestReportsPage() {
               <strong>{label(row.line)}</strong> tourne mais n&apos;insère rien
             </div>
           ))}
+        </section>
+      )}
+
+      {server && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Serveur d&apos;ingestion</h2>
+          {server.trouble && <div style={{ ...S.alert, ...STATE_STYLE.arrêtée }}><strong>{server.host}</strong> : {server.trouble}</div>}
+          <p style={S.hint}>
+            {server.host} · vu {minutesAgo(server.at)} min · en marche depuis {server.uptimeHours} h · charge {server.load1}
+            {' · '}disque libre {server.disk?.freeGB} / {server.disk?.totalGB} Go · mémoire libre {server.memory?.freeMB} / {server.memory?.totalMB} Mo
+            {server.lastRun ? ` · dernier passage ${label(server.lastRun.line)} : ${server.lastRun.status}, ${server.lastRun.inserted} insérés` : ' · aucun passage'}
+            {server.hoursSinceSuccess != null ? ` · dernier succès il y a ${server.hoursSinceSuccess} h` : ''}
+          </p>
         </section>
       )}
 

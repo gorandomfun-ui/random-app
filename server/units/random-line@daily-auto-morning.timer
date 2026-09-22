@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM daily ingestion, morning (09:10 Paris, as the GitHub job)
+
+[Timer]
+OnCalendar=*-*-* 09:10:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

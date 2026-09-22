@@ -3,7 +3,7 @@ import type { Db } from 'mongodb'
 import { quotaConfigFromEnv } from '../../lib/discovery/exploration'
 import { youtubeBudget } from '../../lib/discovery/youtubeBudget'
 import { githubDiscoveryConfig, acquireDiscoveryRun, releaseDiscoveryRun, runDiscoveryLoop, type ProviderBatch } from '../../lib/discovery/runner'
-import { judge, recordRun } from '../../lib/v3/ingest/journal'
+import { journalHost, judge, recordRun } from '../../lib/v3/ingest/journal'
 
 /** The journal's view of one provider's batch: judged on what it inserted, never asserted. */
 async function journalBatch(db: Db, report: ProviderBatch, finishedAt: Date): Promise<void> {
@@ -16,7 +16,7 @@ async function journalBatch(db: Db, report: ProviderBatch, finishedAt: Date): Pr
   }
   await recordRun(db, {
     line: 'like-dig', startedAt: new Date(finishedAt.getTime() - report.durationMs), finishedAt,
-    status: judge(counters, errors, report.stopReason === 'time-budget'), counters, errors, host: 'github',
+    status: judge(counters, errors, report.stopReason === 'time-budget'), counters, errors, host: journalHost(),
   }).catch(() => console.warn('Journal unavailable for this batch; the batch itself is unaffected.'))
 }
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM video enrichment (09:55 and 21:55 Paris, after the daily ingestion)
+
+[Timer]
+OnCalendar=*-*-* 09:55:00 Europe/Paris
+OnCalendar=*-*-* 21:55:00 Europe/Paris
+Persistent=true
+
+[Install]
+WantedBy=timers.target

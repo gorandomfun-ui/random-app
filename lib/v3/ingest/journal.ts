@@ -27,6 +27,13 @@ export type JournalLine = Line | 'trend-subjects' | 'web' | 'texts' | 'enrich' |
  */
 export const INTERRUPTED_AFTER_MS = 15 * 60_000
 
+/** Where a direct run happens, for the journal: GitHub Actions, the ingestion server, or a hand on a computer. */
+export function journalHost(): 'github' | 'server' | 'local' {
+  if (process.env.GITHUB_ACTIONS === 'true') return 'github'
+  if (process.env.RANDOM_INGEST_SERVER === '1') return 'server'
+  return 'local'
+}
+
 /**
  * `partial` exists so a run stopped by its own deadline is not called a
  * failure, and `skipped` so a run that found nothing to do is not called a

@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM daily ingestion, evening (21:10 Paris)
+
+[Timer]
+OnCalendar=*-*-* 21:10:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
