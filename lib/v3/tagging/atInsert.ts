@@ -32,7 +32,13 @@ export type TaggedDocument<T> = T & { v3: ItemTags & { nearFamily: string; forma
 export async function tagForInsert<T extends TaggableDocument>(
   db: Db,
   documents: T[],
-  line: Line = 'legacy',
+  /**
+   * The ingestion line, when the caller knows it. Left out, the line the
+   * tagger reads from the document stands: a default of `legacy` here
+   * overwrote `trend` on every trending video since 19 September, and the
+   * cool pool's trend source found 25 of them.
+   */
+  line?: Line,
   now = new Date(),
 ): Promise<Array<T | TaggedDocument<T>>> {
   if (!documents.length) return documents
@@ -60,7 +66,7 @@ export async function tagForInsert<T extends TaggableDocument>(
       ...document,
       v3: {
         ...tags,
-        line,
+        line: line ?? tags.line,
         nearFamily: nearFamilyKey(document.title ?? '', labels),
         formatFamily: formatFamilyKey({
           primarySubjectId: tags.subjects[0]?.id,

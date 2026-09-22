@@ -4,6 +4,7 @@ import { retroSearchPlan, youtubeSearchBatch } from './retroSearchPlan';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildVideoDocument } from './videoDocument';
 import { tagForInsert } from '@/lib/v3/tagging/atInsert';
+import type { Line } from '@/lib/v3/types';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
 import {
@@ -1040,10 +1041,12 @@ export async function finalizeVideoIngest(
     routineWarningLabel?: string;
     onStage?: (stage: VideoIngestStage) => void;
     conservativeRoutineInitialization?: boolean;
+    /** The ingestion line written on the v3 block; without it the tagger's own reading stands. */
+    line?: Line;
   },
 ): Promise<IngestResult> {
   const { dryRun, sampleSize, warnings, providers, skipDetails = false, insertOnly = false,
-    routineWarningLabel = 'videos:editorial-quota', onStage, conservativeRoutineInitialization = false } = options;
+    routineWarningLabel = 'videos:editorial-quota', onStage, conservativeRoutineInitialization = false, line } = options;
 
   const map = new Map<string, RawVideo>();
   for (const video of collected) {
@@ -1166,6 +1169,7 @@ export async function finalizeVideoIngest(
         updatedAt: now,
         rand: Math.random(),
       })),
+      line,
     );
     let insertedIndexes = insertDocuments.map((_doc, index) => index);
     try {
@@ -1506,6 +1510,7 @@ export async function ingestTrendingVideos(regions: string[], options: { dryRun?
     insertOnly: options.insertOnly ?? false,
     routineWarningLabel: 'trending:editorial-quota',
     conservativeRoutineInitialization: options.conservativeRoutineInitialization,
+    line: 'trend',
   });
 }
 
