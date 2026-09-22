@@ -10,7 +10,6 @@ import Link from 'next/link'
 import { RotateCcw, Volume2, VolumeX, X } from 'lucide-react'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
-import { useCookieConsent } from '@/components/CookieConsent'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { FactQuizCard } from '@/components/RandomContentRenderer'
 import MiniGameCard from '@/components/minigames/MiniGameCard'
@@ -2425,7 +2424,6 @@ export function RandomExperience({
   const curatorPendingRef = useRef(false)
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addAction, addPoints, maybeSpawnDiamond, quizScore, score } = useScore()
-  const { consent } = useCookieConsent()
   const encourageMessages = useMemo(() => {
     const fallback = FALLBACK_ENCOURAGE_MESSAGES
     if (!dict || typeof dict !== 'object') return fallback

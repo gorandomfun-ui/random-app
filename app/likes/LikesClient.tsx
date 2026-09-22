@@ -11,7 +11,6 @@ import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
 import QuizScoreText from '@/components/QuizScoreText'
 import HeartIcon from '../../components/HeartIcon'
-import { useCookieConsent } from '@/components/CookieConsent'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
@@ -211,7 +210,6 @@ export default function LikesClient({
   navigationPaths = PUBLIC_APP_PATHS,
 }: LikesClientProps = {}) {
   const { t, locale, locales, setLocale } = useI18n()
-  const { consent } = useCookieConsent()
   const cached = typeof window !== 'undefined' ? readWeCache() : null
   const [seedItems] = useState<GlobalLikeItem[]>(() => cached?.items ?? initialGlobalItems)
   const [seedTimestamp] = useState<number>(() => cached?.timestamp ?? initialFetchedAt)

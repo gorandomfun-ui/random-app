@@ -20,7 +20,6 @@ import MonoIcon from '@/components/MonoIcon'
 import QuizScoreText from '@/components/QuizScoreText'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
-import { useCookieConsent } from '@/components/CookieConsent'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { THEMES } from '@/lib/theme'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
@@ -311,7 +310,6 @@ function useButtonWidth(
 export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: { navigationPaths?: AppNavigationPaths } = {}) {
   const router = useRouter()
   const { t, locale, locales, setLocale } = useI18n()
-  const { consent } = useCookieConsent()
   const { addAction, maybeSpawnDiamond } = useScore()
 
   const HEADER_H = 56
