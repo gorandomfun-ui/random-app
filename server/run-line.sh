@@ -9,6 +9,7 @@
 #   bash /opt/random-app/server/run-line.sh trend-subjects
 #   bash /opt/random-app/server/run-line.sh discovery
 #   bash /opt/random-app/server/run-line.sh web-embed
+#   bash /opt/random-app/server/run-line.sh like-pool
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -41,6 +42,8 @@ case "${LINE}" in
       run node --import tsx scripts/discovery/maintain-subjects.ts --apply || true
       run npm run -s discovery:explore || true
     fi
+    # The like pool right after the pass: the journal shows how much the ingestion grew it.
+    run node --import tsx scripts/v3/like-pool.ts || true
     ;;
   video-enrich)
     run node scripts/daily-video-enrich.mjs
@@ -50,6 +53,10 @@ case "${LINE}" in
     ;;
   discovery)
     run npm run -s discovery:explore
+    ;;
+  like-pool)
+    # The zones around the likes and their sizes, as the like tickets draw them.
+    run node --import tsx scripts/v3/like-pool.ts
     ;;
   web-embed)
     # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.

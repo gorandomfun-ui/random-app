@@ -2,19 +2,23 @@ import type { Db, Document, Filter } from 'mongodb'
 
 /**
  * Enough of a database for a cool draw, without Mongo: equality (an array
- * field holds the value, a path through an array reads each element), `$in`, `$ne`, `$gte`, `$lt`, a sort on `rand` and
+ * field holds the value, a path through an array reads each element, an
+ * ObjectId equals its hex string), `$in`, `$nin`, `$ne`, `$gte`, `$lt`, a sort on `rand` and
  * a limit. Every collection but `items` is empty.
  */
 export function fakeDb(items: Document[]): Db {
   // A path through an array of objects, like `v3.subjects.id`, reads every element's field.
   const read = (row: Document, path: string) => path.split('.').reduce<unknown>((value, key) =>
     Array.isArray(value) ? value.map((element) => (element as Record<string, unknown> | undefined)?.[key]) : (value as Record<string, unknown> | undefined)?.[key], row)
-  const holds = (value: unknown, wanted: unknown) => (Array.isArray(value) ? value.includes(wanted) : value === wanted)
+  // An ObjectId and its hex string are the same id.
+  const same = (value: unknown, wanted: unknown) => value === wanted || (value != null && wanted != null && (typeof value === 'object' || typeof wanted === 'object') && String(value) === String(wanted))
+  const holds = (value: unknown, wanted: unknown) => (Array.isArray(value) ? value.some((element) => same(element, wanted)) : same(value, wanted))
   const matches = (row: Document, filter: Filter<Document>) => Object.entries(filter).every(([key, condition]) => {
     const value = read(row, key)
     if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
       const ops = condition as Record<string, unknown>
       if ('$in' in ops) return (ops.$in as unknown[]).some((wanted) => holds(value, wanted))
+      if ('$nin' in ops) return !(ops.$nin as unknown[]).some((wanted) => holds(value, wanted))
       if ('$ne' in ops) return value !== ops.$ne
       if ('$gte' in ops && !((value as number) >= (ops.$gte as number))) return false
       if ('$lt' in ops && !((value as number) < (ops.$lt as number))) return false
@@ -32,6 +36,7 @@ export function fakeDb(items: Document[]): Db {
         return options?.limit ? rows.slice(0, options.limit) : rows
       },
     }),
+    findOne: async (filter: Filter<Document>) => (name === 'items' ? items.find((row) => matches(row, filter)) ?? null : null),
     countDocuments: async (filter: Filter<Document>) => (name === 'items' ? items.filter((row) => matches(row, filter)).length : 0),
   })
   return { collection } as unknown as Db

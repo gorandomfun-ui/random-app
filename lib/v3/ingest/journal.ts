@@ -17,7 +17,7 @@ export const RUNS = 'ingest_runs_v3'
 export const SEARCHES = 'ingest_searches_v3'
 
 /** The lines of ingestion as the journal names them: the v3 lines, and what the current pipeline still runs. */
-export type JournalLine = Line | 'trend-subjects' | 'web' | 'texts' | 'enrich' | 'repair'
+export type JournalLine = Line | 'trend-subjects' | 'web' | 'texts' | 'enrich' | 'repair' | 'like-pool'
 
 /**
  * A run still marked "running" past this was killed — by Vercel's five
@@ -66,6 +66,8 @@ export type RunRecord = {
   host?: string
   /** A rehearsal: recorded, never counted as the line's work. */
   dryRun?: boolean
+  /** One line the report shows as is: what a measuring pass found. */
+  note?: string
 }
 
 /** What the collection holds: a run opened and not yet closed has no end and the status "running". */
@@ -97,7 +99,7 @@ export async function openRun(db: Db, run: { line: JournalLine; startedAt: Date;
 export async function closeRun(
   db: Db,
   id: ObjectId,
-  end: { finishedAt: Date; status: RunStatus; counters: RunCounters; errors?: string[]; quotaUnits?: number },
+  end: { finishedAt: Date; status: RunStatus; counters: RunCounters; errors?: string[]; quotaUnits?: number; note?: string },
 ): Promise<void> {
   await db.collection(RUNS).updateOne({ _id: id }, { $set: end })
 }
