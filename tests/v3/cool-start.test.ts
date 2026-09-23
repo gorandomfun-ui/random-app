@@ -119,7 +119,8 @@ test('la tendance retombe d_abord sur le récent, puis sur une niche ; le récen
   // Une image n'a pas de date : récente si elle est entrée dans l'année, jamais des registres du vieux.
   const gif = (title: string, extra: Record<string, unknown> = {}) => ({ ...fakeVideo('music'), type: 'image', provider: 'giphy', url: `https://media.giphy.com/media/${title.replace(/\W/g, '')}/giphy.gif`, title, createdAt: new Date(NOW - 60 * 86_400_000), v3: { registers: [], era: 'unknown', popularity: 'unknown', usable: true }, ...extra })
   const images = [gif('Serena Williams Sport GIF by Team USA'), gif('vintage tv GIF', { v3: { registers: ['cool-words'], era: 'unknown', popularity: 'unknown', usable: true } }), gif('old GIF', { createdAt: new Date(NOW - 3 * 365 * 86_400_000) }), gif('sexy ted GIF')]
-  const image = await drawStart(fakeDb(images), { type: 'image', source: 'trend', random: rolls([0.1, 0.2]), now: NOW })
+  // A point of zero: the fake rows carry small rand values, and a seek past them would read nothing before wrapping.
+  const image = await drawStart(fakeDb(images), { type: 'image', source: 'trend', random: rolls([0, 0]), now: NOW })
   assert.equal(image?.source, 'recent', 'un ticket tendance en image retombe sur le récent, pas sur les archives')
   assert.equal(image?.rows.length, 1)
   assert.equal(image?.rows[0].title, 'Serena Williams Sport GIF by Team USA')
