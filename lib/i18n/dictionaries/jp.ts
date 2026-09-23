@@ -108,6 +108,11 @@ const jpDictionary = {
     "tapForSound": "タップで音声オン",
     "openExternally": "アプリで開く"
   },
+  "web": {
+    "openHere": "ここで開く",
+    "newWindow": "新しいウィンドウで開く",
+    "close": "閉じる"
+  },
   "shuffle": {
     "title": "コンテンツをフィルター",
     "all": "すべて",

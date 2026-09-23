@@ -108,6 +108,11 @@ const enDictionary = {
     "tapForSound": "Tap for sound",
     "openExternally": "Open in app"
   },
+  "web": {
+    "openHere": "Open here",
+    "newWindow": "Open in a new window",
+    "close": "Close"
+  },
   "shuffle": {
     "title": "Filter content",
     "all": "Everything",

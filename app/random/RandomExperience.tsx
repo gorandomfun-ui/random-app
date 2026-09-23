@@ -45,6 +45,7 @@ import type {
   DisplayItem,
   EncourageItem as EncourageContentItem,
   ImageItem as ImageContentItem,
+  WebItem as WebContentItem,
   MiniGameItem,
   MiniGameId,
   RandomContentItem,
@@ -1263,6 +1264,65 @@ function VideoFullscreenBrand({ visible }: { visible: boolean }) {
   )
 }
 
+/** After this without the frame's `load`, the site is opened in a tab instead and the server is told. */
+const WEB_FRAME_LOAD_TIMEOUT_MS = 8000
+
+/**
+ * A website inside Random: the frame takes the screen, and above it — in
+ * Random's page, out of the site's reach — the cross, the new-window button
+ * and the brand, on desktop and mobile alike. The frame may run scripts and
+ * forms and open popups, never navigate Random away (no allow-top-navigation),
+ * never see where it came from, never use camera, microphone or location.
+ */
+function WebFullscreenOverlay({ url, title, onClose, onAbandon, closeLabel, newWindowLabel }: {
+  url: string
+  title?: string | null
+  onClose: () => void
+  onAbandon: (reason: 'frame-load-timeout') => void
+  closeLabel: string
+  newWindowLabel: string
+}) {
+  const loadedRef = useRef(false)
+  useEffect(() => {
+    loadedRef.current = false
+    const timer = window.setTimeout(() => {
+      if (!loadedRef.current) onAbandon('frame-load-timeout')
+    }, WEB_FRAME_LOAD_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [url, onAbandon])
+
+  return (
+    <div className="web-fullscreen-overlay" role="dialog" aria-modal="true" aria-label={title || url}>
+      <iframe
+        className="web-fullscreen-frame"
+        src={url}
+        title={title || url}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        referrerPolicy="no-referrer"
+        loading="eager"
+        allow=""
+        onLoad={() => { loadedRef.current = true }}
+      />
+      <div className="web-fullscreen-controls">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="web-fullscreen-button"
+          aria-label={newWindowLabel}
+          title={newWindowLabel}
+        >
+          ↗
+        </a>
+        <button type="button" className="web-fullscreen-button" onClick={onClose} aria-label={closeLabel} title={closeLabel}>
+          ×
+        </button>
+      </div>
+      <VideoFullscreenBrand visible />
+    </div>
+  )
+}
+
 const shouldBypassNativeFullscreen = () => {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent || navigator.vendor || ''
@@ -2187,6 +2247,7 @@ function ContentRenderer({
   onVideoSoundUnlocked,
   onPlaybackIssue,
   onImageIssue,
+  onOpenWeb,
 }: {
   item: DisplayItem
   theme: { cream: string; text: string; deep: string; bg: string }
@@ -2201,6 +2262,7 @@ function ContentRenderer({
   onVideoSoundUnlocked?: () => void
   onImageIssue?: (item: ImageContentItem, issue: ImageLoadIssue) => void
   onPlaybackIssue?: PlaybackIssueHandler
+  onOpenWeb?: (item: WebContentItem) => void
 }) {
   if (item.type === 'encourage') {
     const encourageStyle: EncourageStyle = {
@@ -2390,7 +2452,17 @@ function ContentRenderer({
             />
           </div>
         ) : null}
-        {href ? (
+        {href && item.embeddable && onOpenWeb ? (
+          // The server found the site lets itself be framed: it opens over Random, the visitor stays.
+          <button
+            type="button"
+            onClick={() => onOpenWeb(item)}
+            className="px-5 sm:px-6 underline font-inter text-xl md:text-2xl break-words"
+            style={{ color: theme.cream, background: 'none', border: 0, cursor: 'pointer' }}
+          >
+            {item.text || host || href}
+          </button>
+        ) : href ? (
           <a
             href={href}
             target="_blank"
@@ -2551,6 +2623,10 @@ export function RandomExperience({
   const [pageGlitchCycle, setPageGlitchCycle] = useState(0)
   const [pageGlitchBars, setPageGlitchBars] = useState<GlitchBar[]>(() => [])
   const [fullscreenVideo, setFullscreenVideo] = useState<FullscreenVideoPayload | null>(null)
+  /** A website open inside Random, over everything else; the page keeps its state underneath. */
+  const [fullscreenWeb, setFullscreenWeb] = useState<{ item: WebContentItem; url: string } | null>(null)
+  const fullscreenWebRef = useRef<{ item: WebContentItem; url: string } | null>(null)
+  fullscreenWebRef.current = fullscreenWeb
   const [soundMuted, setSoundMuted] = useState(false)
   // Video audio follows the Sound FX preference, but unmuting a single video
   // must not rewrite that preference. Session-only, never persisted.
@@ -3058,6 +3134,51 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
     setFullscreenVideo(null)
     exitNativeFullscreen()
   }, [])
+
+  /** A site the server found embeddable opens over Random; the others keep their new tab. */
+  const openWebInRandom = useCallback((item: WebContentItem) => {
+    const url = item.embedUrl || item.url
+    if (!item.embeddable || !url) return
+    setFullscreenWeb({ item, url })
+  }, [])
+
+  const closeWeb = useCallback(() => {
+    setFullscreenWeb(null)
+  }, [])
+
+  /** The frame never loaded in time: back to the tab the site would have had, and a word to the server. */
+  const abandonWeb = useCallback((reason: 'frame-load-timeout') => {
+    const current = fullscreenWebRef.current
+    if (!current) return
+    setFullscreenWeb(null)
+    try {
+      window.open(current.url, '_blank', 'noopener,noreferrer')
+    } catch {
+      /* A blocked popup leaves the visitor on Random, which is fine. */
+    }
+    try {
+      void fetch('/api/feedback/web-embed', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+        body: JSON.stringify({ itemId: current.item._id ?? null, url: current.item.url, reason }),
+      }).catch(() => undefined)
+    } catch {
+      /* fire and forget */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!fullscreenWeb) return undefined
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeWeb()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [closeWeb, fullscreenWeb])
 
   useEffect(() => {
     const initial = randIdx(THEMES.length)
@@ -3922,6 +4043,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     let transitionIntensity = effectiveProgressionIntensity
 
     try {
+      if (fullscreenWebRef.current) return false
       restartRhythmIfIdle()
       let entry = takeRandomReadyEntry()
       if (!entry) {
@@ -4518,6 +4640,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [savedMode, onSavedRandom, effectsTestMode, loadNext])
 
   const handleWave = useCallback(async () => {
+    if (fullscreenWebRef.current) return
     if (transitionLockedRef.current) return
     const current = currentItemRef.current
     if (!current || current.type === 'encourage' || current.type === 'minigame') return
@@ -4589,7 +4712,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo || fullscreenWeb ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
       style={mainStyle}
     >
       {curationMode && curationError ? <aside role="status" className="fixed bottom-2 left-2 z-50 rounded bg-black px-3 py-2 text-xs text-white">
@@ -4785,6 +4908,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               onVideoSoundUnlocked={unlockVideoSound}
               onPlaybackIssue={handlePlaybackIssue}
               onImageIssue={handleImageIssue}
+              onOpenWeb={openWebInRandom}
             />
           )}
         </div>
@@ -5025,6 +5149,18 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           </div>
           <div className="video-fullscreen-backdrop" onClick={closeFullscreen} />
         </div>
+      ) : null}
+
+      {fullscreenWeb ? (
+        <WebFullscreenOverlay
+          key={fullscreenWeb.url}
+          url={fullscreenWeb.url}
+          title={fullscreenWeb.item.text}
+          onClose={closeWeb}
+          onAbandon={abandonWeb}
+          closeLabel={t('web.close', 'Close')}
+          newWindowLabel={t('web.newWindow', 'Open in a new window')}
+        />
       ) : null}
 
       <ShareMenu
@@ -5751,6 +5887,52 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .video-fullscreen-glitch-bg__fragments {
           opacity: calc(var(--random-bg-strength, 0) * 0.68);
+        }
+        .web-fullscreen-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 950;
+          background: #050507;
+          overflow: hidden;
+        }
+        .web-fullscreen-frame {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          border: 0;
+          background: #fff;
+        }
+        .web-fullscreen-controls {
+          position: absolute;
+          top: max(10px, calc(env(safe-area-inset-top) + 6px));
+          right: max(10px, calc(env(safe-area-inset-right) + 6px));
+          z-index: 6;
+          display: flex;
+          gap: 8px;
+        }
+        .web-fullscreen-button {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          border: 0;
+          border-radius: 9999px;
+          background: rgba(0, 0, 0, 0.72);
+          color: #fff;
+          font-size: 24px;
+          line-height: 1;
+          text-decoration: none;
+          cursor: pointer;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+        .web-fullscreen-button:hover {
+          background: rgba(0, 0, 0, 0.88);
+        }
+        .web-fullscreen-overlay .video-fullscreen-brand {
+          z-index: 6;
+          opacity: 0.85;
         }
         .video-fullscreen-backdrop {
           position: absolute;

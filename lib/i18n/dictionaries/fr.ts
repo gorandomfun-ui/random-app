@@ -108,6 +108,11 @@ const frDictionary = {
     "tapForSound": "Touchez pour le son",
     "openExternally": "Ouvrir dans l'app"
   },
+  "web": {
+    "openHere": "Ouvrir ici",
+    "newWindow": "Ouvrir dans une nouvelle fenêtre",
+    "close": "Fermer"
+  },
   "shuffle": {
     "title": "Filtrer le contenu",
     "all": "Tout",
