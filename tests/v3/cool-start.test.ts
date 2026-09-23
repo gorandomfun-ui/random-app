@@ -1,8 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { nicheFallback, pickZone, registerFor } from '@/lib/v3/cool/start'
-import type { LikeZone } from '@/lib/v3/cool/likes'
+import { nicheFallback, registerFor } from '@/lib/v3/cool/start'
+import type { LikePool, PoolZone } from '@/lib/v3/cool/likePool'
+
+const authorZone = (key: string, likeIds: string[], video: number): PoolZone => ({ id: `author:${key}`, kind: 'author', key, likeIds, video, image: 0 })
+const subjectZone = (key: string, likeIds: string[], video: number, image = 0): PoolZone => ({ id: `subject:${key}`, kind: 'subject', key, likeIds, video, image })
+const poolOf = (...zones: PoolZone[]): LikePool => ({ zones, likeIds: [...new Set(zones.flatMap((zone) => zone.likeIds))] })
 
 const rolls = (values: number[]) => { let index = 0; return () => values[index++ % values.length] }
 
@@ -21,19 +25,6 @@ test('quand une source n_a rien, le repli n_est jamais gaming', () => {
   }
   assert.equal(nicheFallback('image', rolls([0.99])), 'cool-words')
   assert.equal(nicheFallback('video', rolls([0.99])), 'elsewhere')
-})
-
-test('la zone d_un like : son sujet nommé, son auteur ou son genre, selon ce qu_il a', () => {
-  const full: LikeZone = { id: 'l', type: 'video', subjectIds: ['entity:santana'], channelKey: 'youtube:UC1', universe: 'music', angle: 'live-concert', era: 'retro' }
-  assert.equal(pickZone(full, rolls([0])), 'like-subject')
-  assert.equal(pickZone(full, rolls([0.5])), 'like-channel')
-  assert.equal(pickZone(full, rolls([0.99])), 'like-genre')
-  const bare: LikeZone = { ...full, subjectIds: [], channelKey: undefined }
-  assert.equal(pickZone(bare, rolls([0])), 'like-genre', 'sans sujet ni auteur, le genre')
-  const vague: LikeZone = { ...bare, angle: 'other' }
-  assert.equal(pickZone(vague, rolls([0])), null, 'un genre qui ne dit rien n_est pas une zone')
-  const news: LikeZone = { ...bare, universe: 'news-society', angle: 'mainstream-report' }
-  assert.equal(pickZone(news, rolls([0])), null, 'jamais les news')
 })
 
 test('la tendance retombe en niche quand la ligne est mince ; une niche ne retombe jamais en tendance ni en likes', async () => {
@@ -62,29 +53,37 @@ test('la tendance retombe en niche quand la ligne est mince ; une niche ne retom
   assert.equal(gaming?.source, 'gaming', 'une niche gaming demandée par le sac est servie')
 })
 
-test('la zone genre d_un like lit un lot borné de l_univers et n_en garde que l_angle et l_époque du like', async () => {
+test('un ticket like tire dans une zone sujet du pool, jamais le like lui-même', async () => {
   const { drawStart } = await import('@/lib/v3/cool/start')
   const { fakeDb, fakeVideo } = await import('../support/fakeDb')
-  const { __setLikeZonesForTests } = await import('@/lib/v3/cool/likes')
-  __setLikeZonesForTests([{ id: 'like-1', type: 'video', subjectIds: [], universe: 'music', angle: 'live-concert', era: 'retro' }])
+  const { __setLikePoolForTests } = await import('@/lib/v3/cool/likePool')
+  const like = fakeVideo('music', { title: 'Le like', v3: { registers: ['music'], subjects: [{ id: 'artist:x' }], usable: true } })
+  __setLikePoolForTests(poolOf(subjectZone('artist:x', [String(like._id)], 3)))
   try {
-    const rows = [
-      fakeVideo('music', { v3: { registers: ['music'], universe: 'music', angle: 'official-clip', era: 'recent', usable: true } }),
-      fakeVideo('music', { v3: { registers: ['music'], universe: 'music', angle: 'live-concert', era: 'retro', usable: true } }),
-      fakeVideo('music', { v3: { registers: ['music'], universe: 'music', angle: 'live-concert', era: 'recent', usable: true } }),
-      fakeVideo('archive'),
-    ]
-    const drawn = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0, 0.99, 0]) })
+    const around = Array.from({ length: 3 }, () => fakeVideo('music', { v3: { registers: ['music'], subjects: [{ id: 'artist:x' }], usable: true } }))
+    const drawn = await drawStart(fakeDb([like, ...around, fakeVideo('archive')]), { type: 'video', source: 'like', random: rolls([0.5, 0.5, 0.1]) })
     assert.ok(drawn)
-    assert.equal(drawn.source, 'like-genre')
+    assert.equal(drawn.source, 'like-subject')
     assert.equal(drawn.fallback, false)
-    for (const row of drawn.rows) {
-      const v3 = row.v3 as { angle: string; era: string }
-      assert.equal(v3.angle, 'live-concert')
-      assert.equal(v3.era, 'retro')
-    }
+    assert.equal(drawn.rows.length, 3, 'les trois contenus autour du like')
+    assert.ok(drawn.rows.every((row) => String(row._id) !== String(like._id)), 'le like n_est pas servi par sa zone')
   } finally {
-    __setLikeZonesForTests(null)
+    __setLikePoolForTests(null)
+  }
+})
+
+test('le like lui-même sort une fois sur mille', async () => {
+  const { drawStart } = await import('@/lib/v3/cool/start')
+  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
+  const { __setLikePoolForTests } = await import('@/lib/v3/cool/likePool')
+  const like = fakeVideo('music', { title: 'Le like', v3: { registers: ['music'], channelKey: 'youtube:UCauteur', usable: true } })
+  __setLikePoolForTests(poolOf(authorZone('youtube:UCauteur', [String(like._id)], 40)))
+  try {
+    const drawn = await drawStart(fakeDb([like, fakeVideo('archive')]), { type: 'video', source: 'like', random: rolls([0.0005, 0]) })
+    assert.equal(drawn?.source, 'like')
+    assert.equal(String(drawn?.rows[0]._id), String(like._id))
+  } finally {
+    __setLikePoolForTests(null)
   }
 })
 
@@ -129,19 +128,19 @@ test('la tendance retombe d_abord sur le récent, puis sur une niche ; le récen
 test('la zone auteur d_un like part d_un point aléatoire, pas toujours des trente mêmes vidéos', async () => {
   const { drawStart } = await import('@/lib/v3/cool/start')
   const { fakeDb, fakeVideo } = await import('../support/fakeDb')
-  const { __setLikeZonesForTests } = await import('@/lib/v3/cool/likes')
-  __setLikeZonesForTests([{ id: 'like-2', type: 'video', subjectIds: [], channelKey: 'youtube:UCauteur', universe: 'other', angle: 'other', era: 'recent' }])
+  const { __setLikePoolForTests } = await import('@/lib/v3/cool/likePool')
+  __setLikePoolForTests(poolOf(authorZone('youtube:UCauteur', ['like-2'], 80)))
   try {
     const rows = Array.from({ length: 80 }, (_, index) => fakeVideo('music', { title: `Vidéo ${index} de l_auteur`, v3: { registers: ['music'], channelKey: 'youtube:UCauteur', usable: true } }))
-    const early = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0, 0.5, 0]) })
-    const late = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0, 0.5, 0.99]) })
+    const early = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0.5, 0.5, 0]) })
+    const late = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0.5, 0.5, 0.99]) })
     assert.equal(early?.source, 'like-channel')
     assert.equal(late?.source, 'like-channel')
     const index = (row: Record<string, unknown>) => Number(/Vidéo (\d+)/.exec(String(row.title))?.[1])
     assert.ok(early!.rows.every((row) => index(row) < 30), 'un point bas lit le début')
     assert.ok(late!.rows.every((row) => index(row) >= 50), 'un point haut lit la fin')
   } finally {
-    __setLikeZonesForTests(null)
+    __setLikePoolForTests(null)
   }
 })
 
@@ -158,45 +157,4 @@ test('un point près de la fin fait le tour de l_index, et les lignes lues sont 
   assert.ok(shuffled)
   assert.deepEqual(shuffled.rows.map((row) => row.rand).sort(), [0.01, 0.02, 0.03, 0.04])
   assert.notEqual(shuffled.rows[0].rand, 0.01, 'la première ligne servie n_est pas toujours la première après le point')
-})
-
-test('une zone sujet de moins de quatre contenus autour du like n_est pas une zone : le tirage retombe en niche', async () => {
-  const { drawStart } = await import('@/lib/v3/cool/start')
-  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
-  const { __setLikeZonesForTests } = await import('@/lib/v3/cool/likes')
-  __setLikeZonesForTests([{ id: 'like-3', type: 'video', subjectIds: ['artist:x'], universe: 'other', angle: 'other', era: 'unknown' }])
-  try {
-    const around = (count: number) => Array.from({ length: count }, () => fakeVideo('music', { v3: { registers: ['music'], subjects: [{ id: 'artist:x' }], usable: true } }))
-    const registers = [fakeVideo('archive'), fakeVideo('music'), fakeVideo('elsewhere')]
-    const thin = await drawStart(fakeDb([...around(3), ...registers]), { type: 'video', source: 'like', random: rolls([0.1]) })
-    assert.ok(thin)
-    assert.equal(thin.fallback, true, 'trois contenus autour du like : les mêmes reviendraient à chaque tirage')
-    assert.notEqual(thin.source, 'like-subject')
-    const wide = await drawStart(fakeDb([...around(4), ...registers]), { type: 'video', source: 'like', random: rolls([0.1]) })
-    assert.equal(wide?.source, 'like-subject')
-    assert.equal(wide?.fallback, false)
-    assert.equal(wide?.rows.length, 4)
-  } finally {
-    __setLikeZonesForTests(null)
-  }
-})
-
-test('un auteur de quatre vidéos ou moins n_est pas une zone', async () => {
-  const { drawStart } = await import('@/lib/v3/cool/start')
-  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
-  const { __setLikeZonesForTests } = await import('@/lib/v3/cool/likes')
-  __setLikeZonesForTests([{ id: 'like-4', type: 'video', subjectIds: [], channelKey: 'youtube:UCpetit', universe: 'other', angle: 'other', era: 'recent' }])
-  try {
-    const author = (count: number) => Array.from({ length: count }, (_, index) => fakeVideo('music', { title: `Vidéo ${index} du petit auteur`, v3: { registers: ['music'], channelKey: 'youtube:UCpetit', usable: true } }))
-    const registers = [fakeVideo('archive'), fakeVideo('elsewhere')]
-    const thin = await drawStart(fakeDb([...author(4), ...registers]), { type: 'video', source: 'like', random: rolls([0.1]) })
-    assert.ok(thin)
-    assert.equal(thin.fallback, true, 'quatre vidéos, le like compris : pas une zone')
-    assert.notEqual(thin.source, 'like-channel')
-    const wide = await drawStart(fakeDb([...author(5), ...registers]), { type: 'video', source: 'like', random: rolls([0.1]) })
-    assert.equal(wide?.source, 'like-channel')
-    assert.equal(wide?.fallback, false)
-  } finally {
-    __setLikeZonesForTests(null)
-  }
 })

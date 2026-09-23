@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useState } from 'react'
  */
 
 type StatusCounts = Partial<Record<'ok' | 'partial' | 'skipped' | 'failed' | 'interrompu' | 'en cours', number>>
-type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number | string[]; providers?: Record<string, number>; searches: string[]; statuses?: StatusCounts; duplicates?: number }
+type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number | string[]; providers?: Record<string, number>; searches: string[]; statuses?: StatusCounts; duplicates?: number; note?: string }
 type DayRow = { day: string; lines: LineRow[]; total: number }
 type HealthState = 'active' | 'sans insertion' | 'arrêtée' | 'muette' | 'en cours'
 type HealthRow = { line: string; lastRunAt: string | null; hoursAgo?: number; hoursSinceRun?: number | null; hoursSinceInsert?: number | null; state: HealthState }
@@ -46,6 +46,7 @@ const LINE_LABEL: Record<string, string> = {
   'enrich-videos': 'Enrichissement',
   repair: 'Réparations',
   images: 'Images',
+  'like-pool': 'Pool des likes',
 }
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
@@ -225,6 +226,9 @@ export default function IngestReportsPage() {
                           </span>
                         ))
                       : <span style={{ color: '#bbb', fontSize: 12 }}>—</span>}
+                    {row.note && (
+                      <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>{row.note}</div>
+                    )}
                     {Array.isArray(row.errors) && row.errors.length > 0 && (
                       <div style={{ fontSize: 11, color: '#b71c1c', marginTop: 2 }}>{row.errors.join(' · ')}</div>
                     )}

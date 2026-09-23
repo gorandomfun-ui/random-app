@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM like pool, counted every hour (the zones around the likes and their sizes)
+
+[Timer]
+OnCalendar=*-*-* *:20:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

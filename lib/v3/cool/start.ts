@@ -3,33 +3,34 @@
  * source the session's bag asked for.
  *
  * No stock, nothing computed ahead: a cool draw seeks a random point in the
- * index of a register, of a zone around a curation like, or of the trend
- * line. The population is everything in the catalogue that fits, enriched
+ * index of a register, of a zone of the like pool, or of the trend line. The population is everything in the catalogue that fits, enriched
  * by every day's ingestion. A source with nothing to give — a thin trend
  * line, a like with no zone — is served as a niche: a register that is not
  * gaming, so the cap on games holds even then; the answer says so. A niche
  * never falls back to the trend or the likes.
  */
 
-import { type Db, type Document, type Filter } from 'mongodb'
+import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
 import type { CoolSource, NicheSource } from './bag'
 import { isCleanTitle, isLatinTitle } from './clean'
-import { loadLikeZones, type LikeZone } from './likes'
-import { EXCLUDED_ANGLES, EXCLUDED_UNIVERSES, isCoolCandidate, type LabelableRow } from './registers'
+import { LIKE_ITSELF, loadLikePool, pickZone, type LikePool } from './likePool'
+import { isCoolCandidate, type LabelableRow } from './registers'
+import { SERVABLE } from './servable'
 import type { CoolRegister, Popularity } from '../types'
+
+export { SERVABLE } from './servable'
 
 export type Rng = () => number
 export type StartType = 'video' | 'image'
-export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like-genre'
+/** A content of the subject a like names, of its author, or — once in a thousand — the like itself. */
+export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like'
 /** What a start actually came from: a register, a zone around a like, the trend, or the recent. */
 export type StartSource = CoolRegister | LikeZoneKind | 'trend' | 'recent'
 export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; niche?: NicheSource; fallback: boolean }
 
 /** Rows read per draw: enough for the eligibility rules to refuse a few. */
 const ROWS = 4
-/** A zone around a like holds at least this many contents besides the like, or it is no zone. */
-const ZONE_FLOOR = 4
 const CHANNEL_ROWS = 30
 /** The trend line carries no register label, so more rows are read and sifted. */
 const TREND_ROWS = 12
@@ -42,15 +43,10 @@ const RECENT_IMAGE_MONTHS = 12
 /** Registers of the old: never what the recent source means. */
 const OLD_REGISTERS: CoolRegister[] = ['archive', 'cool-words']
 const ERA_INDEX = 'v3_era_type_rand'
-/** A genre is universe + angle + era, and the index names the universe only: this many rows are read from the point and sifted, no more. */
-const GENRE_SCAN = 100
 const QUERY_BUDGET_MS = 1_500
 const REGISTER_INDEX = 'v3_register_type_rand'
 const SUBJECT_INDEX = 'v3_subject_type_rand'
-const UNIVERSE_INDEX = 'v3_universe_type_rand'
 const LINE_INDEX = 'v3_line_type_rand'
-/** Only content a visitor should be served; the labels settled the rest when they were written. */
-export const SERVABLE: Filter<Document> = { isSuppressed: { $ne: true }, obsoleteVideoStatus: { $ne: 'obsolete' } }
 
 /** The register a niche means for a format: old school is the archives for a video, the archives or the vintage GIFs for an image. */
 export function registerFor(source: NicheSource, type: StartType, random: Rng): CoolRegister {
@@ -62,21 +58,6 @@ export function registerFor(source: NicheSource, type: StartType, random: Rng): 
 export function nicheFallback(type: StartType, random: Rng): CoolRegister {
   const registers: CoolRegister[] = type === 'video' ? ['archive', 'music', 'elsewhere'] : ['archive', 'music', 'elsewhere', 'cool-words']
   return registers[Math.floor(random() * registers.length)] ?? 'music'
-}
-
-/** A genre is a zone only when it says something: "live concert, retro" does, "other, recent" is the whole catalogue. */
-export function hasGenre(zone: LikeZone): boolean {
-  return zone.angle !== 'other' && !EXCLUDED_UNIVERSES.includes(zone.universe) && !EXCLUDED_ANGLES.includes(zone.angle)
-}
-
-/** Which zone of a like to draw in: its named subject, its author, or its genre — whichever it has. */
-export function pickZone(zone: LikeZone, random: Rng): LikeZoneKind | null {
-  const kinds: LikeZoneKind[] = [
-    ...(zone.subjectIds.length ? ['like-subject' as const] : []),
-    ...(zone.channelKey ? ['like-channel' as const] : []),
-    ...(hasGenre(zone) ? ['like-genre' as const] : []),
-  ]
-  return kinds[Math.floor(random() * kinds.length)] ?? null
 }
 
 /** The rows in a random order: the one served is any of them, not always the first past the point. */
@@ -108,61 +89,36 @@ async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng,
   return shuffle(rows.filter((row) => !excluded.has(String(row._id))), random)
 }
 
-/**
- * A random point in an index, then at most `scan` rows read from it and
- * sifted in memory. For a zone the index does not name in full, the cost
- * stays bounded: a rare combination falls back rather than walking a whole
- * universe until the query budget runs out.
- */
-async function seekAmong(
-  db: Db, filter: Filter<Document>, hint: string, random: Rng, excluded: Set<string>, scan: number, keep: (row: Document) => boolean,
-): Promise<Document[]> {
-  const rows = await seek(db, filter, hint, random, excluded, scan)
-  return rows.filter(keep).slice(0, ROWS)
-}
-
 function drawRegister(db: Db, register: CoolRegister, type: StartType, random: Rng, excluded: Set<string>): Promise<Document[]> {
   return seek(db, { 'v3.registers': register, type, ...SERVABLE }, REGISTER_INDEX, random, excluded)
 }
 
-async function drawLike(db: Db, zones: LikeZone[], type: StartType, random: Rng, excluded: Set<string>): Promise<{ rows: Document[]; kind: LikeZoneKind } | null> {
-  const zone = zones[Math.floor(random() * zones.length)]
-  const kind = pickZone(zone, random)
-  if (!kind) return null
-  if (kind === 'like-subject') {
-    // One row more than served: fewer than four contents around the like besides itself is not a zone,
-    // the same one or two would come back at every draw of it.
-    const rows = await seek(db, { 'v3.subjects.id': { $in: zone.subjectIds }, type, 'v3.usable': true, ...SERVABLE }, SUBJECT_INDEX, random, excluded, ROWS + 1)
-    return rows.length >= ZONE_FLOOR ? { rows: rows.slice(0, ROWS), kind } : null
+/**
+ * A like ticket: a zone of the like pool, weighted by what it holds (capped),
+ * then a content of the zone at random — the subject a like names, or the
+ * videos of its author from a random point. Once in a thousand, the like
+ * itself. Null when the pool holds nothing for this format: a niche then.
+ */
+async function drawLike(db: Db, pool: LikePool, type: StartType, random: Rng, excluded: Set<string>): Promise<{ rows: Document[]; kind: LikeZoneKind } | null> {
+  const items = db.collection('items')
+  if (pool.likeIds.length && random() < LIKE_ITSELF) {
+    const id = pool.likeIds[Math.floor(random() * pool.likeIds.length)]
+    const row = ObjectId.isValid(id) ? await items.findOne({ _id: new ObjectId(id), type, ...SERVABLE }, { maxTimeMS: QUERY_BUDGET_MS }) : null
+    if (row) return { rows: [row], kind: 'like' }
   }
-  if (kind === 'like-channel') {
-    // From a random point in the author's videos, not always the same thirty: a liked channel used to
-    // serve the same handful in every session.
-    const filter = { 'v3.channelKey': zone.channelKey, type, ...SERVABLE }
-    const total = await db.collection('items').countDocuments(filter, { maxTimeMS: QUERY_BUDGET_MS }).catch(() => 0)
-    // The like counts among its author's videos: an author of four or fewer is not a zone.
-    if (total <= ZONE_FLOOR) return null
-    const skip = total > CHANNEL_ROWS ? Math.floor(random() * (total - CHANNEL_ROWS + 1)) : 0
-    const rows = await db
-      .collection('items')
-      .find(filter, { skip, limit: CHANNEL_ROWS, maxTimeMS: QUERY_BUDGET_MS })
-      .toArray()
-    const usable = rows.filter((row) => !excluded.has(String(row._id)))
-    for (let index = usable.length - 1; index > 0; index -= 1) {
-      const other = Math.floor(random() * (index + 1))
-      ;[usable[index], usable[other]] = [usable[other], usable[index]]
-    }
-    return usable.length ? { rows: usable.slice(0, ROWS), kind } : null
+  const zone = pickZone(pool.zones, type, random)
+  if (!zone) return null
+  if (zone.kind === 'subject') {
+    const rows = await seek(db, { 'v3.subjects.id': zone.key, type, 'v3.usable': true, ...SERVABLE }, SUBJECT_INDEX, random, excluded)
+    return rows.length ? { rows, kind: 'like-subject' } : null
   }
-  // The universe is in the index; the angle and the era are sifted from a bounded batch.
-  const rows = await seekAmong(
-    db, { 'v3.universe': zone.universe, type, ...SERVABLE }, UNIVERSE_INDEX, random, excluded, GENRE_SCAN,
-    (row) => {
-      const v3 = row.v3 as { angle?: string; era?: string; usable?: boolean } | undefined
-      return v3?.angle === zone.angle && v3?.era === zone.era && v3?.usable === true
-    },
-  )
-  return rows.length ? { rows, kind } : null
+  // The author's videos from a random point; the zone's count, the likes added back, says how far the point may go.
+  const filter = { 'v3.channelKey': zone.key, type, ...SERVABLE }
+  const total = zone.video + zone.likeIds.length
+  const skip = total > CHANNEL_ROWS ? Math.floor(random() * (total - CHANNEL_ROWS + 1)) : 0
+  const rows = await items.find(filter, { skip, limit: CHANNEL_ROWS, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const usable = shuffle(rows.filter((row) => !excluded.has(String(row._id))), random)
+  return usable.length ? { rows: usable.slice(0, ROWS), kind: 'like-channel' } : null
 }
 
 /**
@@ -211,13 +167,13 @@ export async function drawStart(
   options: { type: StartType; source: CoolSource; niche?: NicheSource; excludeIds?: Iterable<string>; random?: Rng; now?: number },
 ): Promise<Start | null> {
   const random = options.random ?? Math.random
-  const zones = await loadLikeZones(db, options.now).catch(() => [] as LikeZone[])
-  // A like is never shown, whichever source the draw came from.
-  const excluded = new Set([...(options.excludeIds ?? []), ...zones.map((zone) => zone.id)])
+  const pool = await loadLikePool(db, options.now).catch((): LikePool => ({ zones: [], likeIds: [] }))
+  // A like is never shown by a zone, whichever source the draw came from.
+  const excluded = new Set([...(options.excludeIds ?? []), ...pool.likeIds])
   const { type, source } = options
 
   if (source === 'like') {
-    const drawn = zones.length ? await drawLike(db, zones, type, random, excluded) : null
+    const drawn = pool.zones.length ? await drawLike(db, pool, type, random, excluded) : null
     if (drawn) return { rows: drawn.rows, source: drawn.kind, asked: source, fallback: false }
   } else if (source === 'trend' || source === 'recent') {
     if (source === 'trend') {

@@ -16,6 +16,7 @@ export type JournalRun = {
   status: RunStatus | 'running'
   counters?: Partial<RunCounters>
   errors?: string[]
+  note?: string
   dryRun?: boolean
   host?: string
 }
@@ -44,7 +45,11 @@ export const LINE_LABELS: Record<string, string> = {
   enrich: 'Enrichissement',
   repair: 'Réparations',
   legacy: 'Ancien',
+  'like-pool': 'Pool des likes',
 }
+
+/** Lines that measure rather than ingest: their "inserted" is a growth, not the day's content. */
+const MEASURING_LINES = new Set<string>(['like-pool'])
 
 export function shownStatus(run: Pick<JournalRun, 'status' | 'startedAt'>, now: number): ShownStatus {
   if (run.status !== 'running') return run.status
@@ -64,6 +69,9 @@ export type LineDay = {
   statuses: Partial<Record<ShownStatus, number>>
   errors: string[]
   searches: string[]
+  /** The latest run's note, when the line leaves one. */
+  note?: string
+  noteAt?: Date
 }
 export type DaySummary = { day: string; total: number; lines: LineDay[] }
 
@@ -92,6 +100,7 @@ export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now
     for (const error of run.errors ?? []) {
       if (bucket.errors.length < 3 && !bucket.errors.includes(error)) bucket.errors.push(error.slice(0, 160))
     }
+    if (run.note && (!bucket.noteAt || run.startedAt > bucket.noteAt)) { bucket.note = run.note.slice(0, 200); bucket.noteAt = run.startedAt }
   }
   // What each line went looking for: a line can look healthy while asking the
   // same eight questions for a fortnight.
@@ -105,7 +114,7 @@ export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now
     .map(([day, byLine]) => ({
       day,
       lines: [...byLine.values()].sort((left, right) => right.inserted - left.inserted),
-      total: [...byLine.values()].reduce((sum, bucket) => sum + bucket.inserted, 0),
+      total: [...byLine.values()].reduce((sum, bucket) => sum + (MEASURING_LINES.has(bucket.line) ? 0 : bucket.inserted), 0),
     }))
 }
 
