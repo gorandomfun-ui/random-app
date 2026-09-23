@@ -35,6 +35,10 @@ const TREND_ROWS = 12
 const RECENT_ROWS = 24
 /** "Modern": published within this many months. */
 const MODERN_MONTHS = 24
+/** A GIF carries no date; one brought in within this many months is what today's feeds serve. */
+const RECENT_IMAGE_MONTHS = 12
+/** Registers of the old: never what the recent source means. */
+const OLD_REGISTERS: CoolRegister[] = ['archive', 'cool-words']
 const ERA_INDEX = 'v3_era_type_rand'
 /** A genre is universe + angle + era, and the index names the universe only: this many rows are read from the point and sifted, no more. */
 const GENRE_SCAN = 100
@@ -159,24 +163,27 @@ const publishedDate = (value: unknown): Date | null => {
 }
 
 /**
- * The recent: what this year brought that has an audience — a video known or
- * mainstream, an image of the recent era — with a clean title in Latin
- * letters. The era index says "recent" over ten years; the sift keeps the
- * last two, which is what "modern" means to a visitor.
+ * The recent: what this year brought — a video of the last two years, known
+ * or mainstream; a GIF brought in within the year, since a GIF carries no
+ * date and its era reads "unknown" — with a clean title in Latin letters,
+ * never from the registers of the old. The era index says "recent" over ten
+ * years for videos; the sift keeps the last two, which is what "modern"
+ * means to a visitor.
  */
 async function drawRecent(db: Db, type: StartType, random: Rng, excluded: Set<string>, now: number): Promise<Document[]> {
-  const since = now - MODERN_MONTHS * 30 * 86_400_000
-  const filter: Filter<Document> = { 'v3.era': 'recent', type, 'v3.usable': true, ...SERVABLE }
+  const filter: Filter<Document> = { 'v3.era': type === 'video' ? 'recent' : 'unknown', type, 'v3.usable': true, ...SERVABLE }
   const rows = await seek(db, filter, ERA_INDEX, random, excluded, RECENT_ROWS)
   return rows.filter((row) => {
     if (!isCoolCandidate(row as LabelableRow) || !isCleanTitle(row.title as string) || !isLatinTitle(row.title as string)) return false
-    const published = publishedDate(row.publishedAt)
-    if (!published || published.getTime() < since) return false
+    const v3 = row.v3 as { popularity?: Popularity; registers?: CoolRegister[] } | undefined
+    if ((v3?.registers ?? []).some((register) => OLD_REGISTERS.includes(register))) return false
     if (type === 'video') {
-      const popularity = (row.v3 as { popularity?: Popularity } | undefined)?.popularity
-      return popularity === 'known' || popularity === 'mainstream'
+      const published = publishedDate(row.publishedAt)
+      if (!published || published.getTime() < now - MODERN_MONTHS * 30 * 86_400_000) return false
+      return v3?.popularity === 'known' || v3?.popularity === 'mainstream'
     }
-    return true
+    const created = publishedDate(row.createdAt)
+    return Boolean(created && created.getTime() >= now - RECENT_IMAGE_MONTHS * 30 * 86_400_000)
   }).slice(0, ROWS)
 }
 
