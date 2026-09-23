@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useState } from 'react'
  */
 
 type StatusCounts = Partial<Record<'ok' | 'partial' | 'skipped' | 'failed' | 'interrompu' | 'en cours', number>>
-type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number | string[]; providers?: Record<string, number>; searches: string[]; statuses?: StatusCounts; duplicates?: number; note?: string }
+type LineRow = { line: string; inserted: number; scanned: number; runs: number; errors: number | string[]; providers?: Record<string, number>; searches: string[]; statuses?: StatusCounts; duplicates?: number; note?: string; providersFrom?: 'runs' | 'searches' }
 type DayRow = { day: string; lines: LineRow[]; total: number }
 type HealthState = 'active' | 'sans insertion' | 'arrêtée' | 'muette' | 'en cours'
 type HealthRow = { line: string; lastRunAt: string | null; hoursAgo?: number; hoursSinceRun?: number | null; hoursSinceInsert?: number | null; state: HealthState }
@@ -68,10 +68,12 @@ const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.pa
 const label = (line: string) => LINE_LABEL[line] ?? line
 
 /** "youtube 4 250 (92 %) · dailymotion 373 (8 %)": what a line wrote, by provider, with its share. */
-function providerShares(providers: Record<string, number>): string {
+function providerShares(providers: Record<string, number>, from?: 'runs' | 'searches'): string {
   const entries = Object.entries(providers).filter(([, n]) => n > 0).sort((left, right) => right[1] - left[1])
   const total = entries.reduce((sum, [, n]) => sum + n, 0)
   if (!total) return ''
+  // Counted from the searches, the base is not the runs' inserted total: the shares alone are true.
+  if (from === 'searches') return entries.map(([provider, n]) => `${provider} ${Math.round((100 * n) / total)} %`).join(' · ')
   return entries.map(([provider, n]) => `${provider} ${n.toLocaleString('fr-FR')} (${Math.round((100 * n) / total)} %)`).join(' · ')
 }
 
@@ -213,7 +215,7 @@ export default function IngestReportsPage() {
                     <div>{label(row.line)}</div>
                     {row.providers && Object.keys(row.providers).length > 0 && (
                       <div style={S.providers}>
-                        {providerShares(row.providers)}
+                        {providerShares(row.providers, row.providersFrom)}
                       </div>
                     )}
                     {row.searches?.length > 0 && (
