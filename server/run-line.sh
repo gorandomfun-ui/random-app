@@ -8,6 +8,7 @@
 #   bash /opt/random-app/server/run-line.sh video-enrich
 #   bash /opt/random-app/server/run-line.sh trend-subjects
 #   bash /opt/random-app/server/run-line.sh discovery
+#   bash /opt/random-app/server/run-line.sh web-embed
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -47,6 +48,10 @@ case "${LINE}" in
     ;;
   discovery)
     run npm run -s discovery:explore
+    ;;
+  web-embed)
+    # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
+    run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-2000}"
     ;;
   *)
     echo "ligne inconnue : ${LINE}" >&2

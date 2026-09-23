@@ -117,6 +117,10 @@ export type WebItem = Identifiable & {
   tags?: string[]
   keywords?: string[]
   host?: string | null
+  /** The site lets itself be framed (checked ahead on the server); absent or false → opens in a new tab. */
+  embeddable?: boolean
+  /** The address to frame when it differs from `url` (an https twin of an http site). */
+  embedUrl?: string | null
 } & ToneAttributes & DiscoveryMetadata
 
 export type MiniGameId =

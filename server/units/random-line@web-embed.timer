@@ -1,0 +1,9 @@
+[Unit]
+Description=RANDOM web sites: can they be framed (03:20 Paris)
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Europe/Paris
+Persistent=true
+
+[Install]
+WantedBy=timers.target

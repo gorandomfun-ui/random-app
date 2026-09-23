@@ -108,6 +108,11 @@ const deDictionary = {
     "tapForSound": "Tippen für Ton",
     "openExternally": "In App öffnen"
   },
+  "web": {
+    "openHere": "Hier öffnen",
+    "newWindow": "In neuem Fenster öffnen",
+    "close": "Schließen"
+  },
   "shuffle": {
     "title": "Inhalt filtern",
     "all": "Alles",

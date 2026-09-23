@@ -35,6 +35,8 @@ export type WaveDocument = Document & {
   source?: { name?: string | null; url?: string | null } | null
   pageUrl?: string | null
   ogImage?: string | null
+  embeddable?: boolean | null
+  embedUrl?: string | null
   host?: string | null
   tags?: string[] | null
   keywords?: string[] | null
@@ -175,6 +177,7 @@ export function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
       provider,
       source: source(doc, provider, url),
       host: host || null,
+      ...(doc.embeddable === true ? { embeddable: true, embedUrl: trim(doc.embedUrl) || null } : {}),
     }
   }
 
