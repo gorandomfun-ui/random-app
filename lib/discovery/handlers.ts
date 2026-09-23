@@ -31,6 +31,12 @@ export async function bodyOf(req: Request): Promise<Record<string, unknown> | nu
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
   try { const body: unknown = JSON.parse(new TextDecoder().decode(bytes)); return isObject(body) ? body : null } catch { return null }
 }
+/** Keys the device saw this week: at most four hundred, each a plain content key. */
+export const SEEN_KEYS_MAX = 400
+export function parseSeen(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((key): key is string => typeof key === 'string' && key.length > 0 && key.length <= 2048).slice(-SEEN_KEYS_MAX)
+}
 /** One switch on Vercel turns the cool pool off without a deployment. */
 const coolPoolEnabled = () => process.env.RANDOM_COOL_POOL_ENABLED !== '0'
 function language(body: Record<string, unknown>): string { return ['en', 'fr', 'de', 'es', 'jp'].includes(String(body.lang)) ? String(body.lang) : 'en' }
@@ -43,11 +49,14 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
       const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
+      // What the device saw this week rides along and is left out of the draw, on top of the session's own forty.
+      const seen = parseSeen(body.seen)
+      const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
       // The lanes remain the fallback when the pool holds nothing eligible for this visitor.
       const cool = coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
-        ? await selectCool(db, ticket, state, deps.decode, Math.random, Date.now()).catch(() => null) : null
-      const choice = cool ?? await selectPool(db, ticket, state, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
+        ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now()).catch(() => null) : null
+      const choice = cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }

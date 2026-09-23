@@ -23,6 +23,7 @@ import {
   type RandomSequenceState, type SequenceSlot,
 } from '@/lib/random/sequence'
 import { RANDOM_SESSION_TTL_MS, homeAdvanceKey, randomSessionKey } from '@/lib/random/sessionKeys'
+import { seenKeys } from '@/utils/seenMemory'
 
 /** The most the home prepares: an advance, not a flow. */
 export const RANDOM_HOME_PREFETCH_MAX = 8
@@ -187,7 +188,7 @@ export function startHomePrefetch(lang: string, options: HomePrefetchOptions = {
 
   const random = options.random ?? Math.random
   const max = Math.min(RANDOM_HOME_PREFETCH_MAX, Math.max(1, options.max ?? RANDOM_HOME_PREFETCH_MAX))
-  const load = makeRandomLoader<RandomContentItem>(lang, options.request)
+  const load = makeRandomLoader<RandomContentItem>(lang, options.request, seenKeys)
   const controller = new DiscoveryController<RandomContentItem>(newSession(Math.floor(random() * 0xffffffff)))
   const allowed = new Set<ItemType>(ALL_ITEM_TYPES)
   const abort = new AbortController()

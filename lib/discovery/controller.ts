@@ -42,10 +42,11 @@ export class DiscoveryController<T> {
   adopt(ticket: Intent, candidate: Candidate<T>): void { this.queue.reserve(ticket, candidate) }
 }
 
-export function makeRandomLoader<T>(lang: string, request: typeof fetch = fetch): RandomLoader<T> {
+/** `seen`: what this device saw lately, sent with every draw so it is left out; the session's own memory stays in the session. */
+export function makeRandomLoader<T>(lang: string, request: typeof fetch = fetch, seen: () => string[] = () => []): RandomLoader<T> {
   return async (session, type, signal, factVariant) => {
     const response = await request('/api/discovery/random', { method: 'POST', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session, type, lang, factVariant }) })
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session, type, lang, factVariant, seen: seen() }) })
     if (response.status === 204) return null
     if (!response.ok) throw new Error(`Discovery request failed (${response.status})`)
     const body = await response.json() as { candidate: Candidate<T> }
