@@ -12,4 +12,6 @@ export type IngestResult = {
   warnings?: FetchWarning[]
   skippedInvalid?: number
   providers?: string[]
+  /** What was actually written, by provider: the report shows the YouTube / Dailymotion share of a line. */
+  insertedByProvider?: Record<string, number>
 }

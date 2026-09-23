@@ -21,7 +21,7 @@ export type JournalRun = {
   host?: string
 }
 
-export type JournalSearch = { line: string; query: string; at: Date }
+export type JournalSearch = { line: string; query: string; at: Date; provider?: string; inserted?: number }
 
 /** What the page shows for a run: the judged status, or what became of a run that never ended. */
 export type ShownStatus = RunStatus | 'interrompu' | 'en cours'
@@ -69,6 +69,8 @@ export type LineDay = {
   statuses: Partial<Record<ShownStatus, number>>
   errors: string[]
   searches: string[]
+  /** What the line wrote, by provider: from its runs when they count it, else from its searches. */
+  providers?: Record<string, number>
   /** The latest run's note, when the line leaves one. */
   note?: string
   /** When the latest run seen started: the note and a measuring line's size come from it. */
@@ -81,6 +83,7 @@ const emptyLineDay = (line: string): LineDay => ({ line, runs: 0, inserted: 0, s
 /** One bucket per day, per line — never a running total across days. Rehearsals are left out. */
 export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now: number): DaySummary[] {
   const days = new Map<string, Map<string, LineDay>>()
+  const providersFromRuns = new Set<LineDay>()
   const lineDay = (day: string, line: string): LineDay => {
     const byLine = days.get(day) ?? new Map<string, LineDay>()
     days.set(day, byLine)
@@ -104,12 +107,21 @@ export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now
       if (bucket.errors.length < 3 && !bucket.errors.includes(error)) bucket.errors.push(error.slice(0, 160))
     }
     if (!bucket.noteAt || run.startedAt > bucket.noteAt) { if (run.note) bucket.note = run.note.slice(0, 200); bucket.noteAt = run.startedAt }
+    for (const [provider, n] of Object.entries(run.counters?.byProvider ?? {})) {
+      if (!(Number(n) > 0)) continue
+      bucket.providers = { ...(bucket.providers ?? {}), [provider]: (bucket.providers?.[provider] ?? 0) + Number(n) }
+      providersFromRuns.add(bucket)
+    }
   }
   // What each line went looking for: a line can look healthy while asking the
   // same eight questions for a fortnight.
   for (const search of searches) {
     const bucket = lineDay(dayKey(search.at), search.line)
     if (bucket.searches.length < MAX_SEARCHES_SHOWN && !bucket.searches.includes(search.query)) bucket.searches.push(search.query)
+    // A line whose runs do not count by provider is counted from what each of its searches wrote.
+    if (search.provider && Number(search.inserted) > 0 && !providersFromRuns.has(bucket)) {
+      bucket.providers = { ...(bucket.providers ?? {}), [search.provider]: (bucket.providers?.[search.provider] ?? 0) + Number(search.inserted) }
+    }
   }
 
   return [...days.entries()]

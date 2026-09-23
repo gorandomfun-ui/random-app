@@ -32,7 +32,7 @@ async function journalReport(db: Db, since: Date, now: number): Promise<{ days: 
     .toArray()) as unknown as JournalRun[]
   const searches = (await db
     .collection(SEARCHES)
-    .find({ at: { $gte: since } }, { projection: { line: 1, query: 1, at: 1 }, sort: { at: -1 }, limit: 3000, maxTimeMS: 5000 })
+    .find({ at: { $gte: since } }, { projection: { line: 1, query: 1, at: 1, provider: 1, inserted: 1 }, sort: { at: -1 }, limit: 3000, maxTimeMS: 5000 })
     .toArray()) as unknown as JournalSearch[]
   return { days: summariseDays(runs, searches, now), health: assessHealth(runs, now, STALE_HOURS) }
 }

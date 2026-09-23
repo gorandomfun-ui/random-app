@@ -50,6 +50,8 @@ export type RunCounters = {
   duplicates: number
   /** Refused, by reason: too many per channel, saturation, no title… */
   rejected: Record<string, number>
+  /** Accepted and written, by provider — the YouTube / Dailymotion share of a line. */
+  byProvider?: Record<string, number>
 }
 
 export const emptyCounters = (): RunCounters => ({ scanned: 0, inserted: 0, duplicates: 0, rejected: {} })

@@ -69,3 +69,23 @@ test('une ligne qui mesure (pool des likes) : la taille du dernier passage, la c
   assert.equal(pool?.note, '+4 000', 'la note du dernier passage')
   assert.equal(days[0].total, 120, 'le pool ne compte pas dans le total inséré du jour')
 })
+
+test('la part par fournisseur : des passages quand ils la comptent, sinon des recherches de la ligne', async () => {
+  const { summariseDays } = await import('@/lib/v3/ingest/report')
+  const at = (hour: number) => new Date(Date.UTC(2026, 8, 23, hour))
+  const days = summariseDays([
+    { line: 'combo', startedAt: at(7), finishedAt: at(7), status: 'ok', counters: { scanned: 500, inserted: 120, duplicates: 0, rejected: {}, byProvider: { youtube: 100, dailymotion: 20 } } },
+    { line: 'combo', startedAt: at(9), finishedAt: at(9), status: 'ok', counters: { scanned: 500, inserted: 30, duplicates: 0, rejected: {}, byProvider: { dailymotion: 30 } } },
+    { line: 'like-dig', startedAt: at(8), finishedAt: at(8), status: 'ok', counters: { scanned: 40, inserted: 25, duplicates: 0, rejected: {} } },
+  ], [
+    { line: 'like-dig', query: 'santana', at: at(8), provider: 'youtube', inserted: 5 },
+    { line: 'like-dig', query: 'playlist UU1', at: at(8), provider: 'dailymotion', inserted: 20 },
+    { line: 'like-dig', query: 'rien', at: at(8), provider: 'youtube', inserted: 0 },
+    // A search of a line whose runs count by provider is not added on top.
+    { line: 'combo', query: 'x', at: at(7), provider: 'youtube', inserted: 99 },
+  ], at(10).getTime())
+  const combo = days[0].lines.find((line) => line.line === 'combo')
+  const likeDig = days[0].lines.find((line) => line.line === 'like-dig')
+  assert.deepEqual(combo?.providers, { youtube: 100, dailymotion: 50 }, 'sommé sur les passages, les recherches ignorées')
+  assert.deepEqual(likeDig?.providers, { youtube: 5, dailymotion: 20 }, 'compté depuis les recherches')
+})

@@ -51,12 +51,21 @@ function countersOf(phase: DailyAutoPhase, result: Record<string, unknown> | und
   if (phase === 'enrich-videos') {
     return { scanned: number(result.checked) || number(result.scanned), inserted: number(result.updated), duplicates: 0, rejected: {} }
   }
+  const byProvider = providerCounts(result.insertedByProvider)
   return {
     scanned: number(result.scanned),
     inserted: number(result.inserted),
     duplicates: number(result.existingSkipped),
     rejected: { ...(number(result.skippedInvalid) ? { invalid: number(result.skippedInvalid) } : {}) },
+    ...(byProvider ? { byProvider } : {}),
   }
+}
+
+/** The pipeline's count of what it wrote by provider, when it kept one. */
+function providerCounts(value: unknown): Record<string, number> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries = Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] > 0)
+  return entries.length ? Object.fromEntries(entries) : null
 }
 
 /** The pipeline's warnings are objects — `{ label, message }` — and the journal wants a line each. */
