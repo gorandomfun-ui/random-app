@@ -71,6 +71,7 @@ export type LineDay = {
   searches: string[]
   /** The latest run's note, when the line leaves one. */
   note?: string
+  /** When the latest run seen started: the note and a measuring line's size come from it. */
   noteAt?: Date
 }
 export type DaySummary = { day: string; total: number; lines: LineDay[] }
@@ -93,14 +94,16 @@ export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now
     const bucket = lineDay(dayKey(run.startedAt), run.line)
     bucket.runs += 1
     bucket.inserted += Number(run.counters?.inserted ?? 0)
-    bucket.scanned += Number(run.counters?.scanned ?? 0)
+    // A measuring line's "scanned" is a size, not work done: the day shows the latest, never the sum of every pass.
+    if (MEASURING_LINES.has(run.line)) { if (!bucket.noteAt || run.startedAt > bucket.noteAt) bucket.scanned = Number(run.counters?.scanned ?? 0) }
+    else bucket.scanned += Number(run.counters?.scanned ?? 0)
     bucket.duplicates += Number(run.counters?.duplicates ?? 0)
     const status = shownStatus(run, now)
     bucket.statuses[status] = (bucket.statuses[status] ?? 0) + 1
     for (const error of run.errors ?? []) {
       if (bucket.errors.length < 3 && !bucket.errors.includes(error)) bucket.errors.push(error.slice(0, 160))
     }
-    if (run.note && (!bucket.noteAt || run.startedAt > bucket.noteAt)) { bucket.note = run.note.slice(0, 200); bucket.noteAt = run.startedAt }
+    if (!bucket.noteAt || run.startedAt > bucket.noteAt) { if (run.note) bucket.note = run.note.slice(0, 200); bucket.noteAt = run.startedAt }
   }
   // What each line went looking for: a line can look healthy while asking the
   // same eight questions for a fortnight.

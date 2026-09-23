@@ -52,3 +52,20 @@ test('les jours ne se mélangent pas, les statuts se comptent, les répétitions
   assert.deepEqual(today.lines.find((line) => line.line === 'web')!.statuses, { interrompu: 1 })
   assert.equal(days[1].lines[0].statuses.partial, 1)
 })
+
+test('une ligne qui mesure (pool des likes) : la taille du dernier passage, la croissance sommée, hors du total du jour', async () => {
+  const { summariseDays } = await import('@/lib/v3/ingest/report')
+  const at = (hour: number) => new Date(Date.UTC(2026, 8, 23, hour))
+  const run = (line: string, hour: number, scanned: number, inserted: number, note?: string) =>
+    ({ line, startedAt: at(hour), finishedAt: at(hour), status: 'ok' as const, counters: { scanned, inserted, duplicates: 0, rejected: {} }, ...(note ? { note } : {}) })
+  const days = summariseDays([
+    run('combo', 7, 500, 120),
+    run('like-pool', 8, 36_779, 0, 'premier comptage'),
+    run('like-pool', 9, 40_779, 4_000, '+4 000'),
+  ], [], at(10).getTime())
+  const pool = days[0].lines.find((line) => line.line === 'like-pool')
+  assert.equal(pool?.scanned, 40_779, 'la taille du dernier passage, pas la somme')
+  assert.equal(pool?.inserted, 4_000, 'la croissance du jour')
+  assert.equal(pool?.note, '+4 000', 'la note du dernier passage')
+  assert.equal(days[0].total, 120, 'le pool ne compte pas dans le total inséré du jour')
+})
