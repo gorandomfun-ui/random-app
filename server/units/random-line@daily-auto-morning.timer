@@ -1,8 +1,9 @@
 [Unit]
-Description=RANDOM daily ingestion, morning (09:10 Paris, as the GitHub job)
+Description=RANDOM daily ingestion, morning (09:10 and 10:40 Paris, the two passes GitHub ran)
 
 [Timer]
 OnCalendar=*-*-* 09:10:00 Europe/Paris
+OnCalendar=*-*-* 10:40:00 Europe/Paris
 Persistent=true
 RandomizedDelaySec=120
 

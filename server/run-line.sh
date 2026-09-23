@@ -31,7 +31,9 @@ case "${LINE}" in
     # The GitHub job, step by step: the trending line directly, the daily pipeline, then the direct exploration.
     export DAILY_AUTO_PROFILE=${LINE#daily-auto-}
     export DAILY_AUTO_TRENDS_ON_GITHUB=1
-    export DAILY_AUTO_SKIP_COMPLETED=true
+    # Four full passes a day, as GitHub actually ran them: its second pass of each half-day was meant to skip a
+    # profile already completed and never did (four times ~4,000 contents on 22 September). Two passes gave half.
+    export DAILY_AUTO_SKIP_COMPLETED=false
     run node --import tsx scripts/v3/trending-direct.ts || true
     run node scripts/daily-auto-ingest.mjs
     if [ "${RANDOM_DISCOVERY_ON_SERVER:-1}" = "1" ]; then
