@@ -1384,14 +1384,6 @@ function isDailymotionMessageOrigin(origin: string): boolean {
   }
 }
 
-/** After the frame loaded, this long without the player saying anything means the video inside is dead. */
-const DAILYMOTION_READY_TIMEOUT_MS = 8000
-/**
- * Whether a Dailymotion frame has ever spoken to this page. Silence only
- * means a dead video once the player is known to talk: treating every
- * silent frame as dead replaced videos that were playing fine.
- */
-let dailymotionPlayerTalks = false
 /** An image that has not painted after this is treated as broken. */
 const IMAGE_LOAD_TIMEOUT_MS = 8000
 
@@ -1864,16 +1856,15 @@ function DailymotionEmbed({
   }, [embedMuted, url])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
-  const playerReadyRef = useRef(false)
   const playerIssueReportedRef = useRef(false)
 
   useEffect(() => {
-    playerReadyRef.current = false
     playerIssueReportedRef.current = false
   }, [embedUrl, reloadNonce])
 
   // A frame that loads and shows "video unavailable" inside used to count as a success: nothing listened to the player.
-  // A pause, a refused autoplay or a consent prompt all send apiready; only an error, or silence after the frame loaded, is a dead video.
+  // Only the player's own error event is a verdict here. Its silence never is: a rule that took eight seconds without a
+  // ready event for a dead video replaced videos that were playing fine, ten of eleven reports in one evening.
   useEffect(() => {
     const report = (issue: VideoPlaybackIssue) => {
       if (playerIssueReportedRef.current) return
@@ -1885,9 +1876,7 @@ function DailymotionEmbed({
       if (!iframeWindow || event.source !== iframeWindow || !isDailymotionMessageOrigin(event.origin)) return
       const message = parseDailymotionMessage(event.data)
       if (!message) return
-      dailymotionPlayerTalks = true
       if (message.event === 'apiready' || message.event === 'playback_ready' || message.event === 'video_start' || message.event === 'start' || message.event === 'playing') {
-        playerReadyRef.current = true
         markLoaded()
       }
       if (message.event === 'error') report({ reason: 'dailymotion-player-error', ...(message.code !== undefined ? { playerCode: message.code } : {}) })
@@ -1920,17 +1909,6 @@ function DailymotionEmbed({
     })()
     return () => { controller.abort(); window.clearTimeout(timer) }
   }, [url, item, onPlaybackIssue])
-
-  useEffect(() => {
-    if (!iframeLoaded || playerReadyRef.current) return undefined
-    const timer = window.setTimeout(() => {
-      // Silence is only a verdict when the player has proven it talks on this page.
-      if (!dailymotionPlayerTalks || playerReadyRef.current || playerIssueReportedRef.current) return
-      playerIssueReportedRef.current = true
-      onPlaybackIssue?.(item, { reason: 'dailymotion-player-error' })
-    }, DAILYMOTION_READY_TIMEOUT_MS)
-    return () => window.clearTimeout(timer)
-  }, [iframeLoaded, item, onPlaybackIssue, reloadNonce])
 
   useEffect(() => {
     if (!iframeLoaded) {
