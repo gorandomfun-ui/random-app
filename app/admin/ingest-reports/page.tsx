@@ -67,6 +67,14 @@ const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.pa
 
 const label = (line: string) => LINE_LABEL[line] ?? line
 
+/** "youtube 4 250 (92 %) · dailymotion 373 (8 %)": what a line wrote, by provider, with its share. */
+function providerShares(providers: Record<string, number>): string {
+  const entries = Object.entries(providers).filter(([, n]) => n > 0).sort((left, right) => right[1] - left[1])
+  const total = entries.reduce((sum, [, n]) => sum + n, 0)
+  if (!total) return ''
+  return entries.map(([provider, n]) => `${provider} ${n.toLocaleString('fr-FR')} (${Math.round((100 * n) / total)} %)`).join(' · ')
+}
+
 function formatDay(day: string): string {
   const [year, month, date] = day.split('-')
   return new Date(Number(year), Number(month) - 1, Number(date)).toLocaleDateString('fr-FR', {
@@ -205,10 +213,7 @@ export default function IngestReportsPage() {
                     <div>{label(row.line)}</div>
                     {row.providers && Object.keys(row.providers).length > 0 && (
                       <div style={S.providers}>
-                        {Object.entries(row.providers)
-                          .sort((left, right) => right[1] - left[1])
-                          .map(([provider, n]) => `${provider} ${n.toLocaleString('fr-FR')}`)
-                          .join(' · ')}
+                        {providerShares(row.providers)}
                       </div>
                     )}
                     {row.searches?.length > 0 && (

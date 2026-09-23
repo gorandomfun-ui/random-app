@@ -108,6 +108,8 @@ type IngestResult = {
   skippedInvalid?: number;
   existingSkipped?: number;
   providers?: string[];
+  /** What was actually written, by provider. */
+  insertedByProvider?: Record<string, number>;
   remaining?: number;
 };
 
@@ -1184,6 +1186,12 @@ export async function finalizeVideoIngest(
       summary.inserted = bulk.result?.insertedCount ?? insertedIndexes.length;
       summary.existingSkipped = duplicateIndexes.size;
     }
+    const insertedByProvider: Record<string, number> = {};
+    for (const index of insertedIndexes) {
+      const provider = insertDocuments[index]?.provider;
+      if (typeof provider === 'string' && provider) insertedByProvider[provider] = (insertedByProvider[provider] || 0) + 1;
+    }
+    summary.insertedByProvider = insertedByProvider;
 
     if (!skipDetails && summary.inserted > 0) {
       const newVideoIds = insertedIndexes

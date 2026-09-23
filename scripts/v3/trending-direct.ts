@@ -23,6 +23,13 @@ const MAX_MINUTES = Number(process.env.RANDOM_TRENDING_MINUTES ?? 12)
 const flag = (name: string) => process.argv.includes(`--${name}`)
 const valueFlag = (name: string) => process.argv.find((argument) => argument.startsWith(`--${name}=`))?.split('=')[1]
 
+/** The pipeline's count of what it wrote by provider, when it kept one. */
+function byProvider(value: unknown): Record<string, number> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries = Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] > 0)
+  return entries.length ? Object.fromEntries(entries) : null
+}
+
 async function main(): Promise<void> {
   const dryRun = flag('dry')
   const regions = (valueFlag('regions')?.split(',').map((code) => code.trim().toUpperCase()).filter(Boolean) ?? []).slice(0, 2)
@@ -52,6 +59,7 @@ async function main(): Promise<void> {
       inserted: number(raw.inserted),
       duplicates: number(raw.existingSkipped),
       rejected: number(raw.skippedInvalid) ? { invalid: number(raw.skippedInvalid) } : {},
+      ...(byProvider(raw.insertedByProvider) ? { byProvider: byProvider(raw.insertedByProvider)! } : {}),
     }
     const warnings = Array.isArray(raw.warnings) ? (raw.warnings as Array<{ label?: string; message?: string }>) : []
     errors = warnings.map((warning) => [warning.label, warning.message].filter(Boolean).join(' : ')).slice(0, 10)
