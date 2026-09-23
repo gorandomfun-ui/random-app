@@ -5,13 +5,15 @@ import { DEFAULT_BAG, NICHE_SOURCES, bagSequence, bagSourceAt, coolBag, nicheAt,
 
 const tally = (sources: string[]) => sources.reduce<Record<string, number>>((acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }), {})
 
-test('le sac par défaut : quatre tendances, trois likes, trois niches', () => {
+test('le sac par défaut : deux tendances, trois likes, trois niches, deux récents', () => {
   assert.equal(DEFAULT_BAG.length, 10)
-  assert.deepEqual(tally(DEFAULT_BAG), { trend: 4, like: 3, niche: 3 })
+  assert.deepEqual(tally(DEFAULT_BAG), { trend: 2, like: 3, niche: 3, recent: 2 })
 })
 
 test('le réglage RANDOM_COOL_BAG est lu, et ignoré quand il ne tient pas debout', () => {
   assert.deepEqual(tally(coolBag('trend:2,like:3,niche:5')), { trend: 2, like: 3, niche: 5 })
+  assert.deepEqual(tally(coolBag('trend:4,like:3,niche:3')), { trend: 4, like: 3, niche: 3 }, 'l_ancien réglage reste lisible')
+  assert.deepEqual(tally(coolBag('recent:5,like:5')), { recent: 5, like: 5 })
   assert.deepEqual(tally(coolBag('trend:5,like:5')), { trend: 5, like: 5 }, 'cinq tendances, c_est le plafond')
   assert.deepEqual(coolBag('trend:6,niche:1'), DEFAULT_BAG, 'jamais plus de cinq tickets tendance')
   assert.deepEqual(coolBag('gaming:4'), DEFAULT_BAG, 'les registres ne sont plus des sources : le sac par défaut')
@@ -19,7 +21,7 @@ test('le réglage RANDOM_COOL_BAG est lu, et ignoré quand il ne tient pas debou
   assert.deepEqual(coolBag(undefined), DEFAULT_BAG)
 })
 
-test('sur mille sessions, les tickets suivent le sac 4/3/3 et jamais deux fois la même source d_affilée, d_un sac à l_autre aussi', () => {
+test('sur mille sessions, les tickets suivent le sac 2/3/3/2 et jamais deux fois la même source d_affilée, d_un sac à l_autre aussi', () => {
   const counts: Record<string, number> = {}
   let repeats = 0
   for (let seed = 1; seed <= 1000; seed += 1) {
@@ -30,13 +32,14 @@ test('sur mille sessions, les tickets suivent le sac 4/3/3 et jamais deux fois l
       if (index && sequence[index] === sequence[index - 1]) repeats += 1
       assert.equal(bagSourceAt(seed, index), sequence[index], 'lire un rang seul donne le même ticket que la suite')
     }
-    assert.deepEqual(tally(sequence.slice(0, 10)), { trend: 4, like: 3, niche: 3 }, 'chaque sac tient ses dix tickets')
+    assert.deepEqual(tally(sequence.slice(0, 10)), { trend: 2, like: 3, niche: 3, recent: 2 }, 'chaque sac tient ses dix tickets')
   }
   const total = 30_000
   assert.equal(repeats, 0)
-  assert.ok(Math.abs(counts.trend / total - 0.4) < 0.01, `trend ${counts.trend / total}`)
+  assert.ok(Math.abs(counts.trend / total - 0.2) < 0.01, `trend ${counts.trend / total}`)
   assert.ok(Math.abs(counts.like / total - 0.3) < 0.01, `like ${counts.like / total}`)
   assert.ok(Math.abs(counts.niche / total - 0.3) < 0.01, `niche ${counts.niche / total}`)
+  assert.ok(Math.abs(counts.recent / total - 0.2) < 0.01, `recent ${counts.recent / total}`)
 })
 
 test('un sac serré (cinq tendances, cinq likes) alterne encore sans jamais se répéter', () => {

@@ -1,30 +1,34 @@
 /**
- * What a session's cool draws ask for: the trend, the likes, or a niche.
+ * What a session's cool draws ask for: the trend, the likes, a niche, or
+ * something recent.
  *
- * Ten tickets per session, in an order the seed decides once: four for the
+ * Ten tickets per session, in an order the seed decides once: two for the
  * trend (what the trending lines brought in), three around the curator's
  * likes (a zone around a like, never the like itself), three niches — the
- * four registers in turn: gaming, old school, music, elsewhere. Never the
- * same source twice in a row, the previous bag's last ticket included; never
- * gaming twice in a row among the niches. A source with nothing to give is
- * served as a niche, never the other way round (`start.ts`).
+ * four registers in turn: gaming, old school, music, elsewhere — and two
+ * recent: modern contents with an audience, written in Latin letters, so the
+ * hook shows this year as well as the archives and elsewhere (the owner,
+ * 2026-09-23: "peu de moderne, ou alors asiatique"). Never the same source
+ * twice in a row, the previous bag's last ticket included; never gaming
+ * twice in a row among the niches. A thin trend falls back to the recent,
+ * then to a niche; nothing falls back the other way (`start.ts`).
  */
 
 import { hash, seeded, shuffled, type Rng } from '@/lib/discovery/random'
 
-export type CoolSource = 'trend' | 'like' | 'niche'
-export const COOL_SOURCES: CoolSource[] = ['trend', 'like', 'niche']
+export type CoolSource = 'trend' | 'like' | 'niche' | 'recent'
+export const COOL_SOURCES: CoolSource[] = ['trend', 'like', 'niche', 'recent']
 export type NicheSource = 'gaming' | 'oldschool' | 'music' | 'elsewhere'
 export const NICHE_SOURCES: NicheSource[] = ['gaming', 'oldschool', 'music', 'elsewhere']
 
 export const DEFAULT_BAG: CoolSource[] = [
-  'trend', 'trend', 'trend', 'trend', 'like', 'like', 'like', 'niche', 'niche', 'niche',
+  'trend', 'trend', 'like', 'like', 'like', 'niche', 'niche', 'niche', 'recent', 'recent',
 ]
 /** The trend is where the bubble is; Random's point is to leave it. */
 const MAX_TREND_TICKETS = 5
 
 /**
- * The bag, from `RANDOM_COOL_BAG` when set — "trend:4,like:3,niche:3" — else
+ * The bag, from `RANDOM_COOL_BAG` when set — "trend:2,like:3,niche:3,recent:2" — else
  * the default. A setting that names no known source, or more than five
  * trend tickets, is ignored.
  */

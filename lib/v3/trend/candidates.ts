@@ -123,11 +123,13 @@ const SENSITIVE_CJK = ['死亡', '死去', '殺害', '殺人', '事件', '事故
 
 const SENSITIVE_WORDS = new Set(SENSITIVE_LATIN.map((word) => normalize(word)))
 
-function sensitiveText(text: string): boolean {
+/** Whether a text carries one of the words of a death, an accident, a disaster, a trial or an election, in any of the site's languages. */
+export function hasSensitiveWord(text: string): boolean {
   if (!text) return false
   if (SENSITIVE_CJK.some((word) => text.includes(word))) return true
   return normalize(text).split(' ').some((word) => SENSITIVE_WORDS.has(word))
 }
+const sensitiveText = hasSensitiveWord
 
 /**
  * Whether the thing is a piece of news rather than a subject: its Wikidata

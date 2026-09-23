@@ -21,14 +21,16 @@ export function fakeDb(items: Document[]): Db {
     return holds(value, condition)
   })
   const collection = (name: string) => ({
-    find: (filter: Filter<Document>, options?: { limit?: number; sort?: Record<string, number> }) => ({
+    find: (filter: Filter<Document>, options?: { limit?: number; skip?: number; sort?: Record<string, number> }) => ({
       toArray: async () => {
         if (name !== 'items') return []
         let rows = items.filter((row) => matches(row, filter))
         if (options?.sort?.rand) rows = [...rows].sort((a, b) => (a.rand as number) - (b.rand as number))
+        if (options?.skip) rows = rows.slice(options.skip)
         return options?.limit ? rows.slice(0, options.limit) : rows
       },
     }),
+    countDocuments: async (filter: Filter<Document>) => (name === 'items' ? items.filter((row) => matches(row, filter)).length : 0),
   })
   return { collection } as unknown as Db
 }
