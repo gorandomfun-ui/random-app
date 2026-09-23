@@ -54,6 +54,8 @@ import type {
 import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { reportImageLoadIssue, type ImageLoadIssue } from '@/utils/imageSuspects'
 import { isMediaBlockedThisSession } from '@/utils/mediaSuspects'
+import { rememberSeen, seenKeys } from '@/utils/seenMemory'
+import { dailymotionVerdict } from '@/lib/v3/mediaAvailability'
 import {
   reportVideoPlaybackIssue,
   type VideoPlaybackIssue,
@@ -1834,6 +1836,31 @@ function DailymotionEmbed({
     return () => window.removeEventListener('message', handleMessage)
   }, [embedUrl, item, markLoaded, onPlaybackIssue])
 
+  // The player keeps quiet about a deleted video and shows "no longer available" inside the frame; Dailymotion's public
+  // API says it plainly (404, private, unpublished, not embeddable) and lets the browser ask. One call per video shown.
+  useEffect(() => {
+    const videoId = extractDailymotionVideoId(url) || ''
+    if (!videoId) return undefined
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 6000)
+    void (async () => {
+      try {
+        const response = await fetch(`https://api.dailymotion.com/video/${encodeURIComponent(videoId)}?fields=id,status,private,published,allow_embed`, { signal: controller.signal, cache: 'no-store' })
+        const body = response.ok ? await response.json().catch(() => null) : null
+        const verdict = dailymotionVerdict(response.status, body)
+        if (verdict.checked && !verdict.available && !playerIssueReportedRef.current) {
+          playerIssueReportedRef.current = true
+          onPlaybackIssue?.(item, { reason: 'dailymotion-player-error', playerCode: response.status })
+        }
+      } catch {
+        /* No answer: the player and the frame watchdog remain the judges. */
+      } finally {
+        window.clearTimeout(timer)
+      }
+    })()
+    return () => { controller.abort(); window.clearTimeout(timer) }
+  }, [url, item, onPlaybackIssue])
+
   useEffect(() => {
     if (!iframeLoaded || playerReadyRef.current) return undefined
     const timer = window.setTimeout(() => {
@@ -3340,6 +3367,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       invalidateDiscoveryQueue()
       discoveryRef.current.waveDisplayed(candidate)
       lastInteractionAtRef.current = Date.now()
+      rememberSeen(candidate.key)
     }
   }, [discoveryEnabled, waveDiscoveryMode, invalidateDiscoveryQueue])
 
@@ -3674,7 +3702,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         const miniGame = spawnMiniGameIfDue()
         if (miniGame) { sequenceStateRef.current = preparedState; return { slot, item: miniGame, sequenceAfter: preparedState, generation: discoveryGeneration } }
       }
-      const load = makeRandomLoader<RandomContentItem>(locale || 'en')
+      const load = makeRandomLoader<RandomContentItem>(locale || 'en', fetch, seenKeys)
       for (let attempt = 0; attempt < 2; attempt++) {
         const prepared = await discoveryRef.current.prepare(slot.itemType, async (session, type, signal, variant) => {
           const candidate = await load(session, type, signal, variant)
@@ -3928,6 +3956,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (entry.discoveryKey) discoveryRef.current.displayed(entry.discoveryKey)
         if (entry.sequenceAfter) committedSequenceRef.current = cloneSequenceState(entry.sequenceAfter)
         if (entry.item.type !== 'encourage' && entry.item.type !== 'minigame') { const key = getContentKey(entry.item); if (key) registerRecentKey(key) }
+        // The device remembers for a week what the session remembers for six hours.
+        if (entry.discoveryKey) rememberSeen(entry.discoveryKey)
       }
       setIsSecond((prev) => !prev)
       setTrigger((t) => t + 1)
