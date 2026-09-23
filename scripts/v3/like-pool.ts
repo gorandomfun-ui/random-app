@@ -26,7 +26,8 @@ async function main(): Promise<void> {
     const { zones, uncounted } = await countZones(db, zonesOfLikes(likes), likes.map((like) => like.id), previous)
     const summary = summarise(zones, likes.length, new Date())
     const before = await readSummary(db)
-    const growth = before ? Math.max(0, summary.connected - before.connected) : summary.connected
+    // A first count has nothing to compare with: its growth is nothing, not the whole pool (which read as an ingestion of thirty thousand).
+    const growth = before ? Math.max(0, summary.connected - before.connected) : 0
     const note = `${fr(summary.connected)} contenus reliés aux likes, ${fr(summary.effective)} vus par le tirage (plafond ${ZONE_CAP} par zone), ${summary.zones} zones pour ${summary.likes} likes` +
       (before ? ` ; ${growth ? '+' + fr(growth) : 'rien de plus'} depuis le passage précédent` : ' ; premier comptage') +
       (uncounted.length ? ` ; ${uncounted.length} zone${uncounted.length > 1 ? 's' : ''} trop grande${uncounted.length > 1 ? 's' : ''} pour être comptée${uncounted.length > 1 ? 's' : ''} (${uncounted.join(', ')})` : '')
