@@ -71,6 +71,8 @@ export type LineDay = {
   searches: string[]
   /** What the line wrote, by provider: from its runs when they count it, else from its searches. */
   providers?: Record<string, number>
+  /** Where the provider counts come from: the searches' base can differ from the runs' inserted total, so only their shares are shown. */
+  providersFrom?: 'runs' | 'searches'
   /** The latest run's note, when the line leaves one. */
   note?: string
   /** When the latest run seen started: the note and a measuring line's size come from it. */
@@ -110,6 +112,7 @@ export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now
     for (const [provider, n] of Object.entries(run.counters?.byProvider ?? {})) {
       if (!(Number(n) > 0)) continue
       bucket.providers = { ...(bucket.providers ?? {}), [provider]: (bucket.providers?.[provider] ?? 0) + Number(n) }
+      bucket.providersFrom = 'runs'
       providersFromRuns.add(bucket)
     }
   }
@@ -121,6 +124,7 @@ export function summariseDays(runs: JournalRun[], searches: JournalSearch[], now
     // A line whose runs do not count by provider is counted from what each of its searches wrote.
     if (search.provider && Number(search.inserted) > 0 && !providersFromRuns.has(bucket)) {
       bucket.providers = { ...(bucket.providers ?? {}), [search.provider]: (bucket.providers?.[search.provider] ?? 0) + Number(search.inserted) }
+      bucket.providersFrom = 'searches'
     }
   }
 

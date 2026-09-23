@@ -87,5 +87,7 @@ test('la part par fournisseur : des passages quand ils la comptent, sinon des re
   const combo = days[0].lines.find((line) => line.line === 'combo')
   const likeDig = days[0].lines.find((line) => line.line === 'like-dig')
   assert.deepEqual(combo?.providers, { youtube: 100, dailymotion: 50 }, 'sommé sur les passages, les recherches ignorées')
+  assert.equal(combo?.providersFrom, 'runs')
   assert.deepEqual(likeDig?.providers, { youtube: 5, dailymotion: 20 }, 'compté depuis les recherches')
+  assert.equal(likeDig?.providersFrom, 'searches')
 })
