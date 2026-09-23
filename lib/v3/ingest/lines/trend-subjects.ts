@@ -19,6 +19,7 @@ import { needsSecondClue, normalize, subjectId } from '../../tagging/normalize'
 import { SUBJECTS_COLLECTION } from '../../subjects/build'
 import { DAILY_CAP, displayLabel, mergeCandidates, qualifies, refusalOf, textKey, type Candidate, type CandidatePiece } from '../../trend/candidates'
 import { digSteps, keepForStep, searchDailymotion, searchGiphy, searchYouTube, YOUTUBE_SEARCH_UNITS, type DigSubject } from '../../trend/dig'
+import { isCleanTitle } from '../../cool/clean'
 import { TREND_COUNTRIES, dayOf, fetchGiphyTrending, fetchTrendsSignals, fetchWikipediaSignals, fetchYouTubeMostPopular, type Signal } from '../../trend/signals'
 import { emptyCounters } from '../journal'
 import { addAdmission, type LineContext, type LineResult } from '../context'
@@ -255,10 +256,11 @@ async function dig(ctx: LineContext, digs: Dig[], signalDay: Date, counters: Lin
         if (!(await ctx.quota.reserve(YOUTUBE_SEARCH_UNITS))) { youtubeStopped = true; ctx.log('youtube : budget du jour atteint'); break }
         try {
           const videos = await searchYouTube(youtubeKey!, { query: spec.query, order: spec.order, after: spec.after, before: spec.before, language: spec.language }, http)
-          const kept = keepForStep(videos, spec.focus?.subject ?? current.steps[0].youtube[0]?.focus?.subject ?? { key: subjectId, label: current.subject.label, aliases: current.subject.aliases, kind: 'entity', evidence: 'title' })
-            .map((video) => ({ ...video, trendObservedAt: signalDay }))
+          const titled = keepForStep(videos, spec.focus?.subject ?? current.steps[0].youtube[0]?.focus?.subject ?? { key: subjectId, label: current.subject.label, aliases: current.subject.aliases, kind: 'entity', evidence: 'title' })
+          // A search on a name drags junk and news along; neither is admitted on the trend.
+          const kept = titled.filter((video) => isCleanTitle(video.title)).map((video) => ({ ...video, trendObservedAt: signalDay }))
           const result = await ctx.admit({ subjectId, videos: kept })
-          addAdmission(counters, { ...result, scanned: videos.length })
+          addAdmission(counters, { ...result, scanned: videos.length, rejected: { ...result.rejected, ...(titled.length - kept.length ? { unclean: titled.length - kept.length } : {}) } })
           await ctx.search({ provider: 'youtube', query: spec.query, subjectId, scanned: videos.length, kept: kept.length, inserted: result.inserted, duplicates: result.duplicates, rejected: result.rejected, quotaUnits: YOUTUBE_SEARCH_UNITS, insertedIds: result.insertedIds })
         } catch (error) {
           errors.push(`youtube "${spec.query}" : ${message(error)}`)
@@ -269,10 +271,10 @@ async function dig(ctx: LineContext, digs: Dig[], signalDay: Date, counters: Lin
         if (spec.kind !== 'dailymotion' || !spec.query) continue
         try {
           const videos = await searchDailymotion({ query: spec.query, sort: spec.sort === 'recent' ? 'recent' : 'relevance', after: spec.after, before: spec.before }, http)
-          const kept = keepForStep(videos, spec.focus?.subject ?? { key: subjectId, label: current.subject.label, aliases: current.subject.aliases, kind: 'entity', evidence: 'title' })
-            .map((video) => ({ ...video, trendObservedAt: signalDay }))
+          const titled = keepForStep(videos, spec.focus?.subject ?? { key: subjectId, label: current.subject.label, aliases: current.subject.aliases, kind: 'entity', evidence: 'title' })
+          const kept = titled.filter((video) => isCleanTitle(video.title)).map((video) => ({ ...video, trendObservedAt: signalDay }))
           const result = await ctx.admit({ subjectId, videos: kept })
-          addAdmission(counters, { ...result, scanned: videos.length })
+          addAdmission(counters, { ...result, scanned: videos.length, rejected: { ...result.rejected, ...(titled.length - kept.length ? { unclean: titled.length - kept.length } : {}) } })
           await ctx.search({ provider: 'dailymotion', query: spec.query, subjectId, scanned: videos.length, kept: kept.length, inserted: result.inserted, duplicates: result.duplicates, rejected: result.rejected, quotaUnits: 0, insertedIds: result.insertedIds })
         } catch (error) {
           errors.push(`dailymotion "${spec.query}" : ${message(error)}`)

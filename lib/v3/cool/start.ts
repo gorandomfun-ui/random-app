@@ -14,15 +14,16 @@
 import { type Db, type Document, type Filter } from 'mongodb'
 
 import type { CoolSource, NicheSource } from './bag'
+import { isCleanTitle, isLatinTitle } from './clean'
 import { loadLikeZones, type LikeZone } from './likes'
 import { EXCLUDED_ANGLES, EXCLUDED_UNIVERSES, isCoolCandidate, type LabelableRow } from './registers'
-import type { CoolRegister } from '../types'
+import type { CoolRegister, Popularity } from '../types'
 
 export type Rng = () => number
 export type StartType = 'video' | 'image'
 export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like-genre'
-/** What a start actually came from: a register, a zone around a like, or the trend. */
-export type StartSource = CoolRegister | LikeZoneKind | 'trend'
+/** What a start actually came from: a register, a zone around a like, the trend, or the recent. */
+export type StartSource = CoolRegister | LikeZoneKind | 'trend' | 'recent'
 export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; niche?: NicheSource; fallback: boolean }
 
 /** Rows read per draw: enough for the eligibility rules to refuse a few. */
@@ -30,6 +31,11 @@ const ROWS = 4
 const CHANNEL_ROWS = 30
 /** The trend line carries no register label, so more rows are read and sifted. */
 const TREND_ROWS = 12
+/** The recent source sifts for this year's contents with an audience and a clean Latin title: more rows still. */
+const RECENT_ROWS = 24
+/** "Modern": published within this many months. */
+const MODERN_MONTHS = 24
+const ERA_INDEX = 'v3_era_type_rand'
 /** A genre is universe + angle + era, and the index names the universe only: this many rows are read from the point and sifted, no more. */
 const GENRE_SCAN = 100
 const QUERY_BUDGET_MS = 1_500
@@ -109,9 +115,14 @@ async function drawLike(db: Db, zones: LikeZone[], type: StartType, random: Rng,
     return rows.length ? { rows, kind } : null
   }
   if (kind === 'like-channel') {
+    // From a random point in the author's videos, not always the same thirty: a liked channel used to
+    // serve the same handful in every session.
+    const filter = { 'v3.channelKey': zone.channelKey, type, ...SERVABLE }
+    const total = await db.collection('items').countDocuments(filter, { maxTimeMS: QUERY_BUDGET_MS }).catch(() => 0)
+    const skip = total > CHANNEL_ROWS ? Math.floor(random() * (total - CHANNEL_ROWS + 1)) : 0
     const rows = await db
       .collection('items')
-      .find({ 'v3.channelKey': zone.channelKey, type, ...SERVABLE }, { limit: CHANNEL_ROWS, maxTimeMS: QUERY_BUDGET_MS })
+      .find(filter, { skip, limit: CHANNEL_ROWS, maxTimeMS: QUERY_BUDGET_MS })
       .toArray()
     const usable = rows.filter((row) => !excluded.has(String(row._id)))
     for (let index = usable.length - 1; index > 0; index -= 1) {
@@ -138,7 +149,35 @@ async function drawLike(db: Db, zones: LikeZone[], type: StartType, random: Rng,
  */
 async function drawTrend(db: Db, type: StartType, random: Rng, excluded: Set<string>): Promise<Document[]> {
   const rows = await seek(db, { 'v3.line': 'trend', type, ...SERVABLE }, LINE_INDEX, random, excluded, TREND_ROWS)
-  return rows.filter((row) => isCoolCandidate(row as LabelableRow)).slice(0, ROWS)
+  return rows.filter((row) => isCoolCandidate(row as LabelableRow) && isCleanTitle(row.title as string)).slice(0, ROWS)
+}
+
+const publishedDate = (value: unknown): Date | null => {
+  if (value instanceof Date) return value
+  if (typeof value === 'string' && value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? null : date }
+  return null
+}
+
+/**
+ * The recent: what this year brought that has an audience — a video known or
+ * mainstream, an image of the recent era — with a clean title in Latin
+ * letters. The era index says "recent" over ten years; the sift keeps the
+ * last two, which is what "modern" means to a visitor.
+ */
+async function drawRecent(db: Db, type: StartType, random: Rng, excluded: Set<string>, now: number): Promise<Document[]> {
+  const since = now - MODERN_MONTHS * 30 * 86_400_000
+  const filter: Filter<Document> = { 'v3.era': 'recent', type, 'v3.usable': true, ...SERVABLE }
+  const rows = await seek(db, filter, ERA_INDEX, random, excluded, RECENT_ROWS)
+  return rows.filter((row) => {
+    if (!isCoolCandidate(row as LabelableRow) || !isCleanTitle(row.title as string) || !isLatinTitle(row.title as string)) return false
+    const published = publishedDate(row.publishedAt)
+    if (!published || published.getTime() < since) return false
+    if (type === 'video') {
+      const popularity = (row.v3 as { popularity?: Popularity } | undefined)?.popularity
+      return popularity === 'known' || popularity === 'mainstream'
+    }
+    return true
+  }).slice(0, ROWS)
 }
 
 export async function drawStart(
@@ -154,9 +193,14 @@ export async function drawStart(
   if (source === 'like') {
     const drawn = zones.length ? await drawLike(db, zones, type, random, excluded) : null
     if (drawn) return { rows: drawn.rows, source: drawn.kind, asked: source, fallback: false }
-  } else if (source === 'trend') {
-    const rows = await drawTrend(db, type, random, excluded)
-    if (rows.length) return { rows, source: 'trend', asked: source, fallback: false }
+  } else if (source === 'trend' || source === 'recent') {
+    if (source === 'trend') {
+      const rows = await drawTrend(db, type, random, excluded)
+      if (rows.length) return { rows, source: 'trend', asked: source, fallback: false }
+    }
+    // A thin trend — every image ticket today — falls back to the recent before any niche: modern first, the archives after.
+    const recent = await drawRecent(db, type, random, excluded, options.now ?? Date.now())
+    if (recent.length) return { rows: recent, source: 'recent', asked: source, fallback: source !== 'recent' }
   } else {
     // A niche ticket names its register; without one, any register but gaming.
     const niche = options.niche

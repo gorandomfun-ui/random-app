@@ -169,6 +169,7 @@ function fakeHttp(counts: Record<string, number>) {
         { id: { videoId: `v${String(n).padStart(8, '0')}a1` }, snippet: { title: `${q} documentary 1975`, channelId: 'chan1', channelTitle: 'Archives' } },
         { id: { videoId: `v${String(n).padStart(8, '0')}b2` }, snippet: { title: `${q} house tour`, channelId: 'chan2', channelTitle: 'Tours' } },
         { id: { videoId: `v${String(n).padStart(8, '0')}c3` }, snippet: { title: 'Unrelated cooking video', channelId: 'chan3' } },
+        { id: { videoId: `v${String(n).padStart(8, '0')}d4` }, snippet: { title: `${q} feet fetish HD`, channelId: 'chan4' } },
       ] })
     }
     if (url.hostname === 'api.dailymotion.com') { hit('dailymotion'); const q = url.searchParams.get('search') ?? ''; return json({ list: [{ id: `x${counts.dailymotion}ab`, title: `${q.replace(/"/g, '')} reportage`, owner: { id: 'o1' } }] }) }
@@ -257,7 +258,8 @@ test('la ligne : des signaux aux sujets du jour, puis la fouille dans le budget'
   assert.equal(fake.counts['youtube-search'], youtube.length)
   assert.ok(fake.searches.some((s) => s.provider === 'dailymotion') && fake.searches.some((s) => s.provider === 'giphy'))
   assert.ok(fake.admitted.every((batch) => (batch.videos ?? []).every((video) => video.trendObservedAt instanceof Date)), 'les vidéos portent le jour du signal')
-  assert.ok(fake.admitted.some((batch) => (batch.videos ?? []).length === 2), 'la vidéo sans rapport n_est pas gardée')
+  assert.ok(fake.admitted.some((batch) => (batch.videos ?? []).length === 2), 'la vidéo sans rapport et le déchet ne sont pas gardés')
+  assert.ok((result.counters.rejected.unclean ?? 0) >= 1, 'le déchet est compté refusé')
   assert.ok(result.counters.inserted > 0)
   assert.ok((fake.writes.subjects_v3 ?? []).some((op) => 'bulkWrite' in (op as object)), 'les sujets du jour sont écrits')
   assert.ok((fake.writes.trend_signals_v3 ?? []).length === 1, 'les signaux sont journalisés')

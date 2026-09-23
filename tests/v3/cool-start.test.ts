@@ -87,3 +87,51 @@ test('la zone genre d_un like lit un lot borné de l_univers et n_en garde que l
     __setLikeZonesForTests(null)
   }
 })
+
+test('la tendance retombe d_abord sur le récent, puis sur une niche ; le récent ne retombe jamais en tendance', async () => {
+  const { drawStart } = await import('@/lib/v3/cool/start')
+  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
+  const NOW = Date.UTC(2026, 8, 23)
+  const modern = (register: string, extra: Record<string, unknown> = {}) => fakeVideo(register, { publishedAt: new Date(NOW - 90 * 86_400_000), v3: { registers: [register], era: 'recent', popularity: 'known', usable: true }, ...extra })
+  const rows = [
+    modern('music'),
+    modern('elsewhere', { title: 'Vieille vidéo', publishedAt: new Date(NOW - 5 * 365 * 86_400_000) }),
+    modern('music', { title: 'ASMR feet licking' }),
+    modern('music', { title: 'ミュージックビデオ' }),
+    modern('music', { v3: { registers: ['music'], era: 'recent', popularity: 'niche', usable: true } }),
+    fakeVideo('archive'),
+  ]
+  const trend = await drawStart(fakeDb(rows), { type: 'video', source: 'trend', random: rolls([0.1, 0.2]), now: NOW })
+  assert.ok(trend)
+  assert.equal(trend.source, 'recent', 'pas de tendance : le récent avant les archives')
+  assert.equal(trend.fallback, true)
+  assert.equal(trend.rows.length, 1, 'seul le contenu de cette année, connu, au titre propre et latin, passe')
+  assert.equal(trend.rows[0].title, rows[0].title)
+
+  const recent = await drawStart(fakeDb(rows), { type: 'video', source: 'recent', random: rolls([0.1]), now: NOW })
+  assert.equal(recent?.source, 'recent')
+  assert.equal(recent?.fallback, false)
+
+  const nothingModern = await drawStart(fakeDb([fakeVideo('archive')]), { type: 'video', source: 'recent', random: rolls([0.1, 0.1]), now: NOW })
+  assert.equal(nothingModern?.source, 'archive', 'sans récent, une niche')
+  assert.equal(nothingModern?.fallback, true)
+})
+
+test('la zone auteur d_un like part d_un point aléatoire, pas toujours des trente mêmes vidéos', async () => {
+  const { drawStart } = await import('@/lib/v3/cool/start')
+  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
+  const { __setLikeZonesForTests } = await import('@/lib/v3/cool/likes')
+  __setLikeZonesForTests([{ id: 'like-2', type: 'video', subjectIds: [], channelKey: 'youtube:UCauteur', universe: 'other', angle: 'other', era: 'recent' }])
+  try {
+    const rows = Array.from({ length: 80 }, (_, index) => fakeVideo('music', { title: `Vidéo ${index} de l_auteur`, v3: { registers: ['music'], channelKey: 'youtube:UCauteur', usable: true } }))
+    const early = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0, 0.5, 0]) })
+    const late = await drawStart(fakeDb(rows), { type: 'video', source: 'like', random: rolls([0, 0.5, 0.99]) })
+    assert.equal(early?.source, 'like-channel')
+    assert.equal(late?.source, 'like-channel')
+    const index = (row: Record<string, unknown>) => Number(/Vidéo (\d+)/.exec(String(row.title))?.[1])
+    assert.ok(early!.rows.every((row) => index(row) < 30), 'un point bas lit le début')
+    assert.ok(late!.rows.every((row) => index(row) >= 50), 'un point haut lit la fin')
+  } finally {
+    __setLikeZonesForTests(null)
+  }
+})

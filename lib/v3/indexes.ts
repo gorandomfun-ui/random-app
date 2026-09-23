@@ -35,6 +35,12 @@ export const V3_INDEXES: PlannedIndex[] = [
   },
   {
     collection: ITEMS,
+    name: 'v3_era_type_rand',
+    key: { 'v3.era': 1, type: 1, rand: 1 },
+    purpose: 'Cool pool: the "recent" source, a modern content drawn at random.',
+  },
+  {
+    collection: ITEMS,
     name: 'v3_line_type_rand',
     key: { 'v3.line': 1, type: 1, rand: 1 },
     purpose: 'Random draw: pick a line, then an item inside it.',
