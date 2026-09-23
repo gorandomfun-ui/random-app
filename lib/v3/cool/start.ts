@@ -28,6 +28,8 @@ export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; 
 
 /** Rows read per draw: enough for the eligibility rules to refuse a few. */
 const ROWS = 4
+/** A zone around a like holds at least this many contents besides the like, or it is no zone. */
+const ZONE_FLOOR = 4
 const CHANNEL_ROWS = 30
 /** The trend line carries no register label, so more rows are read and sifted. */
 const TREND_ROWS = 12
@@ -77,15 +79,33 @@ export function pickZone(zone: LikeZone, random: Rng): LikeZoneKind | null {
   return kinds[Math.floor(random() * kinds.length)] ?? null
 }
 
-/** A random point in an index, wrapping round at the end: the whole population, whatever the point. */
+/** The rows in a random order: the one served is any of them, not always the first past the point. */
+function shuffle(rows: Document[], random: Rng): Document[] {
+  for (let index = rows.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(random() * (index + 1))
+    ;[rows[index], rows[other]] = [rows[other], rows[index]]
+  }
+  return rows
+}
+
+/**
+ * A random point in an index, then `limit` rows read from it, round the end
+ * and on from the start when the point is near the end, shuffled.
+ *
+ * Reading from a point and serving the first row favoured whatever sat
+ * after the widest gaps in `rand`: on the trend line, a few videos came out
+ * seven times their share and a tenth never did, the point stopping short
+ * of the end. Every row in the window now has the same chance, and the
+ * window goes round.
+ */
 async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng, excluded: Set<string>, limit = ROWS): Promise<Document[]> {
   const items = db.collection('items')
-  const point = random() * 0.9
-  const read = (range: Filter<Document>) =>
-    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit, hint, maxTimeMS: QUERY_BUDGET_MS }).toArray()
-  let rows = await read({ rand: { $gte: point } })
-  if (!rows.length) rows = await read({ rand: { $lt: point } })
-  return rows.filter((row) => !excluded.has(String(row._id)))
+  const point = random()
+  const read = (range: Filter<Document>, take: number) =>
+    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: take, hint, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const rows = await read({ rand: { $gte: point } }, limit)
+  if (rows.length < limit) rows.push(...(await read({ rand: { $lt: point } }, limit - rows.length)))
+  return shuffle(rows.filter((row) => !excluded.has(String(row._id))), random)
 }
 
 /**
@@ -97,13 +117,8 @@ async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng,
 async function seekAmong(
   db: Db, filter: Filter<Document>, hint: string, random: Rng, excluded: Set<string>, scan: number, keep: (row: Document) => boolean,
 ): Promise<Document[]> {
-  const items = db.collection('items')
-  const point = random() * 0.9
-  const read = (range: Filter<Document>) =>
-    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: scan, hint, maxTimeMS: QUERY_BUDGET_MS }).toArray()
-  let rows = await read({ rand: { $gte: point } })
-  if (!rows.length) rows = await read({ rand: { $lt: point } })
-  return rows.filter((row) => !excluded.has(String(row._id)) && keep(row)).slice(0, ROWS)
+  const rows = await seek(db, filter, hint, random, excluded, scan)
+  return rows.filter(keep).slice(0, ROWS)
 }
 
 function drawRegister(db: Db, register: CoolRegister, type: StartType, random: Rng, excluded: Set<string>): Promise<Document[]> {
@@ -115,14 +130,18 @@ async function drawLike(db: Db, zones: LikeZone[], type: StartType, random: Rng,
   const kind = pickZone(zone, random)
   if (!kind) return null
   if (kind === 'like-subject') {
-    const rows = await seek(db, { 'v3.subjects.id': { $in: zone.subjectIds }, type, 'v3.usable': true, ...SERVABLE }, SUBJECT_INDEX, random, excluded)
-    return rows.length ? { rows, kind } : null
+    // One row more than served: fewer than four contents around the like besides itself is not a zone,
+    // the same one or two would come back at every draw of it.
+    const rows = await seek(db, { 'v3.subjects.id': { $in: zone.subjectIds }, type, 'v3.usable': true, ...SERVABLE }, SUBJECT_INDEX, random, excluded, ROWS + 1)
+    return rows.length >= ZONE_FLOOR ? { rows: rows.slice(0, ROWS), kind } : null
   }
   if (kind === 'like-channel') {
     // From a random point in the author's videos, not always the same thirty: a liked channel used to
     // serve the same handful in every session.
     const filter = { 'v3.channelKey': zone.channelKey, type, ...SERVABLE }
     const total = await db.collection('items').countDocuments(filter, { maxTimeMS: QUERY_BUDGET_MS }).catch(() => 0)
+    // The like counts among its author's videos: an author of four or fewer is not a zone.
+    if (total <= ZONE_FLOOR) return null
     const skip = total > CHANNEL_ROWS ? Math.floor(random() * (total - CHANNEL_ROWS + 1)) : 0
     const rows = await db
       .collection('items')

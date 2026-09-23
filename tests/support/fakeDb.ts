@@ -2,11 +2,13 @@ import type { Db, Document, Filter } from 'mongodb'
 
 /**
  * Enough of a database for a cool draw, without Mongo: equality (an array
- * field holds the value), `$in`, `$ne`, `$gte`, `$lt`, a sort on `rand` and
+ * field holds the value, a path through an array reads each element), `$in`, `$ne`, `$gte`, `$lt`, a sort on `rand` and
  * a limit. Every collection but `items` is empty.
  */
 export function fakeDb(items: Document[]): Db {
-  const read = (row: Document, path: string) => path.split('.').reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], row)
+  // A path through an array of objects, like `v3.subjects.id`, reads every element's field.
+  const read = (row: Document, path: string) => path.split('.').reduce<unknown>((value, key) =>
+    Array.isArray(value) ? value.map((element) => (element as Record<string, unknown> | undefined)?.[key]) : (value as Record<string, unknown> | undefined)?.[key], row)
   const holds = (value: unknown, wanted: unknown) => (Array.isArray(value) ? value.includes(wanted) : value === wanted)
   const matches = (row: Document, filter: Filter<Document>) => Object.entries(filter).every(([key, condition]) => {
     const value = read(row, key)
