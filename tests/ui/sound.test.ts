@@ -84,6 +84,15 @@ test('sans toucher, aucun moteur n_est créé et rien ne sonne', () => {
   assert.equal(context.notes.length, 0)
 })
 
+test('son coupé, le toucher ne crée pas de moteur : la vidéo garde le son de l_appareil', () => {
+  // Creating an engine takes the device's audio session on iOS, and a page whose
+  // sound is off has no business taking it from the video.
+  sound.setMuted(true)
+  sound.wakeSound()
+  assert.equal(births, 0)
+  sound.setMuted(false)
+})
+
 test('le toucher crée le moteur, et le son se joue', () => {
   sound.wakeSound()
   assert.equal(births, 1, 'le moteur naît au toucher')

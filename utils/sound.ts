@@ -2,7 +2,6 @@ let ctx: AudioContext | null = null
 let transitionNoiseBuffer: AudioBuffer | null = null
 let muted = false
 let watching = false
-let armed = false
 /** What the engine has been asked for and what came out, so a device can be questioned. */
 const tally = { asked: 0, played: 0, resumes: 0, born: '' as '' | 'touch' | 'page', last: '' as '' | 'ok' | 'refused' }
 
@@ -29,35 +28,10 @@ function ready(context: AudioContext): boolean {
  * is due; by the time the draw has loaded, the engine is awake again.
  */
 export function wakeSound(): void {
+  if (muted) return
   const context = getAudioContext(true)
   if (!context || ready(context)) return
-  tally.resumes += 1
-  void context.resume().then(
-    () => { tally.last = ready(context) ? 'ok' : 'refused' },
-    () => { tally.last = 'refused' },
-  )
-}
-
-/**
- * Arms the first touch of the page.
- *
- * Safari does not only refuse to wake an engine outside a touch: an engine born
- * outside one can stay deaf for the rest of the visit, whatever is asked of it
- * later. So nothing creates it but a touch, and the first touch anywhere is
- * enough, whichever button it lands on.
- */
-export function armSound(): void {
-  if (armed || typeof document === 'undefined') return
-  armed = true
-  const open = () => {
-    wakeSound()
-    const context = getAudioContext(false)
-    if (!context || !ready(context)) return
-    document.removeEventListener('pointerdown', open, true)
-    document.removeEventListener('touchend', open, true)
-  }
-  document.addEventListener('pointerdown', open, true)
-  document.addEventListener('touchend', open, true)
+  resume(context)
 }
 
 /** The engine's state, for the witness the page can show on a device. */
@@ -98,8 +72,18 @@ function liveContext(): AudioContext | null {
   const context = getAudioContext(false)
   if (!context) return null
   if (ready(context)) { tally.played += 1; return context }
-  wakeSound()
+  // Never create one here: a draw comes up on its own, with no touch behind it.
+  resume(context)
   return null
+}
+
+/** Asks an engine that already exists to come back. */
+function resume(context: AudioContext): void {
+  tally.resumes += 1
+  void context.resume().then(
+    () => { tally.last = ready(context) ? 'ok' : 'refused' },
+    () => { tally.last = 'refused' },
+  )
 }
 
 export const setMuted = (v: boolean) => { muted = v }

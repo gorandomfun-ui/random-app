@@ -26,7 +26,7 @@ import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { THEMES } from '@/lib/theme'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
 import { useScore } from '@/providers/ScoreProvider'
-import { armSound, setMuted } from '@/utils/sound'
+import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
 import { startHomePrefetch } from '@/lib/discovery/homePrefetch'
@@ -365,8 +365,6 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
     const initial = readSoundPref()
     setSoundMuted(initial)
     setMuted(initial)
-    // The engine may only be born during a touch, and the home is where the visit starts.
-    armSound()
     const handler = (event: StorageEvent) => {
       if (event.key === SOUND_STORAGE_KEY && event.newValue != null) {
         const next = event.newValue === 'true'
