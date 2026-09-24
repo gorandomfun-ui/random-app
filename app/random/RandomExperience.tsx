@@ -149,12 +149,14 @@ const randomBetween = (min: number, max: number) => Math.random() * (max - min) 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
 const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
 /** Below this, a viewport is short whatever its width (a tablet in landscape). */
-const SHORT_VIEWPORT_HEIGHT = 900
 /**
  * Everything above and below the content: header, logo, score, buttons and
  * margins. Used to cap the content so the buttons cannot fall behind the ad.
  */
+/** What the page's own chrome costs before it is measured: header, title bar, source line, buttons, margins. */
 const CHROME_BUDGET_PX = 280
+/** The fixed gaps around the content: title bar 2, frame to source line 10, action row margins 10 + 10, room above the ad 16. */
+const CHROME_GAPS_PX = 2 + 10 + 10 + 10 + 16
 const VISUAL_READY_TIMEOUT_MS = 2400
 const VISUAL_READY_CACHE_LIMIT = 80
 
@@ -2562,6 +2564,14 @@ export function RandomExperience({
   const initialLoadTriggeredRef = useRef(false)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
+  // The chrome is measured, not guessed: a tablet's header and a wrapped source line pushed the button under the ad.
+  const [chromeHeight, setChromeHeight] = useState<number | null>(null)
+  const [adBarPadding, setAdBarPadding] = useState(0)
+  const headerRef = useRef<HTMLElement | null>(null)
+  const categoryRowRef = useRef<HTMLDivElement | null>(null)
+  const sourceLineRef = useRef<HTMLDivElement | null>(null)
+  const actionRowRef = useRef<HTMLDivElement | null>(null)
+  const adBarRef = useRef<HTMLDivElement | null>(null)
   const [effectsProfile, setEffectsProfile] = useState<EffectsProfile>('standard')
   const [effectsTestStep, setEffectsTestStep] = useState(0)
   const effectsTestStepRef = useRef(0)
@@ -2727,14 +2737,33 @@ export function RandomExperience({
 
     if (viewportHeight == null) return preferred
 
-    // Rather than guess which devices are short, cap the content at what is
-    // actually left once the chrome and the ad have taken their share. A
-    // tablet in landscape is as wide as a laptop but 250px shorter, and a
-    // small laptop has the same problem.
-    const bannerHeight = viewportWidth >= 1024 && viewportHeight >= SHORT_VIEWPORT_HEIGHT ? 90 : 50
-    const available = Math.max(220, Math.round(viewportHeight - CHROME_BUDGET_PX - bannerHeight))
+    // Cap the content at what is actually left once the chrome and the ad have taken their share: the
+    // chrome as measured on this very page (a guess of 280px let a tablet's button slide under the ad),
+    // the ad at the size the width calls for, the phone's safe area below it.
+    const bannerHeight = viewportWidth >= 1024 ? 90 : 50
+    const chrome = chromeHeight ?? CHROME_BUDGET_PX
+    const available = Math.max(220, Math.round(viewportHeight - chrome - bannerHeight - adBarPadding))
     return `min(${preferred}, ${available}px)`
-  }, [viewportHeight, viewportWidth])
+  }, [adBarPadding, chromeHeight, viewportHeight, viewportWidth])
+
+  // Measure the chrome whenever any of its pieces changes size; the frame then takes exactly what is left.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      const header = headerRef.current?.offsetHeight ?? 0
+      const category = categoryRowRef.current?.offsetHeight ?? 0
+      const source = sourceLineRef.current?.offsetHeight ?? 0
+      const actions = actionRowRef.current?.offsetHeight ?? 0
+      if (!header && !category && !actions) return
+      setChromeHeight(header + category + source + actions + CHROME_GAPS_PX)
+      const bar = adBarRef.current
+      if (bar) setAdBarPadding(Math.max(0, bar.offsetHeight - bar.clientHeight + (Number.parseFloat(getComputedStyle(bar).paddingBottom) || 0)))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    for (const element of [headerRef.current, categoryRowRef.current, sourceLineRef.current, actionRowRef.current, adBarRef.current]) if (element) observer.observe(element)
+    return () => observer.disconnect()
+  }, [currentItem, viewportHeight, viewportWidth])
 
   const contentFrameStyle = useMemo(() => ({
     height: contentHeight,
@@ -4472,9 +4501,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (isQuizView) return false
     return false
   }, [isQuizView, viewItem])
-  // The 728x90 banner costs 40px more than the 320x50 one. On a short
-  // viewport those 40px are what hides the button.
-  const isDesktopAd = (viewportWidth ?? 0) >= 1024 && (viewportHeight ?? 0) >= SHORT_VIEWPORT_HEIGHT
+  // The banner's size follows the width alone, so two browsers on one tablet show the same ad; the
+  // content frame, measured, gives it its room.
+  const isDesktopAd = (viewportWidth ?? 0) >= 1024
   const adHeight = isDesktopAd ? 90 : 50
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
@@ -4752,7 +4781,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           })}
         </div>
       </div>
-      <header className="random-main-header relative z-10 flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
+      <header ref={headerRef} className="random-main-header relative z-10 flex items-center justify-between px-4 sm:px-6 pt-6 pb-4">
         <button
           ref={menuButtonRef}
           type="button"
@@ -4821,7 +4850,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       </header>
 
       {/* Two pixels between the title bar and the content, everywhere, always: the owner's rule. */}
-      <div className="random-category-row relative z-10 px-4 sm:px-6" style={{ marginBottom: '2px' }}>
+      <div ref={categoryRowRef} className="random-category-row relative z-10 px-4 sm:px-6" style={{ marginBottom: '2px' }}>
         {categoryLabel ? (
           <div className="flex gap-[2px]" style={{ height: '40px' }}>
             <div
@@ -4893,14 +4922,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         </div>
 
         {viewItem && viewItem.type !== 'encourage' ? (
-          <div className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
+          <div ref={sourceLineRef} className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
         ) : null}
       </section>
 
-      <section className="random-action-section relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: footerPadHeight + 16 }}>
-        <div className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
+      <section className="random-action-section relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: `calc(${footerPadHeight + 16}px + env(safe-area-inset-bottom, 0px))` }}>
+        <div ref={actionRowRef} className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
           <button
             type="button"
             aria-label={likeLabel}
@@ -5152,13 +5181,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
       {adsAllowed ? (
         <div
+          ref={adBarRef}
           className="random-footer-ad fixed bottom-0 left-0 right-0 flex items-center justify-center"
           style={{
+            // The safe area adds to the bar rather than eating it, and nothing paints outside the white box.
+            boxSizing: 'content-box',
             height: footerAdVisible ? adHeight : 0,
             backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
             color: '#111',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            overflow: 'visible',
+            overflow: 'hidden',
             pointerEvents: footerAdVisible ? 'auto' : 'none',
             zIndex: 120,
           }}
@@ -5168,8 +5200,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             style={{
               width: adWidth,
               height: adHeight,
-              position: footerAdVisible ? 'static' : 'absolute',
-              bottom: 0,
+              flexShrink: 0,
             }}
           >
             <AadsFooterSlot
