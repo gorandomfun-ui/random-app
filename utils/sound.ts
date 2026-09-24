@@ -1,9 +1,43 @@
 let ctx: AudioContext | null = null
 let transitionNoiseBuffer: AudioBuffer | null = null
 let muted = false
+let watching = false
 
 type AudioWindow = typeof window & {
   webkitAudioContext?: typeof AudioContext
+}
+
+/**
+ * Whether the engine can make a sound right now.
+ *
+ * Safari has a state the standard does not name: when something else takes the
+ * device's audio session — a video starting with its sound on, a call, the
+ * control centre — the context turns `interrupted` and stays there. Testing
+ * only for `suspended`, as this file used to, left an iPad silent after its
+ * first video: one sound, then nothing until the page was reloaded.
+ */
+function ready(context: AudioContext): boolean {
+  return (context.state as string) === 'running'
+}
+
+/**
+ * Asks the engine to come back. Safari grants it during a touch, so the buttons
+ * of the page call this as the finger goes down, well before the sound itself
+ * is due; by the time the draw has loaded, the engine is awake again.
+ */
+export function wakeSound(): void {
+  const context = getAudioContext()
+  if (!context || ready(context)) return
+  void context.resume().catch(() => undefined)
+}
+
+/** Coming back to the tab is the other moment the engine may have to be woken. */
+function watchReturns(): void {
+  if (watching || typeof document === 'undefined') return
+  watching = true
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') wakeSound()
+  })
 }
 
 function getAudioContext(): AudioContext | null {
@@ -11,8 +45,24 @@ function getAudioContext(): AudioContext | null {
   const win = window as AudioWindow
   const Ctor = win.AudioContext || win.webkitAudioContext
   if (!Ctor) return null
-  if (!ctx) ctx = new Ctor()
+  if (!ctx) {
+    ctx = new Ctor()
+    watchReturns()
+  }
   return ctx
+}
+
+/**
+ * The engine, but only when it can play at once. When it cannot, it is woken
+ * for the next sound and this one is dropped: notes written to a frozen clock
+ * would all fire together the moment it came back.
+ */
+function liveContext(): AudioContext | null {
+  const context = getAudioContext()
+  if (!context) return null
+  if (ready(context)) return context
+  void context.resume().catch(() => undefined)
+  return null
 }
 
 export const setMuted = (v: boolean) => { muted = v }
@@ -21,7 +71,7 @@ export const getMuted = () => muted
 type BeepOpts = { freq?: number; attack?: number; decay?: number; sustain?: number; release?: number; type?: OscillatorType; gain?: number }
 function env({ freq=440, attack=0.005, decay=0.06, sustain=0.04, release=0.08, type='square', gain=0.2 }: BeepOpts) {
   if (muted) return
-  const c = getAudioContext()
+  const c = liveContext()
   if (!c) return
   const t = c.currentTime
   const o = c.createOscillator()
@@ -126,10 +176,10 @@ export function playEncourage3D(
     }
   }
 
-  if (c.state === 'suspended') {
-    void c.resume().then(play).catch(() => undefined)
-  } else {
+  if (ready(c)) {
     play()
+  } else {
+    void c.resume().then(() => { if (!muted && ready(c)) play() }).catch(() => undefined)
   }
 }
 
@@ -155,9 +205,8 @@ function transitionTail(progress: number, direction: 1 | -1) {
   const overdrive = soundProgress(progress - 1)
   const finalPush = soundFinalPush(progress)
   if (muted || energy < 0.06) return
-  const c = getAudioContext()
+  const c = liveContext()
   if (!c) return
-  if (c.state === 'suspended') void c.resume().catch(() => undefined)
 
   const start = c.currentTime + 0.008
   const duration = 0.14 + energy * 0.44 + overdrive * 0.28 + finalPush * 0.18
@@ -199,9 +248,8 @@ function resonantPulse(progress: number, direction: 1 | -1) {
   const overdrive = soundProgress(progress - 1)
   const finalPush = soundFinalPush(progress)
   if (muted || overdrive < 0.02) return
-  const c = getAudioContext()
+  const c = liveContext()
   if (!c) return
-  if (c.state === 'suspended') void c.resume().catch(() => undefined)
 
   const start = c.currentTime + 0.014
   const duration = 0.34 + overdrive * 0.5 + finalPush * 0.18
@@ -259,9 +307,8 @@ function resonantPulse(progress: number, direction: 1 | -1) {
 function pressurePulse(progress: number, direction: 1 | -1) {
   const finalPush = soundFinalPush(progress)
   if (muted || finalPush < 0.02) return
-  const c = getAudioContext()
+  const c = liveContext()
   if (!c) return
-  if (c.state === 'suspended') void c.resume().catch(() => undefined)
 
   const start = c.currentTime + 0.055
   const duration = 0.48 + finalPush * 0.42
@@ -354,8 +401,9 @@ async function swoosh(duration: number, gainValue: number, startFrequency: numbe
   if (muted) return
   const c = getAudioContext()
   if (!c) return
-  if (c.state === 'suspended') {
+  if (!ready(c)) {
     try { await c.resume() } catch { return }
+    if (!ready(c)) return
   }
 
   const start = c.currentTime + 0.01

@@ -18,7 +18,8 @@
     "test:v3": "node --test-concurrency=1 --import tsx --test tests/v3/*.test.ts",
     "test:share": "node --import tsx --test tests/share/*.test.ts",
     "test:games": "node --import tsx --test tests/games/*.test.ts",
-    "test:v3:mongo": "node --env-file=.env.local --test-concurrency=1 --import tsx --test tests/v3/*.mongo.test.ts"
+    "test:v3:mongo": "node --env-file=.env.local --test-concurrency=1 --import tsx --test tests/v3/*.mongo.test.ts",
+    "test:ui": "node --import tsx --test tests/ui/*.test.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.6.1",
