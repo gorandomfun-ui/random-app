@@ -7,6 +7,7 @@ import type { Evidence, ItemTags, ItemType, Line, SubjectRef, Universe } from '.
 import { TAG_VERSION, isUniverse } from '../types'
 import { computeRegisters } from '../cool/registers'
 import { detectAngle } from './angle'
+import { cueText, universeFromCues } from './cues'
 import { channelKey, classifyEra, classifyPopularity, isUsableItem, yearFromTitle } from './classify'
 import { appearsCapitalised, searchableText } from './normalize'
 import { matchSubjects, type AliasMatch, type SubjectIndex } from './subjectIndex'
@@ -58,13 +59,14 @@ function detectLine(item: TaggableItem): Line {
   return 'legacy'
 }
 
-function pickUniverse(matches: AliasMatch[]): Universe {
+function pickUniverse(matches: AliasMatch[], item: TaggableItem): Universe {
   for (const match of matches) {
     if (isUniverse(match.subject.universe) && match.subject.universe !== 'other') {
       return match.subject.universe
     }
   }
-  return 'other'
+  // No subject the dictionaries know: the words of the title and keywords still say "gameplay", "recipe", "concert".
+  return universeFromCues(cueText(item as { title?: string | null; keywords?: unknown; tags?: unknown })) ?? 'other'
 }
 
 /**
@@ -126,7 +128,7 @@ function labelItem(item: TaggableItem, index: SubjectIndex, now: Date): ItemTags
 
   return {
     subjects: toSubjectRefs(ordered, 'alias'),
-    universe: pickUniverse(ordered),
+    universe: pickUniverse(ordered, item),
     // Moods stay empty for now: no rule fills them without guessing, and an
     // invented mood would poison the Wave's level 3.
     moods: [],
