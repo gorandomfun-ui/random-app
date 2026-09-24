@@ -63,7 +63,7 @@ import {
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
 import RandomPlayerFrame from '@/components/players/RandomPlayerFrame'
-import { armSound, playAgain, playRandom, playWaveEnter, playWaveStep, setMuted, soundStatus, wakeSound } from '@/utils/sound'
+import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted, soundStatus, wakeSound } from '@/utils/sound'
 import {
   advanceProductionEncourage3DSchedule,
   createEncourage3DSchedule,
@@ -2735,8 +2735,6 @@ export function RandomExperience({
 
   const [soundWitness, setSoundWitness] = useState('')
   useEffect(() => {
-    // Safari only lets the sound engine be born during a touch; this arms the first one.
-    armSound()
     if (typeof window === 'undefined') return
     if (!new URLSearchParams(window.location.search).has('sound-debug')) return
     const tick = () => {
@@ -2844,9 +2842,18 @@ export function RandomExperience({
     // Safari on iPad still gives the previous size while a rotation runs, so the
     // measure is taken again once the browser has settled on the new one. Read
     // only during the turn, the page kept its portrait frame in landscape.
+    let nudges = 0
+    let lastNudge = 0
     const settle = () => {
       apply()
-      if (onIOS && viewportIsStale()) refreshViewport()
+      if (!onIOS || !viewportIsStale()) return
+      // Redeclaring the tag fires a resize of its own, so this is held to a few
+      // tries, spaced out: a loop of them costs the video its sound.
+      const now = Date.now()
+      if (nudges >= 2 || now - lastNudge < 1500) return
+      nudges += 1
+      lastNudge = now
+      refreshViewport()
     }
     const update = () => {
       apply()
@@ -3308,7 +3315,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
       window.requestAnimationFrame(() => {
         setViewportWidth(window.innerWidth)
         setViewportHeight(window.innerHeight)
-        if (viewportIsStale()) refreshViewport()
+        if (shouldBypassNativeFullscreen() && viewportIsStale()) refreshViewport()
       })
     }
   }, [closeFullscreen, fullscreenVideo])
