@@ -4820,7 +4820,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         </button>
       </header>
 
-      <div className="random-category-row relative z-10 px-4 sm:px-6" style={{ marginBottom: '10px' }}>
+      {/* Two pixels between the title bar and the content, everywhere, always: the owner's rule. */}
+      <div className="random-category-row relative z-10 px-4 sm:px-6" style={{ marginBottom: '2px' }}>
         {categoryLabel ? (
           <div className="flex gap-[2px]" style={{ height: '40px' }}>
             <div
