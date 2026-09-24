@@ -26,14 +26,20 @@ export type AppShareWording = {
   /** On the phone, arrived by the QR code: what to tap. */
   tapToPost: string
   back: string
+  /** The story as an image, or as three seconds of the card with the site's glitch. */
+  image: string
+  animatedVideo: string
+  preparing: string
+  shareVideo: string
+  saveVideo: string
 }
 
 export const APP_SHARE: Record<ShareLocale, AppShareWording> = {
-  en: { slogan: 'Come explore. Only random discovery.', messages: 'Messages', saveImage: 'Save the image', copyText: 'Copy the text', copied: 'Copied!', storyFromPhone: 'A story is posted from your phone.', scanToShare: 'Scan to share from your phone', tapToPost: 'Tap to post your story', back: 'Back' },
-  fr: { slogan: 'Viens explorer. Rien que de la découverte au hasard.', messages: 'Messages', saveImage: 'Enregistrer l’image', copyText: 'Copier le texte', copied: 'Copié !', storyFromPhone: 'Une story se publie depuis ton téléphone.', scanToShare: 'Scanne pour partager depuis ton téléphone', tapToPost: 'Appuie pour publier ta story', back: 'Retour' },
-  de: { slogan: 'Komm entdecken. Nur Zufallsfunde.', messages: 'Nachrichten', saveImage: 'Bild speichern', copyText: 'Text kopieren', copied: 'Kopiert!', storyFromPhone: 'Eine Story wird vom Handy aus gepostet.', scanToShare: 'Scannen und vom Handy aus teilen', tapToPost: 'Tippen, um deine Story zu posten', back: 'Zurück' },
-  es: { slogan: 'Ven a explorar. Solo descubrimiento al azar.', messages: 'Mensajes', saveImage: 'Guardar la imagen', copyText: 'Copiar el texto', copied: '¡Copiado!', storyFromPhone: 'Una historia se publica desde el móvil.', scanToShare: 'Escanea para compartir desde tu móvil', tapToPost: 'Toca para publicar tu historia', back: 'Volver' },
-  jp: { slogan: '探しに来て。あるのは偶然の発見だけ。', messages: 'メッセージ', saveImage: '画像を保存', copyText: 'テキストをコピー', copied: 'コピーしました！', storyFromPhone: 'ストーリーはスマホから投稿します。', scanToShare: 'スキャンしてスマホから共有', tapToPost: 'タップしてストーリーを投稿', back: '戻る' },
+  en: { slogan: 'Come explore. Only random discovery.', messages: 'Messages', saveImage: 'Save the image', copyText: 'Copy the text', copied: 'Copied!', storyFromPhone: 'A story is posted from your phone.', scanToShare: 'Scan to share from your phone', tapToPost: 'Tap to post your story', back: 'Back', image: 'Image', animatedVideo: 'Animated video', preparing: 'Preparing the video…', shareVideo: 'Share the video', saveVideo: 'Save the video' },
+  fr: { slogan: 'Viens explorer. Rien que de la découverte au hasard.', messages: 'Messages', saveImage: 'Enregistrer l’image', copyText: 'Copier le texte', copied: 'Copié !', storyFromPhone: 'Une story se publie depuis ton téléphone.', scanToShare: 'Scanne pour partager depuis ton téléphone', tapToPost: 'Appuie pour publier ta story', back: 'Retour', image: 'Image', animatedVideo: 'Vidéo animée', preparing: 'Préparation de la vidéo…', shareVideo: 'Partager la vidéo', saveVideo: 'Enregistrer la vidéo' },
+  de: { slogan: 'Komm entdecken. Nur Zufallsfunde.', messages: 'Nachrichten', saveImage: 'Bild speichern', copyText: 'Text kopieren', copied: 'Kopiert!', storyFromPhone: 'Eine Story wird vom Handy aus gepostet.', scanToShare: 'Scannen und vom Handy aus teilen', tapToPost: 'Tippen, um deine Story zu posten', back: 'Zurück', image: 'Bild', animatedVideo: 'Animiertes Video', preparing: 'Video wird vorbereitet…', shareVideo: 'Video teilen', saveVideo: 'Video speichern' },
+  es: { slogan: 'Ven a explorar. Solo descubrimiento al azar.', messages: 'Mensajes', saveImage: 'Guardar la imagen', copyText: 'Copiar el texto', copied: '¡Copiado!', storyFromPhone: 'Una historia se publica desde el móvil.', scanToShare: 'Escanea para compartir desde tu móvil', tapToPost: 'Toca para publicar tu historia', back: 'Volver', image: 'Imagen', animatedVideo: 'Vídeo animado', preparing: 'Preparando el vídeo…', shareVideo: 'Compartir el vídeo', saveVideo: 'Guardar el vídeo' },
+  jp: { slogan: '探しに来て。あるのは偶然の発見だけ。', messages: 'メッセージ', saveImage: '画像を保存', copyText: 'テキストをコピー', copied: 'コピーしました！', storyFromPhone: 'ストーリーはスマホから投稿します。', scanToShare: 'スキャンしてスマホから共有', tapToPost: 'タップしてストーリーを投稿', back: '戻る', image: '画像', animatedVideo: 'アニメ動画', preparing: '動画を準備中…', shareVideo: '動画を共有', saveVideo: '動画を保存' },
 }
 
 /** The places that take an image rather than a link: a story, posted from a phone. */
