@@ -1,13 +1,16 @@
 /**
  * The registers of the cool pool.
  *
- * The cool pool is RANDOM's shop window: a content that catches the eye in
- * three seconds, whatever its age, with a proof that it does — a real
- * audience where it was published. Four registers say what that looks like
- * on the labels every content carries (universe, angle, era, popularity) and
- * in its title; a fifth keeps the cool GIFs. Nothing here matches a word
- * "anywhere": the description and the tags are where mainstream junk hid a
- * cool word.
+ * The cool pool is RANDOM's shop window. Four registers name a pond the
+ * niche tickets draw from — gaming, the old school, music, elsewhere — on
+ * the labels every content carries (universe, era) and, for elsewhere, in
+ * its title; a fifth keeps the cool GIFs. The ponds are wide on purpose:
+ * until 24 September they kept an angle and an audience as proofs of
+ * quality, and the music pond held 2,420 of 24,000 music videos, so one
+ * band with 144 of them came back and back. The owner's rule: a large pool
+ * and no restriction; the refusals below (news, stock, junk titles) are
+ * what stays. Nothing here matches a word "anywhere": the description and
+ * the tags are where mainstream junk hid a cool word.
  *
  * The rules are written once and evaluated twice: on a stored row when the
  * catalogue is labelled (`computeRegisters`), and as a Mongo filter when a
@@ -70,46 +73,41 @@ const STOCK_PROVIDERS = ['pexels', 'pixabay']
 
 export const REGISTERS: Register[] = [
   {
-    id: 'gaming', label: 'Gaming niche',
+    id: 'gaming', label: 'Gaming',
     universes: ['gaming'],
-    titleWords: ['speedrun', 'speedrunner', 'retro', 'longplay', 'demoscene', 'demo', 'tas', 'mod', 'mods', 'modding', 'indie', 'indie game', 'arcade', 'glitch', 'glitches', 'world record', 'any%', '100%',
-      'nes', 'snes', 'sega', 'genesis', 'mega drive', 'atari', 'amiga', 'commodore', 'c64', 'msx', 'ms-dos', 'dos', 'ps1', 'psx', 'ps2', 'dreamcast', 'n64', 'gamecube', 'game boy', 'gameboy', 'psp', 'pico-8',
-      'emulator', 'pixel art', 'chiptune', 'quake', 'doom', 'homebrew', 'romhack', 'rom hack', 'fan game', 'jam', 'game jam', 'ludum dare', 'itch.io', 'prototype', 'unreleased', 'beta', 'cancelled', 'lost', 'mame',
-      'roguelike', 'metroidvania', 'platformer', 'shmup', 'bullet hell', 'fighting game', 'rhythm game', 'point and click', 'text adventure', 'visual novel', 'devlog', 'postmortem', 'gdc', 'making of',
-      'easter egg', 'easter eggs', 'cut content', 'developer commentary', 'tool-assisted', 'no hit', 'no damage', 'blindfolded', 'lan party', 'esport', 'esports', 'tournament', 'evo', 'grand finals'],
-    combine: 'both', minPopularity: 'mid',
-    excludeWords: ['roblox', 'minecraft', 'fortnite', 'gta 5', 'gta v', 'free fire', 'brawl stars', 'fnaf', 'among us', 'fifa', 'ea fc', 'call of duty', 'warzone', 'valorant', 'skibidi', 'brainrot',
-      'stream', 'new class', 'preview', 'update', 'patch', 'explored'],
+    combine: 'both', minPopularity: 'unknown',
+    excludeWords: ['stream', 'preview', 'update', 'patch notes', 'giveaway'],
   },
   {
     id: 'archive', label: 'Archives / nostalgie',
-    angles: ['tv-archive', 'home-video', 'documentary', 'local-event', 'fan-footage', 'official-clip', 'episode-extract'],
-    titleWords: ['vintage', 'archive', 'archives', 'footage', 'home movie', 'home movies', 'vhs', 'betamax', 'super 8', '8mm', '16mm', '35mm', 'commercial', 'commercials', 'publicité', 'pub',
+    // A video: anything old. A GIF has no year, so it must say it is vintage.
+    imageTitleWords: ['vintage', 'archive', 'archives', 'footage', 'home movie', 'home movies', 'vhs', 'betamax', 'super 8', '8mm', '16mm', '35mm', 'commercial', 'commercials', 'publicité', 'pub',
       'newsreel', 'travelogue', 'retro', 'rétro', 'nostalgia', 'nostalgie', 'classic', 'classique', 'old', 'rare', 'lost', 'found'],
-    combine: 'both', minPopularity: 'mid', era: 'retro',
+    combine: 'both', minPopularity: 'unknown', era: 'retro',
     excludeWords: ['logo', 'logos', 'ident', 'idents', 'opening', 'closing', 'bumper', 'bumpers', 'warning screen', 'fbi warning', 'arcade archives', 'vhs rip', 'home video'],
     excludeUniverses: ['gaming'],
   },
   {
     id: 'music', label: 'Musical',
-    universes: ['music'], angles: ['live-concert', 'official-clip', 'amateur-cover', 'tv-archive', 'fan-footage', 'local-event'],
+    universes: ['music'],
     // A GIF has no angle: it must say something musical itself, or every reaction GIF of a singer counts.
     imageTitleWords: ['music', 'musique', 'musica', 'concert', 'live', 'guitar', 'guitare', 'bass', 'drums', 'drummer', 'batterie', 'piano', 'synth', 'dj', 'vinyl', 'vinyle', 'turntable',
       'band', 'singer', 'singing', 'chanteur', 'chanteuse', 'rapper', 'rap', 'hip hop', 'hiphop', 'jazz', 'rock', 'punk', 'metal', 'techno', 'house music', 'disco', 'funk', 'soul', 'reggae', 'ska', 'blues',
       'orchestra', 'orchestre', 'opera', 'opéra', 'choir', 'symphony', 'album', 'on tour', 'on stage', 'festival', 'gig', 'rehearsal', 'music video', 'clip', 'sax', 'saxophone', 'trumpet', 'violin', 'cello', 'accordion', 'accordéon'],
-    combine: 'both', minPopularity: 'mid',
-    excludeWords: ['1 hour', 'one hour', '2 hours', '10 hours', 'mix', 'megamix', 'mashup', 'remix', 'instrumental', 'backing track', 'lesson', 'cover art', 'vaquejada'],
+    combine: 'both', minPopularity: 'unknown',
+    excludeWords: ['1 hour', 'one hour', '2 hours', '10 hours', 'backing track', 'lesson', 'cover art', 'vaquejada'],
   },
   {
     id: 'elsewhere', label: 'Ailleurs',
-    universes: ['music', 'cinema-tv', 'animation', 'humor-memes', 'food', 'events-parties', 'fashion', 'sport', 'travel', 'art', 'craft'],
     titleScript: /[぀-ヿ一-鿿가-힯฀-๿ऀ-ॿঀ-৿஀-௿ఀ-౿؀-ۿЀ-ӿ֐-׿]/,
     titleWords: ['japan', 'japanese', 'japon', 'japonais', 'tokyo', 'osaka', 'korea', 'korean', 'corée', 'coréen', 'seoul', 'bollywood', 'tamil', 'telugu', 'thai', 'thaïlande', 'bangkok',
       'vietnam', 'indonesia', 'jakarta', 'philippines', 'manila', 'brazil', 'brasil', 'brésil', 'mexico', 'méxico', 'mexican', 'cumbia', 'tango', 'salsa', 'k-pop', 'kpop', 'j-pop', 'jpop', 'c-pop',
       'turkish', 'türk', 'istanbul', 'arabic', 'egypt', 'cairo', 'nigeria', 'lagos', 'ghana', 'kenya', 'hindi', 'mumbai', 'bhangra', 'africa', 'african', 'afrique',
       'soviet', 'russian', 'moscow', 'polish', 'warsaw', 'iran', 'pakistan', 'bangladesh', 'peru', 'colombia', 'bogotá', 'argentina', 'buenos aires', 'havana'],
-    combine: 'both', minPopularity: 'known',
-    excludeWords: ['war', 'guerre', 'election', 'minister', 'president', 'jersey', 'evolution', 'highlights', 'persian wine', 'demon hunters'],
+    combine: 'both', minPopularity: 'unknown',
+    // Dubbed series and local news wear another script too; an episode number in any language gives them away.
+    excludeWords: ['war', 'guerre', 'election', 'minister', 'president', 'jersey', 'evolution', 'highlights', 'persian wine', 'demon hunters',
+      'серия', 'сезон', 'bölüm', 'capítulo', 'capitulo', 'episodio', 'épisode', 'episode', 'haber', 'noticias', 'новости'],
   },
 ]
 
@@ -222,7 +220,8 @@ export function computeRegisters(row: LabelableRow): CoolRegister[] {
     if (titleRegex || register.titleScript) {
       checks.push(Boolean(titleRegex?.test(title)) || Boolean(register.titleScript?.test(title)))
     }
-    if (!checks.length) continue
+    // A register that names only an era (the old school, for a video) is met by the era alone.
+    if (!checks.length && !(video && register.era)) continue
     if (register.combine === 'both' ? checks.every(Boolean) : checks.some(Boolean)) found.push(register.id)
   }
   // The cool GIFs: the forty words, in the title, and none of the blocked ones.
