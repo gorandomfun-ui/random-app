@@ -6,6 +6,7 @@
  *   node --env-file=.env.local --import tsx scripts/v3/check-web-links.ts --size=300
  *   node --env-file=.env.local --import tsx scripts/v3/check-web-links.ts --apply
  *   node --env-file=.env.local --import tsx scripts/v3/check-web-links.ts --apply --fresh --max=2000
+ *   node --env-file=.env.local --import tsx scripts/v3/check-web-links.ts --apply --tone --max=3000   # the framed sites never asked their tone
  *
  * Without --apply it checks a sample and reports, writing nothing. With
  * --apply it records a verdict per site and is resumable by checkpoint;
@@ -45,6 +46,7 @@ type Verdict = {
   row: WebRow
   link: Awaited<ReturnType<typeof inspectSite>>['link']
   embed: EmbedVerdict
+  tone: Awaited<ReturnType<typeof inspectSite>>['tone']
   image: Awaited<ReturnType<typeof checkImage>> | null
   merchant: boolean
 }
@@ -57,9 +59,9 @@ async function inspect(rows: WebRow[]): Promise<Verdict[]> {
     const slice = rows.slice(index, index + CONCURRENCY)
     const checked = await Promise.all(
       slice.map(async (row): Promise<Verdict> => {
-        const { link, embed } = await inspectSite(row.url)
+        const { link, embed, tone } = await inspectSite(row.url)
         const image = row.ogImage ? await checkImage(row.ogImage) : null
-        return { row, link, embed, image, merchant: looksMerchant(row.url) }
+        return { row, link, embed, tone, image, merchant: looksMerchant(row.url) }
       }),
     )
     results.push(...checked)
@@ -125,6 +127,9 @@ async function record(db: Db, verdicts: Verdict[]): Promise<void> {
           embeddable: verdict.embed.embeddable,
           embedReason: verdict.embed.embeddable ? 'ok' : verdict.embed.reason,
           embedUrl: verdict.embed.embeddable && verdict.embed.url !== verdict.row.url ? verdict.embed.url : null,
+          // Light or dark, as the site declares it; the overlay's logo follows. Null when it says nothing readable.
+          embedTone: verdict.embed.embeddable ? verdict.tone.tone : null,
+          embedToneEvidence: verdict.embed.embeddable ? verdict.tone.evidence : null,
         },
       },
     },
@@ -138,6 +143,7 @@ async function main(): Promise<void> {
   const dbName = process.env.MONGODB_DB || process.env.MONGO_DB || 'randomdb'
   const apply = flag('apply')
   const fresh = flag('fresh')
+  const tone = flag('tone')
   const size = numericFlag('size', 300)
   const max = numericFlag('max', 0)
 
@@ -159,14 +165,18 @@ async function main(): Promise<void> {
       return
     }
 
-    if (fresh) {
+    if (fresh || tone) {
       // The new entries first, then the stale verdicts; bounded, so a nightly run stays short.
+      // --tone: the framed sites never asked their tone, once.
       const staleBefore = new Date(Date.now() - EMBED_RECHECK_DAYS * 86_400_000)
-      const filter = { type: 'web', webLinkDead: { $ne: true }, $or: [{ embedCheckedAt: { $exists: false } }, { embedCheckedAt: { $lt: staleBefore } }] }
+      const filter = tone
+        ? { type: 'web', webLinkDead: { $ne: true }, embeddable: true, embedTone: { $exists: false } }
+        : { type: 'web', webLinkDead: { $ne: true }, $or: [{ embedCheckedAt: { $exists: false } }, { embedCheckedAt: { $lt: staleBefore } }] }
       const limit = max > 0 ? max : 2000
-      console.log(`Mode : sites jamais vérifiés pour l_encadrement, puis anciens de plus de ${EMBED_RECHECK_DAYS} jours, ${count(limit)} au plus\n`)
+      console.log(tone ? `Mode : sites encadrables sans ton connu, ${count(limit)} au plus\n` : `Mode : sites jamais vérifiés pour l_encadrement, puis anciens de plus de ${EMBED_RECHECK_DAYS} jours, ${count(limit)} au plus\n`)
       let done = 0
       let embeddable = 0
+      let toned = 0
       const started = Date.now()
       while (done < limit) {
         const rows = (await items
@@ -177,9 +187,10 @@ async function main(): Promise<void> {
         await record(db, verdicts)
         done += rows.length
         embeddable += verdicts.filter((verdict) => verdict.embed.embeddable).length
-        console.log(`  ${count(done)} vérifiés · ${count(embeddable)} encadrables · ~${count(Math.round((done / (Date.now() - started)) * 60000))}/min`)
+        toned += verdicts.filter((verdict) => verdict.tone.tone).length
+        console.log(`  ${count(done)} vérifiés · ${count(embeddable)} encadrables · ${count(toned)} au ton connu · ~${count(Math.round((done / (Date.now() - started)) * 60000))}/min`)
       }
-      console.log(`\nTerminé : ${count(done)} sites vérifiés, ${count(embeddable)} encadrables.`)
+      console.log(`\nTerminé : ${count(done)} sites vérifiés, ${count(embeddable)} encadrables, ${count(toned)} au ton connu.`)
       return
     }
 

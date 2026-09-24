@@ -119,6 +119,8 @@ export type WebItem = Identifiable & {
   host?: string | null
   /** The site lets itself be framed (checked ahead on the server); absent or false → opens in a new tab. */
   embeddable?: boolean
+  /** Light or dark, as the site declares it: the overlay's logo is black on light, white on dark, outlined when unknown. */
+  embedTone?: 'light' | 'dark' | null
   /** The address to frame when it differs from `url` (an https twin of an http site). */
   embedUrl?: string | null
 } & ToneAttributes & DiscoveryMetadata

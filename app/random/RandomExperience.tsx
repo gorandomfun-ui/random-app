@@ -20,7 +20,7 @@ import ShareMenu from '@/components/ShareMenu'
 import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
 import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
-import { THEMES } from '@/lib/theme'
+import { THEMES, type Theme } from '@/lib/theme'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
 import { newSession, restartRhythm, rhythmIdle, type Session as DiscoverySession } from '@/lib/discovery/pool'
@@ -1253,11 +1253,12 @@ function VideoSoundIconButton({ muted, onClick }: { muted: boolean; onClick: () 
   )
 }
 
-function VideoFullscreenBrand({ visible }: { visible: boolean }) {
+/** The brand over a frame: cream over a video; over a website, black on a light one, white on a dark one, outlined when unknown. */
+function VideoFullscreenBrand({ visible, tone }: { visible: boolean; tone?: 'light' | 'dark' | 'unknown' }) {
   if (!visible) return null
 
   return (
-    <div className="video-fullscreen-brand" aria-hidden="true">
+    <div className={`video-fullscreen-brand${tone ? ` video-fullscreen-brand--${tone}` : ''}`} aria-hidden="true">
       {VIDEO_FULLSCREEN_LOGO_LETTERS.map((letter) => (
         // eslint-disable-next-line @next/next/no-img-element
         <img key={letter} src={`/logo/${letter}1.svg`} alt="" draggable={false} />
@@ -1276,9 +1277,12 @@ const WEB_FRAME_LOAD_TIMEOUT_MS = 8000
  * forms and open popups, never navigate Random away (no allow-top-navigation),
  * never see where it came from, never use camera, microphone or location.
  */
-function WebFullscreenOverlay({ url, title, onClose, onAbandon, closeLabel, newWindowLabel }: {
+function WebFullscreenOverlay({ url, title, tone, theme, onClose, onAbandon, closeLabel, newWindowLabel }: {
   url: string
   title?: string | null
+  /** As the site declared it at the nightly check; null when it said nothing readable. */
+  tone: 'light' | 'dark' | null
+  theme: Theme
   onClose: () => void
   onAbandon: (reason: 'frame-load-timeout') => void
   closeLabel: string
@@ -1311,16 +1315,18 @@ function WebFullscreenOverlay({ url, title, onClose, onAbandon, closeLabel, newW
           target="_blank"
           rel="noopener noreferrer"
           className="web-fullscreen-button"
+          style={{ background: theme.text, color: theme.cream }}
           aria-label={newWindowLabel}
           title={newWindowLabel}
         >
-          ↗
+          {/* The return arrow, mirrored: out to the site. */}
+          <span style={{ display: 'flex', transform: 'scaleX(-1)' }}><MonoIcon src="/icons/return.svg" color={theme.cream} size={22} /></span>
         </a>
-        <button type="button" className="web-fullscreen-button" onClick={onClose} aria-label={closeLabel} title={closeLabel}>
+        <button type="button" className="web-fullscreen-button" style={{ background: theme.text, color: theme.cream }} onClick={onClose} aria-label={closeLabel} title={closeLabel}>
           ×
         </button>
       </div>
-      <VideoFullscreenBrand visible />
+      <VideoFullscreenBrand visible tone={tone ?? 'unknown'} />
     </div>
   )
 }
@@ -5170,6 +5176,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           key={fullscreenWeb.url}
           url={fullscreenWeb.url}
           title={fullscreenWeb.item.text}
+          tone={fullscreenWeb.item.embedTone ?? null}
+          theme={theme}
           onClose={closeWeb}
           onAbandon={abandonWeb}
           closeLabel={t('web.close', 'Close')}
@@ -5941,14 +5949,25 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           line-height: 1;
           text-decoration: none;
           cursor: pointer;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+          box-shadow: none;
         }
         .web-fullscreen-button:hover {
           background: rgba(0, 0, 0, 0.88);
         }
         .web-fullscreen-overlay .video-fullscreen-brand {
           z-index: 6;
-          opacity: 0.85;
+          opacity: 1;
+          filter: none;
+        }
+        /* The letters are cream: black on a light site, left white on a dark one, outlined in black when the site said nothing. */
+        .web-fullscreen-overlay .video-fullscreen-brand--light img {
+          filter: brightness(0);
+        }
+        .web-fullscreen-overlay .video-fullscreen-brand--dark img {
+          filter: brightness(0) invert(1);
+        }
+        .web-fullscreen-overlay .video-fullscreen-brand--unknown img {
+          filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);
         }
         .video-fullscreen-backdrop {
           position: absolute;

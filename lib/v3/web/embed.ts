@@ -10,6 +10,8 @@
 import { checkLink, type LinkVerdict } from './linkCheck'
 
 /** Where Random lives: what a `frame-ancestors` must allow. */
+import { readTone, type ToneReading } from './tone'
+
 export const RANDOM_HOSTS = ['gorandom.fun', 'www.gorandom.fun']
 
 export type EmbedVerdict =
@@ -85,8 +87,9 @@ export async function checkEmbeddable(url: string, options: { timeoutMs?: number
   return twin.embeddable ? twin : { embeddable: false, reason: 'http-only', url: final.url }
 }
 
-/** One request for both questions a stored site gets: is it alive, can it be framed. */
-export async function inspectSite(url: string, options: { timeoutMs?: number; request?: typeof fetch } = {}): Promise<{ link: LinkVerdict; embed: EmbedVerdict }> {
+/** The three questions a stored site gets: is it alive, can it be framed, and — when it can — is it light or dark. */
+export async function inspectSite(url: string, options: { timeoutMs?: number; request?: typeof fetch } = {}): Promise<{ link: LinkVerdict; embed: EmbedVerdict; tone: ToneReading }> {
   const [link, embed] = await Promise.all([checkLink(url, options.timeoutMs ?? 9000), checkEmbeddable(url, options)])
-  return { link, embed }
+  const tone: ToneReading = embed.embeddable ? await readTone(embed.url ?? url, options) : { tone: null, evidence: null }
+  return { link, embed, tone }
 }

@@ -155,7 +155,7 @@ export async function selectWeb(options: RandomSelectOptions = {}): Promise<WebI
     provider,
     source: { name: sourceName, url: sourceUrl },
     host,
-    ...(doc.embeddable === true ? { embeddable: true, embedUrl: typeof doc.embedUrl === 'string' && doc.embedUrl ? doc.embedUrl : null } : {}),
+    ...(doc.embeddable === true ? { embeddable: true, embedUrl: typeof doc.embedUrl === 'string' && doc.embedUrl ? doc.embedUrl : null, embedTone: doc.embedTone === 'light' || doc.embedTone === 'dark' ? doc.embedTone : null } : {}),
     tags,
     keywords,
     tone,
