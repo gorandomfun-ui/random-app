@@ -37,6 +37,7 @@ export type WaveDocument = Document & {
   ogImage?: string | null
   embeddable?: boolean | null
   embedUrl?: string | null
+  embedTone?: string | null
   host?: string | null
   tags?: string[] | null
   keywords?: string[] | null
@@ -177,7 +178,7 @@ export function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
       provider,
       source: source(doc, provider, url),
       host: host || null,
-      ...(doc.embeddable === true ? { embeddable: true, embedUrl: trim(doc.embedUrl) || null } : {}),
+      ...(doc.embeddable === true ? { embeddable: true, embedUrl: trim(doc.embedUrl) || null, embedTone: doc.embedTone === 'light' || doc.embedTone === 'dark' ? doc.embedTone : null } : {}),
     }
   }
 
