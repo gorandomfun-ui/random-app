@@ -2,7 +2,7 @@
 Description=RANDOM trend-subjects line (06:30 Paris)
 
 [Timer]
-OnCalendar=*-*-* 06:30:00 Europe/Paris
+OnCalendar=*-*-* 12:30:00 Europe/Paris
 Persistent=true
 
 [Install]
