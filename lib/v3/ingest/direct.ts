@@ -42,8 +42,8 @@ export type DirectOptions = {
 
 export type DirectRun = {
   ctx: LineContext
-  /** Judges, journals, releases the lock. */
-  finish(result: LineResult): Promise<{ status: RunStatus; hitDeadline: boolean }>
+  /** Judges, journals, releases the lock; a note is one line the report shows as is. */
+  finish(result: LineResult, note?: string): Promise<{ status: RunStatus; hitDeadline: boolean }>
 }
 
 async function acquireLock(db: Db, line: string, until: Date, host: string): Promise<boolean> {
@@ -155,14 +155,14 @@ export async function directContext(db: Db, options: DirectOptions): Promise<Dir
   }
   return {
     ctx,
-    async finish(result: LineResult) {
+    async finish(result: LineResult, note?: string) {
       const finishedAt = new Date()
       const hitDeadline = finishedAt.getTime() >= deadline
       // A dry run inserts nothing by design: it is judged on what it read, not on what it wrote.
       const status: RunStatus = options.dryRun
         ? (result.errors.length ? 'partial' : result.counters.scanned ? 'ok' : 'skipped')
         : judge(result.counters, result.errors, hitDeadline)
-      if (runId) await closeRun(db, runId, { finishedAt, status, counters: result.counters, errors: result.errors }).catch(() => log('journal indisponible ; le passage lui-même n_est pas affecté'))
+      if (runId) await closeRun(db, runId, { finishedAt, status, counters: result.counters, errors: result.errors, ...(note ? { note } : {}) }).catch(() => log('journal indisponible ; le passage lui-même n_est pas affecté'))
       await db.collection(LOCKS_COLLECTION).updateOne({ _id: options.journalLine } as Document, { $set: { until: new Date(0) } }).catch(() => undefined)
       return { status, hitDeadline }
     },

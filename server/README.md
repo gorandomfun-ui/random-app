@@ -6,7 +6,7 @@ Une machine gratuite Google Cloud (`e2-micro`, Debian 12) qui fait tourner l'ing
 
 - `setup.sh` : prépare la machine une fois (mises à jour automatiques, 2 Go d'échange, Node 22, utilisateur `random` sans sudo, journaux bornés, clé de déploiement).
 - `deploy.sh` : amène `/opt/random-app` au dernier `main` (clone la première fois, puis `git pull --ff-only` ; `npm ci` seulement si `package-lock.json` a changé).
-- `run-line.sh <ligne>` : un passage d'une ligne, les réglages lus dans `.env.ingest`. Lignes : `daily-auto-morning` (09:10 et 10:40), `daily-auto-evening` (21:10 et 22:40), `video-enrich`, `trend-subjects`, `discovery`, `web-embed` (les sites encadrables, 03:20), `like-pool` (les zones autour des likes et leurs tailles, toutes les heures à :20 et après chaque passage quotidien).
+- `run-line.sh <ligne>` : un passage d'une ligne, les réglages lus dans `.env.ingest`. Lignes : `daily-auto-morning` (09:10 et 10:40), `daily-auto-evening` (21:10 et 22:40), `video-enrich`, `trend-subjects`, `discovery`, `web-embed` (les sites encadrables, 03:20), `like-pool` (les zones autour des likes et leurs tailles, toutes les heures à :20 et après chaque passage quotidien), `pools` (les gros univers complétés chaque nuit à 04:40 sur Dailymotion, sans unité YouTube, avec le récap par univers).
 - `units/` : les unités systemd ; un timer par ligne aux heures des jobs GitHub (Paris), un verrou par ligne, une durée maximale par passage ; `random-status` écrit la santé du serveur toutes les 10 minutes.
 - `install-units.sh` : installe les unités et démarre les timers.
 

@@ -29,6 +29,8 @@ export type TaggableItem = {
   channelId?: string | null
   channelTitle?: string | null
   viewCount?: number | null
+  /** The universe the line that found the item was looking for: trusted when no subject says otherwise. */
+  universeHint?: Universe | null
   publishedAt?: Date | null
   trendObservedAt?: Date | null
   categoryId?: string | null
@@ -65,7 +67,9 @@ function pickUniverse(matches: AliasMatch[], item: TaggableItem): Universe {
       return match.subject.universe
     }
   }
-  // No subject the dictionaries know: the words of the title and keywords still say "gameplay", "recipe", "concert".
+  // The line that found the item said what it was looking for (a pool pass asks Dailymotion for "concert rock 90s").
+  if (item.universeHint && isUniverse(item.universeHint) && item.universeHint !== 'other') return item.universeHint
+  // No subject the dictionaries know: the words of the title still say "gameplay", "recipe", "concert".
   return universeFromCues(cueText(item as { title?: string | null; keywords?: unknown; tags?: unknown })) ?? 'other'
 }
 

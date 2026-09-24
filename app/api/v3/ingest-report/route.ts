@@ -174,6 +174,8 @@ export async function GET(request: Request) {
     const alerts = journal.health.filter((row) => row.state === 'arrêtée' || row.state === 'muette')
     // The ingestion server's own word on itself, written every ten minutes by scripts/server/status.ts.
     const server = await db.collection('ingest_server_status').findOne({ _id: 'random-ingest' } as never, { maxTimeMS: 2000 }).catch(() => null)
+    // What each pool holds and what entered it, as the nightly pools line closed the day.
+    const recap = await db.collection('ingest_universe_recap').find({}, { sort: { at: -1 }, limit: 3, maxTimeMS: 2000 }).toArray().catch(() => [])
 
     return NextResponse.json({
       source: journal.health.length ? 'journal' : 'cron_runs',
@@ -181,6 +183,7 @@ export async function GET(request: Request) {
       health,
       alerts,
       server,
+      recap,
     })
   } catch (error) {
     console.error('[v3/ingest-report] échec', error)
