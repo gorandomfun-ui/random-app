@@ -19,8 +19,8 @@ export type AppShareWording = {
   saveImage: string
   copyText: string
   copied: string
-  /** "Open Instagram", "Open TikTok". */
-  open: string
+  /** Over the QR code: a story is the phone's business. */
+  storyFromPhone: string
   /** Under the QR code: the phone takes over. */
   scanToShare: string
   /** On the phone, arrived by the QR code: what to tap. */
@@ -29,11 +29,11 @@ export type AppShareWording = {
 }
 
 export const APP_SHARE: Record<ShareLocale, AppShareWording> = {
-  en: { slogan: 'Come explore. Only random discovery.', messages: 'Messages', saveImage: 'Save the image', copyText: 'Copy the text', copied: 'Copied!', open: 'Open', scanToShare: 'Scan to share from your phone', tapToPost: 'Tap to post your story', back: 'Back' },
-  fr: { slogan: 'Viens explorer. Rien que de la découverte au hasard.', messages: 'Messages', saveImage: 'Enregistrer l’image', copyText: 'Copier le texte', copied: 'Copié !', open: 'Ouvrir', scanToShare: 'Scanne pour partager depuis ton téléphone', tapToPost: 'Appuie pour publier ta story', back: 'Retour' },
-  de: { slogan: 'Komm entdecken. Nur Zufallsfunde.', messages: 'Nachrichten', saveImage: 'Bild speichern', copyText: 'Text kopieren', copied: 'Kopiert!', open: 'Öffnen', scanToShare: 'Scannen und vom Handy aus teilen', tapToPost: 'Tippen, um deine Story zu posten', back: 'Zurück' },
-  es: { slogan: 'Ven a explorar. Solo descubrimiento al azar.', messages: 'Mensajes', saveImage: 'Guardar la imagen', copyText: 'Copiar el texto', copied: '¡Copiado!', open: 'Abrir', scanToShare: 'Escanea para compartir desde tu móvil', tapToPost: 'Toca para publicar tu historia', back: 'Volver' },
-  jp: { slogan: '探しに来て。あるのは偶然の発見だけ。', messages: 'メッセージ', saveImage: '画像を保存', copyText: 'テキストをコピー', copied: 'コピーしました！', open: '開く', scanToShare: 'スキャンしてスマホから共有', tapToPost: 'タップしてストーリーを投稿', back: '戻る' },
+  en: { slogan: 'Come explore. Only random discovery.', messages: 'Messages', saveImage: 'Save the image', copyText: 'Copy the text', copied: 'Copied!', storyFromPhone: 'A story is posted from your phone.', scanToShare: 'Scan to share from your phone', tapToPost: 'Tap to post your story', back: 'Back' },
+  fr: { slogan: 'Viens explorer. Rien que de la découverte au hasard.', messages: 'Messages', saveImage: 'Enregistrer l’image', copyText: 'Copier le texte', copied: 'Copié !', storyFromPhone: 'Une story se publie depuis ton téléphone.', scanToShare: 'Scanne pour partager depuis ton téléphone', tapToPost: 'Appuie pour publier ta story', back: 'Retour' },
+  de: { slogan: 'Komm entdecken. Nur Zufallsfunde.', messages: 'Nachrichten', saveImage: 'Bild speichern', copyText: 'Text kopieren', copied: 'Kopiert!', storyFromPhone: 'Eine Story wird vom Handy aus gepostet.', scanToShare: 'Scannen und vom Handy aus teilen', tapToPost: 'Tippen, um deine Story zu posten', back: 'Zurück' },
+  es: { slogan: 'Ven a explorar. Solo descubrimiento al azar.', messages: 'Mensajes', saveImage: 'Guardar la imagen', copyText: 'Copiar el texto', copied: '¡Copiado!', storyFromPhone: 'Una historia se publica desde el móvil.', scanToShare: 'Escanea para compartir desde tu móvil', tapToPost: 'Toca para publicar tu historia', back: 'Volver' },
+  jp: { slogan: '探しに来て。あるのは偶然の発見だけ。', messages: 'メッセージ', saveImage: '画像を保存', copyText: 'テキストをコピー', copied: 'コピーしました！', storyFromPhone: 'ストーリーはスマホから投稿します。', scanToShare: 'スキャンしてスマホから共有', tapToPost: 'タップしてストーリーを投稿', back: '戻る' },
 }
 
 /** The places that take an image rather than a link: a story, posted from a phone. */

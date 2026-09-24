@@ -128,6 +128,14 @@ export default function SharedRandomExperience({
   locale: ShareLocale
 }) {
   const [shareOpen, setShareOpen] = useState(false)
+  // Arrived by a computer's QR code (`?share=instagram`): the panel opens by itself, Instagram marked.
+  const [shareHighlight, setShareHighlight] = useState<'instagram' | null>(null)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('share') !== 'instagram') return
+    setShareHighlight('instagram')
+    setShareOpen(true)
+  }, [])
   const labels = SHARE_PRESENTATION[locale]
   const originalUrl = content.sourceUrl || content.mediaUrl
   const backgroundStyle = useMemo<BackgroundStyle>(() => ({
@@ -215,6 +223,7 @@ export default function SharedRandomExperience({
         themeIndex={themeIndex}
         localeOverride={locale}
         itemId={content.id}
+        highlight={shareHighlight}
       />
 
       <style jsx global>{`
