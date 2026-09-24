@@ -1763,7 +1763,8 @@ function YouTubeEmbed({
           title={text || 'Video'}
           style={{
             border: 'none',
-            width: '177.8%',
+            // Sixteen by nine of the frame's height: a tall frame is filled and the sides cropped; never narrower than the frame.
+            width: `max(100%, calc(${frameHeight} * 1.7778))`,
             height: '100%',
             transform: 'translate(-50%, -50%)',
             zIndex: 1,
@@ -2000,7 +2001,7 @@ function DailymotionEmbed({
         title={text || 'Video'}
         style={{
           border: 'none',
-          width: fullscreen ? '100%' : '177.8%',
+          width: fullscreen ? '100%' : `max(100%, calc(${frameHeight} * 1.7778))`,
           height: '100%',
           transform: 'translate(-50%, -50%)',
           zIndex: 1,
@@ -2152,8 +2153,9 @@ function HtmlVideoEmbed({
         className="absolute top-1/2 left-1/2"
         style={{
           backgroundColor: '#000',
-          width: fullscreen ? '100%' : '177.8%',
+          width: fullscreen ? '100%' : `max(100%, calc(${frameHeight} * 1.7778))`,
           height: '100%',
+          objectFit: 'cover',
           transform: 'translate(-50%, -50%)',
         }}
         poster={item.thumbUrl ?? undefined}
@@ -2728,8 +2730,12 @@ export function RandomExperience({
   const contentHeight = useMemo(() => {
     const base = 'clamp(260px, 45vh, 560px)'
     if (viewportWidth == null) return base
+    // A tablet held upright has more height than width: the frame takes it (a cap of 595px left half the
+    // screen empty on an iPad in portrait). Phones keep their own rule.
+    const uprightTablet = viewportHeight != null && viewportWidth >= 768 && viewportHeight > viewportWidth
     const preferred =
-      viewportWidth >= 1400 ? 'clamp(357px, 61vh, 697px)'
+      uprightTablet ? 'clamp(300px, 72vh, 1200px)'
+      : viewportWidth >= 1400 ? 'clamp(357px, 61vh, 697px)'
       : viewportWidth >= 1200 ? 'clamp(323px, 57.8vh, 646px)'
       : viewportWidth >= 992 ? 'clamp(289px, 53vh, 595px)'
       : viewportWidth >= 768 ? 'clamp(300px, 55vh, 640px)'
