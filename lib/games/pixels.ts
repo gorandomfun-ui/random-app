@@ -14,6 +14,23 @@ export function spriteSize(sprite: Sprite): { width: number; height: number } {
   return { width: sprite.reduce((max, row) => Math.max(max, row.length), 0), height: sprite.length }
 }
 
+/** The sprite turned by quarter turns clockwise (1 = 90° clockwise, 3 = 90° counter-clockwise). */
+export function rotateSprite(sprite: Sprite, turns: number): Sprite {
+  let rows = sprite.map((row) => row.split(''))
+  for (let t = 0; t < ((turns % 4) + 4) % 4; t += 1) {
+    const h = rows.length, w = rows[0]?.length ?? 0
+    const next: string[][] = Array.from({ length: w }, () => Array.from({ length: h }, () => '.'))
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) next[x][h - 1 - y] = rows[y][x]
+    rows = next
+  }
+  return rows.map((row) => row.join(''))
+}
+
+/** The sprite mirrored left to right. */
+export function flipSprite(sprite: Sprite): Sprite {
+  return sprite.map((row) => row.split('').reverse().join(''))
+}
+
 const hexCache = new Map<string, [number, number, number]>()
 export function rgbOf(color: string): [number, number, number] {
   const cached = hexCache.get(color)

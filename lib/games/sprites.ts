@@ -111,54 +111,162 @@ export const PELLET: Sprite = ['.ww.', 'wwww', 'wwww', '.ww.']
 
 // ---------------------------------------------------------------- RANDOM EATER
 
+import { flipSprite, rotateSprite } from './pixels'
+
 export type Direction = 'up' | 'right' | 'down' | 'left'
 
-/** The head from above: hair `h`, the face `p` on the side it goes, eyes `k`. */
-export const EATER_HEAD: Record<Direction, Sprite> = {
-  up: ['.....pppppp.....', '....pkpppppkp...', '....pppppppppp..', '....pppppppppp..', '...hhhhhhhhhhh..', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '...hhhhhhhhhhh..', '....hhhhhhhhh...', '.....hhhhhhh....', '................'],
-  down: ['................', '.....hhhhhhh....', '....hhhhhhhhh...', '...hhhhhhhhhhh..', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '..hhhhhhhhhhhhh.', '...hhhhhhhhhhh..', '....pppppppppp..', '....pppppppppp..', '....pkpppppkp...', '.....pppppp.....'],
-  right: ['................', '....hhhhhhh.....', '...hhhhhhhhh....', '..hhhhhhhhhhpp..', '..hhhhhhhhhhppp.', '..hhhhhhhhhhppk.', '..hhhhhhhhhhppp.', '..hhhhhhhhhhppp.', '..hhhhhhhhhhppp.', '..hhhhhhhhhhppp.', '..hhhhhhhhhhppk.', '..hhhhhhhhhhppp.', '..hhhhhhhhhhpp..', '...hhhhhhhhh....', '....hhhhhhh.....', '................'],
-  left: ['................', '.....hhhhhhh....', '....hhhhhhhhh...', '..pphhhhhhhhhh..', '.ppphhhhhhhhhh..', '.kpphhhhhhhhhh..', '.ppphhhhhhhhhh..', '.ppphhhhhhhhhh..', '.ppphhhhhhhhhh..', '.ppphhhhhhhhhh..', '.kpphhhhhhhhhh..', '.ppphhhhhhhhhh..', '..pphhhhhhhhhh..', '....hhhhhhhhh...', '.....hhhhhhh....', '................'],
-}
-/** The shoulders, right under the head: the shirt `c` with the two arms `p` fixed to it, hands `p`. Never stretches. */
-export const EATER_SHOULDERS: Record<Direction, Sprite> = {
-  up: ['....cccccccc....', '..pccccccccccp..', '.pppcccccccccpp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '....cccccccc....'],
-  down: ['....cccccccc....', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pp.cccccccc.pp.', '.pppcccccccccpp.', '..pccccccccccp..', '....cccccccc....'],
-  right: ['.pppppppppppppp.', '.ppp..........p.', '.....ccccccccc..', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.....ccccccccc..', '.ppp..........p.', '.pppppppppppppp.'],
-  left: ['.pppppppppppppp.', '.p..........ppp.', '..ccccccccc.....', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '.cccccccccccccc.', '..ccccccccc.....', '.p..........ppp.', '.pppppppppppppp.'],
-}
-/** A piece of torso: the shirt, straight along an axis. These are what a meal adds. */
-export const EATER_TORSO: Record<'vertical' | 'horizontal', Sprite> = {
-  vertical: Array.from({ length: 16 }, () => '....cccccccc....'),
-  horizontal: ['................', '................', '................', '................', 'cccccccccccccccc', 'cccccccccccccccc', 'cccccccccccccccc', 'cccccccccccccccc', 'cccccccccccccccc', 'cccccccccccccccc', 'cccccccccccccccc', 'cccccccccccccccc', '................', '................', '................', '................'],
-}
-/** The torso bending at a corner: which two sides it connects. */
-export const EATER_TURN: Record<'up-right' | 'right-down' | 'down-left' | 'left-up', Sprite> = {
-  'up-right': ['....cccccccc....', '....cccccccc....', '....cccccccc....', '....cccccccc....', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '................', '................', '................', '................'],
-  'right-down': ['................', '................', '................', '................', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccccccc', '....cccccccc....', '....cccccccc....', '....cccccccc....', '....cccccccc....'],
-  'down-left': ['................', '................', '................', '................', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', '....cccccccc....', '....cccccccc....', '....cccccccc....', '....cccccccc....'],
-  'left-up': ['....cccccccc....', '....cccccccc....', '....cccccccc....', '....cccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', 'cccccccccccc....', '................', '................', '................', '................'],
-}
-/** The legs at the end: jeans `j` and shoes `k`, seen from above, two frames of walking, four directions. */
-export const EATER_LEGS: Record<Direction, Sprite[]> = {
-  up: [
-    ['....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....sss..sss....', '....sss..sss....', '....sss..sss....', '................', '................', '................'],
-    ['....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..sss....', '....jjj..sss....', '....jjj..sss....', '....jjj.........', '....sss.........', '....sss.........', '....sss.........', '................', '................', '................'],
+/**
+ * The eater is drawn from the side, crawling on his belly, head first, and
+ * every piece is drawn facing right: the other directions are the same
+ * pixels turned or mirrored. Hair `h`, skin `p`, the far arm `q` (skin in
+ * shadow), shirt `c`, its second colour `d`, jeans `j`, sneakers `s` with their sole `S`, dark `k`.
+ */
+
+/** The head in profile: hair, an eye, the mouth open on whatever is ahead, a neck going back to the shoulders. */
+export const CRAWL_HEAD: Sprite = [
+  '................',
+  '....hhhhhhhh....',
+  '...hhhhhhhhhh...',
+  '..hhhhhhhhhhhh..',
+  '..hhhhpppppppp..',
+  '..hhhppppppkpp..',
+  '..hhhppppppppp..',
+  '..hhppppppppppp.',
+  '...ppppppppkkkk.',
+  '...pppppppkkkk..',
+  'ppppppppppppp...',
+  'pppppppppppp....',
+  'pppppppppp......',
+  '................',
+  '................',
+  '................',
+]
+
+/** The shoulders: the top of the shirt, both arms fixed to it and planted on the ground ahead; two frames, the arms swap. */
+export const CRAWL_SHOULDERS: Sprite[] = [
+  [
+    '................',
+    '................',
+    '................',
+    '..cccccccccccc..',
+    '.cccccccccccccc.',
+    '.cccccccccccccc.',
+    '.cccccccccccccc.',
+    '.ccccccccccqqcc.',
+    '.cccccccccqqccc.',
+    '.cccccccccqqppp.',
+    '.cccccccccqqpp..',
+    '.cccccccccqqpp..',
+    '.........qqppp..',
+    '.........qqpp...',
+    '........qqqppp..',
+    '................',
   ],
-  down: [
-    ['................', '................', '................', '....sss..sss....', '....sss..sss....', '....sss..sss....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....'],
-    ['................', '................', '................', '.........sss....', '.........sss....', '.........sss....', '....sss..jjj....', '....sss..jjj....', '....sss..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....', '....jjj..jjj....'],
+  [
+    '................',
+    '................',
+    '................',
+    '..cccccccccccc..',
+    '.cccccccccccccc.',
+    '.cccccccccccccc.',
+    '.cccccccccccccc.',
+    '.cccccccccccqqc.',
+    '.ccccccccccqqcc.',
+    '.cccccccppppqq..',
+    '.cccccccpp.qq...',
+    '.cccccccpp.qq...',
+    '.......ppp.qqq..',
+    '.......pp..qqq..',
+    '......ppp.qqqq..',
+    '................',
   ],
-  right: [
-    ['................', '................', '................', '................', 'jjjjjjjjjjsss...', 'jjjjjjjjjjsss...', 'jjjjjjjjjjsss...', '................', '................', 'jjjjjjjjjjsss...', 'jjjjjjjjjjsss...', 'jjjjjjjjjjsss...', '................', '................', '................', '................'],
-    ['................', '................', '................', '................', 'jjjjjjjsss......', 'jjjjjjjsss......', 'jjjjjjjsss......', '................', '................', 'jjjjjjjjjjsss...', 'jjjjjjjjjjsss...', 'jjjjjjjjjjsss...', '................', '................', '................', '................'],
+]
+
+/** The legs at the end, trailing: two jeans legs one over the other, chunky sneakers with a grey sole; two frames, the near leg crawls. */
+export const CRAWL_LEGS: Sprite[] = [
+  [
+    '................',
+    '................',
+    '................',
+    '................',
+    '.....jjjjjjjjjjj',
+    '..sssjjjjjjjjjjj',
+    '.ssssjjjjjjjjjjj',
+    '.sssssjjjjjjjjjj',
+    'SSSSSS..........',
+    '................',
+    '.......jjjjjjjjj',
+    '....sssjjjjjjjjj',
+    '...ssssjjjjjjjjj',
+    '...sssssjjjjjjjj',
+    '..SSSSSS........',
+    '................',
   ],
-  left: [
-    ['................', '................', '................', '................', '...sssjjjjjjjjjj', '...sssjjjjjjjjjj', '...sssjjjjjjjjjj', '................', '................', '...sssjjjjjjjjjj', '...sssjjjjjjjjjj', '...sssjjjjjjjjjj', '................', '................', '................', '................'],
-    ['................', '................', '................', '................', '......sssjjjjjjj', '......sssjjjjjjj', '......sssjjjjjjj', '................', '................', '...sssjjjjjjjjjj', '...sssjjjjjjjjjj', '...sssjjjjjjjjjj', '................', '................', '................', '................'],
+  [
+    '................',
+    '................',
+    '................',
+    '................',
+    '.......jjjjjjjjj',
+    '....sssjjjjjjjjj',
+    '...ssssjjjjjjjjj',
+    '...sssssjjjjjjjj',
+    '..SSSSSS........',
+    '................',
+    '.....jjjjjjjjjjj',
+    '..sssjjjjjjjjjjj',
+    '.ssssjjjjjjjjjjj',
+    '.sssssjjjjjjjjjj',
+    'SSSSSS..........',
+    '................',
   ],
+]
+
+export type TorsoPattern = 'plain' | 'bands' | 'stripes' | 'diagonal' | 'checks' | 'dots'
+export const TORSO_PATTERNS: readonly TorsoPattern[] = ['bands', 'stripes', 'diagonal', 'checks', 'dots', 'plain']
+
+/** A piece of torso: a patch of shirt with a pattern in two colours, a pixel of air on every side so the pieces read apart. */
+export function torsoPiece(pattern: TorsoPattern): Sprite {
+  const rows: string[] = []
+  for (let y = 0; y < CELL; y += 1) {
+    let row = ''
+    for (let x = 0; x < CELL; x += 1) {
+      if (x < 1 || x > 14 || y < 3 || y > 12) { row += '.'; continue }
+      const px = x - 1, py = y - 3
+      let second = false
+      if (pattern === 'bands') second = Math.floor(py / 2) % 2 === 1
+      else if (pattern === 'stripes') second = Math.floor(px / 2) % 2 === 1
+      else if (pattern === 'diagonal') second = (px + py) % 4 < 2
+      else if (pattern === 'checks') second = (Math.floor(px / 3) + Math.floor(py / 3)) % 2 === 1
+      else if (pattern === 'dots') second = px % 4 === 1 && py % 4 === 1
+      row += second ? 'd' : 'c'
+    }
+    rows.push(row)
+  }
+  return rows
 }
-export const eaterPalette = (shirt: string): Palette => ({ h: '#5a3319', p: '#f2c9a0', c: shirt, j: '#2f4fa8', s: '#f8f5e6', k: '#121210' })
+export const TORSO_PIECES: Record<TorsoPattern, Sprite> = Object.fromEntries(TORSO_PATTERNS.map((pattern) => [pattern, torsoPiece(pattern)])) as Record<TorsoPattern, Sprite>
+
+/** The shirt colours a meal can add, in pairs: the cloth and its pattern. */
+export const TORSO_COLORS: ReadonlyArray<readonly [string, string]> = [
+  ['#3d42cc', '#f8f5e6'], ['#d90845', '#f2c33c'], ['#f2c33c', '#121210'], ['#af3bf2', '#f8f5e6'], ['#0fc55d', '#121210'], ['#f8f5e6', '#d92d2d'], ['#e39a3b', '#3d42cc'],
+]
+
+/** The piece `index` back from the shoulders: which pattern, which colours. The first piece wears the shirt of the shoulders. */
+export function torsoLook(index: number, shirt: string): { sprite: Sprite; palette: Palette } {
+  const pattern = TORSO_PATTERNS[index % TORSO_PATTERNS.length]
+  const [c, d] = index === 0 ? [shirt, '#f8f5e6'] : TORSO_COLORS[(index - 1) % TORSO_COLORS.length]
+  return { sprite: TORSO_PIECES[pattern], palette: { c, d } }
+}
+
+/** A right-facing piece turned to face a direction. */
+export function facing(sprite: Sprite, direction: Direction): Sprite {
+  if (direction === 'right') return sprite
+  if (direction === 'left') return flipSprite(sprite)
+  return rotateSprite(sprite, direction === 'down' ? 1 : 3)
+}
+
+export const eaterPalette = (shirt: string): Palette => ({ h: '#5a3319', p: '#f2c9a0', q: '#c9a07a', c: shirt, d: '#f8f5e6', j: '#3a5fc4', s: '#f8f5e6', S: '#8a8a82', k: '#121210' })
 
 /** What the eater eats and grows on: a little burger. */
 export const MINI_BURGER: Sprite = ['...oooooo...', '..oyooooyo..', '.oooooooooo.', '.llllllllll.', '.rrrrrrrrrr.', '.nnnnnnnnnn.', '..oooooooo..', '...oooooo...']

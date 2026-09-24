@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import { LOGO, LOGO_HEIGHT, LOGO_WIDTH } from '@/lib/games/logo'
 import { cellsOf, MAZE, MAZE_HEIGHT, MAZE_WIDTH, reachable } from '@/lib/games/maze'
-import { drawText, FONT, PixelBuffer, spriteSize, textWidth } from '@/lib/games/pixels'
+import { drawText, FONT, PixelBuffer, rotateSprite, spriteSize, textWidth } from '@/lib/games/pixels'
 import { canvasSize, renderAll, renderEnd, renderPlay, renderTitle } from '@/lib/games/screens'
 import * as sprites from '@/lib/games/sprites'
 
@@ -25,18 +25,30 @@ test('le logo pixel : 96 sur 22, rectangulaire, dessiné', () => {
 test('chaque sprite est rectangulaire et ne sort pas d_une cellule de seize', () => {
   const all: Array<[string, readonly string[]]> = [
     ...sprites.BURGER.map((s, i): [string, readonly string[]] => [`burger ${i}`, s]), ['tomate', sprites.TOMATO], ['cornichon', sprites.PICKLE], ['oignon', sprites.ONION], ['sauce', sprites.SAUCE],
-    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['humain effrayé', sprites.HUMAN_SCARED], ['mini burger', sprites.MINI_BURGER],
-    ...Object.entries(sprites.EATER_SHOULDERS).map(([k, s]): [string, readonly string[]] => [`épaules ${k}`, s]),
-    ...Object.entries(sprites.EATER_HEAD).map(([k, s]): [string, readonly string[]] => [`tête ${k}`, s]),
-    ...Object.entries(sprites.EATER_TORSO).map(([k, s]): [string, readonly string[]] => [`torse ${k}`, s]),
-    ...Object.entries(sprites.EATER_TURN).map(([k, s]): [string, readonly string[]] => [`virage ${k}`, s]),
-    ...Object.entries(sprites.EATER_LEGS).flatMap(([k, list]) => list.map((s, i): [string, readonly string[]] => [`jambes ${k} ${i}`, s])),
+    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['humain effrayé', sprites.HUMAN_SCARED], ['mini burger', sprites.MINI_BURGER], ['tête', sprites.CRAWL_HEAD],
+    ...sprites.CRAWL_SHOULDERS.map((s, i): [string, readonly string[]] => [`épaules ${i}`, s]),
+    ...sprites.CRAWL_LEGS.map((s, i): [string, readonly string[]] => [`jambes ${i}`, s]),
+    ...Object.entries(sprites.TORSO_PIECES).map(([k, s]): [string, readonly string[]] => [`torse ${k}`, s]),
   ]
   for (const [name, sprite] of all) {
     const { width, height } = spriteSize(sprite)
     assert.ok(width <= 16 && height <= 16, `${name} : ${width}×${height}`)
     for (const row of sprite) assert.equal(row.length, width, `${name} : rangée irrégulière`)
   }
+})
+
+test('le mangeur : les morceaux de torse se distinguent tous, les chaussures existent, une pièce tournée quatre fois revient', () => {
+  const looks = sprites.TORSO_PATTERNS.map((p) => sprites.TORSO_PIECES[p].join(''))
+  assert.equal(new Set(looks).size, looks.length, 'six motifs différents')
+  for (const legs of sprites.CRAWL_LEGS) { assert.ok(legs.join('').includes('s'), 'des baskets'); assert.ok(legs.join('').includes('S'), 'une semelle'); assert.ok(legs.join('').includes('j'), 'un jean') }
+  assert.ok(sprites.CRAWL_SHOULDERS.every((s) => s.join('').includes('p')), 'les bras sur les épaules')
+  assert.deepEqual(rotateSprite(sprites.CRAWL_HEAD, 4), sprites.CRAWL_HEAD)
+  assert.deepEqual(rotateSprite(rotateSprite(sprites.CRAWL_HEAD, 1), 3), sprites.CRAWL_HEAD)
+  const up = sprites.facing(sprites.CRAWL_HEAD, 'up')
+  assert.equal(up.length, 16)
+  assert.notDeepEqual(up, sprites.CRAWL_HEAD)
+  const colours = new Set([0, 1, 2, 3, 4, 5, 6].map((i) => sprites.torsoLook(i, '#0FC55D').palette.c))
+  assert.ok(colours.size >= 5, 'des couleurs différentes le long du corps')
 })
 
 test('le labyrinthe : 28 sur 20, clos sauf le tunnel, un départ, un enclos, des pastilles toutes atteignables', () => {
