@@ -60,10 +60,13 @@ class FakeContext {
 
 const listeners: Array<() => void> = []
 const context = new FakeContext()
+/** How many times the page asked the browser for an engine. */
+let births = 0
 
 // The module only reads the browser when a sound is asked for, so putting the
 // stand-ins here, after the import, is early enough.
-;(globalThis as unknown as { window: unknown }).window = { AudioContext: function () { return context } }
+;(globalThis as unknown as { window: unknown }).window = { AudioContext: function () { births += 1; return context } }
+Object.defineProperty(globalThis, 'navigator', { value: { userActivation: { isActive: true } }, configurable: true })
 ;(globalThis as unknown as { document: unknown }).document = {
   visibilityState: 'visible',
   addEventListener: (_name: string, handler: () => void) => listeners.push(handler),
@@ -71,7 +74,19 @@ const context = new FakeContext()
 
 
 
-test('un son se joue quand le moteur tourne', () => {
+test('sans toucher, aucun moteur n_est créé et rien ne sonne', () => {
+  // Safari leaves an engine born outside a touch deaf for the rest of the visit,
+  // so the page must not create one just because a draw came up on its own.
+  context.notes.length = 0
+  sound.playRandom(0)
+  sound.playAgain(0)
+  assert.equal(births, 0, 'aucun moteur demandé au navigateur')
+  assert.equal(context.notes.length, 0)
+})
+
+test('le toucher crée le moteur, et le son se joue', () => {
+  sound.wakeSound()
+  assert.equal(births, 1, 'le moteur naît au toucher')
   context.notes.length = 0
   sound.playRandom(0)
   assert.ok(context.notes.length > 0, 'des notes sont écrites')
@@ -90,6 +105,7 @@ test('interrompu par une vidéo, le moteur est réveillé et le son suivant revi
 
   sound.playRandom(0)
   assert.ok(context.notes.length > 0, 'le tirage suivant sonne')
+  assert.equal(births, 1, 'toujours le même moteur')
 })
 
 test('le réveil au toucher agit avant que le son soit dû', () => {
