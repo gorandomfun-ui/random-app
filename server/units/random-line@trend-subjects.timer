@@ -1,5 +1,5 @@
 [Unit]
-Description=RANDOM trend-subjects line (06:30 Paris)
+Description=RANDOM trend-subjects line (12:30 Paris, a fresh YouTube quota day)
 
 [Timer]
 OnCalendar=*-*-* 12:30:00 Europe/Paris
