@@ -15,6 +15,7 @@ import Link from 'next/link'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import HomeShareMenu from '@/components/HomeShareMenu'
+import { storyDestinationOf, type StoryDestination } from '@/lib/share/app'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
@@ -625,8 +626,17 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
 
   // The app's own share panel: Instagram, TikTok, X, Messages, WhatsApp, the link — never the bare system sheet.
   const [shareOpen, setShareOpen] = useState(false)
-  const shareFromFooter = useCallback(() => setShareOpen(true), [])
-  const closeShare = useCallback(() => setShareOpen(false), [])
+  // Arrived by a computer's QR code (`?share=instagram`): the panel is already open, that destination marked.
+  const [shareHighlight, setShareHighlight] = useState<StoryDestination | null>(null)
+  const shareFromFooter = useCallback(() => { setShareHighlight(null); setShareOpen(true) }, [])
+  const closeShare = useCallback(() => { setShareOpen(false); setShareHighlight(null) }, [])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const destination = storyDestinationOf(new URLSearchParams(window.location.search).get('share'))
+    if (!destination) return
+    setShareHighlight(destination)
+    setShareOpen(true)
+  }, [])
 
   const handleStart = useCallback(() => {
     const next = !isSecond
@@ -834,7 +844,7 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
         </div>
       </footer>
 
-      <HomeShareMenu open={shareOpen} onClose={closeShare} theme={theme} themeIndex={themeIdx} locale={locale} />
+      <HomeShareMenu open={shareOpen} onClose={closeShare} theme={theme} themeIndex={themeIdx} locale={locale} highlight={shareHighlight} />
 
       {adsAllowed ? (
         <div

@@ -41,7 +41,8 @@ export async function GET(req: Request) {
   const logoUrl = new URL('/elements/logo_black.png', requestUrl.origin).toString()
   const story = format === 'story'
   const long = slogan.length > 40
-  const sloganSize = story ? (long ? 82 : 96) : long ? 52 : 60
+  // Uppercase runs wider: the sizes keep three lines inside the frame.
+  const sloganSize = story ? (long ? 74 : 88) : long ? 46 : 54
   const [black, bold] = await Promise.all([loadFont(requestUrl.origin, 'Tomorrow-Black.ttf'), loadFont(requestUrl.origin, 'Tomorrow-Bold.ttf')])
   const fonts = [
     ...(black ? [{ name: 'Tomorrow', data: black, weight: 900 as const, style: 'normal' as const }] : []),
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
             <img src={logoUrl} alt="Random" width={story ? 640 : 380} height={story ? 215 : 128} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           <div style={{ display: 'flex', width: story ? 520 : 360, height: 3, marginTop: story ? 70 : 34, background: theme.text, opacity: 0.7 }} />
-          <div style={{ display: 'flex', justifyContent: 'center', textAlign: 'center', maxWidth: story ? 900 : 1000, marginTop: story ? 70 : 34, fontSize: sloganSize, fontWeight: 900, lineHeight: 1.12, textShadow: '0 4px 22px rgba(0,0,0,.55)' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', textAlign: 'center', maxWidth: story ? 900 : 1000, marginTop: story ? 70 : 34, fontSize: sloganSize, fontWeight: 900, lineHeight: 1.12, letterSpacing: 1, textTransform: 'uppercase', textShadow: '0 4px 22px rgba(0,0,0,.55)' }}>
             {slogan}
           </div>
           <div style={{ display: 'flex', marginTop: story ? 110 : 44, padding: story ? '22px 46px' : '12px 26px', background: theme.text, color: theme.cream, fontSize: story ? 38 : 22, fontWeight: 700, letterSpacing: story ? 5 : 3, textTransform: 'uppercase' }}>
