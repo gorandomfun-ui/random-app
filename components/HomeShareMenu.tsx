@@ -7,14 +7,14 @@
  * in the visitor's language, its address, its branded card.
  *
  * A story is posted from a phone. On one, the card goes through the phone's
- * own share sheet. On a computer, the panel shows the card, saves it, copies
- * the text, opens the site — and a QR code hands the whole thing to the
- * phone, which arrives with this panel already open.
+ * own share sheet. On a computer, the handover view takes over: a QR code
+ * the phone scans to arrive with this panel already open.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { APP_SHARE, appHandoverUrl, appQrUrl, appShareLinks, platformOf, STORY_NAMES, STORY_SITES, type StoryDestination } from '@/lib/share/app'
+import StoryHandover, { fetchCard, hasStorySheet } from '@/components/StoryHandover'
+import { APP_SHARE, appHandoverUrl, appShareLinks, platformOf, STORY_NAMES, type StoryDestination } from '@/lib/share/app'
 import { normalizeShareLocale, SHARE_PRESENTATION } from '@/lib/share/presentation'
 import type { Theme } from '@/lib/theme'
 
@@ -28,44 +28,17 @@ type Props = {
   highlight?: StoryDestination | null
 }
 
-async function fetchCard(url: string): Promise<File | null> {
-  try {
-    const response = await fetch(url)
-    if (!response.ok) return null
-    return new File([await response.blob()], 'gorandom.png', { type: 'image/png' })
-  } catch {
-    return null
-  }
-}
-
-function saveFile(file: File): void {
-  const href = URL.createObjectURL(file)
-  const anchor = document.createElement('a')
-  anchor.href = href
-  anchor.download = file.name
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(href), 5000)
-}
-
-/** A phone or a tablet: something with a share sheet the story apps listen to. A Mac's sheet is not that. */
-function hasStorySheet(): boolean {
-  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return false
-  return navigator.maxTouchPoints > 1 || /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent)
-}
-
 export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale: rawLocale, highlight = null }: Props) {
   const locale = normalizeShareLocale(rawLocale)
   const words = SHARE_PRESENTATION[locale]
   const wording = APP_SHARE[locale]
-  const [copied, setCopied] = useState<'link' | 'text' | null>(null)
+  const [copied, setCopied] = useState(false)
   const [story, setStory] = useState<StoryDestination | null>(null)
 
   useEffect(() => {
     if (!open) return
     setStory(null)
-    setCopied(null)
+    setCopied(false)
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -75,15 +48,15 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
   const links = useMemo(() => appShareLinks(origin, locale, platformOf(typeof navigator !== 'undefined' ? navigator.userAgent : ''), themeIndex), [locale, origin, themeIndex])
   const text = `${links.text} ${links.url}`
 
-  const copy = useCallback(async (value: string, what: 'link' | 'text') => {
+  const copyLink = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(value)
-      setCopied(what)
-      window.setTimeout(() => setCopied(null), 1400)
+      await navigator.clipboard.writeText(links.url)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
     } catch {
       /* Clipboard access can be refused by the browser. */
     }
-  }, [])
+  }, [links.url])
 
   const shareStory = useCallback(async (destination: StoryDestination) => {
     if (!hasStorySheet()) {
@@ -102,11 +75,6 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
       // A cancelled share sheet is not an error for the interface.
     }
   }, [links, onClose, text])
-
-  const saveCard = useCallback(async () => {
-    const file = await fetchCard(links.card.story)
-    if (file) saveFile(file)
-  }, [links.card.story])
 
   if (!open) return null
 
@@ -128,25 +96,7 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
         </div>
 
         {story ? (
-          <div>
-            <div className="mb-5 flex items-start gap-5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={links.card.story} alt="" width={135} height={240} className="shrink-0" style={{ width: 135, height: 240, objectFit: 'cover', border: `1px solid ${accent}` }} />
-              <div className="flex min-w-0 flex-1 flex-col items-center gap-3 text-center">
-                <div className="flex items-center justify-center bg-white p-2" style={{ width: 160, height: 160 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={appQrUrl(origin, appHandoverUrl(origin, locale, story))} alt="" width={144} height={144} style={{ width: 144, height: 144 }} />
-                </div>
-                <p className="text-sm opacity-90">{wording.scanToShare}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <button className={buttonClass} style={buttonStyle} onClick={() => void saveCard()}>{wording.saveImage}</button>
-              <button className={buttonClass} style={buttonStyle} onClick={() => void copy(text, 'text')}>{copied === 'text' ? wording.copied : wording.copyText}</button>
-              <a className={buttonClass} style={buttonStyle} href={STORY_SITES[story]} target="_blank" rel="noreferrer">{wording.open} {STORY_NAMES[story]}</a>
-            </div>
-            <button className="mt-5 text-sm underline opacity-80" onClick={() => setStory(null)}>← {wording.back}</button>
-          </div>
+          <StoryHandover locale={locale} colors={{ bg, fg, accent }} cardUrl={links.card.story} handoverUrl={appHandoverUrl(origin, locale, story)} text={text} onBack={() => setStory(null)} />
         ) : (
           <div>
             <p className="mb-6 text-sm opacity-80">{highlight ? wording.tapToPost : `${links.text} — goRANDOM.fun`}</p>
@@ -156,7 +106,7 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
               <a className={buttonClass} style={buttonStyle} href={links.x} target="_blank" rel="noreferrer">X</a>
               <a className={buttonClass} style={buttonStyle} href={links.messages}>{wording.messages}</a>
               <a className={buttonClass} style={buttonStyle} href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
-              <button className={buttonClass} style={buttonStyle} onClick={() => void copy(links.url, 'link')}>{copied === 'link' ? words.copied : words.copyLink}</button>
+              <button className={buttonClass} style={buttonStyle} onClick={() => void copyLink()}>{copied ? words.copied : words.copyLink}</button>
             </div>
           </div>
         )}

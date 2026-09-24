@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
+import StoryHandover, { fetchCard, hasStorySheet } from '@/components/StoryHandover'
+import { APP_SHARE, appCardUrl, appHandoverUrl } from '@/lib/share/app'
 import type { DisplayItem } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useI18n } from '@/providers/I18nProvider'
@@ -30,6 +32,8 @@ type Props = {
   item?: ShareableItem
   itemId?: string
   list?: ShareListEntry[]
+  /** Arrived from a computer's QR code: Instagram is the one to tap. */
+  highlight?: 'instagram' | null
 }
 
 const truncate = (text: string, maxLength: number) => {
@@ -59,14 +63,18 @@ export default function ShareMenu({
   item,
   itemId,
   list,
+  highlight = null,
 }: Props) {
   const { locale: appLocale } = useI18n()
   const [copied, setCopied] = useState(false)
+  // On a computer, a story is handed to the phone: the QR view replaces the buttons.
+  const [story, setStory] = useState(false)
   const locale = localeOverride ?? normalizeShareLocale(appLocale)
   const translated = SHARE_PRESENTATION[locale]
 
   useEffect(() => {
     if (!open) return
+    setStory(false)
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
@@ -172,31 +180,26 @@ export default function ShareMenu({
     }
   }
 
+  // The card a story shows: the content's own when it has one, the app's otherwise.
+  const storyCardUrl = cardUrl ?? appCardUrl(siteOrigin, locale, 'story', themeIndex)
+  // What the QR code hands the phone: this content's share page with the panel open, or the home's.
+  const handoverUrl = resolvedItemId ? `${shareUrl}&share=instagram` : appHandoverUrl(siteOrigin, locale, 'instagram')
+  const storyText = `${shareMessage}\n${shareUrl}`
+
   async function shareToInstagram() {
-    const text = `${shareMessage}\n${shareUrl}`
+    // A Mac's share sheet reaches no story: the QR view hands the phone the job.
+    if (!hasStorySheet()) {
+      setStory(true)
+      return
+    }
     try {
-      if (typeof navigator.share === 'function') {
-        if (cardUrl && typeof navigator.canShare === 'function') {
-          try {
-            const response = await fetch(cardUrl)
-            if (response.ok) {
-              const file = new File([await response.blob()], 'gorandom-share.png', { type: 'image/png' })
-              if (navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: contentTitle, text })
-                onClose()
-                return
-              }
-            }
-          } catch {
-            /* Fall back to the regular native share below. */
-          }
-        }
+      const file = await fetchCard(storyCardUrl, 'gorandom-share.png')
+      if (file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: contentTitle, text: storyText })
+      } else {
         await navigator.share({ title: contentTitle, text: shareMessage, url: shareUrl })
-        onClose()
-        return
       }
-      try { await navigator.clipboard.writeText(text) } catch { /* Continue to Instagram. */ }
-      window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer')
+      onClose()
     } catch {
       /* A cancelled native share is not an error for the interface. */
     }
@@ -215,16 +218,23 @@ export default function ShareMenu({
           <button className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-2xl" onClick={onClose} style={{ background: accent, color: fg }} aria-label={translated.close}>×</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <button className={buttonClass} style={buttonStyle} onClick={shareToInstagram}>Instagram</button>
-          <a className={buttonClass} style={buttonStyle} href={urls.x} target="_blank" rel="noreferrer">X</a>
-          <a className={buttonClass} style={buttonStyle} href={urls.facebook} target="_blank" rel="noreferrer">Facebook</a>
-          <a className={buttonClass} style={buttonStyle} href={urls.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
-          <a className={buttonClass} style={buttonStyle} href={urls.reddit} target="_blank" rel="noreferrer">Reddit</a>
-          <button className={buttonClass} style={buttonStyle} onClick={copyLink}>
-            {copied ? translated.copied : translated.copyLink}
-          </button>
-        </div>
+        {story ? (
+          <StoryHandover locale={locale} colors={{ bg, fg, accent }} cardUrl={storyCardUrl} handoverUrl={handoverUrl} text={storyText} onBack={() => setStory(false)} />
+        ) : (
+          <div>
+            {highlight ? <p className="mb-5 text-sm opacity-85">{APP_SHARE[locale].tapToPost}</p> : null}
+            <div className="grid grid-cols-2 gap-3">
+              <button className={buttonClass} style={highlight === 'instagram' ? { ...buttonStyle, boxShadow: `0 0 0 4px ${fg}` } : buttonStyle} onClick={shareToInstagram}>Instagram</button>
+              <a className={buttonClass} style={buttonStyle} href={urls.x} target="_blank" rel="noreferrer">X</a>
+              <a className={buttonClass} style={buttonStyle} href={urls.facebook} target="_blank" rel="noreferrer">Facebook</a>
+              <a className={buttonClass} style={buttonStyle} href={urls.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
+              <a className={buttonClass} style={buttonStyle} href={urls.reddit} target="_blank" rel="noreferrer">Reddit</a>
+              <button className={buttonClass} style={buttonStyle} onClick={copyLink}>
+                {copied ? translated.copied : translated.copyLink}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

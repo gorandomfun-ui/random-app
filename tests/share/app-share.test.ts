@@ -10,7 +10,7 @@ test('chaque langue a son invitation, courte, et ses mots', () => {
   for (const locale of LOCALES) {
     const words = APP_SHARE[locale]
     assert.ok(words.slogan.length > 10 && words.slogan.length <= 60, `${locale} : ${words.slogan}`)
-    for (const key of ['messages', 'saveImage', 'copyText', 'copied', 'open', 'scanToShare', 'tapToPost', 'back'] as const) assert.ok(words[key], `${locale}.${key}`)
+    for (const key of ['messages', 'saveImage', 'copyText', 'copied', 'storyFromPhone', 'scanToShare', 'tapToPost', 'back'] as const) assert.ok(words[key], `${locale}.${key}`)
   }
 })
 
