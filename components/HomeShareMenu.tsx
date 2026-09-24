@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import StoryHandover, { fetchCard, hasStorySheet } from '@/components/StoryHandover'
 import { APP_SHARE, appHandoverUrl, appShareLinks, platformOf, STORY_NAMES, type StoryDestination } from '@/lib/share/app'
+import { canRenderGlitchStory, renderGlitchStory } from '@/lib/share/glitchVideo'
 import { normalizeShareLocale, SHARE_PRESENTATION } from '@/lib/share/presentation'
 import type { Theme } from '@/lib/theme'
 
@@ -34,11 +35,16 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
   const wording = APP_SHARE[locale]
   const [copied, setCopied] = useState(false)
   const [story, setStory] = useState<StoryDestination | null>(null)
+  // On a phone: image or animated video, chosen before the share sheet; the video is recorded once per opening.
+  const [choice, setChoice] = useState<StoryDestination | null>(null)
+  const [video, setVideo] = useState<{ status: 'idle' | 'rendering' | 'ready' | 'failed' | 'unavailable'; file?: File }>({ status: 'idle' })
 
   useEffect(() => {
     if (!open) return
     setStory(null)
+    setChoice(null)
     setCopied(false)
+    setVideo({ status: canRenderGlitchStory() ? 'idle' : 'unavailable' })
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -58,12 +64,7 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
     }
   }, [links.url])
 
-  const shareStory = useCallback(async (destination: StoryDestination) => {
-    if (!hasStorySheet()) {
-      setStory(destination)
-      return
-    }
-    const file = await fetchCard(links.card.story)
+  const shareFile = useCallback(async (file: File | null) => {
     try {
       if (file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Random', text })
@@ -75,6 +76,31 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
       // A cancelled share sheet is not an error for the interface.
     }
   }, [links, onClose, text])
+
+  const shareStory = useCallback((destination: StoryDestination) => {
+    if (!hasStorySheet()) {
+      setStory(destination)
+      return
+    }
+    // No video possible here: the image goes straight to the sheet, as before.
+    if (video.status === 'unavailable') { void fetchCard(links.card.story).then(shareFile); return }
+    setChoice(destination)
+  }, [links.card.story, shareFile, video.status])
+
+  const shareImage = useCallback(async () => { await shareFile(await fetchCard(links.card.story)) }, [links.card.story, shareFile])
+
+  // The video is recorded on the first ask (three seconds); the sheet opens on the next tap, which is the gesture it needs.
+  const prepareOrShareVideo = useCallback(async () => {
+    if (video.status === 'ready' && video.file) { await shareFile(video.file); return }
+    if (video.status !== 'idle' && video.status !== 'failed') return
+    setVideo({ status: 'rendering' })
+    try {
+      const file = await renderGlitchStory(links.card.story)
+      setVideo(file ? { status: 'ready', file } : { status: 'failed' })
+    } catch {
+      setVideo({ status: 'failed' })
+    }
+  }, [links.card.story, shareFile, video])
 
   if (!open) return null
 
@@ -97,6 +123,18 @@ export default function HomeShareMenu({ open, onClose, theme, themeIndex, locale
 
         {story ? (
           <StoryHandover locale={locale} colors={{ bg, fg, accent }} cardUrl={links.card.story} handoverUrl={appHandoverUrl(origin, locale, story)} text={text} onBack={() => setStory(null)} />
+        ) : choice ? (
+          <div>
+            <p className="mb-5 text-sm opacity-80">{STORY_NAMES[choice]}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button className={buttonClass} style={buttonStyle} onClick={() => void shareImage()}>{wording.image}</button>
+              <button className={buttonClass} style={buttonStyle} onClick={() => void prepareOrShareVideo()} disabled={video.status === 'rendering'}>
+                {video.status === 'rendering' ? wording.preparing : video.status === 'ready' ? wording.shareVideo : wording.animatedVideo}
+              </button>
+            </div>
+            {video.status === 'failed' ? <p className="mt-3 text-xs opacity-70">{wording.image} ✓</p> : null}
+            <button className="mt-5 text-sm underline opacity-80" onClick={() => setChoice(null)}>← {wording.back}</button>
+          </div>
         ) : (
           <div>
             <p className="mb-6 text-sm opacity-80">{highlight ? wording.tapToPost : `${links.text} — goRANDOM.fun`}</p>
