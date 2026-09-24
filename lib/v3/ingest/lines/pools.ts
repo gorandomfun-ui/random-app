@@ -33,10 +33,13 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const asked: Partial<Record<PoolUniverse, string[]>> = {}
   const now = new Date()
   const before = now.toISOString()
+  // A run by hand can ask another night's queries (RANDOM_POOLS_DAY_OFFSET=1: tomorrow's), to bring new content rather than the night's duplicates.
+  const offsetDays = Number(process.env.RANDOM_POOLS_DAY_OFFSET ?? 0) || 0
+  const queryDay = new Date(now.getTime() + offsetDays * 86_400_000)
   let hitDeadline = false
 
   for (const universe of POOL_UNIVERSES) {
-    const queries = queriesForDay(universe, now)
+    const queries = queriesForDay(universe, queryDay)
     asked[universe] = queries
     for (const query of queries) {
       for (const sort of SORTS) {
