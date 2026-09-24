@@ -36,7 +36,7 @@ export function wakeSound(): void {
 
 /** The engine's state, for the witness the page can show on a device. */
 export function soundStatus(): { state: string; muted: boolean; asked: number; played: number; resumes: number; born: string; last: string } {
-  return { state: ctx ? (ctx.state as string) : 'absent', muted, asked: tally.asked, played: tally.played, resumes: tally.resumes, born: tally.born, last: tally.last }
+  return { state: ctx ? (ctx.state as string) : (synthesisAllowed() ? 'absent' : 'coupe-ios'), muted, asked: tally.asked, played: tally.played, resumes: tally.resumes, born: tally.born, last: tally.last }
 }
 
 /** Coming back to the tab is the other moment the engine may have to be woken. */
@@ -48,11 +48,35 @@ function watchReturns(): void {
   })
 }
 
+/**
+ * Whether the device is an iPad or an iPhone. iPadOS calls itself a Mac, so the
+ * touch points are what gives it away.
+ */
+function isAppleTouch(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  return /iP(ad|hone|od)/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1)
+}
+
+/**
+ * The synthesised sounds are off on iPad and iPhone.
+ *
+ * A page that holds a running Web Audio engine takes the device's audio session
+ * there, and the video in the page is then given nothing: the owner's iPad lost
+ * the sound of its videos the evening this engine was finally made to run, and
+ * got it back the moment it stopped running. The transitions will come back
+ * through real audio files, which are played the way a video plays its own
+ * sound and take nothing from it.
+ */
+function synthesisAllowed(): boolean {
+  return !isAppleTouch()
+}
+
 /** The engine, created only when `create` says so, which only a touch may say. */
 function getAudioContext(create: boolean): AudioContext | null {
   if (typeof window === 'undefined') return null
   if (ctx) return ctx
-  if (!create) return null
+  if (!create || !synthesisAllowed()) return null
   const win = window as AudioWindow
   const Ctor = win.AudioContext || win.webkitAudioContext
   if (!Ctor) return null
