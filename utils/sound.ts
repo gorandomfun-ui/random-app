@@ -2,6 +2,9 @@ let ctx: AudioContext | null = null
 let transitionNoiseBuffer: AudioBuffer | null = null
 let muted = false
 let watching = false
+let armed = false
+/** What the engine has been asked for and what came out, so a device can be questioned. */
+const tally = { asked: 0, played: 0, resumes: 0, born: '' as '' | 'touch' | 'page', last: '' as '' | 'ok' | 'refused' }
 
 type AudioWindow = typeof window & {
   webkitAudioContext?: typeof AudioContext
@@ -26,9 +29,40 @@ function ready(context: AudioContext): boolean {
  * is due; by the time the draw has loaded, the engine is awake again.
  */
 export function wakeSound(): void {
-  const context = getAudioContext()
+  const context = getAudioContext(true)
   if (!context || ready(context)) return
-  void context.resume().catch(() => undefined)
+  tally.resumes += 1
+  void context.resume().then(
+    () => { tally.last = ready(context) ? 'ok' : 'refused' },
+    () => { tally.last = 'refused' },
+  )
+}
+
+/**
+ * Arms the first touch of the page.
+ *
+ * Safari does not only refuse to wake an engine outside a touch: an engine born
+ * outside one can stay deaf for the rest of the visit, whatever is asked of it
+ * later. So nothing creates it but a touch, and the first touch anywhere is
+ * enough, whichever button it lands on.
+ */
+export function armSound(): void {
+  if (armed || typeof document === 'undefined') return
+  armed = true
+  const open = () => {
+    wakeSound()
+    const context = getAudioContext(false)
+    if (!context || !ready(context)) return
+    document.removeEventListener('pointerdown', open, true)
+    document.removeEventListener('touchend', open, true)
+  }
+  document.addEventListener('pointerdown', open, true)
+  document.addEventListener('touchend', open, true)
+}
+
+/** The engine's state, for the witness the page can show on a device. */
+export function soundStatus(): { state: string; muted: boolean; asked: number; played: number; resumes: number; born: string; last: string } {
+  return { state: ctx ? (ctx.state as string) : 'absent', muted, asked: tally.asked, played: tally.played, resumes: tally.resumes, born: tally.born, last: tally.last }
 }
 
 /** Coming back to the tab is the other moment the engine may have to be woken. */
@@ -40,15 +74,17 @@ function watchReturns(): void {
   })
 }
 
-function getAudioContext(): AudioContext | null {
+/** The engine, created only when `create` says so, which only a touch may say. */
+function getAudioContext(create: boolean): AudioContext | null {
   if (typeof window === 'undefined') return null
+  if (ctx) return ctx
+  if (!create) return null
   const win = window as AudioWindow
   const Ctor = win.AudioContext || win.webkitAudioContext
   if (!Ctor) return null
-  if (!ctx) {
-    ctx = new Ctor()
-    watchReturns()
-  }
+  ctx = new Ctor()
+  tally.born = navigator?.userActivation?.isActive === false ? 'page' : 'touch'
+  watchReturns()
   return ctx
 }
 
@@ -58,10 +94,11 @@ function getAudioContext(): AudioContext | null {
  * would all fire together the moment it came back.
  */
 function liveContext(): AudioContext | null {
-  const context = getAudioContext()
+  tally.asked += 1
+  const context = getAudioContext(false)
   if (!context) return null
-  if (ready(context)) return context
-  void context.resume().catch(() => undefined)
+  if (ready(context)) { tally.played += 1; return context }
+  wakeSound()
   return null
 }
 
@@ -94,11 +131,13 @@ export function playEncourage3D(
   finish: 'color' | 'silver' | 'gold' = 'color',
 ) {
   if (muted) return
-  const c = getAudioContext()
+  tally.asked += 1
+  const c = getAudioContext(false)
   if (!c) return
 
   const play = () => {
     if (muted) return
+    tally.played += 1
     const energy = soundProgress(progress)
     const rarity = finish === 'gold' ? 1 : finish === 'silver' ? 0.52 : 0
     const root = 392 + energy * 72 + rarity * 34
@@ -399,7 +438,8 @@ export function playAgain(progress = 0) {
 
 async function swoosh(duration: number, gainValue: number, startFrequency: number, endFrequency: number) {
   if (muted) return
-  const c = getAudioContext()
+  tally.asked += 1
+  const c = getAudioContext(false)
   if (!c) return
   if (!ready(c)) {
     try { await c.resume() } catch { return }

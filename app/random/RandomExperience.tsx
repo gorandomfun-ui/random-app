@@ -63,7 +63,7 @@ import {
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
 import RandomPlayerFrame from '@/components/players/RandomPlayerFrame'
-import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted, wakeSound } from '@/utils/sound'
+import { armSound, playAgain, playRandom, playWaveEnter, playWaveStep, setMuted, soundStatus, wakeSound } from '@/utils/sound'
 import {
   advanceProductionEncourage3DSchedule,
   createEncourage3DSchedule,
@@ -2733,6 +2733,21 @@ export function RandomExperience({
     return () => window.removeEventListener('storage', handler)
   }, [])
 
+  const [soundWitness, setSoundWitness] = useState('')
+  useEffect(() => {
+    // Safari only lets the sound engine be born during a touch; this arms the first one.
+    armSound()
+    if (typeof window === 'undefined') return
+    if (!new URLSearchParams(window.location.search).has('sound-debug')) return
+    const tick = () => {
+      const state = soundStatus()
+      setSoundWitness(`${state.state} · ne:${state.born || '-'} · coupe:${state.muted ? 'oui' : 'non'} · demandes:${state.asked} · joues:${state.played} · reveils:${state.resumes} · dernier:${state.last || '-'}`)
+    }
+    tick()
+    const timer = window.setInterval(tick, 400)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const toggleSound = () => {
     setSoundMuted((prev) => {
       const next = !prev
@@ -5199,6 +5214,18 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               </button>
             </nav>
           </div>
+        </div>
+      ) : null}
+
+      {soundWitness ? (
+        <div
+          style={{
+            position: 'fixed', left: 8, right: 8, bottom: 8, zIndex: 9999,
+            background: 'rgba(0,0,0,0.85)', color: '#F8F5E6', borderRadius: 8,
+            padding: '8px 10px', font: '12px/1.4 ui-monospace, monospace', pointerEvents: 'none',
+          }}
+        >
+          son : {soundWitness}
         </div>
       ) : null}
 
