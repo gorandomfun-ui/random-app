@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM pools, filled every night on Dailymotion (04:40 Paris): music, sport, gaming, humour, parties, food, discovery, craft
+
+[Timer]
+OnCalendar=*-*-* 04:40:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

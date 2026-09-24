@@ -47,6 +47,7 @@ const LINE_LABEL: Record<string, string> = {
   repair: 'Réparations',
   images: 'Images',
   'like-pool': 'Pool des likes',
+  pools: 'Pools par univers',
 }
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
@@ -64,6 +65,13 @@ type ServerStatus = {
 }
 
 const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000))
+
+type UniverseRecapRow = { day: string; at: string; sizes: Record<string, number>; added: Record<string, number> }
+const UNIVERSE_LABEL: Record<string, string> = {
+  music: 'Musique', sport: 'Sport', gaming: 'Gaming', 'humor-memes': 'Humour', 'events-parties': 'Fête', food: 'Food', travel: 'Découverte', craft: 'Astuces / artisanat',
+  'cinema-tv': 'Cinéma-TV', 'nature-animals': 'Animaux / nature', animation: 'Animation', art: 'Art', science: 'Science', tech: 'Tech', history: 'Histoire', vehicles: 'Véhicules',
+  fashion: 'Mode', 'people-everyday': 'Gens', 'news-society': 'Actualité', other: 'Non classé',
+}
 
 const label = (line: string) => LINE_LABEL[line] ?? line
 
@@ -88,6 +96,7 @@ function formatDay(day: string): string {
 
 export default function IngestReportsPage() {
   const [days, setDays] = useState<DayRow[]>([])
+  const [recap, setRecap] = useState<UniverseRecapRow[]>([])
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -104,10 +113,11 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[] }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
+      setRecap(Array.isArray(payload.recap) ? payload.recap : [])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -173,6 +183,34 @@ export default function IngestReportsPage() {
             {server.lastRun ? ` · dernier passage ${label(server.lastRun.line)} : ${server.lastRun.status}, ${server.lastRun.inserted} insérés` : ' · aucun passage'}
             {server.hoursSinceSuccess != null ? ` · dernier succès il y a ${server.hoursSinceSuccess} h` : ''}
           </p>
+        </section>
+      )}
+
+      {recap.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Pools par univers</h2>
+          <p style={S.hint}>Ce que chaque univers contient en vidéos, et ce qui y est entré dans les 24 heures avant le passage de nuit.</p>
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={S.th}>Univers</th>
+                {recap.map((row) => <th key={row.day} style={{ ...S.th, textAlign: 'right' }}>{formatDay(row.day)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(UNIVERSE_LABEL).map((universe) => (
+                <tr key={universe}>
+                  <td style={S.td}>{UNIVERSE_LABEL[universe]}</td>
+                  {recap.map((row) => (
+                    <td key={row.day} style={{ ...S.td, textAlign: 'right' }}>
+                      <span style={{ color: (row.added?.[universe] ?? 0) > 0 ? '#1b5e20' : '#bbb', fontWeight: 600 }}>+{(row.added?.[universe] ?? 0).toLocaleString('fr-FR')}</span>
+                      <span style={{ color: '#777', marginLeft: 8 }}>{(row.sizes?.[universe] ?? 0).toLocaleString('fr-FR')}</span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
 

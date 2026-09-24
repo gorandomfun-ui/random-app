@@ -10,6 +10,7 @@
 #   bash /opt/random-app/server/run-line.sh discovery
 #   bash /opt/random-app/server/run-line.sh web-embed
 #   bash /opt/random-app/server/run-line.sh like-pool
+#   bash /opt/random-app/server/run-line.sh pools
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -53,6 +54,10 @@ case "${LINE}" in
     ;;
   discovery)
     run npm run -s discovery:explore
+    ;;
+  pools)
+    # The big universes grown a little every night, on Dailymotion only: no YouTube unit spent.
+    run node --import tsx scripts/v3/pools-direct.ts
     ;;
   like-pool)
     # The zones around the likes and their sizes, as the like tickets draw them.

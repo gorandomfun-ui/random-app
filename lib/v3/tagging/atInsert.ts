@@ -56,23 +56,26 @@ export async function tagForInsert<T extends TaggableDocument>(
     console.warn(`[v3] étiquetage partiel pour ${documents.length} contenus : sujets possiblement manquants`)
   }
 
-  return documents.map((document) => {
-    const tags = tagItem(document, index, now)
+  return documents.map((original) => {
+    const tags = tagItem(original, index, now)
+    // The hint served the tagging; it is not a field of the stored item.
+    const { universeHint: _hint, ...document } = original as T & { universeHint?: unknown }
+    void _hint
     const labels = tags.subjects
       .map((subject) => index.subjects.get(subject.id)?.label)
       .filter((label): label is string => Boolean(label))
 
     return {
-      ...document,
+      ...(document as T),
       v3: {
         ...tags,
         line: line ?? tags.line,
-        nearFamily: nearFamilyKey(document.title ?? '', labels),
+        nearFamily: nearFamilyKey(original.title ?? '', labels),
         formatFamily: formatFamilyKey({
           primarySubjectId: tags.subjects[0]?.id,
           universe: tags.universe,
           angle: tags.angle,
-          lang: document.lang,
+          lang: original.lang,
         }),
       },
     }
