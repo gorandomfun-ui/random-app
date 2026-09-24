@@ -51,7 +51,7 @@ export default function MockGallery() {
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
       <h1 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 22, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Jeux — maquette statique</h1>
-      <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>Les écrans des deux jeux à l&apos;arrêt, dessinés en pixels par le code du projet. Rien n&apos;est jouable ici. Choisis une couleur du site :</p>
+      <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12 }}>Les écrans des deux jeux, dessinés en pixels par le code du projet, avec leurs petites animations. Rien n&apos;est jouable ici. Choisis une couleur du site :</p>
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {TEXT_COLORS.map((color) => (
           <button key={color} onClick={() => setAccent(color)} aria-label={color} style={{ width: 32, height: 32, borderRadius: 999, background: color, border: color === accent ? '3px solid #F8F5E6' : '3px solid transparent' }} />

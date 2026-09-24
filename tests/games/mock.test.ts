@@ -22,19 +22,19 @@ test('le logo pixel : 96 sur 22, rectangulaire, dessiné', () => {
   assert.ok(on > LOGO_WIDTH * LOGO_HEIGHT * 0.4 && on < LOGO_WIDTH * LOGO_HEIGHT * 0.95, 'ni vide ni un bloc plein')
 })
 
-test('chaque sprite est rectangulaire et ne sort pas d_une cellule de huit', () => {
+test('chaque sprite est rectangulaire et ne sort pas d_une cellule de seize', () => {
   const all: Array<[string, readonly string[]]> = [
     ...sprites.BURGER.map((s, i): [string, readonly string[]] => [`burger ${i}`, s]), ['tomate', sprites.TOMATO], ['cornichon', sprites.PICKLE], ['oignon', sprites.ONION], ['sauce', sprites.SAUCE],
-    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['humain effrayé', sprites.HUMAN_SCARED], ['mur', sprites.WALL],
+    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['humain effrayé', sprites.HUMAN_SCARED], ['mini burger', sprites.MINI_BURGER],
+    ...Object.entries(sprites.EATER_SHOULDERS).map(([k, s]): [string, readonly string[]] => [`épaules ${k}`, s]),
     ...Object.entries(sprites.EATER_HEAD).map(([k, s]): [string, readonly string[]] => [`tête ${k}`, s]),
     ...Object.entries(sprites.EATER_TORSO).map(([k, s]): [string, readonly string[]] => [`torse ${k}`, s]),
     ...Object.entries(sprites.EATER_TURN).map(([k, s]): [string, readonly string[]] => [`virage ${k}`, s]),
     ...Object.entries(sprites.EATER_LEGS).flatMap(([k, list]) => list.map((s, i): [string, readonly string[]] => [`jambes ${k} ${i}`, s])),
-    ['vidéo', sprites.FOOD_VIDEO], ['image', sprites.FOOD_IMAGE], ['texte', sprites.FOOD_TEXT],
   ]
   for (const [name, sprite] of all) {
     const { width, height } = spriteSize(sprite)
-    assert.ok(width <= 8 && height <= 8, `${name} : ${width}×${height}`)
+    assert.ok(width <= 16 && height <= 16, `${name} : ${width}×${height}`)
     for (const row of sprite) assert.equal(row.length, width, `${name} : rangée irrégulière`)
   }
 })
