@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
+import HomeShareMenu from '@/components/HomeShareMenu'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
@@ -622,18 +623,10 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
     return undefined
   }, [targetBtnW, viewportWidth])
 
-  const shareFromFooter = useCallback(() => {
-    const shareData = {
-      title: 'Random',
-      text: 'Random app',
-      url: typeof window !== 'undefined' ? window.location.origin : 'https://gorandom.fun',
-    }
-    if (navigator.share) {
-      navigator.share(shareData).catch(() => {})
-    } else {
-      navigator.clipboard?.writeText(shareData.url).then(() => alert('Link copied!')).catch(() => {})
-    }
-  }, [])
+  // The app's own share panel: Instagram, TikTok, X, Messages, WhatsApp, the link — never the bare system sheet.
+  const [shareOpen, setShareOpen] = useState(false)
+  const shareFromFooter = useCallback(() => setShareOpen(true), [])
+  const closeShare = useCallback(() => setShareOpen(false), [])
 
   const handleStart = useCallback(() => {
     const next = !isSecond
@@ -840,6 +833,8 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
           </div>
         </div>
       </footer>
+
+      <HomeShareMenu open={shareOpen} onClose={closeShare} theme={theme} themeIndex={themeIdx} locale={locale} />
 
       {adsAllowed ? (
         <div
