@@ -146,3 +146,17 @@ test('coupé, le moteur reste muet même réveillé', () => {
   assert.equal(context.notes.length, 0)
   sound.setMuted(false)
 })
+
+test('sur iPad, aucun moteur n_est créé : la vidéo garde le son de l_appareil', () => {
+  // A running Web Audio engine takes the device's audio session, and the video
+  // in the page is then given nothing. Files will bring the transitions back.
+  const before = births
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1', maxTouchPoints: 5 },
+    configurable: true,
+  })
+  sound.wakeSound()
+  sound.playRandom(0)
+  assert.equal(births, before, 'rien n_est demandé au navigateur')
+  Object.defineProperty(globalThis, 'navigator', { value: { userActivation: { isActive: true } }, configurable: true })
+})
