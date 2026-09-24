@@ -63,7 +63,7 @@ import {
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
 import RandomPlayerFrame from '@/components/players/RandomPlayerFrame'
-import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted } from '@/utils/sound'
+import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted, wakeSound } from '@/utils/sound'
 import {
   advanceProductionEncourage3DSchedule,
   createEncourage3DSchedule,
@@ -1337,6 +1337,31 @@ const shouldBypassNativeFullscreen = () => {
   const isiOS = /iP(ad|hone|od)/.test(ua)
   const isIpadOnMac = /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1
   return isiOS || isIpadOnMac
+}
+
+/**
+ * Whether the page is laid out at a width the window no longer has.
+ *
+ * Safari on iPad sometimes keeps the width the page had before a rotation, above
+ * all just after a full-screen video is closed: the document stays in portrait
+ * inside a landscape window, with a dead band on the side.
+ */
+function viewportIsStale(): boolean {
+  if (typeof document === 'undefined') return false
+  return Math.abs(document.documentElement.clientWidth - window.innerWidth) > 1
+}
+
+/**
+ * Unsticks it. Nothing in the style sheet moves Safari once it is in that state;
+ * declaring the viewport again does. The extra term lasts one frame and the
+ * original declaration is put back, so zooming is never taken away.
+ */
+function refreshViewport(): void {
+  const meta = document.querySelector('meta[name="viewport"]')
+  const content = meta?.getAttribute('content')
+  if (!meta || !content) return
+  meta.setAttribute('content', `${content}, height=${window.innerHeight}`)
+  window.requestAnimationFrame(() => meta.setAttribute('content', content))
 }
 
 const VIDEO_SOUND_WAKE_DELAYS = [80, 320, 900, 1600]
@@ -2794,16 +2819,37 @@ export function RandomExperience({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const update = () => {
+    const onIOS = shouldBypassNativeFullscreen()
+    let frame = 0
+    let settleTimer = 0
+    const apply = () => {
       setViewportWidth(window.innerWidth)
       setViewportHeight(window.innerHeight)
+    }
+    // Safari on iPad still gives the previous size while a rotation runs, so the
+    // measure is taken again once the browser has settled on the new one. Read
+    // only during the turn, the page kept its portrait frame in landscape.
+    const settle = () => {
+      apply()
+      if (onIOS && viewportIsStale()) refreshViewport()
+    }
+    const update = () => {
+      apply()
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(settleTimer)
+      frame = window.requestAnimationFrame(settle)
+      settleTimer = window.setTimeout(settle, 400)
     }
     update()
     window.addEventListener('resize', update)
     window.addEventListener('orientationchange', update)
+    window.visualViewport?.addEventListener('resize', update)
     return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(settleTimer)
       window.removeEventListener('resize', update)
       window.removeEventListener('orientationchange', update)
+      window.visualViewport?.removeEventListener('resize', update)
     }
   }, [])
 
@@ -3243,6 +3289,12 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
       window.removeEventListener('keydown', onKey)
       document.removeEventListener('fullscreenchange', onFullscreenChange)
       document.removeEventListener('webkitfullscreenchange', onFullscreenChange)
+      // Closing the full-screen layer is where Safari forgets to lay the page out again.
+      window.requestAnimationFrame(() => {
+        setViewportWidth(window.innerWidth)
+        setViewportHeight(window.innerHeight)
+        if (viewportIsStale()) refreshViewport()
+      })
     }
   }, [closeFullscreen, fullscreenVideo])
 
@@ -4713,6 +4765,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   }, [ensureWaveTrail, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
 
   const handlePrimaryAction = useCallback(() => {
+    // Safari only lets the sound engine come back during a touch, and the draw's
+    // own sound comes long after, once the content has loaded.
+    wakeSound()
     if (!waveModeRef.current || waveRemainingRef.current <= 1) {
       handleRandomAgain()
       return
@@ -4832,6 +4887,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           aria-label={waveButtonLabel}
           title={waveButtonLabel}
           onClick={() => {
+            wakeSound()
             if (waveModeRef.current) {
               handleRandomAgain()
               return
