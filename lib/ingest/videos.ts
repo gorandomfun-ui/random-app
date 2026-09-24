@@ -4,6 +4,7 @@ import { retroSearchPlan, youtubeSearchBatch } from './retroSearchPlan';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildVideoDocument } from './videoDocument';
 import { tagForInsert } from '@/lib/v3/tagging/atInsert';
+import type { Universe } from '@/lib/v3/types';
 import type { Line } from '@/lib/v3/types';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
@@ -46,6 +47,8 @@ export type RawVideo = {
   liveBroadcastContent?: string;
   editorialRoutine?: boolean;
   editorialRoutineIngestedAt?: Date;
+  /** The universe the line that found the video was looking for; read by the tagger at insert, never stored. */
+  universeHint?: Universe;
 };
 
 export type VideoDocument = Partial<DiscoveryVideoFields> & {
@@ -1078,6 +1081,8 @@ export async function finalizeVideoIngest(
 
   const unique = admission.videos;
   const documents: VideoDocument[] = [];
+  // What a line asked for, by video id: handed to the tagger at insert, kept out of every write.
+  const universeHints = new Map<string, Universe>();
   let skippedInvalid = 0;
   for (const raw of unique) {
     const doc = buildVideoDocument(raw);
@@ -1085,6 +1090,7 @@ export async function finalizeVideoIngest(
       skippedInvalid += 1;
       continue;
     }
+    if (raw.universeHint) universeHints.set(doc.videoId, raw.universeHint);
     documents.push(doc);
   }
 
@@ -1167,6 +1173,7 @@ export async function finalizeVideoIngest(
       await getDb(),
       writeDocuments.map((doc) => ({
         ...doc,
+        ...(universeHints.has(doc.videoId) ? { universeHint: universeHints.get(doc.videoId) } : {}),
         createdAt: now,
         updatedAt: now,
         rand: Math.random(),
