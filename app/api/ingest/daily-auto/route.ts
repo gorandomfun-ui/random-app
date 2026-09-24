@@ -174,6 +174,8 @@ function compactResult(value: unknown): Record<string, unknown> {
     existingSkipped: raw.existingSkipped ?? 0,
     providerCounts: raw.providerCounts ?? {},
     providers: raw.providers ?? [],
+    // What was actually written by provider: the journal's share, dropped here until 24 September.
+    ...(raw.insertedByProvider && typeof raw.insertedByProvider === 'object' ? { insertedByProvider: raw.insertedByProvider } : {}),
     warnings: Array.isArray(raw.warnings) ? raw.warnings.slice(0, 10) : [],
     dryRun: Boolean(raw.dryRun),
     checked: raw.checked ?? undefined,
