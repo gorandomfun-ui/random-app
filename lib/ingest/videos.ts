@@ -932,62 +932,8 @@ export async function enrichRecentYouTubeVideos(options: {
   return summary;
 }
 
-export async function redditYouTube(
-  sub: string,
-  limit: number,
-  warnings?: FetchWarning[],
-  options?: RedditListingOptions,
-): Promise<RawVideo[]> {
-  const listing = options?.listing || 'hot';
-  const time = options?.time;
-  const safeLimit = Math.min(100, Math.max(5, limit));
-  const params = new URLSearchParams({ limit: String(safeLimit) });
-  if (listing === 'top' && time) params.set('t', time);
-  if (options?.after) params.set('after', options.after);
-
-  const path = listing === 'hot' ? '' : `/${listing}`;
-  const label = time ? `reddit:${sub}:${listing}:${time}` : `reddit:${sub}:${listing}`;
-
-  const json = await fetchJson<RedditListing>(
-    `https://www.reddit.com/r/${encodeURIComponent(sub)}${path}.json?${params.toString()}`,
-    8000,
-    label,
-    warnings,
-  );
-  const posts = json?.data?.children?.map((child) => child?.data).filter((entry): entry is RedditPost => Boolean(entry)) || [];
-  const out: RawVideo[] = [];
-  let cursor: string | null = null;
-  for (const post of posts) {
-    if (post?.name) {
-      cursor = post.name;
-    }
-    const url = String(post?.url || '');
-    if (!/youtu\.be\//i.test(url) && !/youtube\.com\/watch\?/i.test(url)) continue;
-    let videoId = '';
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname.includes('youtu')) videoId = parsed.searchParams.get('v') || parsed.pathname.split('/').pop() || '';
-    } catch {
-      videoId = '';
-    }
-    if (!videoId) continue;
-    const context: string[] = [`reddit:${sub}`];
-    if (listing) context.push(`reddit:${sub}:${listing}${time ? `:${time}` : ''}`);
-    out.push({
-      videoId,
-      url: `https://youtu.be/${videoId}`,
-      provider: 'reddit-youtube',
-      title: post?.title || '',
-      thumb: youtubeThumb(videoId),
-      source: { name: 'Reddit', url: `https://www.reddit.com${post?.permalink || ''}` },
-      contextQueries: context,
-    });
-  }
-  if (options?.onCursor) {
-    options.onCursor(cursor);
-  }
-  return out;
-}
+import { redditYouTube } from './sources/redditFeed';
+export { redditYouTube };
 
 let cachedCollection: Collection<VideoDocument> | null = null;
 let videoIndexesPromise: Promise<void> | null = null;
