@@ -1849,21 +1849,41 @@ function DailymotionEmbed({
   const shellRef = useRef<HTMLDivElement | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const soundMutedRef = useRef(soundMuted)
-  const [isMuted, setIsMuted] = useState(soundMuted)
-  const [embedMuted, setEmbedMuted] = useState(soundMuted)
+  // A phone and a tablet forbid a video starting with its sound on. Asked for it
+  // anyway, the player either refuses to start or starts silent with no way back,
+  // which is what left Dailymotion mute on every touch device. So it starts muted
+  // there and the speaker below gives the sound back inside the tap.
+  const touchDevice = shouldBypassNativeFullscreen()
+  const [isMuted, setIsMuted] = useState(soundMuted || touchDevice)
+  const [embedMuted, setEmbedMuted] = useState(soundMuted || touchDevice)
   const [showSoundHint, setShowSoundHint] = useState(false)
 
   useEffect(() => {
     soundMutedRef.current = soundMuted
-    setIsMuted(soundMuted)
-    setEmbedMuted(soundMuted)
-  }, [soundMuted])
+    setIsMuted(soundMuted || touchDevice)
+    setEmbedMuted(soundMuted || touchDevice)
+  }, [soundMuted, touchDevice])
 
   useEffect(() => {
-    const nextMuted = soundMutedRef.current
+    const nextMuted = soundMutedRef.current || touchDevice
     setIsMuted(nextMuted)
     setEmbedMuted(nextMuted)
-  }, [url])
+  }, [touchDevice, url])
+
+  /**
+   * The sound, given back by reloading the player unmuted.
+   *
+   * The new player takes its orders from its address, and the message channel of
+   * the old one is gone; changing the address inside the tap is what a phone
+   * accepts. The video starts again from the beginning, which is the price of
+   * hearing it at all.
+   */
+  const toggleMute = () => {
+    const next = !isMuted
+    setIsMuted(next)
+    setEmbedMuted(next)
+    if (!next) requestSound()
+  }
 
   const embedUrl = useMemo(() => {
     try {
@@ -2051,6 +2071,7 @@ function DailymotionEmbed({
             onClick={handleFullscreen}
             hidden={fullscreen}
           />
+          {!fullscreen ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
           {!fullscreen ? soundHint : null}
           {fullscreen ? (
             <button
@@ -2073,7 +2094,7 @@ function DailymotionEmbed({
         title={text}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
-        soundControl={soundHint}
+        soundControl={<VideoSoundIconButton muted={isMuted} onClick={toggleMute} />}
       >
         {(fullscreen) => renderPlayer(fullscreen)}
       </RandomPlayerFrame>
