@@ -2010,7 +2010,7 @@ function DailymotionEmbed({
 
   const requestSound = useCallback(() => {
     wakeDailymotionSound(iframeRef.current, dailymotionId)
-  }, [])
+  }, [dailymotionId])
 
   useEffect(() => {
     if (isMuted) return undefined
