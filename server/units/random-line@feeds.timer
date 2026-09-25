@@ -1,0 +1,12 @@
+[Unit]
+Description=Random, ligne sources humaines : les communautés où des gens ont déjà fait le tri
+
+[Timer]
+# After the pools pass, before the morning lines: the night is free and the
+# communities have had a full day of posts.
+OnCalendar=*-*-* 05:40:00 Europe/Paris
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
