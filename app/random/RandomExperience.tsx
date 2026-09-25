@@ -1447,32 +1447,34 @@ function subscribeToYouTubeEvents(iframe: HTMLIFrameElement | null, playerId: st
 }
 
 /**
- * Giving a Dailymotion video its sound, in the words its player understands.
+ * Giving a Dailymotion video its sound.
  *
- * On a desktop the `mute=false` in the address is enough: the browser allows a
- * video to start with its sound. A phone and a tablet forbid that, so the player
- * starts muted there and only a command can lift it — and the command it used to
- * answer to, `setMuted`, is nowhere in the new player's code, while `setVolume`
- * and `muted` are. That is why the desktop was fine and every touch device silent.
+ * Their new player's public interface was read command by command: it registers
+ * play, pause, togglePlay, seek, speed, load, preload and a dozen things about
+ * advertising and casting, and **nothing at all about sound**. `setMuted`, the
+ * command the page used to send, no longer exists anywhere in it. That is why
+ * the desktop, which gets its sound from the address, was fine while every
+ * touch device stayed silent whatever we sent.
  *
- * Each spelling is sent; the player ignores what it does not know.
+ * One lever remains. `load` takes an object, keeps `video` for itself and hands
+ * every other key to the player as the settings of the video it is about to
+ * start. So the video is loaded again, by the player itself, with its sound on.
+ * It starts from the beginning, which is the price.
  */
-function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
-  for (const message of [
-    { command: 'muted', parameters: [false] },
-    { command: 'setMuted', parameters: [false] },
-    { command: 'setVolume', parameters: [1] },
-    { command: 'volume', parameters: [1] },
-    { command: 'play', parameters: [] },
-  ]) postEmbedMessage(iframe, message)
+function wakeDailymotionSound(iframe: HTMLIFrameElement | null, videoId: string) {
+  if (videoId) {
+    postEmbedMessage(iframe, { command: 'load', parameters: [{ video: videoId, mute: false, autoplay: true }] })
+  }
+  // Kept for the older player, which some regions may still be served.
+  postEmbedMessage(iframe, { command: 'setMuted', parameters: [false] })
+  postEmbedMessage(iframe, { command: 'play', parameters: [] })
 }
 
-function muteDailymotionSound(iframe: HTMLIFrameElement | null) {
-  for (const message of [
-    { command: 'muted', parameters: [true] },
-    { command: 'setMuted', parameters: [true] },
-    { command: 'setVolume', parameters: [0] },
-  ]) postEmbedMessage(iframe, message)
+function muteDailymotionSound(iframe: HTMLIFrameElement | null, videoId: string) {
+  if (videoId) {
+    postEmbedMessage(iframe, { command: 'load', parameters: [{ video: videoId, mute: true, autoplay: true }] })
+  }
+  postEmbedMessage(iframe, { command: 'setMuted', parameters: [true] })
 }
 
 function scheduleVideoSoundWake(wake: () => void) {
@@ -1906,13 +1908,14 @@ function DailymotionEmbed({
     setIsMuted(next)
     // No reload: a phone refuses a video that starts with its sound, so the
     // player is asked, inside the tap, to lift the mute it already has.
-    if (next) muteDailymotionSound(iframeRef.current)
+    if (next) muteDailymotionSound(iframeRef.current, dailymotionId)
     else requestSound()
   }
 
+  const dailymotionId = useMemo(() => extractDailymotionVideoId(url) || '', [url])
   const embedUrl = useMemo(() => {
     try {
-      const videoId = extractDailymotionVideoId(url) || ''
+      const videoId = dailymotionId
       // Dailymotion retired `dailymotion.com/embed/video/<id>`: it answers 301 to
       // `geo.dailymotion.com/player.html?video=<id>` and the redirect **drops every
       // parameter** — measured 25 September. So the mute we asked for, the controls
@@ -2006,7 +2009,7 @@ function DailymotionEmbed({
   }, [iframeLoaded, url])
 
   const requestSound = useCallback(() => {
-    wakeDailymotionSound(iframeRef.current)
+    wakeDailymotionSound(iframeRef.current, dailymotionId)
   }, [])
 
   useEffect(() => {
