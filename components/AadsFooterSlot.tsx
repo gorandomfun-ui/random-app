@@ -46,7 +46,10 @@ export default function AadsFooterSlot({
   const [nonce, setNonce] = useState(0)
   const [status, setStatus] = useState<AadsSlotStatus>(() => (effectiveEnabled && unitId ? 'idle' : 'empty'))
   const visible = status === 'visible'
-  const adUrl = unitId ? `https://ad.a-ads.com/${encodeURIComponent(unitId)}?size=${encodeURIComponent(size)}` : null
+  // The address and the shape of A-ADS's own snippet, to the letter: their
+  // verifier looks for the code they hand out, and ours differed by a domain
+  // and a trailing slash. Their two domains serve the same banner.
+  const adUrl = unitId ? `https://acceptable.a-ads.com/${encodeURIComponent(unitId)}/?size=${encodeURIComponent(size)}` : null
 
   useEffect(() => {
     onVisibleChange?.(visible)
@@ -88,7 +91,7 @@ export default function AadsFooterSlot({
           {label}
         </span>
       ) : null}
-      <div className="relative flex h-full w-full items-center justify-center">
+      <div id="frame" className="relative flex h-full w-full items-center justify-center" style={{ width: '100%' }}>
         {adUrl && effectiveEnabled ? (
           <iframe
             key={nonce}

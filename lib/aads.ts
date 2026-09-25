@@ -25,7 +25,7 @@ export function mountAadsSlot(
   const iframe = document.createElement('iframe')
   const size = options?.size ?? 'Adaptive'
   iframe.dataset.aa = unitId
-  iframe.src = `https://ad.a-ads.com/${encodeURIComponent(unitId)}?size=${encodeURIComponent(size)}`
+  iframe.src = `https://acceptable.a-ads.com/${encodeURIComponent(unitId)}/?size=${encodeURIComponent(size)}`
   iframe.width = '100%'
   iframe.height = '100%'
   iframe.scrolling = 'no'
