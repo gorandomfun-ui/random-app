@@ -1446,10 +1446,33 @@ function subscribeToYouTubeEvents(iframe: HTMLIFrameElement | null, playerId: st
   }
 }
 
+/**
+ * Giving a Dailymotion video its sound, in the words its player understands.
+ *
+ * On a desktop the `mute=false` in the address is enough: the browser allows a
+ * video to start with its sound. A phone and a tablet forbid that, so the player
+ * starts muted there and only a command can lift it — and the command it used to
+ * answer to, `setMuted`, is nowhere in the new player's code, while `setVolume`
+ * and `muted` are. That is why the desktop was fine and every touch device silent.
+ *
+ * Each spelling is sent; the player ignores what it does not know.
+ */
 function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
-  postEmbedMessage(iframe, { command: 'setMuted', parameters: [false] })
-  postEmbedMessage(iframe, { command: 'setVolume', parameters: [1] })
-  postEmbedMessage(iframe, { command: 'play' })
+  for (const message of [
+    { command: 'muted', parameters: [false] },
+    { command: 'setMuted', parameters: [false] },
+    { command: 'setVolume', parameters: [1] },
+    { command: 'volume', parameters: [1] },
+    { command: 'play', parameters: [] },
+  ]) postEmbedMessage(iframe, message)
+}
+
+function muteDailymotionSound(iframe: HTMLIFrameElement | null) {
+  for (const message of [
+    { command: 'muted', parameters: [true] },
+    { command: 'setMuted', parameters: [true] },
+    { command: 'setVolume', parameters: [0] },
+  ]) postEmbedMessage(iframe, message)
 }
 
 function scheduleVideoSoundWake(wake: () => void) {
@@ -1881,8 +1904,10 @@ function DailymotionEmbed({
   const toggleMute = () => {
     const next = !isMuted
     setIsMuted(next)
-    setEmbedMuted(next)
-    if (!next) requestSound()
+    // No reload: a phone refuses a video that starts with its sound, so the
+    // player is asked, inside the tap, to lift the mute it already has.
+    if (next) muteDailymotionSound(iframeRef.current)
+    else requestSound()
   }
 
   const embedUrl = useMemo(() => {
