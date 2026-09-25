@@ -30,7 +30,7 @@ type Props = {
 }
 
 export default function ScoreCounter({ variant = 'home', className = '', style }: Props) {
-  const { score, diamonds } = useScore()
+  const { points } = useScore()
   const [activeDiamonds, setActiveDiamonds] = useState<AnimatedDiamond[]>([])
   const lastSeenRef = useRef<Set<string>>(new Set())
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -57,21 +57,6 @@ export default function ScoreCounter({ variant = 'home', className = '', style }
     }
   }, [updateTarget])
 
-  useEffect(() => {
-    const seen = lastSeenRef.current
-    const newcomers = diamonds.filter((diamond) => !seen.has(diamond.id))
-    if (!newcomers.length) return
-    const { dx, dy } = targetRef.current
-    newcomers.forEach((diamond) => {
-      seen.add(diamond.id)
-      setActiveDiamonds((prev) => [...prev, { id: diamond.id, amount: diamond.amount, dx, dy }])
-      setTimeout(() => {
-        setActiveDiamonds((prev) => prev.filter((entry) => entry.id !== diamond.id))
-        seen.delete(diamond.id)
-      }, 1400)
-    })
-  }, [diamonds])
-
   const baseClass = 'score-counter'
   const variantClass = variant === 'random' ? 'score-counter--random' : ''
 
@@ -83,7 +68,7 @@ export default function ScoreCounter({ variant = 'home', className = '', style }
       style={style}
     >
       <span className="score-counter__label">XP :</span>
-      <span className="score-counter__value">{score}</span>
+      <span className="score-counter__value">{points}</span>
 
       {activeDiamonds.map((diamond) => (
         <Diamond key={diamond.id} amount={diamond.amount} dx={diamond.dx} dy={diamond.dy} />

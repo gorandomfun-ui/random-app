@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import MonoIcon from '@/components/MonoIcon'
-import QuizScoreText from '@/components/QuizScoreText'
+import PointsText from '@/components/PointsText'
 import { useI18n } from '@/providers/I18nProvider'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
@@ -207,7 +207,7 @@ export default function LegalDocumentHeader({
                 <MonoIcon src="/icons/plus.svg" color={menuColor} size={18} />
               </Link>
 
-              <QuizScoreText style={{ color: scoreColor }} />
+              <PointsText style={{ color: scoreColor }} />
             </nav>
           </div>
         </div>

@@ -9,15 +9,16 @@ type Props = {
   style?: CSSProperties
 }
 
-export default function QuizScoreText({
+/** The one total of points, wherever a menu or a page header shows it. */
+export default function PointsText({
   className = 'text-lg font-semibold uppercase',
   style,
 }: Props) {
-  const { quizScore } = useScore()
+  const { points } = useScore()
 
   return (
     <span className={className} style={style}>
-      {quizScore} PTS
+      {points} PTS
     </span>
   )
 }

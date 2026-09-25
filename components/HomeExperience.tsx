@@ -19,13 +19,12 @@ import { storyDestinationOf, type StoryDestination } from '@/lib/share/app'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import QuizScoreText from '@/components/QuizScoreText'
+import PointsText from '@/components/PointsText'
 import SocialPopover from '@/components/SocialPopover'
 import { useI18n } from '@/providers/I18nProvider'
 import { fetchRandom, type RandomTypes } from '@/lib/api'
 import { THEMES } from '@/lib/theme'
 import type { RandomContentItem } from '@/lib/random/clientTypes'
-import { useScore } from '@/providers/ScoreProvider'
 import { setMuted } from '@/utils/sound'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import { startWeLikePrefetch } from '@/lib/prefetch/homePrefetch'
@@ -311,7 +310,6 @@ function useButtonWidth(
 export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: { navigationPaths?: AppNavigationPaths } = {}) {
   const router = useRouter()
   const { t, locale, locales, setLocale } = useI18n()
-  const { addAction, maybeSpawnDiamond } = useScore()
 
   const HEADER_H = 56
   const FOOTER_H = 56
@@ -646,10 +644,8 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
     setIsButtonBursting(true)
     setTimeout(() => setIsButtonBursting(false), 520)
 
-    addAction('random')
-    maybeSpawnDiamond()
     router.push(navigationPaths.random)
-  }, [addAction, isSecond, maybeSpawnDiamond, navigationPaths.random, router])
+  }, [isSecond, navigationPaths.random, router])
 
   return (
     <main className="home-page min-h-screen flex flex-col" style={mainStyle}>
@@ -998,7 +994,7 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
 
-              <QuizScoreText style={{ color: '#191916' }} />
+              <PointsText style={{ color: '#191916' }} />
 
               <button
                 type="button"

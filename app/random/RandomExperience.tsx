@@ -2560,7 +2560,7 @@ export function RandomExperience({
   const [curationError, setCurationError] = useState('')
   const curatorPendingRef = useRef(false)
   const { dict, locale, locales, setLocale, t } = useI18n()
-  const { addAction, addPoints, maybeSpawnDiamond, quizScore, score } = useScore()
+  const { addPoints, points } = useScore()
   const encourageMessages = useMemo(() => {
     const fallback = FALLBACK_ENCOURAGE_MESSAGES
     if (!dict || typeof dict !== 'object') return fallback
@@ -2913,8 +2913,7 @@ export function RandomExperience({
   const privacyLabel = useMemo(() => t('legal.privacy.privacyPolicy', 'Privacy'), [t])
   const languageLabel = useMemo(() => t('language.title', 'Language'), [t])
   const fullscreenLabel = useMemo(() => t('video.fullscreen', 'Fullscreen'), [t])
-  const quizScoreText = useMemo(() => `${quizScore} PTS`, [quizScore])
-  const scoreText = useMemo(() => `${score} PTS`, [score])
+  const scoreText = useMemo(() => `${points} PTS`, [points])
   const langVersionRef = useRef(0)
   const encourageQueueRef = useRef<string[]>([])
   const miniGameStateRef = useRef<{
@@ -3115,7 +3114,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
 
     const prepared = createProductionEncourage3DEvent({
       draws,
-      score,
+      score: points,
       messages: encourageMessages,
       previousMainId: previousEncourage3dMainRef.current,
     })
@@ -3129,7 +3128,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
         preparedEncourage3dPromiseRef.current = null
       }
     })
-  }, [effectsTestMode, encourageMessages, preloadEncourage3D, score])
+  }, [effectsTestMode, encourageMessages, preloadEncourage3D, points])
 
   const queueProductionEncourage3D = useCallback(() => {
     if (effectsTestMode) return
@@ -3140,7 +3139,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
     const context = {
       now,
       draws,
-      score,
+      score: points,
       messages: encourageMessages,
       previousMainId: previousEncourage3dMainRef.current,
     }
@@ -3157,7 +3156,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
     preparedEncourage3dPromiseRef.current = null
     previousEncourage3dMainRef.current = next.event.main?.id ?? previousEncourage3dMainRef.current
     revealEncourage3D(next.event, prepared?.id === next.event.id ? preparedPromise : null)
-  }, [effectsTestMode, encourageMessages, prepareProductionEncourage3D, revealEncourage3D, score])
+  }, [effectsTestMode, encourageMessages, prepareProductionEncourage3D, revealEncourage3D, points])
 
   const handleEncourage3DAward = useCallback((points: number) => {
     addPoints(points)
@@ -4217,11 +4216,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
 
       if (reward) {
-        addAction('random')
         if (displayedItem.type === 'encourage') {
-          addAction('encourage')
         }
-        maybeSpawnDiamond()
       }
       await waitForNextPaint()
       await waitForTransitionSettle('random')
@@ -4255,7 +4251,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       void fillRandomReadyQueue()
     }
-  }, [addAction, adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, maybeSpawnDiamond, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle, discoveryEnabled, getContentKey, registerRecentKey, invalidateDiscoveryQueue, restartRhythmIfIdle])
+  }, [adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle, discoveryEnabled, getContentKey, registerRecentKey, invalidateDiscoveryQueue, restartRhythmIfIdle])
 
   /**
    * The content on screen is dead: replaced by a reserve of the Wave when in
@@ -4964,7 +4960,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
                   fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif",
                 }}
               >
-                <span>{quizScoreText}</span>
+                <span>{scoreText}</span>
               </div>
             ) : showXpForCategory ? (
               <div
