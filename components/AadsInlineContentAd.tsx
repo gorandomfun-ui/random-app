@@ -7,7 +7,6 @@ import {
   type AadsRefreshEvent,
   type AadsRefreshTarget,
   type AadsSlotStatus,
-  mountAadsSlot,
 } from '@/lib/aads'
 
 const INLINE_DESKTOP_ID = process.env.NEXT_PUBLIC_AADS_INFEED_DESKTOP_ID
@@ -49,18 +48,30 @@ export default function AadsInlineContentAd({
   const [intersecting, setIntersecting] = useState(forceVisible)
   const [active, setActive] = useState(forceVisible)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
-  const slotRef = useRef<HTMLDivElement | null>(null)
-  const cleanupRef = useRef<(() => void) | null>(null)
   const lastRefreshRef = useRef(0)
   const unitId = getUnitId(variant)
   // A-ADS is cookieless and shown without a consent gate, in every region.
   const effectiveEnabled = true
   const [status, setStatus] = useState<AadsSlotStatus>(() => (effectiveEnabled && unitId ? 'idle' : 'empty'))
 
+  const [nonce, setNonce] = useState(0)
+
   const size = useMemo(() => {
     if (variant === 'desktop') return { width: 728, height: 90 }
     return { width: 300, height: 250 }
   }, [variant])
+
+  /**
+   * A-ADS checks one page and reads what the server sent, without running it.
+   * A frame built by hand once the page is running exists nowhere in that page,
+   * so these two units could never be verified. Both are written now, at their
+   * own address and in A-ADS's own shape, and the one that does not belong on
+   * this screen is left to the style sheet.
+   */
+  const otherId = variant === 'desktop' ? INLINE_MOBILE_ID : INLINE_DESKTOP_ID
+  const otherSize = variant === 'desktop' ? '300x250' : '728x90'
+  const adUrl = unitId ? `https://acceptable.a-ads.com/${encodeURIComponent(unitId)}/?size=${size.width}x${size.height}` : null
+  const otherUrl = otherId ? `https://acceptable.a-ads.com/${encodeURIComponent(otherId)}/?size=${otherSize}` : null
 
   useEffect(() => () => releaseInlineSlot(slotIdRef.current), [])
 
@@ -111,37 +122,13 @@ export default function AadsInlineContentAd({
   }, [unitId])
 
   const requestAd = useCallback(() => {
-    cleanupRef.current?.()
     if (!active || !effectiveEnabled || !unitId) {
       setStatus('empty')
       return
     }
-    const container = slotRef.current
-    if (!container) return
-    setStatus('loading')
-    cleanupRef.current = mountAadsSlot(container, unitId, {
-      onLoad: () => setStatus('visible'),
-      onFallback: () => setStatus('empty'),
-      size: `${size.width}x${size.height}`,
-      timeoutMs: 2500,
-    })
+    setNonce((value) => value + 1)
     lastRefreshRef.current = Date.now()
-  }, [active, effectiveEnabled, size.height, size.width, unitId])
-
-  useEffect(() => {
-    if (!effectiveEnabled) {
-      setStatus('empty')
-      cleanupRef.current?.()
-      return
-    }
-    if (!active) {
-      setStatus(unitId ? 'idle' : 'empty')
-      cleanupRef.current?.()
-      return
-    }
-    requestAd()
-    return () => cleanupRef.current?.()
-  }, [active, effectiveEnabled, requestAd, unitId])
+  }, [active, effectiveEnabled, unitId])
 
   useEffect(() => {
     if (!refreshTarget) return
@@ -168,10 +155,10 @@ export default function AadsInlineContentAd({
     >
       <div
         className="flex h-full w-full flex-col items-center justify-center rounded-3xl border border-white/15 bg-white/5 px-4 py-5"
-        aria-hidden={!visible}
+        aria-hidden={status === 'empty'}
         style={{
-          opacity: visible ? 1 : 0,
-          pointerEvents: visible ? 'auto' : 'none',
+          opacity: status === 'empty' ? 0 : 1,
+          pointerEvents: status === 'empty' ? 'none' : 'auto',
         }}
       >
         {visible ? (
@@ -179,11 +166,35 @@ export default function AadsInlineContentAd({
             {label}
           </span>
         ) : null}
-        <div className="flex items-center justify-center" style={{ width: size.width, maxWidth: '100%', height: size.height }}>
-          <div
-            ref={slotRef}
-            className="h-full w-full"
-          />
+        <div id="frame" className="relative flex items-center justify-center" style={{ width: size.width, maxWidth: '100%', height: size.height }}>
+          {adUrl && effectiveEnabled ? (
+            <iframe
+              key={nonce}
+              data-aa={unitId}
+              src={adUrl}
+              title="advertisement"
+              width="100%"
+              height="100%"
+              scrolling="no"
+              frameBorder={0}
+              loading="lazy"
+              style={{ border: 0, padding: 0, width: '100%', height: '100%', overflow: 'hidden', background: 'transparent' }}
+              onLoad={() => setStatus('visible')}
+              onError={() => setStatus('empty')}
+            />
+          ) : null}
+          {otherUrl && effectiveEnabled ? (
+            <iframe
+              className="aads-other-format"
+              data-aa={otherId}
+              src={otherUrl}
+              title="advertisement"
+              scrolling="no"
+              frameBorder={0}
+              loading="lazy"
+              style={{ border: 0, padding: 0, overflow: 'hidden', background: 'transparent', position: 'absolute', inset: 0, margin: 'auto' }}
+            />
+          ) : null}
         </div>
       </div>
     </div>
