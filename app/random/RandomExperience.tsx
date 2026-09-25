@@ -1868,21 +1868,27 @@ function DailymotionEmbed({
   const embedUrl = useMemo(() => {
     try {
       const videoId = extractDailymotionVideoId(url) || ''
+      // Dailymotion retired `dailymotion.com/embed/video/<id>`: it answers 301 to
+      // `geo.dailymotion.com/player.html?video=<id>` and the redirect **drops every
+      // parameter** — measured 25 September. So the mute we asked for, the controls
+      // and the message channel never reached the player, on any device, and a
+      // video could no longer be heard at all. The address it redirects to is the
+      // one to ask for, and it keeps what it is given.
       const params = new URLSearchParams()
-      params.set('autoplay', '1')
-      params.set('mute', embedMuted ? '1' : '0')
-      params.set('controls', '1')
-      params.set('queue-enable', '0')
-      params.set('sharing-enable', '0')
-      params.set('ui-logo', '0')
+      params.set('video', videoId)
+      params.set('autoplay', 'true')
+      params.set('mute', embedMuted ? 'true' : 'false')
+      params.set('controls', 'true')
+      params.set('queue-enable', 'false')
+      params.set('sharing-enable', 'false')
+      params.set('ui-logo', 'false')
       params.set('ui-start-screen-info', 'false')
-      params.set('ui-start-screen-controls', 'true')
+      params.set('playsinline', 'true')
       params.set('quality', '480')
-      params.set('playsinline', '1')
       // The player tells the page what happens inside the frame: a dead video is an error event, or no ready event at all.
       params.set('api', 'postMessage')
       return videoId
-        ? `https://www.dailymotion.com/embed/video/${videoId}?${params.toString()}`
+        ? `https://geo.dailymotion.com/player.html?${params.toString()}`
         : url
     } catch {
       return url
