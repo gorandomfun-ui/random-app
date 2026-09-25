@@ -9,7 +9,7 @@ import { useSavedLikeView } from '@/components/likes/useSavedLikeView'
 import { clearExpired, fetchGlobalTop, getAll, type GlobalLikeItem, type LikeItem } from '../../utils/likes'
 import LogoAnimated from '../../components/LogoAnimated'
 import MonoIcon from '../../components/MonoIcon'
-import QuizScoreText from '@/components/QuizScoreText'
+import PointsText from '@/components/PointsText'
 import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
 import { THEMES } from '@/lib/theme'
@@ -716,7 +716,7 @@ export default function LikesClient({
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
 
-              <QuizScoreText style={{ color: '#191916' }} />
+              <PointsText style={{ color: '#191916' }} />
             </nav>
           </div>
         </div>

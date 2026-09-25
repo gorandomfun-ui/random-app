@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import HeartIcon from '@/components/HeartIcon'
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import QuizScoreText from '@/components/QuizScoreText'
+import PointsText from '@/components/PointsText'
 import { THEMES } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 
@@ -826,7 +826,7 @@ function MenuOverlay({ close, languagesOpen, setLanguagesOpen, langs, locale, se
             <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
           </Link>
 
-          <QuizScoreText style={{ color: '#191916' }} />
+          <PointsText style={{ color: '#191916' }} />
         </nav>
       </div>
     </div>

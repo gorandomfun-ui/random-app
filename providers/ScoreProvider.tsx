@@ -10,109 +10,85 @@ import {
   type ReactNode,
 } from 'react'
 
-type ScoreAction = 'random' | 'encourage' | 'quizSuccess' | 'diamond'
-
-type DiamondEvent = { id: string; amount: number; timestamp: number }
+/**
+ * One counter of points, for the whole site.
+ *
+ * There used to be two, both labelled "PTS": the quiz total, kept for good in
+ * the browser's lasting store, and an XP total kept in the session store, which
+ * a closed tab wiped and which almost nothing ever fed — the function the draws
+ * called to award it was an empty shell. The home menu showed one, the Random
+ * menu the other, and they never agreed.
+ *
+ * Now: a single number, kept where the quiz total was kept, so it survives a
+ * closed tab, a closed browser and a phone that puts the page to sleep. The old
+ * quiz total is carried into it, so nobody loses what they had. The games will
+ * award through the same door.
+ *
+ * It lives in the browser of one device: a phone and a computer each keep their
+ * own. Sharing them would take an account.
+ */
 
 type ScoreContextValue = {
-  score: number
-  quizScore: number
-  addAction: (action: ScoreAction) => void
+  /** Everything earned on this device, ever. */
+  points: number
+  /** Awards points. Negative or absurd amounts are ignored. */
   addPoints: (amount: number) => void
-  addQuizPoints: (amount: number) => void
-  maybeSpawnDiamond: () => boolean
-  diamonds: DiamondEvent[]
 }
 
-const STORAGE_KEY = 'xp-session-total'
-const QUIZ_STORAGE_KEY = 'random-quiz-score-total'
+const STORAGE_KEY = 'random-points-total'
+/** Where the quiz total used to live, read once so nothing is lost. */
+const LEGACY_QUIZ_KEY = 'random-quiz-score-total'
+
+function readStored(): number {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored != null) {
+      const parsed = parseInt(stored, 10)
+      if (!Number.isNaN(parsed)) return Math.max(0, parsed)
+    }
+    const legacy = localStorage.getItem(LEGACY_QUIZ_KEY)
+    if (legacy != null) {
+      const parsed = parseInt(legacy, 10)
+      if (!Number.isNaN(parsed)) return Math.max(0, parsed)
+    }
+  } catch {
+    /* A browser that refuses its store simply starts at zero. */
+  }
+  return 0
+}
 
 const ScoreContext = createContext<ScoreContextValue | undefined>(undefined)
 
 export function ScoreProvider({ children }: { children: ReactNode }) {
-  const [score, setScore] = useState(0)
-  const [quizScore, setQuizScore] = useState(0)
+  const [points, setPoints] = useState(0)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY)
-      if (stored != null) {
-        const parsed = parseInt(stored, 10)
-        if (!Number.isNaN(parsed)) {
-          setScore(parsed)
-        }
-      }
-    } catch {
-      /* ignore */
+    setPoints(readStored())
+    // Another tab of the site earning points keeps this one in step.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || event.newValue == null) return
+      const parsed = parseInt(event.newValue, 10)
+      if (!Number.isNaN(parsed)) setPoints(Math.max(0, parsed))
     }
-    try {
-      const storedQuiz = localStorage.getItem(QUIZ_STORAGE_KEY)
-      if (storedQuiz != null) {
-        const parsedQuiz = parseInt(storedQuiz, 10)
-        if (!Number.isNaN(parsedQuiz)) {
-          setQuizScore(parsedQuiz)
-        }
-      }
-    } catch {
-      /* ignore */
-    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  const persistScore = useCallback((value: number) => {
-    if (typeof window === 'undefined') return
-    try {
-      sessionStorage.setItem(STORAGE_KEY, String(value))
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  const addPoints = useCallback(
-    (amount: number) => {
-      if (!amount || Number.isNaN(amount)) return
-      setScore((prev) => {
-        const next = Math.max(0, Math.round(prev + amount))
-        persistScore(next)
-        return next
-      })
-    },
-    [persistScore],
-  )
-
-  const addQuizPoints = useCallback((amount: number) => {
-    if (!amount || Number.isNaN(amount)) return
-    setQuizScore((prev) => {
-      const next = Math.max(0, Math.round(prev + amount))
+  const addPoints = useCallback((amount: number) => {
+    if (!Number.isFinite(amount) || amount <= 0) return
+    setPoints((previous) => {
+      const next = Math.max(0, Math.round(previous + amount))
       try {
-        localStorage.setItem(QUIZ_STORAGE_KEY, String(next))
+        localStorage.setItem(STORAGE_KEY, String(next))
       } catch {
-        /* ignore */
+        /* The number still counts for this visit. */
       }
       return next
     })
   }, [])
 
-  const noopAddAction = useCallback((action: ScoreAction) => {
-    void action
-  }, [])
-
-  const noopMaybeSpawnDiamond = useCallback(() => false, [])
-
-  const diamonds = useMemo<DiamondEvent[]>(() => [], [])
-
-  const value = useMemo<ScoreContextValue>(
-    () => ({
-      score,
-      quizScore,
-      addAction: noopAddAction,
-      addPoints,
-      addQuizPoints,
-      maybeSpawnDiamond: noopMaybeSpawnDiamond,
-      diamonds,
-    }),
-    [addPoints, addQuizPoints, diamonds, noopAddAction, noopMaybeSpawnDiamond, quizScore, score],
-  )
+  const value = useMemo<ScoreContextValue>(() => ({ points, addPoints }), [addPoints, points])
 
   return <ScoreContext.Provider value={value}>{children}</ScoreContext.Provider>
 }

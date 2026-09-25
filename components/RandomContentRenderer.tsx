@@ -18,6 +18,9 @@ import type {
 } from '../lib/random/clientTypes'
 import { getSourceHref, getSourceLabel } from '../lib/random/clientTypes'
 import { useScore } from '@/providers/ScoreProvider'
+
+/** What a right answer is worth. */
+const QUIZ_POINTS = 1
 import { useI18n } from '@/providers/I18nProvider'
 import MiniGameCard from './minigames/MiniGameCard'
 import { reportImageLoadIssue } from '@/utils/imageSuspects'
@@ -180,7 +183,7 @@ function AiAttribution({ item, theme }: { item: QuoteItem | JokeItem | FactTextI
 export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme }) {
   const [selected, setSelected] = useState<number | null>(null)
   const [revealed, setRevealed] = useState(false)
-  const { addQuizPoints } = useScore()
+  const { addPoints } = useScore()
   const { t } = useI18n()
 
   const allCorrectIndices = useMemo(() => {
@@ -203,7 +206,7 @@ export function FactQuizCard({ item, theme }: { item: FactQuizItem; theme: Theme
     setSelected(index)
     setRevealed(true)
     if (correct) {
-      addQuizPoints(1)
+      addPoints(QUIZ_POINTS)
     }
   }
 
