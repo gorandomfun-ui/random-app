@@ -105,7 +105,7 @@ const frDictionary = {
     "fullscreen": "Plein écran",
     "mute": "Couper le son",
     "unmute": "Activer le son",
-    "tapForSound": "Touchez pour le son",
+    "tapForSound": "Touchez deux fois pour le son",
     "openExternally": "Ouvrir dans l'app"
   },
   "web": {

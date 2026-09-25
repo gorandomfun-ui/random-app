@@ -2026,9 +2026,14 @@ function DailymotionEmbed({
    * The only way left to give a Dailymotion video its sound.
    *
    * Their new player exposes no sound command at all to the page around it, so
-   * a button of ours can do nothing. Its own control does work, and a touch on
-   * the video brings it up. So the page says where to press instead of
-   * pretending it can press for you.
+   * a button of ours can do nothing. Its own control does work: one touch on the
+   * video brings the controls up, a second one on the speaker lifts the mute —
+   * hence two taps, not one.
+   *
+   * The strip runs across the top of the frame rather than sitting somewhere on
+   * the image: the player is widened to fill the height and cropped at the
+   * sides, so anything placed against the video itself lands off-screen on a
+   * phone or an upright tablet. Against the frame, it is always whole.
    */
   const soundHint = showSoundHint ? (
     <div
@@ -2036,27 +2041,28 @@ function DailymotionEmbed({
       className="video-sound-hint"
       style={{
         position: 'absolute',
-        right: '10px',
-        bottom: '14px',
-        zIndex: 4,
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 5,
         pointerEvents: 'none',
         userSelect: 'none',
         display: 'flex',
         alignItems: 'center',
-        gap: '7px',
-        whiteSpace: 'nowrap',
-        borderRadius: '999px',
-        padding: '9px 13px',
+        justifyContent: 'center',
+        gap: '8px',
+        padding: '7px 10px',
         fontSize: '12px',
         fontWeight: 700,
         lineHeight: '16px',
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
         color: '#fff',
-        background: 'rgba(0,0,0,0.68)',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.78), rgba(0,0,0,0))',
       }}
     >
-      <Volume2 size={16} strokeWidth={2.4} aria-hidden="true" />
-      <span>{t('video.tapForSound', 'Tap for sound')}</span>
+      <Volume2 size={15} strokeWidth={2.4} aria-hidden="true" />
+      <span>{t('video.tapForSound', 'Tap twice for sound')}</span>
       <span className="video-sound-hint__arrow" aria-hidden="true">↓</span>
     </div>
   ) : null

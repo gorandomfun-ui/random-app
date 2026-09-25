@@ -105,7 +105,7 @@ const enDictionary = {
     "fullscreen": "Fullscreen",
     "mute": "Mute video",
     "unmute": "Unmute video",
-    "tapForSound": "Tap for sound",
+    "tapForSound": "Tap twice for sound",
     "openExternally": "Open in app"
   },
   "web": {

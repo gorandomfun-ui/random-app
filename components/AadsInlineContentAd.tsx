@@ -155,10 +155,10 @@ export default function AadsInlineContentAd({
     >
       <div
         className="flex h-full w-full flex-col items-center justify-center rounded-3xl border border-white/15 bg-white/5 px-4 py-5"
-        aria-hidden={status === 'empty'}
+        aria-hidden={!visible}
         style={{
-          opacity: status === 'empty' ? 0 : 1,
-          pointerEvents: status === 'empty' ? 'none' : 'auto',
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? 'auto' : 'none',
         }}
       >
         {visible ? (

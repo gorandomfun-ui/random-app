@@ -105,7 +105,7 @@ const jpDictionary = {
     "fullscreen": "全画面",
     "mute": "動画をミュート",
     "unmute": "動画のミュートを解除",
-    "tapForSound": "タップで音声オン",
+    "tapForSound": "二回タップで音声オン",
     "openExternally": "アプリで開く"
   },
   "web": {
