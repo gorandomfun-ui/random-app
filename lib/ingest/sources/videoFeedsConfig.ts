@@ -9,19 +9,12 @@ export type CuratedSubreddit = {
   limit?: number
 }
 
+/**
+ * Curated lists kept in the repository. The three GitHub lists this used to
+ * fetch all answered 404 on 25 September: their repositories are gone, and a
+ * list that cannot be read is a nightly error for nothing.
+ */
 export const AWESOME_VIDEO_LISTS: AwesomeListSource[] = [
-  {
-    label: 'Awesome Creative Coding',
-    url: 'https://raw.githubusercontent.com/terkelg/awesome-creative-coding/master/README.md',
-  },
-  {
-    label: 'Awesome Streaming',
-    url: 'https://raw.githubusercontent.com/bstellar/awesome-streaming/master/README.md',
-  },
-  {
-    label: 'Awesome Video Intelligent Systems',
-    url: 'https://raw.githubusercontent.com/rajathkumars/awesome-video/master/README.md',
-  },
   {
     label: 'Weird Video Sources (local)',
     path: 'lib/ingest/sources/awesome/weird-video-sources.md',
