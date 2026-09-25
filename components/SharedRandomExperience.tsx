@@ -55,7 +55,8 @@ function getYouTubeEmbedUrl(url: string): string | null {
 
 function getDailymotionEmbedUrl(url: string): string | null {
   const match = url.match(/(?:dailymotion\.com\/(?:video|embed\/video)\/|dai\.ly\/)([a-zA-Z0-9]+)/i)
-  return match?.[1] ? `https://www.dailymotion.com/embed/video/${encodeURIComponent(match[1])}` : null
+  // The old embed address answers 301 and loses every parameter on the way; this is the one it points at.
+  return match?.[1] ? `https://geo.dailymotion.com/player.html?video=${encodeURIComponent(match[1])}` : null
 }
 
 function SharedContentView({ content, theme }: { content: SharedContent; theme: Theme }) {
