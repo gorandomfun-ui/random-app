@@ -20,6 +20,8 @@ import {
 
 const USER_AGENT = { 'User-Agent': 'RandomAppBot/1.0 (+https://random.app)' }
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3'
+/** Refusals in a row before the pass gives up on the communities. */
+const THROTTLE_GIVE_UP = 6
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -253,10 +255,15 @@ export async function ingestVideoFeeds(options: VideoFeedsOptions = {}): Promise
 
   const redditLimit = options.redditLimit ?? 60
   const subreddits = shuffleArray(selectSubreddits(options.subreddits))
+  // Reddit throttles an unauthenticated datacentre address within a few calls.
+  // Rather than spend a quarter of an hour collecting refusals, the pass stops
+  // and says so; with a client key it never gets here.
+  let throttled = 0
   const cursorStore = await loadCursorStore()
   const updatedSubCursors: Record<string, { lastIds?: Record<string, string>; lastFetchedAt?: string }> = {}
 
   for (const sub of subreddits) {
+    if (throttled >= THROTTLE_GIVE_UP) break
     const limit = sub.limit ?? redditLimit
     try {
       const variants: Array<{ listing?: 'hot' | 'new' | 'top'; time?: 'day' | 'week' | 'month'; context: string }> = [
@@ -274,6 +281,7 @@ export async function ingestVideoFeeds(options: VideoFeedsOptions = {}): Promise
       }
 
       for (const variant of variants) {
+        if (throttled >= THROTTLE_GIVE_UP) break
         const contextKey = variant.context
         const after = storedCursor.lastIds?.[contextKey]
 
@@ -284,6 +292,8 @@ export async function ingestVideoFeeds(options: VideoFeedsOptions = {}): Promise
           { listing: variant.listing, time: variant.time },
         )
 
+        if (!latestBatch.length && warnings.some((w) => w.label === `reddit:${sub.name}:${variant.context.replace('-', ':')}` && w.status === 429)) throttled += 1
+        else if (latestBatch.length) throttled = 0
         for (const video of latestBatch) {
           if (seen.has(video.videoId)) continue
           seen.add(video.videoId)
