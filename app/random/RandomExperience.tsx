@@ -1470,12 +1470,6 @@ function wakeDailymotionSound(iframe: HTMLIFrameElement | null, videoId: string)
   postEmbedMessage(iframe, { command: 'play', parameters: [] })
 }
 
-function muteDailymotionSound(iframe: HTMLIFrameElement | null, videoId: string) {
-  if (videoId) {
-    postEmbedMessage(iframe, { command: 'load', parameters: [{ video: videoId, mute: true, autoplay: true }] })
-  }
-  postEmbedMessage(iframe, { command: 'setMuted', parameters: [true] })
-}
 
 function scheduleVideoSoundWake(wake: () => void) {
   if (typeof window === 'undefined') return () => undefined
@@ -1903,14 +1897,7 @@ function DailymotionEmbed({
    * accepts. The video starts again from the beginning, which is the price of
    * hearing it at all.
    */
-  const toggleMute = () => {
-    const next = !isMuted
-    setIsMuted(next)
-    // No reload: a phone refuses a video that starts with its sound, so the
-    // player is asked, inside the tap, to lift the mute it already has.
-    if (next) muteDailymotionSound(iframeRef.current, dailymotionId)
-    else requestSound()
-  }
+
 
   const dailymotionId = useMemo(() => extractDailymotionVideoId(url) || '', [url])
   const embedUrl = useMemo(() => {
@@ -2004,7 +1991,8 @@ function DailymotionEmbed({
       return undefined
     }
     setShowSoundHint(true)
-    const timer = window.setTimeout(() => setShowSoundHint(false), 4000)
+    // Long enough to be read and acted on, short enough not to sit on the image.
+    const timer = window.setTimeout(() => setShowSoundHint(false), 6000)
     return () => window.clearTimeout(timer)
   }, [iframeLoaded, url])
 
@@ -2034,25 +2022,42 @@ function DailymotionEmbed({
     openProviderUrl(item.url)
   }
 
+  /**
+   * The only way left to give a Dailymotion video its sound.
+   *
+   * Their new player exposes no sound command at all to the page around it, so
+   * a button of ours can do nothing. Its own control does work, and a touch on
+   * the video brings it up. So the page says where to press instead of
+   * pretending it can press for you.
+   */
   const soundHint = showSoundHint ? (
     <div
       role="status"
-      className="rounded-full bg-black/60 text-white shadow-lg"
+      className="video-sound-hint"
       style={{
         position: 'absolute',
-        top: '12px',
-        right: '68px',
+        right: '10px',
+        bottom: '14px',
         zIndex: 4,
         pointerEvents: 'none',
         userSelect: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '7px',
         whiteSpace: 'nowrap',
-        padding: '11px 14px',
+        borderRadius: '999px',
+        padding: '9px 13px',
         fontSize: '12px',
         fontWeight: 700,
-        lineHeight: '18px',
+        lineHeight: '16px',
+        color: '#fff',
+        background: 'rgba(0,0,0,0.68)',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
       }}
     >
-      {t('video.tapForSound', 'Tap for sound')}
+      <Volume2 size={16} strokeWidth={2.4} aria-hidden="true" />
+      <span>{t('video.tapForSound', 'Tap for sound')}</span>
+      <span className="video-sound-hint__arrow" aria-hidden="true">↓</span>
     </div>
   ) : null
 
@@ -2099,7 +2104,6 @@ function DailymotionEmbed({
             onClick={handleFullscreen}
             hidden={fullscreen}
           />
-          {!fullscreen ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
           {!fullscreen ? soundHint : null}
           {fullscreen ? (
             <button
@@ -2122,7 +2126,7 @@ function DailymotionEmbed({
         title={text}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
-        soundControl={<VideoSoundIconButton muted={isMuted} onClick={toggleMute} />}
+        soundControl={soundHint}
       >
         {(fullscreen) => renderPlayer(fullscreen)}
       </RandomPlayerFrame>
@@ -5524,6 +5528,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       `}</style>
 
       <style jsx global>{`
+        .video-sound-hint__arrow {
+          display: inline-block;
+          animation: video-sound-hint-nudge 1.15s ease-in-out infinite;
+        }
+        @keyframes video-sound-hint-nudge {
+          0%, 100% { transform: translateY(0); opacity: 0.75; }
+          50% { transform: translateY(3px); opacity: 1; }
+        }
         .random-page {
           position: relative;
           isolation: isolate;
