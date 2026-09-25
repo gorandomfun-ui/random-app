@@ -63,6 +63,10 @@ case "${LINE}" in
     # The zones around the likes and their sizes, as the like tickets draw them.
     run node --import tsx scripts/v3/like-pool.ts
     ;;
+  feeds)
+    # Communities where people already did the sorting; the videos found cost one unit per fifty checked.
+    run node --import tsx scripts/v3/feeds-direct.ts
+    ;;
   web-embed)
     # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
     run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-2000}"

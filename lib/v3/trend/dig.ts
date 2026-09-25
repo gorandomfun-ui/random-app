@@ -67,12 +67,12 @@ export async function searchYouTube(apiKey: string, spec: YouTubeSearch, request
   })
 }
 
-export type DailymotionSearch = { query: string; sort: 'relevance' | 'recent'; after: string; before: string }
+export type DailymotionSearch = { query: string; sort: 'relevance' | 'recent'; after: string; before: string; /** Which page of results, first by default. Costs nothing more than the first. */ page?: number }
 
 /** One Dailymotion search on the public API, twenty-five results. */
 export async function searchDailymotion(spec: DailymotionSearch, request: typeof fetch = fetch, signal?: AbortSignal): Promise<RawVideo[]> {
   const params = new URLSearchParams({
-    limit: String(RESULTS_PER_SEARCH), page: '1', sort: spec.sort, search: spec.query,
+    limit: String(RESULTS_PER_SEARCH), page: String(Math.max(1, Math.floor(spec.page ?? 1))), sort: spec.sort, search: spec.query,
     created_after: String(Math.floor(new Date(spec.after).getTime() / 1000)), created_before: String(Math.floor(new Date(spec.before).getTime() / 1000)),
     fields: 'id,title,description,url,thumbnail_url,duration,channel.id,owner.id,owner.screenname,created_time,views_total,private',
   })
