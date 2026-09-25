@@ -54,3 +54,8 @@ body{font-family:var(--font-inter-tight),system-ui,sans-serif;background-color:#
 .noroscope-tile-source{font-family:var(--font-inter-tight),system-ui,sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.18em;opacity:.8;}
 .noroscope-tile-disclaimer{font-family:var(--font-inter-tight),system-ui,sans-serif;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:rgba(248,245,230,.75);text-align:center;}
 /* stylelint-enable at-rule-no-unknown */
+
+
+/* The banner of the other screen size: written into the page so A-ADS can find
+   its unit at the address it checks, shown only on the screens it is meant for. */
+.aads-other-format { display: none; }
