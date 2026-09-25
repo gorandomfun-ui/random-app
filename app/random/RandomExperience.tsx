@@ -1467,13 +1467,6 @@ function wakeDailymotionSound(iframe: HTMLIFrameElement | null) {
   ]) postEmbedMessage(iframe, message)
 }
 
-function muteDailymotionSound(iframe: HTMLIFrameElement | null) {
-  for (const message of [
-    { command: 'muted', parameters: [true] },
-    { command: 'setMuted', parameters: [true] },
-    { command: 'setVolume', parameters: [0] },
-  ]) postEmbedMessage(iframe, message)
-}
 
 function scheduleVideoSoundWake(wake: () => void) {
   if (typeof window === 'undefined') return () => undefined
@@ -1872,26 +1865,33 @@ function DailymotionEmbed({
   const shellRef = useRef<HTMLDivElement | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const soundMutedRef = useRef(soundMuted)
-  // A phone and a tablet forbid a video starting with its sound on. Asked for it
-  // anyway, the player either refuses to start or starts silent with no way back,
-  // which is what left Dailymotion mute on every touch device. So it starts muted
-  // there and the speaker below gives the sound back inside the tap.
-  const touchDevice = shouldBypassNativeFullscreen()
-  const [isMuted, setIsMuted] = useState(soundMuted || touchDevice)
-  const [embedMuted, setEmbedMuted] = useState(soundMuted || touchDevice)
+  // The sound is asked for straight away, everywhere.
+  //
+  // A phone grants it to nobody from outside the frame: the commands the player
+  // does answer to on a desktop change nothing there, measured on the owner's
+  // devices in both browsers. And the player's own buttons cannot be reached,
+  // because the frame is widened to fill the height and its edges are cropped,
+  // which is how it must stay.
+  //
+  // So the video is asked to start with its sound. A desktop simply plays it. A
+  // phone refuses to start it by itself and shows the player's own play button
+  // instead: one touch inside the frame, which is the only thing a phone accepts,
+  // and the video runs with its sound from the first second.
+  const [isMuted, setIsMuted] = useState(soundMuted)
+  const [embedMuted, setEmbedMuted] = useState(soundMuted)
   const [showSoundHint, setShowSoundHint] = useState(false)
 
   useEffect(() => {
     soundMutedRef.current = soundMuted
-    setIsMuted(soundMuted || touchDevice)
-    setEmbedMuted(soundMuted || touchDevice)
-  }, [soundMuted, touchDevice])
+    setIsMuted(soundMuted)
+    setEmbedMuted(soundMuted)
+  }, [soundMuted])
 
   useEffect(() => {
-    const nextMuted = soundMutedRef.current || touchDevice
+    const nextMuted = soundMutedRef.current
     setIsMuted(nextMuted)
     setEmbedMuted(nextMuted)
-  }, [touchDevice, url])
+  }, [url])
 
   /**
    * The sound, given back by reloading the player unmuted.
@@ -1901,14 +1901,6 @@ function DailymotionEmbed({
    * accepts. The video starts again from the beginning, which is the price of
    * hearing it at all.
    */
-  const toggleMute = () => {
-    const next = !isMuted
-    setIsMuted(next)
-    // No reload: a phone refuses a video that starts with its sound, so the
-    // player is asked, inside the tap, to lift the mute it already has.
-    if (next) muteDailymotionSound(iframeRef.current)
-    else requestSound()
-  }
 
   const embedUrl = useMemo(() => {
     try {
@@ -2096,7 +2088,6 @@ function DailymotionEmbed({
             onClick={handleFullscreen}
             hidden={fullscreen}
           />
-          {!fullscreen ? <VideoSoundIconButton muted={isMuted} onClick={toggleMute} /> : null}
           {!fullscreen ? soundHint : null}
           {fullscreen ? (
             <button
@@ -2119,7 +2110,7 @@ function DailymotionEmbed({
         title={text}
         frameHeight={frameHeight}
         fullscreenLabel={fullscreenLabel}
-        soundControl={<VideoSoundIconButton muted={isMuted} onClick={toggleMute} />}
+        soundControl={soundHint}
       >
         {(fullscreen) => renderPlayer(fullscreen)}
       </RandomPlayerFrame>
