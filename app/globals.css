@@ -59,3 +59,13 @@ body{font-family:var(--font-inter-tight),system-ui,sans-serif;background-color:#
 /* The banner of the other screen size: written into the page so A-ADS can find
    its unit at the address it checks, shown only on the screens it is meant for. */
 .aads-other-format { display: none; }
+
+
+/* The Dailymotion player is widened to fill the height and cropped at the sides.
+   Centred, its own controls — which live at its edges — fall outside the frame on
+   an upright tablet. There it is pushed against the right edge instead: the
+   controls come back into view and the crop falls on the left alone. */
+.random-dm-player { left: 50%; right: auto; transform: translate(-50%, -50%); }
+@media (min-width: 768px) and (orientation: portrait) {
+  .random-dm-player { left: auto; right: 0; transform: translateY(-50%); }
+}

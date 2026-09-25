@@ -2025,15 +2025,13 @@ function DailymotionEmbed({
   /**
    * The only way left to give a Dailymotion video its sound.
    *
-   * Their new player exposes no sound command at all to the page around it, so
-   * a button of ours can do nothing. Its own control does work: one touch on the
-   * video brings the controls up, a second one on the speaker lifts the mute —
-   * hence two taps, not one.
+   * Their new player exposes no sound command at all to the page around it, so a
+   * button of ours can do nothing. Its own speaker does work: one touch on the
+   * video brings the controls up, a second on the speaker lifts the mute — hence
+   * two taps, not one.
    *
-   * The strip runs across the top of the frame rather than sitting somewhere on
-   * the image: the player is widened to fill the height and cropped at the
-   * sides, so anything placed against the video itself lands off-screen on a
-   * phone or an upright tablet. Against the frame, it is always whole.
+   * The hint sits just above that speaker, at the bottom right, with an arrow
+   * pointing down at it. Not on it, so it never hides what it is naming.
    */
   const soundHint = showSoundHint ? (
     <div
@@ -2041,24 +2039,23 @@ function DailymotionEmbed({
       className="video-sound-hint"
       style={{
         position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
+        right: '10px',
+        bottom: '58px',
         zIndex: 5,
         pointerEvents: 'none',
         userSelect: 'none',
-        display: 'flex',
+        display: 'inline-flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        padding: '7px 10px',
+        gap: '7px',
+        whiteSpace: 'nowrap',
+        borderRadius: '999px',
+        padding: '9px 13px',
         fontSize: '12px',
         fontWeight: 700,
         lineHeight: '16px',
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
         color: '#fff',
-        background: 'linear-gradient(to bottom, rgba(0,0,0,0.78), rgba(0,0,0,0))',
+        background: 'rgba(0,0,0,0.72)',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
       }}
     >
       <Volume2 size={15} strokeWidth={2.4} aria-hidden="true" />
@@ -2090,7 +2087,9 @@ function DailymotionEmbed({
         ref={iframeRef}
         src={embedUrl}
         onLoad={markLoaded}
-        className="absolute top-1/2 left-1/2"
+        // Where it sits inside the frame is a style sheet rule: centred, except on
+        // an upright tablet where it is pushed right so its controls are reachable.
+        className="random-dm-player absolute top-1/2"
         allow="autoplay; fullscreen; picture-in-picture"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
@@ -2099,7 +2098,6 @@ function DailymotionEmbed({
           border: 'none',
           width: fullscreen ? '100%' : `max(100%, calc(${frameHeight} * 1.7778))`,
           height: '100%',
-          transform: 'translate(-50%, -50%)',
           zIndex: 1,
         }}
       />
