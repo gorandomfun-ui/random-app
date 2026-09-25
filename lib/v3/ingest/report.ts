@@ -48,6 +48,7 @@ export const LINE_LABELS: Record<string, string> = {
   'like-pool': 'Pool des likes',
   pools: 'Pools par univers',
   feeds: 'Sources humaines',
+  authors: 'Auteurs suivis',
 }
 
 /** Lines that measure rather than ingest: their "inserted" is a growth, not the day's content. */

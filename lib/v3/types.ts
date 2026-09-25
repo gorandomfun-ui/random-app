@@ -95,7 +95,7 @@ export const COOL_REGISTERS = ['gaming', 'archive', 'music', 'elsewhere', 'cool-
 export type CoolRegister = (typeof COOL_REGISTERS)[number]
 
 /** Which ingestion line brought the item in. */
-export type Line = 'trend' | 'retro-trend' | 'mainstream' | 'combo' | 'like-dig' | 'subject-dig' | 'pools' | 'feeds' | 'legacy'
+export type Line = 'trend' | 'retro-trend' | 'mainstream' | 'combo' | 'like-dig' | 'subject-dig' | 'pools' | 'feeds' | 'authors' | 'legacy'
 
 export type SubjectKind = 'entity' | 'topic' | 'combo'
 
