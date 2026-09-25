@@ -69,3 +69,12 @@ body{font-family:var(--font-inter-tight),system-ui,sans-serif;background-color:#
 @media (min-width: 768px) and (orientation: portrait) {
   .random-dm-player { left: auto; right: 0; transform: translateY(-50%); }
 }
+
+
+/* On a tablet held sideways the player's speaker sits to the left of the hint,
+   while the full-screen button sits under its right end: there the arrow leads
+   the pill instead of closing it, so it points at the speaker and not at the
+   button next to it. Phones and upright tablets keep it after the words. */
+@media (min-width: 768px) and (orientation: landscape) and (pointer: coarse) {
+  .video-sound-hint__arrow { order: -1; }
+}
