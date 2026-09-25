@@ -63,6 +63,10 @@ case "${LINE}" in
     # The zones around the likes and their sizes, as the like tickets draw them.
     run node --import tsx scripts/v3/like-pool.ts
     ;;
+  authors)
+    # The people whose work was liked, and what they have published since.
+    run node --import tsx scripts/v3/authors-direct.ts
+    ;;
   feeds)
     # Communities where people already did the sorting; the videos found cost one unit per fifty checked.
     run node --import tsx scripts/v3/feeds-direct.ts

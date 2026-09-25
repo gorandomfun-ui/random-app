@@ -1,0 +1,11 @@
+[Unit]
+Description=Random, ligne auteurs : ce qu_ont publié les gens dont le travail a plu
+
+[Timer]
+# After the morning lines, on what the night's likes have left in the pool.
+OnCalendar=*-*-* 11:40:00 Europe/Paris
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
