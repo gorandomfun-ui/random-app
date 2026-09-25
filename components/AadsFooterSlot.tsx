@@ -73,10 +73,14 @@ export default function AadsFooterSlot({
   return (
     <div
       className="relative flex h-full w-full flex-col items-center justify-center"
-      aria-hidden={!visible}
+      // Shown from the first paint, not once the frame reports back. A verifier
+      // reads the delivered page: finding the ad there but written as invisible
+      // is worse than not finding it, and the frame fills itself in a moment
+      // anyway. Only a frame that failed is put out of the way.
+      aria-hidden={status === 'empty'}
       style={{
-        opacity: visible ? 1 : 0,
-        pointerEvents: visible ? 'auto' : 'none',
+        opacity: status === 'empty' ? 0 : 1,
+        pointerEvents: status === 'empty' ? 'none' : 'auto',
       }}
     >
       {label && visible ? (
