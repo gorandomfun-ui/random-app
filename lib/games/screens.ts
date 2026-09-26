@@ -8,6 +8,9 @@
  * diner's floor. Everything takes the theme's accent.
  */
 
+import { positionOf, type CatcherState } from './catcher'
+import { EATER_LEVELS, type Floor, type Furniture } from './diner'
+import type { EaterState } from './eater'
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { catcherLogoSize, drawCatcherLogo, drawEaterLogo, eaterLogoSize } from './logos'
 import { mazeFor, MAZE_HEIGHT, MAZE_WIDTH } from './maze'
@@ -24,7 +27,8 @@ import { arcadeText, button, CREAM, dpad, hud, HUD_HEIGHT, infoLine, INK, pressS
 
 export type Game = 'catcher' | 'eater'
 export type Layout = 'landscape' | 'portrait'
-export type Floor = 'plain' | 'checker'
+export { EATER_LEVELS, obstacleCells, openCell } from './diner'
+export type { Floor } from './diner'
 export const GAME_NAMES: Record<Game, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
 export const LAYOUTS: readonly Layout[] = ['landscape', 'portrait']
 
@@ -239,7 +243,8 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
   return buffer
 }
 
-export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean }
+/** `choice`: the answer lit, YES (0) or NO (1). */
+export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean; choice?: 0 | 1 }
 
 /**
  * GAME OVER: the game's night street with nothing in front — no building,
@@ -254,22 +259,22 @@ export function renderGameOver(game: Game, layout: Layout, accent: string, optio
   buffer.shade(0, 0, width, height, 0.6)
   const c = width / 2
   const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
-  const chosen = options.blink !== false
+  const chosen = options.blink !== false, choice = options.choice ?? 0
   if (layout === 'landscape') {
     arcadeText(buffer, 'GAME OVER', c, 70, 8, accent)
     infoLine(buffer, c - 20, 150, 'SCORE', score, 'right', 2)
     infoLine(buffer, c + 20, 150, 'BEST', best, 'left', 2)
     arcadeText(buffer, 'PLAY AGAIN?', c, 192, 4, accent)
-    button(buffer, 'YES', c - 64, 244, accent, chosen, 2)
-    button(buffer, 'NO', c + 64, 244, accent, false, 2)
+    button(buffer, 'YES', c - 64, 244, accent, chosen && choice === 0, 2)
+    button(buffer, 'NO', c + 64, 244, accent, chosen && choice === 1, 2)
   } else {
     arcadeText(buffer, 'GAME', c, 120, 11, accent)
     arcadeText(buffer, 'OVER', c, 214, 11, accent)
     infoLine(buffer, c, 318, 'SCORE', score, 'centre', 2)
     infoLine(buffer, c, 346, 'BEST', best, 'centre', 2)
     arcadeText(buffer, 'PLAY AGAIN?', c, 392, 3, accent)
-    button(buffer, 'YES', c - 64, 440, accent, chosen, 2)
-    button(buffer, 'NO', c + 64, 440, accent, false, 2)
+    button(buffer, 'YES', c - 64, 440, accent, chosen && choice === 0, 2)
+    button(buffer, 'NO', c + 64, 440, accent, chosen && choice === 1, 2)
   }
   return buffer
 }
@@ -433,60 +438,6 @@ function renderCatcherPlay(layout: Layout, accent: string, options: PlayOptions)
 
 // ---------------------------------------------------------------- EATER in play
 
-/** A piece of the diner's furniture seen from above: where it stands, the cells it covers, which way a chair's back faces. */
-type Furniture = { kind: 'chair' | 'table' | 'stool' | 'booth' | 'counter'; x: number; y: number; w: number; h: number; back?: Direction }
-
-const chair = (x: number, y: number, back: Direction): Furniture => ({ kind: 'chair', x, y, w: 1, h: 1, back })
-const stool = (x: number, y: number): Furniture => ({ kind: 'stool', x, y, w: 1, h: 1 })
-
-/** An island of furniture: pieces packed together, never a one-cell gap between them. */
-export type Island = readonly Furniture[]
-/** Two chairs back to back, side by side or one above the other. */
-const pairAcross = (x: number, y: number): Island => [chair(x, y, 'right'), chair(x + 1, y, 'left')]
-const pairDown = (x: number, y: number): Island => [chair(x, y, 'down'), chair(x, y + 1, 'up')]
-/** A round table with two chairs either side, four cells by two. */
-const tableSet = (x: number, y: number): Island => [chair(x, y, 'left'), chair(x, y + 1, 'left'), { kind: 'table', x: x + 1, y, w: 2, h: 2 }, chair(x + 3, y, 'right'), chair(x + 3, y + 1, 'right')]
-/** The counter, standing free, its stools along one side, five cells by two. */
-const counterIsland = (x: number, y: number): Island => [{ kind: 'counter', x, y, w: 5, h: 1 }, stool(x, y + 1), stool(x + 1, y + 1), stool(x + 2, y + 1), stool(x + 3, y + 1), stool(x + 4, y + 1)]
-const booth = (x: number, y: number): Island => [{ kind: 'booth', x, y, w: 3, h: 3 }]
-
-const CHAIRS_A = [pairAcross(4, 4), pairDown(22, 4), pairAcross(20, 15)]
-const CHAIRS_B = [pairDown(4, 14), pairAcross(16, 3), pairAcross(14, 16)]
-
-/**
- * The eight levels of RANDOM EATER, then round again faster: the floor
- * black to begin with, then a light checker of black and dark grey; the
- * diner filling up in islands — chairs in pairs, tables with their chairs,
- * the counter with its stools, a booth — each island two clear cells from
- * the next and from the walls, so there is always room to pass and to
- * turn round: harder, never impossible. Cells in the wide board's grid;
- * the tall board turns them over.
- */
-export const EATER_LEVELS: ReadonlyArray<{ floor: Floor; islands: readonly Island[] }> = [
-  { floor: 'plain', islands: [] },
-  { floor: 'plain', islands: [] },
-  { floor: 'checker', islands: CHAIRS_A },
-  { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B] },
-  { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9)] },
-  { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7)] },
-  { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7), counterIsland(8, 3)] },
-  { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7), counterIsland(8, 3), booth(8, 14)] },
-]
-
-/** Every cell the furniture of a level takes, for a layout. */
-export function obstacleCells(layout: Layout, level: number): Set<string> {
-  const out = new Set<string>()
-  for (const island of EATER_LEVELS[(level - 1) % EATER_LEVELS.length].islands) for (const f of island) for (let y = f.y; y < f.y + f.h; y += 1) for (let x = f.x; x < f.x + f.w; x += 1) out.add(layout === 'portrait' ? `${y},${x}` : `${x},${y}`)
-  return out
-}
-
-/** Where a burger or the milkshake may appear: a free cell with nothing of the furniture round it. */
-export function openCell(layout: Layout, level: number, x: number, y: number): boolean {
-  const blocked = obstacleCells(layout, level)
-  for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) if (blocked.has(`${x + dx},${y + dy}`)) return false
-  return true
-}
-
 const TURN: Record<Direction, Direction> = { up: 'left', left: 'up', down: 'right', right: 'down' }
 
 function drawFurniture(buffer: PixelBuffer, f: Furniture, top: number, accent: string, tall: boolean): void {
@@ -633,4 +584,151 @@ export function shotSpecs(accent: string): ShotSpec[] {
 /** Every base screen, drawn at one moment. */
 export function renderAll(accent: string, frame = 0): Shot[] {
   return shotSpecs(accent).map(({ game, layout, name, draw }) => ({ game, layout, name, buffer: draw(frame) }))
+}
+
+// ---------------------------------------------------------------- the games as they are played
+
+/** Where a button of the pause card or of GAME OVER stands, so a tap can be read against it. */
+export type Hit = { x: number; y: number; w: number; h: number }
+const hitOfButton = (label: string, centre: number, y: number, scale: number): Hit => {
+  const w = (label.length * 7 + 14) * scale
+  return { x: Math.round(centre - w / 2) - 8 * scale, y: y - 4 * scale, w: w + 16 * scale, h: 23 * scale }
+}
+export function gameOverHits(layout: Layout): { yes: Hit; no: Hit } {
+  const c = SCENE_SIZE[layout].width / 2, y = layout === 'landscape' ? 244 : 440
+  return { yes: hitOfButton('YES', c - 64, y, 2), no: hitOfButton('NO', c + 64, y, 2) }
+}
+const boardMiddle = (layout: Layout) => {
+  const { height } = playSize(layout)
+  return Math.round(HUD_HEIGHT + (height - HUD_HEIGHT - (layout === 'portrait' ? DPAD_HEIGHT : 0)) / 2)
+}
+export function pauseHits(layout: Layout): { resume: Hit; quit: Hit; pause: Hit } {
+  const { width } = playSize(layout)
+  const mid = boardMiddle(layout)
+  return { resume: hitOfButton('RESUME', width / 2, mid + 6, 1), quit: hitOfButton('QUIT', width / 2, mid + 30, 1), pause: { x: width - 28, y: 0, w: 28, h: HUD_HEIGHT + 4 } }
+}
+/** The cross of arrows on a tall screen: its centre and the width of an arm. */
+export function dpadGeometry(layout: Layout): { cx: number; cy: number; arm: number } | null {
+  if (layout !== 'portrait') return null
+  return { cx: playSize(layout).width / 2, cy: HUD_HEIGHT + MAZE_WIDTH * CELL + DPAD_HEIGHT / 2, arm: 26 }
+}
+
+/** A card across the board: the board a shade darker, the words in arcade letters, the choices, `choice` the one lit. */
+function playCard(buffer: PixelBuffer, layout: Layout, accent: string, title: string, buttons: string[], choice = 0): void {
+  const boardH = buffer.height - HUD_HEIGHT - (layout === 'portrait' ? DPAD_HEIGHT : 0)
+  const mid = boardMiddle(layout)
+  buffer.shade(0, HUD_HEIGHT, buffer.width, boardH, 0.45)
+  arcadeText(buffer, title, buffer.width / 2, mid - (buttons.length ? 44 : 12), 3, accent)
+  buttons.forEach((label, i) => button(buffer, label, buffer.width / 2, mid + 6 + i * 24, accent, i === choice))
+}
+
+/** One drawing surface per screen, used again every frame, and the floors that never change, drawn once. */
+const surfaces = new Map<string, PixelBuffer>()
+function surface(name: string, layout: Layout): PixelBuffer {
+  const key = `${name}|${layout}`
+  let out = surfaces.get(key)
+  if (!out) { const { width, height } = playSize(layout); out = new PixelBuffer(width, height, INK); surfaces.set(key, out) }
+  return out
+}
+const floors = new Map<string, PixelBuffer>()
+function cachedFloor(key: string, layout: Layout, draw: (buffer: PixelBuffer) => void): PixelBuffer {
+  let out = floors.get(key)
+  if (!out) {
+    if (floors.size > 24) floors.clear()
+    const { width, height } = playSize(layout)
+    out = new PixelBuffer(width, height, INK)
+    draw(out)
+    floors.set(key, out)
+  }
+  return out
+}
+
+/** What a play screen shows over the game: nothing, or the pause card with RESUME (0) or QUIT (1) lit. */
+export type PlayView = { pause?: 0 | 1 | null }
+
+/** A moment of a game of RANDOM CATCHER, drawn from its state. The surface is used again on the next call. */
+export function renderCatcherGame(s: CatcherState, accent: string, view: PlayView = {}): PixelBuffer {
+  const layout = s.layout
+  const tall = layout === 'portrait'
+  const { width } = playSize(layout)
+  const floor = cachedFloor(`catcher|${layout}|${accent}`, layout, (buffer) => {
+    drawStoreFloor(buffer, s.maze, HUD_HEIGHT, accent, tall)
+    if (tall) dpad(buffer, width / 2, HUD_HEIGHT + MAZE_WIDTH * CELL + DPAD_HEIGHT / 2, 26, accent)
+  })
+  const buffer = surface('catcher', layout)
+  buffer.data.set(floor.data)
+  const top = HUD_HEIGHT
+  const at = (x: number, y: number): [number, number] => [Math.round(x * CELL), Math.round(top + y * CELL)]
+  const beat = (every: number) => Math.floor(s.steps / every) % 2
+  for (const k of s.puddles.keys()) { const [x, y] = k.split(',').map(Number); puddle(buffer, ...at(x, y)) }
+  const kinds = [TOMATO, PICKLE, ONION, CHEESE]
+  for (const it of s.items) { const [px, py] = at(it.x, it.y); buffer.blit(kinds[it.kind], px + 3, py + 3, ITEM_PALETTE) }
+  // the sauce blinks in its last two seconds
+  if (s.sauce && (s.sauce.timer > 120 || beat(8) === 0)) { const [px, py] = at(s.sauce.x, s.sauce.y); buffer.blit(SAUCE, px + 2, py + 1, SAUCE_PALETTE) }
+  s.shoppers.forEach((sh, i) => {
+    if (!sh.inside) return
+    const [px, py] = at(positionOf(sh).x, positionOf(sh).y)
+    if (sh.stunned > 0) { buffer.blit(HUMAN[0], px, py - 2, humanPalette(sh.look)); dizzy(buffer, px, py - 2, Math.floor(s.steps / 6)) }
+    else buffer.blit(HUMAN[(Math.floor(s.steps / 10) + i) % 2], px, py, humanPalette(sh.look))
+  })
+  // caught, the burger blinks where it was
+  if (!(s.phase === 'caught' && beat(6) === 0)) {
+    const [px, py] = at(positionOf(s.burger).x, positionOf(s.burger).y)
+    buffer.blit(BURGER[s.burger.dir ? beat(8) : 0], px, py, BURGER_PALETTE, { flipX: s.burger.face === 'left' })
+  }
+  hud(buffer, accent, {
+    level: s.level, score: s.score, lives: Math.max(0, s.lives),
+    list: kinds.map((icon, k) => ({ icon, palette: ITEM_PALETTE, have: s.have[k], need: s.need[k] })),
+  })
+  if (s.phase === 'clear') playCard(buffer, layout, accent, 'LEVEL CLEAR', [])
+  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', ['RESUME', 'QUIT'], view.pause)
+  return buffer
+}
+
+/** A moment of a game of RANDOM EATER, drawn from its state: furniture still waiting for room shows faint. */
+export function renderEaterGame(s: EaterState, accent: string, view: PlayView = {}): PixelBuffer {
+  const layout = s.layout
+  const tall = layout === 'portrait'
+  const { width } = playSize(layout)
+  const kind = EATER_LEVELS[(s.level - 1) % EATER_LEVELS.length].floor
+  const floor = cachedFloor(`eater|${layout}|${accent}|${kind}`, layout, (buffer) => {
+    drawDinerFloor(buffer, s.cols, s.rows, HUD_HEIGHT, accent, kind)
+    if (tall) dpad(buffer, width / 2, HUD_HEIGHT + s.rows * CELL + DPAD_HEIGHT / 2, 26, accent)
+  })
+  const buffer = surface('eater', layout)
+  buffer.data.set(floor.data)
+  const top = HUD_HEIGHT
+  for (const entry of s.islands) {
+    // the rules keep a tall board's furniture already turned over; drawn from its wide self, chair backs and booths face the right way
+    for (const f of entry.island) drawFurniture(buffer, tall ? { ...f, x: f.y, y: f.x, w: f.h, h: f.w } : f, top, accent, tall)
+    if (!entry.solid) for (const f of entry.island) {
+      for (let y = 0; y < f.h * CELL; y += 1) for (let x = (y % 2); x < f.w * CELL; x += 2) buffer.set(f.x * CELL + x, top + f.y * CELL + y, '#110f18')
+    }
+  }
+  const place = (c: { x: number; y: number }): [number, number] => [c.x * CELL, top + c.y * CELL]
+  if (s.food) { const [px, py] = place(s.food); buffer.blit(MINI_BURGER, px + 2, py + 3, MINI_BURGER_PALETTE) }
+  if (s.shake) {
+    // the milkshake, a ring of light round it counting its seconds down
+    const [px, py] = place(s.shake)
+    const share = s.shake.timer / 360
+    for (let a = 0; a < Math.PI * 2 * share; a += 0.08) buffer.set(Math.round(px + 8 + Math.cos(a - Math.PI / 2) * 10), Math.round(py + 8 + Math.sin(a - Math.PI / 2) * 10), (Math.floor(s.steps / 4) + Math.round(a * 4)) % 3 === 0 ? '#ffffff' : '#ff9ac0')
+    buffer.blit(MILKSHAKE, px + 2, py, MILKSHAKE_PALETTE)
+  }
+  const palette = eaterPalette(accent)
+  const body = s.body.map((c) => [c.x, c.y] as [number, number])
+  const n = body.length
+  const step = s.moves % 2
+  buffer.blit(facing(CRAWL_LEGS[step], toward(body[n - 1], body[n - 2])), ...place(s.body[n - 1]), palette)
+  for (let i = n - 2; i >= 1; i -= 1) {
+    const front = toward(body[i], body[i - 1]), back = toward(body[i], body[i + 1])
+    const look = i === 1 ? { pattern: 'plain' as const, cloth: accent, print: accent } : torsoLook(i - 2)
+    const piece = tubePiece(front, back, look)
+    buffer.blit(piece.sprite, ...place(s.body[i]), piece.palette)
+    if (i === 1) buffer.blit(facing(CRAWL_ARMS[step], front), ...place(s.body[i]), palette)
+  }
+  buffer.blit(facing(CRAWL_HEAD, toward(body[1], body[0])), ...place(s.body[0]), palette)
+  hud(buffer, accent, { level: s.level, score: s.score, progress: [s.eaten, s.target] })
+  if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', ['RESUME', 'QUIT'], view.pause)
+  else if (s.levelUp > 0 && Math.floor(s.levelUp / 10) % 2 === 0) arcadeText(buffer, 'LEVEL UP', width / 2, HUD_HEIGHT + 30, 3, accent)
+  return buffer
 }

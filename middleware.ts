@@ -37,7 +37,7 @@ function requestHostname(request: NextRequest): string {
 function isLocalOnlyPath(pathname: string): boolean {
   if (LOCAL_ONLY_STATIC_PATHS.has(pathname)) return true
   if (!pathname.startsWith('/admin')) return false
-  const onlineAdminPaths = ['/admin/curation', '/admin/ingest-reports']
+  const onlineAdminPaths = ['/admin/curation', '/admin/ingest-reports', '/admin/catcher', '/admin/eater']
   return !onlineAdminPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))
 }
 

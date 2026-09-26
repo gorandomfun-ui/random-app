@@ -3,7 +3,16 @@
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-export default function EffectsTestLogin({ configured }: { configured: boolean }) {
+/** The password door; `title` and `endpoint` let the games' test pages use it too. */
+export default function EffectsTestLogin({
+  configured,
+  title = 'Effects test',
+  endpoint = '/api/effects-test/access',
+}: {
+  configured: boolean
+  title?: string
+  endpoint?: string
+}) {
   const router = useRouter()
   const [password, setPassword] = useState('')
   const [error, setError] = useState(configured ? '' : 'ACCESS NOT CONFIGURED')
@@ -15,7 +24,7 @@ export default function EffectsTestLogin({ configured }: { configured: boolean }
     setLoading(true)
     setError('')
     try {
-      const response = await fetch('/api/effects-test/access', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -35,7 +44,7 @@ export default function EffectsTestLogin({ configured }: { configured: boolean }
   return (
     <main className="min-h-screen bg-black text-[#fffbea] flex items-center justify-center px-6">
       <form onSubmit={submit} className="w-full max-w-[320px] flex flex-col gap-4">
-        <h1 className="font-tomorrow text-center text-2xl font-bold uppercase">Effects test</h1>
+        <h1 className="font-tomorrow text-center text-2xl font-bold uppercase">{title}</h1>
         <label htmlFor="effects-test-password" className="sr-only">Password</label>
         <input
           id="effects-test-password"
