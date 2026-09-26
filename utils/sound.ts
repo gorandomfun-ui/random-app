@@ -29,6 +29,8 @@ function ready(context: AudioContext): boolean {
  */
 export function wakeSound(): void {
   if (muted) return
+  // Where the engine is off, the files are warmed during this very touch instead.
+  if (!synthesisAllowed()) { void import('@/lib/sound/files').then((m) => m.unlockSoundFiles()).catch(() => undefined); return }
   const context = getAudioContext(true)
   if (!context || ready(context)) return
   resume(context)
@@ -64,9 +66,11 @@ function isAppleTouch(): boolean {
  * A page that holds a running Web Audio engine takes the device's audio session
  * there, and the video in the page is then given nothing: the owner's iPad lost
  * the sound of its videos the evening this engine was finally made to run, and
- * got it back the moment it stopped running. The transitions will come back
- * through real audio files, which are played the way a video plays its own
- * sound and take nothing from it.
+ * got it back the moment it stopped running.
+ *
+ * Those devices get the same sounds as files instead (`lib/sound/files.ts`),
+ * played through a player, which takes nothing from the video and ignores the
+ * silent switch just as a video does.
  */
 function synthesisAllowed(): boolean {
   return !isAppleTouch()
@@ -108,6 +112,11 @@ function resume(context: AudioContext): void {
     () => { tally.last = ready(context) ? 'ok' : 'refused' },
     () => { tally.last = 'refused' },
   )
+}
+
+/** Plays one of the rendered files, loading the player the first time it is needed. */
+function playFile(name: 'random' | 'again' | 'wave-enter' | 'wave-step', progress: number): void {
+  void import('@/lib/sound/files').then((m) => m.playSoundFile(name, progress)).catch(() => undefined)
 }
 
 export const setMuted = (v: boolean) => { muted = v }
@@ -399,6 +408,8 @@ function pressurePulse(progress: number, direction: 1 | -1) {
 }
 
 export function playRandom(progress = 0) {
+  if (muted) return
+  if (!synthesisAllowed()) { playFile('random', progress); return }
   const energy = soundProgress(progress)
   const overdrive = soundProgress(progress - 1)
   const digitalPresence = 1 - overdrive * 0.25
@@ -433,6 +444,8 @@ export function playRandom(progress = 0) {
 }
 
 export function playAgain(progress = 0) {
+  if (muted) return
+  if (!synthesisAllowed()) { playFile('again', progress); return }
   const energy = soundProgress(progress)
   const overdrive = soundProgress(progress - 1)
   const digitalPresence = 1 - overdrive * 0.25
@@ -502,9 +515,13 @@ async function swoosh(duration: number, gainValue: number, startFrequency: numbe
 }
 
 export function playWaveEnter() {
+  if (muted) return
+  if (!synthesisAllowed()) { playFile('wave-enter', 0); return }
   void swoosh(1.42, 0.34, 150, 5600)
 }
 
 export function playWaveStep() {
+  if (muted) return
+  if (!synthesisAllowed()) { playFile('wave-step', 0); return }
   void swoosh(0.56, 0.22, 330, 3900)
 }

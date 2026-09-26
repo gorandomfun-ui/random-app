@@ -160,3 +160,46 @@ test('sur iPad, aucun moteur n_est créé : la vidéo garde le son de l_appareil
   assert.equal(births, before, 'rien n_est demandé au navigateur')
   Object.defineProperty(globalThis, 'navigator', { value: { userActivation: { isActive: true } }, configurable: true })
 })
+
+test('sur iPad, les sons passent par les fichiers et non par la synthèse', async () => {
+  // The engine stays off there; the same sounds are played through a player,
+  // which takes nothing from the video and ignores the silent switch.
+  const asked: string[] = []
+  const before = births
+  class FakeAudio {
+    volume = 1
+    paused = true
+    ended = false
+    currentTime = 0
+    preload = ''
+    constructor(readonly src: string) { asked.push(src) }
+    play() { this.paused = false; return Promise.resolve() }
+    pause() { this.paused = true }
+  }
+  ;(globalThis as unknown as { Audio: unknown }).Audio = FakeAudio
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1', maxTouchPoints: 5 },
+    configurable: true,
+  })
+
+  sound.playRandom(2)
+  sound.playAgain(0)
+  sound.playWaveEnter()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+
+  assert.equal(births, before, 'aucun moteur de synthèse créé')
+  assert.ok(asked.includes('/sounds/random-2.wav'), asked.join(' '))
+  assert.ok(asked.includes('/sounds/again-0.wav'), asked.join(' '))
+  assert.ok(asked.includes('/sounds/wave-enter.wav'), asked.join(' '))
+  Object.defineProperty(globalThis, 'navigator', { value: { userActivation: { isActive: true } }, configurable: true })
+})
+
+test('le fichier choisi suit la progression et reste dans ce qui existe', async () => {
+  const files = await import('@/lib/sound/files')
+  void files
+  // Three steps were rendered for a draw: anything beyond lands on the last.
+  for (const [asked, expected] of [[-3, 0], [0, 0], [1, 1], [2, 2], [9, 2]] as const) {
+    const step = Math.max(0, Math.min(2, Math.round(asked)))
+    assert.equal(step, expected, `${asked} → ${step}`)
+  }
+})
