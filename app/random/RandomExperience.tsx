@@ -2643,7 +2643,9 @@ export function RandomExperience({
   const [currentItem, setCurrentItem] = useState<DisplayItem | null>(savedItem ?? null)
   const currentItemRef = useRef<DisplayItem | null>(savedItem ?? null)
   const footerAdCounterRef = useRef(0)
-  const [footerAdVisible, setFooterAdVisible] = useState(false)
+  // The bar is there from the first frame: a banner that appears later reads as
+  // hidden to A-ADS, and a bar that grows later let the banner escape it on an iPad.
+  const [footerAdVisible, setFooterAdVisible] = useState(true)
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)

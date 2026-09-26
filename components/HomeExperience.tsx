@@ -326,7 +326,8 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const [viewportWidth, setViewportWidth] = useState<number | null>(null)
   const [reservedHeight, setReservedHeight] = useState(HEADER_H + FOOTER_H)
-  const [footerAdVisible, setFooterAdVisible] = useState(false)
+  // Present from the first frame, for the same reason as the Random page.
+  const [footerAdVisible, setFooterAdVisible] = useState(true)
   const [isButtonBursting, setIsButtonBursting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [languagesOpen, setLanguagesOpen] = useState(false)

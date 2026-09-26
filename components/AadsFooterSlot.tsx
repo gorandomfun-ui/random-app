@@ -85,13 +85,15 @@ export default function AadsFooterSlot({
   return (
     <div
       className="relative flex h-full w-full flex-col items-center justify-center"
-      // Painted only once the frame has answered, as before: shown earlier it
-      // escaped the white bar on an iPad. The verifier reads the delivered page
-      // and finds the unit there whatever its opacity, so nothing is lost.
-      aria-hidden={!visible}
+      // Painted from the first frame. A-ADS's own article: "if the ad unit does
+      // not appear immediately after loading, our bot may consider it invisible",
+      // and no revenue is accrued while a unit reads as hidden. It cannot escape
+      // its white bar any more either, because the bar now holds its height from
+      // the start instead of growing once the frame has answered.
+      aria-hidden={status === 'empty'}
       style={{
-        opacity: visible ? 1 : 0,
-        pointerEvents: visible ? 'auto' : 'none',
+        opacity: status === 'empty' ? 0 : 1,
+        pointerEvents: status === 'empty' ? 'none' : 'auto',
       }}
     >
       {label && visible ? (
