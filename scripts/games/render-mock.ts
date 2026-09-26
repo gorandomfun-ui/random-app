@@ -17,7 +17,7 @@ const accent = process.argv[3] ?? TEXT_COLORS[0]
 const frame = Number(process.argv[4] ?? 0)
 mkdirSync(out, { recursive: true })
 for (const { game, layout, name, buffer } of renderAll(accent, frame)) {
-  const scale = buffer.width >= 400 || buffer.height >= 500 ? 3 : 4
+  const scale = name === 'titre' || name === 'game-over' ? 2 : 3
   const file = join(out, `${game}-${name}-${layout === 'landscape' ? 'paysage' : 'portrait'}.png`)
   writeFileSync(file, encodePng(buffer.width, buffer.height, buffer.data, scale))
   console.log(`${file}  ${buffer.width}×${buffer.height} ×${scale}`)

@@ -69,7 +69,12 @@ export const BURGER_PALETTE: Palette = {
 export const TOMATO: Sprite = ['..kkkkkk..', '.krrrrrrk.', 'krppwrpprk', 'krpprrpprk', 'krrrwwrrrk', 'krpprrpprk', 'krppwrpprk', '.krrrrrrk.', '..kkkkkk..']
 export const PICKLE: Sprite = ['..kkkkkk..', '.kggggggk.', 'kgGyGGyGgk', 'kgGGyyGGgk', 'kgyyGGyygk', 'kgGGyyGGgk', 'kgGyGGyGgk', '.kggggggk.', '..kkkkkk..']
 export const ONION: Sprite = ['..kkkkkk..', '.kwwwwwwk.', 'kwwkkkkwwk', 'kwk....kwk', 'kwk....kwk', 'kwk....kwk', 'kwwkkkkwwk', '.kwwwwwwk.', '..kkkkkk..']
-export const ITEM_PALETTE: Palette = { k: INK, r: '#e8412c', p: '#ff9a7a', w: '#fff1e0', g: '#5aa83a', G: '#8fd05a', y: '#e6f0a0' }
+/** A slice of cheese with its holes. */
+export const CHEESE: Sprite = ['.kkkkkkkk.', 'kcccccccck', 'kccoccccck', 'kccccccock', 'kcccccccck', 'kcoccccock', 'kcccccccck', '.kkkkkkkk.']
+export const ITEM_PALETTE: Palette = { k: INK, r: '#e8412c', p: '#ff9a7a', w: '#fff1e0', g: '#5aa83a', G: '#8fd05a', y: '#e6f0a0', c: '#ffd23f', o: '#d89a18' }
+
+/** The shopping list's four ingredients, in the order the HUD shows them. */
+export const INGREDIENTS = [TOMATO, PICKLE, ONION, CHEESE] as const
 
 /** The crumbs that line the aisles: a sesame seed. */
 export const PELLET: Sprite = ['.yy.', 'yyyy', '.yy.']

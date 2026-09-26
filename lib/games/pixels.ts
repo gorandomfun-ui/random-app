@@ -42,6 +42,10 @@ export function rgbOf(color: string): [number, number, number] {
   return rgb
 }
 
+/** The 4×4 ordered-dither threshold: a pixel takes the next shade when `t` passes it — smooth gradients in flat pixels. */
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+export const dither = (x: number, y: number, t: number): boolean => t * 16 > BAYER[((y % 4) + 4) % 4][((x % 4) + 4) % 4] + 0.5
+
 /** Two colours mixed: `t` = 0 gives `a`, 1 gives `b`. */
 export function mix(a: string, b: string, t: number): string {
   const [ar, ag, ab] = rgbOf(a), [br, bg, bb] = rgbOf(b)
@@ -85,6 +89,39 @@ export class PixelBuffer {
   /** A filled disc, centre and radius in pixels. */
   disc(cx: number, cy: number, r: number, color: string): void {
     for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y += 1) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x += 1) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) this.set(x, y, color)
+  }
+
+  /** A filled polygon, points in pixels, filled by rows (a pixel is in when its centre is). */
+  poly(points: ReadonlyArray<readonly [number, number]>, color: string): void {
+    const ys = points.map(([, y]) => y)
+    for (let y = Math.floor(Math.min(...ys)); y <= Math.ceil(Math.max(...ys)); y += 1) {
+      const cy = y + 0.5
+      const xs: number[] = []
+      for (let i = 0; i < points.length; i += 1) {
+        const [ax, ay] = points[i], [bx, by] = points[(i + 1) % points.length]
+        if ((ay <= cy && by > cy) || (by <= cy && ay > cy)) xs.push(ax + ((cy - ay) / (by - ay)) * (bx - ax))
+      }
+      xs.sort((a, b) => a - b)
+      for (let i = 0; i + 1 < xs.length; i += 2) for (let x = Math.ceil(xs[i] - 0.5); x < Math.ceil(xs[i + 1] - 0.5); x += 1) this.set(x, y, color)
+    }
+  }
+
+  /** A straight line one pixel wide. */
+  line(x0: number, y0: number, x1: number, y1: number, color: string): void {
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1)
+    for (let i = 0; i <= steps; i += 1) this.set(Math.round(x0 + ((x1 - x0) * i) / steps), Math.round(y0 + ((y1 - y0) * i) / steps), color)
+  }
+
+  /** The colour under a pixel, as '#rrggbb'. */
+  hex(x: number, y: number): string {
+    const [r, g, b] = this.get(Math.max(0, Math.min(this.width - 1, x)), Math.max(0, Math.min(this.height - 1, y)))
+    return `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`
+  }
+
+  /** A pixel mixed toward a colour by `t`, as light falling on it. */
+  tint(x: number, y: number, color: string, t: number): void {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return
+    this.set(x, y, mix(this.hex(x, y), color, t))
   }
 
   /** Every pixel of a rectangle dimmed to a fraction of itself: a shadow, a night falling. */
@@ -211,4 +248,26 @@ export function drawText7(buffer: PixelBuffer, text: string, x: number, y: numbe
 
 export function drawText7Centered(buffer: PixelBuffer, text: string, y: number, color: string, scale = 1, bold = false, centre = buffer.width / 2): void {
   drawText7(buffer, text, Math.round(centre - text7Width(text, scale, bold) / 2), y, color, scale, bold)
+}
+
+/**
+ * A sprite at twice the size with its diagonals smoothed (the classic
+ * edge-doubling rule for pixel art): each pixel becomes four, and a corner
+ * takes the colour of its two neighbours when they agree. Same drawing,
+ * finer steps — the title screens' version of the play sprites.
+ */
+export function scale2x(sprite: Sprite): Sprite {
+  const h = sprite.length, w = spriteSize(sprite).width
+  const at = (x: number, y: number) => sprite[Math.max(0, Math.min(h - 1, y))][Math.max(0, Math.min(w - 1, x))] ?? '.'
+  const out: string[][] = Array.from({ length: h * 2 }, () => Array.from({ length: w * 2 }, () => '.'))
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    const p = at(x, y), a = at(x, y - 1), b = at(x + 1, y), c = at(x - 1, y), d = at(x, y + 1)
+    let e0 = p, e1 = p, e2 = p, e3 = p
+    if (c === a && c !== d && a !== b) e0 = a
+    if (a === b && a !== c && b !== d) e1 = b
+    if (d === c && d !== b && c !== a) e2 = c
+    if (b === d && b !== a && d !== c) e3 = d
+    out[y * 2][x * 2] = e0; out[y * 2][x * 2 + 1] = e1; out[y * 2 + 1][x * 2] = e2; out[y * 2 + 1][x * 2 + 1] = e3
+  }
+  return out.map((row) => row.join(''))
 }
