@@ -56,7 +56,7 @@ export function pressStart(buffer: PixelBuffer, centre: number, y: number, accen
 
 /** A line of a small grey label and a cream value, as a title screen shows the level and the best score. */
 export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left', scale = 1, dark = false): void {
-  const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale, dark)
+  const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale, true)
   const left = align === 'left' ? x : align === 'right' ? x - w : Math.round(x - w / 2)
   const valueX = left + textWidth(label, scale) + 4 * scale
   if (dark) {
@@ -66,11 +66,11 @@ export function infoLine(buffer: PixelBuffer, x: number, y: number, label: strin
     drawText7(buffer, value, valueX, y, '#0a0c16', scale, true)
     return
   }
-  // a dark shadow under the letters, so they stand out on the night and on the street
+  // at night: a dark shadow under the letters, the number bold and cream
   drawText(buffer, label, left + scale, y + 3 * scale, INK, scale)
-  drawText7(buffer, value, valueX + scale, y + scale, INK, scale)
+  drawText7(buffer, value, valueX + scale, y + scale, INK, scale, true)
   drawText(buffer, label, left, y + 2 * scale, GREY, scale)
-  drawText7(buffer, value, valueX, y, CREAM, scale)
+  drawText7(buffer, value, valueX, y, CREAM, scale, true)
 }
 
 /** A framed button, its corners cut round; the chosen one is lit cream with a pointer before it. */
