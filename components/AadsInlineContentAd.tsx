@@ -68,10 +68,7 @@ export default function AadsInlineContentAd({
    * own address and in A-ADS's own shape, and the one that does not belong on
    * this screen is left to the style sheet.
    */
-  const otherId = variant === 'desktop' ? INLINE_MOBILE_ID : INLINE_DESKTOP_ID
-  const otherSize = variant === 'desktop' ? '300x250' : '728x90'
   const adUrl = unitId ? `https://acceptable.a-ads.com/${encodeURIComponent(unitId)}/?size=${size.width}x${size.height}` : null
-  const otherUrl = otherId ? `https://acceptable.a-ads.com/${encodeURIComponent(otherId)}/?size=${otherSize}` : null
 
   useEffect(() => () => releaseInlineSlot(slotIdRef.current), [])
 
@@ -181,18 +178,6 @@ export default function AadsInlineContentAd({
               style={{ border: 0, padding: 0, width: '100%', height: '100%', overflow: 'hidden', background: 'transparent' }}
               onLoad={() => setStatus('visible')}
               onError={() => setStatus('empty')}
-            />
-          ) : null}
-          {otherUrl && effectiveEnabled ? (
-            <iframe
-              className="aads-other-format"
-              data-aa={otherId}
-              src={otherUrl}
-              title="advertisement"
-              scrolling="no"
-              frameBorder={0}
-              loading="lazy"
-              style={{ border: 0, padding: 0, overflow: 'hidden', background: 'transparent', position: 'absolute', inset: 0, margin: 'auto' }}
             />
           ) : null}
         </div>

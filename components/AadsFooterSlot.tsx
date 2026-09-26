@@ -24,17 +24,13 @@ type Props = {
 }
 
 /**
- * Why both formats are written into the page.
+ * One banner in the page, and only one.
  *
- * A-ADS checks one page and one page only, the address written on the unit, and
- * it does not run the page: it reads what the server sent. Deciding in the
- * browser which of the two banners to build meant the other one existed nowhere
- * in that page, so its unit could never be verified and stayed "Not found",
- * whatever the visitors did.
- *
- * Both are written now, and a plain media query shows the one that fits the
- * screen. A visitor sees a single banner, as before; the checker finds each unit
- * at the address it was given.
+ * Writing both formats and letting a media query pick one put two banners on the
+ * same spot: A-ADS reads the page and answers "partly or fully hidden — if
+ * banners overlap each other, you'll get this error too". Each unit carries its
+ * own page address in their settings, which is what lets them be found; the page
+ * carries the one banner the screen calls for.
  */
 export default function AadsFooterSlot({
   variant,
@@ -45,9 +41,6 @@ export default function AadsFooterSlot({
 }: Props) {
   const unitId = variant === 'desktop' ? FOOTER_DESKTOP_ID : FOOTER_MOBILE_ID
   const size = variant === 'desktop' ? '728x90' : '320x50'
-  const otherId = variant === 'desktop' ? FOOTER_MOBILE_ID : FOOTER_DESKTOP_ID
-  const otherSize = variant === 'desktop' ? '320x50' : '728x90'
-  const otherUrl = otherId ? `https://acceptable.a-ads.com/${encodeURIComponent(otherId)}/?size=${encodeURIComponent(otherSize)}` : null
   // A-ADS sets no cookie and tracks nobody, so the banner does not wait for the
   // privacy dialog: gated behind it, A-ADS's own bot found no ad unit on the page
   // and stopped counting anything.
@@ -121,20 +114,6 @@ export default function AadsFooterSlot({
             style={{ border: 0, padding: 0, width: '100%', height: '100%', overflow: 'hidden', background: 'transparent' }}
             onLoad={() => setStatus('visible')}
             onError={() => setStatus('empty')}
-          />
-        ) : null}
-        {otherUrl && effectiveEnabled ? (
-          <iframe
-            className="aads-other-format"
-            data-aa={otherId}
-            src={otherUrl}
-            title="advertisement"
-            width={otherSize === '728x90' ? 728 : 320}
-            height={otherSize === '728x90' ? 90 : 50}
-            scrolling="no"
-            frameBorder={0}
-            loading="lazy"
-            style={{ border: 0, padding: 0, overflow: 'hidden', background: 'transparent', position: 'absolute', inset: 0, margin: 'auto' }}
           />
         ) : null}
       </div>

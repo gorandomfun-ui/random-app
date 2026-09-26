@@ -31,8 +31,7 @@ type Props = {
 
 export default function ScoreCounter({ variant = 'home', className = '', style }: Props) {
   const { points } = useScore()
-  const [activeDiamonds, setActiveDiamonds] = useState<AnimatedDiamond[]>([])
-  const lastSeenRef = useRef<Set<string>>(new Set())
+  const [activeDiamonds] = useState<AnimatedDiamond[]>([])
   const containerRef = useRef<HTMLDivElement | null>(null)
   const targetRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 })
 
