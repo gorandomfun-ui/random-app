@@ -59,6 +59,7 @@ test('le classement : un titre de film banal ne suffit plus pour le cinéma, l_u
   assert.equal(tag('The Truth (2019) official trailer'), 'cinema-tv', 'avec un mot de cinéma, le film compte')
   assert.equal(tag('The Truth will shock you', { categoryId: 'shortfilms' }), 'cinema-tv', 'ou avec une catégorie film')
   assert.equal(tag('Barbecue', { universeHint: 'food' }), 'food', 'la passe cherchait de la cuisine')
+  assert.equal(tagItem({ type: 'gif', title: 'The Truth GIF', provider: 'giphy' } as never, index, NOW).universe, 'cinema-tv', 'un GIF de film reste au film')
 })
 
 test('le mot « tv » ou « scene » seul ne classe plus en cinéma', () => {

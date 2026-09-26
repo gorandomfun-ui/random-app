@@ -83,7 +83,7 @@ const CINEMA_CLUE = wordsRegex([
 /** YouTube's Film & Animation, Movies, Shows and Trailers; Dailymotion's short films and TV. */
 const CINEMA_CATEGORIES = new Set(['1', '30', '43', '44', 'shortfilms', 'tv', 'film', 'movies'])
 
-function hasCinemaClue(item: TaggableItem): boolean {
+export function hasCinemaClue(item: Pick<TaggableItem, 'title' | 'categoryId'>): boolean {
   if (CINEMA_CLUE.test(item.title ?? '')) return true
   return CINEMA_CATEGORIES.has((item.categoryId ?? '').trim().toLowerCase())
 }
@@ -95,7 +95,8 @@ function pickUniverse(matches: AliasMatch[], item: TaggableItem): Universe {
     const universe = match.subject.universe
     if (!isUniverse(universe) || universe === 'other') continue
     // A film or a series named by an ordinary phrase says nothing without a word of cinema beside it.
-    if (universe === 'cinema-tv' && !hasCinemaClue(item)) continue
+    // Videos only: a GIF from a show ("Happy Dance GIF by Friends") is rightly the show's.
+    if (universe === 'cinema-tv' && item.type === 'video' && !hasCinemaClue(item)) continue
     return universe
   }
   // No subject the dictionaries know: the words of the title still say "gameplay", "recipe", "concert".
