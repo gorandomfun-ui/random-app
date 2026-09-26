@@ -105,11 +105,17 @@ export function moon(buffer: PixelBuffer, cx: number, cy: number, r: number): vo
  */
 export const CLOUDS: Record<'big' | 'long' | 'small', { puffs: ReadonlyArray<readonly [number, number, number, 0 | 1]>; base: number }> = {
   big: {
-    puffs: [[18, 13, 8, 0], [30, 8, 10, 0], [46, 6, 12, 0], [62, 10, 9, 0], [73, 16, 6, 0], [7, 20, 5, 1], [18, 19, 8, 1], [33, 21, 6, 1], [47, 19, 10, 1], [64, 21, 6, 1], [76, 23, 4, 1], [83, 24, 2, 1]],
+    puffs: [
+      [13, 15, 5, 0], [22, 10, 6, 0], [32, 7, 7, 0], [42, 9, 6, 0], [51, 5, 7, 0], [61, 9, 6, 0], [69, 14, 5, 0],
+      [7, 20, 5, 1], [18, 19, 7, 1], [31, 20, 6, 1], [44, 19, 8, 1], [58, 20, 6, 1], [69, 21, 5, 1], [78, 23, 3, 1],
+    ],
     base: 25,
   },
-  long: { puffs: [[16, 9, 6, 0], [28, 6, 8, 0], [42, 8, 7, 0], [5, 14, 4, 1], [17, 13, 7, 1], [31, 15, 5, 1], [45, 12, 7, 1], [57, 15, 4, 1], [64, 16, 2, 1]], base: 18 },
-  small: { puffs: [[13, 5, 6, 0], [6, 9, 5, 1], [19, 8, 5, 1], [25, 10, 3, 1]], base: 13 },
+  long: {
+    puffs: [[14, 10, 5, 0], [23, 6, 6, 0], [33, 8, 5, 0], [42, 7, 6, 0], [50, 11, 4, 0], [5, 14, 4, 1], [16, 13, 6, 1], [29, 14, 5, 1], [42, 13, 6, 1], [54, 15, 4, 1], [61, 16, 2, 1]],
+    base: 18,
+  },
+  small: { puffs: [[10, 6, 4, 0], [17, 4, 5, 0], [6, 9, 4, 1], [16, 9, 5, 1], [24, 10, 3, 1]], base: 13 },
 }
 
 /**
@@ -128,7 +134,7 @@ export function cloud(buffer: PixelBuffer, x: number, y: number, design: keyof t
   const left = Math.min(...puffs.map(([cx]) => cx)), right = Math.max(...puffs.map(([cx]) => cx))
   const slab = puffs.length
   // the front-most puff over a point: front layer first, and within a layer the later one; the base counts as front
-  const owner = (px: number, py: number): number => {
+  const ownerOf = (px: number, py: number): number => {
     if (py > base || py < 0) return -1
     let best = -1
     puffs.forEach(([cx, cy, r, layer], i) => { if (((px + 0.5 - cx) / (r * 1.35)) ** 2 + ((py + 0.5 - cy) / (r * 0.88)) ** 2 <= 1 && (best < 0 || layer >= puffs[best][3])) best = i })
@@ -136,6 +142,25 @@ export function cloud(buffer: PixelBuffer, x: number, y: number, design: keyof t
     return best
   }
   const layerOf = (i: number): 0 | 1 => (i === slab ? 1 : puffs[i][3])
+  // gaps closed in between the puffs (sky showing through the middle) are filled as the front layer's body
+  const gx0 = left - 20, gw = W + 40, gh = base + 2
+  const cover = Array.from({ length: gh }, (_, py) => Array.from({ length: gw }, (_, k) => ownerOf(k + gx0, py) >= 0))
+  const outside = Array.from({ length: gh }, () => Array.from({ length: gw }, () => false))
+  const stack: Array<[number, number]> = []
+  for (let k = 0; k < gw; k += 1) stack.push([k, 0], [k, gh - 1])
+  for (let py = 0; py < gh; py += 1) stack.push([0, py], [gw - 1, py])
+  while (stack.length) {
+    const [k, py] = stack.pop()!
+    if (k < 0 || py < 0 || k >= gw || py >= gh || outside[py][k] || cover[py][k]) continue
+    outside[py][k] = true
+    stack.push([k + 1, py], [k - 1, py], [k, py + 1], [k, py - 1])
+  }
+  const owner = (px: number, py: number): number => {
+    const found = ownerOf(px, py)
+    if (found >= 0) return found
+    const k = px - gx0
+    return py >= 0 && py < gh && k >= 0 && k < gw && !outside[py][k] && py <= base ? slab : -1
+  }
   const between = mix(night.cloudLight, night.rim, 0.45)
   for (let py = 0; py <= base; py += 1) for (let px = -shift; px < W; px += 1) {
     const i = owner(px, py)
@@ -151,6 +176,13 @@ export function cloud(buffer: PixelBuffer, x: number, y: number, design: keyof t
     else if (fromTop <= 2 && layer === 0 && lightSide) c = fromTop === 1 ? night.rim : dither(px, py, 0.5) ? night.rim : between
     else if (fromTop === 1 && layer === 0) c = between
     else if (above >= 0 && layerOf(above) < layer) c = between
+    else if (layer === 0 && i !== slab) {
+      // where this back puff rises over the one behind it, the line of its edge
+      const [cx, cy, r] = puffs[i]
+      const d = ((px + 0.5 - cx) / (r * 1.35)) ** 2 + ((py + 0.5 - cy) / (r * 0.88)) ** 2
+      const behind = [owner(px - 1, py), owner(px + 1, py), owner(px, py - 1)].some((j) => j >= 0 && j !== i && j !== slab && layerOf(j) === 0 && j < i)
+      if (d > 0.72 && behind && py < cy) c = lightSide ? between : night.cloud
+    }
     if (py >= base - 1) c = night.cloudDark
     else if (py === base - 2 && layer === 1) c = dither(px, py, 0.5) ? night.cloudDark : c
     const sx = flip ? x + (W - 1 - px) * 2 : x + (px + shift) * 2
