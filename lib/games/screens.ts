@@ -168,7 +168,7 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
   street(buffer, night, s.ground, 22, s.road.bottom, s.road.line)
   if (s.road.bottom < H) {
     // the near sidewalk under the road on a tall screen
-    buffer.rect(0, s.road.bottom, W, H - s.road.bottom, dim(night.sidewalk, 0.55))
+    buffer.rect(0, s.road.bottom, W, H - s.road.bottom, day ? night.sidewalkDark : dim(night.sidewalk, 0.55))
     buffer.rect(0, s.road.bottom, W, 3, night.sidewalkLight)
     for (let x = 24; x < W; x += 48) buffer.rect(x, s.road.bottom + 3, 1, H - s.road.bottom - 3, dim(night.sidewalk, 0.42))
   }
@@ -233,8 +233,8 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
     infoLine(buffer, 16, 16, 'LEVEL', level, 'left', 2, options.day === true)
     infoLine(buffer, width - 16, 16, 'BEST', best, 'right', 2, options.day === true)
   } else {
-    infoLine(buffer, width / 2 - 14, s.press + 24, 'LEVEL', level, 'right', 2)
-    infoLine(buffer, width / 2 + 14, s.press + 24, 'BEST', best, 'left', 2)
+    infoLine(buffer, width / 2 - 14, s.press + 24, 'LEVEL', level, 'right', 2, options.day === true)
+    infoLine(buffer, width / 2 + 14, s.press + 24, 'BEST', best, 'left', 2, options.day === true)
   }
   return buffer
 }
