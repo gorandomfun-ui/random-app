@@ -26,6 +26,8 @@ export type Night = {
   cities: readonly [string, string, string]; windows: readonly string[]
   sidewalk: string; sidewalkLight: string; sidewalkDark: string; road: string; line: string
   leaf: readonly [string, string, string, string]
+  /** Daylight: the sun instead of the moon, no stars, lamps off, windows that reflect instead of shining. */
+  day?: boolean
 }
 
 /** CATCHER's night is blue with cream-lit clouds; EATER's is violet with pink on the clouds. */
@@ -44,6 +46,35 @@ export const NIGHTS: Record<'blue' | 'violet', Night> = {
     sidewalk: '#4a4276', sidewalkLight: '#6e649c', sidewalkDark: '#362f5e', road: '#120d2a', line: '#efe0bc',
     leaf: ['#0c2e2c', '#154a40', '#1f6a50', '#3f9a6a'],
   },
+}
+
+/** Daytime versions of the two streets: a clear blue sky for CATCHER, a warm afternoon haze for EATER. */
+export const DAYS: Record<'blue' | 'violet', Night> = {
+  blue: {
+    sky: ['#2f7fe0', '#3d8ee8', '#4f9eee', '#63aef2', '#7cbef6', '#96cefa', '#b4defc', '#d2ecff'],
+    cloudDark: '#b4c6ea', cloud: '#d8e4f8', cloudLight: '#eef4ff', rim: '#ffffff', rimBack: '#e4ecfa',
+    cities: ['#a8bcdc', '#8aa2c8', '#6c86b0'], windows: ['#d8e8fc', '#c2d6f2', '#e8f2ff'],
+    sidewalk: '#a8aebe', sidewalkLight: '#c8ccd8', sidewalkDark: '#8a90a2', road: '#565a68', line: '#f4f4f0',
+    leaf: ['#1f6a3a', '#2f8f48', '#4cb05a', '#8ad470'], day: true,
+  },
+  violet: {
+    sky: ['#3a8ce0', '#4e9ae6', '#66a8ea', '#82b6ea', '#a2c4e8', '#c2d0e4', '#e0d8dc', '#f6dcc8', '#ffd8b4'],
+    cloudDark: '#c8b8e6', cloud: '#e2d8f6', cloudLight: '#f4eefe', rim: '#ffffff', rimBack: '#ece4fa',
+    cities: ['#b8b0d8', '#9c90c4', '#7e70a8'], windows: ['#e4e8fc', '#d0d8f4', '#f4f0ff'],
+    sidewalk: '#b0a8c0', sidewalkLight: '#d0c8dc', sidewalkDark: '#9088a4', road: '#5a5668', line: '#f4f4f0',
+    leaf: ['#1a5a44', '#26784e', '#3c9a5c', '#7cc670'], day: true,
+  },
+}
+
+/** The sun: a warm disc, a paler heart, a soft halo dithered into the sky. */
+export function sun(buffer: PixelBuffer, cx: number, cy: number, r: number): void {
+  for (let y = Math.floor(cy - r * 2.6); y <= cy + r * 2.6; y += 1) for (let x = Math.floor(cx - r * 2.6); x <= cx + r * 2.6; x += 1) {
+    const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+    if (d > r && d < r * 2.6 && dither(x, y, (1 - (d - r) / (r * 1.6)) * 0.5)) buffer.tint(x, y, '#fff6c8', 0.35)
+  }
+  buffer.disc(cx, cy, r, '#ffd24a')
+  buffer.disc(cx - r * 0.12, cy - r * 0.12, r * 0.78, '#ffe27a')
+  buffer.disc(cx - r * 0.3, cy - r * 0.3, r * 0.35, '#fff4c0')
 }
 
 /** The sky: a smooth gradient through the night's tones down to `horizon`, dithered between them. */
@@ -220,16 +251,16 @@ export function skyline(buffer: PixelBuffer, night: Night, base: number, far: re
         buffer.rect(cx - 2, top - 70, 4, 70, color)
         buffer.poly([[cx - 12, top - 70], [cx + 12, top - 70], [cx + 7, top - 60], [cx - 7, top - 60]], color)
         buffer.rect(cx - 1, top - 96, 2, 26, color)
-        if (frame % 3 !== 2) buffer.rect(cx - 1, top - 98, 2, 2, '#ff5a5a')
+        if (frame % 3 !== 2 && !night.day) buffer.rect(cx - 1, top - 98, 2, 2, '#ff5a5a')
         for (let k = 0; k < 4; k += 1) buffer.rect(cx - 9 + k * 6, top - 66, 2, 2, mix(color, night.windows[0], 0.5))
       }
       if (kind === 'tank') { const tx = x + Math.round(w * 0.6); buffer.rect(tx, top - 16, 16, 12, color); buffer.poly([[tx - 1, top - 16], [tx + 17, top - 16], [tx + 8, top - 22]], color); buffer.rect(tx + 2, top - 4, 2, 4, color); buffer.rect(tx + 12, top - 4, 2, 4, color) }
-      if (kind === 'antenna') { const ax = x + Math.round(w * 0.3); buffer.rect(ax, top - 30, 2, 30, color); buffer.rect(ax - 4, top - 20, 10, 1, color); if ((frame + x) % 3 !== 1) buffer.rect(ax, top - 32, 2, 2, '#ff5a5a') }
+      if (kind === 'antenna') { const ax = x + Math.round(w * 0.3); buffer.rect(ax, top - 30, 2, 30, color); buffer.rect(ax - 4, top - 20, 10, 1, color); if ((frame + x) % 3 !== 1 && !night.day) buffer.rect(ax, top - 32, 2, 2, '#ff5a5a') }
       if (kind === 'twin') { buffer.rect(x + 4, top - 18, Math.round(w * 0.35), 18, color); buffer.rect(x + w - 4 - Math.round(w * 0.35), top - 18, Math.round(w * 0.35), 18, color) }
       // windows in columns: the far row a few dim ones, the near row more, lit warm
       const ww = plane === 0 ? 2 : 3, wh = plane === 0 ? 2 : 4, gx = plane === 0 ? 5 : 7, gy = plane === 0 ? 6 : 9
       for (let wy = top + 8; wy < base - wh - 4; wy += gy) for (let wx = x + 6; wx < x + w - ww - 4; wx += gx) {
-        const lit = next() < (plane === 0 ? 0.12 : 0.24)
+        const lit = next() < (night.day ? 0.5 : plane === 0 ? 0.12 : 0.24)
         const tone = night.windows[Math.floor(next() * night.windows.length)]
         if (lit && !(next() < 0.04 && frame % 4 === 1)) buffer.rect(wx, wy, ww, wh, plane === 0 ? mix(tone, color, 0.5) : tone)
         else if (plane === 1) buffer.rect(wx, wy, ww, wh, mix(color, '#000000', 0.3))
@@ -266,14 +297,14 @@ export function street(buffer: PixelBuffer, night: Night, top: number, depth: nu
 }
 
 /** A street lamp standing on `ground`: a pole with its base, an arm, a lamp, a halo round it and a pool of light below. */
-export function lamp(buffer: PixelBuffer, x: number, ground: number, height: number, facingLeft = false): void {
-  const pole = '#262c4a', poleLight = '#48507a', bulb = '#fff0b0'
+export function lamp(buffer: PixelBuffer, x: number, ground: number, height: number, facingLeft = false, on = true): void {
+  const pole = on ? '#262c4a' : '#3a4058', poleLight = on ? '#48507a' : '#6a7090', bulb = on ? '#fff0b0' : '#dcdcd0'
   const hx = x + (facingLeft ? -6 : 6), hy = ground - height + 6
-  for (let y = hy - 26; y <= hy + 26; y += 1) for (let xx = hx - 26; xx <= hx + 26; xx += 1) {
+  if (on) for (let y = hy - 26; y <= hy + 26; y += 1) for (let xx = hx - 26; xx <= hx + 26; xx += 1) {
     const d = Math.hypot(xx - hx, y - hy)
     if (d < 26 && dither(xx, y, (1 - d / 26) * 0.9)) buffer.tint(xx, y, '#ffd27a', d < 10 ? 0.4 : 0.22)
   }
-  for (let y = ground - 2; y < ground + 18; y += 1) for (let xx = x - 40; xx < x + 40; xx += 1) {
+  if (on) for (let y = ground - 2; y < ground + 18; y += 1) for (let xx = x - 40; xx < x + 40; xx += 1) {
     const d = Math.hypot((xx - x) / 40, (y - ground - 6) / 12)
     if (d < 1 && dither(xx, y, (1 - d) * 0.8)) buffer.tint(xx, y, '#ffd27a', 0.18)
   }
@@ -283,7 +314,7 @@ export function lamp(buffer: PixelBuffer, x: number, ground: number, height: num
   const armTo = facingLeft ? x - 9 : x + 9
   buffer.rect(Math.min(x, armTo), ground - height, Math.abs(armTo - x) + 3, 3, pole)
   buffer.poly([[hx - 7, hy - 5], [hx + 7, hy - 5], [hx + 5, hy], [hx - 5, hy]], pole)
-  buffer.rect(hx - 4, hy, 9, 3, bulb); buffer.rect(hx - 3, hy + 3, 7, 1, '#ffd27a')
+  buffer.rect(hx - 4, hy, 9, 3, bulb); if (on) buffer.rect(hx - 3, hy + 3, 7, 1, '#ffd27a')
 }
 
 /** A round tree in its square pit: a trunk, a crown of clusters in four greens lit from the top left. */
@@ -420,7 +451,7 @@ function pane(buffer: PixelBuffer, x: number, y: number, w: number, h: number, t
  * poster, a kick plate in the accent's shade. Lights off, the glass goes
  * dark and the sign reads CLOSED.
  */
-export function drawStore(buffer: PixelBuffer, x: number, width: number, ground: number, accent: string, frame: number, lit = true): void {
+export function drawStore(buffer: PixelBuffer, x: number, width: number, ground: number, accent: string, frame: number, lit = true, day = false): void {
   const top = ground - 150
   const awningTop = top + 12, awningBottom = top + 44, wallTop = awningBottom + 8
   const kick = ground - 22
@@ -453,8 +484,8 @@ export function drawStore(buffer: PixelBuffer, x: number, width: number, ground:
   buffer.rect(x - 4, awningTop - 2, width + 8, 2, accentDeep)
   // two gooseneck lamps over the awning and the light they throw
   for (const lx of [x + Math.round(width * 0.28), x + Math.round(width * 0.72)]) {
-    buffer.rect(lx, top - 10, 3, 10, '#2a2f4a'); buffer.rect(lx - 6, top - 12, 15, 4, '#2a2f4a'); buffer.rect(lx - 5, top - 8, 13, 2, lit ? '#fff3b0' : '#4a4a58')
-    if (lit) for (let dy = 0; dy < 26; dy += 1) for (let dx = -4 - dy; dx <= 4 + dy; dx += 1) if (dither(lx + dx, awningTop + dy, 0.5 * (1 - dy / 26))) buffer.tint(lx + dx + 1, top - 6 + dy, '#fff3b0', 0.35)
+    buffer.rect(lx, top - 10, 3, 10, '#2a2f4a'); buffer.rect(lx - 6, top - 12, 15, 4, '#2a2f4a'); buffer.rect(lx - 5, top - 8, 13, 2, lit && !day ? '#fff3b0' : '#6a6a78')
+    if (lit && !day) for (let dy = 0; dy < 26; dy += 1) for (let dx = -4 - dy; dx <= 4 + dy; dx += 1) if (dither(lx + dx, awningTop + dy, 0.5 * (1 - dy / 26))) buffer.tint(lx + dx + 1, top - 6 + dy, '#fff3b0', 0.35)
   }
   // the openings
   const doorW = 56, doorX = x + Math.round(width / 2 - doorW / 2)
@@ -466,7 +497,7 @@ export function drawStore(buffer: PixelBuffer, x: number, width: number, ground:
     buffer.rect(wx - 4, glassTop - 4, ww + 8, glassBottom - glassTop + 8, frameC)
     buffer.rect(wx - 4, glassTop - 4, ww + 8, 1, frameLight)
     pane(buffer, wx, glassTop, ww, glassBottom - glassTop, warmTop, warmLow, false)
-    if (lit) for (let lx = wx + 14; lx < wx + ww - 10; lx += 34) { buffer.rect(lx, glassTop, 16, 2, '#fffbe0'); for (let d = 1; d < 8; d += 1) for (let e = -d; e < 16 + d; e += 1) if (dither(lx + e, glassTop + 2 + d, 0.4 * (1 - d / 8))) buffer.tint(lx + e, glassTop + 2 + d, '#ffffff', 0.3) }
+    if (lit && !day) for (let lx = wx + 14; lx < wx + ww - 10; lx += 34) { buffer.rect(lx, glassTop, 16, 2, '#fffbe0'); for (let d = 1; d < 8; d += 1) for (let e = -d; e < 16 + d; e += 1) if (dither(lx + e, glassTop + 2 + d, 0.4 * (1 - d / 8))) buffer.tint(lx + e, glassTop + 2 + d, '#ffffff', 0.3) }
   }
   // shelves of bottles and boxes in the left window
   const next = rng(31)
@@ -573,7 +604,7 @@ export function bin(buffer: PixelBuffer, x: number, ground: number, color: strin
  * plant; the door in the middle with its round window and a lamp over it;
  * the black-and-cream band of tiles under the windows, a chrome foot.
  */
-export function drawDiner(buffer: PixelBuffer, x: number, width: number, ground: number, accent: string, frame: number, lit = true): void {
+export function drawDiner(buffer: PixelBuffer, x: number, width: number, ground: number, accent: string, frame: number, lit = true, day = false): void {
   const roof = ground - 128
   const bandBottom = roof + 30
   const checkTop = ground - 34, foot = ground - 16
@@ -584,7 +615,7 @@ export function drawDiner(buffer: PixelBuffer, x: number, width: number, ground:
   buffer.rect(x - 10, roof, width + 20, 2, chromeLight); buffer.rect(x - 10, roof + 2, width + 20, 1, chromeDark)
   buffer.rect(x - 10, bandBottom - 3, width + 20, 3, chromeDark); buffer.rect(x - 10, bandBottom - 1, width + 20, 1, chromeDeep)
   for (const ny of [roof + 8, roof + 17]) {
-    if (lit) { buffer.rect(x - 8, ny - 2, width + 16, 8, mix(chrome, accent, 0.35)); buffer.rect(x - 8, ny - 1, width + 16, 6, mix(chrome, accent, 0.6)) }
+    if (lit && !day) { buffer.rect(x - 8, ny - 2, width + 16, 8, mix(chrome, accent, 0.35)); buffer.rect(x - 8, ny - 1, width + 16, 6, mix(chrome, accent, 0.6)) }
     buffer.rect(x - 8, ny, width + 16, 4, neon); buffer.rect(x - 8, ny + 1, width + 16, 2, neonCore)
   }
   for (let px = x - 4; px < x + width + 4; px += 64) { buffer.rect(px, roof + 4, 3, bandBottom - roof - 7, chromeDark); buffer.rect(px, roof + 4, 1, bandBottom - roof - 7, chromeLight) }
@@ -607,7 +638,7 @@ export function drawDiner(buffer: PixelBuffer, x: number, width: number, ground:
       buffer.rect(lx, winTop, 1, 8, '#3a2a2a')
       buffer.poly([[lx - 7, winTop + 15], [lx - 4, winTop + 8], [lx + 5, winTop + 8], [lx + 8, winTop + 15]], lit ? accent : '#3a3048')
       buffer.rect(lx - 7, winTop + 15, 16, 1, lit ? dim(accent, 0.7) : '#2a2440')
-      if (lit) { buffer.rect(lx - 3, winTop + 16, 7, 2, '#fff8d0'); for (let d = 0; d < 14; d += 1) for (let e = -3 - d; e <= 3 + d; e += 1) if (dither(lx + e, winTop + 18 + d, 0.35 * (1 - d / 14))) buffer.tint(lx + e, winTop + 18 + d, '#fff3c0', 0.25) }
+      if (lit && !day) { buffer.rect(lx - 3, winTop + 16, 7, 2, '#fff8d0'); for (let d = 0; d < 14; d += 1) for (let e = -3 - d; e <= 3 + d; e += 1) if (dither(lx + e, winTop + 18 + d, 0.35 * (1 - d / 14))) buffer.tint(lx + e, winTop + 18 + d, '#fff3c0', 0.25) }
     }
     // booths either side of a table, ketchup and mustard; a plant in the last window
     const seat = lit ? dim(accent, 0.75) : '#241c38', seatLight = lit ? mix(accent, '#ffffff', 0.2) : '#2a2240'
@@ -636,7 +667,7 @@ export function drawDiner(buffer: PixelBuffer, x: number, width: number, ground:
   if (lit) buffer.disc(doorX + doorW / 2 - 3, winTop + 19, 3, '#fff0c0')
   buffer.rect(doorX + doorW - 12, winTop + 46, 3, 16, chromeLight); buffer.rect(doorX + doorW - 11, winTop + 46, 1, 16, chromeDark)
   buffer.rect(doorX + doorW / 2 - 8, winTop - 12, 16, 5, '#3a3048'); buffer.rect(doorX + doorW / 2 - 6, winTop - 7, 12, 2, lit ? '#fff3b0' : '#4a4a58')
-  if (lit) for (let d = 0; d < 20; d += 1) for (let e = -6 - d; e <= 6 + d; e += 1) if (dither(doorX + doorW / 2 + e, winTop - 5 + d, 0.4 * (1 - d / 20))) buffer.tint(doorX + doorW / 2 + e, winTop - 5 + d, '#fff3c0', 0.3)
+  if (lit && !day) for (let d = 0; d < 20; d += 1) for (let e = -6 - d; e <= 6 + d; e += 1) if (dither(doorX + doorW / 2 + e, winTop - 5 + d, 0.4 * (1 - d / 20))) buffer.tint(doorX + doorW / 2 + e, winTop - 5 + d, '#fff3c0', 0.3)
   // the band of tiles, black and cream, and the chrome foot
   for (let cx = x; cx < x + width; cx += 1) {
     if (cx >= doorX - 5 && cx < doorX + doorW + 5) continue

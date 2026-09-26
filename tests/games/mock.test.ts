@@ -158,9 +158,10 @@ test('les personnages des titres sont ceux du jeu, deux fois plus fins', () => {
 
 test('les écrans de base : titre, jeu, GAME OVER, en paysage et en portrait, aux tailles annoncées', () => {
   const shots = renderAll('#0FC55D')
-  assert.equal(shots.length, 16, 'CATCHER : titre, jeu, GAME OVER ; EATER : titre, trois niveaux, GAME OVER ; fois deux formats')
+  assert.equal(shots.length, 20, 'CATCHER : titre de nuit et de jour, jeu, GAME OVER ; EATER : titre de nuit et de jour, trois niveaux, GAME OVER ; fois deux formats')
   for (const { game, layout, name, buffer } of shots) {
     const size = name.startsWith('jeu') ? playSize(layout) : SCENE_SIZE[layout]
+    if (name === 'titre-jour') assert.notDeepEqual(buffer.get(10, 100), shots.find((o) => o.game === game && o.layout === layout && o.name === 'titre')!.buffer.get(10, 100), `${game} ${layout} : le ciel du jour diffère de la nuit`)
     assert.equal(buffer.width, size.width, `${game} ${name} ${layout}`)
     assert.equal(buffer.height, size.height, `${game} ${name} ${layout}`)
     assert.ok(buffer.countNot('#000000') > buffer.width * buffer.height * 0.5, `${game} ${name} ${layout} : presque vide`)

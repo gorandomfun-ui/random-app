@@ -58,6 +58,9 @@ export function pressStart(buffer: PixelBuffer, centre: number, y: number, accen
 export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left', scale = 1): void {
   const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale)
   const left = align === 'left' ? x : align === 'right' ? x - w : Math.round(x - w / 2)
+  // a dark shadow under the letters, so they read on a bright day sky as on the night
+  drawText(buffer, label, left + scale, y + 3 * scale, INK, scale)
+  drawText7(buffer, value, left + textWidth(label, scale) + 5 * scale, y + scale, INK, scale)
   drawText(buffer, label, left, y + 2 * scale, GREY, scale)
   drawText7(buffer, value, left + textWidth(label, scale) + 4 * scale, y, CREAM, scale)
 }
