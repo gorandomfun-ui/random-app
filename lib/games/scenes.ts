@@ -32,14 +32,14 @@ export type Night = {
 export const NIGHTS: Record<'blue' | 'violet', Night> = {
   blue: {
     sky: ['#040922', '#081332', '#0e1d46', '#15295c', '#1f3874', '#2c4a8e', '#3d5ea6', '#5374b8'],
-    cloudDark: '#1a2a6a', cloud: '#2a409a', cloudLight: '#4462c8', rim: '#f2e2ba', rimBack: '#7f9ee8',
+    cloudDark: '#2a44a4', cloud: '#3b5fc8', cloudLight: '#5c84e4', rim: '#f6e6c2', rimBack: '#7f9ee8',
     cities: ['#1b2c70', '#13215a', '#0c1644'], windows: ['#f7c850', '#ffe08a', '#f0a840'],
     sidewalk: '#4a5280', sidewalkLight: '#6e77a6', sidewalkDark: '#363d66', road: '#141a36', line: '#efe0bc',
     leaf: ['#12402c', '#1d6a3c', '#2f8f4a', '#5cbf5a'],
   },
   violet: {
     sky: ['#06021a', '#0e0628', '#190c3a', '#26124c', '#37185e', '#4c1f6c', '#662876', '#86347c', '#a6447e'],
-    cloudDark: '#261a58', cloud: '#3a2a80', cloudLight: '#5b40a8', rim: '#ff7fa8', rimBack: '#b07ad8',
+    cloudDark: '#8a74cc', cloud: '#ae98e6', cloudLight: '#cbbcf4', rim: '#f6f0ff', rimBack: '#b07ad8',
     cities: ['#2a1d64', '#1e1450', '#140c3a'], windows: ['#ffb85a', '#5fe3ff', '#ff7aa2', '#ffe08a'],
     sidewalk: '#4a4276', sidewalkLight: '#6e649c', sidewalkDark: '#362f5e', road: '#120d2a', line: '#efe0bc',
     leaf: ['#0c2e2c', '#154a40', '#1f6a50', '#3f9a6a'],
@@ -97,41 +97,64 @@ export function moon(buffer: PixelBuffer, cx: number, cy: number, r: number): vo
   for (const [ox, oy, rr] of [[0.55, 0.1, 0.13], [0.35, 0.45, 0.09], [0.62, -0.35, 0.08]] as const) buffer.disc(cx + ox * r, cy + oy * r, rr * r, '#e2cf98')
 }
 
-/** The cloud designs, drawn here as slabs of pixels — x, y, width, height — piled into a mound on a flat base. */
-export const CLOUDS: Record<'big' | 'long' | 'small', ReadonlyArray<readonly [number, number, number, number]>> = {
-  big: [[4, 26, 150, 18], [22, 14, 44, 24], [52, 2, 50, 30], [92, 10, 40, 26], [124, 22, 26, 16], [34, 20, 110, 18]],
-  long: [[0, 16, 118, 12], [10, 8, 30, 16], [34, 0, 36, 22], [64, 6, 30, 18], [90, 11, 20, 12]],
-  small: [[0, 10, 66, 10], [8, 4, 22, 14], [26, 0, 22, 16], [44, 6, 16, 10]],
+/**
+ * The cloud designs, as puffs — centre, radius, and layer: 0 the puffs at
+ * the back and top, 1 those in front and lower — placed by hand on a grid
+ * half as fine as the scene, and the flat base they sit on. Drawn at twice
+ * the size, so their edges step like the references' clouds.
+ */
+export const CLOUDS: Record<'big' | 'long' | 'small', { puffs: ReadonlyArray<readonly [number, number, number, 0 | 1]>; base: number }> = {
+  big: {
+    puffs: [[18, 13, 8, 0], [30, 8, 10, 0], [46, 6, 12, 0], [62, 10, 9, 0], [73, 16, 6, 0], [7, 20, 5, 1], [18, 19, 8, 1], [33, 21, 6, 1], [47, 19, 10, 1], [64, 21, 6, 1], [76, 23, 4, 1], [83, 24, 2, 1]],
+    base: 25,
+  },
+  long: { puffs: [[16, 9, 6, 0], [28, 6, 8, 0], [42, 8, 7, 0], [5, 14, 4, 1], [17, 13, 7, 1], [31, 15, 5, 1], [45, 12, 7, 1], [57, 15, 4, 1], [64, 16, 2, 1]], base: 18 },
+  small: { puffs: [[13, 5, 6, 0], [6, 9, 5, 1], [19, 8, 5, 1], [25, 10, 3, 1]], base: 13 },
 }
 
 /**
- * A pixel cloud in the manner of the references: slabs piled into a
- * mound, their corners cut in steps; a rim of light along the top, a lit
- * band under it and a few lit streaks, the body, a darker base. `flip`
- * mirrors the design, so the same cloud does not show twice.
+ * A cloud in the manner of the references: round puffs on a flat base, in
+ * two layers — the back ones lit, the front ones a shade darker — the top
+ * edge caught by the light (cream on the side the light comes from), a
+ * light line where a front puff passes over one behind, a darker base.
+ * `flip` mirrors the design, so the same cloud does not show twice;
+ * `fromLeft` puts the light on the left, when the moon is there.
  */
-export function cloud(buffer: PixelBuffer, x: number, y: number, design: keyof typeof CLOUDS, night: Night, flip = false, scale = 1): void {
-  const slabs = CLOUDS[design].map(([sx, sy, w, h]) => [sx * scale, sy * scale, w * scale, h * scale] as const)
-  const W = Math.max(...slabs.map(([sx, , w]) => sx + w)), H = Math.max(...slabs.map(([, sy, , h]) => sy + h))
-  const inside = (px: number, py: number) => slabs.some(([sx, sy, w, h]) => {
-    if (px < sx || py < sy || px >= sx + w || py >= sy + h) return false
-    // the corners cut in two steps
-    const dx = Math.min(px - sx, sx + w - 1 - px), dy = Math.min(py - sy, sy + h - 1 - py)
-    return !((dx === 0 && dy < 3) || (dx === 1 && dy < 1) || (dy === 0 && dx < 3))
-  })
-  for (let py = 0; py < H; py += 1) for (let px = 0; px < W; px += 1) {
-    if (!inside(px, py)) continue
-    let depth = 0
-    while (depth < 6 && inside(px, py - depth - 1)) depth += 1
-    const left = !inside(px - 1, py)
-    let c = night.cloud
-    if (depth === 0) c = px < W * 0.72 ? night.rim : night.cloudLight
-    else if (depth <= 2 || (left && py < H - 6)) c = night.cloudLight
-    else if (depth <= 4) c = dither(px, py, 0.5) ? night.cloudLight : night.cloud
-    if (py >= H - 4) c = py === H - 1 ? dim(night.cloudDark, 0.85) : night.cloudDark
-    // lit streaks across the body, as the references draw them
-    if (depth > 5 && py < H - 5 && (py + Math.floor(px / 23)) % 7 === 0 && px % 23 > 4) c = night.cloudLight
-    buffer.set(flip ? x + W - 1 - px : x + px, y + py, c)
+export function cloud(buffer: PixelBuffer, x: number, y: number, design: keyof typeof CLOUDS, night: Night, flip = false, fromLeft = false): void {
+  const { puffs, base } = CLOUDS[design]
+  const W = Math.max(...puffs.map(([cx, , r]) => cx + Math.ceil(r * 1.35))) + 1
+  const shift = Math.max(0, -Math.min(...puffs.map(([cx, , r]) => cx - Math.ceil(r * 1.35))))
+  // puffs are wider than tall, and the cloud sits on one flat base running under all of them
+  const left = Math.min(...puffs.map(([cx]) => cx)), right = Math.max(...puffs.map(([cx]) => cx))
+  const slab = puffs.length
+  // the front-most puff over a point: front layer first, and within a layer the later one; the base counts as front
+  const owner = (px: number, py: number): number => {
+    if (py > base || py < 0) return -1
+    let best = -1
+    puffs.forEach(([cx, cy, r, layer], i) => { if (((px + 0.5 - cx) / (r * 1.35)) ** 2 + ((py + 0.5 - cy) / (r * 0.88)) ** 2 <= 1 && (best < 0 || layer >= puffs[best][3])) best = i })
+    if (best < 0 && py >= base - 3 && px >= left && px <= right) return slab
+    return best
+  }
+  const layerOf = (i: number): 0 | 1 => (i === slab ? 1 : puffs[i][3])
+  const between = mix(night.cloudLight, night.rim, 0.45)
+  for (let py = 0; py <= base; py += 1) for (let px = -shift; px < W; px += 1) {
+    const i = owner(px, py)
+    if (i < 0) continue
+    const layer = layerOf(i)
+    const above = owner(px, py - 1)
+    let c = layer === 0 ? night.cloudLight : night.cloud
+    // the side the moon is on catches the light: cream along the top there, a broad band of it on the back puffs
+    const onScreen = flip ? W - 1 - px : px
+    const lightSide = fromLeft ? onScreen < W * 0.58 : onScreen > W * 0.42
+    const fromTop = above < 0 ? 0 : owner(px, py - 2) < 0 ? 1 : owner(px, py - 3) < 0 ? 2 : 3
+    if (fromTop === 0) c = lightSide ? night.rim : between
+    else if (fromTop <= 2 && layer === 0 && lightSide) c = fromTop === 1 ? night.rim : dither(px, py, 0.5) ? night.rim : between
+    else if (fromTop === 1 && layer === 0) c = between
+    else if (above >= 0 && layerOf(above) < layer) c = between
+    if (py >= base - 1) c = night.cloudDark
+    else if (py === base - 2 && layer === 1) c = dither(px, py, 0.5) ? night.cloudDark : c
+    const sx = flip ? x + (W - 1 - px) * 2 : x + (px + shift) * 2
+    buffer.rect(sx, y + py * 2, 2, 2, c)
   }
 }
 
