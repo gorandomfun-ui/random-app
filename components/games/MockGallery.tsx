@@ -21,6 +21,8 @@ const LABELS: Record<string, string> = {
   'jeu-niveau-4': 'En jeu — niveau 4 : damier léger, chaises',
   'jeu-niveau-8': 'En jeu — niveau 8 : tout le diner, et le milkshake bonus',
   'game-over': 'Game over',
+  winner: 'Winner — nuit',
+  'winner-jour': 'Winner — jour',
 }
 
 function Screen({ spec, room }: { spec: ShotSpec; room: number }) {

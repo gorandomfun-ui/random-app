@@ -14,14 +14,15 @@ import type { EaterState } from './eater'
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { catcherLogoSize, drawCatcherLogo, drawEaterLogo, eaterLogoSize } from './logos'
 import { mazeFor, MAZE_HEIGHT, MAZE_WIDTH } from './maze'
-import { dim, mix, PixelBuffer, scale2x, type Palette, type Sprite } from './pixels'
+import { dim, drawText7, mix, PixelBuffer, scale2x, text7Width, type Palette, type Sprite } from './pixels'
 import {
   bench, bin, car, cloud, DAYS, drawDiner, drawStore, hedge, hydrant, lamp, moon, NIGHTS, palm, railing, signFrame, skyline, sky, stars, street, sun, tree, vending, wisp,
   type Building, type Night,
 } from './scenes'
 import {
-  BURGER, BURGER_PALETTE, CELL, CHEESE, CRAWL_ARMS, CRAWL_HEAD, CRAWL_LEGS, eaterPalette, facing, HUMAN, humanPalette, ITEM_PALETTE,
-  MILKSHAKE, MILKSHAKE_PALETTE, MINI_BURGER, MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, type Direction,
+  BANKNOTE, BANKNOTE_PALETTE, BURGER, BURGER_PALETTE, CELL, CHEESE, COIN, COIN_PALETTE, CRAWL_ARMS, CRAWL_HEAD, CRAWL_LEGS, DONUT, DONUT_PALETTE, eaterPalette, facing,
+  FRIES, FRIES_PALETTE, GOLD_BURGER_PALETTE, GOLD_CARD, GOLD_CARD_PALETTE, HUMAN, humanPalette, ITEM_PALETTE, MILKSHAKE, MILKSHAKE_PALETTE, MINI_BURGER,
+  MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, WINNER_STAND, winnerPalette, type Direction,
 } from './sprites'
 import { arcadeText, button, CREAM, dpad, hud, HUD_HEIGHT, infoLine, INK, pressStart } from './ui'
 
@@ -48,6 +49,10 @@ export function playSize(layout: Layout): { width: number; height: number } {
 }
 
 // ---------------------------------------------------------------- the street, composed
+
+/** The winner standing, smoothed twice over. */
+let stood: Sprite | null = null
+const standing = (): Sprite => (stood ??= scale2x(scale2x(WINNER_STAND)))
 
 /** The title screens' sprites: the play sprites, smoothed to the finer grid. */
 const fine = new Map<Sprite, Sprite>()
@@ -116,7 +121,8 @@ function stage(game: Game, layout: Layout): Stage {
       }
 }
 
-type SceneOptions = { frame: number; lit: boolean; hero: boolean; building: boolean; day?: boolean }
+/** `hero`: the title's (the burger at the door, the eater crawling in), the winner's (the burger hopping, the eater standing with his cup) or none; `winner` puts WINNER on the building instead of the game's name. */
+type SceneOptions = { frame: number; lit: boolean; hero: 'title' | 'winner' | false; building: boolean; day?: boolean; winner?: boolean }
 
 function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, lit: boolean, index: number): void {
   if (prop.kind === 'lamp') lamp(buffer, prop.x, s.ground, prop.h, prop.left, !night.day)
@@ -156,7 +162,7 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
     drawLogo(buffer, rx, s.randomY, mix(accent, CREAM, 0.25), 2)
     if (game === 'catcher') drawStore(buffer, bx, bw, s.ground, accent, frame, lit, day)
     else {
-      const lettering = layout === 'landscape' ? 'wide' : 'tall'
+      const lettering = options.winner ? (layout === 'landscape' ? 'winnerWide' : 'winnerTall') : layout === 'landscape' ? 'wide' : 'tall'
       const logo = eaterLogoSize(lettering)
       const roof = s.ground - 128
       const markY = s.markY
@@ -177,7 +183,21 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
     for (let x = 24; x < W; x += 48) buffer.rect(x, s.road.bottom + 3, 1, H - s.road.bottom - 3, dim(night.sidewalk, 0.42))
   }
   // the hero on the sidewalk first: the cars pass in front of it
-  if (options.hero) {
+  if (options.hero === 'winner') {
+    const door = bx + Math.round(bw / 2)
+    if (game === 'catcher') {
+      // the burger hops on the spot, mouth open at the top of the jump
+      const up = frame % 2 === 1
+      buffer.blit(smooth(BURGER[up ? 1 : 0]), door - 16, s.ground - 26 - (up ? 16 : 0), BURGER_PALETTE)
+    } else {
+      // the eater on his feet, the cup over his head, a glint on it every other moment; smoothed twice,
+      // since his head is half the crawler's in the sprite: the same man, the same size
+      const x0 = door - 32, y0 = s.ground + 18 - 128
+      buffer.blit(standing(), x0, y0, winnerPalette(accent))
+      const glints: Array<[number, number]> = frame % 2 ? [[x0 + 8, y0 + 12], [x0 + 55, y0 + 24]] : [[x0 + 50, y0 + 4], [x0 + 12, y0 + 30]]
+      for (const [gx, gy] of glints) { buffer.rect(gx - 3, gy, 7, 1, '#fff6c0'); buffer.rect(gx, gy - 3, 1, 7, '#fff6c0'); buffer.set(gx, gy, '#ffffff') }
+    }
+  } else if (options.hero) {
     const door = bx + Math.round(bw / 2)
     if (game === 'catcher') buffer.blit(smooth(BURGER[frame % 2]), door - 16, s.ground - 26, BURGER_PALETTE)
     else {
@@ -212,12 +232,15 @@ function drawCrawler(buffer: PixelBuffer, x: number, y: number, accent: string, 
   buffer.blit(smooth(CRAWL_HEAD), cx, y, palette)
 }
 
-/** CATCHER's letters in volume over the store (RANDOM is drawn with the street, EATER's neon hangs on its diner). */
-function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, frame: number): void {
+/** CATCHER's letters in volume over the store — or WINNER in the same letters (RANDOM is drawn with the street, EATER's neon hangs on its diner). */
+function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, frame: number, winner = false): void {
   const W = buffer.width
   if (game === 'catcher') {
-    const size = catcherLogoSize(s.markSize)
-    drawCatcherLogo(buffer, Math.round(W / 2 - size.width / 2), s.markY, accent, s.markSize, frame)
+    const word = winner ? 'WINNER' : undefined
+    // WINNER is a shorter word: on a tall screen, where there is sky to spare, a little larger
+    const scale = winner && buffer.height > W ? Math.round(s.markSize * 1.08 * 100) / 100 : s.markSize
+    const size = catcherLogoSize(scale, word)
+    drawCatcherLogo(buffer, Math.round(W / 2 - size.width / 2), s.markY, accent, scale, frame, word)
   }
 }
 
@@ -229,7 +252,7 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
   const { width, height } = SCENE_SIZE[layout]
   const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: true, building: true, day: options.day })
+  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: 'title', building: true, day: options.day })
   drawMarks(buffer, game, s, accent, frame)
   pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
   const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
@@ -244,12 +267,43 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
 }
 
 /** `choice`: the answer lit, YES (0) or NO (1). */
+/** `choice`: the answer lit, YES (0) or NO (1). */
 export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean; choice?: 0 | 1 }
+
+/** Where the lines of GAME OVER stand, for a game and a layout: the words in the title's lettering take more room in EATER's script. */
+function overPlaces(game: Game, layout: Layout): { score: number; best: number; question: number; buttons: number } {
+  if (layout === 'landscape') return game === 'catcher' ? { score: 150, best: 150, question: 192, buttons: 244 } : { score: 160, best: 160, question: 200, buttons: 250 }
+  return game === 'catcher' ? { score: 352, best: 380, question: 424, buttons: 470 } : { score: 356, best: 384, question: 428, buttons: 474 }
+}
+
+/** GAME OVER in the game's own lettering: CATCHER's letters in volume, EATER's neon script; on one line wide, two tall. */
+function drawOverWords(buffer: PixelBuffer, game: Game, layout: Layout, accent: string): void {
+  const W = buffer.width
+  if (game === 'catcher') {
+    if (layout === 'landscape') {
+      const size = catcherLogoSize(0.8, 'GAME OVER')
+      drawCatcherLogo(buffer, Math.round(W / 2 - size.width / 2), 34, accent, 0.8, 0, 'GAME OVER')
+    } else {
+      const game1 = catcherLogoSize(1.12, 'GAME'), over = catcherLogoSize(1.12, 'OVER')
+      drawCatcherLogo(buffer, Math.round(W / 2 - game1.width / 2), 70, accent, 1.12, 0, 'GAME')
+      drawCatcherLogo(buffer, Math.round(W / 2 - over.width / 2), 70 + game1.height + 8, accent, 1.12, 0, 'OVER')
+    }
+    return
+  }
+  if (layout === 'landscape') {
+    const size = eaterLogoSize('overWide')
+    drawEaterLogo(buffer, Math.round(W / 2 - size.width / 2), 0, accent, 'overWide')
+  } else {
+    const top = eaterLogoSize('overGame'), bottom = eaterLogoSize('overOver')
+    drawEaterLogo(buffer, Math.round(W / 2 - top.width / 2) - 10, 44, accent, 'overGame')
+    drawEaterLogo(buffer, Math.round(W / 2 - bottom.width / 2) + 14, 44 + top.height - 22, accent, 'overOver')
+  }
+}
 
 /**
  * GAME OVER: the game's night street with nothing in front — no building,
- * no hero — a shade darker, and in the sky the verdict in arcade letters,
- * the score, PLAY AGAIN? and the two framed answers.
+ * no hero — a shade darker, and in the sky the verdict in the title's own
+ * lettering, the score, PLAY AGAIN? and the two framed answers.
  */
 export function renderGameOver(game: Game, layout: Layout, accent: string, options: OverOptions = {}): PixelBuffer {
   const { width, height } = SCENE_SIZE[layout]
@@ -257,25 +311,65 @@ export function renderGameOver(game: Game, layout: Layout, accent: string, optio
   const frame = options.frame ?? 0
   drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: false, building: false })
   buffer.shade(0, 0, width, height, 0.6)
+  drawOverWords(buffer, game, layout, accent)
   const c = width / 2
   const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
   const chosen = options.blink !== false, choice = options.choice ?? 0
+  const at = overPlaces(game, layout)
   if (layout === 'landscape') {
-    arcadeText(buffer, 'GAME OVER', c, 70, 8, accent)
-    infoLine(buffer, c - 20, 150, 'SCORE', score, 'right', 2)
-    infoLine(buffer, c + 20, 150, 'BEST', best, 'left', 2)
-    arcadeText(buffer, 'PLAY AGAIN?', c, 192, 4, accent)
-    button(buffer, 'YES', c - 64, 244, accent, chosen && choice === 0, 2)
-    button(buffer, 'NO', c + 64, 244, accent, chosen && choice === 1, 2)
+    infoLine(buffer, c - 20, at.score, 'SCORE', score, 'right', 2)
+    infoLine(buffer, c + 20, at.best, 'BEST', best, 'left', 2)
+    arcadeText(buffer, 'PLAY AGAIN?', c, at.question, 4, accent)
   } else {
-    arcadeText(buffer, 'GAME', c, 120, 11, accent)
-    arcadeText(buffer, 'OVER', c, 214, 11, accent)
-    infoLine(buffer, c, 318, 'SCORE', score, 'centre', 2)
-    infoLine(buffer, c, 346, 'BEST', best, 'centre', 2)
-    arcadeText(buffer, 'PLAY AGAIN?', c, 392, 3, accent)
-    button(buffer, 'YES', c - 64, 440, accent, chosen && choice === 0, 2)
-    button(buffer, 'NO', c + 64, 440, accent, chosen && choice === 1, 2)
+    infoLine(buffer, c, at.score, 'SCORE', score, 'centre', 2)
+    infoLine(buffer, c, at.best, 'BEST', best, 'centre', 2)
+    arcadeText(buffer, 'PLAY AGAIN?', c, at.question, 3, accent)
   }
+  button(buffer, 'YES', c - 64, at.buttons, accent, chosen && choice === 0, 2)
+  button(buffer, 'NO', c + 64, at.buttons, accent, chosen && choice === 1, 2)
+  return buffer
+}
+
+/** WINNER's row at the foot of the scene: PLAY AGAIN? and the two answers side by side, where the title says PRESS START. */
+function winnerRow(layout: Layout): { text: number; textY: number; yes: number; no: number; y: number } {
+  const { width, height } = SCENE_SIZE[layout]
+  const textW = text7Width('PLAY AGAIN?', 2), yesW = text7Width('YES', 2, true) + 28, noW = text7Width('NO', 2, true) + 28
+  const total = textW + 30 + yesW + 12 + noW
+  const x0 = Math.round(width / 2 - total / 2)
+  const y = layout === 'landscape' ? height - 34 : 726
+  return { text: x0, textY: y + 8, yes: x0 + textW + 30 + yesW / 2, no: x0 + textW + 30 + yesW + 12 + noW / 2, y }
+}
+
+export type WinnerOptions = OverOptions & { day?: boolean }
+
+/**
+ * WINNER, the sixteenth level cleared: the title's own street and building,
+ * day or night, WINNER where the game's name was, in the same letters; the
+ * hero at the door — CATCHER's burger hopping, EATER's man on his feet
+ * holding up a golden cup with a burger on it. The score and the best
+ * where the title shows the level and the best, and PLAY AGAIN? with its
+ * two answers where it says PRESS START.
+ */
+export function renderWinner(game: Game, layout: Layout, accent: string, options: WinnerOptions = {}): PixelBuffer {
+  const { width, height } = SCENE_SIZE[layout]
+  const buffer = new PixelBuffer(width, height, INK)
+  const frame = options.frame ?? 0
+  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: 'winner', building: true, day: options.day, winner: true })
+  drawMarks(buffer, game, s, accent, frame, true)
+  const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
+  const dark = options.day === true
+  // the score and the best in the top corners, wide or tall: the foot of the scene keeps the question
+  infoLine(buffer, 16, 16, 'SCORE', score, 'left', 2, dark)
+  infoLine(buffer, width - 16, 16, 'BEST', best, 'right', 2, dark)
+  void s
+  const row = winnerRow(layout)
+  const chosen = options.blink !== false, choice = options.choice ?? 0
+  if (layout === 'landscape') buffer.shade(0, row.y - 5, width, height - row.y + 5, 0.45)
+  drawText7(buffer, 'PLAY AGAIN?', row.text + 2, row.textY + 2, INK, 2)
+  drawText7(buffer, 'PLAY AGAIN?', row.text, row.textY, dark ? '#ffffff' : CREAM, 2)
+  button(buffer, 'YES', row.yes, row.y, accent, chosen && choice === 0, 2)
+  button(buffer, 'NO', row.no, row.y, accent, chosen && choice === 1, 2)
+  void height
   return buffer
 }
 
@@ -560,7 +654,7 @@ export function renderPlay(game: Game, layout: Layout, accent: string, options: 
 export type ShotSpec = { game: Game; layout: Layout; name: string; width: number; height: number; draw: (frame: number) => PixelBuffer }
 export type Shot = { game: Game; layout: Layout; name: string; buffer: PixelBuffer }
 
-/** Every base screen, not drawn yet: title, play, GAME OVER, each wide and tall; EATER's title in both letterings, its play at levels 1, 4 and 8. */
+/** Every base screen, not drawn yet: title, play, GAME OVER, WINNER, each wide and tall; the titles and WINNER by night and by day; EATER's play at levels 1, 4 and 8. */
 export function shotSpecs(accent: string): ShotSpec[] {
   const specs: ShotSpec[] = []
   for (const game of ['catcher', 'eater'] as Game[]) {
@@ -576,6 +670,8 @@ export function shotSpecs(accent: string): ShotSpec[] {
         add('jeu-niveau-8', play, (frame) => renderPlay(game, layout, accent, { level: 8, score: 6480, frame, bonus: true }))
       }
       add('game-over', scene, (frame) => renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0 }))
+      add('winner', scene, (frame) => renderWinner(game, layout, accent, { score: 18450, best: 18450, frame, blink: frame % 2 === 0 }))
+      add('winner-jour', scene, (frame) => renderWinner(game, layout, accent, { score: 18450, best: 18450, frame, blink: frame % 2 === 0, day: true }))
     }
   }
   return specs
@@ -588,29 +684,34 @@ export function renderAll(accent: string, frame = 0): Shot[] {
 
 // ---------------------------------------------------------------- the games as they are played
 
-/** Where a button of the pause card or of GAME OVER stands, so a tap can be read against it. */
+/** Where a button of the pause card, of GAME OVER or of WINNER stands, so a tap can be read against it. */
 export type Hit = { x: number; y: number; w: number; h: number }
 const hitOfButton = (label: string, centre: number, y: number, scale: number): Hit => {
   const w = (label.length * 7 + 14) * scale
   return { x: Math.round(centre - w / 2) - 8 * scale, y: y - 4 * scale, w: w + 16 * scale, h: 23 * scale }
 }
-export function gameOverHits(layout: Layout): { yes: Hit; no: Hit } {
-  const c = SCENE_SIZE[layout].width / 2, y = layout === 'landscape' ? 244 : 440
+export function gameOverHits(game: Game, layout: Layout): { yes: Hit; no: Hit } {
+  const c = SCENE_SIZE[layout].width / 2, y = overPlaces(game, layout).buttons
   return { yes: hitOfButton('YES', c - 64, y, 2), no: hitOfButton('NO', c + 64, y, 2) }
+}
+export function winnerHits(layout: Layout): { yes: Hit; no: Hit } {
+  const row = winnerRow(layout)
+  return { yes: hitOfButton('YES', row.yes, row.y, 2), no: hitOfButton('NO', row.no, row.y, 2) }
 }
 const boardMiddle = (layout: Layout) => {
   const { height } = playSize(layout)
   return Math.round(HUD_HEIGHT + (height - HUD_HEIGHT - (layout === 'portrait' ? DPAD_HEIGHT : 0)) / 2)
 }
-export function pauseHits(layout: Layout): { resume: Hit; quit: Hit; pause: Hit } {
+export function pauseHits(layout: Layout): { resume: Hit; quit: Hit } {
   const { width } = playSize(layout)
   const mid = boardMiddle(layout)
-  return { resume: hitOfButton('RESUME', width / 2, mid + 6, 1), quit: hitOfButton('QUIT', width / 2, mid + 30, 1), pause: { x: width - 28, y: 0, w: 28, h: HUD_HEIGHT + 4 } }
+  return { resume: hitOfButton('RESUME', width / 2, mid + 6, 1), quit: hitOfButton('QUIT', width / 2, mid + 30, 1) }
 }
-/** The cross of arrows on a tall screen: its centre and the width of an arm. */
-export function dpadGeometry(layout: Layout): { cx: number; cy: number; arm: number } | null {
+/** The cross of arrows on a tall screen: its centre, the width of an arm, and the top of the band under the board that answers to it. */
+export function dpadGeometry(layout: Layout): { cx: number; cy: number; arm: number; top: number } | null {
   if (layout !== 'portrait') return null
-  return { cx: playSize(layout).width / 2, cy: HUD_HEIGHT + MAZE_WIDTH * CELL + DPAD_HEIGHT / 2, arm: 26 }
+  const top = HUD_HEIGHT + MAZE_WIDTH * CELL
+  return { cx: playSize(layout).width / 2, cy: top + DPAD_HEIGHT / 2, arm: 26, top }
 }
 
 /** A card across the board: the board a shade darker, the words in arcade letters, the choices, `choice` the one lit. */
@@ -646,6 +747,35 @@ function cachedFloor(key: string, layout: Layout, draw: (buffer: PixelBuffer) =>
 /** What a play screen shows over the game: nothing, or the pause card with RESUME (0) or QUIT (1) lit. */
 export type PlayView = { pause?: 0 | 1 | null }
 
+/** A little four-pointed glint, for what is golden. */
+function glint(buffer: PixelBuffer, x: number, y: number): void {
+  buffer.set(x, y, '#ffffff'); buffer.set(x - 1, y, '#fff6c0'); buffer.set(x + 1, y, '#fff6c0'); buffer.set(x, y - 1, '#fff6c0'); buffer.set(x, y + 1, '#fff6c0')
+}
+
+/** CATCHER's money in its cell: a coin, a banknote, a bundle of notes held by a paper band, a golden card that glints. */
+function drawCash(buffer: PixelBuffer, kind: import('./catcher').CatcherCash, px: number, py: number, steps: number): void {
+  if (kind === 'coin') buffer.blit(COIN, px + 3, py + 2, COIN_PALETTE)
+  else if (kind === 'note') buffer.blit(BANKNOTE, px + 1, py + 4, BANKNOTE_PALETTE)
+  else if (kind === 'bundle') {
+    for (const [dx, dy] of [[2, 0], [1, 2], [0, 4]]) buffer.blit(BANKNOTE, px + dx, py + 2 + dy, BANKNOTE_PALETTE)
+    buffer.rect(px + 6, py + 2, 3, 12, '#f0e0b0'); buffer.rect(px + 6, py + 2, 1, 12, '#c8b080')
+  } else {
+    buffer.blit(GOLD_CARD, px + 1, py + 4, GOLD_CARD_PALETTE)
+    glint(buffer, px + (Math.floor(steps / 12) % 2 ? 12 : 3), py + (Math.floor(steps / 12) % 2 ? 4 : 11))
+  }
+}
+
+/** EATER's bonus in its cell: fries, the milkshake, a donut, or the golden burger with its glints. */
+function drawEaterBonus(buffer: PixelBuffer, kind: import('./eater').EaterBonus, px: number, py: number, steps: number): void {
+  if (kind === 'fries') buffer.blit(FRIES, px + 2, py + 2, FRIES_PALETTE)
+  else if (kind === 'shake') buffer.blit(MILKSHAKE, px + 2, py, MILKSHAKE_PALETTE)
+  else if (kind === 'donut') buffer.blit(DONUT, px + 2, py + 3, DONUT_PALETTE)
+  else {
+    buffer.blit(MINI_BURGER, px + 2, py + 3, GOLD_BURGER_PALETTE)
+    glint(buffer, px + (Math.floor(steps / 12) % 2 ? 13 : 3), py + (Math.floor(steps / 12) % 2 ? 3 : 11))
+  }
+}
+
 /** A moment of a game of RANDOM CATCHER, drawn from its state. The surface is used again on the next call. */
 export function renderCatcherGame(s: CatcherState, accent: string, view: PlayView = {}): PixelBuffer {
   const layout = s.layout
@@ -665,6 +795,8 @@ export function renderCatcherGame(s: CatcherState, accent: string, view: PlayVie
   for (const it of s.items) { const [px, py] = at(it.x, it.y); buffer.blit(kinds[it.kind], px + 3, py + 3, ITEM_PALETTE) }
   // the sauce blinks in its last two seconds
   if (s.sauce && (s.sauce.timer > 120 || beat(8) === 0)) { const [px, py] = at(s.sauce.x, s.sauce.y); buffer.blit(SAUCE, px + 2, py + 1, SAUCE_PALETTE) }
+  // the money, blinking in its last two seconds too
+  if (s.cash && (s.cash.timer > 120 || beat(8) === 0)) drawCash(buffer, s.cash.kind, ...at(s.cash.x, s.cash.y), s.steps)
   s.shoppers.forEach((sh, i) => {
     if (!sh.inside) return
     const [px, py] = at(positionOf(sh).x, positionOf(sh).y)
@@ -707,12 +839,13 @@ export function renderEaterGame(s: EaterState, accent: string, view: PlayView = 
   }
   const place = (c: { x: number; y: number }): [number, number] => [c.x * CELL, top + c.y * CELL]
   if (s.food) { const [px, py] = place(s.food); buffer.blit(MINI_BURGER, px + 2, py + 3, MINI_BURGER_PALETTE) }
-  if (s.shake) {
-    // the milkshake, a ring of light round it counting its seconds down
-    const [px, py] = place(s.shake)
-    const share = s.shake.timer / 360
-    for (let a = 0; a < Math.PI * 2 * share; a += 0.08) buffer.set(Math.round(px + 8 + Math.cos(a - Math.PI / 2) * 10), Math.round(py + 8 + Math.sin(a - Math.PI / 2) * 10), (Math.floor(s.steps / 4) + Math.round(a * 4)) % 3 === 0 ? '#ffffff' : '#ff9ac0')
-    buffer.blit(MILKSHAKE, px + 2, py, MILKSHAKE_PALETTE)
+  if (s.bonus) {
+    // the bonus, a ring of light round it counting its seconds down
+    const [px, py] = place(s.bonus)
+    const share = s.bonus.timer / s.bonus.life
+    const ring = s.bonus.kind === 'gold' ? '#ffd23f' : s.bonus.kind === 'fries' ? '#ffb040' : '#ff9ac0'
+    for (let a = 0; a < Math.PI * 2 * share; a += 0.08) buffer.set(Math.round(px + 8 + Math.cos(a - Math.PI / 2) * 10), Math.round(py + 8 + Math.sin(a - Math.PI / 2) * 10), (Math.floor(s.steps / 4) + Math.round(a * 4)) % 3 === 0 ? '#ffffff' : ring)
+    drawEaterBonus(buffer, s.bonus.kind, px, py, s.steps)
   }
   const palette = eaterPalette(accent)
   const body = s.body.map((c) => [c.x, c.y] as [number, number])

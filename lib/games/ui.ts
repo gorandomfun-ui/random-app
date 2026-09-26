@@ -1,8 +1,8 @@
 /**
  * The games' interface, drawn in the same pixels as the rest: the arcade
- * lettering of GAME OVER and PRESS START, the bar across the top in play,
- * the framed YES / NO choice, the pause button, and the cross of arrows a
- * phone plays with.
+ * lettering of PRESS START and the cards over play, the bar across the top
+ * in play, the framed YES / NO choice, and the cross of arrows a phone
+ * plays with.
  */
 
 import { dim, drawText, drawText7, glyph7, mix, PixelBuffer, text7Width, textWidth } from './pixels'
@@ -91,18 +91,11 @@ export function button(buffer: PixelBuffer, label: string, centre: number, y: nu
   if (chosen) drawText7(buffer, '>', x - 8 * k, y + 4 * k, CREAM, k)
 }
 
-/** The pause button: a small frame in the accent, two cream bars. */
-export function pauseButton(buffer: PixelBuffer, x: number, y: number, accent: string): void {
-  buffer.rect(x, y, 16, 16, accent)
-  buffer.rect(x + 1, y + 1, 14, 14, INK)
-  buffer.rect(x + 5, y + 4, 2, 8, CREAM)
-  buffer.rect(x + 9, y + 4, 2, 8, CREAM)
-}
-
 /**
  * The bar across the top in play: the level on the left, the score in the
  * middle, then what the game counts on the right — CATCHER's lives as
- * little burgers, EATER's way to the next level as a gauge — and pause.
+ * little burgers, EATER's way to the next level as a gauge. Pause is on
+ * the page, beside the logo, not in the game.
  */
 export function hud(buffer: PixelBuffer, accent: string, info: { level: number; score: number; lives?: number; progress?: [number, number]; list?: ReadonlyArray<{ icon: Sprite; palette: Palette; have: number; need: number }> }): void {
   const W = buffer.width
@@ -126,8 +119,7 @@ export function hud(buffer: PixelBuffer, accent: string, info: { level: number; 
       drawText(buffer, count, ix + 12, 13, have >= need ? accent : CREAM)
     })
   }
-  pauseButton(buffer, W - 22, 4, accent)
-  const right = W - 30
+  const right = W - 8
   if (info.lives !== undefined) {
     drawText(buffer, 'LIVES', right - textWidth('LIVES'), 3, GREY)
     for (let i = 0; i < info.lives; i += 1) buffer.blit(MINI_BURGER, right - 12 - i * 13, 11, BURGER_PALETTE)

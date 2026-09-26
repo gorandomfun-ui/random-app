@@ -2,23 +2,28 @@
 
 /**
  * A game inside a Random page, the way the site shows any content: the
- * logo on top, a title bar, the frame, the row of actions. The title bar
- * says RANDOM ARCADE with a gamepad, so it reads as a Random of another
- * kind; no source line and no heart, since a game is not liked; the
- * share button shares the game — its title card, the score, a link — and
- * the trophy opens the ten best of this device. The game itself loads
- * only in the browser, after the page.
+ * menu and the logo on top, a title bar, the frame, the row of actions.
+ * Where Random has Wave, a pause button: pause lives on the page, not in
+ * the game. The title bar says RANDOM ARCADE with a gamepad, so it reads
+ * as a Random of another kind; no source line and no heart, since a game
+ * is not liked: in the heart's place HIGH SCORE in pixel letters opens the
+ * ten best of this device; the share button shares the game — its title
+ * card, the score, a link. Behind it all, a calm glitch in the theme's
+ * colours. The game itself loads only in the browser, after the page.
  */
 
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { Gamepad2, Trophy, X } from 'lucide-react'
+import { Gamepad2, Pause, Play, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
-import type { GameResult } from '@/components/games/GamePlayer'
+import ArcadeBackdrop from '@/components/games/ArcadeBackdrop'
+import ArcadeMenu from '@/components/games/ArcadeMenu'
+import type { GameControl, GameResult, PlayState } from '@/components/games/GamePlayer'
 import { isDaytime } from '@/lib/games/engine'
+import { glyph7 } from '@/lib/games/pixels'
 import { topScores, type GameName, type ScoreEntry } from '@/lib/games/scores'
 import { THEMES } from '@/lib/theme'
 
@@ -29,6 +34,18 @@ const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
 
 const NAMES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
 const pad = (n: number) => String(n).padStart(5, '0')
+
+/** Words in the games' own 5×7 pixel letters, a line each, as squares in an SVG: `px` screen pixels to a letter's pixel. */
+function PixelWords({ lines, color, px = 3 }: { lines: string[]; color: string; px?: number }) {
+  const width = Math.max(...lines.map((l) => l.length * 6 - 1)), height = lines.length * 9 - 2
+  const cells: Array<[number, number]> = []
+  lines.forEach((line, row) => line.split('').forEach((c, i) => glyph7(c).forEach((r, y) => r.split('').forEach((dot, x) => { if (dot === '#') cells.push([i * 6 + x, row * 9 + y]) }))))
+  return (
+    <svg width={width * px} height={height * px} viewBox={`0 0 ${width} ${height}`} shapeRendering="crispEdges" aria-hidden="true">
+      {cells.map(([x, y]) => <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={color} />)}
+    </svg>
+  )
+}
 
 /** The game's title card as a picture to share: the title screen, drawn twice as large. */
 async function titleCard(game: GameName, accent: string, best: number): Promise<File | null> {
@@ -56,7 +73,10 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
   const [topOpen, setTopOpen] = useState(false)
   const [top, setTop] = useState<ScoreEntry[]>([])
   const [note, setNote] = useState('')
+  const [playState, setPlayState] = useState<PlayState>('idle')
+  const [backdrop, setBackdrop] = useState<string | null>(null)
   const card = useRef<File | null>(null)
+  const control = useRef<GameControl>({}).current
 
   useEffect(() => {
     document.body.classList.add('arcade-body')
@@ -67,7 +87,12 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
   useEffect(() => {
     let cancelled = false
     const timer = window.setTimeout(() => {
-      void titleCard(game, theme.text, best).then((file) => { if (!cancelled) card.current = file }).catch(() => undefined)
+      void titleCard(game, theme.text, best).then((file) => {
+        if (cancelled || !file) return
+        card.current = file
+        // the first card also becomes the page's backdrop
+        setBackdrop((current) => current ?? URL.createObjectURL(file))
+      }).catch(() => undefined)
     }, 1200)
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [game, theme.text, best])
@@ -79,7 +104,9 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
   }, [note])
 
   const onResult = useCallback((result: GameResult) => setLast(result), [])
-  const openTop = () => { setTop(topScores(game)); setTopOpen(true) }
+  // a panel over the game pauses it
+  const holdGame = () => { if (playState === 'playing') control.togglePause?.() }
+  const openTop = () => { holdGame(); setTop(topScores(game)); setTopOpen(true) }
 
   const share = async () => {
     const url = `${window.location.origin}${window.location.pathname}`
@@ -106,15 +133,25 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
   }
 
   return (
-    <main className="arcade-page flex h-[100svh] flex-col overflow-hidden" style={{ background: theme.bg, color: theme.cream }}>
+    <main className="arcade-page relative flex h-[100svh] flex-col overflow-hidden" style={{ background: theme.bg, color: theme.cream }}>
+      <ArcadeBackdrop image={backdrop} accent={theme.text} playing={playState === 'playing'} />
       <header className="relative z-10 flex items-center justify-between px-4 pb-4 pt-6 sm:px-6">
-        <Link href="/random" aria-label="Random" className="flex h-11 w-11 shrink-0 items-center">
-          <MonoIcon src="/icons/return.svg" color={theme.text} size={28} />
-        </Link>
+        <ArcadeMenu theme={theme} onOpen={holdGame} />
         <div className="flex flex-1 justify-center">
           <LogoAnimated trigger={0} toSecond={false} vhMobile={8} vhDesktop={8} gapMobile={4} gapDesktop={4} />
         </div>
-        <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+        <button
+          type="button"
+          aria-label={playState === 'paused' ? 'Resume' : 'Pause'}
+          title={playState === 'paused' ? 'Resume' : 'Pause'}
+          onClick={() => control.togglePause?.()}
+          disabled={playState === 'idle'}
+          aria-pressed={playState === 'paused'}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default disabled:hover:scale-100"
+          style={{ borderWidth: '2px', borderStyle: 'solid', borderColor: playState === 'idle' ? '#777777' : theme.text, color: playState === 'idle' ? '#777777' : '#ffffff', background: 'transparent' }}
+        >
+          {playState === 'paused' ? <Play size={22} strokeWidth={2.25} fill="currentColor" /> : <Pause size={22} strokeWidth={2.25} fill="currentColor" />}
+        </button>
       </header>
 
       {/* Two pixels between the title bar and the content, as on every Random page. */}
@@ -138,14 +175,14 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
 
       <section className="relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
         <div className="min-h-0 flex-1" style={{ background: '#000' }}>
-          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} />
+          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onPlayState={setPlayState} control={control} />
         </div>
       </section>
 
       <section className="relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 0px))' }}>
         <div className="flex w-full items-center justify-between gap-4">
-          <button type="button" aria-label="Top 10" onClick={openTop} className="p-3" style={{ color: theme.cream }}>
-            <Trophy size={28} strokeWidth={2} />
+          <button type="button" aria-label="High score" onClick={openTop} className="flex items-center py-2 pr-2 transition-transform hover:scale-105">
+            <PixelWords lines={['HIGH', 'SCORE']} color={theme.text} />
           </button>
           <div className="flex flex-1 justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
             <Link
@@ -156,7 +193,7 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
               Random
             </Link>
           </div>
-          <button type="button" aria-label="Share the game" title="Share the game" onClick={() => void share()} className="p-3">
+          <button type="button" aria-label="Share the game" title="Share the game" onClick={() => { holdGame(); void share() }} className="p-3">
             <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
           </button>
         </div>

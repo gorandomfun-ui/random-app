@@ -1,14 +1,14 @@
 /**
- * Draws the word EATER's title lettering from a free font (Meow Script,
+ * Draws EATER's lettering — the title, GAME OVER, WINNER — from a free font (Meow Script,
  * The Meow Script Project Authors, SIL Open Font License 1.1 — file and
  * licence in `scripts/games/fonts/`) into pixel masks, once, and writes
  * them to `lib/games/lettering-data.ts`. The font file never reaches the
  * site: only the masks do, as runs of pixels.
  *
- * The E is pushed along until it touches the a, so the tube runs on; every
+ * Each word's capital is pushed along until it touches the next letter, so the tube runs on; every
  * stroke is thickened to twice its width, the letters otherwise as drawn;
- * the whole word is turned five degrees to rise to the right. Two sizes:
- * one for a wide title, one for a tall one.
+ * the whole text is turned five degrees to rise to the right. Each text
+ * in a size for a wide screen and one for a tall one.
  *
  *   node --import tsx scripts/games/lettering.ts
  */
@@ -21,10 +21,16 @@ import { fillNonZero, Font, type Contour } from './ttf'
 const SS = 4 // supersampling: the letters are drawn four times finer, then read back pixel by pixel
 const FONTS = join(__dirname, 'fonts')
 
-type Variant = { name: string; file: string; width: number; bold: number; turn: number }
+type Variant = { name: string; text: string; file: string; width: number; bold: number; turn: number }
 const VARIANTS: Variant[] = [
-  { name: 'wide', file: 'MeowScript-Regular.ttf', width: 353, bold: 2, turn: 5 },
-  { name: 'tall', file: 'MeowScript-Regular.ttf', width: 340, bold: 2, turn: 5 },
+  { name: 'wide', text: 'Eater', file: 'MeowScript-Regular.ttf', width: 353, bold: 2, turn: 5 },
+  { name: 'tall', text: 'Eater', file: 'MeowScript-Regular.ttf', width: 340, bold: 2, turn: 5 },
+  // GAME OVER and WINNER in the same lettering: one line on a wide screen, GAME and OVER one above the other on a tall one
+  { name: 'overWide', text: 'Game Over', file: 'MeowScript-Regular.ttf', width: 440, bold: 2, turn: 5 },
+  { name: 'overGame', text: 'Game', file: 'MeowScript-Regular.ttf', width: 280, bold: 2, turn: 5 },
+  { name: 'overOver', text: 'Over', file: 'MeowScript-Regular.ttf', width: 260, bold: 2, turn: 5 },
+  { name: 'winnerWide', text: 'Winner', file: 'MeowScript-Regular.ttf', width: 400, bold: 2, turn: 5 },
+  { name: 'winnerTall', text: 'Winner', file: 'MeowScript-Regular.ttf', width: 360, bold: 2, turn: 5 },
 ]
 
 type Mask = { w: number; h: number; data: Uint8Array }
@@ -70,32 +76,38 @@ function strokeWidth(mask: Mask): number {
 
 function build(v: Variant): { width: number; height: number; rows: string[] } {
   const font = new Font(join(FONTS, v.file))
-  const letters = ['E', 'a', 't', 'e', 'r'].map((c) => font.glyph(c))
-  const wordUnits = letters.reduce((sum, g) => sum + g.advance, 0)
-  const scale = (v.width * SS) / wordUnits
+  const words = v.text.split(' ').map((word) => word.split('').map((c) => font.glyph(c)))
+  const space = font.glyph(' ').advance
+  const textUnits = words.reduce((sum, letters) => sum + letters.reduce((a, g) => a + g.advance, 0), 0) + space * (words.length - 1)
+  const scale = (v.width * SS) / textUnits
   // the letters placed on a baseline, in supersampled pixels, y downward
   const pad = 60 * SS, baseline = font.unitsPerEm * scale + pad
   const place = (contours: Contour[], pen: number, dx = 0): Contour[] => contours.map((c) => c.map(([x, y]) => [pad + (pen + x) * scale + dx, baseline - y * scale] as [number, number]))
-  let pen = letters[0].advance
-  const rest: Contour[] = []
-  for (const g of letters.slice(1)) { rest.push(...place(g.contours, pen)); pen += g.advance }
   const W = Math.ceil(v.width * SS * 1.3 + pad * 2), H = Math.ceil(font.unitsPerEm * scale * 1.6 + pad * 2)
   const raster = (contours: Contour[]): Mask => ({ w: W, h: H, data: fillNonZero(contours, W, H) })
-  // the stroke width of the plain letters, and how much to add either side to make it `bold` times as thick
-  const plain = raster([...place(letters[0].contours, 0), ...rest])
-  const grow = ((v.bold - 1) / 2) * strokeWidth(plain)
-  const restMask = dilate(raster(rest), grow)
-  // push the E along until it touches the a with a joint as wide as a stroke, so the tube runs on
-  const joint = Math.max(4, (strokeWidth(plain) + 2 * grow) ** 2 * 0.6)
-  const eMask = dilate(raster(place(letters[0].contours, 0)), grow)
-  const ePixels: Array<[number, number]> = []
-  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) if (eMask.data[y * W + x]) ePixels.push([x, y])
-  const touching = (dx: number) => { let n = 0; for (const [x, y] of ePixels) { const X = x + dx; if (X >= 0 && X < W && restMask.data[y * W + X]) n += 1 } return n }
-  let shift = 0
-  if (touching(0) < joint) { while (shift < letters[0].advance * scale && touching(shift) < joint) shift += SS / 2 }
-  else { while (shift > -letters[0].advance * scale && touching(shift - SS / 2) >= joint) shift -= SS / 2 }
-  // the whole word, turned if asked (rising to the right), thickened, read back at the real size
-  const all = [...place(letters[0].contours, 0, shift), ...rest]
+  const all: Contour[] = []
+  let wordPen = 0, grow = 0
+  words.forEach((letters, index) => {
+    let pen = wordPen + letters[0].advance
+    const rest: Contour[] = []
+    for (const g of letters.slice(1)) { rest.push(...place(g.contours, pen)); pen += g.advance }
+    // the stroke width of the plain letters, and how much to add either side to make it `bold` times as thick
+    const plain = raster([...place(letters[0].contours, wordPen), ...rest])
+    if (index === 0) grow = ((v.bold - 1) / 2) * strokeWidth(plain)
+    const restMask = dilate(raster(rest), grow)
+    // push each word's capital along until it touches the next letter with a joint as wide as a stroke, so the tube runs on
+    const joint = Math.max(4, (strokeWidth(plain) + 2 * grow) ** 2 * 0.6)
+    const eMask = dilate(raster(place(letters[0].contours, wordPen)), grow)
+    const ePixels: Array<[number, number]> = []
+    for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) if (eMask.data[y * W + x]) ePixels.push([x, y])
+    const touching = (dx: number) => { let n = 0; for (const [x, y] of ePixels) { const X = x + dx; if (X >= 0 && X < W && restMask.data[y * W + X]) n += 1 } return n }
+    let shift = 0
+    if (touching(0) < joint) { while (shift < letters[0].advance * scale && touching(shift) < joint) shift += SS / 2 }
+    else { while (shift > -letters[0].advance * scale && touching(shift - SS / 2) >= joint) shift -= SS / 2 }
+    all.push(...place(letters[0].contours, wordPen, shift), ...rest)
+    wordPen = pen + space
+  })
+  // the whole text, turned if asked (rising to the right), thickened, read back at the real size
   const cx = W / 2, cy = H / 2, a = (-v.turn * Math.PI) / 180
   const turned = v.turn ? all.map((c) => c.map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)] as [number, number])) : all
   const big = dilate(raster(turned), grow)
@@ -132,10 +144,10 @@ const parts = VARIANTS.map((v) => {
 })
 
 writeFileSync(join(__dirname, '../../lib/games/lettering-data.ts'), `/**
- * The EATER title lettering as pixel masks, written by
+ * EATER's lettering as pixel masks, written by
  * \`scripts/games/lettering.ts\` from Meow Script (The Meow Script Project
- * Authors, SIL Open Font License 1.1): \`wide\` for a wide title, \`tall\`
- * for a tall one. Each row is the lengths of its alternating runs of
+ * Authors, SIL Open Font License 1.1): the title (\`wide\`, \`tall\`), GAME
+ * OVER (\`overWide\`, or \`overGame\` above \`overOver\`) and WINNER. Each row is the lengths of its alternating runs of
  * pixels, off first, in base 36. Generated — do not edit by hand.
  */
 

@@ -1,6 +1,6 @@
 /**
  * The diner RANDOM EATER plays in, as data: its furniture in islands and
- * its eight levels, the cells they take, and where food may appear. Used
+ * its sixteen levels, the cells they take, and where food may appear. Used
  * by the rules and by the screens alike.
  */
 
@@ -28,15 +28,29 @@ const booth = (x: number, y: number): Island => [{ kind: 'booth', x, y, w: 3, h:
 
 const CHAIRS_A = [pairAcross(4, 4), pairDown(22, 4), pairAcross(20, 15)]
 const CHAIRS_B = [pairDown(4, 14), pairAcross(16, 3), pairAcross(14, 16)]
+const LEVEL_8: readonly Island[] = [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7), counterIsland(8, 3), booth(8, 14)]
 
 /**
- * The eight levels of RANDOM EATER, then round again faster: the floor
- * black to begin with, then a light checker of black and dark grey; the
- * diner filling up in islands — chairs in pairs, tables with their chairs,
- * the counter with its stools, a booth — each island two clear cells from
- * the next and from the walls, so there is always room to pass and to
- * turn round: harder, never impossible. Cells in the wide board's grid;
- * the tall board turns them over.
+ * From level 9 the dinner rush: the room set out in a grid of sixteen
+ * places, four by four, two clear cells between them every way. A table
+ * takes a place, or two pairs of chairs do; the room fills place by place,
+ * and the places still empty are where the burgers can land in the middle.
+ */
+const PLACE_X = [3, 9, 15, 21], PLACE_Y = [3, 7, 11, 15]
+const tableAt = (c: number, r: number): Island => tableSet(PLACE_X[c], PLACE_Y[r])
+const chairsAt = (c: number, r: number): Island[] => [pairDown(PLACE_X[c], PLACE_Y[r]), pairDown(PLACE_X[c] + 3, PLACE_Y[r])]
+const RUSH: readonly Island[] = [[0, 0], [2, 0], [1, 1], [3, 1], [0, 2], [2, 2], [1, 3], [3, 3]].map(([c, r]) => tableAt(c, r))
+const rush = (tables: Array<[number, number]>, chairs: Array<[number, number]> = []): readonly Island[] => [...RUSH, ...tables.map(([c, r]) => tableAt(c, r)), ...chairs.flatMap(([c, r]) => chairsAt(c, r))]
+const FULL: Array<[number, number]> = [[3, 0], [0, 3], [2, 1], [1, 2]]
+
+/**
+ * The sixteen levels of RANDOM EATER: the floor black to begin with, then a
+ * light checker of black and dark grey; the diner filling up in islands —
+ * chairs in pairs, tables with their chairs, the counter with its stools, a
+ * booth — then from level 9 the dinner rush, a grid of tables filling up.
+ * Each island stays two clear cells from the next and from the walls, so
+ * there is always room to pass and to turn round: harder, never impossible.
+ * Cells in the wide board's grid; the tall board turns them over.
  */
 export const EATER_LEVELS: ReadonlyArray<{ floor: Floor; islands: readonly Island[] }> = [
   { floor: 'plain', islands: [] },
@@ -46,7 +60,15 @@ export const EATER_LEVELS: ReadonlyArray<{ floor: Floor; islands: readonly Islan
   { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9)] },
   { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7)] },
   { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7), counterIsland(8, 3)] },
-  { floor: 'checker', islands: [...CHAIRS_A, ...CHAIRS_B, tableSet(19, 9), tableSet(3, 7), counterIsland(8, 3), booth(8, 14)] },
+  { floor: 'checker', islands: LEVEL_8 },
+  { floor: 'checker', islands: rush([]) },
+  { floor: 'checker', islands: rush(FULL.slice(0, 1)) },
+  { floor: 'checker', islands: rush(FULL.slice(0, 2)) },
+  { floor: 'checker', islands: rush(FULL.slice(0, 3)) },
+  { floor: 'checker', islands: rush(FULL) },
+  { floor: 'checker', islands: rush(FULL, [[1, 0]]) },
+  { floor: 'checker', islands: rush(FULL, [[1, 0], [2, 3]]) },
+  { floor: 'checker', islands: rush(FULL, [[1, 0], [2, 3], [0, 1]]) },
 ]
 
 /** Every cell the furniture of a level takes, for a layout. */

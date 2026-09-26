@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 
 import { createCatcher, stepCatcher } from '@/lib/games/catcher'
 import { createEater } from '@/lib/games/eater'
-import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, type Hit } from '@/lib/games/screens'
+import { crossDirection } from '@/lib/games/engine'
+import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderWinner, winnerHits, type Hit } from '@/lib/games/screens'
 
 const A = '#D90845'
 const centre = (h: Hit) => [Math.round(h.x + h.w / 2), Math.round(h.y + h.h / 2)] as const
@@ -33,18 +34,28 @@ test('les zones tactiles tombent sur ce qui est dessiné : pause, RESUME / QUIT,
     assert.notEqual(at(resumeLit, centre(hits.resume)), at(quitLit, centre(hits.resume)), `${layout} : RESUME`)
     assert.notEqual(at(resumeLit, centre(hits.quit)), at(quitLit, centre(hits.quit)), `${layout} : QUIT`)
     assert.notEqual(at(plain, centre(hits.resume)), at(resumeLit, centre(hits.resume)), 'la carte pause couvre le plateau')
-    // the pause button sits in its zone, top right of the HUD
-    assert.ok(hits.pause.x + hits.pause.w >= width - 6 && hits.pause.x <= width - 22)
-    const yes = renderGameOver('catcher', layout, A, { choice: 0 }), no = renderGameOver('catcher', layout, A, { choice: 1 })
-    const w = yes.width
-    const over = (b: { data: Uint8ClampedArray }, [x, y]: readonly [number, number]) => Array.from(b.data.slice((y * w + x) * 4, (y * w + x) * 4 + 3)).join()
-    const oh = gameOverHits(layout)
-    assert.notEqual(over(yes, centre(oh.yes)), over(no, centre(oh.yes)), `${layout} : YES`)
-    assert.notEqual(over(yes, centre(oh.no)), over(no, centre(oh.no)), `${layout} : NO`)
+    for (const game of ['catcher', 'eater'] as const) {
+      const yes = renderGameOver(game, layout, A, { choice: 0 }), no = renderGameOver(game, layout, A, { choice: 1 })
+      const w = yes.width
+      const over = (b: { data: Uint8ClampedArray }, [x, y]: readonly [number, number]) => Array.from(b.data.slice((y * w + x) * 4, (y * w + x) * 4 + 3)).join()
+      const oh = gameOverHits(game, layout)
+      assert.notEqual(over(yes, centre(oh.yes)), over(no, centre(oh.yes)), `${game} ${layout} : YES`)
+      assert.notEqual(over(yes, centre(oh.no)), over(no, centre(oh.no)), `${game} ${layout} : NO`)
+      const wy = renderWinner(game, layout, A, { choice: 0 }), wn = renderWinner(game, layout, A, { choice: 1 })
+      const wh = winnerHits(layout)
+      assert.notEqual(over(wy, centre(wh.yes)), over(wn, centre(wh.yes)), `${game} ${layout} : YES du WINNER`)
+      assert.notEqual(over(wy, centre(wh.no)), over(wn, centre(wh.no)), `${game} ${layout} : NO du WINNER`)
+    }
   }
   assert.equal(dpadGeometry('landscape'), null, 'pas de croix en paysage : le clavier ou le doigt qui glisse')
   const pad = dpadGeometry('portrait')!
   const b = renderEaterGame(createEater('portrait', 1, 1), A)
   const px = (x: number, y: number) => Array.from(b.data.slice((y * b.width + x) * 4, (y * b.width + x) * 4 + 3)).join()
   assert.notEqual(px(pad.cx - pad.arm, pad.cy), px(pad.cx - pad.arm * 3, pad.cy), 'le bras gauche de la croix est là où on tape')
+  assert.equal(crossDirection(pad.cx - pad.arm, pad.cy, pad), 'left')
+  assert.equal(pad.top, b.height - 96, 'tout le bandeau sous le plateau répond')
+  // the HUD has no pause button any more: its corner is the HUD's own dark
+  const hud = renderCatcherGame(createCatcher('landscape', 1, 1), A)
+  const corner = Array.from(hud.data.slice(((10 * hud.width) + hud.width - 12) * 4, ((10 * hud.width) + hud.width - 12) * 4 + 3)).join()
+  assert.notEqual(corner, '248,245,230', 'pas de barres de pause crème dans le coin')
 })
