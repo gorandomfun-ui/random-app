@@ -9,6 +9,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { isAdminRequest, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
 import { RUNS, SEARCHES } from '@/lib/v3/ingest/journal'
 import { assessHealth, summariseDays, type DaySummary, type JournalRun, type JournalSearch, type LineHealth } from '@/lib/v3/ingest/report'
+import { refusalsReport } from '@/lib/ingest/miniSeriesStore'
 
 /**
  * What the ingestion did, by day.
@@ -176,8 +177,11 @@ export async function GET(request: Request) {
     const server = await db.collection('ingest_server_status').findOne({ _id: 'random-ingest' } as never, { maxTimeMS: 2000 }).catch(() => null)
     // What each pool holds and what entered it, as the nightly pools line closed the day.
     const recap = await db.collection('ingest_universe_recap').find({}, { sort: { at: -1 }, limit: 3, maxTimeMS: 2000 }).toArray().catch(() => [])
+    // The mini-series refused at the door over the last three days, with examples, so a wrong refusal shows.
+    const miniSeries = await refusalsReport(db, new Date(now - 3 * 24 * 60 * 60 * 1000)).catch(() => null)
 
     return NextResponse.json({
+      miniSeries,
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,

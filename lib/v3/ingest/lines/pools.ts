@@ -15,6 +15,7 @@ import { isCleanTitle } from '../../cool/clean'
 import { loadDepth, nextDepth, saveDepth, depthId, type DepthKey, type DepthState } from '../../pools/depth'
 import { POOL_UNIVERSES, queriesForDay, type PoolUniverse } from '../../pools/facets'
 import { computeUniverseRecap, recapNote, writeUniverseRecap, type UniverseRecap } from '../../pools/recap'
+import { learnStudios } from '@/lib/ingest/miniSeriesStore'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
@@ -95,6 +96,16 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     ctx.log(`récap : ${note}`)
   } catch (error) {
     errors.push(`récap par univers : ${message(error)}`)
+  }
+
+  // The mini-series studios: the names that kept coming back on the day's refused serials join the filter.
+  if (!ctx.dryRun) {
+    try {
+      const learned = await learnStudios(ctx.db, new Date(now.getTime() - 86_400_000), new Date())
+      ctx.log(`mini-séries : ${learned.candidates} noms vus, ${learned.studios} studios reconnus`)
+    } catch (error) {
+      errors.push(`studios de mini-séries : ${message(error)}`)
+    }
   }
   return { counters, errors, cursor: { queries: asked, recap, note } satisfies PoolsCursor }
 }

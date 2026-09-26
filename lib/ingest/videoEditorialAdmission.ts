@@ -5,6 +5,17 @@ import { isOrdinaryRoutineVideo, ROUTINE_NEWS_RADIO_DAILY_LIMIT } from '../rando
 type RoutineQuota = { _id: 'routine-news-radio'; timestamps: Date[]; updatedAt?: Date }
 const QUOTA_ID = 'routine-news-radio' as const
 
+/**
+ * A title that is nothing but a web address slug — "tn7-rescatistas-de-la-cruz-roja-…-110926" —
+ * is a local news clip posted straight from a newsroom's site: it joins the routine news at the
+ * door. Only here, at ingestion; what is already stored is drawn as before.
+ */
+export const NEWS_SLUG_TITLE_REGEX = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+){5,}(?=\s|$)/u
+
+export function isRoutineAtIngest(video: Pick<RawVideo, 'title' | 'description' | 'channelTitle' | 'categoryId' | 'liveBroadcastContent'>): boolean {
+  return isOrdinaryRoutineVideo(video) || NEWS_SLUG_TITLE_REGEX.test((video.title ?? '').trim())
+}
+
 function activeTimestamps(timestamps: Date[] | undefined, windowStart: Date): Date[] {
   return (timestamps ?? []).filter(value => value instanceof Date && value >= windowStart)
 }
@@ -24,7 +35,7 @@ export async function applyRoutineVideoIngestCap(
   options: { dryRun?: boolean; existingVideoIds?: ReadonlySet<string>; conservativeInitialization?: boolean } = {},
 ): Promise<{ videos: RawVideo[]; admitted: number; filtered: number; alreadyIngested: number }> {
   const existingVideoIds = options.existingVideoIds ?? new Set<string>()
-  const ordinary = videos.filter(video => isOrdinaryRoutineVideo(video) && !existingVideoIds.has(video.videoId))
+  const ordinary = videos.filter(video => isRoutineAtIngest(video) && !existingVideoIds.has(video.videoId))
   if (!ordinary.length) return { videos, admitted: 0, filtered: 0, alreadyIngested: 0 }
 
   const collection = db.collection<VideoDocument>('items')
@@ -39,7 +50,7 @@ export async function applyRoutineVideoIngestCap(
     const allowance = Math.max(0, ROUTINE_NEWS_RADIO_DAILY_LIMIT - alreadyIngested)
     let admitted = 0
     const selected = videos.flatMap((video) => {
-      if (!isOrdinaryRoutineVideo(video) || existingVideoIds.has(video.videoId)) return [video]
+      if (!isRoutineAtIngest(video) || existingVideoIds.has(video.videoId)) return [video]
       if (admitted >= allowance) return []
       admitted += 1
       return [{ ...video, editorialRoutine: true, editorialRoutineIngestedAt: now }]
@@ -57,7 +68,7 @@ export async function applyRoutineVideoIngestCap(
   let admitted = 0
   const selected: RawVideo[] = []
   for (const video of videos) {
-    if (!isOrdinaryRoutineVideo(video) || existingVideoIds.has(video.videoId)) {
+    if (!isRoutineAtIngest(video) || existingVideoIds.has(video.videoId)) {
       selected.push(video)
       continue
     }

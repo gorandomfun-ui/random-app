@@ -8,11 +8,9 @@ import type { Universe } from '@/lib/v3/types';
 import type { Line } from '@/lib/v3/types';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
-import {
-  isOrdinaryRoutineVideo,
-  ROUTINE_NEWS_RADIO_DAILY_LIMIT,
-} from '@/lib/random/videoEditorial';
-import { applyRoutineVideoIngestCap } from './videoEditorialAdmission';
+import { ROUTINE_NEWS_RADIO_DAILY_LIMIT } from '@/lib/random/videoEditorial';
+import { applyRoutineVideoIngestCap, isRoutineAtIngest } from './videoEditorialAdmission';
+import { screenMiniSeries } from './miniSeriesStore';
 
 export type VideoProvider =
   | 'youtube'
@@ -114,9 +112,11 @@ type IngestResult = {
   /** What was actually written, by provider. */
   insertedByProvider?: Record<string, number>;
   remaining?: number;
+  /** Vertical soap serials refused at the door (see miniSeries.ts). */
+  miniSeriesRefused?: number;
 };
 
-export type VideoIngestStage = 'ingest-collection' | 'ingest-routine' | 'ingest-admission' |
+export type VideoIngestStage = 'ingest-collection' | 'ingest-routine' | 'ingest-admission' | 'ingest-mini-series' |
   'ingest-existing' | 'ingest-write' | 'ingest-completed';
 
 const YT_ENDPOINT = 'https://www.googleapis.com/youtube/v3';
@@ -1009,7 +1009,7 @@ export async function finalizeVideoIngest(
   const collection = await getCollection();
   const deduplicated = Array.from(map.values());
   onStage?.('ingest-routine');
-  const routineIds = deduplicated.filter(isOrdinaryRoutineVideo).map((video) => video.videoId);
+  const routineIds = deduplicated.filter(isRoutineAtIngest).map((video) => video.videoId);
   const existingIds = insertOnly ? new Set<string>() : await findExistingVideoIds(collection, routineIds);
   const existingRoutineIds = new Set(routineIds.filter(videoId => existingIds.has(videoId)));
   onStage?.('ingest-admission');
@@ -1025,7 +1025,17 @@ export async function finalizeVideoIngest(
     });
   }
 
-  const unique = admission.videos;
+  // The vertical soap serials, refused on every line at once; one per account in a hundred is let through.
+  onStage?.('ingest-mini-series');
+  const screened = await screenMiniSeries(await getDb(), admission.videos, { dryRun, line }).catch((error) => {
+    console.warn('[ingest:videos] filtre mini-séries indisponible', error instanceof Error ? error.message : error);
+    return { videos: admission.videos, refused: 0, keptIds: new Set<string>() };
+  });
+  if (screened.refused) {
+    warnings.push({ label: 'videos:mini-series', message: `${screened.refused} mini-series refused` });
+  }
+
+  const unique = screened.videos;
   const documents: VideoDocument[] = [];
   // What a line asked for, by video id: handed to the tagger at insert, kept out of every write.
   const universeHints = new Map<string, Universe>();
@@ -1037,6 +1047,7 @@ export async function finalizeVideoIngest(
       continue;
     }
     if (raw.universeHint) universeHints.set(doc.videoId, raw.universeHint);
+    if (screened.keptIds.has(doc.videoId)) (doc as VideoDocument & { miniSeriesKept?: boolean }).miniSeriesKept = true;
     documents.push(doc);
   }
 
@@ -1062,6 +1073,7 @@ export async function finalizeVideoIngest(
     skippedInvalid,
     existingSkipped: 0,
     providers: summaryProviders,
+    ...(screened.refused ? { miniSeriesRefused: screened.refused } : {}),
   };
 
   if (dryRun || !documents.length) {

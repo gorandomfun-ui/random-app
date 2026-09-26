@@ -115,7 +115,9 @@ export function provisionalAdmit(db: Db, line: Line, dryRun: boolean) {
         result.inserted += summary.inserted
         result.duplicates += summary.existingSkipped ?? 0
         if (summary.skippedInvalid) result.rejected.invalid = (result.rejected.invalid ?? 0) + summary.skippedInvalid
-        const filtered = admitted.length - (summary.unique ?? admitted.length) - (summary.skippedInvalid ?? 0)
+        const miniSeries = summary.miniSeriesRefused ?? 0
+        if (miniSeries) result.rejected['mini-series'] = (result.rejected['mini-series'] ?? 0) + miniSeries
+        const filtered = admitted.length - (summary.unique ?? admitted.length) - (summary.skippedInvalid ?? 0) - miniSeries
         if (filtered > 0) result.rejected.routine = (result.rejected.routine ?? 0) + filtered
       }
     }

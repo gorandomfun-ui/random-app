@@ -67,6 +67,16 @@ type ServerStatus = {
 const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000))
 
 type UniverseRecapRow = { day: string; at: string; sizes: Record<string, number>; added: Record<string, number> }
+type MiniSeriesReport = {
+  days: Array<{ day: string; total: number; byDetail: Record<string, number> }>
+  examples: Array<{ at: string; title: string; provider: string; detail: string; channel?: string }>
+  studios: Array<{ name: string; refused: number; kept: number }>
+}
+
+/** Why a title was taken for a mini-series, as the report says it. */
+const MINI_SERIES_REASON: Record<string, string> = {
+  label: 'étiquette', studio: 'studio', cjk: 'titre chinois', trope: 'cliché', 'ai-story': 'histoire IA', narrative: 'titre-récit',
+}
 const UNIVERSE_LABEL: Record<string, string> = {
   music: 'Musique', sport: 'Sport', gaming: 'Gaming', 'humor-memes': 'Humour', 'events-parties': 'Fête', food: 'Food', travel: 'Découverte', craft: 'Astuces / artisanat',
   'cinema-tv': 'Cinéma-TV', 'nature-animals': 'Animaux / nature', animation: 'Animation', art: 'Art', science: 'Science', tech: 'Tech', history: 'Histoire', vehicles: 'Véhicules',
@@ -97,6 +107,7 @@ function formatDay(day: string): string {
 export default function IngestReportsPage() {
   const [days, setDays] = useState<DayRow[]>([])
   const [recap, setRecap] = useState<UniverseRecapRow[]>([])
+  const [miniSeries, setMiniSeries] = useState<MiniSeriesReport | null>(null)
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -113,11 +124,12 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[] }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
       setRecap(Array.isArray(payload.recap) ? payload.recap : [])
+      setMiniSeries(payload.miniSeries ?? null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -211,6 +223,57 @@ export default function IngestReportsPage() {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {miniSeries && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Mini-séries refusées</h2>
+          <p style={S.hint}>
+            Les feuilletons verticaux refusés à l&apos;entrée, sur trois jours, et vingt titres tirés au hasard. Si un titre qui
+            devait passer apparaît ici, la règle est à corriger.
+          </p>
+          {miniSeries.days.length === 0 ? (
+            <p style={S.hint}>Aucun refus enregistré pour l&apos;instant.</p>
+          ) : (
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Jour</th>
+                  <th style={{ ...S.th, textAlign: 'right' }}>Refusées</th>
+                  <th style={S.th}>Par motif</th>
+                </tr>
+              </thead>
+              <tbody>
+                {miniSeries.days.map((row) => (
+                  <tr key={row.day}>
+                    <td style={S.td}>{formatDay(row.day)}</td>
+                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 600 }}>{row.total.toLocaleString('fr-FR')}</td>
+                    <td style={S.td}>
+                      {Object.entries(row.byDetail)
+                        .sort((left, right) => right[1] - left[1])
+                        .map(([detail, n]) => `${MINI_SERIES_REASON[detail] ?? detail} ${n.toLocaleString('fr-FR')}`)
+                        .join(' · ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {miniSeries.examples.length > 0 && (
+            <ul style={{ margin: '12px 0 0', paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+              {miniSeries.examples.map((example, index) => (
+                <li key={`${example.at}-${index}`}>
+                  {example.title} <span style={{ color: '#777' }}>· {example.provider} · {MINI_SERIES_REASON[example.detail] ?? example.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {miniSeries.studios.length > 0 && (
+            <p style={{ ...S.hint, marginTop: 12 }}>
+              Studios appris : {miniSeries.studios.map((studio) => `${studio.name} (${studio.refused})`).join(', ')}
+            </p>
+          )}
         </section>
       )}
 
