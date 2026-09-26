@@ -682,10 +682,11 @@ export function drawDiner(buffer: PixelBuffer, x: number, width: number, ground:
 }
 
 /** The frame the neon hangs on over the roof: a dark backing, a chrome edge, posts down to the roof. */
-export function signFrame(buffer: PixelBuffer, x: number, y: number, width: number, height: number, roof: number): void {
+export function signFrame(buffer: PixelBuffer, x: number, y: number, width: number, height: number, roof: number, day = false): void {
   const chrome = '#c9ccd8', chromeDark = '#8a8ea4'
+  // by day the board is a lighter slate, so it does not sit as a dark hole in a bright sky
   for (const lx of [x + Math.round(width * 0.22), x + Math.round(width * 0.78)]) { buffer.rect(lx - 3, y + height, 6, roof - y - height, chromeDark); buffer.rect(lx - 3, y + height, 1, roof - y - height, chrome) }
-  buffer.poly([[x + 10, y], [x + width - 10, y], [x + width, y + height], [x, y + height]], '#0f0b20')
+  buffer.poly([[x + 10, y], [x + width - 10, y], [x + width, y + height], [x, y + height]], day ? '#43436a' : '#0f0b20')
   buffer.rect(x, y + height - 3, width, 3, chromeDark); buffer.rect(x, y + height - 3, width, 1, chrome)
-  buffer.line(x + 10, y, x + width - 10, y, '#2a2246')
+  buffer.line(x + 10, y, x + width - 10, y, day ? '#5e5e88' : '#2a2246')
 }

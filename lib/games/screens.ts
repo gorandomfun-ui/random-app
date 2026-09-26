@@ -96,7 +96,7 @@ function stage(game: Game, layout: Layout): Stage {
   return game === 'catcher'
     ? {
         ground: 562, building: [32, 368], horizon: 560, randomY: 196, markY: 242, markSize: 0.88,
-        road: { bottom: 714, line: 640, lanes: [[584, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
+        road: { bottom: 714, line: 654, lanes: [[570, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
         moon: [96, 66, 20], clouds: [[216, 92, 'big', true], [0, 170, 'long', false], [300, 30, 'small', false]], wisps: [[40, 130, 60]],
         far: [[-10, 80, 170, 'stepped'], [80, 60, 240, 'spire'], [150, 90, 150, 'block'], [260, 70, 200, 'twin'], [340, 100, 150, 'stepped']],
         near: [[0, 70, 110, 'tank'], [300, 60, 140, 'antenna'], [370, 70, 100, 'block']],
@@ -104,7 +104,7 @@ function stage(game: Game, layout: Layout): Stage {
       }
     : {
         ground: 562, building: [16, 400], horizon: 560, randomY: 196, markY: 226, markSize: 0,
-        road: { bottom: 714, line: 640, lanes: [[584, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
+        road: { bottom: 714, line: 654, lanes: [[570, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
         moon: [330, 70, 20], clouds: [[0, 90, 'big', false], [260, 150, 'long', true], [150, 30, 'small', true]], wisps: [[300, 40, 60]],
         far: [[-10, 90, 160, 'block'], [80, 56, 230, 'spire'], [140, 90, 180, 'stepped'], [250, 70, 150, 'twin'], [330, 110, 200, 'stepped']],
         near: [[0, 60, 120, 'antenna'], [360, 80, 110, 'tank']],
@@ -159,7 +159,7 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
       const frameTop = markY + Math.round(logo.height * 0.24)
       // the board behind the letters stops just under them; its posts carry it down to the roof
       const frameBottom = Math.min(roof - 6, markY + logo.height - 10)
-      signFrame(buffer, Math.round(W / 2 - logo.width / 2) - 4, frameTop, logo.width + 8, Math.max(20, frameBottom - frameTop), roof)
+      signFrame(buffer, Math.round(W / 2 - logo.width / 2) - 4, frameTop, logo.width + 8, Math.max(20, frameBottom - frameTop), roof, day)
       drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), markY, accent, lettering, { lit: lit && frame % 13 !== 12, swashLit: frame % 7 !== 6, glow: !day })
       drawDiner(buffer, bx, bw, s.ground, accent, frame, lit, day)
     }
@@ -230,8 +230,8 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
   pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
   const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
   if (s.info === 'top') {
-    infoLine(buffer, 16, 16, 'LEVEL', level, 'left', 2)
-    infoLine(buffer, width - 16, 16, 'BEST', best, 'right', 2)
+    infoLine(buffer, 16, 16, 'LEVEL', level, 'left', 2, options.day === true)
+    infoLine(buffer, width - 16, 16, 'BEST', best, 'right', 2, options.day === true)
   } else {
     infoLine(buffer, width / 2 - 14, s.press + 24, 'LEVEL', level, 'right', 2)
     infoLine(buffer, width / 2 + 14, s.press + 24, 'BEST', best, 'left', 2)

@@ -55,14 +55,21 @@ export function pressStart(buffer: PixelBuffer, centre: number, y: number, accen
 }
 
 /** A line of a small grey label and a cream value, as a title screen shows the level and the best score. */
-export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left', scale = 1): void {
+export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left', scale = 1, dark = false): void {
   const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale)
   const left = align === 'left' ? x : align === 'right' ? x - w : Math.round(x - w / 2)
-  // a dark shadow under the letters, so they read on a bright day sky as on the night
+  const valueX = left + textWidth(label, scale) + 4 * scale
+  if (dark) {
+    // on a bright day sky: near-black letters
+    drawText(buffer, label, left, y + 2 * scale, '#2a2e44', scale)
+    drawText7(buffer, value, valueX, y, '#0c0e1a', scale)
+    return
+  }
+  // a dark shadow under the letters, so they stand out on the night and on the street
   drawText(buffer, label, left + scale, y + 3 * scale, INK, scale)
-  drawText7(buffer, value, left + textWidth(label, scale) + 5 * scale, y + scale, INK, scale)
+  drawText7(buffer, value, valueX + scale, y + scale, INK, scale)
   drawText(buffer, label, left, y + 2 * scale, GREY, scale)
-  drawText7(buffer, value, left + textWidth(label, scale) + 4 * scale, y, CREAM, scale)
+  drawText7(buffer, value, valueX, y, CREAM, scale)
 }
 
 /** A framed button, its corners cut round; the chosen one is lit cream with a pointer before it. */
