@@ -42,6 +42,17 @@ export function rgbOf(color: string): [number, number, number] {
   return rgb
 }
 
+/** Two colours mixed: `t` = 0 gives `a`, 1 gives `b`. */
+export function mix(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = rgbOf(a), [br, bg, bb] = rgbOf(b)
+  return `#${[ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t].map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** A colour dimmed to a fraction of itself. */
+export function dim(color: string, factor: number): string {
+  return `#${rgbOf(color).map((c) => Math.min(255, Math.round(c * factor)).toString(16).padStart(2, '0')).join('')}`
+}
+
 /** A picture, one byte per channel; black and opaque to start with. */
 export class PixelBuffer {
   readonly data: Uint8ClampedArray
@@ -69,6 +80,19 @@ export class PixelBuffer {
 
   rect(x: number, y: number, width: number, height: number, color: string): void {
     for (let yy = y; yy < y + height; yy += 1) for (let xx = x; xx < x + width; xx += 1) this.set(xx, yy, color)
+  }
+
+  /** A filled disc, centre and radius in pixels. */
+  disc(cx: number, cy: number, r: number, color: string): void {
+    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y += 1) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x += 1) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) this.set(x, y, color)
+  }
+
+  /** Every pixel of a rectangle dimmed to a fraction of itself: a shadow, a night falling. */
+  shade(x: number, y: number, width: number, height: number, factor: number): void {
+    for (let yy = Math.max(0, y); yy < Math.min(this.height, y + height); yy += 1) for (let xx = Math.max(0, x); xx < Math.min(this.width, x + width); xx += 1) {
+      const o = (yy * this.width + xx) * 4
+      this.data[o] = Math.round(this.data[o] * factor); this.data[o + 1] = Math.round(this.data[o + 1] * factor); this.data[o + 2] = Math.round(this.data[o + 2] * factor)
+    }
   }
 
   /** Draws a sprite with its palette; `flipX` mirrors it, `scale` enlarges each pixel. */
@@ -129,4 +153,62 @@ export function textWidth(text: string, scale = 1): number {
 
 export function drawTextCentered(buffer: PixelBuffer, text: string, y: number, color: string, scale = 1): void {
   drawText(buffer, text, Math.floor((buffer.width - textWidth(text, scale)) / 2), y, color, scale)
+}
+
+/**
+ * A 5×7 font, drawn here too: the games' interface voice — the HUD, the
+ * buttons, PRESS START, GAME OVER. `bold` doubles each stroke sideways,
+ * the way arcade titles thicken a thin face.
+ */
+export const FONT7: Record<string, Sprite> = {
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'], B: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'], D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'], F: ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  G: ['.###.', '#...#', '#....', '#..##', '#...#', '#...#', '.###.'], H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  I: ['.###.', '..#..', '..#..', '..#..', '..#..', '..#..', '.###.'], J: ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+  K: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'], L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'], N: ['#...#', '#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'], P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  Q: ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'], R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'], T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'], V: ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '#.#.#', '.#.#.'], X: ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'], Z: ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'], '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'], '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+  '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'], '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  '6': ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'], '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'], '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+  ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'], '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
+  ':': ['.....', '..#..', '.....', '.....', '.....', '..#..', '.....'], '-': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
+  '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'], '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+  '/': ['....#', '....#', '...#.', '..#..', '.#...', '#....', '#....'], '>': ['.#...', '..#..', '...#.', '....#', '...#.', '..#..', '.#...'],
+  '<': ['...#.', '..#..', '.#...', '#....', '.#...', '..#..', '...#.'], "'": ['..#..', '..#..', '.....', '.....', '.....', '.....', '.....'],
+  '×': ['.....', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '.....'],
+}
+
+/** How wide a text is in the 5×7 font: letters of five (six when bold), one pixel apart, times the scale. */
+export function text7Width(text: string, scale = 1, bold = false): number {
+  return text.length === 0 ? 0 : (text.length * ((bold ? 6 : 5) + 1) - 1) * scale
+}
+
+/** The glyph of a letter in the 5×7 font, thickened sideways when `bold`. */
+export function glyph7(char: string, bold = false): Sprite {
+  const glyph = FONT7[char.toUpperCase()] ?? FONT7['?']
+  if (!bold) return glyph
+  return glyph.map((row) => row.split('').map((c, i) => (c === '#' || row[i - 1] === '#' ? '#' : '.')).join('') + (row[4] === '#' ? '#' : '.'))
+}
+
+/** Draws text in the 5×7 font; returns the width used. */
+export function drawText7(buffer: PixelBuffer, text: string, x: number, y: number, color: string, scale = 1, bold = false): number {
+  let cursor = x
+  for (const char of text) {
+    buffer.blit(glyph7(char, bold), cursor, y, { '#': color }, { scale })
+    cursor += ((bold ? 6 : 5) + 1) * scale
+  }
+  return text7Width(text, scale, bold)
+}
+
+export function drawText7Centered(buffer: PixelBuffer, text: string, y: number, color: string, scale = 1, bold = false, centre = buffer.width / 2): void {
+  drawText7(buffer, text, Math.round(centre - text7Width(text, scale, bold) / 2), y, color, scale, bold)
 }
