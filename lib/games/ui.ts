@@ -56,13 +56,14 @@ export function pressStart(buffer: PixelBuffer, centre: number, y: number, accen
 
 /** A line of a small grey label and a cream value, as a title screen shows the level and the best score. */
 export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left', scale = 1, dark = false): void {
-  const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale)
+  const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale, dark)
   const left = align === 'left' ? x : align === 'right' ? x - w : Math.round(x - w / 2)
   const valueX = left + textWidth(label, scale) + 4 * scale
   if (dark) {
-    // on a bright day sky: near-black letters
-    drawText(buffer, label, left, y + 2 * scale, '#2a2e44', scale)
-    drawText7(buffer, value, valueX, y, '#0c0e1a', scale)
+    // on a bright day sky: the label white over a thin navy shadow, the number black and bold
+    drawText(buffer, label, left + scale, y + 3 * scale, '#24346a', scale)
+    drawText(buffer, label, left, y + 2 * scale, '#ffffff', scale)
+    drawText7(buffer, value, valueX, y, '#0a0c16', scale, true)
     return
   }
   // a dark shadow under the letters, so they stand out on the night and on the street
