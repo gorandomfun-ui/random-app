@@ -23,7 +23,7 @@ const FONTS = join(__dirname, 'fonts')
 
 type Variant = { name: string; file: string; width: number; bold: number; turn: number }
 const VARIANTS: Variant[] = [
-  { name: 'wide', file: 'MeowScript-Regular.ttf', width: 360, bold: 2, turn: 5 },
+  { name: 'wide', file: 'MeowScript-Regular.ttf', width: 353, bold: 2, turn: 5 },
   { name: 'tall', file: 'MeowScript-Regular.ttf', width: 340, bold: 2, turn: 5 },
 ]
 
