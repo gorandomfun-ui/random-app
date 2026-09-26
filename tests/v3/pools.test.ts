@@ -27,7 +27,7 @@ test('une nuit demande huit requêtes par univers, la fenêtre glisse d_un jour 
   assert.equal(seen.size, POOL_QUERIES.music.length, 'en un mois, toute la liste est passée')
 })
 
-test('l_indice d_univers d_une ligne prime sur les mots du titre, jamais sur un sujet connu', async () => {
+test('l_indice d_univers d_une ligne prime sur les mots du titre (et, depuis le 26/09, sur les sujets)', async () => {
   const { tagItem } = await import('@/lib/v3/tagging/tagItem')
   const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
   const index = buildSubjectIndex([])

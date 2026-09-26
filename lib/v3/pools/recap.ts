@@ -1,7 +1,8 @@
 /**
  * What each pool holds and what entered it: the recap the owner asked for
- * at the end of an ingestion day. Sizes are one indexed count per universe;
- * what entered is read from the last twenty-four hours of videos.
+ * at the end of an ingestion day. Sizes are one indexed count per universe,
+ * less what a mini-series sweep set aside, so they say what the draw can
+ * really serve; what entered is read from the last twenty-four hours of videos.
  */
 
 import type { Db, Document } from 'mongodb'
@@ -15,8 +16,49 @@ export type UniverseRecap = {
   /** The Paris day the recap closes, `YYYY-MM-DD`. */
   day: string
   at: Date
+  /** What the draw can serve: stored, less what was set aside. */
   sizes: Partial<Record<Universe, number>>
   added: Partial<Record<Universe, number>>
+  /** Stored videos set aside as mini-series, by universe (see `mini_series_sweeps_v3`). */
+  setAside?: Partial<Record<Universe, number>>
+}
+
+/** Where a mini-series sweep keeps, among other things, how many it set aside in each universe. */
+export const SWEEPS_COLLECTION = 'mini_series_sweeps_v3'
+
+/** What the sweeps still in force set aside, by universe: a handful of small documents. */
+export async function setAsideByUniverse(db: Db): Promise<Partial<Record<Universe, number>>> {
+  const rows = await db.collection(SWEEPS_COLLECTION).find({ undoneAt: { $exists: false } }, { projection: { byUniverse: 1 }, maxTimeMS: 5000 }).toArray()
+  const out: Partial<Record<Universe, number>> = {}
+  for (const row of rows) {
+    for (const [universe, n] of Object.entries((row.byUniverse ?? {}) as Record<string, number>)) {
+      if (typeof n === 'number' && n > 0) out[universe as Universe] = (out[universe as Universe] ?? 0) + n
+    }
+  }
+  return out
+}
+
+export function drawable(stored: Partial<Record<Universe, number>>, setAside: Partial<Record<Universe, number>>): Partial<Record<Universe, number>> {
+  const out: Partial<Record<Universe, number>> = {}
+  for (const [universe, n] of Object.entries(stored) as Array<[Universe, number]>) {
+    out[universe] = n < 0 ? n : Math.max(0, n - (setAside[universe] ?? 0))
+  }
+  return out
+}
+
+/** A recap younger than this is trusted for the night's plan; older, the pools are counted again. */
+const RECAP_FRESH_MS = 36 * 3_600_000
+
+/** The drawable size of every pool, for the night's plan: the last recap when fresh, a count otherwise. */
+export async function drawableSizes(db: Db, now = new Date()): Promise<Partial<Record<Universe, number>>> {
+  const latest = await db.collection(RECAP_COLLECTION).find({}, { sort: { at: -1 }, limit: 1, maxTimeMS: 3000 }).toArray().catch(() => [])
+  const recap = latest[0] as unknown as UniverseRecap | undefined
+  const setAside = await setAsideByUniverse(db).catch(() => ({}))
+  if (recap && now.getTime() - new Date(recap.at).getTime() < RECAP_FRESH_MS) {
+    // A recap written before sizes became drawable holds stored counts: take the sweeps off here.
+    return recap.setAside ? recap.sizes : drawable(recap.sizes, setAside)
+  }
+  return drawable(await sizesByUniverse(db), setAside)
 }
 
 export function parisDay(date: Date): string {
@@ -42,9 +84,19 @@ export async function sizesByUniverse(db: Db): Promise<Partial<Record<Universe, 
   return sizes
 }
 
-export async function computeUniverseRecap(db: Db, now = new Date(), read = { added: addedByUniverse, sizes: sizesByUniverse }): Promise<UniverseRecap> {
-  const [sizes, added] = await Promise.all([read.sizes(db), read.added(db, new Date(now.getTime() - DAY_MS), now)])
-  return { day: parisDay(now), at: now, sizes, added }
+type RecapReaders = {
+  added: typeof addedByUniverse
+  sizes: typeof sizesByUniverse
+  setAside?: typeof setAsideByUniverse
+}
+
+export async function computeUniverseRecap(db: Db, now = new Date(), read: RecapReaders = { added: addedByUniverse, sizes: sizesByUniverse }): Promise<UniverseRecap> {
+  const [stored, added, setAside] = await Promise.all([
+    read.sizes(db),
+    read.added(db, new Date(now.getTime() - DAY_MS), now),
+    (read.setAside ?? setAsideByUniverse)(db).catch(() => ({})),
+  ])
+  return { day: parisDay(now), at: now, sizes: drawable(stored, setAside), added, setAside }
 }
 
 export async function writeUniverseRecap(db: Db, recap: UniverseRecap): Promise<void> {

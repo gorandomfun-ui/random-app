@@ -207,7 +207,6 @@ const SAFE_GLAMOUR_CONTEXTS = [
 const SAFE_GLAMOUR_ERAS = ['1960s', '1970s', '1980s', '1990s', '2000s', 'y2k']
 
 const CINEMA_ARCHIVE_SUBJECTS = [
-  'full movie',
   'short film',
   'public domain movie',
   'student film',
@@ -637,7 +636,19 @@ function interestingSubjects(dict: Required<VideoKeywordDictionary>): string[] {
   return unique([...SUBJECT_ALLOWLIST, ...archiveSubjects(), ...fromDict])
 }
 
-function fallbackFormats(dict: Required<VideoKeywordDictionary>): string[] {
+/**
+ * Formats that turn any query into a cinema one, and "full movie" and
+ * "episode" into a door for the soap serials: half of what entered cinema on
+ * 26 September. The forgotten films still come in through the archive
+ * subjects (public domain, cult, low budget, amateur), which stay.
+ */
+export const CINEMA_PULLING_FORMATS: ReadonlySet<string> = new Set(['full movie', 'episode', 'trailer', 'teaser', 'series', 'feature'])
+
+export function fallbackFormats(dict: Required<VideoKeywordDictionary>): string[] {
+  return comboFormats(dict).filter((format) => !CINEMA_PULLING_FORMATS.has(format.toLowerCase()))
+}
+
+function comboFormats(dict: Required<VideoKeywordDictionary>): string[] {
   return unique([
     'clip',
     'episode',

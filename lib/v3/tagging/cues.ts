@@ -5,7 +5,9 @@
  * the cues put them where they belong, at insert and in a relabelling pass.
  *
  * Whole words of the title only, the most specific universes first:
- * "episode" alone is cinema, but "episode 3 gameplay" is gaming.
+ * "episode" alone is cinema, but "episode 3 gameplay" is gaming. "tv" and
+ * "scene" were dropped from cinema on 26 September: a channel called
+ * "Something TV" and "the punk scene" are not films.
  */
 
 import { wordsRegex } from '../cool/registers'
@@ -28,7 +30,7 @@ export const UNIVERSE_CUES: ReadonlyArray<{ universe: Universe; words: string[] 
   { universe: 'art', words: ['painting', 'peinture', 'painter', 'peintre', 'sculpture', 'sculpteur', 'drawing', 'dessin', 'illustration', 'gallery', 'galerie', 'museum', 'musée', 'exhibition', 'exposition', 'street art', 'graffiti', 'mural', 'fresque', 'photography', 'photographie', 'photographer', 'photographe', 'architecture', 'architect', 'architecte', 'performance art', 'timelapse painting'] },
   { universe: 'animation', words: ['animation', 'animated', 'animé', 'anime', 'cartoon', 'cartoons', 'dessin animé', 'manga', 'stop motion', 'stop-motion', 'claymation', 'pixar', 'ghibli', 'disney', 'looney tunes', 'cgi', '3d animation', 'short film animation'] },
   { universe: 'travel', words: ['travel', 'voyage', 'trip', 'road trip', 'vlog', 'explore', 'exploring', 'abandoned', 'abandonné', 'walking tour', 'city walk', 'walk in', 'drive in', 'driving in', 'hiking', 'randonnée', 'island', 'île', 'mountain', 'montagne', 'beach', 'plage', 'desert', 'désert', 'village', 'countryside', 'campagne', 'street view', 'streets of', 'rues de', 'temple', 'castle', 'château', 'cathedral', 'cathédrale', 'tourism', 'tourisme', 'backpacking', 'expedition', 'expédition', 'camping', 'van life'] },
-  { universe: 'cinema-tv', words: ['trailer', 'bande-annonce', 'bande annonce', 'teaser', 'episode', 'épisode', 'episodio', 'full movie', 'film', 'films', 'movie', 'movies', 'series', 'série', 'séries', 'serie', 'season', 'saison', 'temporada', 'tv show', 'tv series', 'sitcom', 'scene', 'scène', 'clip from', 'behind the scenes', 'making of', 'actor', 'actress', 'acteur', 'actrice', 'hollywood', 'bollywood', 'nollywood', 'netflix', 'hbo', 'oscars', 'cannes', 'télé', 'tv'] },
+  { universe: 'cinema-tv', words: ['trailer', 'bande-annonce', 'bande annonce', 'teaser', 'episode', 'épisode', 'episodio', 'full movie', 'film', 'films', 'movie', 'movies', 'series', 'série', 'séries', 'serie', 'season', 'saison', 'temporada', 'tv show', 'tv series', 'sitcom', 'clip from', 'behind the scenes', 'making of', 'actor', 'actress', 'acteur', 'actrice', 'hollywood', 'bollywood', 'nollywood', 'netflix', 'hbo', 'oscars', 'cannes', 'télé'] },
 ]
 
 const MATCHERS = UNIVERSE_CUES.map((entry) => ({ universe: entry.universe, regex: wordsRegex(entry.words) }))

@@ -5,7 +5,7 @@
 
 import type { Evidence, ItemTags, ItemType, Line, SubjectRef, Universe } from '../types'
 import { TAG_VERSION, isUniverse } from '../types'
-import { computeRegisters } from '../cool/registers'
+import { computeRegisters, wordsRegex } from '../cool/registers'
 import { detectAngle } from './angle'
 import { cueText, universeFromCues } from './cues'
 import { channelKey, classifyEra, classifyPopularity, isUsableItem, yearFromTitle } from './classify'
@@ -29,7 +29,11 @@ export type TaggableItem = {
   channelId?: string | null
   channelTitle?: string | null
   viewCount?: number | null
-  /** The universe the line that found the item was looking for: trusted when no subject says otherwise. */
+  /**
+   * The universe the line that found the item was looking for. It wins over
+   * the subjects: a pool pass that asked for "barbecue argentin" found food,
+   * whatever film happens to be called "Barbecue".
+   */
   universeHint?: Universe | null
   publishedAt?: Date | null
   trendObservedAt?: Date | null
@@ -61,14 +65,39 @@ function detectLine(item: TaggableItem): Line {
   return 'legacy'
 }
 
+/**
+ * Words that say a title is about film or television. Films and series are
+ * named with ordinary phrases — "The Truth", "Before and After", "Step by
+ * Step", "Independence Day" — so on 26 September a quarter of what entered
+ * cinema was cooking, sport and travel carried there by a title found in the
+ * description. A cinema subject now needs one of these in the title, or a
+ * provider category of film or TV, to make the item cinema.
+ */
+const CINEMA_CLUE = wordsRegex([
+  'film', 'films', 'movie', 'movies', 'full movie', 'trailer', 'trailers', 'teaser', 'bande-annonce', 'bande annonce', 'tráiler',
+  'película', 'pelicula', 'filme', 'cinema', 'cinéma', 'cine', 'kino', 'episode', 'épisode', 'episodio', 'series', 'série', 'serie',
+  'season', 'saison', 'temporada', 'sitcom', 'tv show', 'tv series', 'scene', 'scène', 'clip', 'movie clip', 'actor', 'actress',
+  'acteur', 'actrice', 'director', 'réalisateur', 'oscars', 'oscar', 'cannes', 'netflix', 'hbo', 'making of', 'behind the scenes',
+  'explained', 'court métrage', 'short film', 'cortometraje', 'documentary', 'documentaire', 'feature', 'sequel', 'remake', 'cast',
+])
+/** YouTube's Film & Animation, Movies, Shows and Trailers; Dailymotion's short films and TV. */
+const CINEMA_CATEGORIES = new Set(['1', '30', '43', '44', 'shortfilms', 'tv', 'film', 'movies'])
+
+function hasCinemaClue(item: TaggableItem): boolean {
+  if (CINEMA_CLUE.test(item.title ?? '')) return true
+  return CINEMA_CATEGORIES.has((item.categoryId ?? '').trim().toLowerCase())
+}
+
 function pickUniverse(matches: AliasMatch[], item: TaggableItem): Universe {
-  for (const match of matches) {
-    if (isUniverse(match.subject.universe) && match.subject.universe !== 'other') {
-      return match.subject.universe
-    }
-  }
   // The line that found the item said what it was looking for (a pool pass asks Dailymotion for "concert rock 90s").
   if (item.universeHint && isUniverse(item.universeHint) && item.universeHint !== 'other') return item.universeHint
+  for (const match of matches) {
+    const universe = match.subject.universe
+    if (!isUniverse(universe) || universe === 'other') continue
+    // A film or a series named by an ordinary phrase says nothing without a word of cinema beside it.
+    if (universe === 'cinema-tv' && !hasCinemaClue(item)) continue
+    return universe
+  }
   // No subject the dictionaries know: the words of the title still say "gameplay", "recipe", "concert".
   return universeFromCues(cueText(item as { title?: string | null; keywords?: unknown; tags?: unknown })) ?? 'other'
 }

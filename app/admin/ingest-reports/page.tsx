@@ -201,7 +201,10 @@ export default function IngestReportsPage() {
       {recap.length > 0 && (
         <section style={S.section}>
           <h2 style={S.h2}>Pools par univers</h2>
-          <p style={S.hint}>Ce que chaque univers contient en vidéos, et ce qui y est entré dans les 24 heures avant le passage de nuit.</p>
+          <p style={S.hint}>
+            Ce que chaque univers peut servir au tirage (les mini-séries mises de côté ne comptent pas), et ce qui y est entré dans les
+            24 heures avant le passage de nuit. Plancher : 20 000 — un univers en dessous reçoit plus de recherches chaque nuit.
+          </p>
           <table style={S.table}>
             <thead>
               <tr>

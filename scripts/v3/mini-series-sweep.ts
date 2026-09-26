@@ -31,9 +31,10 @@ import {
   type MiniSeriesReason,
 } from '@/lib/ingest/miniSeries'
 import { KEPT_COLLECTION, STUDIOS_COLLECTION, accountKey } from '@/lib/ingest/miniSeriesStore'
+import { SWEEPS_COLLECTION } from '@/lib/v3/pools/recap'
 import { count, percent, table } from './reportFormat'
 
-const SWEEPS = 'mini_series_sweeps_v3'
+const SWEEPS = SWEEPS_COLLECTION
 const REPORT = 'docs/reports/mini-series-sweep.md'
 const PAUSE_EVERY = 5000
 const PAUSE_MS = 400
@@ -248,7 +249,10 @@ async function main(): Promise<void> {
         },
       })), { ordered: false })
     }
-    await db.collection(SWEEPS).updateOne({ _id: sweepId }, { $set: { suppressed, kept: keep.length, studios: learned.length, doneAt: new Date() } })
+    // By universe, so the pools table can count only what the draw can serve.
+    const byUniverse: Record<string, number> = {}
+    for (const verdict of pending) byUniverse[verdict.universe] = (byUniverse[verdict.universe] ?? 0) + 1
+    await db.collection(SWEEPS).updateOne({ _id: sweepId }, { $set: { suppressed, kept: keep.length, studios: learned.length, byUniverse, doneAt: new Date() } })
     console.log(`fait : ${count(suppressed)} mises de côté, ${keep.length} gardées, ${learned.length} studios enregistrés`)
   } finally {
     await client.close()
