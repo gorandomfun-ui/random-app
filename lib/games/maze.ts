@@ -33,6 +33,17 @@ export const MAZE_HEIGHT = 20
 
 export type Cell = { x: number; y: number }
 
+/**
+ * The same maze for a tall screen: turned over its diagonal, rows become
+ * columns, so it is twenty wide and twenty-eight high and plays the same.
+ */
+export const MAZE_TALL: readonly string[] = Array.from({ length: MAZE_WIDTH }, (_, x) => MAZE.map((row) => row[x]).join(''))
+
+/** The maze a layout plays on. */
+export function mazeFor(layout: 'landscape' | 'portrait'): readonly string[] {
+  return layout === 'portrait' ? MAZE_TALL : MAZE
+}
+
 export function cellsOf(char: string): Cell[] {
   const cells: Cell[] = []
   MAZE.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (row[x] === char) cells.push({ x, y }) })

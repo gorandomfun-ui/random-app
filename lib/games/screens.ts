@@ -1,378 +1,441 @@
 /**
- * The screens of both games, drawn still or frame by frame: the title with
- * its scene, a moment of play, the end. RANDOM CATCHER opens on the front
- * of a little convenience store and plays in its aisles; RANDOM EATER opens
- * on a diner at night, its neon sign the game's own mark, and plays on the
- * diner's floor. Everything takes the theme's accent.
+ * The screens of both games, wide or tall: the title on its night street,
+ * a moment of play, GAME OVER. RANDOM CATCHER opens on the front of a
+ * little convenience store and plays in its aisles seen from above;
+ * RANDOM EATER opens on a diner, its neon sign the game's own mark, and
+ * plays on the diner's floor. The characters on the titles are the very
+ * sprites of play. Everything takes the theme's accent.
  */
 
-import { BASE_CREAM } from '@/lib/theme'
-
-import { drawLogoCentered, LOGO_HEIGHT } from './logo'
-import { CATCHER_LOGO_HEIGHT, CATCHER_LOGO_WIDTH, dim, drawCatcherLogo, drawEaterLogo, EATER_LOGO_HEIGHT, EATER_LOGO_WIDTH } from './logos'
-import { cellsOf, MAZE, MAZE_HEIGHT, MAZE_WIDTH } from './maze'
-import { drawText, drawTextCentered, PixelBuffer, textWidth } from './pixels'
+import { drawLogo, LOGO_WIDTH } from './logo'
+import { catcherLogoSize, drawCatcherLogo, drawEaterLogo, eaterLogoSize } from './logos'
+import { mazeFor, MAZE_HEIGHT, MAZE_WIDTH, type Cell } from './maze'
+import { dim, mix, PixelBuffer } from './pixels'
 import {
-  BURGER, BURGER_PALETTE, CELL, CRAWL_HEAD, CRAWL_LEGS, CRAWL_SHOULDERS, eaterPalette, facing, HUMAN, HUMAN_COLORS, humanPalette,
-  ITEM_PALETTE, MINI_BURGER, MINI_BURGER_PALETTE, ONION, PELLET, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, type Direction,
+  bin, car, city, cloud, drawDiner, drawStore, hedge, lamp, moon, NIGHTS, palm, railing, signBoard, sky, stars, street, tree, vending, type Night,
+} from './scenes'
+import {
+  BURGER, BURGER_PALETTE, CELL, CRAWL_ARMS, CRAWL_HEAD, CRAWL_LEGS, eaterPalette, facing, HUMAN, humanPalette, ITEM_PALETTE,
+  MINI_BURGER, MINI_BURGER_PALETTE, ONION, PELLET, PELLET_PALETTE, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, type Direction,
 } from './sprites'
+import { arcadeText, button, CREAM, dpad, hud, HUD_HEIGHT, infoLine, INK, pressStart } from './ui'
 
 export type Game = 'catcher' | 'eater'
+export type Layout = 'landscape' | 'portrait'
+export type Floor = 'plain' | 'tiles'
 export const GAME_NAMES: Record<Game, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
-export const HUD_ROWS = 2
-export const BOARD: Record<Game, { cols: number; rows: number }> = { catcher: { cols: MAZE_WIDTH, rows: MAZE_HEIGHT }, eater: { cols: 24, rows: 24 } }
-export function canvasSize(game: Game): { width: number; height: number } {
-  return { width: BOARD[game].cols * CELL, height: (BOARD[game].rows + HUD_ROWS) * CELL }
+export const LAYOUTS: readonly Layout[] = ['landscape', 'portrait']
+
+/** The title and GAME OVER are a scene the size of a screen, sixteen by nine or nine by sixteen. */
+export const SCENE_SIZE: Record<Layout, { width: number; height: number }> = { landscape: { width: 384, height: 216 }, portrait: { width: 216, height: 384 } }
+/** Under the board on a tall screen, the room for the cross of arrows. */
+export const DPAD_HEIGHT = 96
+
+/** The board in cells: wider than high on a wide screen, the other way round on a tall one. */
+export function boardSize(layout: Layout): { cols: number; rows: number } {
+  return layout === 'landscape' ? { cols: MAZE_WIDTH, rows: MAZE_HEIGHT } : { cols: MAZE_HEIGHT, rows: MAZE_WIDTH }
 }
 
-const BG = '#000000'
-const CREAM = BASE_CREAM
-const NIGHT = '#0b0b1c'
-const GREY = '#8a8a82'
-const CHROME = '#c8c8c0'
-const CHROME_DARK = '#8a8a82'
-const WARM = '#8a6a2a'
-const WARM_LIGHT = '#c9a04a'
-const LAMP = '#f2c33c'
-const LOGO_TOP = 12
-/** Where CATCHER's own mark starts, under the RANDOM logo drawn at scale two. */
-const MARK_TOP = LOGO_TOP + LOGO_HEIGHT * 2 + 10
-/** Colours the products on the shelves come in. */
-const GOODS = ['#d92d2d', '#f2c33c', '#3d42cc', '#0fc55d', '#af3bf2', '#f8f5e6', '#e39a3b', '#7fd4ff']
-
-/** A small deterministic sequence, so a scene is the same every time it is drawn. */
-function rng(seed: number): () => number {
-  let s = seed
-  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff }
+export function playSize(layout: Layout): { width: number; height: number } {
+  const { cols, rows } = boardSize(layout)
+  return { width: cols * CELL, height: HUD_HEIGHT + rows * CELL + (layout === 'portrait' ? DPAD_HEIGHT : 0) }
 }
 
-function stars(buffer: PixelBuffer, frame: number, seed: number, count: number, below: number): void {
-  const next = rng(seed)
-  for (let i = 0; i < count; i += 1) {
-    const x = Math.floor(next() * buffer.width), y = Math.floor(next() * below)
-    if ((i + frame) % 5 !== 0) buffer.set(x, y, CREAM)
+// ---------------------------------------------------------------- the street, composed
+
+/** Where things stand on a street scene, for a game and a layout. */
+type Stage = {
+  ground: number; building: [number, number]; horizon: number; skyline: number
+  randomY: number; markY: number; markSize: number
+  road: { bottom: number; line: number; lanes: number[] }
+  press: number; info: 'top' | 'bottom'
+  moon: [number, number, number]; clouds: Array<[number, number, number]>
+  lamps: number[]; greens: number[]
+}
+
+function stage(game: Game, layout: Layout): Stage {
+  if (layout === 'landscape') {
+    return game === 'catcher'
+      ? { ground: 162, building: [96, 192], horizon: 150, skyline: 90, randomY: 7, markY: 36, markSize: 4, road: { bottom: 216, line: 199, lanes: [178] }, press: 205, info: 'top', moon: [350, 38, 8], clouds: [[6, 40, 64], [310, 58, 64], [258, 14, 34]], lamps: [44, 340], greens: [16, 368] }
+      : { ground: 162, building: [80, 224], horizon: 150, skyline: 96, randomY: 7, markY: 38, markSize: 2.1, road: { bottom: 216, line: 199, lanes: [178] }, press: 205, info: 'top', moon: [346, 42, 8], clouds: [[4, 46, 72], [302, 66, 76], [262, 16, 34]], lamps: [58, 326], greens: [22, 362] }
   }
+  return game === 'catcher'
+    ? { ground: 244, building: [28, 160], horizon: 230, skyline: 110, randomY: 78, markY: 108, markSize: 4, road: { bottom: 324, line: 289, lanes: [262, 297] }, press: 342, info: 'bottom', moon: [184, 30, 9], clouds: [[6, 36, 56], [104, 50, 64]], lamps: [12, 204], greens: [] }
+    : { ground: 244, building: [12, 192], horizon: 230, skyline: 120, randomY: 80, markY: 116, markSize: 2.1, road: { bottom: 324, line: 289, lanes: [262, 297] }, press: 342, info: 'bottom', moon: [182, 30, 9], clouds: [[4, 38, 60], [118, 50, 70]], lamps: [], greens: [10, 206] }
 }
 
-/** A car seen from the side, `dir` +1 going right, −1 going left: body, roof with windows, wheels, lights. */
-function car(buffer: PixelBuffer, x: number, y: number, color: string, dir: 1 | -1): void {
-  buffer.rect(x, y + 4, 28, 7, color)
-  buffer.rect(x + 6, y, 14, 5, color)
-  buffer.rect(x + 8, y + 1, 4, 3, '#1a2030'); buffer.rect(x + 14, y + 1, 4, 3, '#1a2030')
-  buffer.rect(x + 4, y + 10, 5, 3, '#121210'); buffer.rect(x + 19, y + 10, 5, 3, '#121210')
-  const front = dir === 1 ? x + 27 : x, back = dir === 1 ? x : x + 27
-  buffer.rect(front, y + 5, 1, 2, CREAM); buffer.rect(back, y + 5, 1, 2, '#e0301e')
-}
+type SceneOptions = { frame: number; lit: boolean; hero: boolean; marks: boolean; building: boolean }
 
-// ---------------------------------------------------------------- the eater
-
-/** The eater crawling, head first along `dir`, from the head cell: shoulders, `torso` pieces each with its own look, the legs. */
-export function drawEater(buffer: PixelBuffer, x: number, y: number, dir: Direction, accent: string, frame: number, torso: number, scale = 1): void {
-  const palette = eaterPalette(accent)
-  const back: Record<Direction, [number, number]> = { right: [-1, 0], left: [1, 0], up: [0, 1], down: [0, -1] }
-  const step = CELL * scale
-  const at = (i: number): [number, number] => [x + back[dir][0] * i * step, y + back[dir][1] * i * step]
-  let [px, py] = at(0); buffer.blit(facing(CRAWL_HEAD, dir), px, py, palette, { scale })
-  ;[px, py] = at(1); buffer.blit(facing(CRAWL_SHOULDERS[frame % 2], dir), px, py, palette, { scale })
-  for (let i = 0; i < torso; i += 1) {
-    const look = torsoLook(i, accent)
-    ;[px, py] = at(2 + i); buffer.blit(facing(look.sprite, dir), px, py, { ...palette, ...look.palette }, { scale })
+/** The night street of a game, its building, its traffic, and its hero on the sidewalk. */
+function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, options: SceneOptions): Stage {
+  const s = stage(game, layout)
+  const night: Night = NIGHTS[game === 'catcher' ? 'blue' : 'violet']
+  const { width: W, height: H } = buffer
+  const { frame, lit } = options
+  sky(buffer, night, s.horizon)
+  stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 46 : 60, s.horizon - 40, frame)
+  moon(buffer, ...s.moon)
+  s.clouds.forEach(([x, y, w], i) => cloud(buffer, x, y, w, night, 5 + i))
+  city(buffer, night, s.ground - 8, s.skyline, game === 'catcher' ? 17 : 23, frame)
+  const [bx, bw] = s.building
+  if (game === 'eater') s.greens.forEach((x, i) => palm(buffer, x, s.ground - 6, layout === 'landscape' ? 64 : 150, (i === 0 ? 1 : -1) * (layout === 'landscape' ? 1 : 0.3), night))
+  railing(buffer, s.ground - 12, game === 'catcher' ? '#3a4274' : '#40346e')
+  if (!options.building) {
+    if (game === 'catcher') s.greens.forEach((x, i) => tree(buffer, x, s.ground, 14, night, 3 + i))
+  } else if (game === 'catcher') {
+    drawStore(buffer, bx, bw, s.ground, accent, frame, lit)
+    if (layout === 'landscape') { vending(buffer, bx - 22, s.ground, accent, lit); bin(buffer, bx + bw + 8, s.ground, dim(accent, 0.55)) }
+    s.greens.forEach((x, i) => tree(buffer, x, s.ground, 14, night, 3 + i))
+  } else {
+    const logo = eaterLogoSize(s.markSize)
+    const boardW = logo.width + 22, boardH = logo.height + 6
+    const roof = s.ground - 64
+    signBoard(buffer, Math.round(W / 2 - boardW / 2), s.markY - 4, boardW, boardH, roof)
+    drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2) - 2, s.markY - 1, accent, s.markSize, { lit: options.marks && lit && frame % 9 !== 8, swashLit: options.marks && lit && frame % 5 !== 4 })
+    drawDiner(buffer, bx, bw, s.ground, accent, frame, lit)
+    hedge(buffer, bx - 24, s.ground, 22, night); hedge(buffer, bx + bw + 2, s.ground, 22, night)
   }
-  ;[px, py] = at(2 + torso); buffer.blit(facing(CRAWL_LEGS[frame % 2], dir), px, py, palette, { scale })
-}
-
-// ---------------------------------------------------------------- the diner (EATER)
-
-/**
- * A diner at night, seen from the street: the city behind, the neon sign
- * on the roof, chrome and glass, the door in the middle; the sidewalk, the
- * street with cars passing; the eater crawling to the door, eating.
- */
-function drawDinerScene(buffer: PixelBuffer, accent: string, frame: number, options: { hero?: boolean } = {}): void {
-  const { width } = buffer
-  buffer.clear(NIGHT)
-  stars(buffer, frame, 3, 26, 120)
-  // the skyline: towers of two tones, windows lit or not, a few blinking
-  const next = rng(9)
-  let bx = -8
-  while (bx < width) {
-    const w = 32 + Math.floor(next() * 40), top = 90 + Math.floor(next() * 90)
-    buffer.rect(bx, top, w, 240 - top, next() < 0.5 ? '#141428' : '#1a1a32')
-    for (let wy = top + 6; wy < 232; wy += 10) for (let wx = bx + 5; wx < bx + w - 6; wx += 9) {
-      const lit = next() < 0.55, blink = next() < 0.12
-      if (lit && !(blink && (frame + wx) % 4 === 0)) buffer.rect(wx, wy, 3, 4, LAMP)
-    }
-    bx += w + 6
+  s.lamps.forEach((x, i) => lamp(buffer, x, s.ground, layout === 'landscape' ? 46 : 58, i === 1))
+  street(buffer, night, s.ground, 12, s.road.bottom, s.road.line)
+  if (s.road.bottom < H) {
+    // the near sidewalk under the road on a tall screen
+    buffer.rect(0, s.road.bottom, W, H - s.road.bottom, dim(night.sidewalk, 0.55))
+    buffer.rect(0, s.road.bottom, W, 2, night.sidewalkLight)
+    for (let x = 10; x < W; x += 20) buffer.rect(x, s.road.bottom + 2, 1, H - s.road.bottom - 2, dim(night.sidewalk, 0.45))
   }
-  // the diner: a box of chrome and glass in the middle
-  const dx = 72, dw = 240, roof = 176, sill = 252, base = 300
-  // the sign on the roof, and the neon on it
-  buffer.rect(dx + 30, 112, dw - 60, roof - 112, '#0c0c14')
-  buffer.rect(dx + 30, 112, dw - 60, 2, CHROME_DARK); buffer.rect(dx + 30, 112, 2, roof - 112, CHROME_DARK); buffer.rect(dx + dw - 32, 112, 2, roof - 112, CHROME_DARK)
-  drawEaterLogo(buffer, Math.floor((width - EATER_LOGO_WIDTH) / 2), 114, accent, { lit: frame % 8 !== 7 })
-  // the roof band, chrome
-  buffer.rect(dx, roof, dw, 8, CHROME); buffer.rect(dx, roof + 6, dw, 2, CHROME_DARK)
-  buffer.rect(dx, roof + 8, dw, 10, accent); buffer.rect(dx, roof + 12, dw, 1, CREAM)
-  // the facade: warm windows on both sides of the door, chrome posts between
-  buffer.rect(dx, roof + 18, dw, sill - roof - 18, '#1e1e2e')
-  const panes: Array<[number, number]> = [[dx + 8, dx + 60], [dx + 66, dx + 104], [dx + 136, dx + 174], [dx + 180, dx + dw - 8]]
-  for (const [x0, x1] of panes) {
-    buffer.rect(x0, roof + 22, x1 - x0, sill - roof - 26, WARM)
-    buffer.rect(x0, sill - 20, x1 - x0, 3, WARM_LIGHT)
-    for (let sx = x0 + 8; sx < x1 - 6; sx += 14) { buffer.rect(sx, sill - 16, 6, 3, '#3a2a10'); buffer.rect(sx + 2, sill - 13, 2, 6, '#3a2a10') }
-    for (let lx = x0 + 10; lx < x1 - 6; lx += 20) { buffer.rect(lx, roof + 24, 1, 6, CHROME_DARK); buffer.rect(lx - 2, roof + 30, 5, 3, LAMP) }
-  }
-  drawText(buffer, 'OPEN', dx + 18, roof + 40, frame % 6 === 5 ? '#3a3a36' : accent, 1)
-  for (const px of [dx + 4, dx + 62, dx + 106, dx + 132, dx + 176, dx + dw - 8]) buffer.rect(px, roof + 18, 4, sill - roof - 18, CHROME)
-  // the door: glass in a frame of the accent, a chrome handle
-  buffer.rect(dx + 110, roof + 20, 22, sill - roof - 20, accent)
-  buffer.rect(dx + 113, roof + 23, 16, sill - roof - 26, WARM)
-  buffer.rect(dx + 124, roof + 52, 2, 10, CHROME)
-  // the lower band in the accent with chrome trim, the base
-  buffer.rect(dx, sill, dw, base - sill, accent)
-  buffer.rect(dx, sill + 4, dw, 2, CHROME); buffer.rect(dx, base - 8, dw, 2, CHROME)
-  buffer.rect(dx, base - 4, dw, 4, '#3a3a36')
-  // the sidewalk, the street with its centre line, the dark band below
-  buffer.rect(0, base, width, 24, '#3a3a36')
-  for (let tx = 0; tx < width; tx += 24) buffer.rect(tx, base, 1, 24, '#2a2a26')
-  buffer.rect(0, base + 24, width, 48, '#16161a')
-  for (let lx = 0; lx < width; lx += 16) buffer.rect(lx, base + 47, 8, 2, '#3a3a36')
-  buffer.rect(0, base + 72, width, buffer.height - base - 72, '#050510')
-  // cars: one each way, at their own speeds
-  car(buffer, ((frame * 14) % (width + 80)) - 40, base + 28, '#d92d2d', 1)
-  car(buffer, width + 20 - ((frame * 9 + 120) % (width + 80)), base + 52, '#f2c33c', -1)
-  if (options.hero !== false) {
-    // the eater on the sidewalk, crawling to the door over a trail of little burgers
-    const head = 96 + ((frame * 5) % 100)
-    for (const bx2 of [150, 185, 220]) if (bx2 > head + 6) buffer.blit(MINI_BURGER, bx2, base + 12, MINI_BURGER_PALETTE)
-    drawEater(buffer, head, base + 6, 'right', accent, frame, 2)
-  }
-}
-
-// ---------------------------------------------------------------- the store (CATCHER)
-
-/** A shelf of goods behind glass: boards, and boxes of colour on them. */
-function shelves(buffer: PixelBuffer, x0: number, y0: number, w: number, h: number, seed: number): void {
-  const next = rng(seed)
-  buffer.rect(x0, y0, w, h, '#141c2c')
-  for (let sy = y0 + 18; sy < y0 + h; sy += 22) {
-    buffer.rect(x0, sy, w, 2, CHROME_DARK)
-    for (let gx = x0 + 3; gx < x0 + w - 6; gx += 8) buffer.rect(gx, sy - 9 + Math.floor(next() * 3), 5, 9 - Math.floor(next() * 3), GOODS[Math.floor(next() * GOODS.length)])
-  }
-}
-
-/**
- * A little convenience store at night, seen from the sidewalk: the sign
- * and the striped awning in the accent, two windows full of shelves, a
- * drinks fridge, the door with its OPEN neon, a vending machine outside;
- * the burger waiting at the door, a customer coming.
- */
-function drawStoreScene(buffer: PixelBuffer, accent: string, frame: number, options: { hero?: boolean } = {}): void {
-  const { width, height } = buffer
-  buffer.clear(NIGHT)
-  stars(buffer, frame, 5, 30, 130)
-  const sx = 32, sw = 384, signTop = 142, awningTop = 162, wallTop = 181, sill = 262, base = 292
-  // the sign
-  buffer.rect(sx, signTop, sw, awningTop - signTop, accent)
-  buffer.rect(sx, signTop, sw, 2, dim(accent, 0.6))
-  drawTextCentered(buffer, 'MINI MART', signTop + 5, CREAM, 2)
-  drawText(buffer, '24H', sx + sw - 30, signTop + 7, CREAM, 1)
-  // the awning: stripes, a scalloped edge
-  for (let x = sx; x < sx + sw; x += 16) buffer.rect(x, awningTop, 16, 16, Math.floor((x - sx) / 16) % 2 === 0 ? accent : CREAM)
-  for (let x = sx; x < sx + sw; x += 8) buffer.rect(x + 2, awningTop + 16, 4, 3, Math.floor((x - sx) / 16) % 2 === 0 ? accent : CREAM)
-  // the wall and the glass
-  buffer.rect(sx, wallTop, sw, sill - wallTop, '#1e1e2a')
-  shelves(buffer, sx + 8, wallTop + 4, 156, sill - wallTop - 10, 21)
-  shelves(buffer, sx + 300, wallTop + 4, 76, sill - wallTop - 10, 33)
-  // the drinks fridge: a chrome box, its light on, rows of cans
-  buffer.rect(sx + 222, wallTop + 4, 72, sill - wallTop - 10, CHROME)
-  buffer.rect(sx + 226, wallTop + 8, 64, sill - wallTop - 18, frame % 7 === 6 ? '#2a3a4a' : '#3a5a6a')
-  const cans = rng(44)
-  for (let ry = wallTop + 14; ry < sill - 16; ry += 14) for (let cx = sx + 230; cx < sx + 286; cx += 8) buffer.rect(cx, ry, 5, 9, GOODS[Math.floor(cans() * GOODS.length)])
-  // the door: the frame in the accent, glass, the push bar, the neon
-  buffer.rect(sx + 168, wallTop, 50, sill - wallTop, accent)
-  buffer.rect(sx + 172, wallTop + 4, 42, sill - wallTop - 4, '#141c2c')
-  buffer.rect(sx + 176, wallTop + 44, 34, 3, CHROME)
-  drawText(buffer, 'OPEN', sx + 193 - Math.floor(textWidth('OPEN', 1) / 2), wallTop + 14, frame % 6 === 5 ? '#3a3a36' : accent, 1)
-  // the low wall in brick, the tiles of the sidewalk
-  const brick = dim(accent, 0.28)
-  buffer.rect(sx, sill, sw, base - sill, brick)
-  for (let by = sill; by < base; by += 8) { buffer.rect(sx, by, sw, 1, NIGHT); for (let bx = sx + ((by / 8) % 2 ? 0 : 12); bx < sx + sw; bx += 24) buffer.rect(bx, by, 1, 8, NIGHT) }
-  buffer.rect(0, base, width, height - base, '#2a2a26')
-  for (let tx = 0; tx < width; tx += 32) buffer.rect(tx, base, 1, height - base, '#1e1e1a')
-  buffer.rect(0, base, width, 1, '#4a4a44')
-  // the vending machine at the left, the bin at the right
-  buffer.rect(2, 214, 26, base - 214, accent)
-  buffer.rect(5, 218, 20, 40, frame % 9 === 8 ? '#2a3a4a' : '#7fd4ff')
-  for (let ry = 222; ry < 254; ry += 10) for (let cx = 8; cx < 22; cx += 6) buffer.rect(cx, ry, 4, 7, GOODS[(ry + cx) % GOODS.length])
-  buffer.rect(8, 262, 14, 3, CREAM); buffer.rect(8, 270, 14, 12, '#121210')
-  buffer.rect(width - 26, 270, 18, base - 270, GREY); buffer.rect(width - 28, 268, 22, 3, '#5a5a52')
-  if (options.hero !== false) {
-    // the burger at the door, sweating, and a customer coming down the sidewalk
-    const bounce = frame % 2 === 0 ? 0 : 3
-    buffer.blit(BURGER[frame % 2], sx + 178, base - 32 - bounce, BURGER_PALETTE, { scale: 2 })
-    buffer.rect(sx + 212, base - 26 - bounce, 2, 4, '#7fd4ff')
-    const walker = width - 40 - ((frame * 6) % 200)
-    buffer.blit(HUMAN[frame % 2], walker, base - 32, humanPalette(HUMAN_COLORS[1]), { scale: 2, flipX: true })
-    buffer.blit(HUMAN[(frame + 1) % 2], 40 + ((frame * 4) % 120), base - 32, humanPalette(HUMAN_COLORS[3]), { scale: 2 })
-  }
-}
-
-// ---------------------------------------------------------------- pieces
-
-function drawHud(buffer: PixelBuffer, accent: string, level: number, score: number, lives: number): void {
-  buffer.rect(0, 0, buffer.width, HUD_ROWS * CELL, BG)
-  drawText(buffer, `LV ${level}`, 8, 10, accent, 2)
-  drawTextCentered(buffer, String(score).padStart(5, '0'), 10, CREAM, 2)
-  const hearts = '♥'.repeat(lives)
-  drawText(buffer, hearts, buffer.width - 40 - textWidth(hearts, 2), 10, '#d90845', 2)
-  buffer.rect(buffer.width - 26, 8, 4, 14, accent)
-  buffer.rect(buffer.width - 18, 8, 4, 14, accent)
-}
-
-/**
- * The maze as the aisles of the store: every wall cell inside is a shelf
- * unit with goods on its boards; the outer ring is the store's wall in the
- * accent's shade. Corridors stay black, so the way reads at a glance.
- */
-function drawAisles(buffer: PixelBuffer, top: number, accent: string): void {
-  const wall = dim(accent, 0.3), wallEdge = dim(accent, 0.55)
-  const isWall = (x: number, y: number) => y >= 0 && y < MAZE_HEIGHT && x >= 0 && x < MAZE_WIDTH && MAZE[y][x] === '#'
-  const next = rng(77)
-  MAZE.forEach((row, y) => {
-    for (let x = 0; x < row.length; x += 1) {
-      if (row[x] !== '#') continue
-      const px = x * CELL, py = top + y * CELL
-      const outer = x === 0 || y === 0 || x === MAZE_WIDTH - 1 || y === MAZE_HEIGHT - 1
-      if (outer) {
-        buffer.rect(px, py, CELL, CELL, wall)
-        if (!isWall(x, y - 1)) buffer.rect(px, py, CELL, 2, wallEdge)
-        if (!isWall(x, y + 1)) buffer.rect(px, py + CELL - 2, CELL, 2, wallEdge)
-        if (!isWall(x - 1, y)) buffer.rect(px, py, 2, CELL, wallEdge)
-        if (!isWall(x + 1, y)) buffer.rect(px + CELL - 2, py, 2, CELL, wallEdge)
-        continue
-      }
-      // a shelf unit: the boards run on into the next unit, two boxes of goods on each board
-      const joinLeft = isWall(x - 1, y) && x - 1 > 0, joinRight = isWall(x + 1, y) && x + 1 < MAZE_WIDTH - 1
-      buffer.rect(px + (joinLeft ? 0 : 1), py + 1, CELL - (joinLeft ? 0 : 1) - (joinRight ? 0 : 1), CELL - 2, '#15151c')
-      for (const sy of [py + 7, py + 14]) {
-        buffer.rect(px + (joinLeft ? 0 : 1), sy, CELL - (joinLeft ? 0 : 1) - (joinRight ? 0 : 1), 1, CHROME_DARK)
-        for (const gx of [px + 3, px + 9]) buffer.rect(gx, sy - 5, 4, 5, GOODS[Math.floor(next() * GOODS.length)])
-      }
-    }
+  // traffic: a car in each lane, each at its own speed and way
+  const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
+  s.road.lanes.forEach((y, i) => {
+    const dir: 1 | -1 = i % 2 === 0 ? 1 : -1
+    const span = W + 120
+    const pos = ((frame * (i === 0 ? 11 : 8) + (i === 0 ? 40 : 200)) % span) - 60
+    car(buffer, dir === 1 ? pos : W - pos - 52, y, colors[i % colors.length], dir)
   })
+  if (options.hero) {
+    if (game === 'catcher') {
+      // the burger at the door, chomping; one of the humans looking in at the window
+      const door = bx + Math.round(bw / 2)
+      buffer.blit(BURGER[frame % 2], door - 8, s.ground - 13, BURGER_PALETTE)
+      const shopper = layout === 'landscape' ? bx + bw - 44 : bx + bw - 34
+      buffer.blit(HUMAN[frame % 2], shopper, s.ground - 13, humanPalette(1))
+    } else {
+      // the eater crawling to the door, burgers on his way
+      const door = bx + Math.round(bw / 2)
+      const head = door - 26 + (frame % 4) * 2
+      drawCrawler(buffer, head, s.ground - 2, accent, frame, layout === 'landscape' ? 2 : 1)
+      buffer.blit(MINI_BURGER, head + 22, s.ground + 3, MINI_BURGER_PALETTE)
+      if (layout === 'landscape') buffer.blit(MINI_BURGER, head + 46, s.ground + 3, MINI_BURGER_PALETTE)
+    }
+  }
+  return s
 }
 
-function drawPanel(buffer: PixelBuffer, x: number, y: number, width: number, height: number, accent: string): void {
-  buffer.rect(x, y, width, height, '#0a0a0a')
-  buffer.rect(x, y, width, 2, accent); buffer.rect(x, y + height - 2, width, 2, accent)
-  buffer.rect(x, y, 2, height, accent); buffer.rect(x + width - 2, y, 2, height, accent)
+/** The eater on a street, crawling right: legs, `torso` pieces, shoulders with their arms, the head at `x`. */
+function drawCrawler(buffer: PixelBuffer, x: number, y: number, accent: string, frame: number, torso: number): void {
+  const palette = eaterPalette(accent)
+  const shirt = tubePiece('right', 'left', { pattern: 'plain', cloth: accent, print: accent })
+  let cx = x - (torso + 2) * CELL
+  buffer.blit(CRAWL_LEGS[frame % 2], cx, y, palette); cx += CELL
+  for (let i = 0; i < torso; i += 1) { const t = tubePiece('right', 'left', torsoLook(i)); buffer.blit(t.sprite, cx, y, t.palette); cx += CELL }
+  buffer.blit(shirt.sprite, cx, y, shirt.palette); buffer.blit(CRAWL_ARMS[frame % 2], cx, y, palette); cx += CELL
+  buffer.blit(CRAWL_HEAD, cx, y, palette)
+}
+
+/** The marks: RANDOM at the top, then CATCHER's letters in volume (EATER's neon hangs on its diner). */
+function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, frame: number): void {
+  const W = buffer.width
+  drawLogo(buffer, Math.round(W / 2 - LOGO_WIDTH / 2) + 1, s.randomY + 1, INK)
+  drawLogo(buffer, Math.round(W / 2 - LOGO_WIDTH / 2), s.randomY, game === 'catcher' ? mix(accent, CREAM, 0.15) : mix(accent, CREAM, 0.15))
+  if (game === 'catcher') {
+    const size = catcherLogoSize(s.markSize)
+    drawCatcherLogo(buffer, Math.round(W / 2 - size.width / 2), s.markY, accent, s.markSize, frame)
+  }
 }
 
 // ---------------------------------------------------------------- screens
 
-export function renderTitle(game: Game, accent: string, options: { level?: number; best?: number; frame?: number; blink?: boolean } = {}): PixelBuffer {
-  const { width, height } = canvasSize(game)
-  const buffer = new PixelBuffer(width, height, BG)
+export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean }
+
+export function renderTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
+  const { width, height } = SCENE_SIZE[layout]
+  const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  if (game === 'catcher') {
-    drawStoreScene(buffer, accent, frame)
-    drawCatcherLogo(buffer, Math.floor((width - CATCHER_LOGO_WIDTH) / 2), MARK_TOP, accent, frame)
+  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: true, marks: true, building: true })
+  drawMarks(buffer, game, s, accent, frame)
+  pressStart(buffer, width / 2, s.press, accent, options.blink !== false)
+  const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
+  if (s.info === 'top') {
+    infoLine(buffer, 8, 8, 'LEVEL', level, 'left')
+    infoLine(buffer, width - 8, 8, 'BEST', best, 'right')
   } else {
-    drawDinerScene(buffer, accent, frame)
+    infoLine(buffer, width / 2 - 8, s.press + 18, 'LEVEL', level, 'right')
+    infoLine(buffer, width / 2 + 8, s.press + 18, 'BEST', best, 'left')
   }
-  drawLogoCentered(buffer, LOGO_TOP, accent, 2)
-  if (options.blink !== false) drawTextCentered(buffer, 'PRESS PLAY', height - 40, CREAM, 2)
-  drawTextCentered(buffer, `LEVEL ${options.level ?? 1}   BEST ${String(options.best ?? 0).padStart(5, '0')}`, height - 18, GREY, 1)
   return buffer
 }
 
-/** A moment of RANDOM CATCHER: the aisles, the pellets, the burger, the humans, the sauces. */
-export function renderCatcherPlay(accent: string, options: { level?: number; score?: number; lives?: number; frame?: number } = {}): PixelBuffer {
-  const { width, height } = canvasSize('catcher')
-  const buffer = new PixelBuffer(width, height, BG)
+export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean }
+
+/**
+ * GAME OVER: the game's night street with nothing in front — no building,
+ * no hero — a shade darker, and in the sky the verdict in arcade letters,
+ * the score, PLAY AGAIN? and the two framed answers.
+ */
+export function renderGameOver(game: Game, layout: Layout, accent: string, options: OverOptions = {}): PixelBuffer {
+  const { width, height } = SCENE_SIZE[layout]
+  const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  drawHud(buffer, accent, options.level ?? 1, options.score ?? 120, options.lives ?? 3)
-  const top = HUD_ROWS * CELL
-  drawAisles(buffer, top, accent)
-  MAZE.forEach((row, y) => {
+  drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: false, marks: false, building: false })
+  buffer.shade(0, 0, width, height, 0.6)
+  const c = width / 2
+  const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
+  const chosen = options.blink !== false
+  if (layout === 'landscape') {
+    arcadeText(buffer, 'GAME OVER', c, 34, 4, accent)
+    infoLine(buffer, c - 10, 76, 'SCORE', score, 'right')
+    infoLine(buffer, c + 10, 76, 'BEST', best, 'left')
+    arcadeText(buffer, 'PLAY AGAIN?', c, 98, 2, accent)
+    button(buffer, 'YES', c - 30, 122, accent, chosen)
+    button(buffer, 'NO', c + 30, 122, accent, false)
+  } else {
+    arcadeText(buffer, 'GAME', c, 56, 5, accent)
+    arcadeText(buffer, 'OVER', c, 100, 5, accent)
+    infoLine(buffer, c, 150, 'SCORE', score, 'centre')
+    infoLine(buffer, c, 164, 'BEST', best, 'centre')
+    arcadeText(buffer, 'PLAY AGAIN?', c, 188, 2, accent)
+    button(buffer, 'YES', c - 30, 212, accent, chosen)
+    button(buffer, 'NO', c + 30, 212, accent, false)
+  }
+  return buffer
+}
+
+// ---------------------------------------------------------------- play
+
+export type PlayOptions = { level?: number; score?: number; lives?: number; frame?: number; floor?: Floor }
+
+const FLOOR = '#141829'
+const SHELF = { top: '#8c92ab', light: '#b8bdd0', shadow: '#555b76', line: '#6c728c' }
+
+/** Cells of the maze that are outside the store: spaces no one can reach. */
+function outsideCells(maze: readonly string[]): Set<string> {
+  const [start] = cellsOnGrid(maze, 'B')
+  const reach = reachableOn(maze, start)
+  const out = new Set<string>()
+  maze.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (row[x] !== '#' && !reach.has(`${x},${y}`)) out.add(`${x},${y}`) })
+  return out
+}
+
+function cellsOnGrid(maze: readonly string[], char: string): Cell[] {
+  const cells: Cell[] = []
+  maze.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (row[x] === char) cells.push({ x, y }) })
+  return cells
+}
+
+/** Every walkable cell from `start`; the tunnels wrap round on the axis they run along. */
+function reachableOn(maze: readonly string[], start: Cell): Set<string> {
+  const h = maze.length, w = maze[0].length
+  const seen = new Set<string>([`${start.x},${start.y}`])
+  const queue: Cell[] = [start]
+  while (queue.length) {
+    const { x, y } = queue.shift()!
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = (x + dx + w) % w, ny = (y + dy + h) % h
+      if (maze[ny][nx] === '#') continue
+      const key = `${nx},${ny}`
+      if (!seen.has(key)) { seen.add(key); queue.push({ x: nx, y: ny }) }
+    }
+  }
+  return seen
+}
+
+/**
+ * The store seen from above: a plain floor, the store's wall round the
+ * edge, and every wall inside a shelf unit — a grey block with a lit
+ * edge, a shadowed edge and the line of its back panel down the middle,
+ * its ends capped in the accent. No goods on them: nothing round the
+ * characters but the way.
+ */
+function drawAisles(buffer: PixelBuffer, maze: readonly string[], top: number, accent: string): void {
+  const h = maze.length, w = maze[0].length
+  const outside = outsideCells(maze)
+  const wallish = (x: number, y: number) => x < 0 || y < 0 || x >= w || y >= h || maze[y][x] === '#' || outside.has(`${x},${y}`)
+  const outer = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return true
+    if (outside.has(`${x},${y}`)) return true
+    if (maze[y][x] !== '#') return false
+    for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+      const nx = x + dx, ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h || outside.has(`${nx},${ny}`)) return true
+    }
+    return false
+  }
+  const wallTone = '#0b0d18', wallEdge = dim(accent, 0.6)
+  buffer.rect(0, top, w * CELL, h * CELL, FLOOR)
+  // the store's wall, with a line of the accent where it meets the floor
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    if (!outer(x, y)) continue
+    const px = x * CELL, py = top + y * CELL
+    buffer.rect(px, py, CELL, CELL, wallTone)
+    if (!wallish(x, y - 1)) buffer.rect(px, py, CELL, 2, wallEdge)
+    if (!wallish(x, y + 1)) buffer.rect(px, py + CELL - 2, CELL, 2, wallEdge)
+    if (!wallish(x - 1, y)) buffer.rect(px, py, 2, CELL, wallEdge)
+    if (!wallish(x + 1, y)) buffer.rect(px + CELL - 2, py, 2, CELL, wallEdge)
+  }
+  // the shelves: each cell's block runs on into a neighbour shelf, stands back three pixels from the floor
+  const shelf = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && maze[y][x] === '#' && !outer(x, y)
+  const inset = 3
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    if (!shelf(x, y)) continue
+    const px = x * CELL, py = top + y * CELL
+    const l = wallish(x - 1, y) ? 0 : inset, r = wallish(x + 1, y) ? 0 : inset
+    const t = wallish(x, y - 1) ? 0 : inset, b = wallish(x, y + 1) ? 0 : inset
+    buffer.rect(px + l, py + t, CELL - l - r, CELL - t - b, SHELF.top)
+    if (t) buffer.rect(px + l, py + t, CELL - l - r, 1, SHELF.light)
+    if (l) buffer.rect(px + l, py + t, 1, CELL - t - b, SHELF.light)
+    if (b) buffer.rect(px + l, py + CELL - b - 2, CELL - l - r, 2, SHELF.shadow)
+    if (r) buffer.rect(px + CELL - r - 1, py + t, 1, CELL - t - b, SHELF.shadow)
+    // the back panel down the middle, along the shelf's longer run
+    const horizontal = shelf(x - 1, y) || shelf(x + 1, y)
+    const vertical = shelf(x, y - 1) || shelf(x, y + 1)
+    if (horizontal || !vertical) buffer.rect(px + l + (l ? 2 : 0), py + 7, CELL - l - r - (l ? 2 : 0) - (r ? 2 : 0), 1, SHELF.line)
+    if (vertical && !horizontal) buffer.rect(px + 7, py + t + (t ? 2 : 0), 1, CELL - t - b - (t ? 2 : 0) - (b ? 3 : 0), SHELF.line)
+    // an end of a run: capped in the accent
+    if (horizontal && !shelf(x - 1, y) && l) buffer.rect(px + l, py + t + 1, 2, CELL - t - b - 3, accent)
+    if (horizontal && !shelf(x + 1, y) && r) buffer.rect(px + CELL - r - 3, py + t + 1, 2, CELL - t - b - 3, accent)
+    if (vertical && !horizontal && !shelf(x, y - 1) && t) buffer.rect(px + l + 1, py + t, CELL - l - r - 2, 2, accent)
+    if (vertical && !horizontal && !shelf(x, y + 1) && b) buffer.rect(px + l + 1, py + CELL - b - 4, CELL - l - r - 2, 2, accent)
+  }
+  // the humans' back room: its door, a cream line across the opening
+  const walkable = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && maze[y][x] !== '#' && maze[y][x] !== 'H' && !outside.has(`${x},${y}`)
+  for (const { x, y } of cellsOnGrid(maze, 'H')) {
+    const px = x * CELL, py = top + y * CELL
+    const isH = (xx: number, yy: number) => maze[yy]?.[xx] === 'H'
+    if ((isH(x, y + 1) && walkable(x, y - 1)) || (isH(x, y - 1) && walkable(x, y + 1))) buffer.rect(px, py + 7, CELL, 2, CREAM)
+    else if ((isH(x + 1, y) && walkable(x - 1, y)) || (isH(x - 1, y) && walkable(x + 1, y))) buffer.rect(px + 7, py, 2, CELL, CREAM)
+  }
+}
+
+/** A moment of RANDOM CATCHER: the aisles, the seeds, a few ingredients, the sauces, the burger, the humans. */
+function renderCatcherPlay(layout: Layout, accent: string, options: PlayOptions): PixelBuffer {
+  const { width, height } = playSize(layout)
+  const buffer = new PixelBuffer(width, height, INK)
+  const frame = options.frame ?? 0
+  const maze = mazeFor(layout)
+  const tall = layout === 'portrait'
+  const at = (x: number, y: number): [number, number] => (tall ? [y, x] : [x, y])
+  const top = HUD_HEIGHT
+  drawAisles(buffer, maze, top, accent)
+  // the way the burger came: along the top, down, then right along the long corridor
+  const trail: Array<[number, number]> = [[1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [6, 2], [6, 3], [6, 4], [7, 4], [8, 4]]
+  const eaten = new Set(trail.map(([x, y]) => at(x, y).join(',')))
+  const items = new Map<string, readonly string[]>([[at(21, 4).join(','), TOMATO], [at(1, 14).join(','), PICKLE], [at(26, 18).join(','), ONION], [at(12, 14).join(','), TOMATO], [at(23, 18).join(','), PICKLE]])
+  maze.forEach((row, y) => {
     for (let x = 0; x < row.length; x += 1) {
-      const char = row[x], px = x * CELL, py = top + y * CELL
-      if (char === '.') buffer.blit(PELLET, px + 6, py + 6, { w: CREAM })
-      else if (char === 'S') buffer.blit(SAUCE, px + 2, py + 2, SAUCE_PALETTE)
+      const px = x * CELL, py = top + y * CELL
+      const key = `${x},${y}`
+      if (row[x] === '.' && !eaten.has(key)) {
+        const item = items.get(key)
+        if (item) buffer.blit(item, px + 3, py + 3, ITEM_PALETTE)
+        else buffer.blit(PELLET, px + 6, py + 6, PELLET_PALETTE)
+      } else if (row[x] === 'S') buffer.blit(SAUCE, px + 2, py + 1, SAUCE_PALETTE)
     }
   })
-  const spots = [[2, 1], [6, 4], [13, 6], [21, 4], [25, 1], [9, 14], [18, 18]] as const
-  spots.forEach(([x, y], index) => { buffer.rect(x * CELL, top + y * CELL, CELL, CELL, BG); buffer.blit([TOMATO, PICKLE, ONION][index % 3], x * CELL + 2, top + y * CELL + 3, ITEM_PALETTE) })
-  const [start] = cellsOf('B')
-  buffer.rect(start.x * CELL, top + start.y * CELL, CELL, CELL, BG)
-  buffer.blit(BURGER[frame % 2], start.x * CELL, top + start.y * CELL, BURGER_PALETTE)
-  cellsOf('H').slice(0, 4).forEach((cell, index) => buffer.blit(HUMAN[(index + frame) % 2], cell.x * CELL, top + cell.y * CELL, humanPalette(HUMAN_COLORS[index])))
-  buffer.blit(HUMAN[frame % 2], 6 * CELL, top + 6 * CELL, humanPalette(HUMAN_COLORS[1]))
+  // the burger in the long corridor, two humans out in the aisles, two waiting in the back room
+  const [bx, by] = at(9, 4)
+  buffer.blit(BURGER[frame % 2], bx * CELL, top + by * CELL, BURGER_PALETTE)
+  const humans: Array<[number, number]> = [[21, 6], [6, 14], [12, 10], [15, 10]]
+  humans.forEach(([x, y], i) => { const [hx, hy] = at(x, y); buffer.blit(HUMAN[(frame + i) % 2], hx * CELL, top + hy * CELL, humanPalette(i)) })
+  hud(buffer, accent, { level: options.level ?? 1, score: options.score ?? 0, lives: options.lives ?? 3 })
+  if (tall) dpad(buffer, width / 2, HUD_HEIGHT + MAZE_WIDTH * CELL + DPAD_HEIGHT / 2, 26, accent)
   return buffer
 }
 
-/** A moment of RANDOM EATER: the diner's checkered floor in a frame, the eater stretched with a bend, mini burgers to eat. */
-export function renderEaterPlay(accent: string, options: { level?: number; score?: number; lives?: number; frame?: number } = {}): PixelBuffer {
-  const { width, height } = canvasSize('eater')
-  const buffer = new PixelBuffer(width, height, BG)
-  const frame = options.frame ?? 0
-  drawHud(buffer, accent, options.level ?? 1, options.score ?? 70, options.lives ?? 1)
-  const top = HUD_ROWS * CELL
-  for (let y = top; y < height; y += CELL) for (let x = 0; x < width; x += CELL) buffer.rect(x, y, CELL, CELL, ((x + y - top) / CELL) % 2 === 0 ? '#0c0c0c' : '#000000')
-  buffer.rect(0, top, width, 2, accent); buffer.rect(0, height - 2, width, 2, accent); buffer.rect(0, top, 2, height - top, accent); buffer.rect(width - 2, top, 2, height - top, accent)
-  // the body: the head going up at column 9, the shoulders, two pieces up, then the bend and four pieces along row 12, the legs at the end
-  const palette = eaterPalette(accent)
-  const at = (cx: number, cy: number): [number, number] => [cx * CELL, top + cy * CELL]
-  let [x, y] = at(9, 8); buffer.blit(facing(CRAWL_HEAD, 'up'), x, y, palette)
-  ;[x, y] = at(9, 9); buffer.blit(facing(CRAWL_SHOULDERS[frame % 2], 'up'), x, y, palette)
-  const trail: Array<[number, number, Direction]> = [[9, 10, 'up'], [9, 11, 'up'], [9, 12, 'up'], [8, 12, 'right'], [7, 12, 'right'], [6, 12, 'right']]
-  trail.forEach(([cx, cy, dir], index) => { const look = torsoLook(index, accent); [x, y] = at(cx, cy); buffer.blit(facing(look.sprite, dir), x, y, { ...palette, ...look.palette }) })
-  ;[x, y] = at(5, 12); buffer.blit(facing(CRAWL_LEGS[frame % 2], 'right'), x, y, palette)
-  for (const [cx, cy] of [[9, 4], [17, 15], [3, 19], [20, 4]] as const) { [x, y] = at(cx, cy); buffer.blit(MINI_BURGER, x + 2, y + 4, MINI_BURGER_PALETTE) }
-  return buffer
-}
-
-export function renderPlay(game: Game, accent: string, options: { level?: number; score?: number; lives?: number; frame?: number } = {}): PixelBuffer {
-  return game === 'catcher' ? renderCatcherPlay(accent, options) : renderEaterPlay(accent, options)
-}
-
-export type Outcome = 'won' | 'lost'
-/** The end: the game's scene behind, the marks, a panel with the verdict, the score and the two choices. */
-export function renderEnd(game: Game, accent: string, outcome: Outcome, options: { score?: number; level?: number; frame?: number } = {}): PixelBuffer {
-  const { width, height } = canvasSize(game)
-  const buffer = new PixelBuffer(width, height, BG)
-  const frame = options.frame ?? 0
-  let py: number
-  if (game === 'catcher') {
-    drawStoreScene(buffer, accent, frame, { hero: false })
-    drawCatcherLogo(buffer, Math.floor((width - CATCHER_LOGO_WIDTH) / 2), MARK_TOP, accent, frame)
-    py = MARK_TOP + CATCHER_LOGO_HEIGHT + 4
-  } else {
-    drawDinerScene(buffer, accent, frame, { hero: false })
-    py = 114 + EATER_LOGO_HEIGHT + 20
+/** The diner's floor under the eater: dark and plain, or tiles in two close darks with their grout and a glint. */
+function drawDinerFloor(buffer: PixelBuffer, cols: number, rows: number, top: number, accent: string, floor: Floor): void {
+  const W = cols * CELL, H = rows * CELL
+  const chrome = '#c9ccd8', chromeDark = '#6a6e84'
+  buffer.rect(0, top, W, H, '#16122a')
+  if (floor === 'tiles') {
+    for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) {
+      const px = x * CELL, py = top + y * CELL
+      const light = (x + y) % 2 === 0
+      buffer.rect(px, py, CELL, CELL, light ? '#26213c' : '#141026')
+      buffer.rect(px, py, CELL, 1, '#0e0b1c'); buffer.rect(px, py, 1, CELL, '#0e0b1c')
+      if (light) { buffer.rect(px + 3, py + 3, 3, 1, '#34304c'); buffer.set(px + 3, py + 4, '#34304c') }
+    }
   }
-  drawLogoCentered(buffer, LOGO_TOP, accent, 2)
-  const panelW = Math.min(width - 32, 300), panelH = 112
-  const px = Math.floor((width - panelW) / 2)
-  py = Math.min(py, height - panelH - 16)
-  drawPanel(buffer, px, py, panelW, panelH, accent)
-  const title = outcome === 'won' ? (game === 'eater' ? 'LEVEL UP' : 'LEVEL CLEAR') : 'GAME OVER'
-  drawTextCentered(buffer, title, py + 14, outcome === 'won' ? accent : '#d90845', 3)
-  drawTextCentered(buffer, `SCORE ${String(options.score ?? 0).padStart(5, '0')}`, py + 44, CREAM, 2)
-  drawTextCentered(buffer, `LEVEL ${options.level ?? 1}`, py + 62, GREY, 1)
-  const left = outcome === 'won' ? 'CONTINUER' : 'REJOUER', right = outcome === 'won' ? 'QUITTER' : 'CONTINUER'
-  const half = Math.floor(width / 2)
-  drawText(buffer, `> ${left}`, half - textWidth(`> ${left}`, 2) - 10, py + 84, accent, 2)
-  drawText(buffer, right, half + 10, py + 84, GREY, 2)
+  // the counter round the edge: chrome, a neon line in the accent where it meets the floor
+  const ring = CELL
+  buffer.rect(0, top, W, ring, chromeDark); buffer.rect(0, top + H - ring, W, ring, chromeDark)
+  buffer.rect(0, top, ring, H, chromeDark); buffer.rect(W - ring, top, ring, H, chromeDark)
+  buffer.rect(2, top + 2, W - 4, 3, chrome); buffer.rect(2, top + H - 5, W - 4, 3, chrome)
+  buffer.rect(2, top + 2, 3, H - 4, chrome); buffer.rect(W - 5, top + 2, 3, H - 4, chrome)
+  buffer.rect(ring - 3, top + ring - 3, W - 2 * ring + 6, 2, accent); buffer.rect(ring - 3, top + H - ring + 1, W - 2 * ring + 6, 2, accent)
+  buffer.rect(ring - 3, top + ring - 3, 2, H - 2 * ring + 6, accent); buffer.rect(W - ring + 1, top + ring - 3, 2, H - 2 * ring + 6, accent)
+  buffer.rect(ring - 1, top + ring - 1, W - 2 * ring + 2, 1, mix(accent, '#000000', 0.5))
+}
+
+/** The eater's body on the board, from the head back: every cell knows the way to the head and the way to the legs. */
+const EATER_PATH: ReadonlyArray<[number, number]> = [
+  [18, 6], [17, 6], [16, 6], [15, 6], [14, 6], [13, 6], [13, 7], [13, 8], [13, 9], [13, 10], [12, 10], [11, 10], [10, 10], [9, 10], [9, 11], [9, 12], [9, 13], [10, 13], [11, 13], [11, 14],
+]
+
+function toward([ax, ay]: readonly [number, number], [bx, by]: readonly [number, number]): Direction {
+  if (bx > ax) return 'right'
+  if (bx < ax) return 'left'
+  return by > ay ? 'down' : 'up'
+}
+
+/** A moment of RANDOM EATER: the diner's floor inside its counter, the eater bending round, a burger ahead. */
+function renderEaterPlay(layout: Layout, accent: string, options: PlayOptions): PixelBuffer {
+  const { width, height } = playSize(layout)
+  const buffer = new PixelBuffer(width, height, INK)
+  const frame = options.frame ?? 0
+  const tall = layout === 'portrait'
+  const { cols, rows } = boardSize(layout)
+  const top = HUD_HEIGHT
+  drawDinerFloor(buffer, cols, rows, top, accent, options.floor ?? 'plain')
+  const path = EATER_PATH.map(([x, y]) => (tall ? [y, x] : [x, y]) as [number, number])
+  const place = ([x, y]: readonly [number, number]): [number, number] => [x * CELL, top + y * CELL]
+  const palette = eaterPalette(accent)
+  const n = path.length
+  // legs first, then the tube from the back to the front, then the head over its neck
+  const legsDir = toward(path[n - 1], path[n - 2])
+  buffer.blit(facing(CRAWL_LEGS[frame % 2], legsDir), ...place(path[n - 1]), palette)
+  for (let i = n - 2; i >= 1; i -= 1) {
+    const front = toward(path[i], path[i - 1]), back = toward(path[i], path[i + 1])
+    const look = i === 1 ? { pattern: 'plain' as const, cloth: accent, print: accent } : torsoLook(i - 2)
+    const piece = tubePiece(front, back, look)
+    buffer.blit(piece.sprite, ...place(path[i]), piece.palette)
+    if (i === 1) buffer.blit(facing(CRAWL_ARMS[frame % 2], front), ...place(path[i]), palette)
+  }
+  buffer.blit(facing(CRAWL_HEAD, toward(path[1], path[0])), ...place(path[0]), palette)
+  const food = tall ? [6, 22] : [22, 6]
+  buffer.blit(MINI_BURGER, food[0] * CELL + 2, top + food[1] * CELL + 3, MINI_BURGER_PALETTE)
+  hud(buffer, accent, { level: options.level ?? 1, score: options.score ?? 0, progress: [7, 12] })
+  if (tall) dpad(buffer, width / 2, HUD_HEIGHT + rows * CELL + DPAD_HEIGHT / 2, 26, accent)
   return buffer
 }
 
-export function renderAll(game: Game, accent: string, frame = 0): Array<{ name: string; buffer: PixelBuffer }> {
-  return [
-    { name: 'titre', buffer: renderTitle(game, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }) },
-    { name: 'jeu', buffer: renderPlay(game, accent, { level: 3, score: 1280, lives: game === 'catcher' ? 2 : 1, frame }) },
-    { name: 'fin-gagne', buffer: renderEnd(game, accent, 'won', { score: 1280, level: 3, frame }) },
-    { name: 'fin-perdu', buffer: renderEnd(game, accent, 'lost', { score: 640, level: 3, frame }) },
-  ]
+export function renderPlay(game: Game, layout: Layout, accent: string, options: PlayOptions = {}): PixelBuffer {
+  return game === 'catcher' ? renderCatcherPlay(layout, accent, options) : renderEaterPlay(layout, accent, options)
 }
+
+// ---------------------------------------------------------------- all of them
+
+export type Shot = { game: Game; layout: Layout; name: string; buffer: PixelBuffer }
+
+/** Every base screen: title, play, GAME OVER, each wide and tall; EATER's play twice, on each floor. */
+export function renderAll(accent: string, frame = 0): Shot[] {
+  const shots: Shot[] = []
+  for (const game of ['catcher', 'eater'] as Game[]) {
+    for (const layout of LAYOUTS) {
+      shots.push({ game, layout, name: 'titre', buffer: renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }) })
+      if (game === 'catcher') shots.push({ game, layout, name: 'jeu', buffer: renderPlay(game, layout, accent, { level: 3, score: 1280, lives: 2, frame }) })
+      else for (const floor of ['plain', 'tiles'] as Floor[]) shots.push({ game, layout, name: floor === 'plain' ? 'jeu-sol-uni' : 'jeu-sol-dalles', buffer: renderPlay(game, layout, accent, { level: 3, score: 1280, frame, floor }) })
+      shots.push({ game, layout, name: 'game-over', buffer: renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0 }) })
+    }
+  }
+  return shots
+}
+
