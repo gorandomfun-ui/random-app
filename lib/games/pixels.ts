@@ -146,6 +146,23 @@ export class PixelBuffer {
     })
   }
 
+  /** Copies another buffer onto this one at `x`, `y`, leaving out the pixels of the `key` colour. */
+  stamp(other: PixelBuffer, x: number, y: number, key: string): void {
+    const [kr, kg, kb] = rgbOf(key)
+    for (let yy = 0; yy < other.height; yy += 1) {
+      const ty = y + yy
+      if (ty < 0 || ty >= this.height) continue
+      for (let xx = 0; xx < other.width; xx += 1) {
+        const tx = x + xx
+        if (tx < 0 || tx >= this.width) continue
+        const o = (yy * other.width + xx) * 4
+        if (other.data[o] === kr && other.data[o + 1] === kg && other.data[o + 2] === kb) continue
+        const t = (ty * this.width + tx) * 4
+        this.data[t] = other.data[o]; this.data[t + 1] = other.data[o + 1]; this.data[t + 2] = other.data[o + 2]; this.data[t + 3] = 255
+      }
+    }
+  }
+
   /** How many pixels are not the given colour: a test's way to know something was drawn. */
   countNot(color: string): number {
     const [r, g, b] = rgbOf(color)
