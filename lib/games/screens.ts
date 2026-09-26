@@ -504,22 +504,30 @@ export function renderPlay(game: Game, layout: Layout, accent: string, options: 
 
 // ---------------------------------------------------------------- all of them
 
+export type ShotSpec = { game: Game; layout: Layout; name: string; width: number; height: number; draw: (frame: number) => PixelBuffer }
 export type Shot = { game: Game; layout: Layout; name: string; buffer: PixelBuffer }
 
-/** Every base screen: title, play, GAME OVER, each wide and tall; EATER's play three times — plain, tiled, and a higher level. */
-export function renderAll(accent: string, frame = 0): Shot[] {
-  const shots: Shot[] = []
+/** Every base screen, not drawn yet: title, play, GAME OVER, each wide and tall; EATER's play three times — plain, tiled, and a higher level. */
+export function shotSpecs(accent: string): ShotSpec[] {
+  const specs: ShotSpec[] = []
   for (const game of ['catcher', 'eater'] as Game[]) {
     for (const layout of LAYOUTS) {
-      shots.push({ game, layout, name: 'titre', buffer: renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }) })
-      if (game === 'catcher') shots.push({ game, layout, name: 'jeu', buffer: renderPlay(game, layout, accent, { level: 3, score: 1280, lives: 2, frame }) })
+      const scene = SCENE_SIZE[layout], play = playSize(layout)
+      const add = (name: string, size: { width: number; height: number }, draw: (frame: number) => PixelBuffer) => specs.push({ game, layout, name, width: size.width, height: size.height, draw })
+      add('titre', scene, (frame) => renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }))
+      if (game === 'catcher') add('jeu', play, (frame) => renderPlay(game, layout, accent, { level: 3, score: 1280, lives: 2, frame }))
       else {
-        shots.push({ game, layout, name: 'jeu-sol-uni', buffer: renderPlay(game, layout, accent, { level: 1, score: 320, frame, floor: 'plain' }) })
-        shots.push({ game, layout, name: 'jeu-sol-dalles', buffer: renderPlay(game, layout, accent, { level: 3, score: 1280, frame, floor: 'tiles' }) })
-        shots.push({ game, layout, name: 'jeu-niveau-avance', buffer: renderPlay(game, layout, accent, { level: 6, score: 4820, frame, floor: 'checker', obstacles: true }) })
+        add('jeu-sol-uni', play, (frame) => renderPlay(game, layout, accent, { level: 1, score: 320, frame, floor: 'plain' }))
+        add('jeu-sol-dalles', play, (frame) => renderPlay(game, layout, accent, { level: 3, score: 1280, frame, floor: 'tiles' }))
+        add('jeu-niveau-avance', play, (frame) => renderPlay(game, layout, accent, { level: 6, score: 4820, frame, floor: 'checker', obstacles: true }))
       }
-      shots.push({ game, layout, name: 'game-over', buffer: renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0 }) })
+      add('game-over', scene, (frame) => renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0 }))
     }
   }
-  return shots
+  return specs
+}
+
+/** Every base screen, drawn at one moment. */
+export function renderAll(accent: string, frame = 0): Shot[] {
+  return shotSpecs(accent).map(({ game, layout, name, draw }) => ({ game, layout, name, buffer: draw(frame) }))
 }

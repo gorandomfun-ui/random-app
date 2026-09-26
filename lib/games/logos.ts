@@ -65,7 +65,25 @@ function catcherMask(scale: number): boolean[][] {
  * dark outline round it all, then the face, pale in the accent, a cream
  * bevel along its top and left edges. A drop of sauce on the R.
  */
+const KEY = '#ff00fe'
+const catcherCache = new Map<string, PixelBuffer>()
+
 export function drawCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: string, scale: number, frame = 0): void {
+  // drawn once per accent, size and drip, then stamped: the letters' depth is the costly part
+  const key = `${accent}|${scale}|${frame % 2}`
+  let layer = catcherCache.get(key)
+  if (!layer) {
+    const { width, height } = catcherLogoSize(scale)
+    const pad = Math.round(height * 0.5)
+    layer = new PixelBuffer(width + pad * 2, height + pad, KEY)
+    paintCatcherLogo(layer, pad, 6, accent, scale, frame)
+    catcherCache.set(key, layer)
+  }
+  const pad = Math.round(catcherLogoSize(scale).height * 0.5)
+  buffer.stamp(layer, x - pad, y - 6, KEY)
+}
+
+function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: string, scale: number, frame: number): void {
   const mask = catcherMask(scale)
   const { width, face, height } = catcherLogoSize(scale)
   const depth = height - face
@@ -233,7 +251,23 @@ export function secondNeon(accent: string): string {
  * the second neon. `dark` strokes (by index) are tubes gone out — the
  * flicker of an old sign. Unlit, the tubes are grey glass.
  */
+const eaterCache = new Map<string, PixelBuffer>()
+
 export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, zoom: number, options: { lit?: boolean; dark?: readonly number[]; swashLit?: boolean } = {}): void {
+  // drawn once per accent, size and state of its tubes, then stamped over whatever the sign shows behind
+  const key = `${accent}|${zoom}|${options.lit !== false}|${(options.dark ?? []).join(',')}|${options.swashLit !== false}`
+  let layer = eaterCache.get(key)
+  const pad = Math.round(8 * zoom)
+  if (!layer) {
+    const { width, height } = eaterLogoSize(zoom)
+    layer = new PixelBuffer(width + pad * 2, height + pad * 2, KEY)
+    paintEaterLogo(layer, pad, pad, accent, zoom, options)
+    eaterCache.set(key, layer)
+  }
+  buffer.stamp(layer, x - pad, y - pad, KEY)
+}
+
+function paintEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, zoom: number, options: { lit?: boolean; dark?: readonly number[]; swashLit?: boolean }): void {
   const place = ([px, py]: readonly [number, number]): [number, number] => [x + (px + SLANT * (BASELINE - py)) * zoom, y + py * zoom]
   const rim = 2.9 * zoom, core = 1.3 * zoom
   const strokes = EATER_STROKES.map((chain) => sample(chain).map(place))
@@ -258,7 +292,7 @@ export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent:
       const d = Math.hypot(xx + 0.5 - px, yy + 0.5 - py)
       if (d > r) continue
       seen.add(key)
-      if (dither(xx, yy, 0.55 * (1 - d / r))) buffer.tint(xx, yy, color, 0.35)
+      if (dither(xx, yy, 0.55 * (1 - d / r))) buffer.set(xx, yy, mix('#140e28', color, 0.38))
     }
   }
   // the shadow the tubes throw on the sign behind
