@@ -31,14 +31,14 @@ export type Night = {
 /** CATCHER's night is blue with cream-lit clouds; EATER's is violet with pink on the clouds. */
 export const NIGHTS: Record<'blue' | 'violet', Night> = {
   blue: {
-    sky: ['#040820', '#070e2e', '#0b163e', '#101f50', '#162a64', '#1e3778', '#27448a'],
+    sky: ['#040922', '#081332', '#0e1d46', '#15295c', '#1f3874', '#2c4a8e', '#3d5ea6', '#5374b8'],
     cloudDark: '#1a2a6a', cloud: '#2a409a', cloudLight: '#4462c8', rim: '#f2e2ba', rimBack: '#7f9ee8',
     cities: ['#1b2c70', '#13215a', '#0c1644'], windows: ['#f7c850', '#ffe08a', '#f0a840'],
     sidewalk: '#4a5280', sidewalkLight: '#6e77a6', sidewalkDark: '#363d66', road: '#141a36', line: '#efe0bc',
     leaf: ['#12402c', '#1d6a3c', '#2f8f4a', '#5cbf5a'],
   },
   violet: {
-    sky: ['#06021a', '#0c0526', '#150a36', '#1f0f47', '#2a1658', '#371e68', '#452672'],
+    sky: ['#06021a', '#0e0628', '#190c3a', '#26124c', '#37185e', '#4c1f6c', '#662876', '#86347c', '#a6447e'],
     cloudDark: '#261a58', cloud: '#3a2a80', cloudLight: '#5b40a8', rim: '#ff7fa8', rimBack: '#b07ad8',
     cities: ['#2a1d64', '#1e1450', '#140c3a'], windows: ['#ffb85a', '#5fe3ff', '#ff7aa2', '#ffe08a'],
     sidewalk: '#4a4276', sidewalkLight: '#6e649c', sidewalkDark: '#362f5e', road: '#120d2a', line: '#efe0bc',
@@ -97,39 +97,42 @@ export function moon(buffer: PixelBuffer, cx: number, cy: number, r: number): vo
   for (const [ox, oy, rr] of [[0.55, 0.1, 0.13], [0.35, 0.45, 0.09], [0.62, -0.35, 0.08]] as const) buffer.disc(cx + ox * r, cy + oy * r, rr * r, '#e2cf98')
 }
 
-/** One layer of cloud: puffs on a flat base, a rim of light along the top, a lit band under it, the body, a darker underside. */
-function cloudLayer(buffer: PixelBuffer, x: number, y: number, width: number, seed: number, tones: { rim: string; light: string; body: string; dark: string }): void {
-  const next = rng(seed)
-  const peak = Math.min(30, Math.max(8, width / 4.4))
-  const height = Math.ceil(peak * 1.8) + 4
-  const base = height - 5
-  const count = Math.max(3, Math.round(width / 16))
-  const puffs: Array<[number, number, number]> = []
-  for (let i = 0; i < count; i += 1) {
-    const t = (i + 0.5) / count
-    const r = Math.max(5, peak * (0.4 + 0.6 * Math.sin(Math.PI * Math.pow(t, 0.85))) * (0.78 + next() * 0.4))
-    puffs.push([t * width + (next() - 0.5) * 6, base - r * 0.5, r])
-  }
-  const inside = (px: number, py: number) => py < base + 4 && (puffs.some(([cx, cy, r]) => (px - cx) ** 2 + (py - cy) ** 2 <= r * r) || (py > base - 6 && px > puffs[0][0] && px < puffs[puffs.length - 1][0]))
-  for (let yy = 0; yy < height; yy += 1) for (let xx = -8; xx < width + 8; xx += 1) {
-    const px = xx + 0.5, py = yy + 0.5
-    if (!inside(px, py)) continue
-    let depth = 0
-    while (depth < 8 && inside(px, py - depth - 1)) depth += 1
-    const bottom = yy >= base
-    let color = tones.body
-    if (depth === 0) color = tones.rim
-    else if (depth <= 2) color = tones.light
-    else if (depth <= 4) color = dither(xx, yy, 0.5) ? tones.light : tones.body
-    if (bottom) color = dither(xx, yy, (yy - base) / 4) ? tones.dark : color === tones.rim ? tones.rim : tones.body
-    buffer.set(x + xx, y + yy, color)
-  }
+/** The cloud designs, drawn here as slabs of pixels — x, y, width, height — piled into a mound on a flat base. */
+export const CLOUDS: Record<'big' | 'long' | 'small', ReadonlyArray<readonly [number, number, number, number]>> = {
+  big: [[4, 26, 150, 18], [22, 14, 44, 24], [52, 2, 50, 30], [92, 10, 40, 26], [124, 22, 26, 16], [34, 20, 110, 18]],
+  long: [[0, 16, 118, 12], [10, 8, 30, 16], [34, 0, 36, 22], [64, 6, 30, 18], [90, 11, 20, 12]],
+  small: [[0, 10, 66, 10], [8, 4, 22, 14], [26, 0, 22, 16], [44, 6, 16, 10]],
 }
 
-/** A cloud bank: a paler layer behind, a lit layer in front, lower and a little aside. */
-export function cloud(buffer: PixelBuffer, x: number, y: number, width: number, night: Night, seed: number): void {
-  cloudLayer(buffer, x + Math.round(width * 0.18), y, Math.round(width * 0.7), seed + 31, { rim: night.rimBack, light: night.cloud, body: night.cloudDark, dark: dim(night.cloudDark, 0.85) })
-  cloudLayer(buffer, x, y + Math.round(width * 0.09), width, seed, { rim: night.rim, light: night.cloudLight, body: night.cloud, dark: night.cloudDark })
+/**
+ * A pixel cloud in the manner of the references: slabs piled into a
+ * mound, their corners cut in steps; a rim of light along the top, a lit
+ * band under it and a few lit streaks, the body, a darker base. `flip`
+ * mirrors the design, so the same cloud does not show twice.
+ */
+export function cloud(buffer: PixelBuffer, x: number, y: number, design: keyof typeof CLOUDS, night: Night, flip = false, scale = 1): void {
+  const slabs = CLOUDS[design].map(([sx, sy, w, h]) => [sx * scale, sy * scale, w * scale, h * scale] as const)
+  const W = Math.max(...slabs.map(([sx, , w]) => sx + w)), H = Math.max(...slabs.map(([, sy, , h]) => sy + h))
+  const inside = (px: number, py: number) => slabs.some(([sx, sy, w, h]) => {
+    if (px < sx || py < sy || px >= sx + w || py >= sy + h) return false
+    // the corners cut in two steps
+    const dx = Math.min(px - sx, sx + w - 1 - px), dy = Math.min(py - sy, sy + h - 1 - py)
+    return !((dx === 0 && dy < 3) || (dx === 1 && dy < 1) || (dy === 0 && dx < 3))
+  })
+  for (let py = 0; py < H; py += 1) for (let px = 0; px < W; px += 1) {
+    if (!inside(px, py)) continue
+    let depth = 0
+    while (depth < 6 && inside(px, py - depth - 1)) depth += 1
+    const left = !inside(px - 1, py)
+    let c = night.cloud
+    if (depth === 0) c = px < W * 0.72 ? night.rim : night.cloudLight
+    else if (depth <= 2 || (left && py < H - 6)) c = night.cloudLight
+    else if (depth <= 4) c = dither(px, py, 0.5) ? night.cloudLight : night.cloud
+    if (py >= H - 4) c = py === H - 1 ? dim(night.cloudDark, 0.85) : night.cloudDark
+    // lit streaks across the body, as the references draw them
+    if (depth > 5 && py < H - 5 && (py + Math.floor(px / 23)) % 7 === 0 && px % 23 > 4) c = night.cloudLight
+    buffer.set(flip ? x + W - 1 - px : x + px, y + py, c)
+  }
 }
 
 /** A thin wisp of cloud: a few lines, lit on top. */
@@ -139,55 +142,47 @@ export function wisp(buffer: PixelBuffer, x: number, y: number, width: number, n
   buffer.rect(x + 10, y + 3, width - 24, 1, night.cloudDark)
 }
 
+/** A building of the skyline: where it stands, how wide and high, its kind. */
+export type Building = readonly [number, number, number, 'block' | 'stepped' | 'spire' | 'tank' | 'antenna' | 'twin']
+
 /**
- * The city on three planes from `base` up: a pale far row with a few
- * spires, a middle row with its grids of windows, a near row with roofs
- * — water tanks, antennas with a red light — and more windows lit.
+ * The skyline, drawn building by building rather than at random: a far
+ * row paler in the haze, with a needle tower and stepped crowns; a near
+ * row darker, with its columns of windows, a few lit in the night's warm
+ * tones, water tanks and antennas with a red light on the roofs.
  */
-export function city(buffer: PixelBuffer, night: Night, base: number, tallest: number, seed: number, frame: number): void {
-  const planes = [
-    { color: night.cities[0], scale: 1, lit: 0.1, win: [1, 2] as const, gap: 2 },
-    { color: night.cities[1], scale: 0.78, lit: 0.2, win: [2, 3] as const, gap: 4 },
-    { color: night.cities[2], scale: 0.55, lit: 0.28, win: [3, 4] as const, gap: 8 },
-  ]
-  planes.forEach((plane, layer) => {
-    const next = rng(seed + layer * 97)
-    let x = -10 - Math.floor(next() * 20)
-    while (x < buffer.width) {
-      const w = Math.round((22 + Math.floor(next() * 40)) * (layer === 2 ? 1.2 : 1))
-      const h = Math.floor(tallest * plane.scale * (0.4 + next() * 0.6))
+export function skyline(buffer: PixelBuffer, night: Night, base: number, far: readonly Building[], near: readonly Building[], frame: number): void {
+  const draw = (list: readonly Building[], color: string, plane: 0 | 1, seed: number) => {
+    const next = rng(seed)
+    const edge = mix(color, '#ffffff', plane === 0 ? 0.05 : 0.08)
+    for (const [x, w, h, kind] of list) {
       const top = base - h
-      const edge = mix(plane.color, '#ffffff', 0.07)
-      buffer.rect(x, top, w, h, plane.color)
-      buffer.rect(x, top, 1, h, edge)
-      // roofs: a stepped top, a spire, a water tank, an antenna with its light
-      const roof = next()
-      if (roof < 0.2) { buffer.rect(x + 3, top - 4, w - 6, 4, plane.color); buffer.rect(x + 6, top - 7, w - 12, 3, plane.color) }
-      else if (roof < 0.35 && layer === 0) { buffer.poly([[x + w / 2 - 3, top], [x + w / 2 + 3, top], [x + w / 2, top - 18]], plane.color) }
-      else if (roof < 0.5 && layer > 0) {
-        const tx = x + 4 + Math.floor(next() * Math.max(1, w - 16))
-        buffer.rect(tx, top - 9, 10, 7, plane.color); buffer.rect(tx + 1, top - 2, 1, 2, plane.color); buffer.rect(tx + 8, top - 2, 1, 2, plane.color)
-        buffer.rect(tx - 1, top - 10, 12, 1, edge)
-      } else if (roof < 0.65) {
-        const ax = x + Math.floor(w * 0.6)
-        buffer.rect(ax, top - 14, 1, 14, plane.color)
-        if ((frame + layer) % 3 !== 2) buffer.set(ax, top - 15, '#ff4a4a')
+      buffer.rect(x, top, w, h, color)
+      buffer.rect(x, top, 2, h, edge)
+      if (kind === 'stepped') { buffer.rect(x + Math.round(w * 0.15), top - 14, Math.round(w * 0.7), 14, color); buffer.rect(x + Math.round(w * 0.3), top - 26, Math.round(w * 0.4), 12, color); buffer.rect(x + Math.round(w / 2) - 1, top - 40, 2, 14, color) }
+      if (kind === 'spire') {
+        const cx = x + Math.round(w / 2)
+        buffer.rect(cx - 2, top - 70, 4, 70, color)
+        buffer.poly([[cx - 12, top - 70], [cx + 12, top - 70], [cx + 7, top - 60], [cx - 7, top - 60]], color)
+        buffer.rect(cx - 1, top - 96, 2, 26, color)
+        if (frame % 3 !== 2) buffer.rect(cx - 1, top - 98, 2, 2, '#ff5a5a')
+        for (let k = 0; k < 4; k += 1) buffer.rect(cx - 9 + k * 6, top - 66, 2, 2, mix(color, night.windows[0], 0.5))
       }
-      // windows: a grid, some lit in the night's tones, a few flickering
-      const [ww, wh] = plane.win
-      const stepX = ww + (layer === 0 ? 3 : 4), stepY = wh + (layer === 0 ? 3 : 4)
-      for (let wy = top + 5; wy < base - wh - 2; wy += stepY) for (let wx = x + 4; wx < x + w - ww - 3; wx += stepX) {
-        const on = next() < plane.lit
+      if (kind === 'tank') { const tx = x + Math.round(w * 0.6); buffer.rect(tx, top - 16, 16, 12, color); buffer.poly([[tx - 1, top - 16], [tx + 17, top - 16], [tx + 8, top - 22]], color); buffer.rect(tx + 2, top - 4, 2, 4, color); buffer.rect(tx + 12, top - 4, 2, 4, color) }
+      if (kind === 'antenna') { const ax = x + Math.round(w * 0.3); buffer.rect(ax, top - 30, 2, 30, color); buffer.rect(ax - 4, top - 20, 10, 1, color); if ((frame + x) % 3 !== 1) buffer.rect(ax, top - 32, 2, 2, '#ff5a5a') }
+      if (kind === 'twin') { buffer.rect(x + 4, top - 18, Math.round(w * 0.35), 18, color); buffer.rect(x + w - 4 - Math.round(w * 0.35), top - 18, Math.round(w * 0.35), 18, color) }
+      // windows in columns: the far row a few dim ones, the near row more, lit warm
+      const ww = plane === 0 ? 2 : 3, wh = plane === 0 ? 2 : 4, gx = plane === 0 ? 5 : 7, gy = plane === 0 ? 6 : 9
+      for (let wy = top + 8; wy < base - wh - 4; wy += gy) for (let wx = x + 6; wx < x + w - ww - 4; wx += gx) {
+        const lit = next() < (plane === 0 ? 0.12 : 0.24)
         const tone = night.windows[Math.floor(next() * night.windows.length)]
-        const flicker = next() < 0.05 && frame % 4 === 1
-        if (on && !flicker) {
-          buffer.rect(wx, wy, ww, wh, layer === 0 ? mix(tone, plane.color, 0.55) : tone)
-          if (layer === 2) buffer.rect(wx, wy + wh - 1, ww, 1, dim(tone, 0.75))
-        } else if (layer > 0) buffer.rect(wx, wy, ww, wh, mix(plane.color, '#000000', 0.25))
+        if (lit && !(next() < 0.04 && frame % 4 === 1)) buffer.rect(wx, wy, ww, wh, plane === 0 ? mix(tone, color, 0.5) : tone)
+        else if (plane === 1) buffer.rect(wx, wy, ww, wh, mix(color, '#000000', 0.3))
       }
-      x += w + plane.gap + Math.floor(next() * 6)
     }
-  })
+  }
+  draw(far, night.cities[0], 0, 41)
+  draw(near, night.cities[2], 1, 43)
 }
 
 /** A low railing along the back of the sidewalk: two rails and posts, lit on top. */
@@ -286,41 +281,56 @@ export function hedge(buffer: PixelBuffer, x: number, ground: number, width: num
 }
 
 /**
- * A car from the side, 104 pixels long: the body in two tones with a
+ * A car from the side, 104 × `s` pixels long: the body in two tones with a
  * chrome strip, a cabin with its windows and a glint, door lines and
  * handles, bumpers, wheels with hubcaps, head and tail lights. `dir` 1
  * goes right.
  */
-export function car(buffer: PixelBuffer, x: number, y: number, color: string, dir: 1 | -1): void {
+export function car(buffer: PixelBuffer, x: number, y: number, color: string, dir: 1 | -1, s = 1): void {
   const L = 104
-  const X = (dx: number) => (dir === 1 ? x + dx : x + L - dx)
-  const P = (pts: Array<[number, number]>) => pts.map(([dx, dy]) => [X(dx), y + dy] as [number, number])
-  const R = (dx: number, dy: number, w: number, h: number, c: string) => buffer.rect(dir === 1 ? x + dx : x + L - dx - w, y + dy, w, h, c)
-  const light = mix(color, '#ffffff', 0.35), shade = dim(color, 0.66), glass = '#1a2548', glassLight = '#4a64a8'
-  // outline, then body and cabin
-  buffer.poly(P([[-1, 15], [8, 13], [26, 12], [34, 1], [70, 1], [82, 12], [100, 14], [105, 17], [105, 28], [-1, 28]]), INK)
-  buffer.poly(P([[1, 16], [9, 14], [27, 13], [35, 3], [69, 3], [80, 13], [99, 15], [103, 18], [103, 27], [1, 27]]), color)
-  buffer.poly(P([[1, 16], [9, 14], [99, 15], [103, 18], [103, 19], [1, 19]]), light)
+  const X = (dx: number) => (dir === 1 ? x + dx * s : x + (L - dx) * s)
+  const P = (pts: Array<[number, number]>) => pts.map(([dx, dy]) => [X(dx), y + dy * s] as [number, number])
+  const R = (dx: number, dy: number, w: number, h: number, c: string) => buffer.rect(Math.round(dir === 1 ? x + dx * s : x + (L - dx - w) * s), Math.round(y + dy * s), Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)), c)
+  const light = mix(color, '#ffffff', 0.35), shade = dim(color, 0.66), glass = '#1a2548', glassLight = '#5a74b8'
+  buffer.poly(P([[-1, 15], [8, 12.6], [26, 11.6], [34, 0.6], [70, 0.6], [82, 11.6], [100, 13.6], [105, 16.6], [105, 28.4], [-1, 28.4]]), INK)
+  buffer.poly(P([[1, 16], [9, 14], [27, 13], [35, 2.2], [69, 2.2], [80, 13], [99, 15], [103, 18], [103, 27], [1, 27]]), color)
+  buffer.poly(P([[1, 16], [9, 14], [99, 15], [103, 18], [103, 19.2], [1, 19.2]]), light)
   buffer.poly(P([[1, 23], [103, 23], [103, 27], [1, 27]]), shade)
-  // windows and the pillar between them
-  buffer.poly(P([[30, 13], [37, 5], [51, 5], [51, 13]]), glass)
-  buffer.poly(P([[55, 5], [67, 5], [76, 13], [55, 13]]), glass)
-  buffer.poly(P([[40, 5], [44, 5], [38, 12], [34, 12]]), glassLight)
-  buffer.poly(P([[60, 5], [63, 5], [58, 11], [56, 11]]), glassLight)
-  // door lines, handles, the chrome strip
-  for (const dx of [28, 53, 78]) R(dx, 14, 1, 12, shade)
-  for (const dx of [44, 69]) R(dx, 17, 4, 1, '#d8dce6')
-  R(2, 21, 100, 1, '#c8ccd8')
-  // bumpers, lights
+  buffer.poly(P([[30, 13], [37, 4], [51, 4], [51, 13]]), glass)
+  buffer.poly(P([[55, 4], [67, 4], [76, 13], [55, 13]]), glass)
+  buffer.poly(P([[40, 4], [44, 4], [37.5, 12], [33.5, 12]]), glassLight)
+  buffer.poly(P([[60, 4], [62.5, 4], [57.5, 10.5], [56, 10.5]]), glassLight)
+  R(51, 3, 4, 10, color)
+  for (const dx of [28, 53, 78]) R(dx, 14, 0.6, 12, shade)
+  for (const dx of [44, 69]) R(dx, 17, 4, 0.8, '#d8dce6')
+  R(2, 21, 100, 0.8, '#c8ccd8')
   R(-1, 23, 5, 3, '#b8bcc8'); R(100, 23, 5, 3, '#b8bcc8')
-  R(99, 17, 4, 3, '#fff3b0'); R(1, 17, 3, 3, '#e0301e')
-  // wheels
+  R(99, 17, 4, 2.6, '#fff3b0'); R(1, 17, 3, 2.6, '#e0301e')
   for (const wx of [22, 80]) {
-    buffer.disc(X(wx), y + 28, 9, INK)
-    buffer.disc(X(wx), y + 28, 7, '#1c1c24')
-    buffer.disc(X(wx), y + 28, 4.2, '#9aa0ae')
-    buffer.disc(X(wx) - 1, y + 27, 1.6, '#e0e4ee')
+    buffer.disc(X(wx), y + 28 * s, 9 * s, INK)
+    buffer.disc(X(wx), y + 28 * s, 7 * s, '#1c1c24')
+    buffer.disc(X(wx), y + 28 * s, 4.2 * s, '#9aa0ae')
+    buffer.disc(X(wx), y + 28 * s, 1.8 * s, '#5a5e6a')
+    buffer.disc(X(wx) - s, y + 27 * s, 1.2 * s, '#e0e4ee')
   }
+}
+
+/** A park bench on the sidewalk: slats, a back, iron legs. */
+export function bench(buffer: PixelBuffer, x: number, ground: number, width: number): void {
+  const wood = '#8a5a2e', woodLight = '#b07a44', iron = '#262c4a'
+  buffer.rect(x, ground - 30, width, 4, wood); buffer.rect(x, ground - 30, width, 1, woodLight)
+  buffer.rect(x, ground - 24, width, 4, wood); buffer.rect(x, ground - 24, width, 1, woodLight)
+  buffer.rect(x - 2, ground - 16, width + 4, 4, wood); buffer.rect(x - 2, ground - 16, width + 4, 1, woodLight)
+  for (const lx of [x + 4, x + width - 8]) { buffer.rect(lx, ground - 32, 4, 32, iron); buffer.rect(lx - 2, ground - 3, 8, 3, iron) }
+}
+
+/** A fire hydrant at the kerb. */
+export function hydrant(buffer: PixelBuffer, x: number, ground: number): void {
+  const red = '#d0302a', light = '#f06a50', dark = '#8a1a14'
+  buffer.rect(x - 7, ground - 6, 14, 6, dark)
+  buffer.rect(x - 5, ground - 28, 10, 22, red); buffer.rect(x - 5, ground - 28, 2, 22, light); buffer.rect(x + 3, ground - 28, 2, 22, dark)
+  buffer.rect(x - 9, ground - 22, 18, 5, red); buffer.rect(x - 9, ground - 22, 18, 1, light)
+  buffer.disc(x, ground - 30, 6, red); buffer.rect(x - 2, ground - 38, 4, 4, dark)
 }
 
 // ---------------------------------------------------------------- the store (CATCHER)

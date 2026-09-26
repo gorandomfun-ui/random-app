@@ -339,6 +339,10 @@ export function facing(sprite: Sprite, direction: Direction): Sprite {
   return rotateSprite(sprite, direction === 'down' ? 1 : 3)
 }
 
+/** The bonus that comes and goes, as in the original game: a milkshake, whipped cream and a cherry on top, a straw. */
+export const MILKSHAKE: Sprite = ['.......kk...', '......krk...', '....kkkk.k..', '...kwwwwk.k.', '..kwwwwwwkk.', '..kkkkkkkkk.', '..kppppppk..', '..kpPppppk..', '...kppppk...', '...kpPppk...', '....kppk....', '....kppk....', '.....kk.....', '....kssk....', '...kssssk...', '...kkkkkk...']
+export const MILKSHAKE_PALETTE: Palette = { k: INK, r: '#e8303a', w: '#fff8ee', p: '#ff9ac0', P: '#ffd0e2', s: '#c9ccd8' }
+
 /** What the eater eats and grows on: a little burger. */
 export const MINI_BURGER: Sprite = ['...kkkkkk...', '..khhoooyk..', '.khyooooook.', '.kOOOOOOOOk.', '.kLlLllLlLk.', '.krrrrrrrrk.', '.knnnnnnnnk.', '..kOooooOk..', '...kkkkkk...']
 export const MINI_BURGER_PALETTE: Palette = BURGER_PALETTE

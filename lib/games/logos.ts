@@ -8,6 +8,7 @@
  * second neon. Both take the theme's accent.
  */
 
+import { LETTERING, type LetteringName } from './lettering-data'
 import { dim, dither, mix, PixelBuffer, rgbOf } from './pixels'
 
 export { dim }
@@ -59,7 +60,7 @@ function catcherMask(scale: number): boolean[][] {
 }
 
 /**
- * The CATCHER mark: the depth first, opening out from a point high above
+ * The CATCHER mark: the depth first, closing in toward a point far below
  * the word so every letter's sides and underside show — the sides in the
  * accent's shade, the undersides darker, the back edge darkest — then a
  * dark outline round it all, then the face, pale in the accent, a cream
@@ -88,7 +89,8 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
   const { width, face, height } = catcherLogoSize(scale)
   const depth = height - face
   const on = (mx: number, my: number) => my >= 0 && my < face && mx >= 0 && mx < width && mask[my][mx]
-  const vx = x + width / 2, vy = y - face * 5
+  // the depth runs back toward a point far below the middle of the word: the sides close in, the letters come at us
+  const vx = x + width / 2, vy = y + face + depth * 6
   const faceC = mix(accent, CREAM, 0.42), bevel = mix(accent, CREAM, 0.85), faceShade = mix(accent, CREAM, 0.22)
   const side = dim(accent, 0.62), under = dim(accent, 0.42), back = dim(accent, 0.28)
   const cells: Array<[number, number, 0 | 1 | 2]> = []
@@ -99,8 +101,8 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
   }))
   const project = (mx: number, my: number, k: number): [number, number] => {
     const px = x + mx + 0.5, py = y + my + 0.5
-    const t = k / (py - vy)
-    return [Math.floor(px + (px - vx) * t), Math.floor(py + (py - vy) * t)]
+    const t = k / (vy - py)
+    return [Math.floor(px + (vx - px) * t), Math.floor(py + (vy - py) * t)]
   }
   // the outline: round the back silhouette and every step of the depth
   for (let k = depth + 1; k >= 0; k -= 1) for (const [mx, my, kind] of cells) {
@@ -111,7 +113,7 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
   // under everything, the depth filled solid in the underside's tone
   for (let k = depth; k >= 1; k -= 1) for (const [mx, my] of cells) { const [qx, qy] = project(mx, my, k); buffer.set(qx, qy, under) }
   // the depth, far to near: the undersides dark, the sides lighter, the back edge darkest
-  for (let k = depth; k >= 0.5; k -= 0.5) for (const [mx, my, kind] of cells) {
+  for (let k = depth; k >= 0.25; k -= 0.25) for (const [mx, my, kind] of cells) {
     if (kind === 0 && k < depth - 1) continue
     const [qx, qy] = project(mx, my, k)
     buffer.set(qx, qy, k >= depth - 1 ? back : kind === 2 ? under : side)
@@ -153,87 +155,59 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
 
 // ---------------------------------------------------------------- EATER
 
-type Cubic = readonly [Point, Point, Point, Point]
-
-/**
- * The script, drawn here as curves in a 180 × 80 box before slant: a
- * capital E in two bowls with a little loop at its waist, then a, t, e, r
- * joined on the baseline, the r ending in a flourish. Each stroke is a
- * chain of cubic curves; the letters are ours, in the manner of a diner's
- * neon sign.
- */
-const EATER_STROKES: ReadonlyArray<ReadonlyArray<Cubic>> = [
-  // E: over the top from the right, down the left, a loop at the waist, the big lower bowl, on to the a
-  [
-    [[50, 18], [50, 7], [27, 3], [18, 13]],
-    [[18, 13], [11, 21], [17, 33], [31, 34]],
-    [[31, 34], [39, 34], [40, 27], [34, 27]],
-    [[34, 27], [20, 28], [7, 42], [10, 56]],
-    [[10, 56], [13, 70], [37, 73], [50, 64]],
-    [[50, 64], [55, 60], [57, 57], [59, 55]],
-  ],
-  // a: the bowl, then its stem with a foot running on to the t
-  [
-    [[75, 47], [69, 39], [53, 42], [53, 56]],
-    [[53, 56], [53, 69], [67, 70], [74, 58]],
-  ],
-  [
-    [[76, 43], [75, 52], [72, 61], [75, 67]],
-    [[75, 67], [77, 71], [83, 69], [86, 64]],
-  ],
-  // t: a tall stem curling out at its foot, its crossbar
-  [
-    [[97, 14], [95, 32], [89, 55], [90, 63]],
-    [[90, 63], [91, 71], [99, 71], [103, 64]],
-  ],
-  [[[82, 37], [89, 36], [100, 35], [108, 34]]],
-  // e: up into its loop and round
-  [
-    [[103, 64], [109, 60], [119, 56], [120, 48]],
-    [[120, 48], [121, 40], [108, 40], [106, 51]],
-    [[106, 51], [104, 62], [110, 70], [119, 68]],
-    [[119, 68], [123, 67], [126, 64], [128, 61]],
-  ],
-  // r: up, a little notch, the shoulder, and a flourish swinging out and back
-  [
-    [[128, 61], [130, 55], [131, 48], [132, 43]],
-    [[132, 43], [134, 48], [137, 47], [140, 43]],
-    [[140, 43], [145, 38], [153, 39], [155, 45]],
-    [[155, 45], [157, 51], [163, 52], [167, 47]],
-  ],
-]
-
-/** The underline, a long curve under the word; its small waves are added when it is drawn. */
-const SWASH: ReadonlyArray<Cubic> = [
-  [[8, 79], [40, 75], [70, 81], [100, 77]],
-  [[100, 77], [130, 73], [155, 79], [170, 72]],
-]
-
-const SLANT = 0.2
-const BASELINE = 68
-const BOX_W = 186, BOX_H = 84
-
-/** The EATER mark's size at a zoom. */
-export function eaterLogoSize(zoom: number): { width: number; height: number } {
-  return { width: Math.round((BOX_W + SLANT * BASELINE) * zoom), height: Math.round(BOX_H * zoom) }
+/** A lettering mask decoded from its runs. */
+type Mask = { w: number; h: number; on: Uint8Array }
+const decoded = new Map<LetteringName, Mask>()
+function lettering(name: LetteringName): Mask {
+  let mask = decoded.get(name)
+  if (mask) return mask
+  const { width, height, runs } = LETTERING[name]
+  const on = new Uint8Array(width * height)
+  runs.split(' ').forEach((row, y) => { let x = 0, set = false; for (const r of row.split('.')) { const n = parseInt(r, 36); if (set) on.fill(1, y * width + x, y * width + x + n); x += n; set = !set } })
+  mask = { w: width, h: height, on }
+  decoded.set(name, mask)
+  return mask
 }
 
-function bezier([a, b, c, d]: Cubic, t: number): [number, number] {
-  const u = 1 - t
-  return [u * u * u * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t * t * t * d[0], u * u * u * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t * t * t * d[1]]
-}
-
-/** Every point along a chain of curves, finely spaced, with an optional wave across it. */
-function sample(chain: ReadonlyArray<Cubic>, wave = 0): Array<[number, number]> {
-  const out: Array<[number, number]> = []
-  for (const curve of chain) {
-    const steps = 80
-    for (let i = 0; i <= steps; i += 1) {
-      const [px, py] = bezier(curve, i / steps)
-      out.push([px, py + (wave ? Math.sin(px / 3.2) * wave : 0)])
-    }
+/** A mask shrunk by `r` pixels all round: a pixel stays when every pixel within `r` of it is set. */
+function shrunk(mask: Mask, r: number): Mask {
+  const { w, h } = mask
+  const on = new Uint8Array(w * h)
+  const disc: Array<[number, number]> = []
+  for (let y = -Math.ceil(r); y <= Math.ceil(r); y += 1) for (let x = -Math.ceil(r); x <= Math.ceil(r); x += 1) if (x * x + y * y <= r * r + 0.5) disc.push([x, y])
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    if (!mask.on[y * w + x]) continue
+    on[y * w + x] = disc.every(([ox, oy]) => { const X = x + ox, Y = y + oy; return X >= 0 && Y >= 0 && X < w && Y < h && mask.on[Y * w + X] === 1 }) ? 1 : 0
   }
-  return out
+  return { w, h, on }
+}
+
+/** A mask grown by `r` pixels all round, on a canvas widened by `pad`. */
+function grown(mask: Mask, pad: number, r: number, dx = 0, dy = 0): Mask {
+  const w = mask.w + pad * 2, h = mask.h + pad * 2
+  const on = new Uint8Array(w * h)
+  const disc: Array<[number, number]> = []
+  for (let y = -Math.ceil(r); y <= Math.ceil(r); y += 1) for (let x = -Math.ceil(r); x <= Math.ceil(r); x += 1) if (x * x + y * y <= r * r + 0.5) disc.push([x, y])
+  for (let y = 0; y < mask.h; y += 1) for (let x = 0; x < mask.w; x += 1) {
+    if (!mask.on[y * mask.w + x]) continue
+    // only the edge pixels need to spread; the inside is covered by its neighbours
+    const edge = x === 0 || y === 0 || x === mask.w - 1 || y === mask.h - 1 || !mask.on[y * mask.w + x - 1] || !mask.on[y * mask.w + x + 1] || !mask.on[(y - 1) * mask.w + x] || !mask.on[(y + 1) * mask.w + x]
+    const cx = x + pad + dx, cy = y + pad + dy
+    if (!edge) { if (cx >= 0 && cy >= 0 && cx < w && cy < h) on[cy * w + cx] = 1; continue }
+    for (const [ox, oy] of disc) { const X = cx + ox, Y = cy + oy; if (X >= 0 && Y >= 0 && X < w && Y < h) on[Y * w + X] = 1 }
+  }
+  return { w, h, on }
+}
+
+const PAD = 16
+const RIM = 4
+/** How far the rim eats into the letters, so it is thick without swelling them further. */
+const INSET = 2
+
+/** The EATER mark's size for a lettering: the letters and the room their rim, shadow and glow take. */
+export function eaterLogoSize(name: LetteringName): { width: number; height: number } {
+  const { width, height } = LETTERING[name]
+  return { width: width + PAD * 2, height: height + PAD * 2 }
 }
 
 /** A secondary neon colour that stands apart from the accent: cyan beside warm accents, pink beside green, yellow beside blue and violet. */
@@ -245,72 +219,63 @@ export function secondNeon(accent: string): string {
   return '#5fe3ff'
 }
 
-/**
- * The EATER neon: a soft glow round the tubes, their shadow on the sign
- * behind, the rim of each tube in the accent, a cream core; the swash in
- * the second neon. `dark` strokes (by index) are tubes gone out — the
- * flicker of an old sign. Unlit, the tubes are grey glass.
- */
 const eaterCache = new Map<string, PixelBuffer>()
+const KEY_EATER = '#ff00fd'
 
-export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, zoom: number, options: { lit?: boolean; dark?: readonly number[]; swashLit?: boolean } = {}): void {
-  // drawn once per accent, size and state of its tubes, then stamped over whatever the sign shows behind
-  const key = `${accent}|${zoom}|${options.lit !== false}|${(options.dark ?? []).join(',')}|${options.swashLit !== false}`
+/**
+ * The EATER neon, as the reference sign draws it: the letters filled cream,
+ * a thick rim in the accent round them, a dark edge, a band of the second
+ * neon showing under the letters, their shadow on the board behind and a
+ * soft glow. Drawn once per accent and state, then stamped. Unlit, the
+ * glass goes grey; `swashLit` false puts the second neon out.
+ */
+export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, name: LetteringName, options: { lit?: boolean; swashLit?: boolean } = {}): void {
+  const lit = options.lit !== false, swashLit = lit && options.swashLit !== false
+  const key = `${name}|${accent}|${lit}|${swashLit}`
   let layer = eaterCache.get(key)
-  const pad = Math.round(8 * zoom)
   if (!layer) {
-    const { width, height } = eaterLogoSize(zoom)
-    layer = new PixelBuffer(width + pad * 2, height + pad * 2, KEY)
-    paintEaterLogo(layer, pad, pad, accent, zoom, options)
+    const mask = lettering(name)
+    const { width, height } = eaterLogoSize(name)
+    layer = new PixelBuffer(width, height, KEY_EATER)
+    const second = secondNeon(accent)
+    const paint = (m: Mask, color: string) => { for (let i = 0; i < m.on.length; i += 1) if (m.on[i]) layer!.set(i % m.w, Math.floor(i / m.w), color) }
+    const outer = grown(mask, PAD, RIM + 1)
+    if (lit) {
+      const glow = grown(mask, PAD, RIM + 7)
+      for (let i = 0; i < glow.on.length; i += 1) if (glow.on[i] && !outer.on[i]) { const gx = i % glow.w, gy = Math.floor(i / glow.w); if (dither(gx, gy, 0.22)) layer.set(gx, gy, mix('#140e28', accent, 0.4)) }
+    }
+    // the shadow on the board, the band of second neon under the letters with its dark edge, then the letters
+    paint(grown(mask, PAD, RIM + 1, 4, 7), mix(OUTLINE, accent, 0.12))
+    paint(grown(mask, PAD, RIM + 1, 1, 6), OUTLINE)
+    paint(grown(mask, PAD, RIM, 1, 6), swashLit ? second : '#3e3a4c')
+    paint(outer, OUTLINE)
+    paint(grown(mask, PAD, RIM), lit ? accent : '#4a4658')
+    const core = grown(shrunk(mask, INSET), PAD, 0)
+    paint(core, lit ? mix(accent, '#fff4dc', 0.93) : '#6a6678')
+    // a glint along the top edge of the core
+    if (lit) for (let i = core.w; i < core.on.length; i += 1) if (core.on[i] && !core.on[i - core.w]) layer.set(i % core.w, Math.floor(i / core.w), '#ffffff')
+    // the holes inside the letters (the eye of the e, the bowl of the a) stay open: only a thin rim round them, the board behind shows
+    const letters = grown(mask, PAD, 0)
+    const outside = new Uint8Array(letters.on.length)
+    const queue: number[] = []
+    for (let i = 0; i < letters.w; i += 1) { queue.push(i, letters.on.length - 1 - i) }
+    for (let yy = 0; yy < letters.h; yy += 1) { queue.push(yy * letters.w, yy * letters.w + letters.w - 1) }
+    while (queue.length) {
+      const i = queue.pop()!
+      if (i < 0 || i >= letters.on.length || outside[i] || letters.on[i]) continue
+      outside[i] = 1
+      const xx = i % letters.w
+      if (xx > 0) queue.push(i - 1)
+      if (xx < letters.w - 1) queue.push(i + 1)
+      queue.push(i - letters.w, i + letters.w)
+    }
+    for (let i = 0; i < letters.on.length; i += 1) {
+      if (letters.on[i] || outside[i]) continue
+      const xx = i % letters.w, yy = Math.floor(i / letters.w)
+      const touching = letters.on[i - 1] || letters.on[i + 1] || letters.on[i - letters.w] || letters.on[i + letters.w]
+      layer.set(xx, yy, touching ? (lit ? accent : '#4a4658') : KEY_EATER)
+    }
     eaterCache.set(key, layer)
   }
-  buffer.stamp(layer, x - pad, y - pad, KEY)
-}
-
-function paintEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, zoom: number, options: { lit?: boolean; dark?: readonly number[]; swashLit?: boolean }): void {
-  const place = ([px, py]: readonly [number, number]): [number, number] => [x + (px + SLANT * (BASELINE - py)) * zoom, y + py * zoom]
-  const rim = 2.9 * zoom, core = 1.3 * zoom
-  const strokes = EATER_STROKES.map((chain) => sample(chain).map(place))
-  const swash = sample(SWASH, 0.9).map(place)
-  const lit = options.lit !== false
-  const dark = new Set(options.dark ?? [])
-  const second = secondNeon(accent)
-  const swashLit = lit && options.swashLit !== false
-  const paint = (points: Array<[number, number]>, r: number, color: string, dx = 0, dy = 0) => {
-    let last: [number, number] | null = null
-    for (const [px, py] of points) {
-      if (last && Math.hypot(px - last[0], py - last[1]) < 0.6) continue
-      buffer.disc(px + dx, py + dy, r, color)
-      last = [px, py]
-    }
-  }
-  const glow = (points: Array<[number, number]>, r: number, color: string) => {
-    const seen = new Set<number>()
-    for (const [px, py] of points) for (let yy = Math.floor(py - r); yy <= py + r; yy += 1) for (let xx = Math.floor(px - r); xx <= px + r; xx += 1) {
-      const key = yy * 4096 + xx
-      if (seen.has(key)) continue
-      const d = Math.hypot(xx + 0.5 - px, yy + 0.5 - py)
-      if (d > r) continue
-      seen.add(key)
-      if (dither(xx, yy, 0.55 * (1 - d / r))) buffer.set(xx, yy, mix('#140e28', color, 0.38))
-    }
-  }
-  // the shadow the tubes throw on the sign behind
-  const shadow = mix(OUTLINE, accent, 0.18)
-  for (const s of strokes) paint(s, rim, shadow, zoom * 1.6, zoom * 1.8)
-  paint(swash, rim * 0.85, shadow, zoom * 1.6, zoom * 1.8)
-  if (lit) {
-    strokes.forEach((s, i) => { if (!dark.has(i)) glow(s, rim + 3.5 * zoom, accent) })
-    if (swashLit) glow(swash, rim + 3 * zoom, second)
-  }
-  // a thin dark edge round every tube, then the rim, then the core
-  for (const s of strokes) paint(s, rim + 0.9, OUTLINE)
-  paint(swash, rim * 0.85 + 0.9, OUTLINE)
-  strokes.forEach((s, i) => {
-    const on = lit && !dark.has(i)
-    paint(s, rim, on ? accent : '#4a4658')
-    paint(s, core, on ? mix(accent, CREAM, 0.88) : '#6a6678')
-  })
-  paint(swash, rim * 0.85, swashLit ? second : '#3e3a4c')
-  paint(swash, core * 0.8, swashLit ? mix(second, '#ffffff', 0.75) : '#56526a')
+  buffer.stamp(layer, x, y, KEY_EATER)
 }

@@ -15,10 +15,11 @@ import { TEXT_COLORS } from '@/lib/theme'
 
 const LABELS: Record<string, string> = {
   titre: 'Écran titre',
+  'titre-yesteryear': 'Écran titre — essai Yesteryear, incliné de 20°',
   jeu: 'En jeu',
-  'jeu-sol-uni': 'En jeu — sol uni (premiers niveaux)',
-  'jeu-sol-dalles': 'En jeu — dallage blanc et gris',
-  'jeu-niveau-avance': 'En jeu — niveau avancé : damier et mobilier',
+  'jeu-niveau-1': 'En jeu — niveau 1 : sol noir',
+  'jeu-niveau-4': 'En jeu — niveau 4 : damier léger, chaises',
+  'jeu-niveau-8': 'En jeu — niveau 8 : tout le diner, et le milkshake bonus',
   'game-over': 'Game over',
 }
 

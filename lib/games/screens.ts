@@ -10,20 +10,22 @@
 
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { catcherLogoSize, drawCatcherLogo, drawEaterLogo, eaterLogoSize } from './logos'
+import type { LetteringName } from './lettering-data'
 import { mazeFor, MAZE_HEIGHT, MAZE_WIDTH } from './maze'
 import { dim, mix, PixelBuffer, scale2x, type Palette, type Sprite } from './pixels'
 import {
-  bin, car, city, cloud, drawDiner, drawStore, hedge, lamp, moon, NIGHTS, palm, railing, signFrame, sky, stars, street, tree, vending, wisp, type Night,
+  bench, bin, car, cloud, drawDiner, drawStore, hedge, hydrant, lamp, moon, NIGHTS, palm, railing, signFrame, skyline, sky, stars, street, tree, vending, wisp,
+  type Building, type Night,
 } from './scenes'
 import {
   BURGER, BURGER_PALETTE, CELL, CHEESE, CRAWL_ARMS, CRAWL_HEAD, CRAWL_LEGS, eaterPalette, facing, HUMAN, humanPalette, ITEM_PALETTE,
-  MINI_BURGER, MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, type Direction,
+  MILKSHAKE, MILKSHAKE_PALETTE, MINI_BURGER, MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, type Direction,
 } from './sprites'
 import { arcadeText, button, CREAM, dpad, hud, HUD_HEIGHT, infoLine, INK, pressStart } from './ui'
 
 export type Game = 'catcher' | 'eater'
 export type Layout = 'landscape' | 'portrait'
-export type Floor = 'plain' | 'tiles' | 'checker'
+export type Floor = 'plain' | 'checker'
 export const GAME_NAMES: Record<Game, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
 export const LAYOUTS: readonly Layout[] = ['landscape', 'portrait']
 
@@ -48,28 +50,81 @@ export function playSize(layout: Layout): { width: number; height: number } {
 const fine = new Map<Sprite, Sprite>()
 const smooth = (sprite: Sprite): Sprite => { let out = fine.get(sprite); if (!out) { out = scale2x(sprite); fine.set(sprite, out) } return out }
 
-/** Where things stand on a street scene, for a game and a layout. */
+/** Something standing on the street, left or right of the building. */
+type Prop =
+  | { kind: 'lamp'; x: number; h: number; left?: boolean }
+  | { kind: 'tree'; x: number; size: number }
+  | { kind: 'palm'; x: number; h: number; lean: number }
+  | { kind: 'bench'; x: number; w: number }
+  | { kind: 'hydrant'; x: number }
+  | { kind: 'vending'; x: number }
+  | { kind: 'bin'; x: number }
+  | { kind: 'hedge'; x: number; w: number }
+
+/** Where things stand on a street scene, for a game and a layout. Left and right are never mirrored. */
 type Stage = {
-  ground: number; building: [number, number]; horizon: number; skyline: number
+  ground: number; building: [number, number]; horizon: number
   randomY: number; markY: number; markSize: number
   road: { bottom: number; line: number; lanes: number[] }
   press: number; info: 'top' | 'bottom'
-  moon: [number, number, number]; clouds: Array<[number, number, number]>; wisps: Array<[number, number, number]>
-  lamps: number[]; greens: number[]; greenSize: number
+  moon: [number, number, number]; clouds: Array<[number, number, 'big' | 'long' | 'small', boolean]>; wisps: Array<[number, number, number]>
+  far: Building[]; near: Building[]; props: Prop[]
 }
+
+/** How much bigger than the play sprites the cars are drawn: a car is about twice as long as the door is high. */
+const CAR_SCALE = 1.8
 
 function stage(game: Game, layout: Layout): Stage {
   if (layout === 'landscape') {
     return game === 'catcher'
-      ? { ground: 332, building: [200, 368], horizon: 300, skyline: 190, randomY: 12, markY: 62, markSize: 1, road: { bottom: 432, line: 404, lanes: [364] }, press: 412, info: 'top', moon: [690, 70, 17], clouds: [[14, 84, 170], [590, 120, 170], [520, 26, 96]], wisps: [[210, 44, 60], [60, 40, 44]], lamps: [96, 672], greens: [38, 730], greenSize: 30 }
-      : { ground: 332, building: [152, 464], horizon: 300, skyline: 200, randomY: 10, markY: 62, markSize: 1.7, road: { bottom: 432, line: 404, lanes: [364] }, press: 412, info: 'top', moon: [686, 64, 17], clouds: [[6, 96, 176], [600, 128, 166], [548, 22, 90]], wisps: [[230, 52, 56]], lamps: [118, 650], greens: [56, 712], greenSize: 190 }
+      ? {
+          ground: 332, building: [200, 368], horizon: 330, randomY: 10, markY: 60, markSize: 1,
+          road: { bottom: 432, line: 402, lanes: [354, 366] }, press: 408, info: 'top',
+          moon: [712, 62, 17], clouds: [[6, 52, 'big', false], [596, 116, 'long', true], [524, 16, 'small', false]], wisps: [],
+          far: [[-10, 74, 128, 'stepped'], [66, 52, 104, 'spire'], [126, 70, 96, 'block'], [300, 90, 168, 'block'], [548, 58, 112, 'twin'], [612, 76, 166, 'stepped'], [694, 90, 104, 'block']],
+          near: [[0, 58, 88, 'tank'], [60, 74, 132, 'antenna'], [138, 58, 70, 'block'], [576, 66, 96, 'block'], [648, 56, 62, 'tank'], [702, 70, 124, 'antenna']],
+          props: [{ kind: 'bench', x: 22, w: 70 }, { kind: 'lamp', x: 118, h: 178 }, { kind: 'vending', x: 152 }, { kind: 'bin', x: 588 }, { kind: 'hydrant', x: 640 }, { kind: 'tree', x: 712, size: 46 }],
+        }
+      : {
+          ground: 336, building: [152, 464], horizon: 330, randomY: 8, markY: 0, markSize: 0,
+          road: { bottom: 432, line: 404, lanes: [356, 368] }, press: 410, info: 'top',
+          moon: [118, 60, 16], clouds: [[560, 54, 'big', true], [0, 104, 'long', false], [250, 16, 'small', true]], wisps: [[310, 150, 56]],
+          far: [[-6, 66, 120, 'block'], [58, 90, 162, 'stepped'], [640, 50, 176, 'spire'], [688, 84, 118, 'twin']],
+          near: [[0, 62, 76, 'antenna'], [104, 50, 100, 'block'], [618, 70, 90, 'tank'], [690, 80, 136, 'block']],
+          props: [{ kind: 'palm', x: 74, h: 230, lean: 1 }, { kind: 'hedge', x: 108, w: 40 }, { kind: 'lamp', x: 660, h: 176, left: true }, { kind: 'palm', x: 740, h: 160, lean: -0.6 }],
+        }
   }
   return game === 'catcher'
-    ? { ground: 562, building: [32, 368], horizon: 540, skyline: 250, randomY: 236, markY: 300, markSize: 0.72, road: { bottom: 700, line: 640, lanes: [596, 650] }, press: 716, info: 'bottom', moon: [352, 82, 22], clouds: [[8, 104, 176], [214, 166, 200]], wisps: [[40, 40, 70], [250, 50, 60]], lamps: [14, 418], greens: [], greenSize: 0 }
-    : { ground: 562, building: [16, 400], horizon: 540, skyline: 250, randomY: 196, markY: 256, markSize: 1.95, road: { bottom: 700, line: 640, lanes: [596, 650] }, press: 716, info: 'bottom', moon: [352, 82, 22], clouds: [[8, 96, 176], [210, 150, 200]], wisps: [[40, 40, 70]], lamps: [], greens: [], greenSize: 0 }
+    ? {
+        ground: 562, building: [32, 368], horizon: 560, randomY: 236, markY: 300, markSize: 0.72,
+        road: { bottom: 708, line: 640, lanes: [588, 638] }, press: 720, info: 'bottom',
+        moon: [96, 66, 20], clouds: [[216, 92, 'big', true], [0, 170, 'long', false], [300, 30, 'small', false]], wisps: [[40, 130, 60]],
+        far: [[-10, 80, 170, 'stepped'], [80, 60, 240, 'spire'], [150, 90, 150, 'block'], [260, 70, 200, 'twin'], [340, 100, 150, 'stepped']],
+        near: [[0, 70, 110, 'tank'], [300, 60, 140, 'antenna'], [370, 70, 100, 'block']],
+        props: [{ kind: 'lamp', x: 16, h: 190 }, { kind: 'hydrant', x: 414 }],
+      }
+    : {
+        ground: 562, building: [16, 400], horizon: 560, randomY: 196, markY: 0, markSize: 0,
+        road: { bottom: 708, line: 640, lanes: [588, 638] }, press: 720, info: 'bottom',
+        moon: [330, 70, 20], clouds: [[0, 90, 'big', false], [260, 150, 'long', true], [150, 30, 'small', true]], wisps: [[300, 40, 60]],
+        far: [[-10, 90, 160, 'block'], [80, 56, 230, 'spire'], [140, 90, 180, 'stepped'], [250, 70, 150, 'twin'], [330, 110, 200, 'stepped']],
+        near: [[0, 60, 120, 'antenna'], [360, 80, 110, 'tank']],
+        props: [{ kind: 'hedge', x: 404, w: 30 }],
+      }
 }
 
-type SceneOptions = { frame: number; lit: boolean; hero: boolean; building: boolean }
+type SceneOptions = { frame: number; lit: boolean; hero: boolean; building: boolean; lettering: LetteringName }
+
+function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, lit: boolean, index: number): void {
+  if (prop.kind === 'lamp') lamp(buffer, prop.x, s.ground, prop.h, prop.left)
+  else if (prop.kind === 'tree') tree(buffer, prop.x, s.ground, prop.size, night, 3 + index)
+  else if (prop.kind === 'palm') palm(buffer, prop.x, s.ground - 10, prop.h, prop.lean, night)
+  else if (prop.kind === 'bench') bench(buffer, prop.x, s.ground, prop.w)
+  else if (prop.kind === 'hydrant') hydrant(buffer, prop.x, s.ground + 4)
+  else if (prop.kind === 'vending') vending(buffer, prop.x, s.ground, accent, lit)
+  else if (prop.kind === 'bin') bin(buffer, prop.x, s.ground, dim(accent, 0.55))
+  else hedge(buffer, prop.x, s.ground, prop.w, night)
+}
 
 /** The night street of a game, its building and the game's own mark, its traffic, and its hero on the sidewalk. */
 function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, options: SceneOptions): Stage {
@@ -78,31 +133,28 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
   const { width: W, height: H } = buffer
   const { frame, lit } = options
   sky(buffer, night, s.horizon)
-  stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 130 : 150, s.horizon - 60, frame)
+  stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 120 : 150, s.horizon - 120, frame)
   moon(buffer, ...s.moon)
   s.wisps.forEach(([x, y, w]) => wisp(buffer, x, y, w, night))
-  s.clouds.forEach(([x, y, w], i) => cloud(buffer, x, y, w, night, 5 + i * 13))
-  city(buffer, night, s.ground - 16, s.skyline, game === 'catcher' ? 17 : 23, frame)
+  s.clouds.forEach(([x, y, design, flip]) => cloud(buffer, x, y, design, night, flip))
+  skyline(buffer, night, s.ground - 16, s.far, s.near, frame)
   const [bx, bw] = s.building
-  if (game === 'eater') s.greens.forEach((x, i) => palm(buffer, x, s.ground - 10, s.greenSize, i === 0 ? 1 : -1, night))
+  // palms stand behind the railing; everything else in front
+  s.props.forEach((prop, i) => { if (prop.kind === 'palm') drawProp(buffer, prop, s, night, accent, lit, i) })
   railing(buffer, s.ground - 26, game === 'catcher' ? '#343c6c' : '#3c3068')
-  if (game === 'catcher') {
-    if (options.building) {
-      drawStore(buffer, bx, bw, s.ground, accent, frame, lit)
-      if (layout === 'landscape') { vending(buffer, bx - 50, s.ground, accent, lit); bin(buffer, bx + bw + 18, s.ground, dim(accent, 0.55)) }
+  if (options.building) {
+    if (game === 'catcher') drawStore(buffer, bx, bw, s.ground, accent, frame, lit)
+    else {
+      const logo = eaterLogoSize(options.lettering)
+      const roof = s.ground - 128
+      const markY = roof - logo.height + 14
+      const frameTop = markY + Math.round(logo.height * 0.24)
+      signFrame(buffer, Math.round(W / 2 - logo.width / 2) - 4, frameTop, logo.width + 8, roof - 6 - frameTop, roof)
+      drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), markY, accent, options.lettering, { lit: lit && frame % 13 !== 12, swashLit: frame % 7 !== 6 })
+      drawDiner(buffer, bx, bw, s.ground, accent, frame, lit)
     }
-    s.greens.forEach((x, i) => tree(buffer, x, s.ground, s.greenSize, night, 3 + i))
-  } else if (options.building) {
-    const logo = eaterLogoSize(s.markSize)
-    const roof = s.ground - 128
-    const frameTop = s.markY + Math.round(logo.height * 0.16)
-    signFrame(buffer, Math.round(W / 2 - logo.width / 2) - 16, frameTop, logo.width + 32, roof - 6 - frameTop, roof)
-    const dark = lit && frame % 11 === 10 ? [3] : []
-    drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), s.markY, accent, s.markSize, { lit, dark, swashLit: frame % 7 !== 6 })
-    drawDiner(buffer, bx, bw, s.ground, accent, frame, lit)
-    hedge(buffer, bx - 44, s.ground, 40, night); hedge(buffer, bx + bw + 4, s.ground, 40, night)
   }
-  s.lamps.forEach((x, i) => lamp(buffer, x, s.ground, layout === 'landscape' ? 112 : 150, i === 1))
+  s.props.forEach((prop, i) => { if (prop.kind !== 'palm' && (options.building || prop.kind !== 'vending')) drawProp(buffer, prop, s, night, accent, lit, i) })
   street(buffer, night, s.ground, 22, s.road.bottom, s.road.line)
   if (s.road.bottom < H) {
     // the near sidewalk under the road on a tall screen
@@ -110,21 +162,19 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
     buffer.rect(0, s.road.bottom, W, 3, night.sidewalkLight)
     for (let x = 24; x < W; x += 48) buffer.rect(x, s.road.bottom + 3, 1, H - s.road.bottom - 3, dim(night.sidewalk, 0.42))
   }
-  // traffic: a car in each lane, each at its own speed and way
+  // traffic: a car in each lane, each at its own speed and way, the nearer lane drawn last
   const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
+  const carLength = Math.round(104 * CAR_SCALE)
   s.road.lanes.forEach((y, i) => {
     const dir: 1 | -1 = i % 2 === 0 ? 1 : -1
-    const span = W + 240
-    const pos = ((frame * (i === 0 ? 22 : 16) + (i === 0 ? 60 : 380)) % span) - 120
-    car(buffer, dir === 1 ? pos : W - pos - 104, y, colors[i % colors.length], dir)
+    const span = W + carLength * 2
+    const pos = ((frame * (i === 0 ? 14 : 11) + (i === 0 ? carLength - 10 : carLength + 30)) % span) - carLength
+    car(buffer, dir === 1 ? pos : W - pos - carLength, y, colors[i % colors.length], dir, CAR_SCALE)
   })
   if (options.hero) {
     const door = bx + Math.round(bw / 2)
-    if (game === 'catcher') {
-      // the burger at the door, chomping; a shopper at the window
-      buffer.blit(smooth(BURGER[frame % 2]), door - 16, s.ground - 26, BURGER_PALETTE)
-      buffer.blit(smooth(HUMAN[frame % 2]), door + (layout === 'landscape' ? 112 : 96), s.ground - 26, humanPalette(1))
-    } else {
+    if (game === 'catcher') buffer.blit(smooth(BURGER[frame % 2]), door - 16, s.ground - 26, BURGER_PALETTE)
+    else {
       // the eater crawling to the door, a burger on his way
       const head = door - 60 + (frame % 4) * 3
       drawCrawler(buffer, head, s.ground - 6, accent, frame, 1)
@@ -160,13 +210,13 @@ function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, fr
 
 // ---------------------------------------------------------------- the fine screens
 
-export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean }
+export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; lettering?: LetteringName }
 
 export function renderTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
   const { width, height } = SCENE_SIZE[layout]
   const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: true, building: true })
+  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: true, building: true, lettering: options.lettering ?? 'meow' })
   drawMarks(buffer, game, s, accent, frame)
   pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
   const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
@@ -191,7 +241,7 @@ export function renderGameOver(game: Game, layout: Layout, accent: string, optio
   const { width, height } = SCENE_SIZE[layout]
   const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: false, building: false })
+  drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: false, building: false, lettering: 'meow' })
   buffer.shade(0, 0, width, height, 0.6)
   const c = width / 2
   const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
@@ -217,7 +267,7 @@ export function renderGameOver(game: Game, layout: Layout, accent: string, optio
 
 // ---------------------------------------------------------------- CATCHER in play
 
-export type PlayOptions = { level?: number; score?: number; lives?: number; frame?: number; floor?: Floor; obstacles?: boolean }
+export type PlayOptions = { level?: number; score?: number; lives?: number; frame?: number; bonus?: boolean }
 
 const FLOOR = '#161a2c'
 /** The colour strip along each gondola's shelf edges, one per aisle, like a store's departments. */
@@ -374,30 +424,61 @@ function renderCatcherPlay(layout: Layout, accent: string, options: PlayOptions)
 
 // ---------------------------------------------------------------- EATER in play
 
-/** The diner's furniture seen from above, on higher levels: where each piece stands, the cells it covers. */
-type Furniture = { kind: 'table' | 'stool' | 'booth' | 'counter'; x: number; y: number; w: number; h: number }
-export const EATER_OBSTACLES: readonly Furniture[] = [
-  { kind: 'table', x: 5, y: 4, w: 2, h: 2 },
-  { kind: 'table', x: 21, y: 13, w: 2, h: 2 },
-  { kind: 'booth', x: 20, y: 3, w: 3, h: 3 },
-  { kind: 'counter', x: 6, y: 16, w: 6, h: 1 },
-  { kind: 'stool', x: 6, y: 15, w: 1, h: 1 }, { kind: 'stool', x: 8, y: 15, w: 1, h: 1 }, { kind: 'stool', x: 10, y: 15, w: 1, h: 1 },
-  { kind: 'stool', x: 4, y: 5, w: 1, h: 1 }, { kind: 'stool', x: 7, y: 4, w: 1, h: 1 },
-  { kind: 'stool', x: 23, y: 14, w: 1, h: 1 }, { kind: 'stool', x: 22, y: 12, w: 1, h: 1 },
+/** A piece of the diner's furniture seen from above: where it stands, the cells it covers, which way a chair's back faces. */
+type Furniture = { kind: 'chair' | 'table' | 'stool' | 'booth' | 'counter'; x: number; y: number; w: number; h: number; back?: Direction }
+
+const chair = (x: number, y: number, back: Direction): Furniture => ({ kind: 'chair', x, y, w: 1, h: 1, back })
+const stool = (x: number, y: number): Furniture => ({ kind: 'stool', x, y, w: 1, h: 1 })
+const CHAIRS_A = [chair(5, 3, 'up'), chair(21, 15, 'down'), chair(24, 4, 'right')]
+const CHAIRS_B = [chair(4, 15, 'left'), chair(17, 2, 'up'), chair(15, 15, 'down')]
+const TABLE_A = [{ kind: 'table' as const, x: 20, y: 11, w: 2, h: 2 }, chair(19, 11, 'left'), chair(22, 12, 'right')]
+const TABLE_B = [{ kind: 'table' as const, x: 5, y: 6, w: 2, h: 2 }, chair(5, 5, 'up'), chair(7, 7, 'right')]
+const COUNTER = [{ kind: 'counter' as const, x: 14, y: 18, w: 7, h: 1 }, stool(14, 17), stool(16, 17), stool(18, 17), stool(20, 17)]
+const BOOTH = [{ kind: 'booth' as const, x: 24, y: 8, w: 3, h: 3 }]
+
+/**
+ * The eight levels of RANDOM EATER, then round again faster: the floor
+ * black to begin with, then a light checker of black and dark grey; and
+ * the diner filling up — a few chairs, more chairs, a table, two, the
+ * counter with its stools, a booth. Cells in the board's own grid, the
+ * wide one; the tall board turns them over.
+ */
+export const EATER_LEVELS: ReadonlyArray<{ floor: Floor; furniture: readonly Furniture[] }> = [
+  { floor: 'plain', furniture: [] },
+  { floor: 'plain', furniture: [] },
+  { floor: 'checker', furniture: CHAIRS_A },
+  { floor: 'checker', furniture: [...CHAIRS_A, ...CHAIRS_B] },
+  { floor: 'checker', furniture: [...CHAIRS_A, ...CHAIRS_B, ...TABLE_A] },
+  { floor: 'checker', furniture: [...CHAIRS_A, ...CHAIRS_B, ...TABLE_A, ...TABLE_B] },
+  { floor: 'checker', furniture: [...CHAIRS_A, ...CHAIRS_B, ...TABLE_A, ...TABLE_B, ...COUNTER] },
+  { floor: 'checker', furniture: [...CHAIRS_A, ...CHAIRS_B, ...TABLE_A, ...TABLE_B, ...COUNTER, ...BOOTH] },
 ]
 
-/** Every cell the furniture takes, for a layout. */
-export function obstacleCells(layout: Layout): Set<string> {
+/** Every cell the furniture of a level takes, for a layout. */
+export function obstacleCells(layout: Layout, level: number): Set<string> {
   const out = new Set<string>()
-  for (const f of EATER_OBSTACLES) for (let y = f.y; y < f.y + f.h; y += 1) for (let x = f.x; x < f.x + f.w; x += 1) out.add(layout === 'portrait' ? `${y},${x}` : `${x},${y}`)
+  for (const f of EATER_LEVELS[(level - 1) % EATER_LEVELS.length].furniture) for (let y = f.y; y < f.y + f.h; y += 1) for (let x = f.x; x < f.x + f.w; x += 1) out.add(layout === 'portrait' ? `${y},${x}` : `${x},${y}`)
   return out
 }
+
+const TURN: Record<Direction, Direction> = { up: 'left', left: 'up', down: 'right', right: 'down' }
 
 function drawFurniture(buffer: PixelBuffer, f: Furniture, top: number, accent: string, tall: boolean): void {
   const [x, y, w, h] = tall ? [f.y, f.x, f.h, f.w] : [f.x, f.y, f.w, f.h]
   const px = x * CELL, py = top + y * CELL, pw = w * CELL, ph = h * CELL
-  const chrome = '#c9ccd8', chromeDark = '#6a6e84', shadow = '#0c0a16'
-  if (f.kind === 'table') {
+  const chrome = '#c9ccd8', chromeDark = '#6a6e84', shadow = '#08070c'
+  const seat = accent, seatLight = mix(accent, '#ffffff', 0.35), seatDark = dim(accent, 0.7)
+  if (f.kind === 'chair') {
+    // a diner chair from above: a padded seat, its chrome back on one side
+    const back = tall ? TURN[f.back ?? 'up'] : f.back ?? 'up'
+    buffer.rect(px + 4, py + 4, 11, 11, shadow)
+    buffer.rect(px + 2, py + 2, 12, 12, chromeDark)
+    buffer.rect(px + 3, py + 3, 10, 10, seat); buffer.rect(px + 3, py + 3, 10, 2, seatLight); buffer.rect(px + 3, py + 3, 2, 10, seatLight); buffer.rect(px + 5, py + 11, 8, 2, seatDark)
+    if (back === 'up') buffer.rect(px + 1, py + 1, 14, 3, chrome)
+    if (back === 'down') buffer.rect(px + 1, py + 12, 14, 3, chrome)
+    if (back === 'left') buffer.rect(px + 1, py + 1, 3, 14, chrome)
+    if (back === 'right') buffer.rect(px + 12, py + 1, 3, 14, chrome)
+  } else if (f.kind === 'table') {
     buffer.disc(px + pw / 2 + 2, py + ph / 2 + 2, pw / 2 - 1, shadow)
     buffer.disc(px + pw / 2, py + ph / 2, pw / 2 - 1, chromeDark)
     buffer.disc(px + pw / 2, py + ph / 2, pw / 2 - 2.5, CREAM)
@@ -406,16 +487,15 @@ function drawFurniture(buffer: PixelBuffer, f: Furniture, top: number, accent: s
   } else if (f.kind === 'stool') {
     buffer.disc(px + 9, py + 9, 6.5, shadow)
     buffer.disc(px + 8, py + 8, 6.5, chrome)
-    buffer.disc(px + 8, py + 8, 5, accent)
-    buffer.disc(px + 7, py + 7, 2, mix(accent, '#ffffff', 0.45))
+    buffer.disc(px + 8, py + 8, 5, seat)
+    buffer.disc(px + 7, py + 7, 2, seatLight)
   } else if (f.kind === 'booth') {
-    const seat = dim(accent, 0.8), seatLight = mix(accent, '#ffffff', 0.2)
     buffer.rect(px + 2, py + 2, pw, ph, shadow)
     const benches = tall ? [[px, py, CELL, ph], [px + pw - CELL, py, CELL, ph]] : [[px, py, pw, CELL], [px, py + ph - CELL, pw, CELL]]
     for (const [bx, by, bw, bh] of benches) {
-      buffer.rect(bx, by, bw, bh, seat); buffer.rect(bx + 1, by + 1, bw - 2, bh - 2, seatLight)
-      if (tall) for (let k = 4; k < bh - 2; k += 6) buffer.rect(bx + 3, by + k, bw - 6, 1, seat)
-      else for (let k = 4; k < bw - 2; k += 6) buffer.rect(bx + k, by + 3, 1, bh - 6, seat)
+      buffer.rect(bx, by, bw, bh, seatDark); buffer.rect(bx + 1, by + 1, bw - 2, bh - 2, seat)
+      if (tall) for (let k = 4; k < bh - 2; k += 6) buffer.rect(bx + 3, by + k, bw - 6, 1, seatDark)
+      else for (let k = 4; k < bw - 2; k += 6) buffer.rect(bx + k, by + 3, 1, bh - 6, seatDark)
     }
     const [tx, ty, tw, th] = tall ? [px + CELL, py + 2, pw - 2 * CELL, ph - 4] : [px + 2, py + CELL, pw - 4, ph - 2 * CELL]
     buffer.rect(tx, ty, tw, th, chromeDark); buffer.rect(tx + 1, ty + 1, tw - 2, th - 2, CREAM)
@@ -427,26 +507,14 @@ function drawFurniture(buffer: PixelBuffer, f: Furniture, top: number, accent: s
 }
 
 /**
- * The diner's floor inside its counter: plain and dark (the first
- * levels), white tiles with grey joints, or the black-and-white checker
- * of a real diner (higher levels, where the furniture comes in).
+ * The diner's floor inside its counter: black on the first levels, then a
+ * light checker of black and dark grey — there, but never in the way.
  */
 function drawDinerFloor(buffer: PixelBuffer, cols: number, rows: number, top: number, accent: string, floor: Floor): void {
   const W = cols * CELL, H = rows * CELL
   const chrome = '#c9ccd8', chromeDark = '#6a6e84'
-  buffer.rect(0, top, W, H, '#16122a')
-  for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) {
-    const px = x * CELL, py = top + y * CELL
-    if (floor === 'tiles') {
-      buffer.rect(px, py, CELL, CELL, '#e4e2ea')
-      buffer.rect(px, py, CELL, 1, '#b4b2c0'); buffer.rect(px, py, 1, CELL, '#b4b2c0')
-      buffer.rect(px + 1, py + 1, CELL - 1, 1, '#f2f0f6')
-    } else if (floor === 'checker') {
-      const light = (x + y) % 2 === 0
-      buffer.rect(px, py, CELL, CELL, light ? '#e4e2ea' : '#24202e')
-      if (light) { buffer.rect(px + 2, py + 2, 3, 1, '#ffffff'); buffer.rect(px, py + CELL - 1, CELL, 1, '#c4c2ce') }
-    }
-  }
+  buffer.rect(0, top, W, H, '#110f18')
+  if (floor === 'checker') for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) if ((x + y) % 2 === 0) buffer.rect(x * CELL, top + y * CELL, CELL, CELL, '#1c1a26')
   // the counter round the edge: chrome, a neon line in the accent where it meets the floor
   const ring = CELL
   buffer.rect(0, top, W, ring, chromeDark); buffer.rect(0, top + H - ring, W, ring, chromeDark)
@@ -476,8 +544,9 @@ function renderEaterPlay(layout: Layout, accent: string, options: PlayOptions): 
   const tall = layout === 'portrait'
   const { cols, rows } = boardSize(layout)
   const top = HUD_HEIGHT
-  drawDinerFloor(buffer, cols, rows, top, accent, options.floor ?? 'plain')
-  if (options.obstacles) for (const f of EATER_OBSTACLES) drawFurniture(buffer, f, top, accent, tall)
+  const level = EATER_LEVELS[((options.level ?? 1) - 1) % EATER_LEVELS.length]
+  drawDinerFloor(buffer, cols, rows, top, accent, level.floor)
+  for (const f of level.furniture) drawFurniture(buffer, f, top, accent, tall)
   const path = EATER_PATH.map(([x, y]) => (tall ? [y, x] : [x, y]) as [number, number])
   const place = ([x, y]: readonly [number, number]): [number, number] => [x * CELL, top + y * CELL]
   const palette = eaterPalette(accent)
@@ -493,6 +562,13 @@ function renderEaterPlay(layout: Layout, accent: string, options: PlayOptions): 
   buffer.blit(facing(CRAWL_HEAD, toward(path[1], path[0])), ...place(path[0]), palette)
   const food = tall ? [7, 22] : [22, 7]
   buffer.blit(MINI_BURGER, food[0] * CELL + 2, top + food[1] * CELL + 3, MINI_BURGER_PALETTE)
+  if (options.bonus) {
+    // the milkshake, for a few seconds: a ring of light round it counting down
+    const [mx, my] = tall ? [3, 12] : [12, 3]
+    const cx = mx * CELL + 8, cy = top + my * CELL + 8
+    for (let a = 0; a < Math.PI * 2 * 0.7; a += 0.08) buffer.set(Math.round(cx + Math.cos(a - Math.PI / 2) * 10), Math.round(cy + Math.sin(a - Math.PI / 2) * 10), (frame + Math.round(a * 4)) % 3 === 0 ? '#ffffff' : '#ff9ac0')
+    buffer.blit(MILKSHAKE, mx * CELL + 2, top + my * CELL, MILKSHAKE_PALETTE)
+  }
   hud(buffer, accent, { level: options.level ?? 1, score: options.score ?? 0, progress: [7, 12] })
   if (tall) dpad(buffer, width / 2, HUD_HEIGHT + rows * CELL + DPAD_HEIGHT / 2, 26, accent)
   return buffer
@@ -507,7 +583,7 @@ export function renderPlay(game: Game, layout: Layout, accent: string, options: 
 export type ShotSpec = { game: Game; layout: Layout; name: string; width: number; height: number; draw: (frame: number) => PixelBuffer }
 export type Shot = { game: Game; layout: Layout; name: string; buffer: PixelBuffer }
 
-/** Every base screen, not drawn yet: title, play, GAME OVER, each wide and tall; EATER's play three times — plain, tiled, and a higher level. */
+/** Every base screen, not drawn yet: title, play, GAME OVER, each wide and tall; EATER's title in both letterings, its play at levels 1, 4 and 8. */
 export function shotSpecs(accent: string): ShotSpec[] {
   const specs: ShotSpec[] = []
   for (const game of ['catcher', 'eater'] as Game[]) {
@@ -515,11 +591,12 @@ export function shotSpecs(accent: string): ShotSpec[] {
       const scene = SCENE_SIZE[layout], play = playSize(layout)
       const add = (name: string, size: { width: number; height: number }, draw: (frame: number) => PixelBuffer) => specs.push({ game, layout, name, width: size.width, height: size.height, draw })
       add('titre', scene, (frame) => renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }))
+      if (game === 'eater') add('titre-yesteryear', scene, (frame) => renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0, lettering: 'yesteryear' }))
       if (game === 'catcher') add('jeu', play, (frame) => renderPlay(game, layout, accent, { level: 3, score: 1280, lives: 2, frame }))
       else {
-        add('jeu-sol-uni', play, (frame) => renderPlay(game, layout, accent, { level: 1, score: 320, frame, floor: 'plain' }))
-        add('jeu-sol-dalles', play, (frame) => renderPlay(game, layout, accent, { level: 3, score: 1280, frame, floor: 'tiles' }))
-        add('jeu-niveau-avance', play, (frame) => renderPlay(game, layout, accent, { level: 6, score: 4820, frame, floor: 'checker', obstacles: true }))
+        add('jeu-niveau-1', play, (frame) => renderPlay(game, layout, accent, { level: 1, score: 320, frame }))
+        add('jeu-niveau-4', play, (frame) => renderPlay(game, layout, accent, { level: 4, score: 2150, frame }))
+        add('jeu-niveau-8', play, (frame) => renderPlay(game, layout, accent, { level: 8, score: 6480, frame, bonus: true }))
       }
       add('game-over', scene, (frame) => renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0 }))
     }

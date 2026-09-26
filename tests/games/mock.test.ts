@@ -2,10 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { LOGO, LOGO_HEIGHT, LOGO_WIDTH } from '@/lib/games/logo'
-import { catcherLogoSize, secondNeon } from '@/lib/games/logos'
+import { catcherLogoSize, eaterLogoSize, secondNeon } from '@/lib/games/logos'
 import { BLOCKING, cellsOf, MAZE, MAZE_HEIGHT, MAZE_TALL, MAZE_WIDTH, reachable } from '@/lib/games/maze'
 import { drawText, FONT, FONT7, PixelBuffer, rotateSprite, scale2x, spriteSize, textWidth } from '@/lib/games/pixels'
-import { boardSize, EATER_PATH, obstacleCells, playSize, renderAll, renderGameOver, renderPlay, renderTitle, SCENE_SIZE } from '@/lib/games/screens'
+import { boardSize, EATER_LEVELS, EATER_PATH, obstacleCells, playSize, renderAll, renderGameOver, renderPlay, renderTitle, SCENE_SIZE } from '@/lib/games/screens'
 import * as sprites from '@/lib/games/sprites'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -26,7 +26,8 @@ test('le logo pixel : 96 sur 22, rectangulaire, dessiné', () => {
 })
 
 test('les marques : CATCHER tient dans un écran en hauteur, le second néon d_EATER se distingue de l_accent', () => {
-  assert.ok(catcherLogoSize(0.72).width <= SCENE_SIZE.portrait.width - 60, 'CATCHER tient en portrait, profondeur comprise')
+  assert.ok(catcherLogoSize(0.72).width <= SCENE_SIZE.portrait.width - 60, 'CATCHER tient en portrait')
+  for (const name of ['meow', 'yesteryear'] as const) assert.ok(eaterLogoSize(name).width <= SCENE_SIZE.portrait.width, `le néon ${name} tient en portrait`)
   assert.ok(catcherLogoSize(1).width <= SCENE_SIZE.landscape.width - 200)
   for (const accent of TEXT_COLORS) assert.notEqual(secondNeon(accent).toLowerCase(), accent.toLowerCase())
 })
@@ -34,7 +35,7 @@ test('les marques : CATCHER tient dans un écran en hauteur, le second néon d_E
 test('chaque sprite est rectangulaire et tient dans une cellule de seize', () => {
   const all: Array<[string, readonly string[]]> = [
     ...sprites.BURGER.map((s, i): [string, readonly string[]] => [`burger ${i}`, s]), ['tomate', sprites.TOMATO], ['cornichon', sprites.PICKLE], ['oignon', sprites.ONION], ['sauce', sprites.SAUCE],
-    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['mini burger', sprites.MINI_BURGER], ['fromage', sprites.CHEESE], ['tête', sprites.CRAWL_HEAD],
+    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['mini burger', sprites.MINI_BURGER], ['fromage', sprites.CHEESE], ['milkshake', sprites.MILKSHAKE], ['tête', sprites.CRAWL_HEAD],
     ...sprites.CRAWL_ARMS.map((s, i): [string, readonly string[]] => [`bras ${i}`, s]),
     ...sprites.CRAWL_LEGS.map((s, i): [string, readonly string[]] => [`jambes ${i}`, s]),
   ]
@@ -100,11 +101,18 @@ test('le magasin : 28 sur 20, clos, une entrée, un départ, tout le sol atteign
   for (let y = 0; y < MAZE_HEIGHT; y += 1) for (let x = 0; x < MAZE_WIDTH; x += 1) assert.equal(MAZE_TALL[x][y], MAZE[y][x])
 })
 
-test('le diner des niveaux avancés : le mobilier n_enferme jamais le mangeur, le sol libre reste d_un seul tenant', () => {
-  for (const layout of ['landscape', 'portrait'] as const) {
+test('les huit niveaux du diner : sol noir puis damier léger, du mobilier de plus en plus, qui n_enferme jamais le mangeur', () => {
+  assert.equal(EATER_LEVELS.length, 8)
+  assert.deepEqual(EATER_LEVELS.slice(0, 2).map((l) => l.furniture.length), [0, 0], 'rien aux niveaux 1 et 2')
+  assert.ok(EATER_LEVELS.slice(0, 2).every((l) => l.floor === 'plain') && EATER_LEVELS.slice(2).every((l) => l.floor === 'checker'), 'le damier à partir du niveau 3')
+  for (let i = 1; i < EATER_LEVELS.length; i += 1) assert.ok(EATER_LEVELS[i].furniture.length >= EATER_LEVELS[i - 1].furniture.length, `le niveau ${i + 1} a au moins autant de meubles`)
+  for (const layout of ['landscape', 'portrait'] as const) for (let level = 1; level <= 8; level += 1) {
     const { cols, rows } = boardSize(layout)
-    const blocked = obstacleCells(layout)
-    for (const [x, y] of EATER_PATH) assert.ok(!blocked.has(layout === 'portrait' ? `${y},${x}` : `${x},${y}`), `le corps sur un meuble en ${x},${y}`)
+    const blocked = obstacleCells(layout, level)
+    for (const [x, y] of EATER_PATH) assert.ok(!blocked.has(layout === 'portrait' ? `${y},${x}` : `${x},${y}`), `niveau ${level} : un meuble sous le corps en ${x},${y}`)
+    // the row the eater starts on stays clear
+    for (let x = 2; x <= 8; x += 1) assert.ok(!blocked.has(layout === 'portrait' ? `10,${x}` : `${x},10`), `niveau ${level} : départ encombré`)
+    for (const key of blocked) { const [x, y] = key.split(',').map(Number); assert.ok(x >= 1 && y >= 1 && x < cols - 1 && y < rows - 1, `niveau ${level} : meuble hors du sol en ${key}`) }
     const free: string[] = []
     for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) if (!blocked.has(`${x},${y}`)) free.push(`${x},${y}`)
     const seen = new Set([free[0]])
@@ -117,7 +125,7 @@ test('le diner des niveaux avancés : le mobilier n_enferme jamais le mangeur, l
         seen.add(key); queue.push(key)
       }
     }
-    assert.equal(seen.size, free.length, `${layout} : du sol coupé du reste`)
+    assert.equal(seen.size, free.length, `${layout} niveau ${level} : du sol coupé du reste`)
   }
 })
 
@@ -132,7 +140,7 @@ test('les personnages des titres sont ceux du jeu, deux fois plus fins', () => {
 
 test('les écrans de base : titre, jeu, GAME OVER, en paysage et en portrait, aux tailles annoncées', () => {
   const shots = renderAll('#0FC55D')
-  assert.equal(shots.length, 16, 'titre, jeu, GAME OVER pour chaque jeu, trois sols pour EATER, fois deux formats')
+  assert.equal(shots.length, 18, 'CATCHER : titre, jeu, GAME OVER ; EATER : deux titres, trois niveaux, GAME OVER ; fois deux formats')
   for (const { game, layout, name, buffer } of shots) {
     const size = name.startsWith('jeu') ? playSize(layout) : SCENE_SIZE[layout]
     assert.equal(buffer.width, size.width, `${game} ${name} ${layout}`)
@@ -144,7 +152,7 @@ test('les écrans de base : titre, jeu, GAME OVER, en paysage et en portrait, au
   assert.deepEqual(boardSize('portrait'), { cols: boardSize('landscape').rows, rows: boardSize('landscape').cols })
   for (const accent of TEXT_COLORS) for (const game of ['catcher', 'eater'] as const) {
     assert.ok(renderTitle(game, 'portrait', accent, { frame: 3 }).countNot('#000000') > 1000)
-    assert.ok(renderPlay(game, 'landscape', accent, { frame: 1, floor: 'checker', obstacles: true }).countNot('#000000') > 1000)
+    assert.ok(renderPlay(game, 'landscape', accent, { frame: 1, level: 8, bonus: true }).countNot('#000000') > 1000)
     assert.ok(renderGameOver(game, 'landscape', accent).countNot('#000000') > 1000)
   }
 })
