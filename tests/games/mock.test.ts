@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 
 import { LOGO, LOGO_HEIGHT, LOGO_WIDTH } from '@/lib/games/logo'
 import { catcherLogoSize, secondNeon } from '@/lib/games/logos'
-import { cellsOf, MAZE, MAZE_HEIGHT, MAZE_TALL, MAZE_WIDTH, reachable } from '@/lib/games/maze'
-import { drawText, FONT, FONT7, PixelBuffer, rotateSprite, spriteSize, textWidth } from '@/lib/games/pixels'
-import { boardSize, playSize, renderAll, renderGameOver, renderPlay, renderTitle, SCENE_SIZE } from '@/lib/games/screens'
+import { BLOCKING, cellsOf, MAZE, MAZE_HEIGHT, MAZE_TALL, MAZE_WIDTH, reachable } from '@/lib/games/maze'
+import { drawText, FONT, FONT7, PixelBuffer, rotateSprite, scale2x, spriteSize, textWidth } from '@/lib/games/pixels'
+import { boardSize, EATER_PATH, obstacleCells, playSize, renderAll, renderGameOver, renderPlay, renderTitle, SCENE_SIZE } from '@/lib/games/screens'
 import * as sprites from '@/lib/games/sprites'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -26,14 +26,15 @@ test('le logo pixel : 96 sur 22, rectangulaire, dessiné', () => {
 })
 
 test('les marques : CATCHER tient dans un écran en hauteur, le second néon d_EATER se distingue de l_accent', () => {
-  assert.ok(catcherLogoSize(4).width <= SCENE_SIZE.portrait.width - 16)
+  assert.ok(catcherLogoSize(0.72).width <= SCENE_SIZE.portrait.width - 60, 'CATCHER tient en portrait, profondeur comprise')
+  assert.ok(catcherLogoSize(1).width <= SCENE_SIZE.landscape.width - 200)
   for (const accent of TEXT_COLORS) assert.notEqual(secondNeon(accent).toLowerCase(), accent.toLowerCase())
 })
 
 test('chaque sprite est rectangulaire et tient dans une cellule de seize', () => {
   const all: Array<[string, readonly string[]]> = [
     ...sprites.BURGER.map((s, i): [string, readonly string[]] => [`burger ${i}`, s]), ['tomate', sprites.TOMATO], ['cornichon', sprites.PICKLE], ['oignon', sprites.ONION], ['sauce', sprites.SAUCE],
-    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['mini burger', sprites.MINI_BURGER], ['graine', sprites.PELLET], ['tête', sprites.CRAWL_HEAD],
+    ...sprites.HUMAN.map((s, i): [string, readonly string[]] => [`humain ${i}`, s]), ['mini burger', sprites.MINI_BURGER], ['fromage', sprites.CHEESE], ['tête', sprites.CRAWL_HEAD],
     ...sprites.CRAWL_ARMS.map((s, i): [string, readonly string[]] => [`bras ${i}`, s]),
     ...sprites.CRAWL_LEGS.map((s, i): [string, readonly string[]] => [`jambes ${i}`, s]),
   ]
@@ -76,24 +77,62 @@ test('le mangeur : droit ou dans un virage, chaque morceau touche ses deux voisi
   }
 })
 
-test('le labyrinthe : 28 sur 20, clos sauf le tunnel, un départ, un enclos, des pastilles toutes atteignables ; tourné, il reste jouable', () => {
+test('le magasin : 28 sur 20, clos, une entrée, un départ, tout le sol atteignable ; ni enclos au centre ni tunnel sur les côtés', () => {
   assert.equal(MAZE.length, MAZE_HEIGHT)
   for (const row of MAZE) assert.equal(row.length, MAZE_WIDTH)
+  for (const row of MAZE) for (const c of row) assert.ok('#F=KTD.B'.includes(c), `caractère inconnu ${c}`)
   assert.equal(cellsOf('B').length, 1, 'un départ')
-  assert.ok(cellsOf('H').length >= 4, 'de la place pour quatre humains')
-  assert.equal(cellsOf('S').length, 4, 'quatre sauces')
+  assert.ok(cellsOf('D').length >= 2, 'une porte d_entrée')
+  assert.equal(cellsOf('H').length, 0, 'pas d_enclos')
+  // closed all round: the border is wall, fridges or the door
+  MAZE.forEach((row, y) => { assert.ok(BLOCKING.has(row[0]) && BLOCKING.has(row[MAZE_WIDTH - 1]), `bord ${y}`) })
+  for (const c of MAZE[0] + MAZE[MAZE_HEIGHT - 1]) assert.ok(BLOCKING.has(c))
   const [start] = cellsOf('B')
   const reach = reachable(start)
-  for (const cell of cellsOf('.')) assert.ok(reach.has(`${cell.x},${cell.y}`), `pastille hors d_atteinte en ${cell.x},${cell.y}`)
-  assert.ok(cellsOf('.').length > 150, `${cellsOf('.').length} pastilles`)
-  MAZE.forEach((row, y) => { if (y !== 8 && y !== 10 && y !== 12) { assert.equal(row[0], '#', `bord gauche ${y}`); assert.equal(row[MAZE_WIDTH - 1], '#', `bord droit ${y}`) } })
+  const floor = [...cellsOf('.'), ...cellsOf('B')]
+  for (const cell of floor) assert.ok(reach.has(`${cell.x},${cell.y}`), `sol hors d_atteinte en ${cell.x},${cell.y}`)
+  // no dead end: every floor cell has at least two ways out, so a shopper can never corner the burger in a cul-de-sac
+  for (const { x, y } of floor) {
+    const ways = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !BLOCKING.has(MAZE[y + dy]?.[x + dx] ?? '#')).length
+    assert.ok(ways >= 2, `impasse en ${x},${y}`)
+  }
   assert.equal(MAZE_TALL.length, MAZE_WIDTH)
   for (let y = 0; y < MAZE_HEIGHT; y += 1) for (let x = 0; x < MAZE_WIDTH; x += 1) assert.equal(MAZE_TALL[x][y], MAZE[y][x])
 })
 
+test('le diner des niveaux avancés : le mobilier n_enferme jamais le mangeur, le sol libre reste d_un seul tenant', () => {
+  for (const layout of ['landscape', 'portrait'] as const) {
+    const { cols, rows } = boardSize(layout)
+    const blocked = obstacleCells(layout)
+    for (const [x, y] of EATER_PATH) assert.ok(!blocked.has(layout === 'portrait' ? `${y},${x}` : `${x},${y}`), `le corps sur un meuble en ${x},${y}`)
+    const free: string[] = []
+    for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) if (!blocked.has(`${x},${y}`)) free.push(`${x},${y}`)
+    const seen = new Set([free[0]])
+    const queue = [free[0]]
+    while (queue.length) {
+      const [x, y] = queue.shift()!.split(',').map(Number)
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const key = `${x + dx},${y + dy}`
+        if (x + dx < 1 || y + dy < 1 || x + dx >= cols - 1 || y + dy >= rows - 1 || blocked.has(key) || seen.has(key)) continue
+        seen.add(key); queue.push(key)
+      }
+    }
+    assert.equal(seen.size, free.length, `${layout} : du sol coupé du reste`)
+  }
+})
+
+test('les personnages des titres sont ceux du jeu, deux fois plus fins', () => {
+  for (const sprite of [...sprites.BURGER, sprites.CRAWL_HEAD, ...sprites.HUMAN]) {
+    const big = scale2x(sprite)
+    assert.equal(big.length, sprite.length * 2)
+    // every pixel of the play sprite is still there, in its colour, at the heart of its four
+    sprite.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) { const four = [big[y * 2][x * 2], big[y * 2][x * 2 + 1], big[y * 2 + 1][x * 2], big[y * 2 + 1][x * 2 + 1]]; assert.ok(four.includes(row[x]), `${x},${y}`) } })
+  }
+})
+
 test('les écrans de base : titre, jeu, GAME OVER, en paysage et en portrait, aux tailles annoncées', () => {
   const shots = renderAll('#0FC55D')
-  assert.equal(shots.length, 14, 'deux titres, trois jeux, deux GAME OVER, fois deux formats')
+  assert.equal(shots.length, 16, 'titre, jeu, GAME OVER pour chaque jeu, trois sols pour EATER, fois deux formats')
   for (const { game, layout, name, buffer } of shots) {
     const size = name.startsWith('jeu') ? playSize(layout) : SCENE_SIZE[layout]
     assert.equal(buffer.width, size.width, `${game} ${name} ${layout}`)
@@ -105,7 +144,7 @@ test('les écrans de base : titre, jeu, GAME OVER, en paysage et en portrait, au
   assert.deepEqual(boardSize('portrait'), { cols: boardSize('landscape').rows, rows: boardSize('landscape').cols })
   for (const accent of TEXT_COLORS) for (const game of ['catcher', 'eater'] as const) {
     assert.ok(renderTitle(game, 'portrait', accent, { frame: 3 }).countNot('#000000') > 1000)
-    assert.ok(renderPlay(game, 'landscape', accent, { frame: 1, floor: 'tiles' }).countNot('#000000') > 1000)
+    assert.ok(renderPlay(game, 'landscape', accent, { frame: 1, floor: 'checker', obstacles: true }).countNot('#000000') > 1000)
     assert.ok(renderGameOver(game, 'landscape', accent).countNot('#000000') > 1000)
   }
 })

@@ -6,6 +6,7 @@
  */
 
 import { dim, drawText, drawText7, glyph7, mix, PixelBuffer, text7Width, textWidth } from './pixels'
+import type { Palette, Sprite } from './pixels'
 import { BURGER_PALETTE, MINI_BURGER } from './sprites'
 
 export const CREAM = '#f8f5e6'
@@ -41,40 +42,42 @@ export function arcadeText(buffer: PixelBuffer, text: string, centre: number, y:
   return width
 }
 
-/** PRESS START with a dash either side, the dashes in the accent. */
-export function pressStart(buffer: PixelBuffer, centre: number, y: number, accent: string, on: boolean): void {
+/** PRESS START with a dash either side, the dashes in the accent; `scale` enlarges it on the fine title screens. */
+export function pressStart(buffer: PixelBuffer, centre: number, y: number, accent: string, on: boolean, scale = 1): void {
   const text = 'PRESS START'
-  const w = text7Width(text, 1)
+  const w = text7Width(text, scale)
   const x = Math.round(centre - w / 2)
-  buffer.rect(x - 16, y + 3, 9, 2, accent)
-  buffer.rect(x + w + 7, y + 3, 9, 2, accent)
+  buffer.rect(x - 16 * scale, y + 3 * scale, 9 * scale, 2 * scale, accent)
+  buffer.rect(x + w + 7 * scale, y + 3 * scale, 9 * scale, 2 * scale, accent)
   if (!on) return
-  drawText7(buffer, text, x + 1, y + 1, INK)
-  drawText7(buffer, text, x, y, CREAM)
+  drawText7(buffer, text, x + scale, y + scale, INK, scale)
+  drawText7(buffer, text, x, y, CREAM, scale)
 }
 
-/** A line of small grey labels and cream values, as a title screen shows the level and the best score. */
-export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left'): void {
-  const w = textWidth(label) + 4 + text7Width(value)
+/** A line of a small grey label and a cream value, as a title screen shows the level and the best score. */
+export function infoLine(buffer: PixelBuffer, x: number, y: number, label: string, value: string, align: 'left' | 'right' | 'centre' = 'left', scale = 1): void {
+  const w = textWidth(label, scale) + 4 * scale + text7Width(value, scale)
   const left = align === 'left' ? x : align === 'right' ? x - w : Math.round(x - w / 2)
-  drawText(buffer, label, left, y + 2, GREY)
-  drawText7(buffer, value, left + textWidth(label) + 4, y, CREAM)
+  drawText(buffer, label, left, y + 2 * scale, GREY, scale)
+  drawText7(buffer, value, left + textWidth(label, scale) + 4 * scale, y, CREAM, scale)
 }
 
 /** A framed button, its corners cut round; the chosen one is lit cream with a pointer before it. */
-export function button(buffer: PixelBuffer, label: string, centre: number, y: number, accent: string, chosen: boolean, pointer = true): void {
-  const tw = text7Width(label, 1, true)
-  const w = tw + 14, h = 15
+export function button(buffer: PixelBuffer, label: string, centre: number, y: number, accent: string, chosen: boolean, scale = 1): void {
+  const k = scale
+  const tw = text7Width(label, k, true)
+  const w = tw + 14 * k, h = 15 * k
   const x = Math.round(centre - w / 2)
   const frame = chosen ? CREAM : dim(accent, 0.85)
-  buffer.rect(x + 1, y + 1, w, h, INK)
-  buffer.rect(x + 1, y, w - 2, h, chosen ? mix(accent, INK, 0.55) : INK)
-  buffer.rect(x, y + 1, w, h - 2, chosen ? mix(accent, INK, 0.55) : INK)
-  buffer.rect(x + 2, y, w - 4, 1, frame); buffer.rect(x + 2, y + h - 1, w - 4, 1, frame)
-  buffer.rect(x, y + 2, 1, h - 4, frame); buffer.rect(x + w - 1, y + 2, 1, h - 4, frame)
-  buffer.set(x + 1, y + 1, frame); buffer.set(x + w - 2, y + 1, frame); buffer.set(x + 1, y + h - 2, frame); buffer.set(x + w - 2, y + h - 2, frame)
-  drawText7(buffer, label, x + 7, y + 4, chosen ? CREAM : dim(accent, 0.95), 1, true)
-  if (chosen && pointer) drawText7(buffer, '>', x - 8, y + 4, CREAM)
+  const fill = chosen ? mix(accent, INK, 0.55) : INK
+  buffer.rect(x + k, y + k, w, h, INK)
+  buffer.rect(x + k, y, w - 2 * k, h, fill)
+  buffer.rect(x, y + k, w, h - 2 * k, fill)
+  buffer.rect(x + 2 * k, y, w - 4 * k, k, frame); buffer.rect(x + 2 * k, y + h - k, w - 4 * k, k, frame)
+  buffer.rect(x, y + 2 * k, k, h - 4 * k, frame); buffer.rect(x + w - k, y + 2 * k, k, h - 4 * k, frame)
+  buffer.rect(x + k, y + k, k, k, frame); buffer.rect(x + w - 2 * k, y + k, k, k, frame); buffer.rect(x + k, y + h - 2 * k, k, k, frame); buffer.rect(x + w - 2 * k, y + h - 2 * k, k, k, frame)
+  drawText7(buffer, label, x + 7 * k, y + 4 * k, chosen ? CREAM : dim(accent, 0.95), k, true)
+  if (chosen) drawText7(buffer, '>', x - 8 * k, y + 4 * k, CREAM, k)
 }
 
 /** The pause button: a small frame in the accent, two cream bars. */
@@ -90,15 +93,28 @@ export function pauseButton(buffer: PixelBuffer, x: number, y: number, accent: s
  * middle, then what the game counts on the right — CATCHER's lives as
  * little burgers, EATER's way to the next level as a gauge — and pause.
  */
-export function hud(buffer: PixelBuffer, accent: string, info: { level: number; score: number; lives?: number; progress?: [number, number] }): void {
+export function hud(buffer: PixelBuffer, accent: string, info: { level: number; score: number; lives?: number; progress?: [number, number]; list?: ReadonlyArray<{ icon: Sprite; palette: Palette; have: number; need: number }> }): void {
   const W = buffer.width
   buffer.rect(0, 0, W, HUD_HEIGHT, '#07070e')
   buffer.rect(0, HUD_HEIGHT - 1, W, 1, dim(accent, 0.55))
   drawText(buffer, 'LEVEL', 8, 3, GREY)
   drawText7(buffer, String(info.level).padStart(2, '0'), 8, 11, CREAM, 1, true)
   const scoreText = String(info.score).padStart(5, '0')
-  drawText(buffer, 'SCORE', Math.round(W / 2 - textWidth('SCORE') / 2), 3, GREY)
-  drawText7(buffer, scoreText, Math.round(W / 2 - text7Width(scoreText, 1, true) / 2), 11, CREAM, 1, true)
+  const scoreX = info.list ? 44 : Math.round(W / 2 - text7Width(scoreText, 1, true) / 2)
+  drawText(buffer, 'SCORE', info.list ? scoreX : Math.round(W / 2 - textWidth('SCORE') / 2), 3, GREY)
+  drawText7(buffer, scoreText, scoreX, 11, CREAM, 1, true)
+  if (info.list) {
+    // the shopping list: each ingredient, how many are in the bag out of how many are needed; a full line lit in the accent
+    const each = 32
+    const lx = Math.round(W / 2 - (each * info.list.length) / 2) + (W < 400 ? 14 : 0)
+    drawText(buffer, 'LIST', lx, 3, GREY)
+    info.list.forEach(({ icon, palette, have, need }, i) => {
+      const ix = lx + i * each
+      buffer.blit(icon, ix, 11, palette)
+      const count = `${have}/${need}`
+      drawText(buffer, count, ix + 12, 13, have >= need ? accent : CREAM)
+    })
+  }
   pauseButton(buffer, W - 22, 4, accent)
   const right = W - 30
   if (info.lives !== undefined) {

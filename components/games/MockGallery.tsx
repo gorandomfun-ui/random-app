@@ -16,8 +16,9 @@ import { TEXT_COLORS } from '@/lib/theme'
 const LABELS: Record<string, string> = {
   titre: 'Écran titre',
   jeu: 'En jeu',
-  'jeu-sol-uni': 'En jeu — sol uni',
-  'jeu-sol-dalles': 'En jeu — sol dallé',
+  'jeu-sol-uni': 'En jeu — sol uni (premiers niveaux)',
+  'jeu-sol-dalles': 'En jeu — dallage blanc et gris',
+  'jeu-niveau-avance': 'En jeu — niveau avancé : damier et mobilier',
   'game-over': 'Game over',
 }
 
@@ -60,7 +61,7 @@ export default function MockGallery() {
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
       <h1 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 22, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Jeux — visuels de base</h1>
       <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-        Les écrans des deux jeux, dessinés en pixels par le code du projet, en paysage puis en portrait. Rien n&apos;est jouable ici. Pour RANDOM EATER, deux sols sont proposés côte à côte : à toi de choisir. Choisis une couleur du site :
+        Les écrans des deux jeux, dessinés en pixels par le code du projet, en paysage puis en portrait. Les écrans titre et game over sont deux fois plus fins que le jeu. Rien n&apos;est jouable ici. Choisis une couleur du site :
       </p>
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {TEXT_COLORS.map((color) => (
