@@ -8,7 +8,7 @@
 
 import type { Db, Document } from 'mongodb'
 
-import { isLearnedStudio, inKeptShare, miniSeriesReason, studioCandidates, studiosMatcher, STUDIO_MIN_REFUSED, type MiniSeriesReason } from './miniSeries'
+import { isLearnedStudio, inKeptShare, miniSeriesVerdict, studioCandidates, studiosMatcher, STUDIO_MIN_REFUSED, type MiniSeriesReason } from './miniSeries'
 
 export const STUDIOS_COLLECTION = 'mini_series_studios_v3'
 export const REFUSALS_COLLECTION = 'ingest_refusals_v3'
@@ -26,6 +26,9 @@ type Screenable = {
   provider?: string | null
   channelId?: string | null
   channelTitle?: string | null
+  /** Width over height, when the provider says: a long vertical video is a serial. */
+  aspectRatio?: number | null
+  duration?: string | null
 }
 
 export type Refusal = {
@@ -110,7 +113,7 @@ export async function screenMiniSeries<T extends Screenable>(
   const refusals: Refusal[] = []
   const keptIds = new Set<string>()
   for (const video of videos) {
-    const detail = miniSeriesReason(video.title, matcher)
+    const detail = miniSeriesVerdict(video, matcher)
     if (!detail) {
       admitted.push(video)
       continue

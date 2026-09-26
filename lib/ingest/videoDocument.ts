@@ -53,6 +53,7 @@ export function buildVideoDocument(raw: RawVideo): VideoDocument | null {
     channelId: raw.channelId,
     channelTitle: raw.channelTitle,
     duration: raw.duration,
+    ...(typeof raw.aspectRatio === 'number' ? { aspectRatio: raw.aspectRatio } : {}),
     categoryId: raw.categoryId,
     liveBroadcastContent: raw.liveBroadcastContent,
     editorialRoutine: raw.editorialRoutine,

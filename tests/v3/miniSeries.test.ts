@@ -5,6 +5,9 @@ import {
   inKeptShare,
   isLearnedStudio,
   isMiniSeries,
+  isoSeconds,
+  isVerticalSerial,
+  miniSeriesVerdict,
   KEEP_ONE_IN,
   miniSeriesReason,
   studioCandidates,
@@ -141,4 +144,21 @@ test('a title that is only a newsroom slug joins the routine news at the door', 
   assert.equal(isRoutineAtIngest({ title: 'mqn-un-santuario-natural-en-Palmares-cumple-26-años' }), true)
   assert.equal(isRoutineAtIngest({ title: 'Spider-Man: Across the Spider-Verse trailer' }), false)
   assert.equal(isRoutineAtIngest({ title: 'Jack-in-the-box full gameplay' }), false)
+})
+
+test('a long vertical video is a serial whatever its title; a short one or a horizontal film is not', () => {
+  assert.equal(isoSeconds('PT5805S'), 5805)
+  assert.equal(isoSeconds('PT1H33M28S'), 5608)
+  assert.equal(isoSeconds('PT'), null)
+  assert.equal(miniSeriesVerdict({ title: 'The Invincible Bodyguard: One Punch to the Heart', aspectRatio: 0.5625, duration: 'PT1H33M28S' }), 'shape')
+  assert.equal(miniSeriesVerdict({ title: 'Quand un PDG consulte une Sexologue', aspectRatio: 0.56, duration: 'PT5760S' }), 'shape')
+  assert.equal(miniSeriesVerdict({ title: 'My ArchNemesis, My Fated Mate', aspectRatio: 0.5625, duration: 'PT3900S' }), 'shape')
+  assert.equal(isVerticalSerial({ title: 'Best Soccer Goals and Incredible Match Highlights', aspectRatio: 0.5625, duration: 'PT45S' }), false)
+  assert.equal(isVerticalSerial({ title: 'Gone With The West', aspectRatio: 1.33, duration: 'PT5400S' }), false)
+  assert.equal(isVerticalSerial({ title: 'Metallica concert filmed from the pit', aspectRatio: 0.5625, duration: 'PT2400S' }), false)
+  assert.equal(isVerticalSerial({ title: 'Anything', duration: 'PT5400S' }), false, 'sans format connu, on ne devine pas')
+  assert.equal(isVerticalSerial({ title: 'The Crazy Night at the Concert [Full Movie]', aspectRatio: 0.5625, duration: 'PT5700S' }), true)
+  assert.equal(isVerticalSerial({ title: 'Puppet No More: Long Live His Fake Majesty', aspectRatio: 0.5625, duration: 'PT2220S' }), true)
+  assert.equal(isVerticalSerial({ title: 'Prime Minister (Documentary film)', aspectRatio: 0.5625, duration: 'PT4200S' }), false)
+  assert.equal(miniSeriesVerdict({ title: 'Short Drama | Full Short Drama | English Sub 2026', aspectRatio: 1.77, duration: 'PT60S' }), 'label', 'le titre passe d_abord')
 })

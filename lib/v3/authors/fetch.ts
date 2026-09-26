@@ -60,7 +60,7 @@ type DailymotionResponse = { list?: Array<Record<string, unknown>> }
 export async function dailymotionAuthorVideos(ownerId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal): Promise<RawVideo[]> {
   const params = new URLSearchParams({
     limit: String(Math.min(50, Math.max(1, take))), page: '1', sort: 'recent',
-    fields: 'id,title,description,url,thumbnail_url,duration,channel.id,owner.id,owner.screenname,created_time,views_total,private',
+    fields: 'id,title,description,url,thumbnail_url,duration,aspect_ratio,channel.id,owner.id,owner.screenname,created_time,views_total,private',
   })
   const payload = await ask<DailymotionResponse>(`https://api.dailymotion.com/user/${encodeURIComponent(ownerId)}/videos?${params}`, request, signal)
   return (payload?.list ?? []).flatMap((row): RawVideo[] => {
@@ -77,6 +77,7 @@ export async function dailymotionAuthorVideos(ownerId: string, take: number, req
       channelTitle: text('owner.screenname'),
       categoryId: text('channel.id'),
       duration: typeof row.duration === 'number' ? `PT${Math.max(0, row.duration)}S` : undefined,
+      aspectRatio: typeof row.aspect_ratio === 'number' ? row.aspect_ratio : undefined,
       publishedAt: typeof row.created_time === 'number' ? new Date(row.created_time * 1000) : undefined,
       viewCount: typeof row.views_total === 'number' ? row.views_total : undefined,
       statsObservedAt: new Date(),

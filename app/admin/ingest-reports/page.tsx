@@ -76,6 +76,7 @@ type MiniSeriesReport = {
 /** Why a title was taken for a mini-series, as the report says it. */
 const MINI_SERIES_REASON: Record<string, string> = {
   label: 'étiquette', studio: 'studio', cjk: 'titre chinois', trope: 'cliché', 'ai-story': 'histoire IA', narrative: 'titre-récit',
+  shape: 'verticale longue',
 }
 const UNIVERSE_LABEL: Record<string, string> = {
   music: 'Musique', sport: 'Sport', gaming: 'Gaming', 'humor-memes': 'Humour', 'events-parties': 'Fête', food: 'Food', travel: 'Découverte', craft: 'Astuces / artisanat',

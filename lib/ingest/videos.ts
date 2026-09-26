@@ -41,6 +41,8 @@ export type RawVideo = {
   channelId?: string;
   channelTitle?: string;
   duration?: string;
+  /** Width over height, as Dailymotion gives it: a vertical video is under 1. */
+  aspectRatio?: number;
   categoryId?: string;
   liveBroadcastContent?: string;
   editorialRoutine?: boolean;
@@ -63,6 +65,8 @@ export type VideoDocument = Partial<DiscoveryVideoFields> & {
   channelId?: string;
   channelTitle?: string;
   duration?: string;
+  /** Width over height, as Dailymotion gives it: a vertical video is under 1. */
+  aspectRatio?: number;
   categoryId?: string;
   liveBroadcastContent?: string;
   editorialRoutine?: boolean;
@@ -264,6 +268,7 @@ type DailymotionItem = {
   thumbnail_720_url?: string;
   url?: string;
   duration?: number;
+  aspect_ratio?: number;
   ['channel.name']?: string;
   ['channel.id']?: string;
   ['owner.screenname']?: string;
@@ -557,7 +562,7 @@ async function searchDailymotion(
         limit: String(limit),
         page: String(page + 1),
         sort,
-        fields: 'id,title,description,thumbnail_url,thumbnail_480_url,thumbnail_720_url,url,duration,channel.name,channel.id,owner.screenname,owner.id,created_time,views_total',
+        fields: 'id,title,description,thumbnail_url,thumbnail_480_url,thumbnail_720_url,url,duration,aspect_ratio,channel.name,channel.id,owner.screenname,owner.id,created_time,views_total',
       });
 
       const data = await fetchJson<DailymotionResponse>(
@@ -590,6 +595,7 @@ async function searchDailymotion(
           viewCount: item.views_total,
           statsObservedAt: item.views_total != null ? new Date() : undefined,
           duration: secondsToIsoDuration(item?.duration),
+          aspectRatio: typeof item?.aspect_ratio === 'number' ? item.aspect_ratio : undefined,
           source: { name: 'Dailymotion', url },
           contextQueries: [`dailymotion:${trimmed}`],
         });
@@ -1420,7 +1426,7 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
   const params = new URLSearchParams({
     sort: 'trending',
     limit: String(Math.min(100, Math.max(1, limit))),
-    fields: 'id,title,description,thumbnail_url,thumbnail_480_url,url,duration,channel.name,channel.id,owner.screenname,owner.id,created_time,views_total',
+    fields: 'id,title,description,thumbnail_url,thumbnail_480_url,url,duration,aspect_ratio,channel.name,channel.id,owner.screenname,owner.id,created_time,views_total',
   });
   const locale = DAILYMOTION_LOCALE[region];
   if (locale) params.set('localization', locale);
@@ -1454,6 +1460,7 @@ async function fetchDailymotionTrending(region: string, limit: number, warnings:
       statsObservedAt: item.views_total != null ? new Date() : undefined,
       trendObservedAt: new Date(),
       duration: secondsToIsoDuration(item?.duration),
+      aspectRatio: typeof item?.aspect_ratio === 'number' ? item.aspect_ratio : undefined,
       source: { name: 'Dailymotion', url },
       contextQueries: [`dailymotion:trending:${region.toLowerCase()}`],
     });

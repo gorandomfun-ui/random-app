@@ -17,7 +17,7 @@
  * `miniSeriesStore.ts` loads them and records the refusals.
  */
 
-export type MiniSeriesReason = 'label' | 'studio' | 'cjk' | 'trope' | 'ai-story' | 'narrative'
+export type MiniSeriesReason = 'label' | 'studio' | 'cjk' | 'trope' | 'ai-story' | 'narrative' | 'shape'
 
 /** Words that only ever describe these serials, whatever else the title says. */
 const LABEL = new RegExp([
@@ -120,6 +120,49 @@ export function miniSeriesReason(title: string | null | undefined, studios: RegE
 
 export const isMiniSeries = (title: string | null | undefined, studios: RegExp | null = null): boolean =>
   miniSeriesReason(title, studios) !== null
+
+/**
+ * The shape of the thing, whatever its title says. Measured on 27 September:
+ * 88% of the serials already caught were vertical and over fifteen minutes,
+ * every vertical video over fifteen minutes posted by the reupload accounts
+ * was a serial ("Quand un PDG consulte une Sexologue", "Le Sacrifice de la
+ * Vierge réclamé par le Roi Dragon"), and their films and TV are horizontal.
+ * A vertical clip of a few minutes is an ordinary short and stays.
+ */
+export const VERTICAL_MAX_RATIO = 0.9
+export const LONG_FORM_SECONDS = 20 * 60
+/**
+ * Vertical and long, yet not a serial: a concert filmed on a phone, a live, a
+ * talk, a workout. Only for a title that has no serial shape at all: on 27
+ * September the loose words ("live", "concert") spared "Long Live His Fake
+ * Majesty" and "The Crazy Night at the Concert [Full Movie]".
+ */
+const LONG_VERTICAL_EXCEPTIONS = /\b(?:concert|concierto|live at|live in|live from|live recording|live session|en vivo|ao vivo|dj set|gameplay|walkthrough|podcast|interview|sermon|messe|misa|webcam|lecture|workout|yoga|asmr|timelapse|documentary|documentaire|conference|conférence)\b/i
+
+/** Seconds from a stored "PT1H2M3S" duration, or null. */
+export function isoSeconds(value: string | number | null | undefined): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null
+  const match = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec((value ?? '').trim())
+  if (!match || match[0] === 'P' || match[0] === 'PT') return null
+  const [, days, hours, minutes, seconds] = match
+  return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3600 + Number(minutes ?? 0) * 60 + Number(seconds ?? 0)
+}
+
+export type ShapedVideo = { title?: string | null; aspectRatio?: number | null; duration?: string | number | null }
+
+export function isVerticalSerial(video: ShapedVideo): boolean {
+  const ratio = video.aspectRatio
+  if (typeof ratio !== 'number' || !(ratio > 0) || ratio >= VERTICAL_MAX_RATIO) return false
+  const seconds = isoSeconds(video.duration)
+  if (seconds === null || seconds < LONG_FORM_SECONDS) return false
+  const title = video.title ?? ''
+  return FORM.test(title) || !LONG_VERTICAL_EXCEPTIONS.test(title)
+}
+
+/** The whole verdict: the title first, then the shape. */
+export function miniSeriesVerdict(video: ShapedVideo, studios: RegExp | null = null): MiniSeriesReason | null {
+  return miniSeriesReason(video.title, studios) ?? (isVerticalSerial(video) ? 'shape' : null)
+}
 
 /**
  * Words that say nothing about who posted a serial. A title segment made of
