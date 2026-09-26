@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createCatcher, levelParams, positionOf, stepCatcher, walkable, type CatcherState } from '@/lib/games/catcher'
-import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
-import { FixedClock, keyDirection, seeded, swipeDirection, dpadDirection } from '@/lib/games/engine'
+import { CATCHER_CASH, CATCHER_LAST_LEVEL, createCatcher, levelParams, positionOf, stepCatcher, walkable, type CatcherState } from '@/lib/games/catcher'
+import { createEater, EATER_BONUSES, EATER_LAST_LEVEL, eaterParams, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
+import { crossDirection, FixedClock, keyDirection, seeded, swipeDirection } from '@/lib/games/engine'
 import { addScore, cleanName, qualifies, topScores } from '@/lib/games/scores'
 
 const steps = (n: number, fn: () => void) => { for (let i = 0; i < n; i += 1) fn() }
@@ -17,7 +17,11 @@ test('le moteur : la boucle à pas fixe donne le même nombre de pas quel que so
   assert.deepEqual([a(), a(), a()], [b(), b(), b()])
   assert.equal(keyDirection('ArrowLeft'), 'left'); assert.equal(keyDirection('z'), 'up'); assert.equal(keyDirection('d'), 'right'); assert.equal(keyDirection('x'), null)
   assert.equal(swipeDirection(40, 5), 'right'); assert.equal(swipeDirection(3, -2), null)
-  assert.equal(dpadDirection(100, 70, 100, 100, 26), 'up'); assert.equal(dpadDirection(100, 100, 100, 100, 26), null)
+  const pad = { cx: 160, cy: 520, arm: 26, top: 472 }
+  assert.equal(crossDirection(160, 490, pad), 'up'); assert.equal(crossDirection(160, 520, pad), null)
+  assert.equal(crossDirection(20, 480, pad), 'left', 'loin à gauche, même en haut du bandeau : gauche'); assert.equal(crossDirection(300, 560, pad), 'right')
+  assert.equal(crossDirection(170, 475, pad), 'up', 'au-dessus de la croix : haut'); assert.equal(crossDirection(150, 600, pad), 'down', 'sous le dessin, même hors du canvas : bas')
+  assert.equal(crossDirection(160, 400, pad), null, 'sur le plateau : rien')
 })
 
 /** Puts the burger somewhere and lets it walk one cell in `dir`. */
@@ -103,7 +107,7 @@ test('EATER : il avance, mange, grandit d_un morceau ; le mur, un meuble ou son 
   for (const layout of ['landscape', 'portrait'] as const) {
     const s = createEater(layout, 1, 9)
     assert.equal(s.body.length, 3, 'tête, épaules, jambes')
-    s.shakeTimer = 1e9
+    s.bonusTimer = 1e9
     s.food = eaterAhead(s)
     tick(s)
     assert.equal(s.eaten, 1)
@@ -115,7 +119,7 @@ test('EATER : il avance, mange, grandit d_un morceau ; le mur, un meuble ou son 
   }
   // his own body: a long eater turning round on himself
   const s = createEater('landscape', 1, 2)
-  s.shakeTimer = 1e9
+  s.bonusTimer = 1e9
   s.body = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }, { x: 8, y: 11 }, { x: 9, y: 11 }, { x: 10, y: 11 }, { x: 11, y: 11 }]
   s.food = null
   turnEater(s, 'down')
@@ -123,7 +127,7 @@ test('EATER : il avance, mange, grandit d_un morceau ; le mur, un meuble ou son 
   assert.equal(s.phase, 'over', 'son propre corps')
   // a piece of furniture
   const f = createEater('landscape', 5, 4)
-  f.shakeTimer = 1e9
+  f.bonusTimer = 1e9
   f.islands.forEach((e) => { e.solid = true }); f.solid = new Set(f.islands.flatMap((e) => e.island.flatMap((p) => Array.from({ length: p.w * p.h }, (_, k) => `${p.x + (k % p.w)},${p.y + Math.floor(k / p.w)}`))))
   f.body = [{ x: 18, y: 9 }, { x: 17, y: 9 }, { x: 16, y: 9 }]
   f.dir = 'right'; f.food = null
@@ -133,7 +137,7 @@ test('EATER : il avance, mange, grandit d_un morceau ; le mur, un meuble ou son 
 
 test('EATER : la longueur visée atteinte, LEVEL UP sans s_arrêter, plus vite, les meubles attendent qu_il y ait la place', () => {
   const s = createEater('landscape', 2, 13)
-  s.shakeTimer = 1e9
+  s.bonusTimer = 1e9
   const interval = s.interval
   s.eaten = s.target - 1
   s.food = eaterAhead(s)
@@ -177,4 +181,149 @@ test('les meilleurs scores de l_appareil : dix, du meilleur au moins bon, un nom
   assert.deepEqual(topScores('eater'), [])
   assert.equal(addScore('eater', { name: 'x', score: 5, level: 1 }), 0)
   delete (globalThis as { window?: unknown }).window
+})
+
+// ---------------------------------------------------------------- sixteen levels, bonuses, WINNER
+
+test('EATER : 16 niveaux, 3,5 cases par seconde au début, 8 au niveau 16, plus long à chaque niveau', () => {
+  const p1 = eaterParams(1), p16 = eaterParams(16)
+  assert.ok(Math.abs(60 / p1.interval - 3.5) < 1e-9 && Math.abs(60 / p16.interval - 8) < 1e-9)
+  for (let l = 2; l <= 16; l += 1) {
+    assert.ok(eaterParams(l).interval < eaterParams(l - 1).interval, `niveau ${l} plus rapide`)
+    assert.ok(eaterParams(l).length > eaterParams(l - 1).length && eaterParams(l).target >= eaterParams(l - 1).target)
+  }
+  assert.equal(EATER_LAST_LEVEL, 16)
+  for (const layout of ['landscape', 'portrait'] as const) {
+    const s = createEater(layout, 16, 3)
+    assert.equal(s.body.length, eaterParams(16).length, `${layout} : la longueur du niveau 16 au départ`)
+    for (let i = 1; i < s.body.length; i += 1) assert.equal(Math.abs(s.body[i].x - s.body[i - 1].x) + Math.abs(s.body[i].y - s.body[i - 1].y), 1, 'un corps d_un seul tenant')
+  }
+})
+
+test('EATER : au LEVEL UP il digère jusqu_à la longueur du niveau suivant, on le voit raccourcir ; le niveau 16 fini, WINNER', () => {
+  const s = createEater('landscape', 1, 5)
+  s.bonusTimer = 1e9
+  s.body = [{ x: 12, y: 5 }, { x: 11, y: 5 }, { x: 10, y: 5 }, { x: 9, y: 5 }, { x: 8, y: 5 }, { x: 7, y: 5 }, { x: 6, y: 5 }, { x: 5, y: 5 }]
+  s.dir = 'right'; s.eaten = s.target - 1; s.food = { x: 13, y: 5 }
+  tick(s)
+  assert.equal(s.level, 2)
+  assert.equal(s.shrink, s.body.length - eaterParams(2).length, 'il reste à digérer')
+  const before = s.body.length
+  s.food = null
+  tick(s)
+  assert.equal(s.body.length, before - 1, 'un morceau de moins à chaque pas')
+  for (let i = 0; i < 10; i += 1) tick(s)
+  assert.equal(s.body.length, eaterParams(2).length)
+  const w = createEater('landscape', 16, 5)
+  w.bonusTimer = 1e9; w.eaten = w.target - 1; w.food = eaterAhead(w)
+  tick(w)
+  assert.equal(w.phase, 'won')
+})
+
+test('EATER : les bonus — frites, milkshake, donut, et le burger doré à partir du niveau 3 — rapportent leurs points', () => {
+  const kinds = (level: number) => {
+    const seen = new Set<string>()
+    for (let seed = 1; seed <= 60; seed += 1) {
+      const s = createEater('landscape', level, seed)
+      s.bonusTimer = 1
+      stepEater(s)
+      if (s.bonus) seen.add(s.bonus.kind)
+    }
+    return seen
+  }
+  assert.ok(!kinds(1).has('gold'), 'pas d_or au niveau 1')
+  assert.deepEqual([...kinds(5)].sort(), ['donut', 'fries', 'gold', 'shake'])
+  const s = createEater('landscape', 3, 2)
+  s.bonus = { ...eaterAhead(s), kind: 'gold', timer: 100, life: 240 }
+  s.food = null
+  const score = s.score
+  tick(s)
+  assert.equal(s.score - score, EATER_BONUSES.gold.points)
+  assert.equal(s.bonus, null)
+})
+
+/** A careful player: never into a wall, furniture or itself, never into a pocket smaller than its body, the shortest way to the burger otherwise. */
+function robotTurn(s: EaterState): void {
+  const key = (x: number, y: number) => `${x},${y}`
+  const blocked = new Set<string>(s.solid)
+  for (const e of s.islands) if (!e.solid) for (const f of e.island) for (let y = f.y; y < f.y + f.h; y += 1) for (let x = f.x; x < f.x + f.w; x += 1) blocked.add(key(x, y))
+  for (const c of s.body.slice(0, -1)) blocked.add(key(c.x, c.y))
+  const free = (x: number, y: number) => x >= 1 && y >= 1 && x < s.cols - 1 && y < s.rows - 1 && !blocked.has(key(x, y))
+  const flood = (x: number, y: number, target: { x: number; y: number } | null) => {
+    const seen = new Map<string, number>([[key(x, y), 0]]), queue: Array<[number, number]> = [[x, y]]
+    let found = Infinity
+    while (queue.length) {
+      const [cx, cy] = queue.shift()!
+      const d = seen.get(key(cx, cy))!
+      if (target && cx === target.x && cy === target.y && found === Infinity) found = d
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (free(nx, ny) && !seen.has(key(nx, ny))) { seen.set(key(nx, ny), d + 1); queue.push([nx, ny]) } }
+    }
+    return { area: seen.size, food: found }
+  }
+  const head = s.body[0]
+  const options = (['up', 'down', 'left', 'right'] as const).filter((d) => d !== ({ up: 'down', down: 'up', left: 'right', right: 'left' } as const)[s.dir]).map((d) => {
+    const [dx, dy] = d === 'up' ? [0, -1] : d === 'down' ? [0, 1] : d === 'left' ? [-1, 0] : [1, 0]
+    const nx = head.x + dx, ny = head.y + dy
+    if (!free(nx, ny)) return null
+    blocked.add(key(nx, ny))
+    const { area, food } = flood(nx, ny, s.food)
+    blocked.delete(key(nx, ny))
+    return { d, area, food }
+  }).filter((o): o is { d: 'up' | 'down' | 'left' | 'right'; area: number; food: number } => o !== null)
+  if (!options.length) return
+  const need = s.body.length + 2
+  const safe = options.filter((o) => o.area >= need)
+  const pick = safe.length ? safe.sort((a, b) => a.food - b.food || b.area - a.area)[0] : options.sort((a, b) => b.area - a.area)[0]
+  s.queue = pick.d === s.dir ? [] : [pick.d]
+}
+
+test('EATER : un joueur prudent va du niveau 1 à WINNER, en paysage et en portrait — le niveau 16 est dur mais faisable', () => {
+  let wins = 0, games = 0
+  for (const layout of ['landscape', 'portrait'] as const) for (let seed = 1; seed <= 4; seed += 1) {
+    const s = createEater(layout, 1, seed)
+    games += 1
+    for (let i = 0; i < 400000 && s.phase === 'play'; i += 1) { if (s.tick <= 1) robotTurn(s); stepEater(s) }
+    if (s.phase === 'won') wins += 1
+    else assert.ok(s.level >= 12, `${layout} graine ${seed} : arrêté trop tôt, au niveau ${s.level}`)
+  }
+  assert.ok(wins >= games - 1, `${wins} victoires sur ${games}`)
+})
+
+test('CATCHER : 16 niveaux, un cinquième client à partir du 9, jamais aussi rapide que le burger, la liste toujours posée en entier', () => {
+  assert.equal(CATCHER_LAST_LEVEL, 16)
+  for (let l = 1; l <= 16; l += 1) {
+    const p = levelParams(l)
+    assert.ok(p.shopperSpeed <= p.burgerSpeed * 0.86, `niveau ${l} : clients trop rapides`)
+    if (l > 1) assert.ok(p.need.reduce((a, b) => a + b, 0) >= levelParams(l - 1).need.reduce((a, b) => a + b, 0))
+    assert.equal(p.shoppers, l >= 9 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)))
+    for (const layout of ['landscape', 'portrait'] as const) for (const seed of [1, 7, 13]) {
+      const s = createCatcher(layout, l, seed)
+      assert.equal(s.items.length, p.need.reduce((a, b) => a + b, 0), `${layout} niveau ${l} graine ${seed} : ingrédients manquants`)
+    }
+  }
+  assert.equal(createCatcher('landscape', 9, 1).shoppers[4].role, 'pincer')
+})
+
+test('CATCHER : l_argent tombe loin du burger et rapporte ; la liste du niveau 16 remplie, WINNER', () => {
+  const s = createCatcher('landscape', 5, 3)
+  s.shoppers.forEach((sh) => { sh.inside = false }); s.enterTimer = 1e9
+  s.cashTimer = 1
+  stepCatcher(s)
+  assert.ok(s.cash, 'de l_argent')
+  assert.ok(Math.abs(s.cash!.x - s.burger.x) + Math.abs(s.cash!.y - s.burger.y) >= 5, 'loin du burger')
+  const b = s.burger
+  const dir = (['right', 'left', 'up', 'down'] as const).find((d) => walkable(s.maze, b.x + (d === 'right' ? 1 : d === 'left' ? -1 : 0), b.y + (d === 'down' ? 1 : d === 'up' ? -1 : 0)))!
+  s.cash = { x: b.x + (dir === 'right' ? 1 : dir === 'left' ? -1 : 0), y: b.y + (dir === 'down' ? 1 : dir === 'up' ? -1 : 0), kind: 'bundle', timer: 300, life: 300 }
+  const score = s.score
+  walk(s, dir)
+  assert.equal(s.score - score, CATCHER_CASH.bundle.points)
+  const w = createCatcher('landscape', 16, 2)
+  w.shoppers.forEach((sh) => { sh.inside = false }); w.enterTimer = 1e9
+  const wb = w.burger
+  const wd = (['right', 'left', 'up', 'down'] as const).find((d) => walkable(w.maze, wb.x + (d === 'right' ? 1 : d === 'left' ? -1 : 0), wb.y + (d === 'down' ? 1 : d === 'up' ? -1 : 0)))!
+  w.items = [{ x: wb.x + (wd === 'right' ? 1 : wd === 'left' ? -1 : 0), y: wb.y + (wd === 'down' ? 1 : wd === 'up' ? -1 : 0), kind: 0 }]
+  walk(w, wd)
+  assert.equal(w.phase, 'clear')
+  steps(200, () => stepCatcher(w))
+  assert.equal(w.phase, 'won')
 })

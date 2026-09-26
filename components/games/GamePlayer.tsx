@@ -4,25 +4,32 @@
  * One of the two games, played: a canvas that fills its frame with square
  * pixels, the title on its street, the game at sixty steps a second
  * whatever the screen, GAME OVER, and a name for the ten best of this
- * device. Arrows, WASD or ZQSD steer, a swipe too, or the cross of arrows
- * on a tall screen; P or Escape pause; the game pauses by itself when the
- * page is left. Wide or tall is chosen at the start of a game, from the
- * frame's shape, and kept until it ends.
+ * device; WINNER when the sixteenth level is cleared. Arrows, WASD or
+ * ZQSD steer, a swipe too, or on a tall screen the cross of arrows — the
+ * whole band under the board answers, and a thumb can roll from one arm to
+ * the next without lifting. P or Escape pause, and so does the page's own
+ * pause button through `control`; the game pauses by itself when the page
+ * is left. Wide or tall is chosen at the start of a game, from the frame's
+ * shape, and kept until it ends.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { createCatcher, nextLevel, stepCatcher, type CatcherState } from '@/lib/games/catcher'
 import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
-import { dpadDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
+import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
-import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, type Hit, type Layout } from '@/lib/games/screens'
+import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout } from '@/lib/games/screens'
 import type { Direction } from '@/lib/games/sprites'
 
-export type GameResult = { score: number; level: number }
+export type GameResult = { score: number; level: number; won: boolean }
+/** What the page shows beside the game: a game under way, paused, or none. */
+export type PlayState = 'idle' | 'playing' | 'paused'
+/** Filled in by the player, so the page's own pause button can reach it. */
+export type GameControl = { togglePause?: () => void }
 
-type Mode = 'title' | 'play' | 'ending' | 'name' | 'over'
+type Mode = 'title' | 'play' | 'ending' | 'name' | 'over' | 'winner'
 
 type Session = {
   mode: Mode
@@ -40,10 +47,11 @@ type Session = {
   seed: number
   score: number
   level: number
+  won: boolean
   dirty: boolean
 }
 
-/** The title and GAME OVER move at the pace of the approved mock page: a picture every 450 ms. */
+/** The title, GAME OVER and WINNER move at the pace of the approved mock page: a picture every 450 ms. */
 const SLOW_MS = 450
 const within = (h: Hit, x: number, y: number) => x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h
 
@@ -72,19 +80,23 @@ export default function GamePlayer({
   onBest,
   onResult,
   onStart,
+  onPlayState,
+  control,
 }: {
   game: GameName
   accent: string
   onBest?: (best: number) => void
   onResult?: (result: GameResult) => void
   onStart?: () => void
+  onPlayState?: (state: PlayState) => void
+  control?: GameControl
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, dirty: true })
+  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, dirty: true })
   const bestRef = useRef(0)
-  const callbacks = useRef({ onBest, onResult, onStart })
-  callbacks.current = { onBest, onResult, onStart }
+  const callbacks = useRef({ onBest, onResult, onStart, onPlayState })
+  callbacks.current = { onBest, onResult, onStart, onPlayState }
   const [naming, setNaming] = useState<GameResult | null>(null)
   const [name, setName] = useState('')
   const [glitching, setGlitching] = useState(true)
@@ -111,7 +123,9 @@ export default function GamePlayer({
 
     const draw = (): PixelBuffer => {
       if (s.mode === 'title') return renderTitle(game, s.layout, accent, { level: 1, best: bestRef.current, frame: s.frame, blink: s.blink, day: isDaytime() })
-      if (s.mode === 'over' || s.mode === 'name') return renderGameOver(game, s.layout, accent, { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode === 'over' && s.blink, choice: s.choice })
+      const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice }
+      if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
+      if (s.mode === 'over' || s.mode === 'name') return renderGameOver(game, s.layout, accent, ended)
       if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause })
       return renderEaterGame(s.eater!, accent, { pause: s.pause })
     }
@@ -129,6 +143,11 @@ export default function GamePlayer({
       }
     }
 
+    let reported: PlayState | null = null
+    const report = () => {
+      const state: PlayState = s.mode !== 'play' ? 'idle' : s.pause != null ? 'paused' : 'playing'
+      if (state !== reported) { reported = state; callbacks.current.onPlayState?.(state) }
+    }
     const start = () => {
       s.layout = layoutFor(box.width, box.height)
       s.seed = Math.floor(Math.random() * 0x7ffffffe) + 1
@@ -149,27 +168,29 @@ export default function GamePlayer({
       s.layout = layoutFor(box.width, box.height)
       s.dirty = true
     }
-    const end = (score: number, level: number, hold: number) => { s.mode = 'ending'; s.score = score; s.level = level; s.endSteps = hold }
+    const end = (score: number, level: number, hold: number, won: boolean) => { s.mode = 'ending'; s.score = score; s.level = level; s.endSteps = hold; s.won = won }
     const finish = () => {
-      const result = { score: s.score, level: s.level }
+      const result = { score: s.score, level: s.level, won: s.won }
       callbacks.current.onResult?.(result)
       s.choice = 0
       s.frame = 0
       s.layout = layoutFor(box.width, box.height)
       if (qualifies(game, s.score)) { s.mode = 'name'; setName(lastName()); setNaming(result) }
-      else s.mode = 'over'
+      else s.mode = s.won ? 'winner' : 'over'
       s.dirty = true
     }
     const stepGame = () => {
       if (s.catcher) {
         const c = s.catcher
         stepCatcher(c)
-        if (c.phase === 'clear' && c.phaseTimer === 0) s.catcher = nextLevel(c, (s.seed = s.seed + 1))
-        else if (c.phase === 'over') end(c.score, c.level, 20)
+        if (c.phase === 'won') end(c.score, c.level, 30, true)
+        else if (c.phase === 'clear' && c.phaseTimer === 0) s.catcher = nextLevel(c, (s.seed = s.seed + 1))
+        else if (c.phase === 'over') end(c.score, c.level, 20, false)
       } else if (s.eater) {
         stepEater(s.eater)
-        // a second to see the crash before GAME OVER
-        if (s.eater.phase === 'over') end(s.eater.score, s.eater.level, 60)
+        // a second to see the crash before GAME OVER, half a second to take in the last burger before WINNER
+        if (s.eater.phase === 'over') end(s.eater.score, s.eater.level, 60, false)
+        else if (s.eater.phase === 'won') end(s.eater.score, s.eater.level, 30, true)
       }
     }
     const steer = (dir: Direction) => {
@@ -181,6 +202,7 @@ export default function GamePlayer({
     const resume = () => { if (s.pause != null) { s.pause = null; s.dirty = true } }
     const confirmPause = () => (s.pause === 0 ? resume() : toTitle())
     const confirmOver = () => (s.choice === 0 ? start() : toTitle())
+    if (control) control.togglePause = () => { if (s.pause != null) resume(); else pause() }
 
     let raf = 0, last = performance.now()
     const loop = (now: number) => {
@@ -189,7 +211,7 @@ export default function GamePlayer({
       last = now
       if (s.mode === 'play' && s.pause == null) { if (clock.advance(dt, () => { if (s.mode === 'play') stepGame() }) > 0) s.dirty = true }
       else if (s.mode === 'ending') clock.advance(dt, () => { if (s.mode === 'ending' && --s.endSteps <= 0) finish() })
-      else if (s.mode === 'title' || s.mode === 'over') {
+      else if (s.mode === 'title' || s.mode === 'over' || s.mode === 'winner') {
         s.slow += dt
         if (s.slow >= SLOW_MS) {
           s.slow = 0
@@ -197,6 +219,7 @@ export default function GamePlayer({
         }
       }
       if (s.dirty) { s.dirty = false; paint() }
+      report()
     }
     raf = requestAnimationFrame(loop)
 
@@ -221,7 +244,7 @@ export default function GamePlayer({
         else if (pauseKey) pause()
         // the space bar does nothing in play, but must not scroll the page
         else used = e.key === ' ' && !onControl
-      } else if (s.mode === 'over') {
+      } else if (s.mode === 'over' || s.mode === 'winner') {
         if (dir === 'left' || dir === 'right') { s.choice = s.choice === 0 ? 1 : 0; s.dirty = true }
         else if (confirm) confirmOver()
         else if (pauseKey) toTitle()
@@ -230,24 +253,37 @@ export default function GamePlayer({
       if (used) e.preventDefault()
     }
 
-    // the finger: the pause button and the cross of arrows answer at once; a swipe steers; a tap chooses
+    // the finger: the cross of arrows answers at once and follows a rolling thumb; a swipe steers; a tap chooses
     const toBuffer = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect()
       return { x: ((e.clientX - r.left) * canvas.width) / r.width, y: ((e.clientY - r.top) * canvas.height) / r.height }
     }
     let touch: { id: number; x: number; y: number; moved: boolean } | null = null
+    let thumb: { id: number; dir: Direction | null } | null = null
+    const onCross = (e: PointerEvent): Direction | null => {
+      const pad = dpadGeometry(s.layout)
+      if (!pad || s.mode !== 'play' || s.pause != null) return null
+      const p = toBuffer(e)
+      return crossDirection(p.x, p.y, pad)
+    }
+    const inBand = (e: PointerEvent) => { const pad = dpadGeometry(s.layout); return pad != null && toBuffer(e).y >= pad.top }
     const onDown = (e: PointerEvent) => {
       if (e.button > 0) return
-      const p = toBuffer(e)
-      if (s.mode === 'play' && s.pause == null) {
-        if (within(pauseHits(s.layout).pause, p.x, p.y)) { pause(); return }
-        const pad = dpadGeometry(s.layout)
-        const dir = pad ? dpadDirection(p.x, p.y, pad.cx, pad.cy, pad.arm) : null
-        if (dir) { steer(dir); return }
+      if (s.mode === 'play' && s.pause == null && inBand(e)) {
+        const dir = onCross(e)
+        thumb = { id: e.pointerId, dir }
+        if (dir) steer(dir)
+        return
       }
       touch = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false }
     }
     const onMove = (e: PointerEvent) => {
+      if (thumb && thumb.id === e.pointerId) {
+        const dir = onCross(e)
+        if (dir && dir !== thumb.dir) steer(dir)
+        thumb.dir = dir
+        return
+      }
       if (!touch || touch.id !== e.pointerId) return
       const dx = e.clientX - touch.x, dy = e.clientY - touch.y
       if (Math.hypot(dx, dy) > 10) touch.moved = true
@@ -257,14 +293,15 @@ export default function GamePlayer({
       if (dir) { steer(dir); touch.x = e.clientX; touch.y = e.clientY }
     }
     const onUp = (e: PointerEvent) => {
+      if (thumb && thumb.id === e.pointerId) { thumb = null; return }
       if (!touch || touch.id !== e.pointerId) return
       const tap = !touch.moved
       touch = null
       if (!tap) return
       const p = toBuffer(e)
       if (s.mode === 'title') start()
-      else if (s.mode === 'over') {
-        const hits = gameOverHits(s.layout)
+      else if (s.mode === 'over' || s.mode === 'winner') {
+        const hits = s.mode === 'winner' ? winnerHits(s.layout) : gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) start()
         else if (within(hits.no, p.x, p.y)) toTitle()
       } else if (s.mode === 'play' && s.pause != null) {
@@ -273,7 +310,7 @@ export default function GamePlayer({
         else if (within(hits.quit, p.x, p.y)) toTitle()
       }
     }
-    const onCancel = () => { touch = null }
+    const onCancel = () => { touch = null; thumb = null }
     const onHidden = () => { if (document.hidden) pause() }
     const watch = new ResizeObserver(() => {
       box.width = frameBox.clientWidth
@@ -290,6 +327,7 @@ export default function GamePlayer({
     frameBox.addEventListener('pointerup', onUp)
     frameBox.addEventListener('pointercancel', onCancel)
     return () => {
+      if (control) control.togglePause = undefined
       cancelAnimationFrame(raf)
       watch.disconnect()
       window.removeEventListener('keydown', onKey)
@@ -300,7 +338,7 @@ export default function GamePlayer({
       frameBox.removeEventListener('pointerup', onUp)
       frameBox.removeEventListener('pointercancel', onCancel)
     }
-  }, [game, accent])
+  }, [game, accent, control])
 
   const submitName = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -310,7 +348,7 @@ export default function GamePlayer({
     callbacks.current.onBest?.(bestRef.current)
     setNaming(null)
     const s = session.current
-    s.mode = 'over'
+    s.mode = s.won ? 'winner' : 'over'
     s.dirty = true
   }
 

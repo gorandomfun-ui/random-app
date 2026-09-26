@@ -133,6 +133,7 @@ export const HUMAN_LOOKS: ReadonlyArray<{ shirt: string; hair: string }> = [
   { shirt: '#ff4d6d', hair: '#f2c33c' },
   { shirt: '#ffb21f', hair: '#6a3a1a' },
   { shirt: '#b05cff', hair: '#121210' },
+  { shirt: '#2fc0a0', hair: '#8a4a20' },
 ]
 export const humanPalette = (index: number): Palette => {
   const { shirt, hair } = HUMAN_LOOKS[index % HUMAN_LOOKS.length]
@@ -346,3 +347,78 @@ export const MILKSHAKE_PALETTE: Palette = { k: INK, r: '#e8303a', w: '#fff8ee', 
 /** What the eater eats and grows on: a little burger. */
 export const MINI_BURGER: Sprite = ['...kkkkkk...', '..khhoooyk..', '.khyooooook.', '.kOOOOOOOOk.', '.kLlLllLlLk.', '.krrrrrrrrk.', '.knnnnnnnnk.', '..kOooooOk..', '...kkkkkk...']
 export const MINI_BURGER_PALETTE: Palette = BURGER_PALETTE
+
+// ---------------------------------------------------------------- bonuses
+
+/**
+ * EATER's bonuses, one at a time for a few seconds, worth more the rarer
+ * they are: a carton of fries, the milkshake, a donut, and now and then a
+ * burger all in gold.
+ */
+export const FRIES: Sprite = ['..k.k.k.k...', '.kykykykyk..', '.kykYkykYk.k', 'kkykYkykYkyk', 'kyYkykYkykYk', 'krrrrrrrrrrk', 'krwrrrrrrrRk', '.krrrwwrrRk.', '.krrwrrwrRk.', '.krrrwwrrRk.', '..krrrrrRk..', '..kkkkkkkk..']
+export const FRIES_PALETTE: Palette = { k: INK, y: '#ffd84a', Y: '#e0a820', r: '#e0303a', R: '#a81c26', w: CREAM }
+export const DONUT: Sprite = ['...kkkkkk...', '.kkpppPppkk.', 'kpbpppyppPpk', 'kpppkkkkpbpk', 'kpyk....kppk', 'kppk....kpyk', 'kdpbkkkkppdk', 'kddppyppbddk', '.kkddddddkk.', '...kkkkkk...']
+export const DONUT_PALETTE: Palette = { k: INK, p: '#ff8ac0', P: '#ffc8e0', d: '#c8843a', b: '#4a9cff', y: '#ffe060' }
+/** The golden burger: the small burger's shape, every layer in gold. */
+export const GOLD_BURGER_PALETTE: Palette = {
+  k: '#5a3a08', h: '#fff6c0', o: '#ffd23f', O: '#c8961a', y: '#ffffff', w: '#ffffff',
+  l: '#ffe066', L: '#e0b020', r: '#f0c030', c: '#ffcc33', n: '#b8860b', N: '#8a6408', m: '#5a0f14', p: '#ff7a8a',
+}
+
+/**
+ * CATCHER's money, lying in an aisle for a few seconds: a coin, a
+ * banknote, a bundle of notes, and now and then a golden card.
+ */
+export const COIN: Sprite = ['...kkkk...', '.kkyyyykk.', '.kylyyyYk.', 'kylkkkkyYk', 'kyykyyyyYk', 'kyyykkyyYk', 'kyyyyykyYk', 'kYykkkkYYk', '.kYYYYYYk.', '.kkYYYYkk.', '...kkkk...']
+export const COIN_PALETTE: Palette = { k: '#5a3a08', y: '#ffd23f', Y: '#c8961a', l: '#fff6c0' }
+export const BANKNOTE: Sprite = ['kkkkkkkkkkkkkk', 'kGggggggggggGk', 'kgwgggkkgggwgk', 'kggggkwwkggggk', 'kggggkwwkggggk', 'kgwgggkkgggwgk', 'kGggggggggggGk', 'kkkkkkkkkkkkkk']
+export const BANKNOTE_PALETTE: Palette = { k: '#1c3a14', g: '#6ac05a', G: '#3a8a34', w: '#e0f8c8' }
+export const GOLD_CARD: Sprite = ['.kkkkkkkkkkkk.', 'kllyyyyyyyyyyk', 'kyyyyyyyyyyyyk', 'kyccccyyyyyyyk', 'kycssyyyyyyyyk', 'kyccccyyyyyyyk', 'kyyyyyyyyYYYYk', 'kyyyyYYYYYYYYk', '.kkkkkkkkkkkk.']
+export const GOLD_CARD_PALETTE: Palette = { k: '#5a3a08', y: '#ffd23f', Y: '#e0a820', l: '#fff6c0', c: '#b8bcc8', s: '#e8ecf4' }
+
+// ---------------------------------------------------------------- the winners
+
+/**
+ * The eater on his feet at last, facing us, both arms up holding the cup
+ * over his head: a golden cup with a burger on it. His hair, skin, shirt
+ * in the accent, jeans and sneakers are the crawler's own, so it is the
+ * same man. Sixteen by thirty-two, drawn smoothed on the WINNER scene.
+ */
+export const WINNER_STAND: Sprite = [
+  '......kkkk......',
+  '.....kohook.....',
+  '.....kLLLLk.....',
+  '.....knnnnk.....',
+  '...kkyyyyyykk...',
+  '..kyklyyyyYkyk..',
+  '..kykyyyyyYkyk..',
+  '...kkkyyyYkkk...',
+  '.ks...kyYk...sk.',
+  '.ksk.kyyyYk.ksk.',
+  '.kSk.kkkkkk.kSk.',
+  '.kSk..kkkk..kSk.',
+  '.kck.khhhhk.kck.',
+  '.kckkhhhhhhkkck.',
+  '.kckkhsssshkkck.',
+  '.kckkwesweSkkck.',
+  '.kckksssssSkkck.',
+  '..kckSsmmsSkck..',
+  '..kcckkSSkkcck..',
+  '...kcccccccck...',
+  '...kcCccccCck...',
+  '...kcCccccCck...',
+  '...kcCccccCck...',
+  '...kcccccccck...',
+  '...kjjjjjjjjk...',
+  '...kjJjkkjJjk...',
+  '...kjJjkkjJjk...',
+  '...kjJjkkjJjk...',
+  '...kjJjkkjJjk...',
+  '..kttttkkttttk..',
+  '..kggrgkkgrggk..',
+  '..kkkkkk.kkkkk..',
+]
+/** The cup's gold and the burger on it, added to the eater's own colours. */
+export const winnerPalette = (shirt: string): Palette => ({
+  ...eaterPalette(shirt), y: '#ffd23f', Y: '#c8961a', l: '#fff6c0', o: '#e89a3a', L: '#7ad04a', n: '#7a4320',
+})

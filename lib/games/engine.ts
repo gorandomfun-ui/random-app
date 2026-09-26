@@ -62,12 +62,19 @@ export function swipeDirection(dx: number, dy: number, threshold = 24): Directio
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
 }
 
-/** Which arm of the cross of arrows a point falls on, the cross centred at `cx`, `cy` with arms `arm` wide. */
-export function dpadDirection(x: number, y: number, cx: number, cy: number, arm: number): Direction | null {
-  const dx = x - cx, dy = y - cy
-  const reach = arm * 1.9
-  if (Math.abs(dx) > reach || Math.abs(dy) > reach) return null
-  if (Math.abs(dx) < arm * 0.35 && Math.abs(dy) < arm * 0.35) return null
+/**
+ * The cross of arrows under a tall board, read generously: the whole band
+ * from the board's foot down answers, not only the drawn arms. Beside the
+ * cross, left or right; above or below it, up or down; on the cross, the
+ * arm under the finger, split along the diagonals. Only the dimple in the
+ * middle says nothing. The cross is centred at `cx`, `cy`, arms `arm`
+ * wide; the band starts at `top`.
+ */
+export function crossDirection(x: number, y: number, pad: { cx: number; cy: number; arm: number; top: number }): Direction | null {
+  if (y < pad.top) return null
+  const dx = x - pad.cx, dy = y - pad.cy
+  if (Math.abs(dx) < pad.arm * 0.35 && Math.abs(dy) < pad.arm * 0.35) return null
+  if (Math.abs(dx) > pad.arm * 1.5) return dx > 0 ? 'right' : 'left'
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
 }
 

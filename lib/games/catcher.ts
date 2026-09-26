@@ -6,8 +6,10 @@
  * one wanders. They rush for a while, then calm down and go back to their
  * corners, so the player can breathe. A bottle of sauce now and then:
  * picked up, the burger spills a trail of it for a few seconds, and a
- * shopper who steps in it slips and sits dizzy. Three lives; the list
- * filled, the level is won; eight levels, then round again, faster.
+ * shopper who steps in it slips and sits dizzy. Money lies about now and
+ * then, for points. Three lives; the list filled, the level is won; from
+ * level 9 a fifth shopper comes to take the burger in a pincer; level 16
+ * cleared, the game is won.
  *
  * Everything moves sixty steps a second through `stepCatcher`; the same
  * seed and the same inputs play the same game.
@@ -22,7 +24,7 @@ export const INGREDIENT_NAMES = ['tomato', 'pickle', 'onion', 'cheese'] as const
 
 type Cell = { x: number; y: number }
 type Mover = { x: number; y: number; dir: Direction | null; progress: number; speed: number }
-export type Role = 'chase' | 'ambush' | 'patrol' | 'wander'
+export type Role = 'chase' | 'ambush' | 'patrol' | 'wander' | 'pincer'
 export type Shopper = Mover & { role: Role; look: number; stunned: number; waypoint: number; inside: boolean }
 
 export type CatcherState = {
@@ -31,7 +33,7 @@ export type CatcherState = {
   level: number
   score: number
   lives: number
-  phase: 'play' | 'caught' | 'clear' | 'over'
+  phase: 'play' | 'caught' | 'clear' | 'over' | 'won'
   phaseTimer: number
   burger: Mover & { want: Direction | null; face: 'left' | 'right'; start: Cell }
   shoppers: Shopper[]
@@ -44,6 +46,8 @@ export type CatcherState = {
   sauceTimer: number
   spilling: number
   puddles: Map<string, number>
+  cash: (Cell & { kind: CatcherCash; timer: number; life: number }) | null
+  cashTimer: number
   rush: boolean
   modeTimer: number
   steps: number
@@ -53,18 +57,43 @@ export type CatcherState = {
 const SECOND = 60
 const key = (x: number, y: number) => `${x},${y}`
 
-/** What a level asks for: how many shoppers, the list, the speeds, how long they rush and calm down. */
+/** The last level: cleared, the game is won. */
+export const CATCHER_LAST_LEVEL = 16
+
+/** The shopping list of each level: tomatoes, pickles, onions, cheese. */
+const LISTS: ReadonlyArray<readonly [number, number, number, number]> = [
+  [2, 2, 1, 1], [3, 2, 2, 1], [3, 3, 2, 1], [4, 3, 3, 2], [4, 4, 3, 2], [5, 4, 4, 2], [5, 5, 4, 3], [6, 5, 5, 3],
+  [6, 6, 5, 3], [6, 6, 5, 4], [7, 6, 5, 4], [7, 6, 6, 4], [7, 7, 6, 4], [7, 7, 6, 5], [8, 7, 6, 5], [8, 7, 7, 5],
+]
+
+/**
+ * What a level asks for: how many shoppers, the list, the speeds, how long
+ * they rush and calm down, how often the sauce comes and how long it stays.
+ * The shoppers never run as fast as the burger.
+ */
 export function levelParams(level: number) {
-  const loop = Math.floor((level - 1) / 8), l = ((level - 1) % 8) + 1
+  const l = Math.max(1, Math.min(level, CATCHER_LAST_LEVEL))
   return {
-    shoppers: Math.min(4, 1 + Math.ceil(l / 2)),
-    need: [2 + Math.floor(l / 2), 2 + Math.floor((l - 1) / 2), 1 + Math.floor(l / 2), 1 + Math.floor((l - 1) / 3)],
-    shopperSpeed: 3 + 0.18 * l + 0.5 * loop,
-    burgerSpeed: 4.4 + 0.1 * l + 0.3 * loop,
+    shoppers: l >= 9 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)),
+    need: [...LISTS[l - 1]],
+    shopperSpeed: 3 + 0.18 * Math.min(l, 8) + 0.08 * Math.max(0, l - 8),
+    burgerSpeed: 4.4 + 0.1 * l,
     rush: (18 + l * 1.5) * SECOND,
-    calm: Math.max(3, 7 - l * 0.4) * SECOND,
+    calm: Math.max(2.5, 7 - l * 0.4) * SECOND,
+    sauceEvery: (14 + Math.max(0, l - 8)) * SECOND,
+    sauceLife: (10 - 0.25 * Math.max(0, l - 8)) * SECOND,
   }
 }
+
+export type CatcherCash = 'coin' | 'note' | 'bundle' | 'card'
+/** The money lying about: what each is worth, how long it stays, how often it comes (out of the weights of those allowed), from which level. */
+export const CATCHER_CASH: Record<CatcherCash, { points: number; life: number; weight: number; from: number }> = {
+  coin: { points: 10, life: 7 * SECOND, weight: 45, from: 1 },
+  note: { points: 30, life: 6 * SECOND, weight: 30, from: 1 },
+  bundle: { points: 60, life: 5 * SECOND, weight: 18, from: 1 },
+  card: { points: 100, life: 4 * SECOND, weight: 7, from: 5 },
+}
+const nextCashIn = (s: CatcherState) => (9 + Math.floor(s.random() * 7)) * SECOND
 
 export const walkable = (maze: readonly string[], x: number, y: number): boolean => y >= 0 && y < maze.length && x >= 0 && x < maze[0].length && !BLOCKING.has(maze[y][x])
 
@@ -110,7 +139,7 @@ export function createCatcher(layout: Layout, level = 1, seed = 1, carry?: { sco
   const params = levelParams(level)
   const random = seeded(seed * 7919 + level)
   const start = startOf(maze)
-  const roles: Role[] = ['chase', 'ambush', 'patrol', 'wander']
+  const roles: Role[] = ['chase', 'ambush', 'patrol', 'wander', 'pincer']
   const entrances = entrancesOf(maze)
   const shoppers: Shopper[] = roles.slice(0, params.shoppers).map((role, i) => ({ ...entrances[i % entrances.length], dir: null, progress: 0, speed: params.shopperSpeed * (role === 'wander' ? 0.85 : 1), role, look: i, stunned: 0, waypoint: 0, inside: false }))
   // the ingredients: on floor cells away from the start and the door, not two side by side
@@ -134,7 +163,7 @@ export function createCatcher(layout: Layout, level = 1, seed = 1, carry?: { sco
     burger: { ...start, dir: null, progress: 0, speed: params.burgerSpeed, want: null, face: 'right', start },
     shoppers, entrances, enterTimer: 2 * SECOND,
     items, need: [...params.need], have: [0, 0, 0, 0],
-    sauce: null, sauceTimer: 8 * SECOND, spilling: 0, puddles: new Map(),
+    sauce: null, sauceTimer: 8 * SECOND, spilling: 0, puddles: new Map(), cash: null, cashTimer: 6 * SECOND,
     rush: false, modeTimer: params.calm, steps: 0, random,
   }
 }
@@ -182,6 +211,7 @@ function arrive(s: CatcherState): void {
     if (s.items.length === 0) { s.phase = 'clear'; s.phaseTimer = 2 * SECOND; s.score += 50 * s.level }
   }
   if (s.sauce && s.sauce.x === b.x && s.sauce.y === b.y) { s.sauce = null; s.spilling = 5 * SECOND; s.score += 5 }
+  if (s.cash && s.cash.x === b.x && s.cash.y === b.y) { s.score += CATCHER_CASH[s.cash.kind].points; s.cash = null; s.cashTimer = nextCashIn(s) }
   if (s.spilling > 0) s.puddles.set(key(b.x, b.y), 8 * SECOND)
 }
 
@@ -193,6 +223,12 @@ function targetOf(s: CatcherState, sh: Shopper, corners: Cell[], index: number):
   if (sh.role === 'ambush') {
     const d = b.dir ? DELTA[b.dir] : [0, 0]
     return nearestFloor(s.maze, b.x + d[0] * 4, b.y + d[1] * 4)
+  }
+  if (sh.role === 'pincer') {
+    // the other side of the burger from the first chaser, so the two close in on it from both ends
+    const chaser = s.shoppers.find((o) => o.role === 'chase' && o.inside)
+    if (!chaser) return { x: b.x, y: b.y }
+    return nearestFloor(s.maze, 2 * b.x - chaser.x, 2 * b.y - chaser.y)
   }
   if (sh.role === 'patrol') {
     const w = corners[sh.waypoint % corners.length]
@@ -233,12 +269,34 @@ function cornersOf(maze: readonly string[]): Cell[] {
   return [nearestFloor(maze, 1, 1), nearestFloor(maze, w - 2, 1), nearestFloor(maze, w - 2, h - 2), nearestFloor(maze, 1, h - 2)]
 }
 
+/** Where the money may lie: a floor cell well away from the burger, not on an ingredient, the sauce or at the door. */
+function cashSpot(s: CatcherState): Cell | null {
+  const far = distances(s.maze, { x: s.burger.x, y: s.burger.y })
+  const spots = [...far.entries()].filter(([k, d]) => {
+    if (d < 5) return false
+    const [x, y] = k.split(',').map(Number)
+    return !s.items.some((it) => it.x === x && it.y === y) && !(s.sauce && s.sauce.x === x && s.sauce.y === y) && !s.entrances.some((e) => Math.abs(e.x - x) + Math.abs(e.y - y) < 2)
+  })
+  if (!spots.length) return null
+  const [x, y] = spots[Math.floor(s.random() * spots.length)][0].split(',').map(Number)
+  return { x, y }
+}
+
+function drawCash(s: CatcherState): CatcherCash {
+  const allowed = (Object.keys(CATCHER_CASH) as CatcherCash[]).filter((k) => s.level >= CATCHER_CASH[k].from)
+  let roll = s.random() * allowed.reduce((sum, k) => sum + CATCHER_CASH[k].weight, 0)
+  for (const k of allowed) { roll -= CATCHER_CASH[k].weight; if (roll < 0) return k }
+  return allowed[0]
+}
+
 /** One sixtieth of a second of the game. `want` is the direction the player asks for, if any. */
 export function stepCatcher(s: CatcherState, want?: Direction | null): void {
   s.steps += 1
   if (want) s.burger.want = want
   if (s.phase !== 'play') {
     if (s.phaseTimer > 0) s.phaseTimer -= 1
+    // the last level's list filled: once LEVEL CLEAR has shown, the game is won
+    if (s.phase === 'clear' && s.phaseTimer === 0 && s.level >= CATCHER_LAST_LEVEL) { s.phase = 'won'; return }
     if (s.phase === 'caught' && s.phaseTimer === 0) {
       if (s.lives <= 0) { s.phase = 'over'; return }
       // back to the start, the shoppers out through the door again
@@ -264,8 +322,15 @@ export function stepCatcher(s: CatcherState, want?: Direction | null): void {
     const far = distances(s.maze, { x: s.burger.x, y: s.burger.y })
     const spots = [...far.entries()].filter(([, d]) => d >= 6).map(([k]) => k.split(',').map(Number))
     const spot = spots[Math.floor(s.random() * spots.length)]
-    if (spot && !s.items.some((it) => it.x === spot[0] && it.y === spot[1])) s.sauce = { x: spot[0], y: spot[1], timer: 10 * SECOND }
-    s.sauceTimer = 14 * SECOND
+    if (spot && !s.items.some((it) => it.x === spot[0] && it.y === spot[1])) s.sauce = { x: spot[0], y: spot[1], timer: params.sauceLife }
+    s.sauceTimer = params.sauceEvery
+  }
+  // money comes and goes
+  if (s.cash) { s.cash.timer -= 1; if (s.cash.timer <= 0) { s.cash = null; s.cashTimer = nextCashIn(s) } }
+  else if (--s.cashTimer <= 0) {
+    const spot = cashSpot(s)
+    if (spot) { const kind = drawCash(s); s.cash = { ...spot, kind, timer: CATCHER_CASH[kind].life, life: CATCHER_CASH[kind].life } }
+    else s.cashTimer = SECOND
   }
   if (s.spilling > 0) s.spilling -= 1
   for (const [k, t] of s.puddles) { if (t <= 1) s.puddles.delete(k); else s.puddles.set(k, t - 1) }
@@ -281,7 +346,7 @@ export function stepCatcher(s: CatcherState, want?: Direction | null): void {
   }
 }
 
-/** The next level, carrying the score and the lives. */
+/** The next level, carrying the score and the lives (the last one cleared, the game is won instead: see `stepCatcher`). */
 export function nextLevel(s: CatcherState, seed: number): CatcherState {
   return createCatcher(s.layout, s.level + 1, seed, { score: s.score, lives: s.lives })
 }

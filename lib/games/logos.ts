@@ -35,15 +35,33 @@ const LETTERS: Record<string, { fill: Poly[]; cut: Poly[] }> = {
   H: { fill: [box(0, 0, 25, 70), box(35, 0, 60, 70), box(24, 24, 36, 46)], cut: [] },
   E: { fill: [box(0, 0, 25, 70, [8, 0, 0, 8]), box(24, 0, 60, 22), box(24, 25, 54, 45), box(24, 48, 60, 70)], cut: [] },
   R: { fill: [box(0, 0, 60, 45, [0, 16, 10, 0]), box(0, 44, 25, 70), [[26, 42], [50, 42], [63, 70], [37, 70]]], cut: [box(25, 19, 35, 28, [0, 3, 3, 0])] },
+  // for GAME OVER and WINNER, in the same cut
+  G: { fill: [box(0, 0, 60, 70, [14, 10, 10, 14])], cut: [box(25, 23, 61, 34, [5, 0, 0, 0]), box(25, 33, 36, 47, [0, 0, 0, 5])] },
+  M: { fill: [box(0, 0, 24, 70, [6, 0, 0, 0]), box(52, 0, 76, 70, [0, 6, 0, 0]), [[23, 0], [38, 20], [53, 0], [53, 26], [38, 46], [23, 26]]], cut: [] },
+  O: { fill: [box(0, 0, 60, 70, [14, 14, 14, 14])], cut: [box(25, 23, 35, 47, [4, 4, 4, 4])] },
+  V: { fill: [[[0, 0], [25, 0], [30, 38], [35, 0], [60, 0], [44, 70], [16, 70]]], cut: [] },
+  W: { fill: [box(0, 0, 24, 70, [0, 0, 0, 6]), box(52, 0, 76, 70, [0, 0, 6, 0]), [[23, 70], [38, 50], [53, 70], [53, 44], [38, 24], [23, 44]]], cut: [] },
+  I: { fill: [box(0, 0, 25, 70)], cut: [] },
+  N: { fill: [box(0, 0, 24, 70), box(36, 0, 60, 70), [[0, 0], [24, 0], [60, 70], [36, 70]]], cut: [] },
 }
 const WORD = 'CATCHER'
 const LETTER_W = 60, LETTER_H = 70, GAP = 8
+/** Most letters sit in a 60 × 70 box; M and W need more room, I less, a space leaves a gap. */
+const WIDTHS: Record<string, number> = { M: 76, W: 76, I: 25, ' ': 22 }
+const letterWidth = (c: string) => WIDTHS[c] ?? LETTER_W
+/** Where each letter of a word starts, and the word's width, at scale 1. */
+function spacing(word: string): { at: number[]; width: number } {
+  const at: number[] = []
+  let x = 0
+  for (const c of word) { at.push(x); x += letterWidth(c) + GAP }
+  return { at, width: x - GAP }
+}
 /** How far the ends of the word sit below its middle: the arch. */
 const ARCH = 14
 
-/** The size of the CATCHER mark at a scale: the face, and the room the depth takes under it. */
-export function catcherLogoSize(scale: number): { width: number; face: number; height: number } {
-  const width = Math.round((WORD.length * LETTER_W + (WORD.length - 1) * GAP) * scale)
+/** The size of the CATCHER mark at a scale — or of another word in its letters: the face, and the room the depth takes under it. */
+export function catcherLogoSize(scale: number, word = WORD): { width: number; face: number; height: number } {
+  const width = Math.round(spacing(word).width * scale)
   const face = Math.round((LETTER_H + ARCH) * scale)
   return { width, face, height: face + Math.round(LETTER_H * scale * 0.48) }
 }
@@ -52,11 +70,13 @@ export function catcherLogoSize(scale: number): { width: number; face: number; h
 const archAt = (x: number, width: number, scale: number): number => ARCH * scale * ((x - width / 2) / (width / 2)) ** 2
 
 /** The word's face as a mask of pixels, bent into its arch: every edge cut into short steps, each step lowered by the arch where it stands. */
-function catcherMask(scale: number): boolean[][] {
-  const { width, face } = catcherLogoSize(scale)
+function catcherMask(scale: number, word: string): boolean[][] {
+  const { width, face } = catcherLogoSize(scale, word)
   const layer = new PixelBuffer(width, face, '#000000')
-  WORD.split('').forEach((letter, i) => {
-    const ox = i * (LETTER_W + GAP)
+  const { at } = spacing(word)
+  word.split('').forEach((letter, i) => {
+    if (!LETTERS[letter]) return
+    const ox = at[i]
     const place = (poly: Poly) => {
       const out: Array<readonly [number, number]> = []
       poly.forEach(([x0, y0], k) => {
@@ -85,24 +105,25 @@ function catcherMask(scale: number): boolean[][] {
 const KEY = '#ff00fe'
 const catcherCache = new Map<string, PixelBuffer>()
 
-export function drawCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: string, scale: number, frame = 0): void {
-  // drawn once per accent, size and drip, then stamped: the letters' depth is the costly part
-  const key = `${accent}|${scale}|${frame % 2}`
+export function drawCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: string, scale: number, frame = 0, word = WORD): void {
+  // drawn once per word, accent, size and drip, then stamped: the letters' depth is the costly part
+  const sauce = word === WORD
+  const key = `${word}|${accent}|${scale}|${sauce ? frame % 2 : 0}`
   let layer = catcherCache.get(key)
   if (!layer) {
-    const { width, height } = catcherLogoSize(scale)
+    const { width, height } = catcherLogoSize(scale, word)
     const pad = Math.round(height * 0.5)
     layer = new PixelBuffer(width + pad * 2, height + pad, KEY)
-    paintCatcherLogo(layer, pad, 6, accent, scale, frame)
+    paintCatcherLogo(layer, pad, 6, accent, scale, frame, word)
     catcherCache.set(key, layer)
   }
-  const pad = Math.round(catcherLogoSize(scale).height * 0.5)
+  const pad = Math.round(catcherLogoSize(scale, word).height * 0.5)
   buffer.stamp(layer, x - pad, y - 6, KEY)
 }
 
-function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: string, scale: number, frame: number): void {
-  const mask = catcherMask(scale)
-  const { width, face, height } = catcherLogoSize(scale)
+function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: string, scale: number, frame: number, word: string): void {
+  const mask = catcherMask(scale, word)
+  const { width, face, height } = catcherLogoSize(scale, word)
   const depth = height - face
   const on = (mx: number, my: number) => my >= 0 && my < face && mx >= 0 && mx < width && mask[my][mx]
   // the depth runs back toward a point far below the middle of the word: the sides close in, the letters come at us
@@ -153,8 +174,9 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
     if (top || left) c = bevel
     buffer.set(x + mx, y + my, c)
   }
-  // the sauce: a small drip over the R's top right corner, longer every other frame;
+  // the sauce: a small drip over the R's top right corner, longer every other frame, on CATCHER only;
   // mustard rather than ketchup when the accent is red, so it still shows
+  if (word !== WORD) return
   const [ar, ag, ab] = rgbOf(accent)
   const reddish = ar > ag * 1.5 && ar > ab * 1.1
   const sauce = reddish ? '#ffcc33' : '#e0301e', dark = reddish ? '#9a7010' : '#8a140a', shine = reddish ? '#fff0a0' : '#ff9a8a'

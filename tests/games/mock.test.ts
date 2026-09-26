@@ -101,11 +101,12 @@ test('le magasin : 28 sur 20, clos, une entrée, un départ, tout le sol atteign
   for (let y = 0; y < MAZE_HEIGHT; y += 1) for (let x = 0; x < MAZE_WIDTH; x += 1) assert.equal(MAZE_TALL[x][y], MAZE[y][x])
 })
 
-test('les huit niveaux du diner : sol noir puis damier léger, des îlots de meubles de plus en plus, toujours jouables', () => {
-  assert.equal(EATER_LEVELS.length, 8)
+test('les seize niveaux du diner : sol noir puis damier léger, de plus en plus de meubles, toujours jouables', () => {
+  assert.equal(EATER_LEVELS.length, 16)
   assert.deepEqual(EATER_LEVELS.slice(0, 2).map((l) => l.islands.length), [0, 0], 'rien aux niveaux 1 et 2')
   assert.ok(EATER_LEVELS.slice(0, 2).every((l) => l.floor === 'plain') && EATER_LEVELS.slice(2).every((l) => l.floor === 'checker'), 'le damier à partir du niveau 3')
-  for (let i = 1; i < EATER_LEVELS.length; i += 1) assert.ok(EATER_LEVELS[i].islands.length >= EATER_LEVELS[i - 1].islands.length, `le niveau ${i + 1} a au moins autant d_îlots`)
+  const taken = (i: number) => EATER_LEVELS[i].islands.reduce((sum, island) => sum + island.reduce((a, f) => a + f.w * f.h, 0), 0)
+  for (let i = 1; i < EATER_LEVELS.length; i += 1) assert.ok(taken(i) >= taken(i - 1), `le niveau ${i + 1} a au moins autant de meubles`)
   const cellsOf = (island: (typeof EATER_LEVELS)[number]['islands'][number]) => island.flatMap((f) => Array.from({ length: f.w * f.h }, (_, k) => [f.x + (k % f.w), f.y + Math.floor(k / f.w)] as const))
   for (const [n, level] of EATER_LEVELS.entries()) {
     // two clear cells between islands, and between an island and the walls
@@ -118,11 +119,12 @@ test('les huit niveaux du diner : sol noir puis damier léger, des îlots de meu
       })
     })
   }
-  for (const layout of ['landscape', 'portrait'] as const) for (let level = 1; level <= 8; level += 1) {
+  for (const layout of ['landscape', 'portrait'] as const) for (let level = 1; level <= 16; level += 1) {
     const { cols, rows } = boardSize(layout)
     const blocked = obstacleCells(layout, level)
     const free = (x: number, y: number) => x >= 1 && y >= 1 && x < cols - 1 && y < rows - 1 && !blocked.has(`${x},${y}`)
-    for (const [x, y] of EATER_PATH) assert.ok(!blocked.has(layout === 'portrait' ? `${y},${x}` : `${x},${y}`), `niveau ${level} : un meuble sous le corps en ${x},${y}`)
+    // the mock screens draw the eater and his food at fixed places on levels 1 to 8
+    if (level <= 8) for (const [x, y] of EATER_PATH) assert.ok(!blocked.has(layout === 'portrait' ? `${y},${x}` : `${x},${y}`), `niveau ${level} : un meuble sous le corps en ${x},${y}`)
     for (let x = 2; x <= 8; x += 1) assert.ok(!blocked.has(layout === 'portrait' ? `10,${x}` : `${x},10`), `niveau ${level} : départ encombré`)
     // no one-cell passage anywhere: every free cell sits in a free square of two by two
     for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) {
@@ -132,9 +134,13 @@ test('les huit niveaux du diner : sol noir puis damier léger, des îlots de meu
     }
     // the food shown on the screens is in the open
     const [fx, fy] = layout === 'portrait' ? [7, 22] : [22, 7]
-    assert.ok(openCell(layout, level, fx, fy), `${layout} niveau ${level} : burger collé à un meuble`)
+    if (level <= 8) assert.ok(openCell(layout, level, fx, fy), `${layout} niveau ${level} : burger collé à un meuble`)
     const [mx, my] = layout === 'portrait' ? [4, 19] : [19, 4]
-    assert.ok(openCell(layout, level, mx, my), `${layout} niveau ${level} : milkshake collé à un meuble`)
+    if (level <= 8) assert.ok(openCell(layout, level, mx, my), `${layout} niveau ${level} : milkshake collé à un meuble`)
+    // somewhere in the open for the burgers, in the middle of the room too
+    let open = 0, middle = 0
+    for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) if (free(x, y) && openCell(layout, level, x, y)) { open += 1; if (x > 3 && y > 3 && x < cols - 4 && y < rows - 4) middle += 1 }
+    assert.ok(open >= 40 && middle >= 6, `${layout} niveau ${level} : trop peu de place pour les burgers (${open}, ${middle} au milieu)`)
     const cells: string[] = []
     for (let y = 1; y < rows - 1; y += 1) for (let x = 1; x < cols - 1; x += 1) if (free(x, y)) cells.push(`${x},${y}`)
     const seen = new Set([cells[0]])
@@ -156,12 +162,14 @@ test('les personnages des titres sont ceux du jeu, deux fois plus fins', () => {
   }
 })
 
-test('les écrans de base : titre, jeu, GAME OVER, en paysage et en portrait, aux tailles annoncées', () => {
+test('les écrans de base : titre, jeu, GAME OVER, WINNER, en paysage et en portrait, aux tailles annoncées', () => {
   const shots = renderAll('#0FC55D')
-  assert.equal(shots.length, 20, 'CATCHER : titre de nuit et de jour, jeu, GAME OVER ; EATER : titre de nuit et de jour, trois niveaux, GAME OVER ; fois deux formats')
+  assert.equal(shots.length, 28, 'CATCHER : titre de nuit et de jour, jeu, GAME OVER, WINNER de nuit et de jour ; EATER : pareil avec trois niveaux de jeu ; fois deux formats')
   for (const { game, layout, name, buffer } of shots) {
     const size = name.startsWith('jeu') ? playSize(layout) : SCENE_SIZE[layout]
-    if (name === 'titre-jour') assert.notDeepEqual(buffer.get(10, 100), shots.find((o) => o.game === game && o.layout === layout && o.name === 'titre')!.buffer.get(10, 100), `${game} ${layout} : le ciel du jour diffère de la nuit`)
+    for (const [dayName, nightName] of [['titre-jour', 'titre'], ['winner-jour', 'winner']]) {
+      if (name === dayName) assert.notDeepEqual(buffer.get(10, 100), shots.find((o) => o.game === game && o.layout === layout && o.name === nightName)!.buffer.get(10, 100), `${game} ${layout} : le ciel du jour diffère de la nuit`)
+    }
     assert.equal(buffer.width, size.width, `${game} ${name} ${layout}`)
     assert.equal(buffer.height, size.height, `${game} ${name} ${layout}`)
     assert.ok(buffer.countNot('#000000') > buffer.width * buffer.height * 0.5, `${game} ${name} ${layout} : presque vide`)
