@@ -6,8 +6,9 @@
  * site: only the masks do, as runs of pixels.
  *
  * The E is pushed along until it touches the a, so the tube runs on; every
- * stroke is thickened to twice its width, the letters otherwise as drawn.
- * Two sizes: one for a wide title, one as wide as a tall one allows.
+ * stroke is thickened to twice its width, the letters otherwise as drawn;
+ * the whole word is turned five degrees to rise to the right. Two sizes:
+ * one for a wide title, one for a tall one.
  *
  *   node --import tsx scripts/games/lettering.ts
  */
@@ -22,8 +23,8 @@ const FONTS = join(__dirname, 'fonts')
 
 type Variant = { name: string; file: string; width: number; bold: number; turn: number }
 const VARIANTS: Variant[] = [
-  { name: 'wide', file: 'MeowScript-Regular.ttf', width: 500, bold: 2, turn: 0 },
-  { name: 'tall', file: 'MeowScript-Regular.ttf', width: 396, bold: 2, turn: 0 },
+  { name: 'wide', file: 'MeowScript-Regular.ttf', width: 360, bold: 2, turn: 5 },
+  { name: 'tall', file: 'MeowScript-Regular.ttf', width: 340, bold: 2, turn: 5 },
 ]
 
 type Mask = { w: number; h: number; data: Uint8Array }
