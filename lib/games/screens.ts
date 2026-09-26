@@ -64,7 +64,7 @@ type Prop =
 type Stage = {
   ground: number; building: [number, number]; horizon: number
   randomY: number; markY: number; markSize: number
-  road: { bottom: number; line: number; lanes: number[] }
+  road: { bottom: number; line: number; lanes: Array<[number, number]> }
   press: number; info: 'top' | 'bottom'
   moon: [number, number, number]; clouds: Array<[number, number, 'big' | 'long' | 'small', boolean]>; wisps: Array<[number, number, number]>
   far: Building[]; near: Building[]; props: Prop[]
@@ -77,16 +77,16 @@ function stage(game: Game, layout: Layout): Stage {
   if (layout === 'landscape') {
     return game === 'catcher'
       ? {
-          ground: 328, building: [200, 368], horizon: 326, randomY: 14, markY: 55, markSize: 0.92,
-          road: { bottom: 432, line: 404, lanes: [350, 354] }, press: 410, info: 'top',
+          ground: 328, building: [200, 368], horizon: 326, randomY: 16, markY: 62, markSize: 1.0,
+          road: { bottom: 432, line: 406, lanes: [[346, 1.75], [372, 2.05]] }, press: 412, info: 'top',
           moon: [712, 62, 17], clouds: [[6, 52, 'big', false], [596, 116, 'long', true], [524, 16, 'small', false]], wisps: [],
           far: [[-10, 74, 128, 'stepped'], [66, 52, 104, 'spire'], [126, 70, 96, 'block'], [300, 90, 168, 'block'], [548, 58, 112, 'twin'], [612, 76, 166, 'stepped'], [694, 90, 104, 'block']],
           near: [[0, 58, 88, 'tank'], [60, 74, 132, 'antenna'], [138, 58, 70, 'block'], [576, 66, 96, 'block'], [648, 56, 62, 'tank'], [702, 70, 124, 'antenna']],
           props: [{ kind: 'bench', x: 22, w: 70 }, { kind: 'lamp', x: 118, h: 178 }, { kind: 'vending', x: 152 }, { kind: 'bin', x: 588 }, { kind: 'hydrant', x: 640 }, { kind: 'tree', x: 712, size: 46 }],
         }
       : {
-          ground: 330, building: [152, 464], horizon: 326, randomY: 14, markY: 40, markSize: 0,
-          road: { bottom: 432, line: 404, lanes: [352, 356] }, press: 410, info: 'top',
+          ground: 330, building: [152, 464], horizon: 326, randomY: 16, markY: 46, markSize: 0,
+          road: { bottom: 432, line: 408, lanes: [[348, 1.75], [374, 2.05]] }, press: 414, info: 'top',
           moon: [118, 60, 16], clouds: [[560, 54, 'big', true], [0, 104, 'long', false], [250, 16, 'small', true]], wisps: [[310, 150, 56]],
           far: [[-6, 66, 120, 'block'], [58, 90, 162, 'stepped'], [640, 50, 176, 'spire'], [688, 84, 118, 'twin']],
           near: [[0, 62, 76, 'antenna'], [104, 50, 100, 'block'], [618, 70, 90, 'tank'], [690, 80, 136, 'block']],
@@ -96,7 +96,7 @@ function stage(game: Game, layout: Layout): Stage {
   return game === 'catcher'
     ? {
         ground: 562, building: [32, 368], horizon: 560, randomY: 196, markY: 242, markSize: 0.88,
-        road: { bottom: 714, line: 640, lanes: [584, 634] }, press: 724, info: 'bottom',
+        road: { bottom: 714, line: 640, lanes: [[584, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
         moon: [96, 66, 20], clouds: [[216, 92, 'big', true], [0, 170, 'long', false], [300, 30, 'small', false]], wisps: [[40, 130, 60]],
         far: [[-10, 80, 170, 'stepped'], [80, 60, 240, 'spire'], [150, 90, 150, 'block'], [260, 70, 200, 'twin'], [340, 100, 150, 'stepped']],
         near: [[0, 70, 110, 'tank'], [300, 60, 140, 'antenna'], [370, 70, 100, 'block']],
@@ -104,7 +104,7 @@ function stage(game: Game, layout: Layout): Stage {
       }
     : {
         ground: 562, building: [16, 400], horizon: 560, randomY: 196, markY: 226, markSize: 0,
-        road: { bottom: 714, line: 640, lanes: [584, 634] }, press: 724, info: 'bottom',
+        road: { bottom: 714, line: 640, lanes: [[584, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
         moon: [330, 70, 20], clouds: [[0, 90, 'big', false], [260, 150, 'long', true], [150, 30, 'small', true]], wisps: [[300, 40, 60]],
         far: [[-10, 90, 160, 'block'], [80, 56, 230, 'spire'], [140, 90, 180, 'stepped'], [250, 70, 150, 'twin'], [330, 110, 200, 'stepped']],
         near: [[0, 60, 120, 'antenna'], [360, 80, 110, 'tank']],
@@ -182,11 +182,12 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
   // traffic: a car in each lane, each at its own speed and way, the nearer lane drawn last
   const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
   const carLength = Math.round(104 * CAR_SCALE)
-  s.road.lanes.forEach((y, i) => {
+  s.road.lanes.forEach(([y, scale], i) => {
     const dir: 1 | -1 = i % 2 === 0 ? 1 : -1
+    const length = Math.round(104 * scale)
     const span = W + carLength * 2
     const pos = ((frame * (i === 0 ? 14 : 11) + (i === 0 ? carLength - 10 : carLength + 30)) % span) - carLength
-    car(buffer, dir === 1 ? pos : W - pos - carLength, y, colors[i % colors.length], dir, CAR_SCALE)
+    car(buffer, dir === 1 ? pos : W - pos - length, y, colors[i % colors.length], dir, scale)
   })
   return s
 }

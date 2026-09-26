@@ -28,7 +28,7 @@ test('le logo pixel : 96 sur 22, rectangulaire, dessiné', () => {
 test('les marques : CATCHER tient dans un écran en hauteur, le second néon d_EATER se distingue de l_accent', () => {
   assert.ok(catcherLogoSize(0.88).width <= SCENE_SIZE.portrait.width - 16, 'CATCHER tient en portrait')
   for (const name of ['tall'] as const) assert.ok(eaterLogoSize(name).width <= SCENE_SIZE.portrait.width, `le néon ${name} tient en portrait`)
-  assert.ok(catcherLogoSize(0.92).width <= SCENE_SIZE.landscape.width - 300, 'CATCHER laisse de la place en paysage')
+  assert.ok(catcherLogoSize(1).width <= SCENE_SIZE.landscape.width - 280, 'CATCHER laisse de la place en paysage')
   for (const accent of TEXT_COLORS) assert.notEqual(secondNeon(accent).toLowerCase(), accent.toLowerCase())
 })
 
