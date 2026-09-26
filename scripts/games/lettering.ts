@@ -1,13 +1,13 @@
 /**
- * Draws the word EATER's title lettering from two free fonts (SIL Open
- * Font License, files and licences in `scripts/games/fonts/`) into pixel
- * masks, once, and writes them to `lib/games/lettering-data.ts`. The font
- * files never reach the site: only the masks do, as runs of pixels.
+ * Draws the word EATER's title lettering from a free font (Meow Script,
+ * The Meow Script Project Authors, SIL Open Font License 1.1 — file and
+ * licence in `scripts/games/fonts/`) into pixel masks, once, and writes
+ * them to `lib/games/lettering-data.ts`. The font file never reaches the
+ * site: only the masks do, as runs of pixels.
  *
- *   Meow Script (The Meow Script Project Authors): the E pushed along until
- *   it touches the a, every stroke thickened to three times its width.
- *   Yesteryear (Astigmatic): as drawn, the E touching the a, the whole word
- *   turned twenty degrees to rise to the right.
+ * The E is pushed along until it touches the a, so the tube runs on; every
+ * stroke is thickened to twice its width, the letters otherwise as drawn.
+ * Two sizes: one for a wide title, one as wide as a tall one allows.
  *
  *   node --import tsx scripts/games/lettering.ts
  */
@@ -22,8 +22,8 @@ const FONTS = join(__dirname, 'fonts')
 
 type Variant = { name: string; file: string; width: number; bold: number; turn: number }
 const VARIANTS: Variant[] = [
-  { name: 'meow', file: 'MeowScript-Regular.ttf', width: 330, bold: 3, turn: 0 },
-  { name: 'yesteryear', file: 'Yesteryear-Regular.ttf', width: 290, bold: 1, turn: 20 },
+  { name: 'wide', file: 'MeowScript-Regular.ttf', width: 500, bold: 2, turn: 0 },
+  { name: 'tall', file: 'MeowScript-Regular.ttf', width: 396, bold: 2, turn: 0 },
 ]
 
 type Mask = { w: number; h: number; data: Uint8Array }
@@ -97,60 +97,7 @@ function build(v: Variant): { width: number; height: number; rows: string[] } {
   const all = [...place(letters[0].contours, 0, shift), ...rest]
   const cx = W / 2, cy = H / 2, a = (-v.turn * Math.PI) / 180
   const turned = v.turn ? all.map((c) => c.map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)] as [number, number])) : all
-  const thin = raster(turned)
-  const big = dilate(thin, grow)
-  // the holes inside the letters (the eye of the e, the bowl of the a) would close up at three times the weight:
-  // they are carved back a little wider than drawn — the strokes thicken outward only — so the word still reads
-  const outside = new Uint8Array(W * H)
-  const stack: number[] = []
-  for (let x = 0; x < W; x += 1) stack.push(x, (H - 1) * W + x)
-  for (let y = 0; y < H; y += 1) stack.push(y * W, y * W + W - 1)
-  while (stack.length) {
-    const i = stack.pop()!
-    if (i < 0 || i >= W * H || outside[i] || thin.data[i]) continue
-    outside[i] = 1
-    const x = i % W
-    if (x > 0) stack.push(i - 1)
-    if (x < W - 1) stack.push(i + 1)
-    stack.push(i - W, i + W)
-  }
-  const notHole: Mask = { w: W, h: H, data: Uint8Array.from(thin.data, (on, i) => (on || outside[i] ? 1 : 0)) }
-  // each hole on its own: only the small ones (an eye, a bowl) are widened; a big loop keeps its drawn size
-  const label = new Int32Array(W * H).fill(-1)
-  const small: number[] = []
-  let count = 0
-  for (let i = 0; i < W * H; i += 1) {
-    if (notHole.data[i] || label[i] >= 0) continue
-    const members: number[] = []
-    const todo = [i]
-    label[i] = count
-    while (todo.length) {
-      const j = todo.pop()!
-      members.push(j)
-      for (const k of [j - 1, j + 1, j - W, j + W]) if (k >= 0 && k < W * H && !notHole.data[k] && label[k] < 0) { label[k] = count; todo.push(k) }
-    }
-    if (members.length > 16 && members.length < (grow * 3) ** 2) small.push(count)
-    count += 1
-  }
-  const smallHoles: Mask = { w: W, h: H, data: Uint8Array.from(label, (l) => (l >= 0 && small.includes(l) ? 1 : 0)) }
-  const bigHoles = Uint8Array.from(label, (l) => (l >= 0 && !small.includes(l) ? 1 : 0))
-  const toHole = distance(smallHoles)
-  const widen = (grow * 0.7) ** 2
-  for (let i = 0; i < W * H; i += 1) if (toHole[i] <= widen || bigHoles[i]) big.data[i] = 0
-  // and no crumbs: bits of letter left standing alone are cleared
-  const seen = new Uint8Array(W * H)
-  for (let i = 0; i < W * H; i += 1) {
-    if (!big.data[i] || seen[i]) continue
-    const members: number[] = []
-    const todo = [i]
-    seen[i] = 1
-    while (todo.length) {
-      const j = todo.pop()!
-      members.push(j)
-      for (const k of [j - 1, j + 1, j - W, j + W]) if (k >= 0 && k < W * H && big.data[k] && !seen[k]) { seen[k] = 1; todo.push(k) }
-    }
-    if (members.length < (grow * 4) ** 2) for (const j of members) big.data[j] = 0
-  }
+  const big = dilate(raster(turned), grow)
   // crop to the letters, then one pixel for every SS × SS block at least half covered
   let x0 = W, y0 = H, x1 = 0, y1 = 0
   for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) if (big.data[y * W + x]) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y) }
@@ -185,10 +132,10 @@ const parts = VARIANTS.map((v) => {
 
 writeFileSync(join(__dirname, '../../lib/games/lettering-data.ts'), `/**
  * The EATER title lettering as pixel masks, written by
- * \`scripts/games/lettering.ts\` from two fonts under the SIL Open Font
- * License 1.1: Meow Script (The Meow Script Project Authors) and
- * Yesteryear (Astigmatic). Each row is the lengths of its alternating runs
- * of pixels, off first, in base 36. Generated — do not edit by hand.
+ * \`scripts/games/lettering.ts\` from Meow Script (The Meow Script Project
+ * Authors, SIL Open Font License 1.1): \`wide\` for a wide title, \`tall\`
+ * for a tall one. Each row is the lengths of its alternating runs of
+ * pixels, off first, in base 36. Generated — do not edit by hand.
  */
 
 export const LETTERING = {

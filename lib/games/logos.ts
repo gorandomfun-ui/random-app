@@ -27,32 +27,48 @@ function box(x0: number, y0: number, x1: number, y1: number, c: [number, number,
   return [[x0 + tl, y0], [x1 - tr, y0], [x1, y0 + tr], [x1, y1 - br], [x1 - br, y1], [x0 + bl, y1], [x0, y1 - bl], [x0, y0 + tl]]
 }
 
-/** Each letter in a 60 × 70 box: the shapes that fill it, and the shapes cut out of it. */
+/** Each letter in a 60 × 70 box, strokes twenty-five thick: the shapes that fill it, and the shapes cut out of it. */
 const LETTERS: Record<string, { fill: Poly[]; cut: Poly[] }> = {
-  C: { fill: [box(0, 0, 60, 70, [14, 10, 10, 14])], cut: [box(21, 20, 61, 50, [6, 0, 0, 6])] },
-  A: { fill: [box(0, 0, 60, 70, [16, 16, 0, 0])], cut: [box(21, 19, 39, 36, [4, 4, 0, 0]), box(21, 52, 39, 71)] },
-  T: { fill: [box(0, 0, 60, 21, [4, 4, 0, 0]), box(20, 20, 40, 70)], cut: [] },
-  H: { fill: [box(0, 0, 21, 70), box(39, 0, 60, 70), box(20, 26, 40, 45)], cut: [] },
-  E: { fill: [box(0, 0, 21, 70, [8, 0, 0, 8]), box(20, 0, 60, 19), box(20, 26, 53, 44), box(20, 51, 60, 70)], cut: [] },
-  R: { fill: [box(0, 0, 60, 45, [0, 16, 10, 0]), box(0, 44, 21, 70), [[28, 42], [50, 42], [62, 70], [40, 70]]], cut: [box(21, 17, 39, 29, [0, 3, 3, 0])] },
+  C: { fill: [box(0, 0, 60, 70, [14, 10, 10, 14])], cut: [box(25, 23, 61, 47, [5, 0, 0, 5])] },
+  A: { fill: [box(0, 0, 60, 70, [16, 16, 0, 0])], cut: [box(25, 22, 35, 35, [3, 3, 0, 0]), box(25, 51, 35, 71)] },
+  T: { fill: [box(0, 0, 60, 24, [4, 4, 0, 0]), box(17, 23, 43, 70)], cut: [] },
+  H: { fill: [box(0, 0, 25, 70), box(35, 0, 60, 70), box(24, 24, 36, 46)], cut: [] },
+  E: { fill: [box(0, 0, 25, 70, [8, 0, 0, 8]), box(24, 0, 60, 22), box(24, 25, 54, 45), box(24, 48, 60, 70)], cut: [] },
+  R: { fill: [box(0, 0, 60, 45, [0, 16, 10, 0]), box(0, 44, 25, 70), [[26, 42], [50, 42], [63, 70], [37, 70]]], cut: [box(25, 19, 35, 28, [0, 3, 3, 0])] },
 }
 const WORD = 'CATCHER'
-const LETTER_W = 60, LETTER_H = 70, GAP = 9
+const LETTER_W = 60, LETTER_H = 70, GAP = 8
+/** How far the ends of the word sit below its middle: the arch. */
+const ARCH = 14
 
 /** The size of the CATCHER mark at a scale: the face, and the room the depth takes under it. */
 export function catcherLogoSize(scale: number): { width: number; face: number; height: number } {
   const width = Math.round((WORD.length * LETTER_W + (WORD.length - 1) * GAP) * scale)
-  const face = Math.round(LETTER_H * scale)
-  return { width, face, height: face + Math.round(face * 0.48) }
+  const face = Math.round((LETTER_H + ARCH) * scale)
+  return { width, face, height: face + Math.round(LETTER_H * scale * 0.48) }
 }
 
-/** The word's face as a mask of pixels. */
+/** How far down a point of the word sits at `x`: nothing in the middle, the full arch at the ends. */
+const archAt = (x: number, width: number, scale: number): number => ARCH * scale * ((x - width / 2) / (width / 2)) ** 2
+
+/** The word's face as a mask of pixels, bent into its arch: every edge cut into short steps, each step lowered by the arch where it stands. */
 function catcherMask(scale: number): boolean[][] {
   const { width, face } = catcherLogoSize(scale)
   const layer = new PixelBuffer(width, face, '#000000')
   WORD.split('').forEach((letter, i) => {
     const ox = i * (LETTER_W + GAP)
-    const place = (poly: Poly) => poly.map(([x, y]) => [(ox + x) * scale, y * scale] as const)
+    const place = (poly: Poly) => {
+      const out: Array<readonly [number, number]> = []
+      poly.forEach(([x0, y0], k) => {
+        const [x1, y1] = poly[(k + 1) % poly.length]
+        const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 3))
+        for (let st = 0; st < steps; st += 1) {
+          const x = (ox + x0 + ((x1 - x0) * st) / steps) * scale, y = (y0 + ((y1 - y0) * st) / steps) * scale
+          out.push([x, y + archAt(x, width, scale)])
+        }
+      })
+      return out
+    }
     for (const p of LETTERS[letter].fill) layer.poly(place(p), '#ffffff')
     for (const p of LETTERS[letter].cut) layer.poly(place(p), '#000000')
   })
@@ -91,7 +107,9 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
   const on = (mx: number, my: number) => my >= 0 && my < face && mx >= 0 && mx < width && mask[my][mx]
   // the depth runs back toward a point far below the middle of the word: the sides close in, the letters come at us
   const vx = x + width / 2, vy = y + face + depth * 6
-  const faceC = mix(accent, CREAM, 0.42), bevel = mix(accent, CREAM, 0.85), faceShade = mix(accent, CREAM, 0.22)
+  const bevel = mix(accent, CREAM, 0.85)
+  // the face's pixel gradient, dark at the foot to light at the top
+  const tones = [dim(accent, 0.78), accent, mix(accent, CREAM, 0.25), mix(accent, CREAM, 0.48), mix(accent, CREAM, 0.68)]
   const side = dim(accent, 0.62), under = dim(accent, 0.42), back = dim(accent, 0.28)
   const cells: Array<[number, number, 0 | 1 | 2]> = []
   mask.forEach((row, my) => row.forEach((set, mx) => {
@@ -104,7 +122,13 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
     const t = k / (vy - py)
     return [Math.floor(px + (vx - px) * t), Math.floor(py + (vy - py) * t)]
   }
-  // the outline: round the back silhouette and every step of the depth
+  // a hard black shadow behind it all, then the outline round the back silhouette and every step of the depth
+  const sx = Math.round(7 * scale), sy = Math.round(9 * scale)
+  for (let k = depth + 1; k >= 0; k -= 1) for (const [mx, my, kind] of cells) {
+    if (kind === 0 && k > 0) continue
+    const [qx, qy] = project(mx, my, k)
+    buffer.rect(qx - 2 + sx, qy - 2 + sy, 5, 5, '#020106')
+  }
   for (let k = depth + 1; k >= 0; k -= 1) for (const [mx, my, kind] of cells) {
     if (kind === 0 && k > 0) continue
     const [qx, qy] = project(mx, my, k)
@@ -118,14 +142,14 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
     const [qx, qy] = project(mx, my, k)
     buffer.set(qx, qy, k >= depth - 1 ? back : kind === 2 ? under : side)
   }
-  // the face, its bevel of light on the top and left, a shade on the bottom and right
+  // the face in its gradient, a bevel of light along the top and the left edges
+  const letterH = LETTER_H * scale
   for (const [mx, my] of cells) {
-    const top = !on(mx, my - 1) || !on(mx, my - 2) || !on(mx, my - 3)
-    const left = !on(mx - 1, my) || !on(mx - 2, my) || !on(mx - 3, my)
-    const bottom = !on(mx, my + 1) || !on(mx, my + 2)
-    const right = !on(mx + 1, my) || !on(mx + 2, my)
-    let c = faceC
-    if (bottom || right) c = faceShade
+    const top = !on(mx, my - 1) || !on(mx, my - 2)
+    const left = !on(mx - 1, my) || !on(mx - 2, my)
+    const f = (1 - (my - archAt(mx, width, scale)) / letterH) * (tones.length - 1)
+    const k = Math.max(0, Math.min(tones.length - 2, Math.floor(f)))
+    let c = dither(mx, my, Math.max(0, Math.min(1, f - k))) ? tones[k + 1] : tones[k]
     if (top || left) c = bevel
     buffer.set(x + mx, y + my, c)
   }
@@ -137,7 +161,7 @@ function paintCatcherLogo(buffer: PixelBuffer, x: number, y: number, accent: str
   // a pool along the top of the R's bowl, rounded at its ends, two drips hanging from it, each ending in a drop
   const u = scale
   const px0 = x + Math.round((6 * (LETTER_W + GAP) + 18) * u), px1 = x + Math.round((6 * (LETTER_W + GAP) + 40) * u)
-  const py0 = y + Math.round(1 * u), thick = Math.max(3, Math.round(4 * u))
+  const py0 = y + Math.round(1 * u + archAt(px0 - x + 10 * u, width, u)), thick = Math.max(3, Math.round(4 * u))
   const drips: Array<[number, number, number]> = [[px0 + Math.round(5 * u), Math.round(14 * u) + (frame % 2) * Math.round(4 * u), 2.4 * u], [px0 + Math.round(15 * u), Math.round(6 * u), 1.8 * u]]
   const shape = (grow: number, color: string) => {
     buffer.rect(px0, py0 - grow, px1 - px0, thick + 2 * grow, color)
@@ -199,7 +223,7 @@ function grown(mask: Mask, pad: number, r: number, dx = 0, dy = 0): Mask {
   return { w, h, on }
 }
 
-const PAD = 16
+const PAD = 18
 const RIM = 4
 /** How far the rim eats into the letters, so it is thick without swelling them further. */
 const INSET = 2
@@ -244,14 +268,24 @@ export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent:
       const glow = grown(mask, PAD, RIM + 7)
       for (let i = 0; i < glow.on.length; i += 1) if (glow.on[i] && !outer.on[i]) { const gx = i % glow.w, gy = Math.floor(i / glow.w); if (dither(gx, gy, 0.22)) layer.set(gx, gy, mix('#140e28', accent, 0.4)) }
     }
-    // the shadow on the board, the band of second neon under the letters with its dark edge, then the letters
-    paint(grown(mask, PAD, RIM + 1, 4, 7), mix(OUTLINE, accent, 0.12))
+    // a strong shadow on the board, the band of second neon under the letters with its dark edge, then the letters
+    paint(grown(mask, PAD, RIM + 2, 6, 9), '#030208')
     paint(grown(mask, PAD, RIM + 1, 1, 6), OUTLINE)
     paint(grown(mask, PAD, RIM, 1, 6), swashLit ? second : '#3e3a4c')
     paint(outer, OUTLINE)
     paint(grown(mask, PAD, RIM), lit ? accent : '#4a4658')
     const core = grown(shrunk(mask, INSET), PAD, 0)
-    paint(core, lit ? mix(accent, '#fff4dc', 0.93) : '#6a6678')
+    // the cream of the letters in a light pixel gradient, darker at the foot, white at the top
+    const tones = lit ? [mix(accent, '#fff4dc', 0.6), mix(accent, '#fff4dc', 0.8), '#fff4dc', '#ffffff'] : ['#5a5668', '#625e70', '#6a6678', '#72708a']
+    let top = core.h, bottom = 0
+    for (let i = 0; i < core.on.length; i += 1) if (core.on[i]) { const cy = Math.floor(i / core.w); top = Math.min(top, cy); bottom = Math.max(bottom, cy) }
+    for (let i = 0; i < core.on.length; i += 1) {
+      if (!core.on[i]) continue
+      const cx = i % core.w, cy = Math.floor(i / core.w)
+      const f = ((bottom - cy) / Math.max(1, bottom - top)) * (tones.length - 1)
+      const k = Math.min(tones.length - 2, Math.floor(f))
+      layer.set(cx, cy, dither(cx, cy, f - k) ? tones[k + 1] : tones[k])
+    }
     // a glint along the top edge of the core
     if (lit) for (let i = core.w; i < core.on.length; i += 1) if (core.on[i] && !core.on[i - core.w]) layer.set(i % core.w, Math.floor(i / core.w), '#ffffff')
     // the holes inside the letters (the eye of the e, the bowl of the a) stay open: only a thin rim round them, the board behind shows

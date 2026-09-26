@@ -15,7 +15,6 @@ import { TEXT_COLORS } from '@/lib/theme'
 
 const LABELS: Record<string, string> = {
   titre: 'Écran titre',
-  'titre-yesteryear': 'Écran titre — essai Yesteryear, incliné de 20°',
   jeu: 'En jeu',
   'jeu-niveau-1': 'En jeu — niveau 1 : sol noir',
   'jeu-niveau-4': 'En jeu — niveau 4 : damier léger, chaises',
