@@ -253,9 +253,9 @@ const KEY_EATER = '#ff00fd'
  * soft glow. Drawn once per accent and state, then stamped. Unlit, the
  * glass goes grey; `swashLit` false puts the second neon out.
  */
-export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, name: LetteringName, options: { lit?: boolean; swashLit?: boolean } = {}): void {
-  const lit = options.lit !== false, swashLit = lit && options.swashLit !== false
-  const key = `${name}|${accent}|${lit}|${swashLit}`
+export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent: string, name: LetteringName, options: { lit?: boolean; swashLit?: boolean; glow?: boolean } = {}): void {
+  const lit = options.lit !== false, swashLit = lit && options.swashLit !== false, glowOn = lit && options.glow !== false
+  const key = `${name}|${accent}|${lit}|${swashLit}|${glowOn}`
   let layer = eaterCache.get(key)
   if (!layer) {
     const mask = lettering(name)
@@ -264,7 +264,7 @@ export function drawEaterLogo(buffer: PixelBuffer, x: number, y: number, accent:
     const second = secondNeon(accent)
     const paint = (m: Mask, color: string) => { for (let i = 0; i < m.on.length; i += 1) if (m.on[i]) layer!.set(i % m.w, Math.floor(i / m.w), color) }
     const outer = grown(mask, PAD, RIM + 1)
-    if (lit) {
+    if (glowOn) {
       const glow = grown(mask, PAD, RIM + 7)
       for (let i = 0; i < glow.on.length; i += 1) if (glow.on[i] && !outer.on[i]) { const gx = i % glow.w, gy = Math.floor(i / glow.w); if (dither(gx, gy, 0.22)) layer.set(gx, gy, mix('#140e28', accent, 0.4)) }
     }

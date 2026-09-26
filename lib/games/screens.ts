@@ -13,7 +13,7 @@ import { catcherLogoSize, drawCatcherLogo, drawEaterLogo, eaterLogoSize } from '
 import { mazeFor, MAZE_HEIGHT, MAZE_WIDTH } from './maze'
 import { dim, mix, PixelBuffer, scale2x, type Palette, type Sprite } from './pixels'
 import {
-  bench, bin, car, cloud, drawDiner, drawStore, hedge, hydrant, lamp, moon, NIGHTS, palm, railing, signFrame, skyline, sky, stars, street, tree, vending, wisp,
+  bench, bin, car, cloud, DAYS, drawDiner, drawStore, hedge, hydrant, lamp, moon, NIGHTS, palm, railing, signFrame, skyline, sky, stars, street, sun, tree, vending, wisp,
   type Building, type Night,
 } from './scenes'
 import {
@@ -78,7 +78,7 @@ function stage(game: Game, layout: Layout): Stage {
     return game === 'catcher'
       ? {
           ground: 328, building: [200, 368], horizon: 326, randomY: 16, markY: 62, markSize: 1.0,
-          road: { bottom: 432, line: 406, lanes: [[346, 1.75], [372, 2.05]] }, press: 412, info: 'top',
+          road: { bottom: 432, line: 404, lanes: [[343, 1.6], [357, 2.0]] }, press: 412, info: 'top',
           moon: [712, 62, 17], clouds: [[6, 52, 'big', false], [596, 116, 'long', true], [524, 16, 'small', false]], wisps: [],
           far: [[-10, 74, 128, 'stepped'], [66, 52, 104, 'spire'], [126, 70, 96, 'block'], [300, 90, 168, 'block'], [548, 58, 112, 'twin'], [612, 76, 166, 'stepped'], [694, 90, 104, 'block']],
           near: [[0, 58, 88, 'tank'], [60, 74, 132, 'antenna'], [138, 58, 70, 'block'], [576, 66, 96, 'block'], [648, 56, 62, 'tank'], [702, 70, 124, 'antenna']],
@@ -86,8 +86,8 @@ function stage(game: Game, layout: Layout): Stage {
         }
       : {
           ground: 330, building: [152, 464], horizon: 326, randomY: 16, markY: 46, markSize: 0,
-          road: { bottom: 432, line: 408, lanes: [[348, 1.75], [374, 2.05]] }, press: 414, info: 'top',
-          moon: [118, 60, 16], clouds: [[560, 54, 'big', true], [0, 104, 'long', false], [250, 16, 'small', true]], wisps: [[310, 150, 56]],
+          road: { bottom: 432, line: 406, lanes: [[345, 1.6], [357, 2.0]] }, press: 414, info: 'top',
+          moon: [40, 74, 16], clouds: [[560, 54, 'big', true], [0, 104, 'long', false], [250, 16, 'small', true]], wisps: [[310, 150, 56]],
           far: [[-6, 66, 120, 'block'], [58, 90, 162, 'stepped'], [640, 50, 176, 'spire'], [688, 84, 118, 'twin']],
           near: [[0, 62, 76, 'antenna'], [104, 50, 100, 'block'], [618, 70, 90, 'tank'], [690, 80, 136, 'block']],
           props: [{ kind: 'palm', x: 74, h: 230, lean: 1 }, { kind: 'hedge', x: 108, w: 40 }, { kind: 'lamp', x: 660, h: 176, left: true }, { kind: 'palm', x: 740, h: 160, lean: -0.6 }],
@@ -112,10 +112,10 @@ function stage(game: Game, layout: Layout): Stage {
       }
 }
 
-type SceneOptions = { frame: number; lit: boolean; hero: boolean; building: boolean }
+type SceneOptions = { frame: number; lit: boolean; hero: boolean; building: boolean; day?: boolean }
 
 function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, lit: boolean, index: number): void {
-  if (prop.kind === 'lamp') lamp(buffer, prop.x, s.ground, prop.h, prop.left)
+  if (prop.kind === 'lamp') lamp(buffer, prop.x, s.ground, prop.h, prop.left, !night.day)
   else if (prop.kind === 'tree') tree(buffer, prop.x, s.ground, prop.size, night, 3 + index)
   else if (prop.kind === 'palm') palm(buffer, prop.x, s.ground - 10, prop.h, prop.lean, night)
   else if (prop.kind === 'bench') bench(buffer, prop.x, s.ground, prop.w)
@@ -128,25 +128,29 @@ function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accen
 /** The night street of a game, its building and the game's own mark, its traffic, and its hero on the sidewalk. */
 function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, options: SceneOptions): Stage {
   const s = stage(game, layout)
-  const night: Night = NIGHTS[game === 'catcher' ? 'blue' : 'violet']
+  const day = options.day === true
+  const night: Night = (day ? DAYS : NIGHTS)[game === 'catcher' ? 'blue' : 'violet']
   const { width: W, height: H } = buffer
   const { frame, lit } = options
   sky(buffer, night, s.horizon)
-  stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 120 : 150, s.horizon - 120, frame)
-  moon(buffer, ...s.moon)
+  if (day) sun(buffer, s.moon[0], s.moon[1], s.moon[2] * 1.15)
+  else {
+    stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 120 : 150, s.horizon - 120, frame)
+    moon(buffer, ...s.moon)
+  }
   s.wisps.forEach(([x, y, w]) => wisp(buffer, x, y, w, night))
   s.clouds.forEach(([x, y, design, flip]) => cloud(buffer, x, y, design, night, flip, s.moon[0] < W / 2))
   skyline(buffer, night, s.ground - 16, s.far, s.near, frame)
   const [bx, bw] = s.building
   // palms stand behind the railing; everything else in front
   s.props.forEach((prop, i) => { if (prop.kind === 'palm') drawProp(buffer, prop, s, night, accent, lit, i) })
-  railing(buffer, s.ground - 26, game === 'catcher' ? '#343c6c' : '#3c3068')
+  railing(buffer, s.ground - 26, day ? '#7a82a0' : game === 'catcher' ? '#343c6c' : '#3c3068')
   if (options.building) {
     // RANDOM first: each game's own mark may bite a little into it
     const rx = Math.round(W / 2 - LOGO_WIDTH)
     drawLogo(buffer, rx + 3, s.randomY + 4, INK, 2)
     drawLogo(buffer, rx, s.randomY, mix(accent, CREAM, 0.25), 2)
-    if (game === 'catcher') drawStore(buffer, bx, bw, s.ground, accent, frame, lit)
+    if (game === 'catcher') drawStore(buffer, bx, bw, s.ground, accent, frame, lit, day)
     else {
       const lettering = layout === 'landscape' ? 'wide' : 'tall'
       const logo = eaterLogoSize(lettering)
@@ -156,8 +160,8 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
       // the board behind the letters stops just under them; its posts carry it down to the roof
       const frameBottom = Math.min(roof - 6, markY + logo.height - 10)
       signFrame(buffer, Math.round(W / 2 - logo.width / 2) - 4, frameTop, logo.width + 8, Math.max(20, frameBottom - frameTop), roof)
-      drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), markY, accent, lettering, { lit: lit && frame % 13 !== 12, swashLit: frame % 7 !== 6 })
-      drawDiner(buffer, bx, bw, s.ground, accent, frame, lit)
+      drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), markY, accent, lettering, { lit: lit && frame % 13 !== 12, swashLit: frame % 7 !== 6, glow: !day })
+      drawDiner(buffer, bx, bw, s.ground, accent, frame, lit, day)
     }
   }
   s.props.forEach((prop, i) => { if (prop.kind !== 'palm' && (options.building || prop.kind !== 'vending')) drawProp(buffer, prop, s, night, accent, lit, i) })
@@ -215,13 +219,13 @@ function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, fr
 
 // ---------------------------------------------------------------- the fine screens
 
-export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean }
+export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; day?: boolean }
 
 export function renderTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
   const { width, height } = SCENE_SIZE[layout]
   const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: true, building: true })
+  const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: true, building: true, day: options.day })
   drawMarks(buffer, game, s, accent, frame)
   pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
   const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
@@ -613,6 +617,7 @@ export function shotSpecs(accent: string): ShotSpec[] {
       const scene = SCENE_SIZE[layout], play = playSize(layout)
       const add = (name: string, size: { width: number; height: number }, draw: (frame: number) => PixelBuffer) => specs.push({ game, layout, name, width: size.width, height: size.height, draw })
       add('titre', scene, (frame) => renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }))
+      add('titre-jour', scene, (frame) => renderTitle(game, layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0, day: true }))
       if (game === 'catcher') add('jeu', play, (frame) => renderPlay(game, layout, accent, { level: 3, score: 1280, lives: 2, frame }))
       else {
         add('jeu-niveau-1', play, (frame) => renderPlay(game, layout, accent, { level: 1, score: 320, frame }))
