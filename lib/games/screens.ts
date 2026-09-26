@@ -96,7 +96,7 @@ function stage(game: Game, layout: Layout): Stage {
   return game === 'catcher'
     ? {
         ground: 562, building: [32, 368], horizon: 560, randomY: 196, markY: 242, markSize: 0.88,
-        road: { bottom: 714, line: 654, lanes: [[570, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
+        road: { bottom: 714, line: 654, lanes: [[585, 1.7], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
         moon: [96, 66, 20], clouds: [[216, 92, 'big', true], [0, 170, 'long', false], [300, 30, 'small', false]], wisps: [[40, 130, 60]],
         far: [[-10, 80, 170, 'stepped'], [80, 60, 240, 'spire'], [150, 90, 150, 'block'], [260, 70, 200, 'twin'], [340, 100, 150, 'stepped']],
         near: [[0, 70, 110, 'tank'], [300, 60, 140, 'antenna'], [370, 70, 100, 'block']],
@@ -104,7 +104,7 @@ function stage(game: Game, layout: Layout): Stage {
       }
     : {
         ground: 562, building: [16, 400], horizon: 560, randomY: 196, markY: 226, markSize: 0,
-        road: { bottom: 714, line: 654, lanes: [[570, CAR_SCALE], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
+        road: { bottom: 714, line: 654, lanes: [[585, 1.7], [634, CAR_SCALE]] }, press: 724, info: 'bottom',
         moon: [330, 70, 20], clouds: [[0, 90, 'big', false], [260, 150, 'long', true], [150, 30, 'small', true]], wisps: [[300, 40, 60]],
         far: [[-10, 90, 160, 'block'], [80, 56, 230, 'spire'], [140, 90, 180, 'stepped'], [250, 70, 150, 'twin'], [330, 110, 200, 'stepped']],
         near: [[0, 60, 120, 'antenna'], [360, 80, 110, 'tank']],
