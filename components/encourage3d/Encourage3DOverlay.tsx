@@ -497,6 +497,8 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
     let renderer: THREE.WebGLRenderer | null = null
     let environment: THREE.Texture | null = null
     const disposables: THREE.Material[] = []
+    // while three.js checks its shaders (compileAsync), freeing them makes its next check throw
+    let compiling: Promise<unknown> | null = null
 
     const start = async () => {
       try {
@@ -658,13 +660,19 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
           frame = window.requestAnimationFrame(render)
         }
 
+        compiling = renderer.compileAsync(scene, camera)
         try {
-          await renderer.compileAsync(scene, camera)
+          await compiling
         } catch {
           renderer.compile(scene, camera)
+        } finally {
+          compiling = null
+        }
+        if (disposed) {
+          observer.disconnect()
+          return undefined
         }
         renderer.render(scene, camera)
-        if (disposed) return () => observer.disconnect()
 
         startedAt = performance.now()
         if (soundPlayedRef.current !== event.id) {
@@ -694,12 +702,17 @@ export default function Encourage3DOverlay({ event, menuTargetRef, onAward, onCo
       disposed = true
       disconnect?.()
       window.cancelAnimationFrame(frame)
-      disposables.forEach((material) => material.dispose())
-      environment?.dispose()
-      if (renderer) {
-        renderer.dispose()
-        renderer.domElement.remove()
+      const release = () => {
+        disposables.forEach((material) => material.dispose())
+        environment?.dispose()
+        if (renderer) {
+          renderer.dispose()
+          renderer.domElement.remove()
+        }
       }
+      // closed while the shaders are still being checked: free everything once the check is over
+      if (compiling) void compiling.then(release, release)
+      else release()
     }
   }, [event])
 
