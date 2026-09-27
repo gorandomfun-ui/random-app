@@ -85,13 +85,16 @@ const FORMS = [
   'filmed in the crowd', 'fan recording', 'amateur', 'village', 'boda',
 ]
 
-/** Recent clips, many countries: the new songs of places that are not on the charts. */
-const CLIP_FORMS = ['videoclip oficial', 'clip officiel', 'official music video', 'clipe oficial', 'offizielles musikvideo', 'video ufficiale', 'new music video']
-const CLIP_PLACES = [
-  'guatemala', 'paraguay', 'bolivia', 'ecuador', 'honduras', 'nicaragua', 'cuba', 'haiti', 'jamaica', 'cote d ivoire', 'cameroun',
-  'benin', 'togo', 'burkina faso', 'niger', 'tchad', 'soudan', 'tanzania', 'uganda', 'zambia', 'mozambique', 'angola', 'cap vert',
-  'kazakhstan', 'ouzbekistan', 'kirghizistan', 'azerbaidjan', 'georgie', 'armenie', 'albanie', 'kosovo', 'moldavie', 'estonie',
-  'islande', 'feroe', 'nepal', 'bhoutan', 'sri lanka', 'myanmar', 'cambodge', 'laos', 'mongolie', 'papouasie', 'samoa', 'tonga',
+/**
+ * Recent clips, many countries: the new songs of places that are not on the
+ * charts. Each wording goes with the countries that title their clips that
+ * way — "offizielles musikvideo 2026 cambodge" found nothing on 27 September.
+ */
+const CLIPS: ReadonlyArray<[string, readonly string[]]> = [
+  ['videoclip oficial', ['guatemala', 'paraguay', 'bolivia', 'ecuador', 'honduras', 'nicaragua', 'el salvador', 'cuba', 'venezuela', 'peru', 'panama', 'republica dominicana']],
+  ['clip officiel', ['cote d ivoire', 'cameroun', 'benin', 'togo', 'burkina faso', 'senegal', 'mali', 'guinee', 'madagascar', 'haiti', 'congo', 'gabon', 'niger', 'tchad']],
+  ['clipe oficial', ['angola', 'mocambique', 'cabo verde', 'guine-bissau']],
+  ['official music video', ['kazakhstan', 'uzbekistan', 'kyrgyzstan', 'azerbaijan', 'georgia', 'armenia', 'albania', 'kosovo', 'moldova', 'estonia', 'iceland', 'nepal', 'bhutan', 'sri lanka', 'myanmar', 'cambodia', 'laos', 'mongolia', 'papua new guinea', 'samoa', 'tonga', 'tanzania', 'uganda', 'zambia', 'ghana', 'nigeria', 'ethiopia', 'sudan', 'malawi', 'zimbabwe']],
 ]
 
 /** Words a music video's title carries in most languages. */
@@ -133,7 +136,8 @@ export function liveQuery(random: () => number): string {
 }
 
 export function clipQuery(random: () => number, year: number): string {
-  return `${pick(CLIP_FORMS, random)} ${year} ${pick(CLIP_PLACES, random)}`
+  const [form, places] = pick(CLIPS, random)
+  return `${form} ${pick(places, random)} ${year}`
 }
 
 export type LiveSearch = { query: string; kind: 'live' | 'clip' }
