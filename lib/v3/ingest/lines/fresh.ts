@@ -13,7 +13,7 @@ import type { Document } from 'mongodb'
 import { fetchYouTubeChart, type RawVideo } from '@/lib/ingest/videos'
 import { junkKind } from '@/lib/ingest/junk'
 import { miniSeriesVerdict } from '@/lib/ingest/miniSeries'
-import { FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, pickBucket, type FreshBucket, type FreshEntry } from '../../fresh/plan'
+import { FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, pickBucket, type FreshBucket, type FreshEntry } from '../../fresh/plan'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
@@ -85,7 +85,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   for (let start = 0; start < ids.length; start += 500) {
     const chunk = await ctx.db.collection('items').find(
       { type: 'video', videoId: { $in: ids.slice(start, start + 500) } } as Document,
-      { projection: { videoId: 1, title: 1, isSuppressed: 1, editorialRoutine: 1, obsoleteVideoStatus: 1, channelId: 1, aspectRatio: 1, duration: 1, 'v3.universe': 1, 'v3.nearFamily': 1 }, hint: 'video_id_lookup' },
+      { projection: { videoId: 1, title: 1, channelTitle: 1, isSuppressed: 1, editorialRoutine: 1, obsoleteVideoStatus: 1, channelId: 1, aspectRatio: 1, duration: 1, 'v3.universe': 1, 'v3.nearFamily': 1 }, hint: 'video_id_lookup' },
     ).toArray().catch(() => [] as Document[])
     for (const row of chunk) rows.set(String(row.videoId), row)
   }
@@ -102,7 +102,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     const row = rows.get(entry.raw.videoId)
     if (!row || row.isSuppressed === true || row.obsoleteVideoStatus === 'obsolete' || before.has(entry.raw.videoId)) continue
     const title = String(row.title ?? '')
-    if (junkKind(title) || miniSeriesVerdict({ title, aspectRatio: row.aspectRatio, duration: row.duration })) continue
+    if (junkKind(title) || miniSeriesVerdict({ title, aspectRatio: row.aspectRatio, duration: row.duration }) || isAiMade(row.channelTitle, title)) continue
     byBucket.set(entry.bucket, [...(byBucket.get(entry.bucket) ?? []), {
       id: String(row._id), videoId: entry.raw.videoId, bucket: entry.bucket, rank: entry.rank, region: entry.region,
       views: entry.raw.viewCount ?? 0, channel: row.channelId ? String(row.channelId) : undefined,

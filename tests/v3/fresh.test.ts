@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
+import { FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
 
 const entry = (videoId: string, bucket: FreshBucket, region: string, rank: number, views = 0, channel?: string): FreshEntry =>
   ({ id: videoId.padStart(24, '0'), videoId, bucket, region, rank, views, channel })
@@ -50,4 +50,13 @@ test('no more than four of one universe within ten: the charts are mostly music,
     const music = order.slice(index, index + 10).filter((pick) => pick.universe === 'music').length
     assert.ok(music <= FRESH_UNIVERSE_MAX, `${music} music in ten at ${index}`)
   }
+})
+
+test('what its channel or title says is made by AI stays off the fresh list', () => {
+  assert.ok(isAiMade('ILARION-AI-STUDIO', '„ისგუ ნაცად მი“/isgu nacad mi'))
+  assert.ok(isAiMade('Some Channel', 'Epic battle (AI generated)'))
+  assert.ok(isAiMade('Sora Clips', 'made with Sora'))
+  assert.ok(!isAiMade('Troye Sivan', 'Troye Sivan - Party (Official Music Video)'))
+  assert.ok(!isAiMade('Wired', 'How AI is changing hospitals'), 'a report about AI is not made by AI')
+  assert.ok(!isAiMade('Mountain Air Studio', 'Faith and Mountains'))
 })

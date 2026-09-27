@@ -1,5 +1,5 @@
 import type { Db } from 'mongodb'
-import { freshEnabled, parseFreshCursor, selectFresh } from './freshPool'
+import { freshEnabled, parseFreshSeen, selectFresh } from './freshPool'
 import type { CatalogueRow } from './catalog'
 import { loadWave, selectPool } from './mongo'
 import { planDraw } from './pool'
@@ -53,9 +53,9 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       // What the device saw this week rides along and is left out of the draw, on top of the session's own forty.
       const seen = parseSeen(body.seen)
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
-      // Fresh of the day first: the session's first ten videos, from where this device is in the day's list.
+      // Fresh of the day first: the session's first ten videos, at random among the day's list, none this device already saw today.
       const fresh = freshEnabled() && ticket.type === 'video'
-        ? await selectFresh(db, ticket, drawState, parseFreshCursor(body.fresh), deps.decode, Date.now()).catch(() => null) : null
+        ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now()).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
       // The lanes remain the fallback when the pool holds nothing eligible for this visitor.
       const cool = !fresh && coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
