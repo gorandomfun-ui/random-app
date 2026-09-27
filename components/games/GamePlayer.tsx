@@ -84,13 +84,18 @@ const within = (h: Hit, x: number, y: number) => x >= h.x && y >= h.y && x < h.x
 
 /**
  * Where the cross goes for each shape of board: a desktop's wide board has
- * none; on a touch screen, a band under the board; on a phone playing full
- * screen, a taller band with a bigger cross upright, a band beside the board
- * on its side.
+ * none; on a touch screen, a band under the board; a tablet held sideways
+ * puts it beside its wide board, under the right thumb; on a phone playing
+ * full screen, a taller band with a bigger cross.
  */
 function padsFor(touch: boolean, big: boolean): Record<Layout, Pad> {
   if (big) return { portrait: 'big', landscape: 'side' }
-  return { portrait: 'band', landscape: touch ? 'band' : 'none' }
+  return { portrait: 'band', landscape: tabletSideways(touch) ? 'side' : touch ? 'band' : 'none' }
+}
+/** A touch screen whose short side is 600 pixels or more, held wider than tall. */
+function tabletSideways(touch: boolean): boolean {
+  if (!touch || typeof window === 'undefined') return false
+  return Math.min(window.innerWidth, window.innerHeight) >= 600 && window.innerWidth > window.innerHeight
 }
 /** Wide or tall: whichever lets the board be drawn the larger in this frame, its cross counted. */
 function layoutFor(width: number, height: number, touch = false, big = false): Layout {

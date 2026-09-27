@@ -537,7 +537,8 @@ const frDictionary = {
     "pause": "Pause",
     "resume": "Reprendre",
     "linkCopied": "Lien copié",
-    "shareGame": "Partager le jeu"
+    "shareGame": "Partager le jeu",
+    "turnUpright": "Tenez votre téléphone droit pour jouer"
   }
 }
 

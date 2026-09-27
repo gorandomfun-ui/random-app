@@ -537,7 +537,8 @@ const deDictionary = {
     "pause": "Pause",
     "resume": "Weiter",
     "linkCopied": "Link kopiert",
-    "shareGame": "Spiel teilen"
+    "shareGame": "Spiel teilen",
+    "turnUpright": "Halte dein Handy aufrecht, um zu spielen"
   }
 }
 

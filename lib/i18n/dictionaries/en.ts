@@ -537,7 +537,8 @@ const enDictionary = {
     "pause": "Pause",
     "resume": "Resume",
     "linkCopied": "Link copied",
-    "shareGame": "Share the game"
+    "shareGame": "Share the game",
+    "turnUpright": "Hold your phone upright to play"
   }
 }
 
