@@ -9,8 +9,12 @@ export function youtubeQuotaWindow(now: number) {
 }
 
 /** Cumulative envelopes, not a fresh allocation on each run/retry. No quota refund. */
-/** mostPopular costs one unit per call; two runs of two regions a day is four, and the rest is room to grow. */
-export const TRENDS_DAILY_UNITS = 200
+/**
+ * mostPopular costs one unit per call; two runs of two regions a day is four.
+ * Since 27 September the fresh-of-the-day line reads about a hundred chart
+ * pages every morning: 400 keeps room for both, out of ten thousand.
+ */
+export const TRENDS_DAILY_UNITS = 400
 
 export function youtubeBudget(config: QuotaConfig, bucket: 'search' | 'other', now: number, discovery: boolean) {
   const daily = bucket === 'search' ? config.searchDailyLimit : config.otherDailyLimit
