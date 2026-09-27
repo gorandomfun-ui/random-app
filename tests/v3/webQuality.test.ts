@@ -49,10 +49,11 @@ test('object-sites, archives, museums and a front page pass', () => {
   assert.deepEqual(KEEP.filter(([url, title]) => boringWebReason(url, title) !== null).map(([url, title]) => `${url} → ${boringWebReason(url, title)}`), [])
 })
 
-test('a search result deep inside some site is a single page; a front page, a short address or a project host is not', () => {
+test('a search result deep inside some site is a single page, even a short one; a front page or a project host is not', () => {
   assert.equal(boringWebReason('https://www.footprintsandmemories.com/my-wurst-months-and-other-german-street-food/', 'My Wurst Months', 'google-cse'), 'page')
   assert.equal(boringWebReason('https://www.visitlyon.fr/decouvrir/quartiers/vieux-lyon', 'Vieux Lyon', 'google-cse'), 'page')
-  assert.equal(boringWebReason('https://neal.fun/deep-sea/', 'The Deep Sea', 'google-cse'), null)
+  assert.equal(boringWebReason('https://www.parkerjazzclub.com/private-events', 'Private Events - Parker Jazz Club', 'google-cse'), 'page')
+  assert.equal(boringWebReason('https://neal.fun/deep-sea/', 'The Deep Sea', 'hn'), null)
   assert.equal(boringWebReason('https://someone.github.io/a/b/strange-toy/', 'Strange toy', 'google-cse'), null)
   assert.equal(boringWebReason('https://bigfuncolumbus.com/', 'Big Fun Columbus - Vintage Toys', 'google-cse'), null)
   assert.equal(boringWebReason('https://www.footprintsandmemories.com/my-wurst-months-and-other-german-street-food/', 'My Wurst Months', 'hn'), null, 'other sources keep their deep pages')

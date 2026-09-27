@@ -53,8 +53,9 @@ function parts(url: string): { host: string; path: string; root: boolean } | nul
 /**
  * Why this page is not a site worth a draw, or null when it may be one.
  * `provider` 'google-cse': a search result is some page deep inside some site;
- * unless it is a site's front page, a short address (neal.fun/deep-sea) or a
- * project host, it is a single page, and that is what the owner found dull.
+ * unless it is a site's front page or on a project host, it is a single page,
+ * and that is what the owner found dull. Even a short address (/enrollment,
+ * /price-list, /private-events) was one: 4,824 of them, nearly all dull.
  */
 export function boringWebReason(url: string | null | undefined, title?: string | null, provider?: string | null): BoringReason | null {
   const address = parts(url ?? '')
@@ -75,10 +76,6 @@ export function boringWebReason(url: string | null | undefined, title?: string |
   if (NEWS_HOST.test(host) && !root) return 'article'
   if (DATED_PATH.test(path) || ARTICLE_PATH.test(path)) return 'article'
   if (!root && LISTICLE.test(text)) return 'article'
-  if (provider === 'google-cse' && !root && !PROJECT_HOST.test(host)) {
-    const segments = path.split('/').filter(Boolean)
-    const short = segments.length === 1 && (segments[0].match(/-/g) ?? []).length <= 2 && segments[0].length <= 24
-    if (!short) return 'page'
-  }
+  if (provider === 'google-cse' && !root && !PROJECT_HOST.test(host)) return 'page'
   return null
 }
