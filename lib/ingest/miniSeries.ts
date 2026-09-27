@@ -22,7 +22,7 @@ export type MiniSeriesReason = 'label' | 'studio' | 'cjk' | 'trope' | 'ai-story'
 /** Words that only ever describe these serials, whatever else the title says. */
 const LABEL = new RegExp([
   'short drama', 'full drama', 'drama hub', 'micro[- ]?drama', 'sd drama', '\\(\\d{1,3} ?eps?\\)', 'full \\d{1,3} ?eps?\\b',
-  'full movies english sub', '\\bep\\.? ?\\d{1,3} ?- ?\\d{1,3}\\b', 'dailymotion (?:movie|episodes?)', 'full dailymotion',
+  'full movies english sub', '\\bep\\.? ?\\d{1,3} ?- ?\\d{1,3}\\b', '\\bepisodes \\d{1,3} ?- ?\\d{2,3}\\b', 'part \\d/\\d ?[|｜] ?episodes', 'dailymotion (?:movie|episodes?)', 'full dailymotion',
   '#drama\\b', '#shortdrama', '#minidrama', '#fullepisode', '#reelshort', '#dramabox', '\\[recommended\\] ?full ep',
 ].join('|'), 'i')
 

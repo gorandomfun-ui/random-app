@@ -47,6 +47,8 @@ const SERIALS = [
   'He danced with his first love while our entire estate collapsed [Full Movie]',
   'Married The Mafioso I Saved | Love and Loyalty Tested 💕 [Full Movie]',
   'Wiedergeboren als Geisterkönig - Teil 2/2 | Folgen 36-67 [Full Movie]',
+  'Reborn Villainess: Bed Me or I Die - Part 1/1 | Episodes 1-50',
+  'The Quarterback\'s Comeback - Part 1/1 | Episodes 1-40',
 ]
 
 // What the owner wants kept: forgotten films reposted whole, TV, music, sport, news, anything else.
