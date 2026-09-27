@@ -6,8 +6,8 @@
  * it sees only what a player sees on the screen.
  */
 
-import { createCatcher, nextLevel, stepCatcher, walkable, type CatcherState } from '@/lib/games/catcher'
-import { DELTA, DIRS, REVERSE } from '@/lib/games/engine'
+import { createCatcher, directionsOf, nextLevel, stepCatcher, walkable, type CatcherState } from '@/lib/games/catcher'
+import { DELTA, REVERSE } from '@/lib/games/engine'
 import type { Direction } from '@/lib/games/sprites'
 
 /** Every walking distance in a store, worked out once: cell index by cell index. */
@@ -17,14 +17,16 @@ function distances(maze: readonly string[]) {
   if (t) return t
   const cells: Array<[number, number]> = []
   const index = new Map<string, number>()
-  maze.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (walkable(maze, x, y)) { index.set(`${x},${y}`, cells.length); cells.push([x, y]) } })
+  // row by row in the wide store, column by column in the tall one, as the rules do
+  const tall = maze.length > maze[0].length, w = maze[0].length, h = maze.length
+  for (let a = 0; a < w * h; a += 1) { const x = tall ? Math.floor(a / h) : a % w, y = tall ? a % h : Math.floor(a / w); if (walkable(maze, x, y)) { index.set(`${x},${y}`, cells.length); cells.push([x, y]) } }
   const n = cells.length
   const dist = new Int16Array(n * n).fill(-1)
   for (let a = 0; a < n; a += 1) {
     const q = [a]; dist[a * n + a] = 0
     for (let h = 0; h < q.length; h += 1) {
       const c = q[h], [x, y] = cells[c], d = dist[a * n + c]
-      for (const dir of DIRS) { const j = index.get(`${x + DELTA[dir][0]},${y + DELTA[dir][1]}`); if (j !== undefined && dist[a * n + j] < 0) { dist[a * n + j] = d + 1; q.push(j) } }
+      for (const dir of directionsOf(maze)) { const j = index.get(`${x + DELTA[dir][0]},${y + DELTA[dir][1]}`); if (j !== undefined && dist[a * n + j] < 0) { dist[a * n + j] = d + 1; q.push(j) } }
     }
   }
   t = { index, cells, dist }
@@ -32,8 +34,12 @@ function distances(maze: readonly string[]) {
   return t
 }
 
-/** A careful shopper-dodging player: the nearest thing on the list it can reach clearly before any shopper, else the way with the most time to spare. */
-export function catcherRobot(s: CatcherState): Direction | null {
+/**
+ * A careful shopper-dodging player: the nearest thing on the list it can
+ * reach clearly before any shopper — `margin` seconds before — else the way
+ * with the most time to spare.
+ */
+export function catcherRobot(s: CatcherState, margin = 0.45): Direction | null {
   const { index, cells, dist } = distances(s.maze)
   const n = cells.length
   const at = (x: number, y: number) => index.get(`${x},${y}`)
@@ -54,7 +60,6 @@ export function catcherRobot(s: CatcherState): Direction | null {
   const moving = b.dir != null && b.progress > 0
   const ahead = moving ? at(b.x + DELTA[b.dir!][0], b.y + DELTA[b.dir!][1])! : at(b.x, b.y)!
   const t0 = moving ? (1 - b.progress) / vb : 0
-  const margin = 0.45
   const safe = (c: number, t: number) => t + margin < danger[c]
   const wanted = new Set<number>(s.items.map((it) => at(it.x, it.y)!).filter((c) => c !== undefined))
   if (s.sauce) { const c = at(s.sauce.x, s.sauce.y); if (c !== undefined) wanted.add(c) }
@@ -66,7 +71,7 @@ export function catcherRobot(s: CatcherState): Direction | null {
   for (let h = 0; h < q.length && goal < 0; h += 1) {
     const c = q[h], [x, y] = cells[c]
     if (wanted.has(c) && first.get(c)) { goal = c; break }
-    for (const dir of DIRS) {
+    for (const dir of directionsOf(s.maze)) {
       const j = at(x + DELTA[dir][0], y + DELTA[dir][1])
       if (j === undefined || first.has(j) || !safe(j, t0 + (depth.get(c)! + 1) / vb)) continue
       first.set(j, first.get(c) ?? dir); depth.set(j, depth.get(c)! + 1); q.push(j)
@@ -78,7 +83,7 @@ export function catcherRobot(s: CatcherState): Direction | null {
   // nowhere safe to go for the list: toward the most time to spare within a few cells
   const [ax, ay] = cells[ahead]
   let best: Direction | null = null, bestSpare = -Infinity
-  for (const dir of DIRS) {
+  for (const dir of directionsOf(s.maze)) {
     const j = at(ax + DELTA[dir][0], ay + DELTA[dir][1])
     if (j === undefined) continue
     let spare = -Infinity
@@ -88,15 +93,21 @@ export function catcherRobot(s: CatcherState): Direction | null {
   return best
 }
 
-/** A whole game from level 1, as the player page plays it; returns how far it went. */
-export function catcherRun(seed: number, layout: 'landscape' | 'portrait'): { won: boolean; level: number; lost: number } {
+/**
+ * A whole game from level 1, as the player page plays it; returns how far it
+ * went. `reaction`: steps between seeing and acting (15 is a player's quarter
+ * of a second); `margin`: how much time to spare it keeps from the shoppers.
+ */
+export function catcherRun(seed: number, layout: 'landscape' | 'portrait', reaction = 0, margin = 0.45): { won: boolean; level: number; lost: number } {
   let s = createCatcher(layout, 1, seed)
   let lost = 0, wasCaught = false
+  const pending: Array<Direction | null> = []
   for (let i = 0; i < 60 * 60 * 40 && s.phase !== 'won' && s.phase !== 'over'; i += 1) {
-    stepCatcher(s, s.phase === 'play' ? catcherRobot(s) : null)
+    pending.push(s.phase === 'play' ? catcherRobot(s, margin) : null)
+    stepCatcher(s, pending.length > reaction ? pending.shift()! : null)
     if (s.phase === 'caught' && !wasCaught) lost += 1
     wasCaught = s.phase === 'caught'
-    if (s.phase === 'clear' && s.phaseTimer === 0) s = nextLevel(s, seed * 31 + s.level)
+    if (s.phase === 'clear' && s.phaseTimer === 0) { s = nextLevel(s, seed * 31 + s.level); pending.length = 0 }
   }
   return { won: s.phase === 'won', level: s.level, lost }
 }

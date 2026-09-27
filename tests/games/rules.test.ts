@@ -339,8 +339,29 @@ test('CATCHER : l_argent tombe loin du burger et rapporte ; la liste du niveau 1
   assert.equal(w.phase, 'won')
 })
 
-test('CATCHER : un joueur prudent va parfois du niveau 1 à WINNER, et va toujours loin — dur mais faisable', () => {
+test('CATCHER : un joueur prudent va souvent du niveau 1 à WINNER, et toujours loin — dur mais faisable', () => {
   const runs = [1, 2, 3, 4, 5, 6].map((seed) => catcherRun(seed, 'landscape'))
-  assert.ok(runs.some((r) => r.won), `aucune victoire : ${runs.map((r) => r.level).join(', ')}`)
+  assert.ok(runs.filter((r) => r.won).length >= 2, `trop peu de victoires : ${runs.map((r) => (r.won ? 'WIN' : r.level)).join(', ')}`)
   for (const r of runs) assert.ok(r.won || r.level >= 11, `une partie arrêtée au niveau ${r.level}`)
+})
+
+test('CATCHER : le magasin en hauteur joue exactement la même partie que le magasin en largeur, tournée', () => {
+  const turn = { up: 'left', right: 'down', down: 'right', left: 'up' } as const
+  const flip = (c: { x: number; y: number }) => `${c.y},${c.x}`
+  for (const [level, seed] of [[3, 5], [12, 9]] as const) {
+    const wide = createCatcher('landscape', level, seed), tall = createCatcher('portrait', level, seed)
+    assert.deepEqual(tall.items.map(flip), wide.items.map((c) => `${c.x},${c.y}`), 'la liste posée aux mêmes places, tournées')
+    const moves = ['right', 'up', 'left', 'down', 'up', 'right', 'down', 'left'] as const
+    for (let i = 0; i < 60 * 60; i += 1) {
+      const want = i % 45 === 0 ? moves[(i / 45) % moves.length] : null
+      stepCatcher(wide, want); stepCatcher(tall, want ? turn[want] : null)
+      const w = positionOf(wide.burger), t = positionOf(tall.burger)
+      assert.ok(Math.abs(w.x - t.y) < 1e-9 && Math.abs(w.y - t.x) < 1e-9, `niveau ${level}, pas ${i} : le burger s_écarte`)
+      wide.shoppers.forEach((sh, k) => { const a = positionOf(sh), b = positionOf(tall.shoppers[k]); assert.ok(Math.abs(a.x - b.y) < 1e-9 && Math.abs(a.y - b.x) < 1e-9, `niveau ${level}, pas ${i} : le client ${k} s_écarte`) })
+      assert.equal(tall.score, wide.score); assert.equal(tall.lives, wide.lives); assert.equal(tall.phase, wide.phase)
+      assert.equal(tall.sauce ? flip(tall.sauce) : null, wide.sauce ? `${wide.sauce.x},${wide.sauce.y}` : null, `niveau ${level}, pas ${i} : la sauce`)
+      assert.equal(tall.cash ? flip(tall.cash) : null, wide.cash ? `${wide.cash.x},${wide.cash.y}` : null, `niveau ${level}, pas ${i} : l_argent`)
+      if (wide.phase === 'over') break
+    }
+  }
 })
