@@ -537,7 +537,8 @@ const jpDictionary = {
     "pause": "一時停止",
     "resume": "再開",
     "linkCopied": "リンクをコピーしました",
-    "shareGame": "ゲームをシェア"
+    "shareGame": "ゲームをシェア",
+    "turnUpright": "スマホを縦向きにしてプレイしてください"
   }
 }
 

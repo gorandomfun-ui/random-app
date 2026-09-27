@@ -10,7 +10,9 @@
  *
  * On a phone, PLAY takes the game full screen: a bar on top (play/pause on
  * the left, RANDOM in pixel letters in the theme's colour, × on the right),
- * the board as large as the screen allows and a tall band of controls. ×
+ * the board as large as the screen allows and a tall band of controls. A
+ * phone plays upright only: turned on its side, the game pauses and asks to
+ * hold it upright; PLAY pressed on its side waits for it, on screen. ×
  * pauses and brings the page back, the game still there; PLAY again takes it
  * up where it was. A round over, the page comes back by itself. On a phone
  * held upright the page puts PLAY and the end of a round under the picture,
@@ -22,7 +24,7 @@
  * in the theme's colours for as long as it is on screen.
  */
 
-import { Pause, Play, X } from 'lucide-react'
+import { Pause, Play, Smartphone, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import GamePlayer, { type GameControl, type PlayState, type Round, type RoundEvent } from '@/components/games/GamePlayer'
@@ -99,6 +101,8 @@ export default function ArcadeStage({
   const [upright, setUpright] = useState(true)
   const [full, setFull] = useState(false)
   const [playState, setPlayState] = useState<PlayState>('idle')
+  /** PLAY was pressed with the phone on its side: the round waits for it to be upright. */
+  const [waiting, setWaiting] = useState(false)
   const decided = useRef(false)
   const started = useRef(false)
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -106,9 +110,12 @@ export default function ArcadeStage({
 
   useEffect(() => {
     const check = () => { setPhone(isPhone()); setUpright(window.innerHeight >= window.innerWidth) }
+    // a turn may be told before the page has its new size: looked at again a moment later
+    const turned = () => { check(); window.setTimeout(check, 300) }
     check()
     window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
+    window.addEventListener('orientationchange', turned)
+    return () => { window.removeEventListener('resize', check); window.removeEventListener('orientationchange', turned) }
   }, [])
 
   // where the game's picture stands in the stage, so what goes with it sits at its foot or under it
@@ -150,7 +157,9 @@ export default function ArcadeStage({
 
   const fullTo = useRef(onFull)
   fullTo.current = onFull
-  const goFull = useCallback((on: boolean) => { setFull(on); fullTo.current(on) }, [])
+  const goFull = useCallback((on: boolean) => { setFull(on); if (!on) setWaiting(false); fullTo.current(on) }, [])
+  // the game running, however it was taken up (PLAY, RESUME on its own card, YES): nothing waits any more
+  useEffect(() => { if (playState === 'playing') setWaiting(false) }, [playState])
   // a full-screen game locks the page behind it; the page comes back when it ends
   useEffect(() => {
     if (!full) return
@@ -176,7 +185,7 @@ export default function ArcadeStage({
   const ended = event.kind === 'won' || event.kind === 'winner' || event.kind === 'lost' || event.kind === 'quit'
   const leave = useCallback(() => onContinue(askName ? name.trim() || null : null), [askName, name, onContinue])
 
-  /** PLAY: the round begins, or takes up where it was; on a phone, full screen first, the game started once the frame has grown. */
+  /** PLAY: the round begins, or takes up where it was; on a phone, full screen first, the game started once the frame has grown — and only upright. */
   const play = useCallback(() => {
     const go = () => {
       if (event.kind === 'retry') control.retry?.()
@@ -184,15 +193,22 @@ export default function ArcadeStage({
       else control.start?.()
     }
     if (!phone) { go(); return }
+    setWaiting(false)
+    if (full && upright) { go(); return }
     goFull(true)
+    if (!upright) { setWaiting(true); return }
     requestAnimationFrame(() => requestAnimationFrame(go))
-  }, [control, event.kind, goFull, phone])
+  }, [control, event.kind, full, goFull, phone, upright])
 
   /** ×: the game pauses and the page comes back; nothing is lost. */
   const close = useCallback(() => {
     control.pause?.()
     goFull(false)
   }, [control, goFull])
+
+  // a phone turned on its side while playing full screen: the game pauses until it is upright again, and PLAY or RESUME takes it up
+  const sideways = full && phone && !upright
+  useEffect(() => { if (sideways) control.pause?.() }, [sideways, control])
 
   // Enter takes the way back once the round is over; typing a name keeps its keys
   useEffect(() => {
@@ -214,8 +230,10 @@ export default function ArcadeStage({
     : event.kind === 'retry' ? (event.retriesLeft === 1 ? words('retryLeft', '1 try left') : words('retriesLeft', '{count} tries left', { count: event.retriesLeft }))
     : null
 
-  // PLAY shows on the title; on a phone also in the page while a round waits, paused or for a retry
-  const showPlay = !full && (event.kind === 'title' || (phone && started.current && !ended && (event.kind === 'play' || event.kind === 'retry')))
+  // PLAY shows on the title; on a phone also in the page while a round waits, paused or for a retry, and full screen once a phone pressed on its side is upright
+  const showPlay = full
+    ? waiting && !sideways
+    : event.kind === 'title' || (phone && started.current && !ended && (event.kind === 'play' || event.kind === 'retry'))
   // on a phone held upright in the page, under the picture, in room kept for it; elsewhere, at its foot
   const under = phone && upright && !full
   const room = !under ? 0 : ended ? (askName ? 156 : 108) : event.kind === 'retry' ? 112 : 72
@@ -228,9 +246,11 @@ export default function ArcadeStage({
     <div ref={stageRef} className={`arcade-stage${full ? ' arcade-stage--full' : ''}`} style={full ? { background: theme.bg } : undefined}>
       {full ? (
         <div className="arcade-stage__bar">
-          <button type="button" className="arcade-stage__icon" aria-label={playState === 'paused' ? words('resume', 'Resume') : words('pause', 'Pause')} onClick={() => control.togglePause?.()} style={{ borderColor: theme.text }}>
-            {playState === 'paused' ? <Play size={20} strokeWidth={2.25} fill="currentColor" /> : <Pause size={20} strokeWidth={2.25} fill="currentColor" />}
-          </button>
+          {sideways || waiting ? <span className="arcade-stage__icon arcade-stage__icon--none" aria-hidden="true" /> : (
+            <button type="button" className="arcade-stage__icon" aria-label={playState === 'paused' ? words('resume', 'Resume') : words('pause', 'Pause')} onClick={() => control.togglePause?.()} style={{ borderColor: theme.text }}>
+              {playState === 'paused' ? <Play size={20} strokeWidth={2.25} fill="currentColor" /> : <Pause size={20} strokeWidth={2.25} fill="currentColor" />}
+            </button>
+          )}
           <PixelRandom color={theme.text} height={30} />
           <button type="button" className="arcade-stage__icon" aria-label="Close" onClick={close} style={{ borderColor: theme.text }}>
             <X size={22} strokeWidth={2.5} />
@@ -249,6 +269,12 @@ export default function ArcadeStage({
           align={under ? 'top' : 'center'}
         />
       </div>
+      {sideways ? (
+        <div className="arcade-stage__turn" style={{ background: theme.bg }}>
+          <span className="arcade-stage__phone" style={{ color: theme.text }}><Smartphone size={56} strokeWidth={1.75} /></span>
+          <p className="arcade-stage__line">{words('turnUpright', 'Hold your phone upright to play')}</p>
+        </div>
+      ) : null}
       {showPlay && shot ? (
         <div className="arcade-stage__foot" style={footOf(14) ?? undefined}>
           <button type="button" className="arcade-stage__pill" style={{ background: theme.text, color: theme.cream }} onClick={play}>Play</button>
@@ -297,6 +323,13 @@ export default function ArcadeStage({
         .arcade-stage--full { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
         .arcade-stage__bar { flex: none; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
         .arcade-stage__icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid; background: transparent; color: #ffffff; }
+        .arcade-stage__icon--none { border-color: transparent; }
+        /* a phone on its side: the game hidden and paused, a phone turning upright */
+        .arcade-stage__turn { position: absolute; left: 0; right: 0; bottom: 0; top: calc(56px + env(safe-area-inset-top, 0px)); z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 0 24px; color: #f8f5e6; font-family: var(--font-inter-tight), 'Inter Tight', sans-serif; text-align: center; }
+        .arcade-stage__turn .arcade-stage__line { font-size: 16px; }
+        .arcade-stage__phone { display: flex; transform: rotate(-90deg); animation: arcade-stage-upright 2.4s ease-in-out infinite; }
+        @keyframes arcade-stage-upright { 0%, 20% { transform: rotate(-90deg); } 50%, 85% { transform: rotate(0deg); } 100% { transform: rotate(-90deg); } }
+        @media (prefers-reduced-motion: reduce) { .arcade-stage__phone { animation: none; transform: none; } }
         .arcade-stage__foot { position: absolute; display: flex; justify-content: center; z-index: 2; pointer-events: none; }
         .arcade-stage__foot > * { pointer-events: auto; }
         /* the same pill as Random's own button, with a shadow to stand out */

@@ -183,7 +183,8 @@ const esDictionary = {
     "pause": "Pausa",
     "resume": "Reanudar",
     "linkCopied": "Enlace copiado",
-    "shareGame": "Compartir el juego"
+    "shareGame": "Compartir el juego",
+    "turnUpright": "Pon tu teléfono en vertical para jugar"
   }
 }
 
