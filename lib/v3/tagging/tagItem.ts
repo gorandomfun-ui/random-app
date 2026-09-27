@@ -8,6 +8,7 @@ import { TAG_VERSION, isUniverse } from '../types'
 import { computeRegisters, wordsRegex } from '../cool/registers'
 import { detectAngle } from './angle'
 import { cueText, universeFromCues } from './cues'
+import { universeFromCategory } from './categories'
 import { channelKey, classifyEra, classifyPopularity, isUsableItem, yearFromTitle } from './classify'
 import { appearsCapitalised, searchableText } from './normalize'
 import { matchSubjects, type AliasMatch, type SubjectIndex } from './subjectIndex'
@@ -100,7 +101,10 @@ function pickUniverse(matches: AliasMatch[], item: TaggableItem): Universe {
     return universe
   }
   // No subject the dictionaries know: the words of the title still say "gameplay", "recipe", "concert".
-  return universeFromCues(cueText(item as { title?: string | null; keywords?: unknown; tags?: unknown })) ?? 'other'
+  // Last, the category the uploader chose, in whatever language the title is (never cinema).
+  return universeFromCues(cueText(item as { title?: string | null; keywords?: unknown; tags?: unknown }))
+    ?? (item.type === 'video' ? universeFromCategory(item.provider, item.categoryId) : null)
+    ?? 'other'
 }
 
 /**

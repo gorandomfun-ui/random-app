@@ -69,7 +69,7 @@ export function universeFor(row: Pick<Row, 'title' | 'categoryId'> & { subjects:
 }
 
 async function undoRuns(db: import('mongodb').Db): Promise<void> {
-  const runs = await db.collection(RUNS).find({ undoneAt: { $exists: false } }).toArray()
+  const runs = await db.collection(RUNS).find({ kind: 'cinema', undoneAt: { $exists: false } }).toArray()
   let restored = 0
   for (const run of runs) {
     const previous = (run.previous ?? []) as Array<{ _id: ObjectId; universe: string; formatFamily?: string; registers?: string[] }>

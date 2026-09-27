@@ -73,3 +73,20 @@ test('l_ancien passage ne cherche plus avec les formats qui attirent le cinéma 
   for (const pulling of CINEMA_PULLING_FORMATS) assert.ok(!formats.includes(pulling), `${pulling} retiré`)
   assert.ok(formats.includes('public domain film') && formats.includes('home movie') && formats.includes('session'), 'les films oubliés et le reste restent')
 })
+
+test('la catégorie choisie par l_auteur range ce que rien d_autre ne range, jamais vers le cinéma', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const { universeFromCategory } = await import('@/lib/v3/tagging/categories')
+  const index = buildSubjectIndex([])
+  const tag = (title: string, provider: string, categoryId?: string) => tagItem({ type: 'video', title, provider, categoryId } as never, index, NOW).universe
+  assert.equal(tag('Seleção volta a fazer cinco gols no mesmo jogo', 'youtube', '17'), 'sport')
+  assert.equal(tag('Frachtschiff sinkt nach Kollision in der Nordsee', 'dailymotion', 'news'), 'news-society')
+  assert.equal(tag('Demolition Racer parte 7', 'dailymotion', 'videogames'), 'gaming')
+  assert.equal(tag('Best goals of the season', 'youtube', '10'), 'sport', 'les mots du titre passent avant la catégorie')
+  assert.equal(tag('Qué bonito día', 'dailymotion', 'shortfilms'), 'other', 'jamais vers le cinéma par la catégorie')
+  assert.equal(universeFromCategory('youtube', '1'), null)
+  assert.equal(universeFromCategory('youtube', '24'), null, 'Entertainment ne dit rien')
+  assert.equal(universeFromCategory('dailymotion', 'people'), null, 'people, c_est des célébrités')
+  assert.equal(tagItem({ type: 'gif', title: 'Dance', provider: 'dailymotion', categoryId: 'music' } as never, index, NOW).universe, 'other', 'vidéos seulement')
+})
