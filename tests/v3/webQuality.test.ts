@@ -52,6 +52,7 @@ test('object-sites, archives, museums and a front page pass', () => {
 test('a search result deep inside some site is a single page, even a short one; a front page or a project host is not', () => {
   assert.equal(boringWebReason('https://www.footprintsandmemories.com/my-wurst-months-and-other-german-street-food/', 'My Wurst Months', 'google-cse'), 'page')
   assert.equal(boringWebReason('https://www.visitlyon.fr/decouvrir/quartiers/vieux-lyon', 'Vieux Lyon', 'google-cse'), 'page')
+  assert.equal(boringWebReason('https://chromewebstore.google.com/?hl=am', 'Chrome Web Store', 'google-cse'), 'shop')
   assert.equal(boringWebReason('https://www.parkerjazzclub.com/private-events', 'Private Events - Parker Jazz Club', 'google-cse'), 'page')
   assert.equal(boringWebReason('https://neal.fun/deep-sea/', 'The Deep Sea', 'hn'), null)
   assert.equal(boringWebReason('https://someone.github.io/a/b/strange-toy/', 'Strange toy', 'google-cse'), null)

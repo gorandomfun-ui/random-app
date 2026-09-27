@@ -16,7 +16,7 @@ export type BoringReason = 'shop' | 'video' | 'article' | 'admin' | 'listing' | 
 const SHOP_HOST = /(?:^|\.)(?:shop|store|boutique|tienda|loja|shopify|etsy|amazon|ebay|aliexpress|alibaba|temu|walmart|target|bestbuy|ikea|zalando|rakuten|mercadolibre)\./i
 const SHOP_PATH = /\/(?:shop|store|boutique|tienda|loja|cart|panier|checkout|product|produit|producto|products|productos|produits|collections?|catalog|catalogue|item|items|dp|gp\/product|pricing|tarifs|subscribe|abonnement|buy|acheter|order|commande|sale|soldes|offers?)(?:\/|$|\?|-)/i
 /** App stores and stock images: a page to buy or license something. */
-const STORE_HOST = /(?:^|\.)(?:apps\.apple\.com|play\.google\.com|chrome\.google\.com|addons\.mozilla\.org|microsoft\.com\/store|photos\.com|pikbest\.com|shutterstock\.com|istockphoto\.com|freepik\.com|dreamstime\.com|alamy\.com|gettyimages\.[a-z.]+|depositphotos\.com|123rf\.com|vecteezy\.com|canva\.com)$/i
+const STORE_HOST = /(?:^|\.)(?:apps\.apple\.com|play\.google\.com|chrome\.google\.com|chromewebstore\.google\.com|addons\.mozilla\.org|microsoft\.com\/store|photos\.com|pikbest\.com|shutterstock\.com|istockphoto\.com|freepik\.com|dreamstime\.com|alamy\.com|gettyimages\.[a-z.]+|depositphotos\.com|123rf\.com|vecteezy\.com|canva\.com)$/i
 /** One track or one post on a platform: a song page, not a site. */
 const MEDIA_HOST = /(?:^|\.)(?:soundcloud\.com|bandcamp\.com|spotify\.com|deezer\.com|music\.apple\.com|mixcloud\.com|instagram\.com|facebook\.com|pinterest\.[a-z.]+|linkedin\.com|tumblr\.com)$/i
 const WIKI_HOST = /(?:^|\.)wiki(?:pedia|media|source|voyage|quote)\.org$/i

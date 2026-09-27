@@ -16,6 +16,8 @@ test('code, stores, videos, text posts and tools for developers are not sites to
   assert.equal(hnSite({ title: 'Show HN: Acme – Observability dashboard for LLM agents (YC W24)', url: 'https://acme.dev' }), null)
   assert.equal(hnSite({ title: 'Show HN: A Chrome extension to gamify your tabs', url: 'https://tabs.example' }), null)
   assert.equal(hnSite({ title: 'Show HN: CSV Explorer (YC F1) - Explore CSVs with Millions of Rows', url: 'https://www.csvexplorer.com/' }), null)
+  assert.equal(hnSite({ title: 'Show HN: Marple – Interactive time series visualization for engineers', url: 'https://www.marpledata.com/' }), null)
+  assert.equal(hnSite({ title: 'Show HN: Foxglove – Web-based visualization for robotics', url: 'https://foxglove.dev/' }), null)
   assert.equal(hnSite({ title: 'Show HN: A simple hand drawn HTML/CSS theme', url: 'https://chr15m.github.io/DoodleCSS/' }), null)
   assert.equal(hnSite({ title: 'Show HN: Redis City – Explore how Redis works in an interactive 3D model', url: 'https://poltora.dev/redis' }), null)
   assert.equal(hnSite({ title: 'Show HN: Anyone interested in a tool helps to explore C++ ASTs', url: 'https://uvic-aurora.github.io/acav-manual/index.html' }), null)
