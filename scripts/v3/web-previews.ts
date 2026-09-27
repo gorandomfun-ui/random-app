@@ -133,7 +133,8 @@ class Camera {
       const finalUrl = page.url()
       const html = await page.content().catch(() => '')
       if (visible.text < 20 && visible.images === 0) return { image: null, finalUrl, html, blank: 'blank page' }
-      const image = await page.screenshot({ type: 'jpeg', quality: 72, timeout: 10_000 })
+      // The e2-micro is slow: a capture can take twenty seconds when the page is heavy; animations are stopped for it.
+      const image = await page.screenshot({ type: 'jpeg', quality: 72, timeout: 30_000, animations: 'disabled', caret: 'hide' })
       if (image.length < MIN_SHOT_BYTES) return { image: null, finalUrl, html, blank: `blank capture (${image.length} bytes)` }
       return { image, finalUrl, html }
     } catch (error) {

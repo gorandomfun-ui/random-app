@@ -84,11 +84,14 @@ const PLATFORM_HOST = /(?:^|\.)(?:yelp\.[a-z.]+|tripadvisor\.[a-z.]+|trip\.com|b
  * part (28 September): "des sites de plombier au Cameroun", not always
  * interesting, but a site, never a page of text.
  */
+/** Business directories and the big services a search for a trade and a town also finds. */
+const DIRECTORY_HOST = /(?:yellow|gelbe|gouden|zlote|gule)[-.]?(?:pages|seiten|gids|strony|sider)|pages-?jaunes|pagine-?gialle|paginas-?amarillas|paginas-?amarelas|(?:^|\.)(?:waze\.com|mondialrelay\.[a-z.]+|cylex[a-z.-]*|hotfrog\.[a-z.]+|kompass\.com|europages\.[a-z.]+|justdial\.com|sulekha\.com|manta\.com|bbb\.org|infobel\.com|yell\.com|herold\.at|firmy\.cz|panoramafirm\.pl|hitta\.se|eniro\.se|gulesider\.no|dasoertliche\.de|11880\.com|paginebianche\.it|infoisinfo[a-z.-]*|tupalo\.[a-z.]+|brownbook\.net|businesslist\.[a-z.]+|africabizinfo\.com|goafrica[a-z.-]*|vconnect\.com|dexknows\.com|mapquest\.com|here\.com|openstreetmap\.org|waze\.com|uber\.com|bolt\.eu|booking\.com|hostelworld\.com|wanderlog\.com|restaurantguru\.com|sluurpy\.[a-z.]+|menupages\.com|zomato\.com|swiggy\.com|justeat\.[a-z.]+|thuisbezorgd\.nl|lieferando\.[a-z.]+|glovoapp\.com|rappi\.[a-z.]+|ifood\.com\.br)$/i
+
 export function frontPageOf(url: string | null | undefined): string | null {
   const address = parts(url ?? '')
   if (!address) return null
   const { host } = address
-  if (PLATFORM_HOST.test(host) || NEWS_HOST.test(host) || WIKI_HOST.test(host) || PRESS_HOST.test(host) || SHOP_HOST.test(host)
+  if (PLATFORM_HOST.test(host) || DIRECTORY_HOST.test(host) || NEWS_HOST.test(host) || WIKI_HOST.test(host) || PRESS_HOST.test(host) || SHOP_HOST.test(host)
     || STORE_HOST.test(host) || VIDEO_HOST.test(host) || MEDIA_HOST.test(host) || MAIL.test(host)) return null
   if (/^(?:\d+\.){3}\d+$/.test(host) || !host.includes('.')) return null
   return `https://${host}/`
