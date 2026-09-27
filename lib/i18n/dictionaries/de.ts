@@ -523,15 +523,10 @@ const deDictionary = {
     ]
   },
   "arcade": {
-    "offer": "Lust auf eine Runde {game}?",
-    "play": "Spielen",
-    "noThanks": "Nein danke",
-    "never": "Nicht mehr anbieten",
     "nextLevel": "Nächstes Level in {count} Randoms",
     "tryAgain": "Neuer Versuch in {count} Randoms",
     "retriesLeft": "Noch {count} Versuche",
     "retryLeft": "Noch 1 Versuch",
-    "continue": "Weiter mit Randoms",
     "yourName": "Dein Name",
     "tabDevice": "Dieses Gerät",
     "tabWorld": "Welt",

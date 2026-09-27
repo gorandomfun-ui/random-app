@@ -523,15 +523,10 @@ const frDictionary = {
     ]
   },
   "arcade": {
-    "offer": "Envie d'une partie de {game} ?",
-    "play": "Jouer",
-    "noThanks": "Non merci",
-    "never": "Ne plus me proposer",
     "nextLevel": "Niveau suivant dans {count} randoms",
     "tryAgain": "Retentez votre chance dans {count} randoms",
     "retriesLeft": "Encore {count} essais",
     "retryLeft": "Encore 1 essai",
-    "continue": "Continuer les randoms",
     "yourName": "Votre nom",
     "tabDevice": "Cet appareil",
     "tabWorld": "Monde",
