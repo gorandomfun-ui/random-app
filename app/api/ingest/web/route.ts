@@ -3,6 +3,8 @@ export const runtime = 'nodejs'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { looksMerchant } from '@/lib/v3/web/linkCheck'
+import { boringWebReason } from '@/lib/v3/web/quality'
+import { hnNextPage, hnQueries, hnSearchUrl, hnSite, type HnHit } from '@/lib/v3/web/hackerNews'
 import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { Db } from 'mongodb'
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
@@ -217,15 +219,20 @@ function isLikelyForum(row: Pick<WebRow, 'url' | 'title' | 'text' | 'host'>): bo
   return FORUM_KEYWORDS_REGEX.test(haystack)
 }
 
-function filterBlockedRows(rows: WebRow[]): { rows: WebRow[]; filtered: number } {
+/**
+ * `judged`: whether the page must also be a site worth a draw
+ * (lib/v3/web/quality.ts) — a product, an article, a menu or, from Google, a
+ * single page deep inside some site is refused. The hand-picked list is not
+ * judged: it was chosen one by one.
+ */
+function filterBlockedRows(rows: WebRow[], judged = true): { rows: WebRow[]; filtered: number } {
   if (!rows.length) return { rows: [], filtered: 0 }
   const out: WebRow[] = []
   let filtered = 0
   for (const row of rows) {
     const host = row?.host || hostFromUrl(row?.url || '')
-    // Product pages sell rather than show. Existing ones stay in the
-    // catalogue by decision; this only stops new ones arriving.
-    if (isHostBlocked(host) || isLikelyForum({ ...row, host }) || looksMerchant(row.url)) {
+    if (isHostBlocked(host) || isLikelyForum({ ...row, host }) || looksMerchant(row.url)
+      || (judged && boringWebReason(row.url, row.title, row.provider))) {
       filtered += 1
       continue
     }
@@ -249,10 +256,10 @@ function limitRowsByDomain(rows: WebRow[], perDomain: number): WebRow[] {
 }
 
 /* ------------------------------- OG fetcher ------------------------------ */
-async function fetchOgImage(link: string): Promise<string | null> {
+async function fetchOgImage(link: string, timeoutMs = 1500): Promise<string | null> {
   try {
     const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 1500)
+    const t = setTimeout(() => controller.abort(), timeoutMs)
     const res = await fetch(link, {
       cache: 'no-store',
       signal: controller.signal,
@@ -262,7 +269,9 @@ async function fetchOgImage(link: string): Promise<string | null> {
     if (!res.ok) return null
     const html = await res.text()
     const m1 = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1]
+      || /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i.exec(html)?.[1]
     const m2 = /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1]
+      || /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i.exec(html)?.[1]
     const img = m1 || m2 || /<img[^>]+src=["']([^"']+)["']/i.exec(html)?.[1]
     if (!img) return null
     try { return new URL(img, link).toString() } catch { return img }
@@ -279,10 +288,13 @@ function isValidImageUrl(url: string | null | undefined): url is string {
   return true
 }
 
+const PICTURE_TYPES = new Set(['jpg', 'png', 'gif', 'webp', 'avif'])
+
 async function validateRemoteImage(url: string): Promise<{ url: string; width: number; height: number } | null> {
   try {
     const result = await probe(url, { timeout: 4500 })
     if (!result?.width || !result?.height) return null
+    if (result.type && !PICTURE_TYPES.has(result.type)) return null
     const { width, height } = result
     if (width < MIN_IMAGE_WIDTH || height < MIN_IMAGE_HEIGHT) return null
     if (width * height < MIN_IMAGE_AREA) return null
@@ -315,10 +327,16 @@ function dedupeRowsWithOg(rows: WebRow[]): WebRow[] {
   return Array.from(map.values())
 }
 
+/**
+ * `patient`: small personal sites answer slower than 1.5 s from a server and
+ * often serve their preview from an address without a file extension (an
+ * image service); the image itself is still probed for its type and size.
+ */
 async function ensureOgImages(
   rows: WebRow[],
   limit: number,
   concurrency = 6,
+  patient = false,
 ): Promise<{ rows: WebRow[]; checked: number; failed: number }> {
   if (!rows.length || limit <= 0) return { rows: [], checked: 0, failed: 0 }
   const out: WebRow[] = []
@@ -333,8 +351,8 @@ async function ensureOgImages(
       if (!current?.url) continue
       checked += 1
       let og = current.ogImage || null
-      if (!og) og = await fetchOgImage(current.url)
-      if (!isValidImageUrl(og)) {
+      if (!og) og = await fetchOgImage(current.url, patient ? 5000 : 1500)
+      if (!(isValidImageUrl(og) || (patient && typeof og === 'string' && /^https:\/\//i.test(og)))) {
         failed += 1
         continue
       }
@@ -591,7 +609,7 @@ async function pullCurated(limit: number, requireOg = true, region: RegionKey = 
     })
   }
 
-  const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
+  const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw), false)
   const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
   if (!requireOg) {
     return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
@@ -605,6 +623,53 @@ async function pullCurated(limit: number, requireOg = true, region: RegionKey = 
     filtered: filtered + (filteredRows.length - limited.length),
     ogFailed: ensured.failed,
   }
+}
+
+/* ---------------------------- Hacker News ------------------------------ */
+const HN_SEARCHES_PER_RUN = 8
+
+/** Addresses already in the catalogue: no need to fetch their preview again. */
+async function storedUrls(urls: string[]): Promise<Set<string>> {
+  const db = await getDbSafe()
+  if (!db || !urls.length) return new Set()
+  const docs = await db.collection('items').find({ type: 'web', url: { $in: urls } }, { projection: { url: 1 } }).toArray()
+  return new Set(docs.map((doc) => String(doc.url)))
+}
+
+async function pullHackerNews(limit: number, requireOg = true): Promise<ProviderResult> {
+  const now = Math.floor(Date.now() / 1000)
+  const raw: WebRow[] = []
+  for (const query of hnQueries(HN_SEARCHES_PER_RUN, Math.random)) {
+    const first = await fetchJson<{ hits?: HnHit[]; nbPages?: number }>(hnSearchUrl(query), { headers: ROUTE_HEADERS, timeoutMs: 10000 })
+    const page = hnNextPage(Number(first?.nbPages) || 0, Math.random)
+    const next = page == null ? null : await fetchJson<{ hits?: HnHit[] }>(hnSearchUrl(query, page), { headers: ROUTE_HEADERS, timeoutMs: 10000 })
+    for (const hit of [...(first?.hits ?? []), ...(next?.hits ?? [])]) {
+      const site = hnSite(hit)
+      if (!site) continue
+      const host = hostFromUrl(site.url)
+      raw.push({
+        type: 'web',
+        url: site.url,
+        title: site.title,
+        text: site.text,
+        host,
+        ogImage: null,
+        provider: 'hn',
+        source: { name: 'Show HN', url: `https://news.ycombinator.com/item?id=${site.postId}` },
+        tags: Array.from(new Set([host, 'show-hn', query])).filter(Boolean),
+        keywords: deriveKeywords(`${site.title} ${site.text}`, 8),
+      })
+    }
+  }
+  const deduped = dedupeByUrl(raw)
+  const stored = await storedUrls(deduped.map((row) => row.url))
+  const { rows: filteredRows, filtered } = filterBlockedRows(shuffle(deduped.filter((row) => !stored.has(row.url))))
+  const limited = limitRowsByDomain(filteredRows, 1)
+  if (!requireOg) {
+    return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
+  }
+  const ensured = await ensureOgImages(limited, limit, 8, true)
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered: filtered + (filteredRows.length - limited.length), ogFailed: ensured.failed }
 }
 
 /* -------------------------------- Handler -------------------------------- */
@@ -629,13 +694,13 @@ export async function GET(req: NextRequest) {
 
   const queries = incoming.length ? incoming : [fallbackQuery]
 
-  const providersParam = (req.nextUrl.searchParams.get('providers') || 'cse,curated')
+  const providersParam = (req.nextUrl.searchParams.get('providers') || 'hn,curated')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
-  const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia'])
+  const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia', 'hn'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
-  const providers = requestedProviders.length ? requestedProviders : ['cse', 'curated']
+  const providers = requestedProviders.length ? requestedProviders : ['hn', 'curated']
 
   const requireOgParam = req.nextUrl.searchParams.get('requireOg')
   const requireOg = requireOgParam == null
@@ -686,6 +751,17 @@ export async function GET(req: NextRequest) {
   if (providers.includes('neocities')) {
     try {
       const result = await pullNeocities(perProviderTarget, requireOg)
+      aggregated.push(...result.rows)
+      scanned += result.scanned
+      checked += result.checked
+      filteredByHost += result.filtered ?? 0
+      ogFailed += result.ogFailed ?? 0
+    } catch {}
+  }
+
+  if (providers.includes('hn')) {
+    try {
+      const result = await pullHackerNews(Math.min(perProviderTarget, 60), requireOg)
       aggregated.push(...result.rows)
       scanned += result.scanned
       checked += result.checked

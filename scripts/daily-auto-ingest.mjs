@@ -26,7 +26,9 @@ function requestSignal(maxMs = 240000) {
 const webCount = readInt('DAILY_AUTO_WEB_COUNT', 12, 1, 20)
 const webPer = readInt('DAILY_AUTO_WEB_PER', 10, 1, 10)
 const webPages = readInt('DAILY_AUTO_WEB_PAGES', 3, 1, 10)
-const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'cse,curated,neocities'
+// Google's search is no longer asked by default (27 September): nine results in
+// ten were a single dull page, and it was the only paid source. Show HN is free.
+const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'hn,curated'
 const enrichLimit = readInt('DAILY_AUTO_ENRICH_LIMIT', 0, 0, 60)
 
 if (!host || !key) {

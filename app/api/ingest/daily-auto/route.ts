@@ -357,7 +357,7 @@ export async function GET(req: NextRequest) {
       const per = parseInteger(req.nextUrl.searchParams.get('per'), 8, 1, 10)
       const pages = parseInteger(req.nextUrl.searchParams.get('pages'), 2, 1, 10)
       const requireOg = parseBoolean(req.nextUrl.searchParams.get('requireOg'), true)
-      const webProviders = parseList(req.nextUrl.searchParams.get('providers') || 'cse,curated')
+      const webProviders = parseList(req.nextUrl.searchParams.get('providers') || 'hn,curated')
         .map((entry) => entry.toLowerCase())
         .filter((entry) => ['cse', 'curated', 'neocities', 'wikipedia'].includes(entry))
       const { queries, result } = await runWebPhase(req, {
@@ -367,7 +367,7 @@ export async function GET(req: NextRequest) {
         per,
         pages,
         requireOg,
-        providers: webProviders.length ? webProviders : ['cse', 'curated'],
+        providers: webProviders.length ? webProviders : ['hn', 'curated'],
         runKey,
       })
       payload = {
