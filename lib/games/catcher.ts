@@ -8,8 +8,9 @@
  * picked up, the burger spills a trail of it for a few seconds, and a
  * shopper who steps in it slips and sits dizzy. Money lies about now and
  * then, for points. Three lives, and one back for every level won, up to
- * five; the list filled, the level is won; from level 12 a fifth shopper
- * comes to take the burger in a pincer; level 16 cleared, the game is won.
+ * five; the list filled, the level is won; from level 12 a fifth shopper,
+ * a little slower, comes in well after the others to take the burger in a
+ * pincer; level 16 cleared, the game is won.
  *
  * Everything moves sixty steps a second through `stepCatcher`; the same
  * seed and the same inputs play the same game.
@@ -79,9 +80,11 @@ export function levelParams(level: number) {
   return {
     shoppers: l >= 12 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)),
     need: [...LISTS[l - 1]],
-    shopperSpeed: 3 + 0.18 * Math.min(l, 8) + 0.08 * Math.max(0, l - 8),
+    // the shoppers stop getting faster after level 12
+    shopperSpeed: 3 + 0.18 * Math.min(l, 8) + 0.08 * Math.max(0, Math.min(l, 12) - 8),
     burgerSpeed: 4.4 + 0.1 * l,
-    rush: (18 + l * 1.5) * SECOND,
+    // a rush never lasts more than half a minute
+    rush: Math.min(30, 18 + l * 1.5) * SECOND,
     calm: Math.max(4, 7 - l * 0.4) * SECOND,
     sauceEvery: (14 + Math.max(0, l - 8)) * SECOND,
     sauceLife: (10 - 0.25 * Math.max(0, l - 8)) * SECOND,
@@ -98,6 +101,23 @@ export const CATCHER_CASH: Record<CatcherCash, { points: number; life: number; w
 }
 const nextCashIn = (s: CatcherState) => (9 + Math.floor(s.random() * 7)) * SECOND
 
+/**
+ * The tall store is the wide one turned over its diagonal, and it plays the
+ * very same game turned: wherever the rules go through the directions or
+ * the cells in an order — to break a tie between two ways as short, to pick
+ * a cell at random — the tall store goes through them in the turned order.
+ * Up in the wide store is left in the tall one, right is down.
+ */
+const isTall = (maze: readonly string[]) => maze.length > maze[0].length
+const TALL_DIRS: readonly Direction[] = ['left', 'down', 'right', 'up']
+export const directionsOf = (maze: readonly string[]): readonly Direction[] => (isTall(maze) ? TALL_DIRS : DIRS)
+/** Every cell of a store, row by row on the wide one, column by column on the tall one. */
+function eachCell(maze: readonly string[], visit: (x: number, y: number) => void): void {
+  const w = maze[0].length, h = maze.length
+  if (isTall(maze)) { for (let x = 0; x < w; x += 1) for (let y = 0; y < h; y += 1) visit(x, y) }
+  else for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) visit(x, y)
+}
+
 export const walkable = (maze: readonly string[], x: number, y: number): boolean => y >= 0 && y < maze.length && x >= 0 && x < maze[0].length && !BLOCKING.has(maze[y][x])
 
 /** Steps from every cell to `target` along the aisles. */
@@ -107,7 +127,7 @@ function distances(maze: readonly string[], target: Cell): Map<string, number> {
   while (queue.length) {
     const c = queue.shift()!
     const d = out.get(key(c.x, c.y))!
-    for (const dir of DIRS) {
+    for (const dir of directionsOf(maze)) {
       const nx = c.x + DELTA[dir][0], ny = c.y + DELTA[dir][1]
       if (!walkable(maze, nx, ny) || out.has(key(nx, ny))) continue
       out.set(key(nx, ny), d + 1)
@@ -120,14 +140,14 @@ function distances(maze: readonly string[], target: Cell): Map<string, number> {
 /** The floor cell nearest to a point, walking cells being the only ones that count. */
 function nearestFloor(maze: readonly string[], x: number, y: number): Cell {
   let best: Cell = { x: 1, y: 1 }, bestD = Infinity
-  maze.forEach((row, cy) => { for (let cx = 0; cx < row.length; cx += 1) if (walkable(maze, cx, cy)) { const d = (cx - x) ** 2 + (cy - y) ** 2; if (d < bestD) { bestD = d; best = { x: cx, y: cy } } } })
+  eachCell(maze, (cx, cy) => { if (walkable(maze, cx, cy)) { const d = (cx - x) ** 2 + (cy - y) ** 2; if (d < bestD) { bestD = d; best = { x: cx, y: cy } } } })
   return best
 }
 
 /** The cells just inside the doors, where shoppers come in. */
 function entrancesOf(maze: readonly string[]): Cell[] {
   const out: Cell[] = []
-  maze.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (row[x] === 'D') for (const dir of DIRS) { const nx = x + DELTA[dir][0], ny = y + DELTA[dir][1]; if (walkable(maze, nx, ny)) out.push({ x: nx, y: ny }) } })
+  eachCell(maze, (x, y) => { if (maze[y][x] === 'D') for (const dir of directionsOf(maze)) { const nx = x + DELTA[dir][0], ny = y + DELTA[dir][1]; if (walkable(maze, nx, ny)) out.push({ x: nx, y: ny }) } })
   return out
 }
 
@@ -144,11 +164,13 @@ export function createCatcher(layout: Layout, level = 1, seed = 1, carry?: { sco
   const start = startOf(maze)
   const roles: Role[] = ['chase', 'ambush', 'patrol', 'wander', 'pincer']
   const entrances = entrancesOf(maze)
-  const shoppers: Shopper[] = roles.slice(0, params.shoppers).map((role, i) => ({ ...entrances[i % entrances.length], dir: null, progress: 0, speed: params.shopperSpeed * (role === 'wander' ? 0.85 : 1), role, look: i, stunned: 0, waypoint: 0, inside: false }))
+  // the wanderer ambles; the fifth, who closes in from the other side, is a little slower than the chasers
+  const pace: Partial<Record<Role, number>> = { wander: 0.85, pincer: 0.9 }
+  const shoppers: Shopper[] = roles.slice(0, params.shoppers).map((role, i) => ({ ...entrances[i % entrances.length], dir: null, progress: 0, speed: params.shopperSpeed * (pace[role] ?? 1), role, look: i, stunned: 0, waypoint: 0, inside: false }))
   // the ingredients: on floor cells away from the start and the door, not two side by side
   const fromStart = distances(maze, start)
   const cells: Cell[] = []
-  maze.forEach((row, y) => { for (let x = 0; x < row.length; x += 1) if (walkable(maze, x, y) && (fromStart.get(key(x, y)) ?? 0) > 3 && !entrances.some((e) => Math.abs(e.x - x) + Math.abs(e.y - y) < 3)) cells.push({ x, y }) })
+  eachCell(maze, (x, y) => { if (walkable(maze, x, y) && (fromStart.get(key(x, y)) ?? 0) > 3 && !entrances.some((e) => Math.abs(e.x - x) + Math.abs(e.y - y) < 3)) cells.push({ x, y }) })
   const items: CatcherState['items'] = []
   params.need.forEach((count, kind) => {
     for (let n = 0; n < count; n += 1) {
@@ -246,8 +268,9 @@ function stepShopper(s: CatcherState, sh: Shopper, corners: Cell[], index: numbe
   if (sh.stunned > 0) { sh.stunned -= 1; return }
   if (sh.progress === 0) {
     // choose the way at the middle of a cell: never straight back unless there is no other
-    const choices = DIRS.filter((d) => open(s, sh.x, sh.y, d) && d !== (sh.dir ? REVERSE[sh.dir] : null))
-    const options = choices.length ? choices : DIRS.filter((d) => open(s, sh.x, sh.y, d))
+    const dirs = directionsOf(s.maze)
+    const choices = dirs.filter((d) => open(s, sh.x, sh.y, d) && d !== (sh.dir ? REVERSE[sh.dir] : null))
+    const options = choices.length ? choices : dirs.filter((d) => open(s, sh.x, sh.y, d))
     const target = targetOf(s, sh, corners, index)
     if (!options.length) return
     if (target) {
@@ -269,7 +292,10 @@ function stepShopper(s: CatcherState, sh: Shopper, corners: Cell[], index: numbe
 /** The four floor cells nearest the store's corners: where calm shoppers go, and the round the patroller walks. */
 function cornersOf(maze: readonly string[]): Cell[] {
   const w = maze[0].length, h = maze.length
-  return [nearestFloor(maze, 1, 1), nearestFloor(maze, w - 2, 1), nearestFloor(maze, w - 2, h - 2), nearestFloor(maze, 1, h - 2)]
+  // round the same way in the tall store as in the wide one, turned
+  return isTall(maze)
+    ? [nearestFloor(maze, 1, 1), nearestFloor(maze, 1, h - 2), nearestFloor(maze, w - 2, h - 2), nearestFloor(maze, w - 2, 1)]
+    : [nearestFloor(maze, 1, 1), nearestFloor(maze, w - 2, 1), nearestFloor(maze, w - 2, h - 2), nearestFloor(maze, 1, h - 2)]
 }
 
 /** Where the money may lie: a floor cell well away from the burger, not on an ingredient, the sauce or at the door. */
@@ -318,7 +344,13 @@ export function stepCatcher(s: CatcherState, want?: Direction | null): void {
   if (s.modeTimer <= 0) { s.rush = !s.rush; s.modeTimer = s.rush ? params.rush : params.calm; s.shoppers.forEach((sh) => { if (sh.dir && sh.progress === 0) sh.dir = REVERSE[sh.dir] }) }
   // shoppers come in one by one
   s.enterTimer -= 1
-  if (s.enterTimer <= 0) { const next = s.shoppers.find((sh) => !sh.inside); if (next) next.inside = true; s.enterTimer = 3 * SECOND }
+  if (s.enterTimer <= 0) {
+    const next = s.shoppers.find((sh) => !sh.inside)
+    if (next) next.inside = true
+    // the fifth comes in well after the others: fifteen seconds of four before the pincer
+    const after = s.shoppers.find((sh) => !sh.inside)
+    s.enterTimer = (after?.role === 'pincer' ? 15 : 3) * SECOND
+  }
   // the sauce comes and goes; the trail dries
   if (s.sauce) { s.sauce.timer -= 1; if (s.sauce.timer <= 0) s.sauce = null }
   else if (--s.sauceTimer <= 0) {
