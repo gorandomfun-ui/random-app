@@ -5,16 +5,12 @@
  * content that was due comes right after it.
  *
  * - The images and videos seen on this device are counted, visit after
- *   visit. The first game is offered at the 30th; refused, the other game
- *   comes at the 60th, then the 100th, the 160th, the 300th, the 600th —
- *   and after that, no more.
- * - Offered to someone who is not playing yet, a game waits for a rest in
- *   the score (a stretch of pure random), from its third visual and not in
- *   its last two, never in the first minute, never in a Wave, never right
- *   after a like: it must not take Random's best moments.
- * - Once someone plays, the game comes first: the next level is back ten
- *   visuals after a level won, twenty after a level lost (two retries come
- *   straight away), wherever the score stands — only never in a Wave.
+ *   visit. A game — CATCHER or EATER, drawn by chance the first time — is
+ *   offered at the 20th exactly, wherever the rhythm stands; refused, the
+ *   other game comes at the 50th, then the 90th, the 150th, the 290th, the
+ *   590th — and after that, no more. Only a Wave holds it back.
+ * - Once someone plays, the next level is back ten visuals after a level
+ *   won, twenty after a level lost (two retries come straight away).
  *   A game refused mid-way puts the player back on the ladder; the game
  *   is kept, and taken up again at its level.
  * - Every level is its own round in the flow: CATCHER starts each with three
@@ -40,14 +36,12 @@ const envList = (value: string | undefined, fallback: number[]) => {
 
 /** The ladder and the gaps, each a setting (`NEXT_PUBLIC_GAMES_*`) with the owner's values as defaults. */
 export const FLOW = {
-  first: envNumber(process.env.NEXT_PUBLIC_GAMES_FIRST, 30),
-  /** After each refusal in a row, how many more visuals until the next offer: 30 → 60 → 100 → 160 → 300 → 600, then no more. */
+  first: envNumber(process.env.NEXT_PUBLIC_GAMES_FIRST, 20),
+  /** After each refusal in a row, how many more visuals until the next offer: 20 → 50 → 90 → 150 → 290 → 590, then no more. */
   ladder: envList(process.env.NEXT_PUBLIC_GAMES_LADDER, [30, 40, 60, 140, 300]),
   afterWin: envNumber(process.env.NEXT_PUBLIC_GAMES_AFTER_WIN, 10),
   afterLoss: envNumber(process.env.NEXT_PUBLIC_GAMES_AFTER_LOSS, 20),
   retries: 2,
-  minGapMs: 60_000,
-  settleMs: 60_000,
 }
 
 /** A game under way in the flow: the level it is at, the score so far, its id and signed ticket for the world's scores. */
@@ -61,7 +55,7 @@ export type FlowState = {
   nextAt: number
   /** Refusals in a row. */
   refusals: number
-  /** The ladder is spent, or the visitor asked for no more. */
+  /** The ladder is spent. */
   stopped: boolean
   /** The game the next offer is for. */
   next: GameName
@@ -73,8 +67,12 @@ export type FlowState = {
 
 const KEY = 'random_games_v1'
 
-export function freshFlow(): FlowState {
-  return { v: 1, count: 0, nextAt: FLOW.first, refusals: 0, stopped: false, next: 'catcher', playing: null, lastOfferAt: 0, runs: {} }
+/** A device's first state: nothing seen yet, the first game drawn by chance (from crypto, not the page's Math.random). */
+export function freshFlow(first: GameName = firstGame()): FlowState {
+  return { v: 1, count: 0, nextAt: FLOW.first, refusals: 0, stopped: false, next: first, playing: null, lastOfferAt: 0, runs: {} }
+}
+function firstGame(): GameName {
+  try { const a = new Uint8Array(1); crypto.getRandomValues(a); return GAMES[a[0] & 1] } catch { return GAMES[Date.now() & 1] }
 }
 
 function storage(): Storage | null {
@@ -102,27 +100,12 @@ export function saveFlow(state: FlowState): void {
 export const countVisual = (s: FlowState): FlowState => ({ ...s, count: s.count + 1 })
 
 /** What the page knows at the moment a content is about to show. */
-export type FlowMoment = {
-  now: number
-  /** When this visit to Random began. */
-  sessionStartedAt: number
-  inWave: boolean
-  /** The content leaving the screen was just liked. */
-  justLiked: boolean
-  /** Where the next visual stands in the cool/random score. */
-  position: { rest: boolean; index: number; untilCool: number }
-}
+export type FlowMoment = { inWave: boolean }
 
 /** Is a game due now, and which? Null when not. Reads only. */
 export function dueGame(s: FlowState, m: FlowMoment): GameName | null {
   if (s.stopped || s.count < s.nextAt || m.inWave) return null
-  if (m.now - s.lastOfferAt < FLOW.minGapMs) return null
-  // someone playing through: the game comes first, wherever the score stands
-  if (s.playing) return s.playing
-  if (m.now - m.sessionStartedAt < FLOW.settleMs || m.justLiked) return null
-  const { rest, index, untilCool } = m.position
-  if (!rest || index < 2 || untilCool <= 2) return null
-  return s.next
+  return s.playing ?? s.next
 }
 
 export const offered = (s: FlowState, now: number): FlowState => ({ ...s, lastOfferAt: now })
@@ -135,9 +118,6 @@ export function refused(s: FlowState): FlowState {
   if (gap === undefined) return { ...s, refusals, stopped: true, playing: null, next: other(game) }
   return { ...s, refusals, nextAt: s.count + gap, playing: null, next: other(game) }
 }
-
-/** The visitor asked for no more games. */
-export const optedOut = (s: FlowState): FlowState => ({ ...s, stopped: true, playing: null })
 
 /** The offer taken: off the ladder, playing this game; its game under way, or a new one from level 1. */
 export function accepted(s: FlowState, game: GameName): { state: FlowState; run: Run } {

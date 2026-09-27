@@ -523,15 +523,10 @@ const jpDictionary = {
     ]
   },
   "arcade": {
-    "offer": "{game}で遊びますか？",
-    "play": "遊ぶ",
-    "noThanks": "今はいい",
-    "never": "もう表示しない",
     "nextLevel": "次のレベルは{count}ランダム後",
     "tryAgain": "{count}ランダム後にもう一度",
     "retriesLeft": "残り{count}回",
     "retryLeft": "残り1回",
-    "continue": "ランダムを続ける",
     "yourName": "名前",
     "tabDevice": "この端末",
     "tabWorld": "世界",

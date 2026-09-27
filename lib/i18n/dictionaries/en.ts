@@ -523,15 +523,10 @@ const enDictionary = {
     ]
   },
   "arcade": {
-    "offer": "Up for a game of {game}?",
-    "play": "Play",
-    "noThanks": "No thanks",
-    "never": "Don't offer again",
     "nextLevel": "Next level in {count} randoms",
     "tryAgain": "Try again in {count} randoms",
     "retriesLeft": "{count} tries left",
     "retryLeft": "1 try left",
-    "continue": "Continue the randoms",
     "yourName": "Your name",
     "tabDevice": "This device",
     "tabWorld": "World",

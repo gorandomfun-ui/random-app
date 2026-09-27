@@ -124,11 +124,11 @@ try {
     const at = plain.draws.findIndex((d, i) => d !== again.draws[i])
     console.log(JSON.stringify({ offTwiceSameContents: plain.shown.join() === again.shown.join(), offTwiceSameDraws: at < 0 }))
   }
-  // games on, someone playing through: a game due at the 3rd visual; left, the ladder brings the other one 30 on — not within this visit
-  const flow = { v: 1, count: 0, nextAt: 3, refusals: 0, stopped: false, next: 'catcher', playing: 'catcher', lastOfferAt: 0, runs: { catcher: { level: 2, score: 300 } } }
+  // games on, a first offer due at the 3rd visual, wherever the rhythm stands; refused, the ladder brings the other one 30 on — not within this visit
+  const flow = { v: 1, count: 0, nextAt: 3, refusals: 0, stopped: false, next: 'catcher', playing: null, lastOfferAt: 0, runs: {} }
   const played = await visit(on, clicks, flow)
   // games on but nothing due: the page must behave as with games off
-  const idle = await visit(on, clicks, { ...flow, nextAt: 10_000, playing: null })
+  const idle = await visit(on, clicks, { ...flow, nextAt: 10_000 })
   if (played.games < 1) throw new Error('No game came up')
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
   if (!same(plain.shown, played.shown)) throw new Error(`Contents differ with a game in between:\n${plain.shown.join(',')}\n${played.shown.join(',')}`)

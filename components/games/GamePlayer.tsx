@@ -64,6 +64,8 @@ type Session = {
   won: boolean
   /** In a round: tries left after this one. */
   retriesLeft: number
+  /** The cross of arrows under the board: always on a tall board, on a wide one on a touch screen. */
+  pad: boolean
   dirty: boolean
 }
 
@@ -80,10 +82,10 @@ function gameSeed(): number {
 const SLOW_MS = 450
 const within = (h: Hit, x: number, y: number) => x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h
 
-/** Wide or tall: whichever lets the board be drawn the larger in this frame. */
-function layoutFor(width: number, height: number): Layout {
+/** Wide or tall: whichever lets the board be drawn the larger in this frame, the cross under it counted on a touch screen. */
+function layoutFor(width: number, height: number, touch = false): Layout {
   if (!width || !height) return 'landscape'
-  const wide = playSize('landscape'), tall = playSize('portrait')
+  const wide = playSize('landscape', touch), tall = playSize('portrait')
   return Math.min(width / wide.width, height / wide.height) >= Math.min(width / tall.width, height / tall.height) ? 'landscape' : 'portrait'
 }
 
@@ -129,7 +131,7 @@ export default function GamePlayer({
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, dirty: true })
+  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, pad: false, dirty: true })
   const roundRef = useRef(round)
   const bestRef = useRef(0)
   const callbacks = useRef({ onBest, onResult, onStart, onPlayState, onRound, onLevelCleared, onNamed })
@@ -153,21 +155,24 @@ export default function GamePlayer({
     const clock = new FixedClock()
     const box = { width: frameBox.clientWidth, height: frameBox.clientHeight }
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    // a phone or a tablet: the cross of arrows is always there, the board wide or tall
+    const touchScreen = (window.matchMedia?.('(pointer: coarse)').matches ?? false) || 'ontouchstart' in window
     bestRef.current = bestScore(game)
     callbacks.current.onBest?.(bestRef.current)
-    s.layout = layoutFor(box.width, box.height)
+    s.layout = layoutFor(box.width, box.height, touchScreen)
     s.dirty = true
 
     const inRound = () => roundRef.current != null
     const draw = (): PixelBuffer => {
-      if (s.mode === 'title') return renderTitle(game, s.layout, accent, { level: roundRef.current?.level ?? 1, best: bestRef.current, frame: s.frame, blink: s.blink, day: isDaytime() })
+      // in a round a real PLAY button takes PRESS START's place
+      if (s.mode === 'title') return renderTitle(game, s.layout, accent, { level: roundRef.current?.level ?? 1, best: bestRef.current, frame: s.frame, blink: s.blink, day: isDaytime(), press: !inRound() })
       // in a round, the end speaks through the page: no PLAY AGAIN? unless a retry is on offer
       const ask = !inRound() || s.mode === 'retry'
       const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice, ask }
       if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
       if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return renderGameOver(game, s.layout, accent, ended)
-      if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause })
-      return renderEaterGame(s.eater!, accent, { pause: s.pause })
+      if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause, pad: s.pad })
+      return renderEaterGame(s.eater!, accent, { pause: s.pause, pad: s.pad })
     }
     let sized = ''
     const paint = () => {
@@ -191,8 +196,9 @@ export default function GamePlayer({
     const tell = (event: RoundEvent) => { if (inRound()) callbacks.current.onRound?.(event) }
     const start = () => {
       const r = roundRef.current
-      s.layout = layoutFor(box.width, box.height)
+      s.layout = layoutFor(box.width, box.height, touchScreen)
       s.seed = gameSeed()
+      s.pad = s.layout === 'portrait' || touchScreen
       // a round starts at its level with the score so far, CATCHER with three lives, EATER for that one level
       s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
       s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
@@ -211,14 +217,14 @@ export default function GamePlayer({
       s.catcher = null
       s.eater = null
       s.pause = null
-      s.layout = layoutFor(box.width, box.height)
+      s.layout = layoutFor(box.width, box.height, touchScreen)
       s.dirty = true
     }
     const end = (score: number, level: number, hold: number, won: boolean) => { s.mode = 'ending'; s.score = score; s.level = level; s.endSteps = hold; s.won = won }
     const finish = () => {
       s.choice = 0
       s.frame = 0
-      s.layout = layoutFor(box.width, box.height)
+      s.layout = layoutFor(box.width, box.height, touchScreen)
       s.dirty = true
       const r = roundRef.current
       if (r) {
@@ -353,12 +359,12 @@ export default function GamePlayer({
     let touch: { id: number; x: number; y: number; moved: boolean } | null = null
     let thumb: { id: number; dir: Direction | null } | null = null
     const onCross = (e: PointerEvent): Direction | null => {
-      const pad = dpadGeometry(s.layout)
+      const pad = dpadGeometry(s.layout, s.pad)
       if (!pad || s.mode !== 'play' || s.pause != null) return null
       const p = toBuffer(e)
       return crossDirection(p.x, p.y, pad)
     }
-    const inBand = (e: PointerEvent) => { const pad = dpadGeometry(s.layout); return pad != null && toBuffer(e).y >= pad.top }
+    const inBand = (e: PointerEvent) => { const pad = dpadGeometry(s.layout, s.pad); return pad != null && toBuffer(e).y >= pad.top }
     const onDown = (e: PointerEvent) => {
       if (e.button > 0) return
       if (s.mode === 'play' && s.pause == null && inBand(e)) {
@@ -411,7 +417,7 @@ export default function GamePlayer({
     const watch = new ResizeObserver(() => {
       box.width = frameBox.clientWidth
       box.height = frameBox.clientHeight
-      if (s.mode === 'title' || s.mode === 'over' || s.mode === 'name') s.layout = layoutFor(box.width, box.height)
+      if (s.mode === 'title' || s.mode === 'over' || s.mode === 'name') s.layout = layoutFor(box.width, box.height, touchScreen)
       s.dirty = true
     })
     watch.observe(frameBox)

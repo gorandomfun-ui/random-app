@@ -43,9 +43,10 @@ export function boardSize(layout: Layout): { cols: number; rows: number } {
   return layout === 'landscape' ? { cols: MAZE_WIDTH, rows: MAZE_HEIGHT } : { cols: MAZE_HEIGHT, rows: MAZE_WIDTH }
 }
 
-export function playSize(layout: Layout): { width: number; height: number } {
+/** A play screen: the HUD, the board, and under it the cross of arrows when there is one — always tall, and wide on a touch screen. */
+export function playSize(layout: Layout, pad = layout === 'portrait'): { width: number; height: number } {
   const { cols, rows } = boardSize(layout)
-  return { width: cols * CELL, height: HUD_HEIGHT + rows * CELL + (layout === 'portrait' ? DPAD_HEIGHT : 0) }
+  return { width: cols * CELL, height: HUD_HEIGHT + rows * CELL + (pad ? DPAD_HEIGHT : 0) }
 }
 
 // ---------------------------------------------------------------- the street, composed
@@ -246,7 +247,8 @@ function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, fr
 
 // ---------------------------------------------------------------- the fine screens
 
-export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; day?: boolean }
+/** `press` false leaves PRESS START out: in the Random flow a real button takes its place. */
+export type TitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; day?: boolean; press?: boolean }
 
 export function renderTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
   const { width, height } = SCENE_SIZE[layout]
@@ -254,7 +256,7 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
   const frame = options.frame ?? 0
   const s = drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: 'title', building: true, day: options.day })
   drawMarks(buffer, game, s, accent, frame)
-  pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
+  if (options.press !== false) pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
   const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
   if (s.info === 'top') {
     infoLine(buffer, 16, 16, 'LEVEL', level, 'left', 2, options.day === true)
@@ -701,25 +703,22 @@ export function winnerHits(layout: Layout): { yes: Hit; no: Hit } {
   const row = winnerRow(layout)
   return { yes: hitOfButton('YES', row.yes, row.y, 2), no: hitOfButton('NO', row.no, row.y, 2) }
 }
-const boardMiddle = (layout: Layout) => {
-  const { height } = playSize(layout)
-  return Math.round(HUD_HEIGHT + (height - HUD_HEIGHT - (layout === 'portrait' ? DPAD_HEIGHT : 0)) / 2)
-}
+const boardMiddle = (layout: Layout) => Math.round(HUD_HEIGHT + (boardSize(layout).rows * CELL) / 2)
 export function pauseHits(layout: Layout): { resume: Hit; quit: Hit } {
   const { width } = playSize(layout)
   const mid = boardMiddle(layout)
   return { resume: hitOfButton('RESUME', width / 2, mid + 6, 1), quit: hitOfButton('QUIT', width / 2, mid + 30, 1) }
 }
-/** The cross of arrows on a tall screen: its centre, the width of an arm, and the top of the band under the board that answers to it. */
-export function dpadGeometry(layout: Layout): { cx: number; cy: number; arm: number; top: number } | null {
-  if (layout !== 'portrait') return null
-  const top = HUD_HEIGHT + MAZE_WIDTH * CELL
-  return { cx: playSize(layout).width / 2, cy: top + DPAD_HEIGHT / 2, arm: 26, top }
+/** The cross of arrows under the board, when there is one: its centre, the width of an arm, and the top of the band that answers to it. */
+export function dpadGeometry(layout: Layout, pad = layout === 'portrait'): { cx: number; cy: number; arm: number; top: number } | null {
+  if (!pad) return null
+  const top = HUD_HEIGHT + boardSize(layout).rows * CELL
+  return { cx: playSize(layout, pad).width / 2, cy: top + DPAD_HEIGHT / 2, arm: 26, top }
 }
 
 /** A card across the board: the board a shade darker, the words in arcade letters, the choices, `choice` the one lit. */
 function playCard(buffer: PixelBuffer, layout: Layout, accent: string, title: string, buttons: string[], choice = 0): void {
-  const boardH = buffer.height - HUD_HEIGHT - (layout === 'portrait' ? DPAD_HEIGHT : 0)
+  const boardH = boardSize(layout).rows * CELL
   const mid = boardMiddle(layout)
   buffer.shade(0, HUD_HEIGHT, buffer.width, boardH, 0.45)
   arcadeText(buffer, title, buffer.width / 2, mid - (buttons.length ? 44 : 12), 3, accent)
@@ -728,18 +727,18 @@ function playCard(buffer: PixelBuffer, layout: Layout, accent: string, title: st
 
 /** One drawing surface per screen, used again every frame, and the floors that never change, drawn once. */
 const surfaces = new Map<string, PixelBuffer>()
-function surface(name: string, layout: Layout): PixelBuffer {
-  const key = `${name}|${layout}`
+function surface(name: string, layout: Layout, pad: boolean): PixelBuffer {
+  const key = `${name}|${layout}|${pad}`
   let out = surfaces.get(key)
-  if (!out) { const { width, height } = playSize(layout); out = new PixelBuffer(width, height, INK); surfaces.set(key, out) }
+  if (!out) { const { width, height } = playSize(layout, pad); out = new PixelBuffer(width, height, INK); surfaces.set(key, out) }
   return out
 }
 const floors = new Map<string, PixelBuffer>()
-function cachedFloor(key: string, layout: Layout, draw: (buffer: PixelBuffer) => void): PixelBuffer {
+function cachedFloor(key: string, layout: Layout, pad: boolean, draw: (buffer: PixelBuffer) => void): PixelBuffer {
   let out = floors.get(key)
   if (!out) {
     if (floors.size > 24) floors.clear()
-    const { width, height } = playSize(layout)
+    const { width, height } = playSize(layout, pad)
     out = new PixelBuffer(width, height, INK)
     draw(out)
     floors.set(key, out)
@@ -747,8 +746,8 @@ function cachedFloor(key: string, layout: Layout, draw: (buffer: PixelBuffer) =>
   return out
 }
 
-/** What a play screen shows over the game: nothing, or the pause card with RESUME (0) or QUIT (1) lit. */
-export type PlayView = { pause?: 0 | 1 | null }
+/** What a play screen shows over the game: nothing, or the pause card with RESUME (0) or QUIT (1) lit; `pad`: the cross under the board (tall screens always have it). */
+export type PlayView = { pause?: 0 | 1 | null; pad?: boolean }
 
 /** A little four-pointed glint, for what is golden. */
 function glint(buffer: PixelBuffer, x: number, y: number): void {
@@ -783,12 +782,13 @@ function drawEaterBonus(buffer: PixelBuffer, kind: import('./eater').EaterBonus,
 export function renderCatcherGame(s: CatcherState, accent: string, view: PlayView = {}): PixelBuffer {
   const layout = s.layout
   const tall = layout === 'portrait'
-  const { width } = playSize(layout)
-  const floor = cachedFloor(`catcher|${layout}|${accent}`, layout, (buffer) => {
+  const pad = view.pad ?? tall
+  const floor = cachedFloor(`catcher|${layout}|${pad}|${accent}`, layout, pad, (buffer) => {
     drawStoreFloor(buffer, s.maze, HUD_HEIGHT, accent, tall)
-    if (tall) dpad(buffer, width / 2, HUD_HEIGHT + MAZE_WIDTH * CELL + DPAD_HEIGHT / 2, 26, accent)
+    const cross = dpadGeometry(layout, pad)
+    if (cross) dpad(buffer, cross.cx, cross.cy, cross.arm, accent)
   })
-  const buffer = surface('catcher', layout)
+  const buffer = surface('catcher', layout, pad)
   buffer.data.set(floor.data)
   const top = HUD_HEIGHT
   const at = (x: number, y: number): [number, number] => [Math.round(x * CELL), Math.round(top + y * CELL)]
@@ -824,13 +824,15 @@ export function renderCatcherGame(s: CatcherState, accent: string, view: PlayVie
 export function renderEaterGame(s: EaterState, accent: string, view: PlayView = {}): PixelBuffer {
   const layout = s.layout
   const tall = layout === 'portrait'
-  const { width } = playSize(layout)
+  const pad = view.pad ?? tall
+  const { width } = playSize(layout, pad)
   const kind = EATER_LEVELS[(s.level - 1) % EATER_LEVELS.length].floor
-  const floor = cachedFloor(`eater|${layout}|${accent}|${kind}`, layout, (buffer) => {
+  const floor = cachedFloor(`eater|${layout}|${pad}|${accent}|${kind}`, layout, pad, (buffer) => {
     drawDinerFloor(buffer, s.cols, s.rows, HUD_HEIGHT, accent, kind)
-    if (tall) dpad(buffer, width / 2, HUD_HEIGHT + s.rows * CELL + DPAD_HEIGHT / 2, 26, accent)
+    const cross = dpadGeometry(layout, pad)
+    if (cross) dpad(buffer, cross.cx, cross.cy, cross.arm, accent)
   })
-  const buffer = surface('eater', layout)
+  const buffer = surface('eater', layout, pad)
   buffer.data.set(floor.data)
   const top = HUD_HEIGHT
   for (const entry of s.islands) {

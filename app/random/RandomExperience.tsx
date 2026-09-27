@@ -75,8 +75,7 @@ import {
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
 import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
-import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, optedOut, refused, saveFlow, withTicket, type FlowState } from '@/lib/games/flow'
-import { positionAt } from '@/lib/v3/cool/score'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, refused, saveFlow, withTicket, type FlowState } from '@/lib/games/flow'
 import { formatI18n as formatArcade } from '@/lib/i18n/format'
 import type { GameName } from '@/lib/games/scores'
 import type { Decision } from '@/components/games/ArcadeStage'
@@ -2637,7 +2636,6 @@ export function RandomExperience({
   // ---- RANDOM ARCADE ----
   const gamesOn = (GAMES_ON || effectsTestMode) && !savedMode && !curationMode
   const flowRef = useRef<FlowState | null>(null)
-  const sessionStartedAtRef = useRef(Date.now())
   /** The content that was due when a game came up: it waits, and shows the moment the game is left. */
   const heldEntryRef = useRef<{ entry: PreparedRandomEntry; reward: boolean; advance: boolean } | null>(null)
   const arcadeDueRef = useRef<((entry: PreparedRandomEntry, reward: boolean, advance: boolean) => boolean) | null>(null)
@@ -2654,7 +2652,6 @@ export function RandomExperience({
   const arcadePendingRef = useRef<{ game: GameName; score: number; level: number; won: boolean; ticket: Ticket | null; runId?: string } | null>(null)
   const arcadeTicketPendingRef = useRef(false)
   const arcadeControl = useRef<GameControl>({}).current
-  const likedNowRef = useRef(false)
   useEffect(() => {
     if (!gamesOn) return
     flowRef.current = loadFlow()
@@ -4386,15 +4383,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   arcadeDueRef.current = (entry, reward, advance) => {
     if (!gamesOn || !flowRef.current || !currentItemRef.current) return false
     if (entry.item.type === 'encourage' || entry.item.type === 'minigame') return false
-    // never over an encouragement on its way or on screen: the game waits for the next content
-    if (encourage3dPending || encourage3dEvent) return false
     const flow = flowRef.current
-    const snapshot = discoveryEnabled ? discoveryRef.current.snapshot() : null
-    const place = snapshot ? positionAt(snapshot.seed, snapshot.beat) : { rest: false, index: 0, untilCool: 0 }
     const now = Date.now()
-    const game = forcedGameRef.current ?? dueGame(flow, {
-      now, sessionStartedAt: sessionStartedAtRef.current, inWave: waveModeRef.current, justLiked: likedNowRef.current, position: place,
-    })
+    // the owner's count, exactly: only a Wave holds a game back (an encouragement due meanwhile waits for the way back)
+    const game = forcedGameRef.current ?? dueGame(flow, { inWave: waveModeRef.current })
     forcedGameRef.current = null
     if (!game) return false
     writeFlow(offered(flow, now))
@@ -4438,11 +4430,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const arcadeDeclined = useCallback(() => {
     if (flowRef.current) writeFlow(refused(flowRef.current))
-    closeArcade()
-  }, [closeArcade, writeFlow])
-
-  const arcadeNever = useCallback(() => {
-    if (flowRef.current) writeFlow(optedOut(flowRef.current))
     closeArcade()
   }, [closeArcade, writeFlow])
 
@@ -4991,7 +4978,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   const handleRandomAgainRef = useRef<(() => void) | null>(null)
   handleRandomAgainRef.current = handleRandomAgain
-  likedNowRef.current = liked
 
   const handleWave = useCallback(async () => {
     if (fullscreenWebRef.current) return
@@ -5302,7 +5288,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               onPlayState={setArcadePlay}
               onStarted={arcadeStarted}
               onDeclined={arcadeDeclined}
-              onNever={arcadeNever}
               onDecided={arcadeDecided}
               onContinue={arcadeContinue}
               onCard={(file, url) => setArcadeCard({ file, url })}

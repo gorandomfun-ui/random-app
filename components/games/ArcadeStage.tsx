@@ -1,11 +1,13 @@
 'use client'
 
 /**
- * A game in the Random flow, in the content's frame: the offer on the game's
- * title screen (Play, No thanks, and quietly, Don't offer again), then one
- * level, then what comes next said in the visitor's language — the next
- * level in so many randoms, a retry, try again later, all sixteen won — with
- * the way back to the randoms. The first level won asks for a name, once.
+ * A game in the Random flow, in the content's frame: the game's title screen
+ * with a PLAY button like Random's own at its foot — nothing else, no box, no
+ * sentence: to pass, RANDOM AGAIN, as for any content. Then one level, then
+ * what comes next, said in the visitor's language on a quiet panel at the
+ * foot of the game — the next level in so many randoms, a retry, try again
+ * later, all sixteen won — with CONTINUE back to the randoms. The first
+ * level won asks for a name, once.
  *
  * The page keeps the rest: the flow's state, the points, the world's table.
  * Loaded only when a game comes up; it also tints Random's glitch backdrop
@@ -20,7 +22,7 @@ import { lastName, NAME_MAX, type GameName } from '@/lib/games/scores'
 import type { Theme } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 
-import { GAME_TITLES, titleCard } from './share'
+import { titleCard } from './share'
 
 export type Decision = { kind: 'won' | 'winner' | 'lost' | 'quit'; score: number; level: number }
 
@@ -33,7 +35,6 @@ export default function ArcadeStage({
   onPlayState,
   onStarted,
   onDeclined,
-  onNever,
   onDecided,
   onContinue,
   onCard,
@@ -47,7 +48,6 @@ export default function ArcadeStage({
   onPlayState: (state: PlayState) => void
   onStarted: () => void
   onDeclined: () => void
-  onNever: () => void
   onDecided: (decision: Decision) => void
   onContinue: (name: string | null) => void
   onCard: (card: File | null, url: string | null) => void
@@ -57,6 +57,30 @@ export default function ArcadeStage({
   const [name, setName] = useState('')
   const [askName, setAskName] = useState(false)
   const decided = useRef(false)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  // where the game's picture stands in the frame, so what goes over it sits at its foot
+  const [shot, setShot] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    let canvas: HTMLCanvasElement | null = null
+    let watch: ResizeObserver | null = null
+    const measure = () => {
+      if (!canvas) return
+      const a = stage.getBoundingClientRect(), b = canvas.getBoundingClientRect()
+      setShot({ left: b.left - a.left, top: b.top - a.top, width: b.width, height: b.height })
+    }
+    const find = window.setInterval(() => {
+      canvas = stage.querySelector('canvas')
+      if (!canvas || canvas.getBoundingClientRect().width === 0) return
+      window.clearInterval(find)
+      watch = new ResizeObserver(measure)
+      watch.observe(canvas)
+      watch.observe(stage)
+      measure()
+    }, 60)
+    return () => { window.clearInterval(find); watch?.disconnect() }
+  }, [])
   const words = (key: string, fallback: string, values: Record<string, string | number> = {}) => formatI18n(t(`arcade.${key}`, fallback), values)
 
   // the title card: the share picture and, while the game is on, Random's backdrop
@@ -107,21 +131,20 @@ export default function ArcadeStage({
     : null
 
   return (
-    <div className="arcade-stage">
+    <div ref={stageRef} className="arcade-stage">
       <GamePlayer game={game} accent={theme.text} round={round} onRound={onRound} onPlayState={onPlayState} control={control} />
-      {event.kind === 'title' ? (
-        <div className="arcade-stage__panel">
-          <p className="arcade-stage__line">{words('offer', 'Up for a game of {game}?', { game: GAME_TITLES[game] })}</p>
-          <div className="arcade-stage__buttons">
-            <button type="button" className="arcade-stage__button" style={{ background: theme.text, color: theme.cream }} onClick={() => control.start?.()}>{words('play', 'Play')}</button>
-            <button type="button" className="arcade-stage__button arcade-stage__button--quiet" style={{ borderColor: theme.cream, color: theme.cream }} onClick={onDeclined}>{words('noThanks', 'No thanks')}</button>
-          </div>
-          <button type="button" className="arcade-stage__never" onClick={onNever}>{words('never', "Don't offer again")}</button>
+      {shot && event.kind === 'title' ? (
+        <div className="arcade-stage__foot" style={{ left: shot.left, width: shot.width, top: shot.top + shot.height * 0.9 }}>
+          <button type="button" className="arcade-stage__pill arcade-stage__pill--play" style={{ background: theme.text, color: theme.cream }} onClick={() => control.start?.()}>Play</button>
         </div>
       ) : null}
-      {event.kind === 'retry' && line ? <div className="arcade-stage__panel arcade-stage__panel--note"><p className="arcade-stage__line">{line}</p></div> : null}
-      {ended && line ? (
-        <form className="arcade-stage__panel" onSubmit={submit}>
+      {shot && event.kind === 'retry' && line ? (
+        <div className="arcade-stage__foot" style={{ left: shot.left, width: shot.width, top: shot.top + shot.height - 6 }}>
+          <p className="arcade-stage__note">{line}</p>
+        </div>
+      ) : null}
+      {shot && ended && line ? (
+        <form className="arcade-stage__panel" onSubmit={submit} style={{ left: shot.left + shot.width * 0.06, width: shot.width * 0.88, top: shot.top + shot.height - 10 }}>
           <p className="arcade-stage__line">{line}</p>
           {askName ? (
             <input
@@ -138,20 +161,23 @@ export default function ArcadeStage({
               style={{ borderColor: theme.text }}
             />
           ) : null}
-          <button type="submit" className="arcade-stage__button" style={{ background: theme.text, color: theme.cream }}>{words('continue', 'Continue the randoms')}</button>
+          <button type="submit" className="arcade-stage__pill" style={{ background: theme.text, color: theme.cream }}>Continue</button>
         </form>
       ) : null}
       <style jsx>{`
         .arcade-stage { position: relative; width: 100%; height: 100%; }
-        .arcade-stage__panel { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); width: min(420px, calc(100% - 24px)); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 14px 12px; background: rgba(8, 8, 16, 0.86); border: 1px solid rgba(248, 245, 230, 0.18); font-family: var(--font-inter-tight), 'Inter Tight', sans-serif; color: #f8f5e6; text-align: center; z-index: 2; }
-        .arcade-stage__panel--note { bottom: 8px; padding: 8px 12px; }
-        .arcade-stage__line { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; }
-        .arcade-stage__buttons { display: flex; gap: 10px; width: 100%; }
-        .arcade-stage__button { flex: 1; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 28px; font-family: var(--font-tomorrow), sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; width: 100%; }
-        .arcade-stage__button--quiet { background: transparent; border: 2px solid; }
-        .arcade-stage__never { background: none; border: 0; color: rgba(248, 245, 230, 0.6); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-        .arcade-stage__name { width: 100%; height: 44px; background: transparent; border: 2px solid; color: #f8f5e6; font-family: var(--font-tomorrow), sans-serif; font-size: 18px; letter-spacing: 0.14em; text-align: center; outline: none; }
-        .arcade-stage__name::placeholder { color: rgba(248, 245, 230, 0.4); letter-spacing: 0.06em; }
+        /* at the foot of the game's picture, centred on it: lifted a little over its bottom edge */
+        .arcade-stage__foot { position: absolute; display: flex; justify-content: center; transform: translateY(-100%); z-index: 2; pointer-events: none; }
+        .arcade-stage__foot > * { pointer-events: auto; }
+        /* the same pill as Random's own button, with a shadow to stand out on the picture */
+        .arcade-stage__pill { min-width: 160px; max-width: 260px; width: 62%; padding: 12px 24px; border: 0; border-radius: 28px; font-family: var(--font-tomorrow), sans-serif; font-weight: 700; font-size: 16px; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55), 0 3px 0 rgba(0, 0, 0, 0.35); transition: transform 120ms ease; }
+        .arcade-stage__pill:hover { transform: scale(1.02); }
+        .arcade-stage__note { margin: 0; padding: 4px 12px; border-radius: 12px; background: rgba(8, 8, 16, 0.55); color: #f8f5e6; font-family: var(--font-inter-tight), 'Inter Tight', sans-serif; font-size: 13px; font-weight: 600; }
+        /* a quiet panel at the game's foot: the line, a name once, CONTINUE */
+        .arcade-stage__panel { position: absolute; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: rgba(8, 8, 16, 0.5); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); font-family: var(--font-inter-tight), 'Inter Tight', sans-serif; color: #f8f5e6; text-align: center; z-index: 2; }
+        .arcade-stage__line { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.3; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+        .arcade-stage__name { width: 100%; max-width: 260px; height: 38px; background: rgba(0, 0, 0, 0.35); border: 2px solid; border-radius: 10px; color: #f8f5e6; font-family: var(--font-tomorrow), sans-serif; font-size: 16px; letter-spacing: 0.14em; text-align: center; outline: none; }
+        .arcade-stage__name::placeholder { color: rgba(248, 245, 230, 0.45); letter-spacing: 0.06em; }
       `}</style>
       <style jsx global>{`
         /* Random's glitch backdrop while a game is on: the game's own card behind, the signal in the theme's colours rather than cyan and magenta */

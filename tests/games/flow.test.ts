@@ -2,63 +2,42 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, refused, type FlowMoment, type FlowState } from '@/lib/games/flow'
-import { beats, positionAt } from '@/lib/v3/cool/score'
 
-/** A moment at a good place: a rest, well inside it, long after the visit began. */
-const calm = (now = 10_000_000): FlowMoment => ({ now, sessionStartedAt: 0, inWave: false, justLiked: false, position: { rest: true, index: 5, untilCool: 20 } })
+/** A moment outside a Wave. */
+const calm = (): FlowMoment => ({ inWave: false })
 const seeTo = (s: FlowState, count: number) => { let out = s; while (out.count < count) out = countVisual(out); return out }
 
-test('la position dans la partition : la même que le rythme, les plages de repos reconnues, rien d_écrit', () => {
-  for (const seed of [1, 99, 123456]) {
-    const b = beats(seed, 300)
-    for (let i = 0; i < 300; i += 1) {
-      const p = positionAt(seed, i)
-      assert.equal(p.beat, b[i], `graine ${seed}, visuel ${i}`)
-      if (p.rest) assert.ok(p.length >= 30 && p.beat === 'random')
-      if (p.beat === 'cool') assert.equal(p.untilCool, 0)
-    }
-  }
-  // the opening and the switch-over have no rest; the first rest comes right after them
-  const first = Array.from({ length: 300 }, (_, i) => positionAt(7, i)).findIndex((p) => p.rest)
-  assert.ok(first >= 10 + 2 + 6 + 2 + 4 + 2 + 1 + 3 + 1 + 6 + 1 + 10, 'pas de repos avant la fin de la bascule')
-})
-
-test('l_échelle des propositions : 30, puis l_autre jeu à 60, 100, 160, 300, 600, puis plus rien', () => {
-  let s = freshFlow()
+test('l_échelle des propositions : 20, puis l_autre jeu à 50, 90, 150, 290, 590, puis plus rien', () => {
+  let s = freshFlow('catcher')
   const offers: Array<[number, string]> = []
   for (let i = 0; i < 2000 && !s.stopped; i += 1) {
     s = countVisual(s)
-    const game = dueGame(s, calm(1e7 + i * 61_000))
-    if (game) { offers.push([s.count, game]); s = refused(offered(s, 1e7 + i * 61_000)) }
+    const game = dueGame(s, calm())
+    if (game) { offers.push([s.count, game]); s = refused(offered(s, i)) }
   }
-  assert.deepEqual(offers.map(([n]) => n), [30, 60, 100, 160, 300, 600])
+  assert.deepEqual(offers.map(([n]) => n), [20, 50, 90, 150, 290, 590])
   assert.deepEqual(offers.map(([, g]) => g), ['catcher', 'eater', 'catcher', 'eater', 'catcher', 'eater'], 'un jeu différent à chaque fois')
   assert.ok(s.stopped)
 })
 
-test('une première proposition attend une plage de repos, jamais la première minute, une Wave, juste après un like', () => {
-  const s = seeTo(freshFlow(), 30)
-  assert.equal(dueGame(s, calm()), 'catcher')
-  assert.equal(dueGame(s, { ...calm(), position: { rest: false, index: 5, untilCool: 20 } }), null, 'hors repos')
-  assert.equal(dueGame(s, { ...calm(), position: { rest: true, index: 1, untilCool: 20 } }), null, 'le 2e du repos')
-  assert.equal(dueGame(s, { ...calm(), position: { rest: true, index: 30, untilCool: 2 } }), null, 'deux avant un cool')
-  assert.equal(dueGame(s, { ...calm(), sessionStartedAt: calm().now - 30_000 }), null, 'la première minute')
-  assert.equal(dueGame(s, { ...calm(), inWave: true }), null, 'une Wave')
-  assert.equal(dueGame(s, { ...calm(), justLiked: true }), null, 'après un like')
-  assert.equal(dueGame(seeTo(freshFlow(), 29), calm()), null, 'avant 30')
-  assert.equal(dueGame({ ...s, lastOfferAt: calm().now - 30_000 }, calm()), null, 'jamais deux dans la même minute')
+test('à 20 pile, où que soit le rythme — seule une Wave le retient — et le premier jeu tiré au hasard', () => {
+  const s = seeTo(freshFlow('eater'), 20)
+  assert.equal(dueGame(seeTo(freshFlow('eater'), 19), calm()), null, 'avant 20')
+  assert.equal(dueGame(s, calm()), 'eater', 'à 20, en plein bloc cool ou pas')
+  assert.equal(dueGame(s, { inWave: true }), null, 'une Wave')
+  const firsts = new Set(Array.from({ length: 40 }, () => freshFlow().next))
+  assert.deepEqual([...firsts].sort(), ['catcher', 'eater'], 'CATCHER ou EATER, au hasard')
 })
 
-test('quelqu_un qui joue : le niveau suivant revient 10 visuels après, 20 après une défaite, même en plein bloc cool — jamais dans une Wave', () => {
-  let s = seeTo(freshFlow(), 30)
+test('quelqu_un qui joue : le niveau suivant revient 10 visuels après, 20 après une défaite — jamais dans une Wave', () => {
+  let s = seeTo(freshFlow('catcher'), 20)
   const took = accepted(offered(s, 1), 'catcher')
   assert.deepEqual(took.run, { level: 1, score: 0 })
   s = levelWon(took.state, 'catcher', 420)
   assert.equal(s.runs.catcher?.level, 2); assert.equal(s.runs.catcher?.score, 420)
-  const cool: FlowMoment = { ...calm(), position: { rest: false, index: 0, untilCool: 0 }, justLiked: true, sessionStartedAt: calm().now - 1000 }
-  assert.equal(dueGame(seeTo(s, 30 + FLOW.afterWin - 1), cool), null)
-  assert.equal(dueGame(seeTo(s, 30 + FLOW.afterWin), cool), 'catcher', 'le jeu passe avant le rythme')
-  assert.equal(dueGame(seeTo(s, 30 + FLOW.afterWin), { ...cool, inWave: true }), null)
+  assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin - 1), calm()), null)
+  assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), calm()), 'catcher')
+  assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), { inWave: true }), null)
   s = levelLost(seeTo(s, 40), 'catcher')
   assert.equal(s.nextAt, 40 + FLOW.afterLoss)
   assert.equal(s.runs.catcher?.level, 2, 'le même niveau revient')

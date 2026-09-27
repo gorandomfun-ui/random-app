@@ -47,7 +47,15 @@ test('les zones tactiles tombent sur ce qui est dessiné : pause, RESUME / QUIT,
       assert.notEqual(over(wy, centre(wh.no)), over(wn, centre(wh.no)), `${game} ${layout} : NO du WINNER`)
     }
   }
-  assert.equal(dpadGeometry('landscape'), null, 'pas de croix en paysage : le clavier ou le doigt qui glisse')
+  assert.equal(dpadGeometry('landscape'), null, 'pas de croix en paysage sur un ordinateur : le clavier')
+  // on a touch screen a wide board has its cross too, in a band under it
+  const wide = dpadGeometry('landscape', true)!
+  assert.deepEqual([playSize('landscape', true).width, playSize('landscape', true).height], [448, 24 + 20 * 16 + 96])
+  const wb = renderEaterGame(createEater('landscape', 1, 1), A, { pad: true })
+  assert.equal(wb.height, playSize('landscape', true).height)
+  const wpx = (x: number, y: number) => Array.from(wb.data.slice((y * wb.width + x) * 4, (y * wb.width + x) * 4 + 3)).join()
+  assert.notEqual(wpx(wide.cx - wide.arm, wide.cy), wpx(wide.cx - wide.arm * 3, wide.cy), 'la croix sous le plateau large')
+  assert.equal(crossDirection(20, wide.cy, wide), 'left')
   const pad = dpadGeometry('portrait')!
   const b = renderEaterGame(createEater('portrait', 1, 1), A)
   const px = (x: number, y: number) => Array.from(b.data.slice((y * b.width + x) * 4, (y * b.width + x) * 4 + 3)).join()
