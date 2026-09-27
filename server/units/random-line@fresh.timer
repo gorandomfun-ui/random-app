@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM fresh of the day (06:00 Paris: the charts of the moment, zone by zone, and the day's list)
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

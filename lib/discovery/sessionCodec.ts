@@ -37,7 +37,9 @@ export function parseSession(value: unknown): Session | null {
         (!Number.isSafeInteger(entry[field]) || Number(entry[field]) < 0 || Number(entry[field]) > 0xffffffff)) return null
     }
   }
+  if (value.freshServed != null && (typeof value.freshServed !== 'number' || !Number.isSafeInteger(value.freshServed) || value.freshServed < 0 || value.freshServed > 0xffffffff)) return null
   const s: Session = { ...(value as unknown as Session), beat: typeof value.beat === 'number' ? value.beat : 0 }
+  if ((s.freshServed ?? 0) > s.visuals) return null
   if (s.visuals > s.displayed || s.mixedVisuals > s.visuals || s.coolTickets > s.visuals || s.beat > s.visuals ||
     s.editorialTickets + s.autonomousTickets !== s.coolTickets) return null
   const canonical = (entry: Session['recent'][number]) => entry.type === 'image' && entry.key.startsWith('image:http')

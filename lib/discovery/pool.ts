@@ -10,6 +10,8 @@ export type Session = {
   /** Position in the cool/random score: visuals since the rhythm (re)started. Lives in the page; a restored session starts it over. */
   beat: number
   recent: Seen[]; visualHistory: Seen[]; exposures?: Exposure[]
+  /** Fresh videos of the day served since the session (re)started: the first ten videos are fresh. */
+  freshServed?: number
 }
 /** Draws a session may hold ahead of display: the home's advance, the page's queue. */
 export const PREFETCH_LIMIT = 8
@@ -54,13 +56,19 @@ export function projectDraw(state: Session, ticket: Intent, type: Format): Sessi
 export function commitDraw<T>(state: Session, ticket: Intent, item: Candidate<T>): Session {
   if (ticket.revision !== state.revision || !hardEligible(item, ticket, state)) throw new Error('Stale or invalid Random reservation')
   const visual = isVisual(item.type), entry = seenOf(item)
-  return { ...projectDraw(state, ticket, item.type),
+  // A fresh video opens the session ahead of the cool pool: it takes no cool ticket and leaves the score where it was,
+  // so the cool pool starts at its beginning once the ten fresh ones are shown.
+  const projected = item.fresh
+    ? { ...projectDraw(state, { ...ticket, mode: 'random', branch: 'general' }, item.type), beat: state.beat, freshServed: (state.freshServed ?? 0) + 1 }
+    : projectDraw(state, ticket, item.type)
+  return { ...projected,
     recent: [...state.recent, entry].slice(-40), exposures: appendExposure(state.exposures, item),
     visualHistory: visual ? [...state.visualHistory, entry].slice(-40) : state.visualHistory }
 }
 /** Back to the hook: the visitor came back to the page, or left it idle for an hour. What was seen stays excluded. */
 export function restartRhythm(state: Session): Session {
-  return { ...state, revision: state.revision + 1, beat: 0 }
+  // The visitor is back: ten new fresh videos of the day open the session again, further down the day's list.
+  return { ...state, revision: state.revision + 1, beat: 0, freshServed: 0 }
 }
 /** An hour without a draw, the page left open: the next draw starts the score over. */
 export const RHYTHM_IDLE_MS = 60 * 60 * 1000

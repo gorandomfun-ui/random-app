@@ -212,6 +212,7 @@ type YoutubeVideoItem = {
 
 type YoutubeVideosResponse = {
   items?: YoutubeVideoItem[];
+  nextPageToken?: string;
 };
 
 type YoutubeChannel = {
@@ -1383,17 +1384,33 @@ export function pickTrendingRegions(date = new Date()): [string, string] {
 }
 
 async function fetchYouTubeTrending(region: string, limit: number, warnings: FetchWarning[]): Promise<RawVideo[]> {
+  return (await fetchYouTubeChart(region, { limit }, warnings)).rows;
+}
+
+/**
+ * One page of a country's "most popular" chart, optionally of one category
+ * (10 music, 23 comedy…). A page costs one unit for fifty videos, where a
+ * search costs a hundred: the fresh-of-the-day line reads a hundred of them.
+ */
+export async function fetchYouTubeChart(
+  region: string,
+  options: { limit?: number; category?: string; pageToken?: string },
+  warnings: FetchWarning[],
+): Promise<{ rows: RawVideo[]; next?: string }> {
+  const limit = Math.min(50, Math.max(1, options.limit ?? 50));
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) {
     warnings.push({ label: 'youtube:trending', message: 'YOUTUBE_API_KEY missing' });
-    return [];
+    return { rows: [] };
   }
   const url = new URL(YT_VIDEOS_ENDPOINT);
   url.searchParams.set('key', key);
   url.searchParams.set('part', 'snippet,contentDetails,statistics,status');
   url.searchParams.set('chart', 'mostPopular');
   url.searchParams.set('regionCode', region);
-  url.searchParams.set('maxResults', String(Math.min(50, Math.max(1, limit))));
+  url.searchParams.set('maxResults', String(limit));
+  if (options.category) url.searchParams.set('videoCategoryId', options.category);
+  if (options.pageToken) url.searchParams.set('pageToken', options.pageToken);
   const data = await fetchJson<YoutubeVideosResponse>(
     url.toString(),
     10000,
@@ -1428,10 +1445,10 @@ async function fetchYouTubeTrending(region: string, limit: number, warnings: Fet
       categoryId: snippet.categoryId,
       liveBroadcastContent: snippet.liveBroadcastContent,
       source: { name: snippet.channelTitle || 'YouTube', url: watchUrl },
-      contextQueries: [`youtube:trending:${region.toLowerCase()}`],
+      contextQueries: [`youtube:trending:${region.toLowerCase()}${options.category ? `:${options.category}` : ''}`],
     });
   }
-  return rows;
+  return { rows, next: data?.nextPageToken };
 }
 
 async function fetchDailymotionTrending(region: string, limit: number, warnings: FetchWarning[]): Promise<RawVideo[]> {

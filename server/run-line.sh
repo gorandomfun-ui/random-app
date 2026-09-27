@@ -67,6 +67,10 @@ case "${LINE}" in
     # The people whose work was liked, and what they have published since.
     run node --import tsx scripts/v3/authors-direct.ts
     ;;
+  fresh)
+    # The charts of the moment, zone by zone, and the day's list the sessions open on.
+    run node --import tsx scripts/v3/fresh-direct.ts
+    ;;
   music-live)
     # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.
     run node --import tsx scripts/v3/music-live-direct.ts

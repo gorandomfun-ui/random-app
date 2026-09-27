@@ -51,6 +51,7 @@ const LINE_LABEL: Record<string, string> = {
   feeds: 'Sources humaines',
   authors: 'Auteurs suivis',
   'music-live': 'Musique live',
+  fresh: 'Frais du jour',
 }
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
@@ -70,6 +71,10 @@ type ServerStatus = {
 const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000))
 
 type UniverseRecapRow = { day: string; at: string; sizes: Record<string, number>; added: Record<string, number> }
+type FreshReport = { day: string; total: number; counts: Record<string, number>; first: string[] }
+const FRESH_ZONE: Record<string, string> = {
+  world: 'Monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l\u2019Est', oceania: 'Océanie', music: 'Musique', fun: 'Fun',
+}
 type MiniSeriesReport = {
   days: Array<{ day: string; total: number; byDetail: Record<string, number> }>
   examples: Array<{ at: string; title: string; provider: string; detail: string; channel?: string }>
@@ -112,6 +117,7 @@ export default function IngestReportsPage() {
   const [days, setDays] = useState<DayRow[]>([])
   const [recap, setRecap] = useState<UniverseRecapRow[]>([])
   const [miniSeries, setMiniSeries] = useState<MiniSeriesReport | null>(null)
+  const [fresh, setFresh] = useState<FreshReport | null>(null)
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -128,12 +134,13 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
       setRecap(Array.isArray(payload.recap) ? payload.recap : [])
       setMiniSeries(payload.miniSeries ?? null)
+      setFresh(payload.fresh ?? null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -230,6 +237,19 @@ export default function IngestReportsPage() {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {fresh && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Frais du jour</h2>
+          <p style={S.hint}>
+            La liste du {formatDay(fresh.day)} : {fresh.total.toLocaleString('fr-FR')} vidéos du moment, dont chaque session ouvre sur dix. Par zone :{' '}
+            {Object.entries(fresh.counts).map(([zone, n]) => `${FRESH_ZONE[zone] ?? zone} ${n}`).join(' · ')}
+          </p>
+          <ol style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
+            {fresh.first.map((title, index) => <li key={index}>{title}</li>)}
+          </ol>
         </section>
       )}
 

@@ -26,6 +26,8 @@ export type AdmissionBatch = {
   subjectId: string
   videos?: RawVideo[]
   images?: ImageSource[]
+  /** No cap on official clips and reports for the subject: the fresh-of-the-day charts are made of them. */
+  keepAngles?: boolean
 }
 
 export type AdmissionResult = {

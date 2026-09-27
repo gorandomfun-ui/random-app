@@ -50,6 +50,7 @@ export const LINE_LABELS: Record<string, string> = {
   feeds: 'Sources humaines',
   authors: 'Auteurs suivis',
   'music-live': 'Musique live',
+  fresh: 'Frais du jour',
 }
 
 /** Lines that measure rather than ingest: their "inserted" is a growth, not the day's content. */

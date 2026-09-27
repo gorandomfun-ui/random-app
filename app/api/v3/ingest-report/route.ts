@@ -10,6 +10,7 @@ import { isAdminRequest, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
 import { RUNS, SEARCHES } from '@/lib/v3/ingest/journal'
 import { assessHealth, summariseDays, type DaySummary, type JournalRun, type JournalSearch, type LineHealth } from '@/lib/v3/ingest/report'
 import { refusalsReport } from '@/lib/ingest/miniSeriesStore'
+import { ObjectId } from 'mongodb'
 
 /**
  * What the ingestion did, by day.
@@ -22,6 +23,15 @@ import { refusalsReport } from '@/lib/ingest/miniSeriesStore'
  */
 
 const PARIS = 'Europe/Paris'
+
+async function freshReport(db: Db): Promise<{ day: string; total: number; counts: Record<string, number>; first: string[] } | null> {
+  const doc = (await db.collection('fresh_daily_v1').find({}, { sort: { at: -1 }, limit: 1, maxTimeMS: 2000 }).toArray())[0]
+  if (!doc) return null
+  const ids = ((doc.ids ?? []) as string[]).slice(0, 15)
+  const rows = await db.collection('items').find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, { projection: { title: 1 }, maxTimeMS: 2000 }).toArray()
+  const titles = new Map(rows.map((row) => [String(row._id), String(row.title ?? '')]))
+  return { day: String(doc._id), total: Number(doc.total) || 0, counts: (doc.counts ?? {}) as Record<string, number>, first: ids.map((id) => titles.get(id) ?? '').filter(Boolean) }
+}
 /** Past this, a line is treated as stopped rather than quiet. */
 const STALE_HOURS = 26
 const WINDOW_DAYS = 14
@@ -179,9 +189,12 @@ export async function GET(request: Request) {
     const recap = await db.collection('ingest_universe_recap').find({}, { sort: { at: -1 }, limit: 3, maxTimeMS: 2000 }).toArray().catch(() => [])
     // The mini-series refused at the door over the last three days, with examples, so a wrong refusal shows.
     const miniSeries = await refusalsReport(db, new Date(now - 3 * 24 * 60 * 60 * 1000)).catch(() => null)
+    // Fresh of the day: the list the sessions open on, by zone, and the first titles in the order they are served.
+    const fresh = await freshReport(db).catch(() => null)
 
     return NextResponse.json({
       miniSeries,
+      fresh,
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,

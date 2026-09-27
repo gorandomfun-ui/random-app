@@ -108,7 +108,7 @@ export function provisionalAdmit(db: Db, line: Line, dryRun: boolean) {
       const admitted: RawVideo[] = []
       for (const video of batch.videos) {
         const angle = detectAngle({ type: 'video', title: video.title, description: video.description, channelTitle: video.channelTitle, viewCount: video.viewCount })
-        if ((SATURATED_ANGLES as readonly string[]).includes(angle)) {
+        if (!batch.keepAngles && (SATURATED_ANGLES as readonly string[]).includes(angle)) {
           if (saturated >= ANGLE_SATURATION) { result.rejected['angle-saturated'] = (result.rejected['angle-saturated'] ?? 0) + 1; continue }
           saturated += 1
         }

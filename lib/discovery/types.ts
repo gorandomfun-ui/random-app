@@ -61,6 +61,10 @@ export type Candidate<T = unknown> = {
   /** Assigned server-side from active owner references, never from public likes. */
   editorialFamilies?: string[]
   directEditorialReference?: boolean
+  /** One of the day's fresh videos (see lib/discovery/freshPool.ts), and where it stands in the day's list. */
+  fresh?: boolean
+  freshDay?: string
+  freshPosition?: number
 }
 export type Seen = Pick<Candidate, 'key' | 'type' | 'authorKey' | 'seriesKey' | 'duplicateKey' | 'stock'> & { family: string; pattern?: string }
 export function isVisual(type: Format): type is Visual { return type === 'video' || type === 'image' }

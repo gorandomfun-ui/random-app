@@ -1,4 +1,5 @@
 import type { Db } from 'mongodb'
+import { freshEnabled, parseFreshCursor, selectFresh } from './freshPool'
 import type { CatalogueRow } from './catalog'
 import { loadWave, selectPool } from './mongo'
 import { planDraw } from './pool'
@@ -52,11 +53,14 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       // What the device saw this week rides along and is left out of the draw, on top of the session's own forty.
       const seen = parseSeen(body.seen)
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
+      // Fresh of the day first: the session's first ten videos, from where this device is in the day's list.
+      const fresh = freshEnabled() && ticket.type === 'video'
+        ? await selectFresh(db, ticket, drawState, parseFreshCursor(body.fresh), deps.decode, Date.now()).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
       // The lanes remain the fallback when the pool holds nothing eligible for this visitor.
-      const cool = coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
+      const cool = !fresh && coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
         ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now()).catch(() => null) : null
-      const choice = cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
+      const choice = fresh ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }
