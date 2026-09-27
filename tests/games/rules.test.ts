@@ -1,10 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { CATCHER_CASH, CATCHER_LAST_LEVEL, createCatcher, levelParams, positionOf, stepCatcher, walkable, type CatcherState } from '@/lib/games/catcher'
+import { CATCHER_CASH, CATCHER_LAST_LEVEL, CATCHER_MAX_LIVES, createCatcher, levelParams, nextLevel, positionOf, stepCatcher, walkable, type CatcherState } from '@/lib/games/catcher'
 import { createEater, EATER_BONUSES, EATER_LAST_LEVEL, eaterParams, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
 import { crossDirection, FixedClock, keyDirection, seeded, swipeDirection } from '@/lib/games/engine'
 import { addScore, cleanName, qualifies, topScores } from '@/lib/games/scores'
+
+import { catcherRun } from './catcher-robot'
 
 const steps = (n: number, fn: () => void) => { for (let i = 0; i < n; i += 1) fn() }
 
@@ -289,19 +291,28 @@ test('EATER : un joueur prudent va du niveau 1 à WINNER, en paysage et en portr
   assert.ok(wins >= games - 1, `${wins} victoires sur ${games}`)
 })
 
-test('CATCHER : 16 niveaux, un cinquième client à partir du 9, jamais aussi rapide que le burger, la liste toujours posée en entier', () => {
+test('CATCHER : 16 niveaux, un cinquième client à partir du 12, jamais aussi rapide que le burger, la liste toujours posée en entier', () => {
   assert.equal(CATCHER_LAST_LEVEL, 16)
   for (let l = 1; l <= 16; l += 1) {
     const p = levelParams(l)
     assert.ok(p.shopperSpeed <= p.burgerSpeed * 0.86, `niveau ${l} : clients trop rapides`)
     if (l > 1) assert.ok(p.need.reduce((a, b) => a + b, 0) >= levelParams(l - 1).need.reduce((a, b) => a + b, 0))
-    assert.equal(p.shoppers, l >= 9 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)))
+    assert.equal(p.shoppers, l >= 12 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)))
+    assert.ok(p.calm >= 4 * 60, `niveau ${l} : au moins quatre secondes de calme`)
     for (const layout of ['landscape', 'portrait'] as const) for (const seed of [1, 7, 13]) {
       const s = createCatcher(layout, l, seed)
       assert.equal(s.items.length, p.need.reduce((a, b) => a + b, 0), `${layout} niveau ${l} graine ${seed} : ingrédients manquants`)
     }
   }
-  assert.equal(createCatcher('landscape', 9, 1).shoppers[4].role, 'pincer')
+  assert.equal(createCatcher('landscape', 12, 1).shoppers[4].role, 'pincer')
+  assert.equal(createCatcher('landscape', 11, 1).shoppers.length, 4)
+  // a life back for every level won, never more than five
+  const s = createCatcher('landscape', 1, 1)
+  s.lives = 2
+  const n = nextLevel(s, 2)
+  assert.equal(n.lives, 3)
+  n.lives = CATCHER_MAX_LIVES
+  assert.equal(nextLevel(n, 3).lives, CATCHER_MAX_LIVES)
 })
 
 test('CATCHER : l_argent tombe loin du burger et rapporte ; la liste du niveau 16 remplie, WINNER', () => {
@@ -326,4 +337,10 @@ test('CATCHER : l_argent tombe loin du burger et rapporte ; la liste du niveau 1
   assert.equal(w.phase, 'clear')
   steps(200, () => stepCatcher(w))
   assert.equal(w.phase, 'won')
+})
+
+test('CATCHER : un joueur prudent va parfois du niveau 1 à WINNER, et va toujours loin — dur mais faisable', () => {
+  const runs = [1, 2, 3, 4, 5, 6].map((seed) => catcherRun(seed, 'landscape'))
+  assert.ok(runs.some((r) => r.won), `aucune victoire : ${runs.map((r) => r.level).join(', ')}`)
+  for (const r of runs) assert.ok(r.won || r.level >= 11, `une partie arrêtée au niveau ${r.level}`)
 })

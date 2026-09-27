@@ -7,9 +7,9 @@
  * corners, so the player can breathe. A bottle of sauce now and then:
  * picked up, the burger spills a trail of it for a few seconds, and a
  * shopper who steps in it slips and sits dizzy. Money lies about now and
- * then, for points. Three lives; the list filled, the level is won; from
- * level 9 a fifth shopper comes to take the burger in a pincer; level 16
- * cleared, the game is won.
+ * then, for points. Three lives, and one back for every level won, up to
+ * five; the list filled, the level is won; from level 12 a fifth shopper
+ * comes to take the burger in a pincer; level 16 cleared, the game is won.
  *
  * Everything moves sixty steps a second through `stepCatcher`; the same
  * seed and the same inputs play the same game.
@@ -63,8 +63,11 @@ export const CATCHER_LAST_LEVEL = 16
 /** The shopping list of each level: tomatoes, pickles, onions, cheese. */
 const LISTS: ReadonlyArray<readonly [number, number, number, number]> = [
   [2, 2, 1, 1], [3, 2, 2, 1], [3, 3, 2, 1], [4, 3, 3, 2], [4, 4, 3, 2], [5, 4, 4, 2], [5, 5, 4, 3], [6, 5, 5, 3],
-  [6, 6, 5, 3], [6, 6, 5, 4], [7, 6, 5, 4], [7, 6, 6, 4], [7, 7, 6, 4], [7, 7, 6, 5], [8, 7, 6, 5], [8, 7, 7, 5],
+  // past level 8 the list hardly grows: the shoppers make those levels hard enough
+  [6, 6, 5, 3], [6, 6, 5, 3], [6, 6, 5, 4], [6, 6, 5, 4], [7, 6, 5, 4], [7, 6, 5, 4], [7, 6, 6, 4], [7, 6, 6, 4],
 ]
+/** Lives at the start, one more for every level won, never more than this. */
+export const CATCHER_MAX_LIVES = 5
 
 /**
  * What a level asks for: how many shoppers, the list, the speeds, how long
@@ -74,12 +77,12 @@ const LISTS: ReadonlyArray<readonly [number, number, number, number]> = [
 export function levelParams(level: number) {
   const l = Math.max(1, Math.min(level, CATCHER_LAST_LEVEL))
   return {
-    shoppers: l >= 9 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)),
+    shoppers: l >= 12 ? 5 : Math.min(4, 1 + Math.ceil(l / 2)),
     need: [...LISTS[l - 1]],
     shopperSpeed: 3 + 0.18 * Math.min(l, 8) + 0.08 * Math.max(0, l - 8),
     burgerSpeed: 4.4 + 0.1 * l,
     rush: (18 + l * 1.5) * SECOND,
-    calm: Math.max(2.5, 7 - l * 0.4) * SECOND,
+    calm: Math.max(4, 7 - l * 0.4) * SECOND,
     sauceEvery: (14 + Math.max(0, l - 8)) * SECOND,
     sauceLife: (10 - 0.25 * Math.max(0, l - 8)) * SECOND,
   }
@@ -346,7 +349,7 @@ export function stepCatcher(s: CatcherState, want?: Direction | null): void {
   }
 }
 
-/** The next level, carrying the score and the lives (the last one cleared, the game is won instead: see `stepCatcher`). */
+/** The next level, carrying the score and the lives, one life given back for the level won (the last one cleared, the game is won instead: see `stepCatcher`). */
 export function nextLevel(s: CatcherState, seed: number): CatcherState {
-  return createCatcher(s.layout, s.level + 1, seed, { score: s.score, lives: s.lives })
+  return createCatcher(s.layout, s.level + 1, seed, { score: s.score, lives: Math.min(CATCHER_MAX_LIVES, s.lives + 1) })
 }
