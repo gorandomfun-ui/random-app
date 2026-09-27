@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM web sites waiting for a visit: alive or not, their preview (every half hour)
+
+[Timer]
+OnCalendar=*-*-* *:12,42:00
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

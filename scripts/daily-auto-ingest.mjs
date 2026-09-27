@@ -26,9 +26,9 @@ function requestSignal(maxMs = 240000) {
 const webCount = readInt('DAILY_AUTO_WEB_COUNT', 12, 1, 20)
 const webPer = readInt('DAILY_AUTO_WEB_PER', 10, 1, 10)
 const webPages = readInt('DAILY_AUTO_WEB_PAGES', 3, 1, 10)
-// Google's search is no longer asked by default (27 September): nine results in
-// ten were a single dull page, and it was the only paid source. Show HN is free.
-const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'hn,curated'
+// Google is asked again since 28 September, within its free 90 searches a day,
+// for the small sites of the world; its results wait for the server's previews.
+const webProviders = process.env.DAILY_AUTO_WEB_PROVIDERS || 'hn,curated,cse'
 const enrichLimit = readInt('DAILY_AUTO_ENRICH_LIMIT', 0, 0, 60)
 
 if (!host || !key) {

@@ -52,6 +52,7 @@ const LINE_LABEL: Record<string, string> = {
   authors: 'Auteurs suivis',
   'music-live': 'Musique live',
   fresh: 'Frais du jour',
+  'web-previews': 'Sites : visites et aperçus',
 }
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
@@ -72,6 +73,9 @@ const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.pa
 
 type UniverseRecapRow = { day: string; at: string; sizes: Record<string, number>; added: Record<string, number> }
 type FreshReport = { day: string; total: number; counts: Record<string, number>; first: string[] }
+type WebReport = { bySource: Record<string, Record<string, number>>; googleToday: number; googleCap: number }
+const WEB_SOURCE: Record<string, string> = { 'google-cse': 'Google', hn: 'Show HN', 'set-aside': 'Sites mis de côté', osm: 'OpenStreetMap', wikidata: 'Wikidata' }
+const WEB_STATUS: Array<[string, string]> = [['new', 'en attente'], ['done', 'ajoutés'], ['dead', 'morts'], ['dull', 'sans intérêt'], ['noimage', 'page vide'], ['failed', 'échecs']]
 const FRESH_ZONE: Record<string, string> = {
   world: 'Monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l\u2019Est', oceania: 'Océanie', music: 'Musique', fun: 'Fun',
 }
@@ -118,6 +122,7 @@ export default function IngestReportsPage() {
   const [recap, setRecap] = useState<UniverseRecapRow[]>([])
   const [miniSeries, setMiniSeries] = useState<MiniSeriesReport | null>(null)
   const [fresh, setFresh] = useState<FreshReport | null>(null)
+  const [web, setWeb] = useState<WebReport | null>(null)
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -134,13 +139,14 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
       setRecap(Array.isArray(payload.recap) ? payload.recap : [])
       setMiniSeries(payload.miniSeries ?? null)
       setFresh(payload.fresh ?? null)
+      setWeb(payload.web ?? null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -250,6 +256,23 @@ export default function IngestReportsPage() {
           <ol style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
             {fresh.first.map((title, index) => <li key={index}>{title}</li>)}
           </ol>
+        </section>
+      )}
+
+      {web && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Sites web : la file des visites</h2>
+          <p style={S.hint}>
+            Les sites trouvés attendent que le serveur les visite (vivant ou non, image ou capture) avant d&apos;entrer dans le tirage.
+            Google aujourd&apos;hui : {web.googleToday} recherches sur {web.googleCap} gratuites.
+          </p>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
+            {Object.entries(web.bySource).map(([source, counts]) => (
+              <li key={source}>
+                {WEB_SOURCE[source] ?? source} : {WEB_STATUS.filter(([status]) => counts[status]).map(([status, name]) => `${(counts[status] ?? 0).toLocaleString('fr-FR')} ${name}`).join(' · ')}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

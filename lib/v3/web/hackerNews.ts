@@ -9,7 +9,7 @@
  */
 
 export const HN_SEARCH = 'https://hn.algolia.com/api/v1/search'
-export const HN_MIN_POINTS = 40
+export const HN_MIN_POINTS = 10
 export const HN_HITS_PER_SEARCH = 50
 /** Older posts point to dead or resold domains more often than not. */
 export const HN_FIRST_YEAR = 2016

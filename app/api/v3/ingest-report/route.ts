@@ -10,6 +10,8 @@ import { isAdminRequest, adminUnauthorizedBody } from '@/lib/auth/adminAuth'
 import { RUNS, SEARCHES } from '@/lib/v3/ingest/journal'
 import { assessHealth, summariseDays, type DaySummary, type JournalRun, type JournalSearch, type LineHealth } from '@/lib/v3/ingest/report'
 import { refusalsReport } from '@/lib/ingest/miniSeriesStore'
+import { CANDIDATES } from '@/lib/v3/web/candidates'
+import { CSE_DAILY_FREE, cseUsed } from '@/lib/v3/web/cseQuota'
 import { ObjectId } from 'mongodb'
 
 /**
@@ -32,6 +34,15 @@ async function freshReport(db: Db): Promise<{ day: string; total: number; counts
   const titles = new Map(rows.map((row) => [String(row._id), String(row.title ?? '')]))
   return { day: String(doc._id), total: Number(doc.total) || 0, counts: (doc.counts ?? {}) as Record<string, number>, first: ids.map((id) => titles.get(id) ?? '').filter(Boolean) }
 }
+/** The websites waiting for their preview, by source and outcome, and Google's free searches spent today. */
+async function webReport(db: Db): Promise<{ bySource: Record<string, Record<string, number>>; googleToday: number; googleCap: number }> {
+  const rows = await db.collection(CANDIDATES).aggregate<{ _id: { source: string; status: string }; n: number }>(
+    [{ $group: { _id: { source: '$source', status: '$status' }, n: { $sum: 1 } } }], { maxTimeMS: 3000 }).toArray()
+  const bySource: Record<string, Record<string, number>> = {}
+  for (const row of rows) (bySource[row._id.source] ??= {})[row._id.status] = row.n
+  return { bySource, googleToday: await cseUsed(db), googleCap: CSE_DAILY_FREE }
+}
+
 /** Past this, a line is treated as stopped rather than quiet. */
 const STALE_HOURS = 26
 const WINDOW_DAYS = 14
@@ -191,10 +202,13 @@ export async function GET(request: Request) {
     const miniSeries = await refusalsReport(db, new Date(now - 3 * 24 * 60 * 60 * 1000)).catch(() => null)
     // Fresh of the day: the list the sessions open on, by zone, and the first titles in the order they are served.
     const fresh = await freshReport(db).catch(() => null)
+    // Websites: the ones waiting for the server's visit, and what the visits made of the others.
+    const web = await webReport(db).catch(() => null)
 
     return NextResponse.json({
       miniSeries,
       fresh,
+      web,
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,

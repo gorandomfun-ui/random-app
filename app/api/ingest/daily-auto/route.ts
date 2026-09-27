@@ -202,7 +202,7 @@ async function runWebPhase(req: NextRequest, input: {
     seed: `web:${new Date().toISOString().slice(0, 10)}:${input.runKey}:${input.queryCount}`,
   })
   const target = new URL('/api/ingest/web', req.url)
-  target.searchParams.set('q', queries.join(','))
+  // No searches given: the web ingest asks Google for the small sites of the world (lib/v3/web/worldQueries.ts).
   target.searchParams.set('per', String(input.per))
   target.searchParams.set('pages', String(input.pages))
   target.searchParams.set('providers', input.providers.join(','))
@@ -357,7 +357,7 @@ export async function GET(req: NextRequest) {
       const per = parseInteger(req.nextUrl.searchParams.get('per'), 8, 1, 10)
       const pages = parseInteger(req.nextUrl.searchParams.get('pages'), 2, 1, 10)
       const requireOg = parseBoolean(req.nextUrl.searchParams.get('requireOg'), true)
-      const webProviders = parseList(req.nextUrl.searchParams.get('providers') || 'hn,curated')
+      const webProviders = parseList(req.nextUrl.searchParams.get('providers') || 'hn,curated,cse')
         .map((entry) => entry.toLowerCase())
         .filter((entry) => ['cse', 'curated', 'neocities', 'wikipedia'].includes(entry))
       const { queries, result } = await runWebPhase(req, {
@@ -367,7 +367,7 @@ export async function GET(req: NextRequest) {
         per,
         pages,
         requireOg,
-        providers: webProviders.length ? webProviders : ['hn', 'curated'],
+        providers: webProviders.length ? webProviders : ['hn', 'curated', 'cse'],
         runKey,
       })
       payload = {

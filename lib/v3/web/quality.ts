@@ -58,6 +58,43 @@ function parts(url: string): { host: string; path: string; root: boolean } | nul
  * /price-list, /private-events) was one: 4,824 of them, nearly all dull.
  */
 export function boringWebReason(url: string | null | undefined, title?: string | null, provider?: string | null): BoringReason | null {
+  const reason = reasonOf(url, title, provider)
+  return reason && CURIOUS_REASONS.has(reason) && CURIOUS.test(title ?? '') ? null : reason
+}
+
+/**
+ * A page, an article or a listing whose title names something curious is kept:
+ * the Museum of the Weird, a museum of impossible objects, a cartoon from 1919,
+ * a roadside mystery. Set aside with the rest on 27 September, 7,310 of them;
+ * about one in three was worth it, and the owner asked for them back.
+ */
+const CURIOUS_REASONS = new Set<BoringReason>(['page', 'article', 'listing'])
+export const CURIOUS = /\b(?:museum|musée|museo|archive|archives|archivo|collection|gallery|galerie|interactive|interactif|map|carte|mapa|atlas|game|jeu|juego|generator|simulator|virtual|explore|timeline|history of|histoire|curious|weird|strange|bizarre|oddities|vintage|retro|old|ancient|lost|forgotten|abandoned|secret|hidden|mystery|legend|folklore|museum of|library of|database of|every|world's|smallest|largest|oldest|longest|tiny|miniature|toy|toys|puppet|robot|machine|automaton|sound|radio|synth|music box|collection of)\b/i
+
+/**
+ * Platforms and big hosts: their front page is not a small site of someone's,
+ * so a page found on them is not turned into one (see frontPageOf).
+ */
+const PLATFORM_HOST = /(?:^|\.)(?:yelp\.[a-z.]+|tripadvisor\.[a-z.]+|trip\.com|booking\.com|airbnb\.[a-z.]+|expedia\.[a-z.]+|agoda\.com|hotels\.com|medium\.com|naver\.com|daum\.net|microsoft\.com|google\.[a-z.]+|goo\.gl|youtube\.com|facebook\.com|fb\.com|instagram\.com|linkedin\.com|threads\.net|wikipedia\.org|wikimedia\.org|wikidata\.org|fandom\.com|wikia\.com|amazon\.[a-z.]+|ebay\.[a-z.]+|etsy\.com|apple\.com|pinterest\.[a-z.]+|reddit\.com|tiktok\.com|x\.com|twitter\.com|github\.com|gitlab\.com|wordpress\.com|blogspot\.com|blogger\.com|substack\.com|tumblr\.com|wix\.com|squarespace\.com|weebly\.com|eventbrite\.[a-z.]+|meetup\.com|timeout\.com|imdb\.com|spotify\.com|soundcloud\.com|bandcamp\.com|vimeo\.com|dailymotion\.com|twitch\.tv|scribd\.com|academia\.edu|researchgate\.net|issuu\.com|slideshare\.net|yahoo\.[a-z.]+|msn\.com|aol\.com|bing\.com|baidu\.com|yandex\.[a-z.]+|pagesjaunes\.fr|yellowpages\.[a-z.]+|foursquare\.com|glassdoor\.[a-z.]+|indeed\.[a-z.]+|craigslist\.org|zillow\.com|opentable\.[a-z.]+|thefork\.[a-z.]+|ubereats\.com|doordash\.com|deliveroo\.[a-z.]+|jumia\.[a-z.]+|mercadolibre\.[a-z.]+|alibaba\.com|aliexpress\.com|archive\.org|quora\.com|stackexchange\.com|stackoverflow\.com|nytimes\.com|bbc\.co\.uk|bbc\.com|cnn\.com|theguardian\.com|forbes\.com)$/i
+
+/**
+ * The front page of the site a page belongs to, when that site is someone's
+ * own — a plumber in Douala, a brewery, a theatre — and not a platform, a
+ * newspaper, an encyclopaedia or a shop chain. The owner's picture of the web
+ * part (28 September): "des sites de plombier au Cameroun", not always
+ * interesting, but a site, never a page of text.
+ */
+export function frontPageOf(url: string | null | undefined): string | null {
+  const address = parts(url ?? '')
+  if (!address) return null
+  const { host } = address
+  if (PLATFORM_HOST.test(host) || NEWS_HOST.test(host) || WIKI_HOST.test(host) || PRESS_HOST.test(host) || SHOP_HOST.test(host)
+    || STORE_HOST.test(host) || VIDEO_HOST.test(host) || MEDIA_HOST.test(host) || MAIL.test(host)) return null
+  if (/^(?:\d+\.){3}\d+$/.test(host) || !host.includes('.')) return null
+  return `https://${host}/`
+}
+
+function reasonOf(url: string | null | undefined, title?: string | null, provider?: string | null): BoringReason | null {
   const address = parts(url ?? '')
   if (!address) return 'document'
   const { host, path, root } = address

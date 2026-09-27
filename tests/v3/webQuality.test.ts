@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { boringWebReason } from '../../lib/v3/web/quality'
+import { boringWebReason, frontPageOf } from '../../lib/v3/web/quality'
 
 // Taken from what was stored, 27 September.
 const BORING: Array<[string, string, string]> = [
@@ -58,4 +58,22 @@ test('a search result deep inside some site is a single page, even a short one; 
   assert.equal(boringWebReason('https://someone.github.io/a/b/strange-toy/', 'Strange toy', 'google-cse'), null)
   assert.equal(boringWebReason('https://bigfuncolumbus.com/', 'Big Fun Columbus - Vintage Toys', 'google-cse'), null)
   assert.equal(boringWebReason('https://www.footprintsandmemories.com/my-wurst-months-and-other-german-street-food/', 'My Wurst Months', 'hn'), null, 'other sources keep their deep pages')
+})
+
+test('a page, an article or a listing about something curious is kept', () => {
+  assert.equal(boringWebReason('https://ourlittlelifestyle.com/museum-of-the-weird-austin-texas/', 'Visiting the Museum of the Weird (Austin, Texas)', 'google-cse'), null)
+  assert.equal(boringWebReason('https://kellykazek.com/2017/08/10/one-roadside-mystery-solved/', 'One roadside mystery solved, new questions raised', 'google-cse'), null)
+  assert.equal(boringWebReason('https://peasandcrayons.com/pizza-recipe/', 'Copycat Pizza Recipe', 'google-cse'), 'page')
+  assert.equal(boringWebReason('https://shop.example.com/old-lamp', 'Old lamp', 'google-cse'), 'shop', 'a shop stays a shop, curious or not')
+})
+
+test("a page on someone's own site gives its front page; a platform, a newspaper or an encyclopaedia does not", () => {
+  assert.equal(frontPageOf('https://www.parkerjazzclub.com/private-events'), 'https://www.parkerjazzclub.com/')
+  assert.equal(frontPageOf('http://cncserviceco.com/about/team?x=1'), 'https://cncserviceco.com/')
+  assert.equal(frontPageOf('https://www.yelp.com/biz/rcades-entertainment-bloomington'), null)
+  assert.equal(frontPageOf('https://m.blog.naver.com/ultrabat/220887947940'), null)
+  assert.equal(frontPageOf('https://en.wikipedia.org/wiki/Douala'), null)
+  assert.equal(frontPageOf('https://www.thenews-messenger.com/story/news/local/2018/10/05/x'), null)
+  assert.equal(frontPageOf('https://acme.bandcamp.com/album/x'), null)
+  assert.equal(frontPageOf('http://192.168.1.10/page'), null)
 })

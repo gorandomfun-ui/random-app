@@ -5,6 +5,9 @@
  *   node --import tsx scripts/v3/web-sweep.ts            read only: counts by reason, examples of both sides
  *   node --import tsx scripts/v3/web-sweep.ts --apply    sets them aside (suppressedReason 'web-dull')
  *   node --import tsx scripts/v3/web-sweep.ts --undo     gives them back
+ *   node --import tsx scripts/v3/web-sweep.ts --rescue [--apply]
+ *       the ones set aside that the rule no longer calls dull (the curious
+ *       pages, 28 September): counted and shown, given back with --apply
  *
  * Decided with the owner on 27 September, reversing the earlier choice to keep
  * the stored product pages: "trouve un moyen de trier aussi les sites".
@@ -24,6 +27,7 @@ const WRITE_BATCH = 500
 const PAUSE_MS = 300
 const apply = process.argv.includes('--apply')
 const undo = process.argv.includes('--undo')
+const rescue = process.argv.includes('--rescue')
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const shuffle = <T,>(values: T[]): T[] => [...values].sort(() => Math.random() - 0.5)
 
@@ -42,6 +46,27 @@ async function main(): Promise<void> {
         await db.collection(SWEEPS).updateOne({ _id: sweep._id }, { $set: { undoneAt: new Date() } })
       }
       console.log(`rendus : ${restored}`)
+      return
+    }
+    if (rescue) {
+      const back: Array<{ _id: ObjectId; url: string; title: string; was: string }> = []
+      for await (const doc of db.collection('items').find({ type: 'web', suppressedReason: 'web-dull' }, { projection: { url: 1, title: 1, provider: 1, suppressedDetail: 1 }, batchSize: 2000 })) {
+        if (!boringWebReason(String(doc.url ?? ''), String(doc.title ?? ''), String(doc.provider ?? ''))) {
+          back.push({ _id: doc._id, url: String(doc.url ?? ''), title: String(doc.title ?? ''), was: String(doc.suppressedDetail ?? '') })
+        }
+      }
+      const byWas = new Map<string, number>()
+      for (const row of back) byWas.set(row.was, (byWas.get(row.was) ?? 0) + 1)
+      console.log(`à rendre : ${count(back.length)} · ${[...byWas].map(([was, n]) => `${was} ${n}`).join(' · ')}`)
+      for (const row of shuffle(back).slice(0, 20)) console.log(`- ${row.was} · ${row.url.slice(0, 70)} · ${row.title.slice(0, 60)}`)
+      if (!apply) return
+      let restored = 0
+      for (let start = 0; start < back.length; start += WRITE_BATCH) {
+        restored += (await db.collection('items').updateMany({ _id: { $in: back.slice(start, start + WRITE_BATCH).map((row) => row._id) }, suppressedReason: 'web-dull' }, { $unset: { isSuppressed: '', suppressedReason: '', suppressedAt: '', suppressedDetail: '' } })).modifiedCount
+        await wait(PAUSE_MS)
+      }
+      await db.collection(SWEEPS).insertOne({ at: new Date(), kind: 'rescue', restored: back.map((row) => row._id) })
+      console.log(`rendus : ${count(restored)}`)
       return
     }
     const rows: Array<{ _id: ObjectId; url: string; title: string; reason: BoringReason | null; provider: string }> = []

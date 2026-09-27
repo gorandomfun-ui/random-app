@@ -12,7 +12,11 @@ import probe from 'probe-image-size'
 import { generateKeywordCombo } from '@/lib/ingest/keywords/combo'
 import { buildRegionalQuery, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools'
 import { CURATED_WEB_SOURCES, type CuratedWebSource } from '@/lib/ingest/sources/webCurated'
-import { tagForInsert, type TaggableDocument } from '@/lib/v3/tagging/atInsert'
+import { enqueueSites, type CandidateInput } from '@/lib/v3/web/candidates'
+import { reserveCseSearch } from '@/lib/v3/web/cseQuota'
+import { frontPageOf } from '@/lib/v3/web/quality'
+import { upsertWebRows } from '@/lib/v3/web/store'
+import { worldWebQueries, type WorldQuery } from '@/lib/v3/web/worldQueries'
 
 /* ---------- DB helpers (identiques au style des autres ingests) ---------- */
 let _db: Db | null = null
@@ -56,37 +60,15 @@ type WebRow = Omit<WebDoc, 'createdAt' | 'updatedAt'> & { imageMeta?: { width: n
 async function upsertManyWeb(rows: WebRow[]) {
   const db = await getDbSafe()
   if (!db || !rows.length) return { inserted: 0, updated: 0 }
-  const ops = rows.map(r => ({
-    updateOne: {
-      filter: { type: 'web', url: r.url },
-      update: {
-        $set: (() => {
-          const { imageMeta, ...rest } = r
-          const base: WebDoc = { ...rest, type: 'web', updatedAt: new Date() }
-          if (imageMeta) {
-            base.webImageValidatedAt = new Date()
-            base.webImageValidation = imageMeta
-          }
-          return base
-        })(),
-        $setOnInsert: { createdAt: new Date(), rand: Math.random() },
-      },
-      upsert: true,
-    }
-  }))
   // Same labels as the automatic ingestion: content added from the local
   // panel must be eligible for a Wave like everything else.
-  const tagged = await tagForInsert(
-    db,
-    ops.map((op) => op.updateOne.update.$set as unknown as TaggableDocument),
-  )
-  ops.forEach((op, index) => {
-    const v3 = (tagged[index] as { v3?: unknown }).v3
-    if (v3) (op.updateOne.update.$set as Record<string, unknown>).v3 = v3
-  })
+  return upsertWebRows(db, rows)
+}
 
-  const res = await db.collection('items').bulkWrite(ops, { ordered: false })
-  return { inserted: res.upsertedCount || 0, updated: res.modifiedCount || 0 }
+async function enqueue(rows: CandidateInput[]): Promise<number> {
+  const db = await getDbSafe()
+  if (!db || !rows.length) return 0
+  return (await enqueueSites(db, rows)).queued
 }
 
 const ROUTE_HEADERS: HeadersInit = {
@@ -337,9 +319,10 @@ async function ensureOgImages(
   limit: number,
   concurrency = 6,
   patient = false,
-): Promise<{ rows: WebRow[]; checked: number; failed: number }> {
-  if (!rows.length || limit <= 0) return { rows: [], checked: 0, failed: 0 }
+): Promise<{ rows: WebRow[]; checked: number; failed: number; refused: WebRow[] }> {
+  if (!rows.length || limit <= 0) return { rows: [], checked: 0, failed: 0, refused: [] }
   const out: WebRow[] = []
+  const refused: WebRow[] = []
   let checked = 0
   let failed = 0
   let index = 0
@@ -354,11 +337,13 @@ async function ensureOgImages(
       if (!og) og = await fetchOgImage(current.url, patient ? 5000 : 1500)
       if (!(isValidImageUrl(og) || (patient && typeof og === 'string' && /^https:\/\//i.test(og)))) {
         failed += 1
+        refused.push(current)
         continue
       }
       const meta = await validateRemoteImage(og)
       if (!meta) {
         failed += 1
+        refused.push(current)
         continue
       }
       if (out.length >= limit) break
@@ -367,7 +352,7 @@ async function ensureOgImages(
   }
 
   await Promise.all(Array.from({ length: workers }, () => worker()))
-  return { rows: out.slice(0, limit), checked, failed }
+  return { rows: out.slice(0, limit), checked, failed, refused }
 }
 
 /* --------------------------------- CSE ---------------------------------- */
@@ -380,80 +365,75 @@ type ProviderResult = {
   checked: number
   filtered?: number
   ogFailed?: number
+  /** Sent to the server's preview line instead (lib/v3/web/candidates.ts). */
+  queued?: number
+  searches?: number
 }
 
-async function runGoogleCSE(
-  queries: string[],
-  per: number,
-  pages: number,
-  limit: number,
-  region: RegionKey,
-): Promise<ProviderResult> {
+/**
+ * Google's results never go straight into the catalogue any more: each one is
+ * kept as the page itself when it is worth it (a front page, a curious page),
+ * or as the front page of its site otherwise, and waits for the server to
+ * visit it and make its preview. At most CSE_DAILY_FREE searches a day: free.
+ */
+async function runGoogleCSE(queries: Array<string | WorldQuery>, per: number, pages: number, region: RegionKey, dryRun = false): Promise<ProviderResult> {
   const KEY = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_API_KEY
   const CX  = process.env.GOOGLE_CSE_CX  || process.env.GOOGLE_CSE_ID
-  if (!KEY || !CX) return { rows: [], scanned: 0, checked: 0 }
+  const db = await getDbSafe()
+  if (!KEY || !CX || !db) return { rows: [], scanned: 0, checked: 0 }
 
-  const raw: WebRow[] = []
+  const found: CandidateInput[] = []
+  let scanned = 0
   let filteredLocal = 0
-  for (const rawQuery of queries) {
-    const q = rawQuery.trim()
-    if (!q) continue
+  let searches = 0
+  search: for (const entry of queries) {
+    const query = typeof entry === 'string' ? { q: entry.trim(), gl: REGION_GL_MAP[region] } : entry
+    if (!query.q) continue
     for (let p = 0; p < pages; p++) {
-      const start = 1 + p * per
-      const queryWithNegatives = `${q} ${NEGATIVE_QUERY_SUFFIX}`.trim()
+      if (!(await reserveCseSearch(db))) break search
+      searches += 1
       const url = new URL('https://www.googleapis.com/customsearch/v1')
       url.searchParams.set('key', KEY)
       url.searchParams.set('cx', CX)
-      url.searchParams.set('q', queryWithNegatives)
+      url.searchParams.set('q', `${query.q} ${NEGATIVE_QUERY_SUFFIX}`.trim())
       url.searchParams.set('num', String(per))
-      url.searchParams.set('start', String(start))
+      url.searchParams.set('start', String(1 + p * per))
       url.searchParams.set('safe', 'off')
-      const gl = REGION_GL_MAP[region]
-      if (gl) url.searchParams.set('gl', gl)
+      if (query.gl) url.searchParams.set('gl', query.gl)
+      if ('lr' in query && query.lr) url.searchParams.set('lr', query.lr)
       try {
         const data = await fetchJson<GoogleCSEResponse>(url.toString(), { headers: ROUTE_HEADERS, timeoutMs: 10000 })
         const items = Array.isArray(data?.items) ? data?.items ?? [] : []
+        scanned += items.length
         for (const it of items) {
           const link = it?.link?.trim()
           if (!link) continue
           const host = hostFromUrl(link)
-          const title = (it?.title || '').trim() || host || link
+          const title = (it?.title || '').trim()
           const snippet = (it?.snippet || '').trim()
-          if (isHostBlocked(host) || isLikelyForum({ url: link, title, text: snippet, host }) || looksMerchant(link)) {
+          if (isHostBlocked(host) || isLikelyForum({ url: link, title, text: snippet, host })) {
             filteredLocal += 1
             continue
           }
-          const descriptor = `${title} ${snippet}`
-          const keywords = deriveKeywords(descriptor, 7)
-          const tags = Array.from(new Set([host, 'search'])).filter(Boolean)
-          raw.push({
-            type: 'web',
-            url: link,
-            title,
-            text: snippet || title,
-            host,
-            ogImage: null,
-            provider: 'google-cse',
-            source: { name: host || 'Google Custom Search', url: link },
-            tags,
-            keywords,
+          const keep = !boringWebReason(link, title, 'google-cse')
+          const site = keep ? link : frontPageOf(link)
+          if (!site) {
+            filteredLocal += 1
+            continue
+          }
+          found.push({
+            url: site,
+            source: 'google-cse',
+            // The front page's own name is read on the visit; a kept page keeps what Google called it.
+            ...(keep ? { title, text: snippet || title } : {}),
+            tags: [query.q],
           })
         }
       } catch { /* ignore */ }
     }
   }
-
-  const deduped = dedupeByUrl(raw)
-  const { rows: filteredRows, filtered } = filterBlockedRows(deduped)
-  const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
-  const ensured = await ensureOgImages(limited, limit)
-  return {
-    rows: ensured.rows,
-    scanned: raw.length,
-    checked: ensured.checked,
-    filtered: filtered + filteredLocal + (filteredRows.length - limited.length),
-    ogFailed: ensured.failed,
-  }
+  const queued = dryRun ? 0 : (await enqueueSites(db, found)).queued
+  return { rows: [], scanned, checked: 0, filtered: filteredLocal, queued, searches }
 }
 
 type NeocitiesListResponse = {
@@ -636,8 +616,7 @@ async function storedUrls(urls: string[]): Promise<Set<string>> {
   return new Set(docs.map((doc) => String(doc.url)))
 }
 
-async function pullHackerNews(limit: number, requireOg = true): Promise<ProviderResult> {
-  const now = Math.floor(Date.now() / 1000)
+async function pullHackerNews(limit: number, requireOg = true, dryRun = false): Promise<ProviderResult> {
   const raw: WebRow[] = []
   for (const query of hnQueries(HN_SEARCHES_PER_RUN, Math.random)) {
     const first = await fetchJson<{ hits?: HnHit[]; nbPages?: number }>(hnSearchUrl(query), { headers: ROUTE_HEADERS, timeoutMs: 10000 })
@@ -669,7 +648,11 @@ async function pullHackerNews(limit: number, requireOg = true): Promise<Provider
     return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
   }
   const ensured = await ensureOgImages(limited, limit, 8, true)
-  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered: filtered + (filteredRows.length - limited.length), ogFailed: ensured.failed }
+  // Two good sites in three have no usable preview: the server photographs them.
+  const queued = dryRun ? 0 : await enqueue(ensured.refused.map((row) => ({
+    url: row.url, source: 'hn', title: row.title, text: row.text, tags: row.tags, sourceName: row.source?.name, sourceUrl: row.source?.url,
+  })))
+  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered: filtered + (filteredRows.length - limited.length), ogFailed: ensured.failed, queued }
 }
 
 /* -------------------------------- Handler -------------------------------- */
@@ -693,14 +676,17 @@ export async function GET(req: NextRequest) {
   }
 
   const queries = incoming.length ? incoming : [fallbackQuery]
+  // Without explicit searches, Google is asked for the small sites of the world, one page each.
+  const cseSearches = Math.max(1, Math.min(90, Number(req.nextUrl.searchParams.get('cseSearches') || 45)))
+  const cseQueries: Array<string | WorldQuery> = incoming.length ? incoming : worldWebQueries(cseSearches)
 
-  const providersParam = (req.nextUrl.searchParams.get('providers') || 'hn,curated')
+  const providersParam = (req.nextUrl.searchParams.get('providers') || 'hn,curated,cse')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
   const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia', 'hn'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
-  const providers = requestedProviders.length ? requestedProviders : ['hn', 'curated']
+  const providers = requestedProviders.length ? requestedProviders : ['hn', 'curated', 'cse']
 
   const requireOgParam = req.nextUrl.searchParams.get('requireOg')
   const requireOg = requireOgParam == null
@@ -725,11 +711,15 @@ export async function GET(req: NextRequest) {
   let checked = 0
   let filteredByHost = 0
   let ogFailed = 0
+  let queued = 0
+  let searches = 0
 
   if (providers.includes('cse')) {
     try {
-      const result = await runGoogleCSE(queries, per, pages, perProviderTarget, region)
+      const result = await runGoogleCSE(cseQueries, per, incoming.length ? pages : 1, region, dryRun)
       aggregated.push(...result.rows)
+      queued += result.queued ?? 0
+      searches += result.searches ?? 0
       scanned += result.scanned
       checked += result.checked
       filteredByHost += result.filtered ?? 0
@@ -761,8 +751,9 @@ export async function GET(req: NextRequest) {
 
   if (providers.includes('hn')) {
     try {
-      const result = await pullHackerNews(Math.min(perProviderTarget, 60), requireOg)
+      const result = await pullHackerNews(Math.min(perProviderTarget, 60), requireOg, dryRun)
       aggregated.push(...result.rows)
+      queued += result.queued ?? 0
       scanned += result.scanned
       checked += result.checked
       filteredByHost += result.filtered ?? 0
@@ -805,6 +796,8 @@ export async function GET(req: NextRequest) {
         unique: deduped.length,
         filtered: filteredByHost,
         ogFailed,
+        queued,
+        searches,
         dryRun,
         sample,
         inserted: 0,
@@ -827,6 +820,8 @@ export async function GET(req: NextRequest) {
       unique: deduped.length,
       filtered: filteredByHost,
       ogFailed,
+      queued,
+      searches,
       dryRun,
       sample,
       inserted,

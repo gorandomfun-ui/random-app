@@ -47,5 +47,5 @@ test('searches cover the whole archive over the days and never the same word twi
   assert.equal(url.searchParams.get('tags'), 'show_hn')
   assert.equal(url.searchParams.get('restrictSearchableAttributes'), 'title')
   assert.equal(url.searchParams.get('page'), '3')
-  assert.equal(url.searchParams.get('numericFilters'), `points>=40,created_at_i>${Date.UTC(HN_FIRST_YEAR, 0, 1) / 1000}`)
+  assert.equal(url.searchParams.get('numericFilters'), `points>=10,created_at_i>${Date.UTC(HN_FIRST_YEAR, 0, 1) / 1000}`)
 })
