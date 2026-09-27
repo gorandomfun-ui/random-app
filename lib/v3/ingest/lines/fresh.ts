@@ -1,5 +1,5 @@
 /**
- * The fresh-of-the-day line, at 06:00 Paris: the charts of the moment, zone
+ * The fresh-of-the-day line, at 09:05 Paris: the charts of the moment, zone
  * by zone (see `lib/v3/fresh/plan.ts`), a thousand videos in all. Every one
  * goes through the usual door — serials, ads and TV news refused — and the
  * ones already stored are simply referenced. What remains is ordered for

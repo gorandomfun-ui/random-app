@@ -1,5 +1,5 @@
 /**
- * The fresh-of-the-day line, run on the ingestion server at 06:00 Paris.
+ * The fresh-of-the-day line, run on the ingestion server at 09:05 Paris.
  *
  *   node --import tsx scripts/v3/fresh-direct.ts
  *   node --import tsx scripts/v3/fresh-direct.ts --dry

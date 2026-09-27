@@ -1,5 +1,5 @@
 /**
- * Fresh of the day at the draw. The day's list (written at 06:00 by
+ * Fresh of the day at the draw. The day's list (written at 09:05 by
  * lib/v3/ingest/lines/fresh.ts) holds the thousand videos the world is
  * watching; the first ten videos of a session are drawn from it at random,
  * never one this device was already shown today, and the next ten the next
