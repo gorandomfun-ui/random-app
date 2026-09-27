@@ -1451,6 +1451,28 @@ export async function fetchYouTubeChart(
   return { rows, next: data?.nextPageToken };
 }
 
+/**
+ * The current view counts of up to fifty YouTube videos, one unit: what the
+ * fresh-of-the-day line needs to measure the views each video gained in a day.
+ */
+export async function fetchYouTubeViewCounts(ids: string[], warnings: FetchWarning[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const key = process.env.YOUTUBE_API_KEY;
+  const batch = ids.filter((id) => /^[\w-]{11}$/.test(id)).slice(0, 50);
+  if (!key || !batch.length) return out;
+  const url = new URL(YT_VIDEOS_ENDPOINT);
+  url.searchParams.set('key', key);
+  url.searchParams.set('part', 'statistics');
+  url.searchParams.set('id', batch.join(','));
+  url.searchParams.set('maxResults', '50');
+  const data = await fetchJson<YoutubeVideosResponse>(url.toString(), 10000, 'youtube:views', warnings, { headers: USER_AGENT });
+  for (const item of data?.items ?? []) {
+    const views = Number(item?.statistics?.viewCount);
+    if (item?.id && Number.isFinite(views)) out.set(item.id, views);
+  }
+  return out;
+}
+
 async function fetchDailymotionTrending(region: string, limit: number, warnings: FetchWarning[]): Promise<RawVideo[]> {
   const params = new URLSearchParams({
     sort: 'trending',

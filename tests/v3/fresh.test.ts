@@ -77,3 +77,21 @@ test('when YouTube says no, the day\'s earlier chart reads rebuild the zones', a
   assert.deepEqual(zones('u1'), ['usa', 'world'])
   assert.deepEqual(zones('x'), [])
 })
+
+test('views of the day: what a video gained since the count taken about a day ago', async () => {
+  const { dailyViews, rankByDaily } = await import('../../lib/v3/fresh/plan')
+  const HOUR = 3_600_000, now = Date.UTC(2026, 8, 28, 7, 5)
+  assert.equal(dailyViews([{ at: now - 24 * HOUR, views: 1_000_000 }], 1_300_000, now), 300_000)
+  assert.equal(dailyViews([{ at: now - 18 * HOUR, views: 1_000 }], 1_900, now), 1_200, 'brought to a whole day')
+  assert.equal(dailyViews([{ at: now - 2 * HOUR, views: 10 }], 20, now), null, 'too recent to say')
+  assert.equal(dailyViews([{ at: now - 60 * HOUR, views: 10 }], 20, now), null, 'too old to say')
+  assert.equal(dailyViews([{ at: now - 30 * HOUR, views: 5 }, { at: now - 23 * HOUR, views: 50 }], 150, now), Math.round(100 * 24 / 23), 'the count closest to a day ago')
+  // A giant that gains little falls behind a smaller video that exploded today.
+  const ranked = rankByDaily([
+    { bucket: 'europe' as const, region: 'FR', daily: 20_000, videoId: 'giant' },
+    { bucket: 'europe' as const, region: 'FR', daily: 900_000, videoId: 'star' },
+    { bucket: 'europe' as const, region: 'DE', daily: 5, videoId: 'de' },
+  ])
+  assert.deepEqual(ranked.filter((entry) => entry.region === 'FR').sort((a, b) => a.rank - b.rank).map((entry) => entry.videoId), ['star', 'giant'])
+  assert.equal(ranked.find((entry) => entry.videoId === 'de')?.rank, 0)
+})

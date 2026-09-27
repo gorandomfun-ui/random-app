@@ -139,7 +139,7 @@ export function isAiMade(channel: string | null | undefined, title: string | nul
   return AI_MADE.test(`${channel ?? ''} ${title ?? ''}`)
 }
 
-export type FreshFound = { raw: RawVideo; bucket: FreshBucket; rank: number; region: string }
+export type FreshFound = { raw: RawVideo; bucket: FreshBucket; rank: number; region: string; /** Its view count is an old one, not read today. */ stale?: boolean }
 
 /**
  * The chart videos read in the last hours, as the zones they came from: every
@@ -173,3 +173,32 @@ export function observedFound(rows: Array<{ videoId?: unknown; title?: unknown; 
   return found
 }
 
+
+/**
+ * Views of the day, measured by us: the owner's rule of 27 September. A
+ * chart ranks what is rising, and a video with a huge total climbs every list
+ * it is on; ranked by what they gained in a day, the day's real stars come
+ * first and the same giants do not come back round. A video needs a count
+ * taken twelve to thirty-six hours ago — the day after it was first seen is
+ * soon enough.
+ */
+export type ViewSample = { at: number; views: number }
+const HOUR = 3_600_000
+
+export function dailyViews(samples: readonly ViewSample[], viewsNow: number, now: number): number | null {
+  const usable = samples.filter((sample) => now - sample.at >= 12 * HOUR && now - sample.at <= 36 * HOUR && sample.views <= viewsNow)
+  if (!usable.length) return null
+  const closest = [...usable].sort((left, right) => Math.abs(now - left.at - 24 * HOUR) - Math.abs(now - right.at - 24 * HOUR))[0]
+  return Math.round(((viewsNow - closest.views) * 24 * HOUR) / (now - closest.at))
+}
+
+/** Within a zone and a country, the order of the day's views: first the one that gained the most. */
+export function rankByDaily<T extends { bucket: FreshBucket; region: string; daily: number }>(entries: T[]): Array<T & { rank: number }> {
+  const groups = new Map<string, T[]>()
+  for (const entry of entries) groups.set(`${entry.bucket}:${entry.region}`, [...(groups.get(`${entry.bucket}:${entry.region}`) ?? []), entry])
+  const out: Array<T & { rank: number }> = []
+  for (const group of groups.values()) {
+    group.sort((left, right) => right.daily - left.daily).forEach((entry, rank) => out.push({ ...entry, rank }))
+  }
+  return out
+}
