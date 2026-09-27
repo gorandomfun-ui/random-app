@@ -20,12 +20,13 @@ export type WebInsertRow = {
   tags?: string[]
   keywords?: string[]
   imageMeta?: { width: number; height: number }
-  /** Where the preview comes from: the site's own og:image, or a capture made by the server. */
-  webPreview?: 'og' | 'shot'
+  /** Where the preview comes from: the site's own og:image, the largest picture of its page, or a capture made by the server. */
+  webPreview?: 'og' | 'page' | 'shot'
 }
 
-export async function upsertWebRows(db: Db, rows: WebInsertRow[]): Promise<{ inserted: number; updated: number }> {
-  if (!rows.length) return { inserted: 0, updated: 0 }
+/** `insertedIndexes`: the rows that were new to the catalogue, by position. */
+export async function upsertWebRows(db: Db, rows: WebInsertRow[]): Promise<{ inserted: number; updated: number; insertedIndexes: number[] }> {
+  if (!rows.length) return { inserted: 0, updated: 0, insertedIndexes: [] }
   const now = new Date()
   const sets = rows.map((row) => {
     const { imageMeta, ...rest } = row
@@ -48,5 +49,5 @@ export async function upsertWebRows(db: Db, rows: WebInsertRow[]): Promise<{ ins
       upsert: true,
     },
   })), { ordered: false })
-  return { inserted: result.upsertedCount || 0, updated: result.modifiedCount || 0 }
+  return { inserted: result.upsertedCount || 0, updated: result.modifiedCount || 0, insertedIndexes: Object.keys(result.upsertedIds ?? {}).map(Number) }
 }

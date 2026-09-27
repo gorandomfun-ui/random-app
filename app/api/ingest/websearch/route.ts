@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { MongoClient, Db } from 'mongodb'
+import { reserveCseSearch } from '@/lib/v3/web/cseQuota'
 
 let _client: MongoClient | null = null
 let _db: Db | null = null
@@ -51,6 +52,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing GOOGLE_CSE_KEY / GOOGLE_CSE_CX' }, { status: 400 })
     }
 
+    // Google is paid past 100 searches a day: this hand tool counts against the same free allowance as the ingest.
+    if (!(await reserveCseSearch(await getDb()))) {
+      return NextResponse.json({ ok: false, error: 'free Google searches of the day used up' }, { status: 429 })
+    }
     const limit = Math.min(parseInt(searchParams.get('limit') || '10', 10), 10)
     const q = searchParams.get('q') || `${pick(WORDS_A)} ${pick(WORDS_B)} ${pick(WORDS_C)}`
     const url = `https://www.googleapis.com/customsearch/v1?key=${CSE_KEY}&cx=${CSE_CX}&q=${encodeURIComponent(

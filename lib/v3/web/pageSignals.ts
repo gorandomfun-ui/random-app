@@ -65,3 +65,52 @@ export function notASiteReason(reading: Pick<PageReading, 'title' | 'description
   if (reading.words < 12 && !reading.title) return 'empty'
   return null
 }
+
+/** Not a picture of the place: logos, icons, trackers, placeholders. */
+const NOT_A_PICTURE = /\.svg(?:$|\?)|^data:|logo|icon|favicon|sprite|pixel|spacer|blank|avatar|gravatar|badge|spinner|loader|loading|placeholder|flag|emoji|button|arrow|facebook\.com\/tr|doubleclick|google-analytics|\/ads?\//i
+
+/**
+ * The pictures a page shows, biggest announced first then in page order: what
+ * stands for a site that has no og:image (27 September: 16 sites in 60 had
+ * none but did show a large photo). Lazy-loaded and responsive images count;
+ * the largest width of a srcset is taken.
+ */
+export function pageImages(html: string, pageUrl: string, limit = 8): string[] {
+  const found: Array<{ url: string; width: number; order: number }> = []
+  const add = (raw: string | undefined, width = 0) => {
+    if (!raw) return
+    const value = raw.trim().replace(/&amp;/g, '&')
+    if (!value || NOT_A_PICTURE.test(value)) return
+    try {
+      const resolved = new URL(value, pageUrl)
+      if (!/^https?:$/.test(resolved.protocol)) return
+      found.push({ url: resolved.toString(), width, order: found.length })
+    } catch { /* not an address */ }
+  }
+  const largestOfSrcset = (srcset: string) => {
+    let best: { url: string; width: number } | null = null
+    for (const part of srcset.split(',')) {
+      const [url, size] = part.trim().split(/\s+/)
+      const width = Number(size?.replace(/w$/, '')) || 0
+      if (url && (!best || width > best.width)) best = { url, width }
+    }
+    return best
+  }
+  for (const tag of html.matchAll(/<(?:img|source)\b[^>]*>/gi)) {
+    const element = tag[0]
+    const attribute = (name: string) => new RegExp(`\\s${name}=["']([^"']+)["']`, 'i').exec(element)?.[1]
+    const declared = Number(attribute('width')) || 0
+    const srcset = attribute('data-srcset') ?? attribute('srcset')
+    const largest = srcset ? largestOfSrcset(srcset) : null
+    if (largest) add(largest.url, Math.max(largest.width, declared))
+    add(attribute('data-src') ?? attribute('data-lazy-src') ?? attribute('data-original') ?? attribute('src'), declared)
+  }
+  for (const style of html.matchAll(/background(?:-image)?\s*:\s*[^;"']*url\(\s*["']?([^"')]+)["']?\s*\)/gi)) add(style[1], 1)
+  add(/<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i.exec(html)?.[1], 1)
+  const seen = new Set<string>()
+  return found
+    .sort((left, right) => (right.width >= 500 ? 1 : 0) - (left.width >= 500 ? 1 : 0) || left.order - right.order)
+    .map((entry) => entry.url)
+    .filter((url) => !seen.has(url) && Boolean(seen.add(url)))
+    .slice(0, limit)
+}

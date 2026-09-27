@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { notASiteReason, readPage } from '../../lib/v3/web/pageSignals'
+import { notASiteReason, pageImages, readPage } from '../../lib/v3/web/pageSignals'
 
 test("a page's name, line and preview are read whatever the attribute order", () => {
   const html = `<html><head><title>Plomberie Ngando &amp; Fils – Douala</title>
@@ -29,4 +29,19 @@ test('a parked domain, a placeholder or an empty page is not a site; "coming soo
   assert.equal(notASiteReason(readPage('<body></body>', 'https://x.cm/'), ''), 'empty')
   const shop = '<title>Boulangerie Soleil</title><body>Nos pains, nos gâteaux. Nouveaux croissants coming soon ! Ouvert du lundi au samedi à Yaoundé.</body>'
   assert.equal(notASiteReason(readPage(shop, 'https://soleil.cm/'), shop), null)
+})
+
+test("a page's pictures, big announced ones first, backgrounds last, without logos or trackers", () => {
+  const html = `<header><img src="/img/logo.png"><img src="/icons/phone.svg"></header>
+    <div class="hero" style="background-image: url('/img/atelier.jpg')"></div>
+    <img data-src="https://cdn.example.cm/camion.jpg" src="data:image/gif;base64,R0lGOD">
+    <img srcset="/img/equipe-400.jpg 400w, /img/equipe-1200.jpg 1200w" src="/img/equipe-400.jpg">
+    <img src="https://www.facebook.com/tr?id=1">`
+  // Pictures in <img> first (announced big ones ahead), then backgrounds.
+  assert.deepEqual(pageImages(html, 'https://plomberie-ngando.cm/'), [
+    'https://plomberie-ngando.cm/img/equipe-1200.jpg',
+    'https://cdn.example.cm/camion.jpg',
+    'https://plomberie-ngando.cm/img/equipe-400.jpg',
+    'https://plomberie-ngando.cm/img/atelier.jpg',
+  ])
 })

@@ -1,14 +1,16 @@
 /**
  * The server's `web-previews` line: visits the sites waiting in
- * web_candidates_v1 (lib/v3/web/candidates.ts), one at a time, and puts the
+ * web_candidates_v1 (lib/v3/web/candidates.ts), a few at a time, and puts the
  * living ones into the catalogue with a preview — their own og:image when it
- * is good, otherwise a capture of the page taken by Chromium and stored in
- * the previews bucket (lib/v3/web/gcs.ts).
+ * is good, else the largest picture their page shows (27 September: that
+ * covers 49 sites in 52), else, only when the previews bucket exists, a
+ * capture of the page taken by Chromium (lib/v3/web/gcs.ts). Without the
+ * bucket no browser is started at all: a site with no picture is left.
  *
- *   node --import tsx scripts/v3/web-previews.ts                 a pass: 20 minutes, 200 sites at most
- *   node --import tsx scripts/v3/web-previews.ts --minutes=5 --max=20
- *   node --import tsx scripts/v3/web-previews.ts --dry --max=10  visits and captures, writes nothing
- *   node --import tsx scripts/v3/web-previews.ts --url=https://… --url=https://…   those sites only, dry
+ *   node --import tsx scripts/v3/web-previews.ts                 a pass: 20 minutes, 300 sites at most, 4 at a time
+ *   node --import tsx scripts/v3/web-previews.ts --minutes=5 --max=20 --parallel=2
+ *   node --import tsx scripts/v3/web-previews.ts --dry --max=10  visits, writes nothing
+ *   node --import tsx scripts/v3/web-previews.ts --url=https://… --url=https://… [--captures]   those sites only, dry
  *
  * Built on 28 September for the owner's picture of the web part — the small
  * sites of the world, a plumber in Douala — after two good sites in three were
@@ -23,9 +25,9 @@ import type { Db } from 'mongodb'
 import type { Browser } from 'playwright-core'
 
 import { closeRun, journalHost, openRun, type RunCounters } from '@/lib/v3/ingest/journal'
-import { candidateCounts, deferCandidate, previewObjectName, settleCandidate, siteKey, storedForms, takeCandidates, type Candidate, type CandidateStatus } from '@/lib/v3/web/candidates'
+import { candidateCounts, previewObjectName, settleCandidates, siteKey, storedForms, takeCandidates, type Candidate, type CandidateStatus } from '@/lib/v3/web/candidates'
 import { gcsUploader, PREVIEW_KEY_FILE, type Upload } from '@/lib/v3/web/gcs'
-import { notASiteReason, readPage } from '@/lib/v3/web/pageSignals'
+import { notASiteReason, pageImages, readPage } from '@/lib/v3/web/pageSignals'
 import { probePreview } from '@/lib/v3/web/previewImage'
 import { boringWebReason, frontPageOf } from '@/lib/v3/web/quality'
 import { upsertWebRows, type WebInsertRow } from '@/lib/v3/web/store'
@@ -88,6 +90,14 @@ async function fetchPage(url: string): Promise<Page | { error: string }> {
 class Camera {
   private browser: Browser | null = null
   private shots = 0
+  /** One page at a time in the browser, whatever the number of visits running: the machine is small. */
+  private turn: Promise<unknown> = Promise.resolve()
+
+  shoot(url: string): ReturnType<Camera['shootNow']> {
+    const run = this.turn.then(() => this.shootNow(url))
+    this.turn = run.catch(() => undefined)
+    return run
+  }
 
   private async open(): Promise<Browser> {
     if (this.browser && this.shots < SHOTS_PER_BROWSER) return this.browser
@@ -103,7 +113,7 @@ class Camera {
   }
 
   /** The page as a browser sees it: its address after redirects, its HTML, and a capture when it shows something. */
-  async shoot(url: string): Promise<{ image: Buffer | null; finalUrl: string; html: string; blank?: string } | { error: string }> {
+  private async shootNow(url: string): Promise<{ image: Buffer | null; finalUrl: string; html: string; blank?: string } | { error: string }> {
     const browser = await this.open()
     this.shots += 1
     const context = await browser.newContext({ viewport: VIEWPORT, userAgent: BROWSER_UA, locale: 'en-US', acceptDownloads: false, serviceWorkers: 'block' })
@@ -150,19 +160,28 @@ class Camera {
   }
 }
 
-type Visit = { status: CandidateStatus | 'deferred'; outcome: string; row?: WebInsertRow }
+type Visit = { status: CandidateStatus; outcome: string; row?: WebInsertRow }
 
 async function alreadyStored(db: Db, url: string): Promise<boolean> {
   return Boolean(await db.collection('items').findOne({ type: 'web', url: { $in: storedForms(url) } }, { projection: { _id: 1 } }))
 }
 
+/** The first of the page's pictures good enough to stand for the site. */
+async function firstPicture(urls: string[]): Promise<{ url: string; width: number; height: number } | null> {
+  for (const url of urls) {
+    const picture = await probePreview(url)
+    if (picture) return picture
+  }
+  return null
+}
+
 const SAVE_DIR = process.env.RANDOM_PREVIEW_SAVE
 
-async function visit(db: Db, candidate: Candidate, camera: Camera, upload: Upload | null, dryRun: boolean): Promise<Visit> {
+async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload: Upload | null, dryRun: boolean): Promise<Visit> {
   let page: Page | { error: string } = await fetchPage(candidate.url)
   let capture: { image: Buffer | null; blank?: string } | null = null
-  // A small site behind a shield often refuses a plain request and shows itself to a browser.
-  if ('error' in page && /^http (?:403|429|503)$/.test(page.error)) {
+  // A small site behind a shield often refuses a plain request and shows itself to a browser (only when captures are on).
+  if ('error' in page && camera && /^http (?:403|429|503)$/.test(page.error)) {
     const shot = await camera.shoot(candidate.url)
     if ('error' in shot) return { status: 'dead', outcome: `${page.error}; ${shot.error}` }
     page = { finalUrl: shot.finalUrl, html: shot.html }
@@ -182,14 +201,16 @@ async function visit(db: Db, candidate: Candidate, camera: Camera, upload: Uploa
 
   let ogImage: string | null = null
   let imageMeta = { width: VIEWPORT.width, height: VIEWPORT.height }
-  let preview: 'og' | 'shot' = 'og'
+  let preview: 'og' | 'page' | 'shot' = 'og'
   const own = reading.ogImage ? await probePreview(reading.ogImage) : null
-  if (own) {
-    ogImage = own.url
-    imageMeta = { width: own.width, height: own.height }
+  const picture = own ? null : await firstPicture(pageImages(page.html, finalUrl, 6))
+  if (own || picture) {
+    const chosen = (own ?? picture)!
+    ogImage = chosen.url
+    imageMeta = { width: chosen.width, height: chosen.height }
+    preview = own ? 'og' : 'page'
   } else {
-    // No bucket yet: the site waits for it rather than being given up.
-    if (!dryRun && !upload) return { status: 'deferred', outcome: 'waits for the captures bucket' }
+    if (!camera) return { status: 'noimage', outcome: 'no picture on the page (captures off)' }
     if (!capture) {
       const shot = await camera.shoot(finalUrl)
       if ('error' in shot) return { status: /^capture/.test(shot.error) ? 'failed' : 'dead', outcome: shot.error }
@@ -240,78 +261,103 @@ async function main(): Promise<void> {
   const byHand = handCandidates()
   const dryRun = process.argv.includes('--dry') || byHand.length > 0
   const minutes = numericFlag('minutes', 20)
-  const max = numericFlag('max', 200)
+  const max = numericFlag('max', 300)
+  const parallel = Math.min(8, numericFlag('parallel', 4))
   const deadline = Date.now() + minutes * 60_000
   const { getDb } = await import('@/lib/db')
   const db = await getDb()
   const startedAt = new Date()
   const runId = dryRun ? null : await openRun(db, { line: 'web-previews', startedAt, host: journalHost() })
   const counters: RunCounters = { scanned: 0, inserted: 0, duplicates: 0, rejected: {}, byProvider: {} }
-  const previews = { og: 0, shot: 0 }
+  const previews = { og: 0, page: 0, shot: 0 }
   const errors: string[] = []
-  const camera = new Camera()
   let upload: Upload | null = null
-  try {
-    if (!dryRun) {
-      try {
-        upload = gcsUploader(PREVIEW_KEY_FILE)
-      } catch {
-        // Without the bucket the sites with their own image still go in; the others wait for it (deferred).
-        errors.push(`no key for the previews bucket at ${PREVIEW_KEY_FILE}: captures deferred`)
-      }
+  if (!dryRun) {
+    try {
+      upload = gcsUploader(PREVIEW_KEY_FILE)
+    } catch {
+      // No bucket (the owner's choice, 27 September: nothing more to pay): no captures, no browser.
     }
-    let hitDeadline = false
+  }
+  const camera = upload || (dryRun && process.argv.includes('--captures')) ? new Camera() : null
+  const queue: Candidate[] = []
+  const held: string[] = []
+  const pending: Array<{ candidate: Candidate; result: Visit }> = []
+  let refilling: Promise<void> | null = null
+  let hitDeadline = false
+
+  async function next(): Promise<Candidate | null> {
+    if (!queue.length) {
+      refilling ??= (async () => {
+        const got = byHand.length ? byHand.splice(0) : dryRun && held.length ? [] : await takeCandidates(db, 20, held)
+        for (const candidate of got) held.push(candidate._id)
+        queue.push(...got)
+      })().finally(() => { refilling = null })
+      await refilling
+    }
+    return queue.shift() ?? null
+  }
+
+  /** The visits since the last write: the new sites in one upsert, their outcomes in one bulk write. */
+  async function flush(): Promise<void> {
+    const done = pending.splice(0)
+    if (!done.length) return
+    const withRow = done.filter((entry) => entry.result.row)
+    if (dryRun) {
+      for (const entry of withRow) previews[entry.result.row!.webPreview ?? 'og'] += 1
+      return
+    }
+    const written = await upsertWebRows(db, withRow.map((entry) => entry.result.row!))
+    const fresh = new Set(written.insertedIndexes)
+    withRow.forEach((entry, index) => {
+      if (!fresh.has(index)) { counters.duplicates += 1; return }
+      counters.inserted += 1
+      counters.byProvider![entry.candidate.source] = (counters.byProvider![entry.candidate.source] ?? 0) + 1
+      previews[entry.result.row!.webPreview ?? 'og'] += 1
+    })
+    await settleCandidates(db, done.map((entry) => ({ candidate: entry.candidate, status: entry.result.status, outcome: entry.result.outcome })))
+  }
+
+  async function worker(): Promise<void> {
     while (counters.scanned < max) {
-      if (Date.now() > deadline) { hitDeadline = true; break }
-      const batch = byHand.length ? byHand : await takeCandidates(db, Math.min(10, max - counters.scanned))
-      if (!batch.length) break
-      for (const candidate of batch) {
-        if (Date.now() > deadline) { hitDeadline = true; break }
-        counters.scanned += 1
-        let result: Visit
-        try {
-          result = await visit(db, candidate, camera, upload, dryRun)
-        } catch (error) {
-          result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
-        }
-        if (result.row && !dryRun) {
-          const written = await upsertWebRows(db, [result.row])
-          if (written.inserted) {
-            counters.inserted += 1
-            counters.byProvider![candidate.source] = (counters.byProvider![candidate.source] ?? 0) + 1
-            previews[result.row.webPreview ?? 'og'] += 1
-          } else counters.duplicates += 1
-        } else if (result.row) {
-          previews[result.row.webPreview ?? 'og'] += 1
-        } else if (result.status === 'done') {
-          counters.duplicates += 1
-        } else if (result.status === 'deferred') {
-          counters.rejected['waiting for the bucket'] = (counters.rejected['waiting for the bucket'] ?? 0) + 1
-        } else {
-          counters.rejected[result.status] = (counters.rejected[result.status] ?? 0) + 1
-        }
-        console.log(`${result.status.padEnd(7)} ${candidate.url.slice(0, 70)} · ${result.row ? `${result.outcome} · ${String(result.row.title).slice(0, 50)}` : result.outcome}`)
-        if (!dryRun) {
-          if (result.status === 'deferred') await deferCandidate(db, candidate, result.outcome)
-          else await settleCandidate(db, candidate, result.status, result.outcome)
-        }
+      if (Date.now() > deadline) { hitDeadline = true; return }
+      const candidate = await next()
+      if (!candidate) return
+      counters.scanned += 1
+      let result: Visit
+      try {
+        result = await visit(db, candidate, camera, upload, dryRun)
+      } catch (error) {
+        result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
       }
-      if (dryRun) break
+      if (!result.row) {
+        if (result.status === 'done') counters.duplicates += 1
+        else counters.rejected[result.status] = (counters.rejected[result.status] ?? 0) + 1
+      }
+      console.log(`${result.status.padEnd(7)} ${candidate.url.slice(0, 70)} · ${result.row ? `${result.outcome} · ${String(result.row.title).slice(0, 50)}` : result.outcome}`)
+      pending.push({ candidate, result })
+      if (pending.length >= 20) await flush()
     }
+  }
+
+  try {
+    await Promise.all(Array.from({ length: parallel }, () => worker()))
+    await flush()
     const waiting = await candidateCounts(db)
-    const note = `${counters.scanned} sites visités : ${counters.inserted} ajoutés (${previews.og} avec leur image, ${previews.shot} photographiés), ` +
+    const note = `${counters.scanned} sites visités : ${counters.inserted} ajoutés (${previews.og} avec leur image, ${previews.page} avec une photo de leur page, ${previews.shot} photographiés), ` +
       `${Object.entries(counters.rejected).map(([reason, n]) => `${n} ${reason}`).join(', ') || 'aucun refus'} ; en attente ${waiting.new}`
     if (runId) {
-      const status = hitDeadline || errors.length ? 'partial' : counters.scanned ? 'ok' : 'skipped'
+      const status = hitDeadline ? 'partial' : counters.scanned ? 'ok' : 'skipped'
       await closeRun(db, runId, { finishedAt: new Date(), status, counters, errors, note })
     }
     console.log(JSON.stringify({ webPreviews: dryRun ? 'dry' : 'ok', ...counters, previews, waiting, errors, note, durationMs: Date.now() - startedAt.getTime() }))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'web-previews failed'
+    await flush().catch(() => undefined)
     if (runId) await closeRun(db, runId, { finishedAt: new Date(), status: 'failed', counters, errors: [...errors, message] }).catch(() => undefined)
     throw error
   } finally {
-    await camera.close()
+    await camera?.close()
   }
   process.exit(0)
 }

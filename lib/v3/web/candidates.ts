@@ -121,11 +121,11 @@ export async function enqueueSites(db: Db, rows: CandidateInput[]): Promise<{ qu
   return { queued: result.upsertedCount || 0, known: unique.size - (result.upsertedCount || 0) }
 }
 
-/** A handful of sites to visit, in random order across sources. */
-export async function takeCandidates(db: Db, size: number, now = new Date()): Promise<Candidate[]> {
+/** A handful of sites to visit, in random order across sources; `exclude`: the ones this pass already holds. */
+export async function takeCandidates(db: Db, size: number, exclude: string[] = [], now = new Date()): Promise<Candidate[]> {
   await ensureIndexes(db)
   const start = Math.random()
-  const filter = { status: 'new' as CandidateStatus, nextAt: { $lte: now } }
+  const filter = { status: 'new' as CandidateStatus, nextAt: { $lte: now }, ...(exclude.length ? { _id: { $nin: exclude } } : {}) }
   const first = await db.collection<Candidate>(CANDIDATES).find({ ...filter, rand: { $gte: start } }).sort({ rand: 1 }).limit(size).toArray()
   if (first.length >= size) return first
   const rest = await db.collection<Candidate>(CANDIDATES).find({ ...filter, rand: { $lt: start } }).sort({ rand: 1 }).limit(size - first.length).toArray()
@@ -136,19 +136,23 @@ export async function takeCandidates(db: Db, size: number, now = new Date()): Pr
 export const RETRY_DAYS = 3
 export const MAX_ATTEMPTS = 2
 
-export async function settleCandidate(db: Db, candidate: Candidate, status: CandidateStatus, outcome: string, now = new Date()): Promise<void> {
-  const attempts = candidate.attempts + 1
-  const retry = (status === 'dead' || status === 'failed') && attempts < MAX_ATTEMPTS
-  await db.collection<Candidate>(CANDIDATES).updateOne({ _id: candidate._id }, {
-    $set: retry
-      ? { attempts, nextAt: new Date(now.getTime() + RETRY_DAYS * 86_400_000), outcome }
-      : { attempts, status, outcome, settledAt: now },
-  })
-}
-
-/** A visit that could not finish for want of something on our side (the captures bucket): tried again tomorrow, no attempt spent. */
-export async function deferCandidate(db: Db, candidate: Candidate, outcome: string, now = new Date()): Promise<void> {
-  await db.collection<Candidate>(CANDIDATES).updateOne({ _id: candidate._id }, { $set: { nextAt: new Date(now.getTime() + 86_400_000), outcome } })
+/** The outcome of each visit, written in one go: the database is small, one write per site would crowd it. */
+export async function settleCandidates(db: Db, visits: Array<{ candidate: Candidate; status: CandidateStatus; outcome: string }>, now = new Date()): Promise<void> {
+  if (!visits.length) return
+  await db.collection<Candidate>(CANDIDATES).bulkWrite(visits.map(({ candidate, status, outcome }) => {
+    const attempts = candidate.attempts + 1
+    const retry = (status === 'dead' || status === 'failed') && attempts < MAX_ATTEMPTS
+    return {
+      updateOne: {
+        filter: { _id: candidate._id },
+        update: {
+          $set: retry
+            ? { attempts, nextAt: new Date(now.getTime() + RETRY_DAYS * 86_400_000), outcome }
+            : { attempts, status, outcome, settledAt: now },
+        },
+      },
+    }
+  }), { ordered: false })
 }
 
 export async function candidateCounts(db: Db): Promise<Record<CandidateStatus, number>> {

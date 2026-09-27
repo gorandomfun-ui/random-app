@@ -81,7 +81,7 @@ case "${LINE}" in
     ;;
   web-previews)
     # The sites waiting for a visit: alive or not, their own image or a capture by Chromium, then into the catalogue.
-    run node --import tsx scripts/v3/web-previews.ts --minutes="${RANDOM_WEB_PREVIEW_MINUTES:-20}" --max="${RANDOM_WEB_PREVIEW_MAX:-200}"
+    run node --import tsx scripts/v3/web-previews.ts --minutes="${RANDOM_WEB_PREVIEW_MINUTES:-20}" --max="${RANDOM_WEB_PREVIEW_MAX:-300}"
     ;;
   web-embed)
     # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
