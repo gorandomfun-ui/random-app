@@ -521,8 +521,29 @@ const enDictionary = {
       "Another cryptic chamber opens.",
       "Stay restless, the signal is forward."
     ]
+  },
+  "arcade": {
+    "offer": "Up for a game of {game}?",
+    "play": "Play",
+    "noThanks": "No thanks",
+    "never": "Don't offer again",
+    "nextLevel": "Next level in {count} randoms",
+    "tryAgain": "Try again in {count} randoms",
+    "retriesLeft": "{count} tries left",
+    "retryLeft": "1 try left",
+    "continue": "Continue the randoms",
+    "yourName": "Your name",
+    "tabDevice": "This device",
+    "tabWorld": "World",
+    "tabAll": "Top 200",
+    "noScore": "No score yet",
+    "winnerLine": "All 16 levels won!",
+    "shareText": "{game}: {score} points on gorandom.fun",
+    "pause": "Pause",
+    "resume": "Resume",
+    "linkCopied": "Link copied",
+    "shareGame": "Share the game"
   }
-
 }
 
 export default enDictionary

@@ -61,6 +61,8 @@ export type EaterState = {
   moves: number
   steps: number
   passed: number
+  /** One level only, as in the Random flow: reached, the level is cleared and the round ends there. */
+  single: boolean
   random: () => number
 }
 
@@ -91,17 +93,17 @@ function startBody(layout: Layout, length: number, cols: number): Cell[] {
   return layout === 'landscape' ? body : body.map(({ x, y }) => ({ x: y, y: x }))
 }
 
-export function createEater(layout: Layout, level = 1, seed = 1): EaterState {
+export function createEater(layout: Layout, level = 1, seed = 1, options: { single?: boolean; score?: number } = {}): EaterState {
   const cols = layout === 'landscape' ? 28 : 20, rows = layout === 'landscape' ? 20 : 28
   const random = seeded(seed * 104729 + level)
   const params = eaterParams(level)
   const s: EaterState = {
-    layout, cols, rows, level, score: 0, phase: 'play',
+    layout, cols, rows, level, score: options.score ?? 0, phase: 'play',
     body: startBody(layout, params.length, layout === 'landscape' ? cols : rows), dir: layout === 'landscape' ? 'right' : 'down', queue: [], grow: 0, shrink: 0,
     eaten: 0, target: params.target, food: null, bonus: null, bonusTimer: 12 * SECOND,
     tick: params.interval, interval: params.interval, levelUp: 0,
     islands: islandsFor(layout, level).map((island) => ({ island, solid: false })), solid: new Set(),
-    moves: 0, steps: 0, passed: 0, random,
+    moves: 0, steps: 0, passed: 0, single: options.single === true, random,
   }
   settleIslands(s)
   s.food = placeFood(s)
@@ -202,7 +204,8 @@ export function stepEater(s: EaterState, want?: Direction | null): void {
 function levelUp(s: EaterState): void {
   s.score += 50 * s.level
   s.passed += 1
-  if (s.level >= EATER_LAST_LEVEL) { s.phase = 'won'; return }
+  // the last level, or the one level of a round in the flow: won, it ends there
+  if (s.level >= EATER_LAST_LEVEL || s.single) { s.phase = 'won'; return }
   s.level += 1
   const params = eaterParams(s.level)
   s.eaten = 0

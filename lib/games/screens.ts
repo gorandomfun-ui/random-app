@@ -267,8 +267,8 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
 }
 
 /** `choice`: the answer lit, YES (0) or NO (1). */
-/** `choice`: the answer lit, YES (0) or NO (1). */
-export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean; choice?: 0 | 1 }
+/** `choice`: the answer lit, YES (0) or NO (1); `ask` false leaves PLAY AGAIN? and its answers out. */
+export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean; choice?: 0 | 1; ask?: boolean }
 
 /** Where the lines of GAME OVER stand, for a game and a layout: the words in the title's lettering take more room in EATER's script. */
 function overPlaces(game: Game, layout: Layout): { score: number; best: number; question: number; buttons: number } {
@@ -316,15 +316,17 @@ export function renderGameOver(game: Game, layout: Layout, accent: string, optio
   const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
   const chosen = options.blink !== false, choice = options.choice ?? 0
   const at = overPlaces(game, layout)
+  const ask = options.ask !== false
   if (layout === 'landscape') {
     infoLine(buffer, c - 20, at.score, 'SCORE', score, 'right', 2)
     infoLine(buffer, c + 20, at.best, 'BEST', best, 'left', 2)
-    arcadeText(buffer, 'PLAY AGAIN?', c, at.question, 4, accent)
+    if (ask) arcadeText(buffer, 'PLAY AGAIN?', c, at.question, 4, accent)
   } else {
     infoLine(buffer, c, at.score, 'SCORE', score, 'centre', 2)
     infoLine(buffer, c, at.best, 'BEST', best, 'centre', 2)
-    arcadeText(buffer, 'PLAY AGAIN?', c, at.question, 3, accent)
+    if (ask) arcadeText(buffer, 'PLAY AGAIN?', c, at.question, 3, accent)
   }
+  if (!ask) return buffer
   button(buffer, 'YES', c - 64, at.buttons, accent, chosen && choice === 0, 2)
   button(buffer, 'NO', c + 64, at.buttons, accent, chosen && choice === 1, 2)
   return buffer
@@ -362,6 +364,7 @@ export function renderWinner(game: Game, layout: Layout, accent: string, options
   infoLine(buffer, 16, 16, 'SCORE', score, 'left', 2, dark)
   infoLine(buffer, width - 16, 16, 'BEST', best, 'right', 2, dark)
   void s
+  if (options.ask === false) return buffer
   const row = winnerRow(layout)
   const chosen = options.blink !== false, choice = options.choice ?? 0
   if (layout === 'landscape') buffer.shade(0, row.y - 5, width, height - row.y + 5, 0.45)
@@ -861,7 +864,8 @@ export function renderEaterGame(s: EaterState, accent: string, view: PlayView = 
   }
   buffer.blit(facing(CRAWL_HEAD, toward(body[1], body[0])), ...place(s.body[0]), palette)
   hud(buffer, accent, { level: s.level, score: s.score, progress: [s.eaten, s.target] })
-  if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', ['RESUME', 'QUIT'], view.pause)
+  if (s.phase === 'won' && s.single) playCard(buffer, layout, accent, 'LEVEL CLEAR', [])
+  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', ['RESUME', 'QUIT'], view.pause)
   else if (s.levelUp > 0 && Math.floor(s.levelUp / 10) % 2 === 0) arcadeText(buffer, 'LEVEL UP', width / 2, HUD_HEIGHT + 30, 3, accent)
   return buffer
 }

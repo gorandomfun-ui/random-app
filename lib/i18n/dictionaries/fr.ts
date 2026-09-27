@@ -521,6 +521,28 @@ const frDictionary = {
       "Une chambre cryptique s’ouvre devant toi.",
       "Reste en mouvement, le signal pointe devant."
     ]
+  },
+  "arcade": {
+    "offer": "Envie d'une partie de {game} ?",
+    "play": "Jouer",
+    "noThanks": "Non merci",
+    "never": "Ne plus me proposer",
+    "nextLevel": "Niveau suivant dans {count} randoms",
+    "tryAgain": "Retentez votre chance dans {count} randoms",
+    "retriesLeft": "Encore {count} essais",
+    "retryLeft": "Encore 1 essai",
+    "continue": "Continuer les randoms",
+    "yourName": "Votre nom",
+    "tabDevice": "Cet appareil",
+    "tabWorld": "Monde",
+    "tabAll": "Top 200",
+    "noScore": "Pas encore de score",
+    "winnerLine": "Les 16 niveaux gagnés !",
+    "shareText": "{game} : {score} points sur gorandom.fun",
+    "pause": "Pause",
+    "resume": "Reprendre",
+    "linkCopied": "Lien copié",
+    "shareGame": "Partager le jeu"
   }
 }
 

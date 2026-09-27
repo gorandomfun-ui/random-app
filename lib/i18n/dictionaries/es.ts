@@ -168,6 +168,28 @@ const esDictionary = {
     correct: "Correcto!",
     wrong: "Incorrecto",
   },
+  "arcade": {
+    "offer": "¿Una partida de {game}?",
+    "play": "Jugar",
+    "noThanks": "No, gracias",
+    "never": "No volver a proponer",
+    "nextLevel": "Siguiente nivel en {count} randoms",
+    "tryAgain": "Vuelve a intentarlo en {count} randoms",
+    "retriesLeft": "Quedan {count} intentos",
+    "retryLeft": "Queda 1 intento",
+    "continue": "Seguir con los randoms",
+    "yourName": "Tu nombre",
+    "tabDevice": "Este dispositivo",
+    "tabWorld": "Mundo",
+    "tabAll": "Top 200",
+    "noScore": "Aún no hay puntuación",
+    "winnerLine": "¡Los 16 niveles superados!",
+    "shareText": "{game}: {score} puntos en gorandom.fun",
+    "pause": "Pausa",
+    "resume": "Reanudar",
+    "linkCopied": "Enlace copiado",
+    "shareGame": "Compartir el juego"
+  }
 }
 
 export default esDictionary

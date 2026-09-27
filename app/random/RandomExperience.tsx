@@ -7,7 +7,7 @@ import ControlledVideoEmbed from '@/components/players/ControlledVideoEmbed'
 import { providerVideo } from '@/lib/players/state'
 import { randomPlayerKind } from '@/lib/privacy/mediaPolicy'
 import Link from 'next/link'
-import { RotateCcw, Volume2, VolumeX, X } from 'lucide-react'
+import { Gamepad2, Pause, Play, RotateCcw, Volume2, VolumeX, X } from 'lucide-react'
 
 import AnimatedButtonLabel from '@/components/AnimatedButtonLabel'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
@@ -75,11 +75,31 @@ import {
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
 import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, optedOut, refused, saveFlow, withTicket, type FlowState } from '@/lib/games/flow'
+import { positionAt } from '@/lib/v3/cool/score'
+import { formatI18n as formatArcade } from '@/lib/i18n/format'
+import type { GameName } from '@/lib/games/scores'
+import type { Decision } from '@/components/games/ArcadeStage'
+import type { GameControl, PlayState, Round } from '@/components/games/GamePlayer'
+import type { Ticket } from '@/components/games/world'
 import { invalidateWeLikesCache } from '@/lib/likes/weCache'
 
 const Encourage3DOverlay = dynamic(() => import('@/components/encourage3d/Encourage3DOverlay'), {
   ssr: false,
 })
+
+/**
+ * RANDOM ARCADE: the two games come up between two contents (the rules in
+ * `lib/games/flow.ts`). Off unless NEXT_PUBLIC_GAMES_ENABLED is 1 — then the
+ * page is exactly as it was; on in the effects test page for trying. The
+ * games' code loads only when a game comes up.
+ */
+const GAMES_ON = process.env.NEXT_PUBLIC_GAMES_ENABLED === '1'
+const ArcadeStage = dynamic(() => import('@/components/games/ArcadeStage'), { ssr: false })
+const ScoresPanel = dynamic(() => import('@/components/games/ScoresPanel'), { ssr: false })
+const PixelWords = dynamic(() => import('@/components/games/PixelWords'), { ssr: false })
+const ArcadeBench = dynamic(() => import('@/components/games/ArcadeBench'), { ssr: false })
+const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',
@@ -2614,6 +2634,32 @@ export function RandomExperience({
 }) {
   const savedMode = Boolean(savedItem)
   const discoveryEnabled = discoveryMode && !effectsTestMode && !savedMode
+  // ---- RANDOM ARCADE ----
+  const gamesOn = (GAMES_ON || effectsTestMode) && !savedMode && !curationMode
+  const flowRef = useRef<FlowState | null>(null)
+  const sessionStartedAtRef = useRef(Date.now())
+  /** The content that was due when a game came up: it waits, and shows the moment the game is left. */
+  const heldEntryRef = useRef<{ entry: PreparedRandomEntry; reward: boolean; advance: boolean } | null>(null)
+  const arcadeDueRef = useRef<((entry: PreparedRandomEntry, reward: boolean, advance: boolean) => boolean) | null>(null)
+  const forcedGameRef = useRef<GameName | null>(null)
+  const [arcade, setArcade] = useState<{ game: GameName; round: Round; id: number } | null>(null)
+  const arcadeShown = arcade != null
+  const [arcadePlay, setArcadePlay] = useState<PlayState>('idle')
+  const [arcadeCard, setArcadeCard] = useState<{ file: File | null; url: string | null }>({ file: null, url: null })
+  const [arcadeScoresOpen, setArcadeScoresOpen] = useState(false)
+  const [arcadeBest, setArcadeBest] = useState(0)
+  const [arcadeNote, setArcadeNote] = useState('')
+  const [flowView, setFlowView] = useState<FlowState | null>(null)
+  const arcadeStageRef = useRef<'offer' | 'play' | 'ended'>('offer')
+  const arcadePendingRef = useRef<{ game: GameName; score: number; level: number; won: boolean; ticket: Ticket | null; runId?: string } | null>(null)
+  const arcadeTicketPendingRef = useRef(false)
+  const arcadeControl = useRef<GameControl>({}).current
+  const likedNowRef = useRef(false)
+  useEffect(() => {
+    if (!gamesOn) return
+    flowRef.current = loadFlow()
+    setFlowView(flowRef.current)
+  }, [gamesOn])
   const discoveryRef = useRef(new DiscoveryController<RandomContentItem>(newSession(Math.floor(Math.random() * 0xffffffff))))
   const committedSequenceRef = useRef<RandomSequenceState | null>(null)
   /** The last draw's time: an hour without one restarts the cool/random score. */
@@ -2858,8 +2904,10 @@ export function RandomExperience({
     const bannerHeight = viewportWidth >= 1024 ? 90 : 50
     const chrome = chromeHeight ?? CHROME_BUDGET_PX
     const available = Math.max(220, Math.round(viewportHeight - chrome - bannerHeight - adBarPadding))
+    // a game takes all the room left: the content's own cap (45% of a phone's height) would leave it too small to play
+    if (arcadeShown) return `${available}px`
     return `min(${preferred}, ${available}px)`
-  }, [adBarPadding, chromeHeight, viewportHeight, viewportWidth])
+  }, [adBarPadding, arcadeShown, chromeHeight, viewportHeight, viewportWidth])
 
   // Measure the chrome whenever any of its pieces changes size; the frame then takes exactly what is left.
   useEffect(() => {
@@ -2878,7 +2926,7 @@ export function RandomExperience({
     const observer = new ResizeObserver(measure)
     for (const element of [headerRef.current, categoryRowRef.current, sourceLineRef.current, actionRowRef.current, adBarRef.current]) if (element) observer.observe(element)
     return () => observer.disconnect()
-  }, [currentItem, viewportHeight, viewportWidth])
+  }, [arcadeShown, currentItem, viewportHeight, viewportWidth])
 
   const contentFrameStyle = useMemo(() => ({
     height: contentHeight,
@@ -4189,7 +4237,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     })
   ), [])
 
-  const loadNext = useCallback(async (reward = false, advanceProgression = reward) => {
+  const loadNext = useCallback(async (reward = false, advanceProgression = reward, held: { entry: PreparedRandomEntry } | null = null) => {
     if (loadPendingRef.current || transitionLockedRef.current) return false
     loadPendingRef.current = true
     transitionLockedRef.current = true
@@ -4202,7 +4250,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     try {
       if (fullscreenWebRef.current) return false
       restartRhythmIfIdle()
-      let entry = takeRandomReadyEntry()
+      // back from a game: the content that was due, where it waited
+      let entry = held && held.entry.generation === randomReadyGenerationRef.current ? held.entry : takeRandomReadyEntry()
       if (!entry) {
         const waiting = waitForRandomReady()
         void fillRandomReadyQueue(1)
@@ -4210,6 +4259,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         entry = takeRandomReadyEntry()
       }
       if (!entry) return false
+      // a game may come up here, between two contents: it takes no draw, the content waits for it
+      if (!held && arcadeDueRef.current?.(entry, reward, advanceProgression)) return false
 
       await waitForContentMedia(entry.item)
       if (reward && advanceProgression) {
@@ -4237,6 +4288,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (entry.item.type !== 'encourage' && entry.item.type !== 'minigame') { const key = getContentKey(entry.item); if (key) registerRecentKey(key) }
         // The device remembers for a week what the session remembers for six hours.
         if (entry.discoveryKey) rememberSeen(entry.discoveryKey)
+      }
+      // the games count the images and videos seen on this device, visit after visit
+      if (flowRef.current && (entry.item.type === 'image' || entry.item.type === 'video')) {
+        flowRef.current = countVisual(flowRef.current)
+        saveFlow(flowRef.current)
+        setFlowView(flowRef.current)
       }
       setIsSecond((prev) => !prev)
       setTrigger((t) => t + 1)
@@ -4317,6 +4374,145 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       void fillRandomReadyQueue()
     }
   }, [adsAllowed, effectsProfile, effectsTestMode, effectiveProgressionIntensity, fillRandomReadyQueue, persistRandomSession, progressionIntensity, queueProductionEncourage3D, queueTestEncourage3D, setTestProgress, takeRandomReadyEntry, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForRandomReady, waitForTransitionReveal, waitForTransitionSettle, discoveryEnabled, getContentKey, registerRecentKey, invalidateDiscoveryQueue, restartRhythmIfIdle])
+
+  // ---- RANDOM ARCADE: coming up, playing, leaving ----
+  const writeFlow = useCallback((next: FlowState) => {
+    flowRef.current = next
+    saveFlow(next)
+    setFlowView(next)
+  }, [])
+
+  /** Is a game due before this content? If so, the content waits and the game comes up. */
+  arcadeDueRef.current = (entry, reward, advance) => {
+    if (!gamesOn || !flowRef.current || !currentItemRef.current) return false
+    if (entry.item.type === 'encourage' || entry.item.type === 'minigame') return false
+    // never over an encouragement on its way or on screen: the game waits for the next content
+    if (encourage3dPending || encourage3dEvent) return false
+    const flow = flowRef.current
+    const snapshot = discoveryEnabled ? discoveryRef.current.snapshot() : null
+    const place = snapshot ? positionAt(snapshot.seed, snapshot.beat) : { rest: false, index: 0, untilCool: 0 }
+    const now = Date.now()
+    const game = forcedGameRef.current ?? dueGame(flow, {
+      now, sessionStartedAt: sessionStartedAtRef.current, inWave: waveModeRef.current, justLiked: likedNowRef.current, position: place,
+    })
+    forcedGameRef.current = null
+    if (!game) return false
+    writeFlow(offered(flow, now))
+    heldEntryRef.current = { entry, reward, advance }
+    const run = flow.runs[game] ?? { level: 1, score: 0 }
+    arcadeStageRef.current = 'offer'
+    arcadePendingRef.current = null
+    void import('@/lib/games/scores').then(({ bestScore }) => setArcadeBest(bestScore(game)))
+    setArcadePlay('idle')
+    // no page glitch here: it draws from the page's random, which the format cycle draws from too; the game comes in with its own
+    setArcade({ game, round: { level: run.level, score: run.score, retries: FLOW.retries }, id: now })
+    return true
+  }
+
+  /** Back to the randoms: the content that waited shows now. */
+  const closeArcade = useCallback(() => {
+    const held = heldEntryRef.current
+    heldEntryRef.current = null
+    arcadeStageRef.current = 'offer'
+    setArcade(null)
+    setArcadePlay('idle')
+    setArcadeScoresOpen(false)
+    if (held) void loadNext(held.reward, held.advance, held)
+    else void loadNext(false)
+  }, [loadNext])
+
+  const arcadeStarted = useCallback(() => {
+    const game = arcade?.game
+    if (!game || !flowRef.current) return
+    arcadeStageRef.current = 'play'
+    writeFlow(accepted(flowRef.current, game).state)
+    // the game's ticket for the world's table, once per game
+    if (!flowRef.current.runs[game]?.token && !arcadeTicketPendingRef.current) {
+      arcadeTicketPendingRef.current = true
+      void import('@/components/games/world').then(({ fetchTicket }) => fetchTicket(game)).then((ticket) => {
+        arcadeTicketPendingRef.current = false
+        if (ticket && flowRef.current) writeFlow(withTicket(flowRef.current, game, ticket))
+      }).catch(() => { arcadeTicketPendingRef.current = false })
+    }
+  }, [arcade, writeFlow])
+
+  const arcadeDeclined = useCallback(() => {
+    if (flowRef.current) writeFlow(refused(flowRef.current))
+    closeArcade()
+  }, [closeArcade, writeFlow])
+
+  const arcadeNever = useCallback(() => {
+    if (flowRef.current) writeFlow(optedOut(flowRef.current))
+    closeArcade()
+  }, [closeArcade, writeFlow])
+
+  /** A round decided: the game's place in the flow, the site's points (one a level, five more for all sixteen). */
+  const arcadeDecided = useCallback((decision: Decision) => {
+    const game = arcade?.game
+    if (!game || !flowRef.current) return
+    arcadeStageRef.current = 'ended'
+    const run = flowRef.current.runs[game]
+    if (decision.kind === 'won' || decision.kind === 'winner') {
+      const ticket = run?.token && run.runId && run.startedAt ? { runId: run.runId, token: run.token, startedAt: run.startedAt } : null
+      arcadePendingRef.current = { game, score: decision.score, level: decision.level, won: decision.kind === 'winner', ticket, runId: run?.runId }
+      writeFlow(levelWon(flowRef.current, game, decision.score))
+      addPoints(decision.kind === 'winner' ? 6 : 1)
+    } else {
+      arcadePendingRef.current = null
+      writeFlow(levelLost(flowRef.current, game))
+    }
+  }, [arcade, addPoints, writeFlow])
+
+  /** Back to the randoms after a round: its score into this device's ten best and the world's table, under the name given. */
+  const arcadeContinue = useCallback((typed: string | null) => {
+    const pending = arcadePendingRef.current
+    arcadePendingRef.current = null
+    if (pending) {
+      void import('@/lib/games/scores').then(({ addScore, lastName }) => {
+        const name = typed || lastName() || 'PLAYER'
+        addScore(pending.game, { name, score: pending.score, level: pending.level, runId: pending.runId })
+        if (pending.ticket) void import('@/components/games/world').then(({ sendScore }) => sendScore(pending.game, pending.ticket!, { name, score: pending.score, level: pending.level, won: pending.won }))
+      })
+    }
+    closeArcade()
+  }, [closeArcade])
+
+  /** RANDOM pressed while a game is up: no thanks on the offer, leaving mid-level counts as a level lost, after a round it is the way back. */
+  const arcadeLeave = useCallback(() => {
+    const stage = arcadeStageRef.current
+    if (stage === 'offer') { arcadeDeclined(); return }
+    if (stage === 'play' && arcade && flowRef.current) { writeFlow(levelLost(flowRef.current, arcade.game)); closeArcade(); return }
+    arcadeContinue(null)
+  }, [arcade, arcadeContinue, arcadeDeclined, closeArcade, writeFlow])
+
+  const shareArcade = useCallback(async () => {
+    if (!arcade) return
+    const { shareGame } = await import('@/components/games/share')
+    const run = flowRef.current?.runs[arcade.game]
+    const score = arcadePendingRef.current?.score ?? run?.score ?? 0
+    const text = score > 0 ? formatArcade(t('arcade.shareText', '{game}: {score} points on gorandom.fun'), { game: ARCADE_TITLES[arcade.game], score }) : ARCADE_TITLES[arcade.game]
+    const outcome = await shareGame(arcade.game, text, `${window.location.origin}/random`, arcadeCard.file)
+    if (outcome === 'copied') setArcadeNote(t('arcade.linkCopied', 'Link copied'))
+  }, [arcade, arcadeCard.file, t])
+
+  useEffect(() => {
+    if (!arcadeNote) return
+    const timer = window.setTimeout(() => setArcadeNote(''), 2200)
+    return () => window.clearTimeout(timer)
+  }, [arcadeNote])
+
+  /** The test page's bench: a game now, its level, the state from scratch. */
+  const benchGame = useCallback((game: GameName) => {
+    forcedGameRef.current = game
+    handleRandomAgainRef.current?.()
+  }, [])
+  const benchLevel = useCallback((game: GameName, delta: number) => {
+    const flow = flowRef.current
+    if (!flow) return
+    const run = flow.runs[game] ?? { level: 1, score: 0 }
+    writeFlow({ ...flow, runs: { ...flow.runs, [game]: { ...run, level: Math.max(1, Math.min(16, run.level + delta)) } } })
+  }, [writeFlow])
+  const benchReset = useCallback(() => { writeFlow(freshFlow()) }, [writeFlow])
 
   /**
    * The content on screen is dead: replaced by a reserve of the Wave when in
@@ -4793,6 +4989,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     playAgain(nextProgressionIntensity)
   }, [savedMode, onSavedRandom, effectsTestMode, loadNext])
 
+  const handleRandomAgainRef = useRef<(() => void) | null>(null)
+  handleRandomAgainRef.current = handleRandomAgain
+  likedNowRef.current = liked
+
   const handleWave = useCallback(async () => {
     if (fullscreenWebRef.current) return
     if (transitionLockedRef.current) return
@@ -4869,7 +5069,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo || fullscreenWeb ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo || fullscreenWeb ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}${arcade ? ' random-page--arcade' : ''}${arcade && arcadePlay === 'playing' ? ' random-page--arcade-playing' : ''}`}
       style={mainStyle}
     >
       {curationMode && curationError ? <aside role="status" className="fixed bottom-2 left-2 z-50 rounded bg-black px-3 py-2 text-xs text-white">
@@ -4884,7 +5084,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           </button>
         </div>
       ) : null}
-      <div className="random-immersive-bg" style={immersiveBackgroundStyle} aria-hidden="true">
+      <div
+        className="random-immersive-bg"
+        style={arcade && arcadeCard.url ? {
+          ...immersiveBackgroundStyle,
+          '--random-bg-image': cssImageUrl(arcadeCard.url),
+          '--random-bg-accent': theme.text,
+          '--random-bg-strength': arcadePlay === 'playing' ? 0.5 : 0.85,
+          '--random-bg-noise-strength': 0.45,
+        } as ImmersiveBackgroundStyle : immersiveBackgroundStyle}
+        aria-hidden="true"
+      >
         <div className="random-immersive-bg__media" />
         <div className="random-immersive-bg__fragments">
           {immersiveFragments.map((fragment) => (
@@ -4942,6 +5152,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               return
             }
             triggerBurgerGlitch()
+            // the menu over a game pauses it
+            if (arcade && arcadePlay === 'playing') arcadeControl.togglePause?.()
             setMenuOpen(true)
           }}
           className={`random-menu-trigger flex items-center${burgerPointPulse ? ' random-menu-trigger--points' : ''}`}
@@ -4965,44 +5177,75 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           />
         </div>
 
-        <button
-          type="button"
-          aria-label={waveButtonLabel}
-          title={waveButtonLabel}
-          onClick={() => {
-            wakeSound()
-            if (waveModeRef.current) {
-              handleRandomAgain()
-              return
-            }
-            void handleWave()
-          }}
-          className={`wave-action wave-action--${waveStatus} ${waveAvailable ? 'wave-action--available' : 'wave-action--unavailable'}${waveMode ? ' wave-action--active' : ''} flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default`}
-          disabled={waveDisabled}
-          aria-pressed={waveMode}
-          aria-busy={waveStatus === 'preparing' || waveStatus === 'slow'}
-          data-wave-status={waveStatus}
-          style={{
-            backgroundColor: 'transparent',
-            borderWidth: '2px',
-            borderColor: waveAvailable ? theme.text : '#777777',
-            borderStyle: ['slow', 'timeout', 'error'].includes(waveStatus) ? 'dashed' : 'solid',
-            color: waveAvailable ? theme.text : '#777777',
-            opacity: 1,
-          }}
-        >
-          <span className="wave-action__echo wave-action__echo--one" aria-hidden="true" />
-          <span className="wave-action__echo wave-action__echo--two" aria-hidden="true" />
-          <span className="wave-action__echo wave-action__echo--three" aria-hidden="true" />
-          <span className="wave-action__icon" aria-hidden="true">
-            {waveMode ? <X size={27} strokeWidth={2.25} /> : <MonoIcon src="/icons/wave.svg" color={waveAvailable ? '#ffffff' : '#777777'} size={27} />}
-          </span>
-        </button>
+        {arcade ? (
+          <button
+            type="button"
+            aria-label={arcadePlay === 'paused' ? t('arcade.resume', 'Resume') : t('arcade.pause', 'Pause')}
+            title={arcadePlay === 'paused' ? t('arcade.resume', 'Resume') : t('arcade.pause', 'Pause')}
+            onClick={() => arcadeControl.togglePause?.()}
+            disabled={arcadePlay === 'idle'}
+            aria-pressed={arcadePlay === 'paused'}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default disabled:hover:scale-100"
+            style={{ backgroundColor: 'transparent', borderWidth: '2px', borderStyle: 'solid', borderColor: arcadePlay === 'idle' ? '#777777' : theme.text, color: arcadePlay === 'idle' ? '#777777' : '#ffffff' }}
+          >
+            {arcadePlay === 'paused' ? <Play size={22} strokeWidth={2.25} fill="currentColor" /> : <Pause size={22} strokeWidth={2.25} fill="currentColor" />}
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={waveButtonLabel}
+            title={waveButtonLabel}
+            onClick={() => {
+              wakeSound()
+              if (waveModeRef.current) {
+                handleRandomAgain()
+                return
+              }
+              void handleWave()
+            }}
+            className={`wave-action wave-action--${waveStatus} ${waveAvailable ? 'wave-action--available' : 'wave-action--unavailable'}${waveMode ? ' wave-action--active' : ''} flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:cursor-default`}
+            disabled={waveDisabled}
+            aria-pressed={waveMode}
+            aria-busy={waveStatus === 'preparing' || waveStatus === 'slow'}
+            data-wave-status={waveStatus}
+            style={{
+              backgroundColor: 'transparent',
+              borderWidth: '2px',
+              borderColor: waveAvailable ? theme.text : '#777777',
+              borderStyle: ['slow', 'timeout', 'error'].includes(waveStatus) ? 'dashed' : 'solid',
+              color: waveAvailable ? theme.text : '#777777',
+              opacity: 1,
+            }}
+          >
+            <span className="wave-action__echo wave-action__echo--one" aria-hidden="true" />
+            <span className="wave-action__echo wave-action__echo--two" aria-hidden="true" />
+            <span className="wave-action__echo wave-action__echo--three" aria-hidden="true" />
+            <span className="wave-action__icon" aria-hidden="true">
+              {waveMode ? <X size={27} strokeWidth={2.25} /> : <MonoIcon src="/icons/wave.svg" color={waveAvailable ? '#ffffff' : '#777777'} size={27} />}
+            </span>
+          </button>
+        )}
       </header>
 
       {/* Two pixels between the title bar and the content, everywhere, always: the owner's rule. */}
       <div ref={categoryRowRef} className="random-category-row relative z-10 px-4 sm:px-6" style={{ marginBottom: '2px' }}>
-        {categoryLabel ? (
+        {arcade ? (
+          <div className="flex gap-[2px]" style={{ height: '40px' }}>
+            <div
+              className="flex-1 px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3"
+              style={{ backgroundColor: theme.text, color: theme.cream, fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif" }}
+            >
+              <Gamepad2 size={20} strokeWidth={2.25} aria-hidden="true" />
+              <span>Random arcade</span>
+            </div>
+            <div
+              className="px-4 flex items-center justify-center text-xs font-semibold uppercase"
+              style={{ backgroundColor: theme.cream, color: '#191916', minWidth: '96px', fontFamily: "var(--font-inter-tight), 'Inter Tight', sans-serif" }}
+            >
+              <span>Best {String(arcadeBest).padStart(5, '0')}</span>
+            </div>
+          </div>
+        ) : categoryLabel ? (
           <div className="flex gap-[2px]" style={{ height: '40px' }}>
             <div
               className="flex-1 px-4 font-semibold uppercase tracking-wide flex items-center justify-center gap-3"
@@ -5048,7 +5291,23 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
       <section className="random-content-section relative z-10 flex flex-col items-center px-4 sm:px-6" style={{ gap: '10px' }}>
         <div className="random-content-frame w-full" style={contentFrameStyle}>
-          {!viewItem ? (
+          {arcade ? (
+            <ArcadeStage
+              key={arcade.id}
+              game={arcade.game}
+              theme={theme}
+              round={arcade.round}
+              control={arcadeControl}
+              after={{ won: FLOW.afterWin, lost: FLOW.afterLoss }}
+              onPlayState={setArcadePlay}
+              onStarted={arcadeStarted}
+              onDeclined={arcadeDeclined}
+              onNever={arcadeNever}
+              onDecided={arcadeDecided}
+              onContinue={arcadeContinue}
+              onCard={(file, url) => setArcadeCard({ file, url })}
+            />
+          ) : !viewItem ? (
             <div className="flex items-center justify-center w-full h-full">
               <span className="font-inter opacity-70">Loading…</span>
             </div>
@@ -5072,7 +5331,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           )}
         </div>
 
-        {viewItem && viewItem.type !== 'encourage' ? (
+        {!arcade && viewItem && viewItem.type !== 'encourage' ? (
           <div ref={sourceLineRef} className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
             <SourceLine item={viewItem} />
           </div>
@@ -5081,30 +5340,41 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
       <section className="random-action-section relative z-10 px-4 sm:px-6" style={{ margin: '10px 0', paddingBottom: `calc(${footerPadHeight + 16}px + env(safe-area-inset-bottom, 0px))` }}>
         <div ref={actionRowRef} className="flex items-center justify-between gap-4 w-full" style={{ flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            aria-label={likeLabel}
-            onClick={handleLike}
-            className="p-3"
-            disabled={controlsDisabled}
-          >
-            <MonoIcon
-              src="/icons/Heart.svg"
-              color={liked ? '#FF4D78' : theme.cream}
-              size={30}
-              className={`heart-icon${liked ? ' heart-icon--liked' : ''}${heartGlitch ? ' heart-icon--glitch' : ''}`}
-            />
-          </button>
+          {arcade ? (
+            <button
+              type="button"
+              aria-label="High score"
+              onClick={() => { if (arcadePlay === 'playing') arcadeControl.togglePause?.(); setArcadeScoresOpen(true) }}
+              className="flex items-center py-2 pr-2 transition-transform hover:scale-105"
+            >
+              <PixelWords lines={['HIGH', 'SCORE']} color={theme.text} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-label={likeLabel}
+              onClick={handleLike}
+              className="p-3"
+              disabled={controlsDisabled}
+            >
+              <MonoIcon
+                src="/icons/Heart.svg"
+                color={liked ? '#FF4D78' : theme.cream}
+                size={30}
+                className={`heart-icon${liked ? ' heart-icon--liked' : ''}${heartGlitch ? ' heart-icon--glitch' : ''}`}
+              />
+            </button>
+          )}
 
           <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
             <button
               type="button"
               data-random-primary
               aria-label={randomAgainLabel}
-              onClick={handlePrimaryAction}
-              disabled={randomAgainDisabled}
-              aria-busy={randomAgainDisabled}
-              className={`w-full px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold ${randomAgainDisabled ? 'cursor-wait' : 'hover:scale-[1.02]'}`}
+              onClick={arcade ? arcadeLeave : handlePrimaryAction}
+              disabled={!arcade && randomAgainDisabled}
+              aria-busy={!arcade && randomAgainDisabled}
+              className={`w-full px-6 py-3 rounded-[28px] shadow-md transition-transform uppercase font-tomorrow font-bold ${!arcade && randomAgainDisabled ? 'cursor-wait' : 'hover:scale-[1.02]'}`}
               style={{
                 backgroundColor: theme.text,
                 color: theme.cream,
@@ -5123,20 +5393,39 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
           <button
             type="button"
-            aria-label={shareLabel}
+            aria-label={arcade ? t('arcade.shareGame', 'Share the game') : shareLabel}
             onClick={() => {
+              if (arcade) { if (arcadePlay === 'playing') arcadeControl.togglePause?.(); void shareArcade(); return }
               if (controlsDisabled) return
               setShareOpen(true)
             }}
             className="p-3"
-            disabled={controlsDisabled}
+            disabled={!arcade && controlsDisabled}
           >
             <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
           </button>
         </div>
       </section>
 
-      {encourage3dEvent ? (
+      {arcade && arcadeScoresOpen ? (
+        <ScoresPanel
+          game={arcade.game}
+          theme={theme}
+          onClose={() => setArcadeScoresOpen(false)}
+          mine={Object.values(flowView?.runs ?? {}).map((run) => run?.runId).filter((id): id is string => Boolean(id))}
+        />
+      ) : null}
+      {arcadeNote ? (
+        <div role="status" className="pointer-events-none fixed inset-x-0 bottom-24 z-40 flex justify-center px-4">
+          <span className="max-w-full truncate px-4 py-2 font-tomorrow text-sm font-bold uppercase tracking-[0.1em]" style={{ background: theme.cream, color: '#191916' }}>{arcadeNote}</span>
+        </div>
+      ) : null}
+      {effectsTestMode && gamesOn ? (
+        <ArcadeBench flow={flowView} onGame={benchGame} onLevel={benchLevel} onFinish={(won) => arcadeControl.finishRound?.(won)} onReset={benchReset} />
+      ) : null}
+
+      {/* an encouragement due while a game is up waits for the way back */}
+      {encourage3dEvent && !arcade ? (
         <Encourage3DOverlay
           event={encourage3dEvent}
           menuTargetRef={menuButtonRef}
