@@ -521,9 +521,29 @@ const deDictionary = {
       "Eine weitere kryptische Kammer öffnet sich.",
       "Bleib unruhig, das Signal zeigt nach vorn."
     ]
+  },
+  "arcade": {
+    "offer": "Lust auf eine Runde {game}?",
+    "play": "Spielen",
+    "noThanks": "Nein danke",
+    "never": "Nicht mehr anbieten",
+    "nextLevel": "Nächstes Level in {count} Randoms",
+    "tryAgain": "Neuer Versuch in {count} Randoms",
+    "retriesLeft": "Noch {count} Versuche",
+    "retryLeft": "Noch 1 Versuch",
+    "continue": "Weiter mit Randoms",
+    "yourName": "Dein Name",
+    "tabDevice": "Dieses Gerät",
+    "tabWorld": "Welt",
+    "tabAll": "Top 200",
+    "noScore": "Noch keine Punkte",
+    "winnerLine": "Alle 16 Level geschafft!",
+    "shareText": "{game}: {score} Punkte auf gorandom.fun",
+    "pause": "Pause",
+    "resume": "Weiter",
+    "linkCopied": "Link kopiert",
+    "shareGame": "Spiel teilen"
   }
-
-
 }
 
 export default deDictionary

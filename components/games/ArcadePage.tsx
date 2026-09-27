@@ -14,18 +14,21 @@
 
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { Gamepad2, Pause, Play, X } from 'lucide-react'
+import { Gamepad2, Pause, Play } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import LogoAnimated from '@/components/LogoAnimated'
 import MonoIcon from '@/components/MonoIcon'
 import ArcadeBackdrop from '@/components/games/ArcadeBackdrop'
 import ArcadeMenu from '@/components/games/ArcadeMenu'
+import PixelWords from '@/components/games/PixelWords'
 import type { GameControl, GameResult, PlayState } from '@/components/games/GamePlayer'
-import { isDaytime } from '@/lib/games/engine'
-import { glyph7 } from '@/lib/games/pixels'
-import { topScores, type GameName, type ScoreEntry } from '@/lib/games/scores'
+import ScoresPanel from '@/components/games/ScoresPanel'
+import { shareGame, titleCard } from '@/components/games/share'
+import { fetchTicket, sendScore, type Ticket } from '@/components/games/world'
+import { lastName, type GameName } from '@/lib/games/scores'
 import { THEMES } from '@/lib/theme'
+import { useScore } from '@/providers/ScoreProvider'
 
 const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
   ssr: false,
@@ -35,44 +38,15 @@ const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
 const NAMES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
 const pad = (n: number) => String(n).padStart(5, '0')
 
-/** Words in the games' own 5×7 pixel letters, a line each, as squares in an SVG: `px` screen pixels to a letter's pixel. */
-function PixelWords({ lines, color, px = 3 }: { lines: string[]; color: string; px?: number }) {
-  const width = Math.max(...lines.map((l) => l.length * 6 - 1)), height = lines.length * 9 - 2
-  const cells: Array<[number, number]> = []
-  lines.forEach((line, row) => line.split('').forEach((c, i) => glyph7(c).forEach((r, y) => r.split('').forEach((dot, x) => { if (dot === '#') cells.push([i * 6 + x, row * 9 + y]) }))))
-  return (
-    <svg width={width * px} height={height * px} viewBox={`0 0 ${width} ${height}`} shapeRendering="crispEdges" aria-hidden="true">
-      {cells.map(([x, y]) => <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={color} />)}
-    </svg>
-  )
-}
-
-/** The game's title card as a picture to share: the title screen, drawn twice as large. */
-async function titleCard(game: GameName, accent: string, best: number): Promise<File | null> {
-  const { renderTitle } = await import('@/lib/games/screens')
-  const b = renderTitle(game, 'landscape', accent, { level: 1, best, frame: 0, blink: true, day: isDaytime() })
-  const small = document.createElement('canvas')
-  small.width = b.width
-  small.height = b.height
-  small.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(b.data), b.width, b.height), 0, 0)
-  const big = document.createElement('canvas')
-  big.width = b.width * 2
-  big.height = b.height * 2
-  const ctx = big.getContext('2d')
-  if (!ctx) return null
-  ctx.imageSmoothingEnabled = false
-  ctx.drawImage(small, 0, 0, big.width, big.height)
-  const blob = await new Promise<Blob | null>((resolve) => big.toBlob(resolve, 'image/png'))
-  return blob ? new File([blob], `random-${game}.png`, { type: 'image/png' }) : null
-}
-
 export default function ArcadePage({ game, themeIndex }: { game: GameName; themeIndex: number }) {
   const theme = THEMES[themeIndex] ?? THEMES[0]
   const [best, setBest] = useState(0)
   const [last, setLast] = useState<GameResult | null>(null)
   const [topOpen, setTopOpen] = useState(false)
-  const [top, setTop] = useState<ScoreEntry[]>([])
   const [note, setNote] = useState('')
+  const { addPoints } = useScore()
+  const ticket = useRef<Ticket | null>(null)
+  const pending = useRef<GameResult | null>(null)
   const [playState, setPlayState] = useState<PlayState>('idle')
   const [backdrop, setBackdrop] = useState<string | null>(null)
   const card = useRef<File | null>(null)
@@ -103,33 +77,38 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
     return () => window.clearTimeout(timer)
   }, [note])
 
-  const onResult = useCallback((result: GameResult) => setLast(result), [])
+  /** A game begins: its ticket for the world's table. */
+  const onStart = useCallback(() => {
+    ticket.current = null
+    void fetchTicket(game).then((t) => { ticket.current = t })
+  }, [game])
+  /** The world's table, under the name given (or the last one, or PLAYER). */
+  const toWorld = useCallback((result: GameResult, name: string) => {
+    if (!ticket.current || result.score <= 0) return
+    void sendScore(game, ticket.current, { name, score: result.score, level: result.level, won: result.won })
+  }, [game])
+  const onResult = useCallback((result: GameResult) => {
+    setLast(result)
+    // the site's points: all sixteen won is worth five more than its last level
+    if (result.won) addPoints(6)
+    if (result.needsName) pending.current = result
+    else toWorld(result, lastName() || 'PLAYER')
+  }, [addPoints, toWorld])
+  const onNamed = useCallback((name: string) => {
+    if (pending.current) toWorld(pending.current, name)
+    pending.current = null
+  }, [toWorld])
+  const onLevelCleared = useCallback(() => addPoints(1), [addPoints])
   // a panel over the game pauses it
   const holdGame = () => { if (playState === 'playing') control.togglePause?.() }
-  const openTop = () => { holdGame(); setTop(topScores(game)); setTopOpen(true) }
+  const openTop = () => { holdGame(); setTopOpen(true) }
 
   const share = async () => {
     const url = `${window.location.origin}${window.location.pathname}`
     const text = last ? `${NAMES[game]} · SCORE ${pad(last.score)}` : NAMES[game]
-    const file = card.current
-    try {
-      if (file && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: NAMES[game], text: `${text}\n${url}` })
-        return
-      }
-      if (typeof navigator.share === 'function') {
-        await navigator.share({ title: NAMES[game], text, url })
-        return
-      }
-    } catch (error) {
-      if ((error as Error)?.name === 'AbortError') return
-    }
-    try {
-      await navigator.clipboard.writeText(`${text} ${url}`)
-      setNote('LINK COPIED')
-    } catch {
-      setNote(url)
-    }
+    const outcome = await shareGame(game, text, url, card.current)
+    if (outcome === 'copied') setNote('LINK COPIED')
+    else if (outcome === 'failed') setNote(url)
   }
 
   return (
@@ -175,7 +154,7 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
 
       <section className="relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
         <div className="min-h-0 flex-1" style={{ background: '#000' }}>
-          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onPlayState={setPlayState} control={control} />
+          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onStart={onStart} onNamed={onNamed} onLevelCleared={onLevelCleared} onPlayState={setPlayState} control={control} />
         </div>
       </section>
 
@@ -205,32 +184,7 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
         </div>
       ) : null}
 
-      {topOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
-          <div className="absolute inset-0" onClick={() => setTopOpen(false)} />
-          <div className="relative w-full max-w-[360px] border-2 p-5" style={{ background: '#0a0a14', borderColor: theme.text }}>
-            <button type="button" aria-label="Close" onClick={() => setTopOpen(false)} className="absolute right-3 top-3" style={{ color: theme.cream }}>
-              <X size={24} />
-            </button>
-            <h2 className="mb-1 font-tomorrow text-xl font-bold uppercase tracking-[0.12em]" style={{ color: theme.text }}>Top 10</h2>
-            <p className="mb-4 font-tomorrow text-xs uppercase tracking-[0.12em] opacity-70">{NAMES[game]} · this device</p>
-            {top.length ? (
-              <ol className="flex flex-col gap-1 font-tomorrow text-sm uppercase">
-                {top.map((entry, index) => (
-                  <li key={`${entry.at}-${index}`} className="grid grid-cols-[2.2em_1fr_auto_3.2em] items-center gap-2" style={{ color: index === 0 ? theme.text : theme.cream }}>
-                    <span className="opacity-70">{index + 1}.</span>
-                    <span className="truncate font-bold">{entry.name}</span>
-                    <span className="font-bold tabular-nums">{pad(entry.score)}</span>
-                    <span className="text-right text-xs opacity-70">LV {entry.level}</span>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="font-tomorrow text-sm uppercase opacity-70">No score yet</p>
-            )}
-          </div>
-        </div>
-      ) : null}
+      {topOpen ? <ScoresPanel game={game} theme={theme} onClose={() => setTopOpen(false)} /> : null}
 
       <style jsx global>{`
         .arcade-body #cookie-banner { display: none !important; }

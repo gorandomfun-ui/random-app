@@ -521,8 +521,29 @@ const jpDictionary = {
       "新たな謎の部屋が開いた。",
       "落ち着かず進め、シグナルは前方だ。"
     ]
+  },
+  "arcade": {
+    "offer": "{game}で遊びますか？",
+    "play": "遊ぶ",
+    "noThanks": "今はいい",
+    "never": "もう表示しない",
+    "nextLevel": "次のレベルは{count}ランダム後",
+    "tryAgain": "{count}ランダム後にもう一度",
+    "retriesLeft": "残り{count}回",
+    "retryLeft": "残り1回",
+    "continue": "ランダムを続ける",
+    "yourName": "名前",
+    "tabDevice": "この端末",
+    "tabWorld": "世界",
+    "tabAll": "トップ200",
+    "noScore": "まだスコアがありません",
+    "winnerLine": "全16レベルクリア！",
+    "shareText": "{game}：gorandom.fun で {score} 点",
+    "pause": "一時停止",
+    "resume": "再開",
+    "linkCopied": "リンクをコピーしました",
+    "shareGame": "ゲームをシェア"
   }
-
 }
 
 export default jpDictionary

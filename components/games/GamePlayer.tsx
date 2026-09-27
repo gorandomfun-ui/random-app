@@ -23,13 +23,27 @@ import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } fro
 import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout } from '@/lib/games/screens'
 import type { Direction } from '@/lib/games/sprites'
 
-export type GameResult = { score: number; level: number; won: boolean }
+export type GameResult = { score: number; level: number; won: boolean; needsName?: boolean }
+/**
+ * A round of the Random flow: one level of a game under way, from its score so
+ * far; `retries` more tries straight away if it is lost.
+ */
+export type Round = { level: number; score: number; retries: number }
+/** What a round tells the page, so it can say the rest in the visitor's language. */
+export type RoundEvent =
+  | { kind: 'title' | 'play' | 'declined' }
+  | { kind: 'retry'; retriesLeft: number }
+  | { kind: 'won' | 'winner' | 'lost' | 'quit'; score: number; level: number }
 /** What the page shows beside the game: a game under way, paused, or none. */
 export type PlayState = 'idle' | 'playing' | 'paused'
-/** Filled in by the player, so the page's own pause button can reach it. */
-export type GameControl = { togglePause?: () => void }
+/**
+ * Filled in by the player, so the page's own buttons can reach it: pause, and
+ * in a round, start — and, for the effects test page's bench only, end the
+ * round won or lost at once.
+ */
+export type GameControl = { togglePause?: () => void; start?: () => void; finishRound?: (won: boolean) => void }
 
-type Mode = 'title' | 'play' | 'ending' | 'name' | 'over' | 'winner'
+type Mode = 'title' | 'play' | 'ending' | 'name' | 'over' | 'winner' | 'cleared' | 'retry' | 'lost'
 
 type Session = {
   mode: Mode
@@ -48,7 +62,18 @@ type Session = {
   score: number
   level: number
   won: boolean
+  /** In a round: tries left after this one. */
+  retriesLeft: number
   dirty: boolean
+}
+
+/**
+ * A game's seed, drawn from the browser's crypto rather than Math.random: the
+ * Random page draws its format cycles from Math.random, and a game in between
+ * must not move them.
+ */
+function gameSeed(): number {
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return (a[0] % 0x7ffffffe) + 1 } catch { return (Date.now() % 0x7ffffffe) + 1 }
 }
 
 /** The title, GAME OVER and WINNER move at the pace of the approved mock page: a picture every 450 ms. */
@@ -82,6 +107,10 @@ export default function GamePlayer({
   onStart,
   onPlayState,
   control,
+  round,
+  onRound,
+  onLevelCleared,
+  onNamed,
 }: {
   game: GameName
   accent: string
@@ -90,13 +119,21 @@ export default function GamePlayer({
   onStart?: () => void
   onPlayState?: (state: PlayState) => void
   control?: GameControl
+  /** Present in the Random flow: one level, then the page takes over. */
+  round?: Round
+  onRound?: (event: RoundEvent) => void
+  /** A level cleared in a whole game (not in a round, which says so through `onRound`). */
+  onLevelCleared?: (level: number) => void
+  /** The name typed for a score of the device's ten best. */
+  onNamed?: (name: string) => void
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, dirty: true })
+  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, dirty: true })
+  const roundRef = useRef(round)
   const bestRef = useRef(0)
-  const callbacks = useRef({ onBest, onResult, onStart, onPlayState })
-  callbacks.current = { onBest, onResult, onStart, onPlayState }
+  const callbacks = useRef({ onBest, onResult, onStart, onPlayState, onRound, onLevelCleared, onNamed })
+  callbacks.current = { onBest, onResult, onStart, onPlayState, onRound, onLevelCleared, onNamed }
   const [naming, setNaming] = useState<GameResult | null>(null)
   const [name, setName] = useState('')
   const [glitching, setGlitching] = useState(true)
@@ -121,11 +158,14 @@ export default function GamePlayer({
     s.layout = layoutFor(box.width, box.height)
     s.dirty = true
 
+    const inRound = () => roundRef.current != null
     const draw = (): PixelBuffer => {
-      if (s.mode === 'title') return renderTitle(game, s.layout, accent, { level: 1, best: bestRef.current, frame: s.frame, blink: s.blink, day: isDaytime() })
-      const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice }
+      if (s.mode === 'title') return renderTitle(game, s.layout, accent, { level: roundRef.current?.level ?? 1, best: bestRef.current, frame: s.frame, blink: s.blink, day: isDaytime() })
+      // in a round, the end speaks through the page: no PLAY AGAIN? unless a retry is on offer
+      const ask = !inRound() || s.mode === 'retry'
+      const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice, ask }
       if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
-      if (s.mode === 'over' || s.mode === 'name') return renderGameOver(game, s.layout, accent, ended)
+      if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return renderGameOver(game, s.layout, accent, ended)
       if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause })
       return renderEaterGame(s.eater!, accent, { pause: s.pause })
     }
@@ -148,19 +188,25 @@ export default function GamePlayer({
       const state: PlayState = s.mode !== 'play' ? 'idle' : s.pause != null ? 'paused' : 'playing'
       if (state !== reported) { reported = state; callbacks.current.onPlayState?.(state) }
     }
+    const tell = (event: RoundEvent) => { if (inRound()) callbacks.current.onRound?.(event) }
     const start = () => {
+      const r = roundRef.current
       s.layout = layoutFor(box.width, box.height)
-      s.seed = Math.floor(Math.random() * 0x7ffffffe) + 1
-      s.catcher = game === 'catcher' ? createCatcher(s.layout, 1, s.seed) : null
-      s.eater = game === 'eater' ? createEater(s.layout, 1, s.seed) : null
+      s.seed = gameSeed()
+      // a round starts at its level with the score so far, CATCHER with three lives, EATER for that one level
+      s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
+      s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
       s.mode = 'play'
       s.pause = null
       s.dirty = true
       clock.reset()
       setGlitching(true)
       callbacks.current.onStart?.()
+      tell({ kind: 'play' })
     }
     const toTitle = () => {
+      // a round never goes back to its title: leaving it is quitting
+      if (inRound()) { quitRound(); return }
       s.mode = 'title'
       s.catcher = null
       s.eater = null
@@ -170,27 +216,51 @@ export default function GamePlayer({
     }
     const end = (score: number, level: number, hold: number, won: boolean) => { s.mode = 'ending'; s.score = score; s.level = level; s.endSteps = hold; s.won = won }
     const finish = () => {
-      const result = { score: s.score, level: s.level, won: s.won }
-      callbacks.current.onResult?.(result)
       s.choice = 0
       s.frame = 0
       s.layout = layoutFor(box.width, box.height)
-      if (qualifies(game, s.score)) { s.mode = 'name'; setName(lastName()); setNaming(result) }
-      else s.mode = s.won ? 'winner' : 'over'
       s.dirty = true
+      const r = roundRef.current
+      if (r) {
+        if (s.won) { s.mode = 'winner'; tell({ kind: 'winner', score: s.score, level: s.level }) }
+        else if (s.retriesLeft > 0) { s.mode = 'retry'; tell({ kind: 'retry', retriesLeft: s.retriesLeft }) }
+        // lost for now: the score stands where the round found it
+        else { s.mode = 'lost'; s.score = r.score; tell({ kind: 'lost', score: r.score, level: s.level }) }
+        return
+      }
+      const needsName = qualifies(game, s.score)
+      const result = { score: s.score, level: s.level, won: s.won, needsName }
+      callbacks.current.onResult?.(result)
+      if (needsName) { s.mode = 'name'; setName(lastName()); setNaming(result) }
+      else s.mode = s.won ? 'winner' : 'over'
     }
+    /** A level cleared in a round, short of the last: the board holds on LEVEL CLEAR and the page says what comes next. */
+    const cleared = (score: number, level: number) => { s.mode = 'cleared'; s.score = score; s.level = level; s.dirty = true; tell({ kind: 'won', score, level }) }
+    const quitRound = () => {
+      const r = roundRef.current!
+      s.mode = 'lost'; s.pause = null; s.score = r.score; s.dirty = true
+      tell({ kind: 'quit', score: r.score, level: r.level })
+    }
+    const retry = () => { s.retriesLeft -= 1; start() }
+    const giveUp = () => { const r = roundRef.current!; s.retriesLeft = 0; s.mode = 'lost'; s.score = r.score; s.dirty = true; tell({ kind: 'lost', score: r.score, level: s.level }) }
     const stepGame = () => {
       if (s.catcher) {
         const c = s.catcher
         stepCatcher(c)
         if (c.phase === 'won') end(c.score, c.level, 30, true)
-        else if (c.phase === 'clear' && c.phaseTimer === 0) s.catcher = nextLevel(c, (s.seed = s.seed + 1))
-        else if (c.phase === 'over') end(c.score, c.level, 20, false)
+        else if (c.phase === 'clear' && c.phaseTimer === 0) {
+          if (inRound()) cleared(c.score, c.level)
+          else { callbacks.current.onLevelCleared?.(c.level); s.catcher = nextLevel(c, (s.seed = s.seed + 1)) }
+        } else if (c.phase === 'over') end(c.score, c.level, 20, false)
       } else if (s.eater) {
-        stepEater(s.eater)
+        const e = s.eater
+        const passed = e.passed
+        stepEater(e)
+        if (e.passed > passed && e.phase === 'play') callbacks.current.onLevelCleared?.(e.level - 1)
         // a second to see the crash before GAME OVER, half a second to take in the last burger before WINNER
-        if (s.eater.phase === 'over') end(s.eater.score, s.eater.level, 60, false)
-        else if (s.eater.phase === 'won') end(s.eater.score, s.eater.level, 30, true)
+        if (e.phase === 'over') end(e.score, e.level, 60, false)
+        else if (e.phase === 'won' && e.single && e.level < 16) cleared(e.score, e.level)
+        else if (e.phase === 'won') end(e.score, e.level, 30, true)
       }
     }
     const steer = (dir: Direction) => {
@@ -202,7 +272,20 @@ export default function GamePlayer({
     const resume = () => { if (s.pause != null) { s.pause = null; s.dirty = true } }
     const confirmPause = () => (s.pause === 0 ? resume() : toTitle())
     const confirmOver = () => (s.choice === 0 ? start() : toTitle())
-    if (control) control.togglePause = () => { if (s.pause != null) resume(); else pause() }
+    const confirmRetry = () => (s.choice === 0 ? retry() : giveUp())
+    if (control) {
+      control.togglePause = () => { if (s.pause != null) resume(); else pause() }
+      control.start = () => { if (s.mode === 'title') start() }
+      control.finishRound = (won: boolean) => {
+        const r = roundRef.current
+        if (!r || s.mode !== 'play') return
+        const level = r.level
+        if (!won) { end(s.catcher?.score ?? s.eater?.score ?? r.score, level, 1, false); return }
+        const score = (s.catcher?.score ?? s.eater?.score ?? r.score) + 50 * level
+        if (level >= 16) end(score, level, 1, true)
+        else cleared(score, level)
+      }
+    }
 
     let raf = 0, last = performance.now()
     const loop = (now: number) => {
@@ -211,7 +294,7 @@ export default function GamePlayer({
       last = now
       if (s.mode === 'play' && s.pause == null) { if (clock.advance(dt, () => { if (s.mode === 'play') stepGame() }) > 0) s.dirty = true }
       else if (s.mode === 'ending') clock.advance(dt, () => { if (s.mode === 'ending' && --s.endSteps <= 0) finish() })
-      else if (s.mode === 'title' || s.mode === 'over' || s.mode === 'winner') {
+      else if (s.mode === 'title' || s.mode === 'over' || s.mode === 'winner' || s.mode === 'retry' || s.mode === 'lost') {
         s.slow += dt
         if (s.slow >= SLOW_MS) {
           s.slow = 0
@@ -233,7 +316,16 @@ export default function GamePlayer({
       const confirm = !onControl && (e.key === 'Enter' || e.key === ' ')
       const pauseKey = e.key === 'Escape' || e.key === 'p' || e.key === 'P'
       let used = true
-      if (s.mode === 'title') { if (confirm) start(); else used = false }
+      if (s.mode === 'title') {
+        if (confirm) start()
+        else if (e.key === 'Escape' && inRound()) tell({ kind: 'declined' })
+        else used = false
+      } else if (s.mode === 'retry') {
+        if (dir === 'left' || dir === 'right') { s.choice = s.choice === 0 ? 1 : 0; s.dirty = true }
+        else if (confirm) confirmRetry()
+        else if (e.key === 'Escape') giveUp()
+        else used = false
+      }
       else if (s.mode === 'play' && s.pause != null) {
         if (dir === 'up' || dir === 'down') { s.pause = s.pause === 0 ? 1 : 0; s.dirty = true }
         else if (confirm) confirmPause()
@@ -244,7 +336,7 @@ export default function GamePlayer({
         else if (pauseKey) pause()
         // the space bar does nothing in play, but must not scroll the page
         else used = e.key === ' ' && !onControl
-      } else if (s.mode === 'over' || s.mode === 'winner') {
+      } else if ((s.mode === 'over' || s.mode === 'winner') && !inRound()) {
         if (dir === 'left' || dir === 'right') { s.choice = s.choice === 0 ? 1 : 0; s.dirty = true }
         else if (confirm) confirmOver()
         else if (pauseKey) toTitle()
@@ -300,7 +392,11 @@ export default function GamePlayer({
       if (!tap) return
       const p = toBuffer(e)
       if (s.mode === 'title') start()
-      else if (s.mode === 'over' || s.mode === 'winner') {
+      else if (s.mode === 'retry') {
+        const hits = gameOverHits(game, s.layout)
+        if (within(hits.yes, p.x, p.y)) retry()
+        else if (within(hits.no, p.x, p.y)) giveUp()
+      } else if ((s.mode === 'over' || s.mode === 'winner') && !inRound()) {
         const hits = s.mode === 'winner' ? winnerHits(s.layout) : gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) start()
         else if (within(hits.no, p.x, p.y)) toTitle()
@@ -319,6 +415,7 @@ export default function GamePlayer({
       s.dirty = true
     })
     watch.observe(frameBox)
+    tell({ kind: 'title' })
     window.addEventListener('keydown', onKey)
     window.addEventListener('blur', pause)
     document.addEventListener('visibilitychange', onHidden)
@@ -327,7 +424,7 @@ export default function GamePlayer({
     frameBox.addEventListener('pointerup', onUp)
     frameBox.addEventListener('pointercancel', onCancel)
     return () => {
-      if (control) control.togglePause = undefined
+      if (control) { control.togglePause = undefined; control.start = undefined; control.finishRound = undefined }
       cancelAnimationFrame(raf)
       watch.disconnect()
       window.removeEventListener('keydown', onKey)
@@ -346,6 +443,7 @@ export default function GamePlayer({
     addScore(game, { name, score: naming.score, level: naming.level })
     bestRef.current = bestScore(game)
     callbacks.current.onBest?.(bestRef.current)
+    callbacks.current.onNamed?.(name)
     setNaming(null)
     const s = session.current
     s.mode = s.won ? 'winner' : 'over'

@@ -106,3 +106,47 @@ export function beatAt(seed: number, index: number, score: Score = coolScore()):
 export function beats(seed: number, count: number, score: Score = coolScore()): Beat[] {
   return Array.from({ length: count }, (_, index) => beatAt(seed, index, score))
 }
+
+/**
+ * Where the visual at `index` stands in the score, read only: its beat, the
+ * block it is in (in playing order), its place in that block and the block's
+ * length, how many visuals since the last cool and until the next one, and
+ * whether the block is a rest — a stretch of pure random of thirty or more,
+ * where attention drops. Used to find where something may break in without
+ * taking the score's best moments; it changes nothing in the score.
+ */
+export type Position = { beat: Beat; block: number; index: number; length: number; rest: boolean; sinceCool: number; untilCool: number }
+
+export function positionAt(seed: number, index: number, score: Score = coolScore()): Position {
+  const at = Math.max(0, Math.floor(index))
+  if (!score.loop.some((block) => block.min > 0)) return { beat: 'random', block: 0, index: at, length: Infinity, rest: true, sinceCool: Infinity, untilCool: Infinity }
+  // walk the blocks in playing order, remembering where the last cool ended
+  let position = 0, ordinal = 0, lastCoolEnd = -Infinity
+  const blockAt = (i: number): Block => (i < score.intro.length ? score.intro[i] : score.loop[(i - score.intro.length) % score.loop.length])
+  for (;;) {
+    const block = blockAt(ordinal)
+    const length = lengthOf(seed, ordinal, block)
+    if (at < position + length) {
+      // the next cool: the first cool block after this one
+      let untilCool = block.beat === 'cool' ? 0 : position + length - at
+      if (block.beat !== 'cool') {
+        let next = ordinal + 1, start = position + length
+        for (let guard = 0; guard < 64; guard += 1, next += 1) {
+          const b = blockAt(next)
+          if (b.beat === 'cool') break
+          start += lengthOf(seed, next, b)
+        }
+        untilCool = start - at
+      }
+      return {
+        beat: block.beat, block: ordinal, index: at - position, length,
+        rest: block.beat === 'random' && length >= 30,
+        sinceCool: block.beat === 'cool' ? 0 : at - lastCoolEnd + 1,
+        untilCool,
+      }
+    }
+    if (block.beat === 'cool') lastCoolEnd = position + length - 1
+    position += length
+    ordinal += 1
+  }
+}
