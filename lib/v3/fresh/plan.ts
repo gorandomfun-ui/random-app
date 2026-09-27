@@ -5,9 +5,11 @@
  * back — before the cool pool and the ordinary draw.
  *
  * YouTube's "most popular" chart per country is the source (one unit for
- * fifty videos); Dailymotion's most watched of the week per country adds a
- * little. Pure: which countries make each zone, how a zone picks its videos,
- * and the order the day's list is served in.
+ * fifty videos). Dailymotion's most watched of the week was tried on the
+ * first day and brought a 2k-view rugby clip, an "IMG_3314" and a reposted
+ * Turkish serial: it is left out (the field stays for later). Pure: which
+ * countries make each zone, how a zone picks its videos, and the order the
+ * day's list is served in.
  */
 
 export type FreshBucket = 'world' | 'usa' | 'europe' | 'asia' | 'africa' | 'east-europe' | 'oceania' | 'music' | 'fun'
@@ -28,13 +30,13 @@ export type BucketPlan = {
 }
 
 export const FRESH_PLAN: readonly BucketPlan[] = [
-  { bucket: 'world', quota: 200, regions: ['US', 'IN', 'BR', 'GB', 'JP', 'MX', 'ID', 'DE', 'FR', 'KR', 'ES', 'PH'], pages: 1, dailymotion: ['us', 'fr', 'gb'], order: 'views' },
-  { bucket: 'usa', quota: 100, regions: ['US'], pages: 3, dailymotion: ['us'], order: 'rank' },
-  { bucket: 'europe', quota: 100, regions: ['GB', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'PT', 'BE', 'IE', 'AT', 'CH', 'DK', 'NO', 'FI'], pages: 1, dailymotion: ['fr', 'de', 'it', 'es'], order: 'rank' },
-  { bucket: 'asia', quota: 100, regions: ['JP', 'KR', 'IN', 'ID', 'TH', 'VN', 'PH', 'TW', 'MY', 'PK', 'BD', 'SG', 'HK'], pages: 1, dailymotion: ['jp', 'in'], order: 'rank' },
-  { bucket: 'africa', quota: 100, regions: ['NG', 'KE', 'ZA', 'EG', 'MA', 'GH', 'SN', 'DZ', 'TN', 'UG', 'TZ'], pages: 1, dailymotion: ['ma', 'sn', 'ci'], order: 'rank' },
-  { bucket: 'east-europe', quota: 100, regions: ['PL', 'UA', 'RO', 'CZ', 'HU', 'RS', 'BG', 'SK', 'HR', 'LT', 'LV', 'EE', 'GE', 'KZ'], pages: 1, dailymotion: ['pl', 'ro'], order: 'rank' },
-  { bucket: 'oceania', quota: 100, regions: ['AU', 'NZ', 'PG', 'FJ'], pages: 2, dailymotion: ['au'], order: 'rank' },
+  { bucket: 'world', quota: 200, regions: ['US', 'IN', 'BR', 'GB', 'JP', 'MX', 'ID', 'DE', 'FR', 'KR', 'ES', 'PH'], pages: 1, dailymotion: [], order: 'views' },
+  { bucket: 'usa', quota: 100, regions: ['US'], pages: 3, dailymotion: [], order: 'rank' },
+  { bucket: 'europe', quota: 100, regions: ['GB', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'PT', 'BE', 'IE', 'AT', 'CH', 'DK', 'NO', 'FI'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'asia', quota: 100, regions: ['JP', 'KR', 'IN', 'ID', 'TH', 'VN', 'PH', 'TW', 'MY', 'PK', 'BD', 'SG', 'HK'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'africa', quota: 100, regions: ['NG', 'KE', 'ZA', 'EG', 'MA', 'GH', 'SN', 'DZ', 'TN', 'UG', 'TZ'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'east-europe', quota: 100, regions: ['PL', 'UA', 'RO', 'CZ', 'HU', 'RS', 'BG', 'SK', 'HR', 'LT', 'LV', 'EE', 'GE', 'KZ'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'oceania', quota: 100, regions: ['AU', 'NZ'], pages: 4, dailymotion: [], order: 'rank' },
   { bucket: 'music', quota: 100, regions: ['US', 'GB', 'BR', 'MX', 'NG', 'KR', 'JP', 'IN', 'FR', 'ES', 'CO', 'ZA'], category: '10', pages: 1, dailymotion: [], order: 'rank' },
   { bucket: 'fun', quota: 100, regions: ['US', 'GB', 'IN', 'BR', 'MX', 'FR', 'PH', 'ID', 'NG', 'DE'], category: '23', pages: 1, dailymotion: [], order: 'rank' },
 ]
@@ -45,6 +47,8 @@ export const FRESH_NEWS_MAX = 2
 export const FRESH_MEMORY_DAYS = 3
 /** Within any ten in a row: one video per channel, one per near-identical title. */
 export const FRESH_SPACING = 10
+/** …and no more than four of one universe: the charts are mostly music, the day's list should not be. */
+export const FRESH_UNIVERSE_MAX = 4
 
 export type FreshEntry = {
   id: string
@@ -56,6 +60,7 @@ export type FreshEntry = {
   views: number
   channel?: string
   family?: string
+  universe?: string
 }
 
 /** A zone's picks: the biggest first, or each country in turn by its own chart order. */
@@ -93,8 +98,11 @@ export function interleave(buckets: Map<FreshBucket, FreshEntry[]>): FreshEntry[
   const queues = FRESH_PLAN.map((plan) => ({ plan, queue: [...(buckets.get(plan.bucket) ?? [])], credit: 0 })).filter((entry) => entry.queue.length)
   const total = queues.reduce((sum, entry) => sum + entry.queue.length, 0)
   const out: FreshEntry[] = []
-  const clashes = (entry: FreshEntry) => out.slice(-FRESH_SPACING + 1).some((previous) =>
-    (entry.channel && previous.channel === entry.channel) || (entry.family && previous.family === entry.family))
+  const clashes = (entry: FreshEntry) => {
+    const window = out.slice(-FRESH_SPACING + 1)
+    if (window.some((previous) => (entry.channel && previous.channel === entry.channel) || (entry.family && previous.family === entry.family))) return true
+    return Boolean(entry.universe) && window.filter((previous) => previous.universe === entry.universe).length >= FRESH_UNIVERSE_MAX
+  }
   while (out.length < total) {
     for (const entry of queues) entry.credit += entry.plan.quota
     queues.sort((left, right) => right.credit - left.credit)

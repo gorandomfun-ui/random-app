@@ -107,6 +107,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       id: String(row._id), videoId: entry.raw.videoId, bucket: entry.bucket, rank: entry.rank, region: entry.region,
       views: entry.raw.viewCount ?? 0, channel: row.channelId ? String(row.channelId) : undefined,
       family: row.v3?.nearFamily ? String(row.v3.nearFamily) : undefined,
+      universe: row.v3?.universe ? String(row.v3.universe) : undefined,
       ...(row.editorialRoutine === true || row.v3?.universe === 'news-society' ? { news: true } : {}),
     } as FreshEntry & { news?: boolean }])
   }
