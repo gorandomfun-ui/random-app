@@ -90,3 +90,16 @@ test('la catégorie choisie par l_auteur range ce que rien d_autre ne range, jam
   assert.equal(universeFromCategory('dailymotion', 'people'), null, 'people, c_est des célébrités')
   assert.equal(tagItem({ type: 'gif', title: 'Dance', provider: 'dailymotion', categoryId: 'music' } as never, index, NOW).universe, 'other', 'vidéos seulement')
 })
+
+test('les liens ne donnent pas de sujet : « x.com » n_est pas le jeu X-COM', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const { stripLinks } = await import('@/lib/v3/tagging/normalize')
+  assert.equal(stripLinks('Follow me https://x.com/rose and www.instagram.com/rose or tiktok.com/@rose'), 'Follow me and or')
+  const index = buildSubjectIndex([{ _id: 'entity:x-com', label: 'X-COM', universe: 'gaming', kind: 'entity', aliases: ['x com'], ambiguous: false }] as never)
+  const clip = tagItem({ type: 'video', title: 'ROSÉ - new trick (OFFICIAL MUSIC VIDEO)', description: 'Follow ROSÉ https://x.com/rose', provider: 'youtube', categoryId: '10' } as never, index, NOW)
+  assert.ok(!clip.subjects.some((subject) => subject.id === 'entity:x-com'))
+  assert.equal(clip.universe, 'music')
+  const game = tagItem({ type: 'video', title: 'X-COM UFO Defense full playthrough', provider: 'youtube' } as never, index, NOW)
+  assert.ok(game.subjects.some((subject) => subject.id === 'entity:x-com'), 'the game itself is still recognised')
+})

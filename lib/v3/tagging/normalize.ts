@@ -111,8 +111,19 @@ function escapeRegExp(value: string): string {
 }
 
 /** Text an item offers for matching: title plus the head of its description. */
+/**
+ * Links say where to follow someone, not what a video is about. Read as
+ * words, "https://x.com/…" became "x com" and gave the game X-COM to 2,055
+ * videos — music videos filed under gaming — until 27 September 2026.
+ */
+const LINKS = /\bhttps?:\/\/\S+|\bwww\.\S+|\b[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:com|net|org|io|tv|fm|me|ly|gg|be|co|app|link|to|fr|de|es|it|uk|us|info|biz|xyz)\b(?:\/\S*)?/giu
+
+export function stripLinks(text: string): string {
+  return text.replace(LINKS, ' ').replace(/\s+/g, ' ').trim()
+}
+
 export function searchableText(item: { title?: string | null; description?: string | null }): string {
-  const title = item.title?.trim() ?? ''
-  const description = item.description?.trim().slice(0, 300) ?? ''
+  const title = stripLinks(item.title?.trim() ?? '')
+  const description = stripLinks(item.description?.trim() ?? '').slice(0, 300)
   return `${title} ${description}`.trim()
 }
