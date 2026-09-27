@@ -22,7 +22,8 @@ async function bundle(games) {
   await build({
     entryPoints: [`${root}/app/random/RandomExperience.tsx`], outfile: output, bundle: true, platform: 'node', format: 'cjs', jsx: 'automatic',
     external: ['react', 'react-dom', 'react/jsx-runtime'], tsconfig: `${root}/tsconfig.json`,
-    define: { 'process.env.NEXT_PUBLIC_GAMES_ENABLED': JSON.stringify(games) },
+    // the first offer, and the least of each visit, brought down to 3 so a short visit shows a game
+    define: { 'process.env.NEXT_PUBLIC_GAMES_ENABLED': JSON.stringify(games), 'process.env.NEXT_PUBLIC_GAMES_FIRST': JSON.stringify('3') },
     plugins: [{ name: 'boundaries', setup(b) {
       b.onResolve({ filter: /^(next\/|@\/components\/|@\/providers\/|@\/utils\/sound$)/ }, (args) => ({ path: args.path, namespace: 'stubs' }))
       b.onLoad({ filter: /.*/, namespace: 'stubs' }, ({ path: p }) => {

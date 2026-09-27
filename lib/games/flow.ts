@@ -8,7 +8,11 @@
  *   visit. A game — CATCHER or EATER, drawn by chance the first time — is
  *   offered at the 20th exactly, wherever the rhythm stands; refused, the
  *   other game comes at the 50th, then the 90th, the 150th, the 290th, the
- *   590th — and after that, no more. Only a Wave holds it back.
+ *   590th — and after that, no more. Only a Wave holds it back, and never
+ *   before the 20th image or video of a visit.
+ * - An offer counts as refused the moment it shows, and PLAY takes that
+ *   back: an offer left unanswered (the page closed or reloaded) moves the
+ *   ladder on instead of coming back at the start of the next visit.
  * - Once someone plays, the next level is back ten visuals after a level
  *   won, twenty after a level lost (two retries come straight away).
  *   A game refused mid-way puts the player back on the ladder; the game
@@ -99,16 +103,17 @@ export function saveFlow(state: FlowState): void {
 /** One more image or video seen. */
 export const countVisual = (s: FlowState): FlowState => ({ ...s, count: s.count + 1 })
 
-/** What the page knows at the moment a content is about to show. */
-export type FlowMoment = { inWave: boolean }
+/** What the page knows at the moment a content is about to show: a Wave under way, the images and videos seen in this visit. */
+export type FlowMoment = { inWave: boolean; visitSeen: number }
 
 /** Is a game due now, and which? Null when not. Reads only. */
 export function dueGame(s: FlowState, m: FlowMoment): GameName | null {
-  if (s.stopped || s.count < s.nextAt || m.inWave) return null
+  if (s.stopped || s.count < s.nextAt || m.inWave || m.visitSeen < FLOW.first) return null
   return s.playing ?? s.next
 }
 
-export const offered = (s: FlowState, now: number): FlowState => ({ ...s, lastOfferAt: now })
+/** An offer shows: it counts as refused from now on, and PLAY takes it back (see `accepted`). */
+export const offered = (s: FlowState, now: number): FlowState => ({ ...refused(s), lastOfferAt: now })
 
 /** The offer refused, or a game left half-way: back on the ladder, the other game next, the game kept. */
 export function refused(s: FlowState): FlowState {
@@ -122,7 +127,7 @@ export function refused(s: FlowState): FlowState {
 /** The offer taken: off the ladder, playing this game; its game under way, or a new one from level 1. */
 export function accepted(s: FlowState, game: GameName): { state: FlowState; run: Run } {
   const run = s.runs[game] ?? { level: 1, score: 0 }
-  return { state: { ...s, refusals: 0, playing: game, runs: { ...s.runs, [game]: run } }, run }
+  return { state: { ...s, refusals: 0, stopped: false, playing: game, runs: { ...s.runs, [game]: run } }, run }
 }
 
 /** A level won: the score kept; the next level ten visuals on; the sixteenth, the game is over and won, the other game next time. */

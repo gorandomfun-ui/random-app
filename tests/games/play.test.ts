@@ -61,7 +61,7 @@ test('les zones tactiles tombent sur ce qui est dessiné : pause, RESUME / QUIT,
   const px = (x: number, y: number) => Array.from(b.data.slice((y * b.width + x) * 4, (y * b.width + x) * 4 + 3)).join()
   assert.notEqual(px(pad.cx - pad.arm, pad.cy), px(pad.cx - pad.arm * 3, pad.cy), 'le bras gauche de la croix est là où on tape')
   assert.equal(crossDirection(pad.cx - pad.arm, pad.cy, pad), 'left')
-  assert.equal(pad.top, b.height - 96, 'tout le bandeau sous le plateau répond')
+  assert.equal(pad.zone.y, b.height - 96, 'tout le bandeau sous le plateau répond')
   // the HUD has no pause button any more: its corner is the HUD's own dark
   const hud = renderCatcherGame(createCatcher('landscape', 1, 1), A)
   const corner = Array.from(hud.data.slice(((10 * hud.width) + hud.width - 12) * 4, ((10 * hud.width) + hud.width - 12) * 4 + 3)).join()
