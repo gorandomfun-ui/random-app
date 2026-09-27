@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   const db = await getDb()
   let direct
   try {
-    direct = await directContext(db, { line: 'authors', journalLine: 'authors', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: UNITS })
+    direct = await directContext(db, { line: 'authors', journalLine: 'authors', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: UNITS, youtubeBucket: 'authors' })
   } catch (error) {
     if (error instanceof LineLocked) { console.log(JSON.stringify({ authors: 'skipped', reason: 'locked' })); process.exit(0) }
     throw error

@@ -94,6 +94,26 @@ const CLIP_PLACES = [
   'islande', 'feroe', 'nepal', 'bhoutan', 'sri lanka', 'myanmar', 'cambodge', 'laos', 'mongolie', 'papouasie', 'samoa', 'tonga',
 ]
 
+/** Words a music video's title carries in most languages. */
+const MUSIC_WORDS = /\b(?:live|en vivo|ao vivo|en direct|concert|concerts|concierto|conciertos|konzert|festival|song|songs|music|musique|musica|música|musik|band|banda|orchestra|orquesta|orchestre|choir|chorale|coro|singer|sings|singing|chant|chanteur|chanteuse|cantante|canta|dance|danse|danza|baile|tanz|folk|folklore|folklórico|performance|session|jam|remix|videoclip|clip|clipe|cover|instrumental|guitar|guitare|guitarra|piano|violin|violon|drums|percussion|trio|quartet|ensemble|fanfare|brass|opera|opéra|aria|recording|album|tune|melody|mélodie|serenata|sérénade|choeur|chœur|bal|toque|rhythm|ritmo)\b/i
+
+const fold = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+export const STYLE_NAMES: readonly string[] = STYLES.map(([style]) => style)
+
+/**
+ * Whether a result of a live music query is music. Dailymotion answers a
+ * place name alone — "khoomei mongolie" brought the COP17 in Mongolia — so a
+ * result is kept only if its title names the style asked for or speaks of
+ * music; the rest is not given the music label.
+ */
+export function isMusicResult(title: string | null | undefined, query: string): boolean {
+  const text = title ?? ''
+  if (MUSIC_WORDS.test(text)) return true
+  const folded = ` ${fold(text).replace(/[^\p{L}\p{N}]+/gu, ' ')} `
+  const style = STYLE_NAMES.find((name) => fold(query).startsWith(fold(name)))
+  return Boolean(style && folded.includes(` ${fold(style).replace(/[^\p{L}\p{N}]+/gu, ' ')} `))
+}
+
 function seeded(seed: number): () => number {
   let state = seed >>> 0 || 1
   return () => {

@@ -8,7 +8,7 @@
  */
 
 import { isCleanTitle } from '../../cool/clean'
-import { liveQueriesForDay } from '../../music/live'
+import { isMusicResult, liveQueriesForDay } from '../../music/live'
 import { searchDailymotion, searchYouTube, YOUTUBE_SEARCH_UNITS } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
@@ -39,10 +39,16 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const plan = liveQueriesForDay(now, { dailymotion: DAILYMOTION_QUERIES, youtubeLive: searches - clips, youtubeClips: clips })
   let live = 0
 
-  const admit = async (videos: Awaited<ReturnType<typeof searchDailymotion>>) => {
-    const kept = videos.filter((video) => isCleanTitle(video.title ?? '')).map((video) => ({ ...video, universeHint: 'music' as const }))
+  const admit = async (videos: Awaited<ReturnType<typeof searchDailymotion>>, query: string) => {
+    const clean = videos.filter((video) => isCleanTitle(video.title ?? ''))
+    // Only what is music gets in: a place name alone brings the news of that place.
+    const kept = clean.filter((video) => isMusicResult(video.title, query)).map((video) => ({ ...video, universeHint: 'music' as const }))
     const result = await ctx.admit({ subjectId: 'pool:music-live', videos: kept })
-    addAdmission(counters, { ...result, scanned: videos.length, rejected: { ...result.rejected, ...(videos.length - kept.length ? { unclean: videos.length - kept.length } : {}) } })
+    addAdmission(counters, { ...result, scanned: videos.length, rejected: {
+      ...result.rejected,
+      ...(videos.length - clean.length ? { unclean: videos.length - clean.length } : {}),
+      ...(clean.length - kept.length ? { 'off-topic': clean.length - kept.length } : {}),
+    } })
     live += result.inserted
     return { kept: kept.length, result }
   }
@@ -52,7 +58,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) break
       try {
         const videos = await searchDailymotion({ query, sort, after: SINCE, before }, http)
-        const { kept, result } = await admit(videos)
+        const { kept, result } = await admit(videos, query)
         await ctx.search({ provider: 'dailymotion', query: `${query} [${sort}]`, scanned: videos.length, kept, inserted: result.inserted, duplicates: result.duplicates, rejected: result.rejected, quotaUnits: 0, insertedIds: result.insertedIds })
       } catch (error) {
         errors.push(`dailymotion "${query}" : ${message(error)}`)
@@ -70,7 +76,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     try {
       const after = search.kind === 'clip' ? new Date(now.getTime() - CLIP_WINDOW_MS).toISOString() : SINCE
       const videos = await searchYouTube(key, { query: search.query, order: search.kind === 'clip' ? 'date' : 'relevance', after, before }, http)
-      const { kept, result } = await admit(videos)
+      const { kept, result } = await admit(videos, search.query)
       await ctx.search({ provider: 'youtube', query: search.query, scanned: videos.length, kept, inserted: result.inserted, duplicates: result.duplicates, rejected: result.rejected, quotaUnits: YOUTUBE_SEARCH_UNITS, insertedIds: result.insertedIds })
     } catch (error) {
       errors.push(`youtube "${search.query}" : ${message(error)}`)

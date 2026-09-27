@@ -36,6 +36,13 @@ export type DirectOptions = {
   host: string
   /** YouTube units the line may spend today, in its own bucket of discovery_quota_v2. */
   youtubeDailyUnits: number
+  /**
+   * Which bucket those units are counted in: the trend lines share "trend".
+   * A line with a smaller allowance needs its own, or the trend's spending
+   * leaves it nothing — the music line found its 1,000 units already "spent"
+   * on its first run, 27 September.
+   */
+  youtubeBucket?: string
   log?: (message: string) => void
   http?: typeof fetch
 }
@@ -63,13 +70,13 @@ async function acquireLock(db: Db, line: string, until: Date, host: string): Pro
 }
 
 /** The line's own YouTube bucket: `spent` never passes the day's units. */
-export function trendQuota(db: Db, dailyUnits: number, dryRun: boolean) {
+export function trendQuota(db: Db, dailyUnits: number, dryRun: boolean, bucket: string = TREND_QUOTA_BUCKET) {
   let booked = 0
   return {
     async reserve(units: number): Promise<boolean> {
       if (dryRun) { booked += units; return true }
       const collection = db.collection<{ _id: string; spent: number }>('discovery_quota_v2')
-      const _id = `${quotaDay(Date.now())}:youtube:${TREND_QUOTA_BUCKET}`
+      const _id = `${quotaDay(Date.now())}:youtube:${bucket}`
       try { await collection.updateOne({ _id }, { $setOnInsert: { spent: 0 } }, { upsert: true, maxTimeMS: 2000 }) }
       catch (error) { if ((error as { code?: number }).code !== 11000) throw error }
       const result = await collection.findOneAndUpdate({ _id, spent: { $lte: dailyUnits - units } }, { $inc: { spent: units } }, { returnDocument: 'after', maxTimeMS: 2000 })
@@ -149,7 +156,7 @@ export async function directContext(db: Db, options: DirectOptions): Promise<Dir
     timeLeft: () => deadline - Date.now(),
     dryRun: options.dryRun,
     cursor: null,
-    quota: trendQuota(db, options.youtubeDailyUnits, options.dryRun),
+    quota: trendQuota(db, options.youtubeDailyUnits, options.dryRun, options.youtubeBucket),
     admit: provisionalAdmit(db, options.line, options.dryRun),
     search: async (record: SearchInput) => {
       await recordSearch(db, { ...record, line: options.journalLine, at: new Date() }).catch(() => log('journal des recherches indisponible'))
