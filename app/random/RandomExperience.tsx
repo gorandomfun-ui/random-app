@@ -75,7 +75,7 @@ import {
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
 import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
-import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, refused, saveFlow, withTicket, type FlowState } from '@/lib/games/flow'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, saveFlow, withTicket, type FlowState } from '@/lib/games/flow'
 import { formatI18n as formatArcade } from '@/lib/i18n/format'
 import type { GameName } from '@/lib/games/scores'
 import type { Decision } from '@/components/games/ArcadeStage'
@@ -2643,6 +2643,9 @@ export function RandomExperience({
   const [arcade, setArcade] = useState<{ game: GameName; round: Round; id: number } | null>(null)
   const arcadeShown = arcade != null
   const [arcadePlay, setArcadePlay] = useState<PlayState>('idle')
+  const [arcadeFull, setArcadeFull] = useState(false)
+  /** Images and videos seen in this visit: no game before the 20th of each visit. */
+  const visitSeenRef = useRef(0)
   const [arcadeCard, setArcadeCard] = useState<{ file: File | null; url: string | null }>({ file: null, url: null })
   const [arcadeScoresOpen, setArcadeScoresOpen] = useState(false)
   const [arcadeBest, setArcadeBest] = useState(0)
@@ -4288,6 +4291,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       }
       // the games count the images and videos seen on this device, visit after visit
       if (flowRef.current && (entry.item.type === 'image' || entry.item.type === 'video')) {
+        visitSeenRef.current += 1
         flowRef.current = countVisual(flowRef.current)
         saveFlow(flowRef.current)
         setFlowView(flowRef.current)
@@ -4386,9 +4390,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const flow = flowRef.current
     const now = Date.now()
     // the owner's count, exactly: only a Wave holds a game back (an encouragement due meanwhile waits for the way back)
-    const game = forcedGameRef.current ?? dueGame(flow, { inWave: waveModeRef.current })
+    const game = forcedGameRef.current ?? dueGame(flow, { inWave: waveModeRef.current, visitSeen: visitSeenRef.current })
     forcedGameRef.current = null
     if (!game) return false
+    // shown, the offer already counts as refused: left unanswered it moves the ladder on; PLAY takes it back
     writeFlow(offered(flow, now))
     heldEntryRef.current = { entry, reward, advance }
     const run = flow.runs[game] ?? { level: 1, score: 0 }
@@ -4408,6 +4413,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     arcadeStageRef.current = 'offer'
     setArcade(null)
     setArcadePlay('idle')
+    setArcadeFull(false)
     setArcadeScoresOpen(false)
     if (held) void loadNext(held.reward, held.advance, held)
     else void loadNext(false)
@@ -4428,10 +4434,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     }
   }, [arcade, writeFlow])
 
+  /** No thanks (RANDOM on the offer): the refusal was counted when the offer showed. */
   const arcadeDeclined = useCallback(() => {
-    if (flowRef.current) writeFlow(refused(flowRef.current))
     closeArcade()
-  }, [closeArcade, writeFlow])
+  }, [closeArcade])
 
   /** A round decided: the game's place in the flow, the site's points (one a level, five more for all sixteen). */
   const arcadeDecided = useCallback((decision: Decision) => {
@@ -5055,7 +5061,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo || fullscreenWeb ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}${arcade ? ' random-page--arcade' : ''}${arcade && arcadePlay === 'playing' ? ' random-page--arcade-playing' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo || fullscreenWeb ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}${arcade ? ' random-page--arcade' : ''}${arcade && arcadePlay === 'playing' ? ' random-page--arcade-playing' : ''}${arcade && arcadeFull ? ' random-page--arcade-full' : ''}`}
       style={mainStyle}
     >
       {curationMode && curationError ? <aside role="status" className="fixed bottom-2 left-2 z-50 rounded bg-black px-3 py-2 text-xs text-white">
@@ -5291,6 +5297,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               onDecided={arcadeDecided}
               onContinue={arcadeContinue}
               onCard={(file, url) => setArcadeCard({ file, url })}
+              onFull={setArcadeFull}
             />
           ) : !viewItem ? (
             <div className="flex items-center justify-center w-full h-full">

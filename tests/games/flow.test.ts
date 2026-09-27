@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, refused, type FlowMoment, type FlowState } from '@/lib/games/flow'
 
 /** A moment outside a Wave. */
-const calm = (): FlowMoment => ({ inWave: false })
+const calm = (): FlowMoment => ({ inWave: false, visitSeen: 99 })
 const seeTo = (s: FlowState, count: number) => { let out = s; while (out.count < count) out = countVisual(out); return out }
 
 test('l_échelle des propositions : 20, puis l_autre jeu à 50, 90, 150, 290, 590, puis plus rien', () => {
@@ -13,7 +13,7 @@ test('l_échelle des propositions : 20, puis l_autre jeu à 50, 90, 150, 290, 59
   for (let i = 0; i < 2000 && !s.stopped; i += 1) {
     s = countVisual(s)
     const game = dueGame(s, calm())
-    if (game) { offers.push([s.count, game]); s = refused(offered(s, i)) }
+    if (game) { offers.push([s.count, game]); s = offered(s, i) }
   }
   assert.deepEqual(offers.map(([n]) => n), [20, 50, 90, 150, 290, 590])
   assert.deepEqual(offers.map(([, g]) => g), ['catcher', 'eater', 'catcher', 'eater', 'catcher', 'eater'], 'un jeu différent à chaque fois')
@@ -24,20 +24,26 @@ test('à 20 pile, où que soit le rythme — seule une Wave le retient — et le
   const s = seeTo(freshFlow('eater'), 20)
   assert.equal(dueGame(seeTo(freshFlow('eater'), 19), calm()), null, 'avant 20')
   assert.equal(dueGame(s, calm()), 'eater', 'à 20, en plein bloc cool ou pas')
-  assert.equal(dueGame(s, { inWave: true }), null, 'une Wave')
+  assert.equal(dueGame(s, { inWave: true, visitSeen: 99 }), null, 'une Wave')
+  assert.equal(dueGame(s, { inWave: false, visitSeen: 19 }), null, 'jamais avant le 20e visuel de la visite')
   const firsts = new Set(Array.from({ length: 40 }, () => freshFlow().next))
   assert.deepEqual([...firsts].sort(), ['catcher', 'eater'], 'CATCHER ou EATER, au hasard')
 })
 
 test('quelqu_un qui joue : le niveau suivant revient 10 visuels après, 20 après une défaite — jamais dans une Wave', () => {
   let s = seeTo(freshFlow('catcher'), 20)
-  const took = accepted(offered(s, 1), 'catcher')
+  // an offer left unanswered already counts as refused: reloading does not bring it straight back
+  const shown = offered(s, 1)
+  assert.equal(dueGame(shown, calm()), null, 'plus dû après avoir été montré')
+  assert.equal(shown.next, 'eater')
+  const took = accepted(shown, 'catcher')
+  assert.equal(took.state.refusals, 0)
   assert.deepEqual(took.run, { level: 1, score: 0 })
   s = levelWon(took.state, 'catcher', 420)
   assert.equal(s.runs.catcher?.level, 2); assert.equal(s.runs.catcher?.score, 420)
   assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin - 1), calm()), null)
   assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), calm()), 'catcher')
-  assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), { inWave: true }), null)
+  assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), { inWave: true, visitSeen: 99 }), null)
   s = levelLost(seeTo(s, 40), 'catcher')
   assert.equal(s.nextAt, 40 + FLOW.afterLoss)
   assert.equal(s.runs.catcher?.level, 2, 'le même niveau revient')

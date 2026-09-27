@@ -24,6 +24,7 @@ import {
   FRIES, FRIES_PALETTE, GOLD_BURGER_PALETTE, GOLD_CARD, GOLD_CARD_PALETTE, HUMAN, humanPalette, ITEM_PALETTE, MILKSHAKE, MILKSHAKE_PALETTE, MINI_BURGER,
   MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, WINNER_STAND, winnerPalette, type Direction,
 } from './sprites'
+import type { Cross } from './engine'
 import { arcadeText, button, CREAM, dpad, hud, HUD_HEIGHT, infoLine, INK, pressStart } from './ui'
 
 export type Game = 'catcher' | 'eater'
@@ -43,10 +44,24 @@ export function boardSize(layout: Layout): { cols: number; rows: number } {
   return layout === 'landscape' ? { cols: MAZE_WIDTH, rows: MAZE_HEIGHT } : { cols: MAZE_HEIGHT, rows: MAZE_WIDTH }
 }
 
-/** A play screen: the HUD, the board, and under it the cross of arrows when there is one — always tall, and wide on a touch screen. */
-export function playSize(layout: Layout, pad = layout === 'portrait'): { width: number; height: number } {
+/**
+ * Where the cross of arrows goes on a play screen: nowhere (a desktop's wide
+ * board), in a band under the board (`band`; a tall board always, a wide one
+ * on a touch screen), in a taller band with a bigger cross (`big`, a phone
+ * playing full screen upright), or in a band beside a wide board (`side`, a
+ * phone turned on its side). `true` and `false` stand for `band` and `none`.
+ */
+export type Pad = 'none' | 'band' | 'big' | 'side'
+export const BIG_PAD_HEIGHT = 160
+export const SIDE_PAD_WIDTH = 150
+const padOf = (layout: Layout, pad: Pad | boolean | undefined): Pad => (pad === undefined ? (layout === 'portrait' ? 'band' : 'none') : pad === true ? 'band' : pad === false ? 'none' : pad)
+
+/** A play screen: the HUD, the board, and the cross of arrows where it goes. */
+export function playSize(layout: Layout, pad?: Pad | boolean): { width: number; height: number } {
   const { cols, rows } = boardSize(layout)
-  return { width: cols * CELL, height: HUD_HEIGHT + rows * CELL + (pad ? DPAD_HEIGHT : 0) }
+  const kind = padOf(layout, pad)
+  const band = kind === 'band' ? DPAD_HEIGHT : kind === 'big' ? BIG_PAD_HEIGHT : 0
+  return { width: cols * CELL + (kind === 'side' ? SIDE_PAD_WIDTH : 0), height: HUD_HEIGHT + rows * CELL + band }
 }
 
 // ---------------------------------------------------------------- the street, composed
@@ -709,11 +724,19 @@ export function pauseHits(layout: Layout): { resume: Hit; quit: Hit } {
   const mid = boardMiddle(layout)
   return { resume: hitOfButton('RESUME', width / 2, mid + 6, 1), quit: hitOfButton('QUIT', width / 2, mid + 30, 1) }
 }
-/** The cross of arrows under the board, when there is one: its centre, the width of an arm, and the top of the band that answers to it. */
-export function dpadGeometry(layout: Layout, pad = layout === 'portrait'): { cx: number; cy: number; arm: number; top: number } | null {
-  if (!pad) return null
-  const top = HUD_HEIGHT + boardSize(layout).rows * CELL
-  return { cx: playSize(layout, pad).width / 2, cy: top + DPAD_HEIGHT / 2, arm: 26, top }
+/** The cross of arrows, when there is one: its centre, the width of an arm, and the zone that answers to it. */
+export function dpadGeometry(layout: Layout, pad?: Pad | boolean): Cross | null {
+  const kind = padOf(layout, pad)
+  if (kind === 'none') return null
+  const { cols, rows } = boardSize(layout)
+  const { width, height } = playSize(layout, kind)
+  if (kind === 'side') {
+    const x = cols * CELL
+    return { cx: x + SIDE_PAD_WIDTH / 2, cy: HUD_HEIGHT + (rows * CELL) / 2, arm: 40, zone: { x, y: HUD_HEIGHT, w: SIDE_PAD_WIDTH, h: height - HUD_HEIGHT } }
+  }
+  const top = HUD_HEIGHT + rows * CELL
+  const band = height - top
+  return { cx: width / 2, cy: top + band / 2, arm: kind === 'big' ? 40 : 26, zone: { x: 0, y: top, w: width, h: band } }
 }
 
 /** A card across the board: the board a shade darker, the words in arcade letters, the choices, `choice` the one lit. */
@@ -727,14 +750,14 @@ function playCard(buffer: PixelBuffer, layout: Layout, accent: string, title: st
 
 /** One drawing surface per screen, used again every frame, and the floors that never change, drawn once. */
 const surfaces = new Map<string, PixelBuffer>()
-function surface(name: string, layout: Layout, pad: boolean): PixelBuffer {
+function surface(name: string, layout: Layout, pad: Pad): PixelBuffer {
   const key = `${name}|${layout}|${pad}`
   let out = surfaces.get(key)
   if (!out) { const { width, height } = playSize(layout, pad); out = new PixelBuffer(width, height, INK); surfaces.set(key, out) }
   return out
 }
 const floors = new Map<string, PixelBuffer>()
-function cachedFloor(key: string, layout: Layout, pad: boolean, draw: (buffer: PixelBuffer) => void): PixelBuffer {
+function cachedFloor(key: string, layout: Layout, pad: Pad, draw: (buffer: PixelBuffer) => void): PixelBuffer {
   let out = floors.get(key)
   if (!out) {
     if (floors.size > 24) floors.clear()
@@ -746,8 +769,8 @@ function cachedFloor(key: string, layout: Layout, pad: boolean, draw: (buffer: P
   return out
 }
 
-/** What a play screen shows over the game: nothing, or the pause card with RESUME (0) or QUIT (1) lit; `pad`: the cross under the board (tall screens always have it). */
-export type PlayView = { pause?: 0 | 1 | null; pad?: boolean }
+/** What a play screen shows over the game: nothing, or the pause card with RESUME (0) or QUIT (1) lit — or RESUME alone; `pad`: where the cross goes. */
+export type PlayView = { pause?: 0 | 1 | null; pad?: Pad | boolean; resumeOnly?: boolean }
 
 /** A little four-pointed glint, for what is golden. */
 function glint(buffer: PixelBuffer, x: number, y: number): void {
@@ -782,7 +805,7 @@ function drawEaterBonus(buffer: PixelBuffer, kind: import('./eater').EaterBonus,
 export function renderCatcherGame(s: CatcherState, accent: string, view: PlayView = {}): PixelBuffer {
   const layout = s.layout
   const tall = layout === 'portrait'
-  const pad = view.pad ?? tall
+  const pad = padOf(layout, view.pad)
   const floor = cachedFloor(`catcher|${layout}|${pad}|${accent}`, layout, pad, (buffer) => {
     drawStoreFloor(buffer, s.maze, HUD_HEIGHT, accent, tall)
     const cross = dpadGeometry(layout, pad)
@@ -816,7 +839,7 @@ export function renderCatcherGame(s: CatcherState, accent: string, view: PlayVie
     list: kinds.map((icon, k) => ({ icon, palette: ITEM_PALETTE, have: s.have[k], need: s.need[k] })),
   })
   if (s.phase === 'clear') playCard(buffer, layout, accent, 'LEVEL CLEAR', [])
-  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', ['RESUME', 'QUIT'], view.pause)
+  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', view.resumeOnly ? ['RESUME'] : ['RESUME', 'QUIT'], view.resumeOnly ? 0 : view.pause)
   return buffer
 }
 
@@ -824,7 +847,7 @@ export function renderCatcherGame(s: CatcherState, accent: string, view: PlayVie
 export function renderEaterGame(s: EaterState, accent: string, view: PlayView = {}): PixelBuffer {
   const layout = s.layout
   const tall = layout === 'portrait'
-  const pad = view.pad ?? tall
+  const pad = padOf(layout, view.pad)
   const { width } = playSize(layout, pad)
   const kind = EATER_LEVELS[(s.level - 1) % EATER_LEVELS.length].floor
   const floor = cachedFloor(`eater|${layout}|${pad}|${accent}|${kind}`, layout, pad, (buffer) => {
@@ -867,7 +890,7 @@ export function renderEaterGame(s: EaterState, accent: string, view: PlayView = 
   buffer.blit(facing(CRAWL_HEAD, toward(body[1], body[0])), ...place(s.body[0]), palette)
   hud(buffer, accent, { level: s.level, score: s.score, progress: [s.eaten, s.target] })
   if (s.phase === 'won' && s.single) playCard(buffer, layout, accent, 'LEVEL CLEAR', [])
-  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', ['RESUME', 'QUIT'], view.pause)
+  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', view.resumeOnly ? ['RESUME'] : ['RESUME', 'QUIT'], view.resumeOnly ? 0 : view.pause)
   else if (s.levelUp > 0 && Math.floor(s.levelUp / 10) % 2 === 0) arcadeText(buffer, 'LEVEL UP', width / 2, HUD_HEIGHT + 30, 3, accent)
   return buffer
 }

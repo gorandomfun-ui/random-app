@@ -19,7 +19,7 @@ test('le moteur : la boucle à pas fixe donne le même nombre de pas quel que so
   assert.deepEqual([a(), a(), a()], [b(), b(), b()])
   assert.equal(keyDirection('ArrowLeft'), 'left'); assert.equal(keyDirection('z'), 'up'); assert.equal(keyDirection('d'), 'right'); assert.equal(keyDirection('x'), null)
   assert.equal(swipeDirection(40, 5), 'right'); assert.equal(swipeDirection(3, -2), null)
-  const pad = { cx: 160, cy: 520, arm: 26, top: 472 }
+  const pad = { cx: 160, cy: 520, arm: 26, zone: { x: 0, y: 472, w: 320, h: 96 } }
   assert.equal(crossDirection(160, 490, pad), 'up'); assert.equal(crossDirection(160, 520, pad), null)
   assert.equal(crossDirection(20, 480, pad), 'left', 'loin à gauche, même en haut du bandeau : gauche'); assert.equal(crossDirection(300, 560, pad), 'right')
   assert.equal(crossDirection(170, 475, pad), 'up', 'au-dessus de la croix : haut'); assert.equal(crossDirection(150, 600, pad), 'down', 'sous le dessin, même hors du canvas : bas')

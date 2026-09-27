@@ -63,18 +63,21 @@ export function swipeDirection(dx: number, dy: number, threshold = 24): Directio
 }
 
 /**
- * The cross of arrows under a tall board, read generously: the whole band
- * from the board's foot down answers, not only the drawn arms. Beside the
- * cross, left or right; above or below it, up or down; on the cross, the
- * arm under the finger, split along the diagonals. Only the dimple in the
- * middle says nothing. The cross is centred at `cx`, `cy`, arms `arm`
- * wide; the band starts at `top`.
+ * The cross of arrows, read generously: its whole zone answers — the band
+ * under the board, or beside it — not only the drawn arms. Out beside the
+ * cross, left or right; above or below it, up or down; on the cross, the arm
+ * under the finger, split along the diagonals. Only the dimple in the middle
+ * says nothing. The cross is centred at `cx`, `cy`, arms `arm` wide.
  */
-export function crossDirection(x: number, y: number, pad: { cx: number; cy: number; arm: number; top: number }): Direction | null {
-  if (y < pad.top) return null
+export type Cross = { cx: number; cy: number; arm: number; zone: { x: number; y: number; w: number; h: number } }
+export function crossDirection(x: number, y: number, pad: Cross): Direction | null {
+  const { zone } = pad
+  // a finger just past the zone's outer edges still counts; only the board side is off limits
+  if (x < zone.x || y < zone.y) return null
   const dx = x - pad.cx, dy = y - pad.cy
   if (Math.abs(dx) < pad.arm * 0.35 && Math.abs(dy) < pad.arm * 0.35) return null
-  if (Math.abs(dx) > pad.arm * 1.5) return dx > 0 ? 'right' : 'left'
+  if (Math.abs(dx) > pad.arm * 1.5 && Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left'
+  if (Math.abs(dy) > pad.arm * 1.5 && Math.abs(dy) > Math.abs(dx)) return dy > 0 ? 'down' : 'up'
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
 }
 

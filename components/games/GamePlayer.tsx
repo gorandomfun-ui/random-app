@@ -20,7 +20,7 @@ import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
-import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout } from '@/lib/games/screens'
+import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout, type Pad } from '@/lib/games/screens'
 import type { Direction } from '@/lib/games/sprites'
 
 export type GameResult = { score: number; level: number; won: boolean; needsName?: boolean }
@@ -37,11 +37,11 @@ export type RoundEvent =
 /** What the page shows beside the game: a game under way, paused, or none. */
 export type PlayState = 'idle' | 'playing' | 'paused'
 /**
- * Filled in by the player, so the page's own buttons can reach it: pause, and
- * in a round, start — and, for the effects test page's bench only, end the
- * round won or lost at once.
+ * Filled in by the player, so the page's own buttons can reach it: pause and
+ * resume, and in a round, start — and, for the effects test page's bench
+ * only, end the round won or lost at once.
  */
-export type GameControl = { togglePause?: () => void; start?: () => void; finishRound?: (won: boolean) => void }
+export type GameControl = { togglePause?: () => void; pause?: () => void; resume?: () => void; start?: () => void; retry?: () => void; finishRound?: (won: boolean) => void }
 
 type Mode = 'title' | 'play' | 'ending' | 'name' | 'over' | 'winner' | 'cleared' | 'retry' | 'lost'
 
@@ -64,8 +64,8 @@ type Session = {
   won: boolean
   /** In a round: tries left after this one. */
   retriesLeft: number
-  /** The cross of arrows under the board: always on a tall board, on a wide one on a touch screen. */
-  pad: boolean
+  /** Where the cross of arrows goes, for the game under way. */
+  pad: Pad
   dirty: boolean
 }
 
@@ -82,10 +82,21 @@ function gameSeed(): number {
 const SLOW_MS = 450
 const within = (h: Hit, x: number, y: number) => x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h
 
-/** Wide or tall: whichever lets the board be drawn the larger in this frame, the cross under it counted on a touch screen. */
-function layoutFor(width: number, height: number, touch = false): Layout {
+/**
+ * Where the cross goes for each shape of board: a desktop's wide board has
+ * none; on a touch screen, a band under the board; on a phone playing full
+ * screen, a taller band with a bigger cross upright, a band beside the board
+ * on its side.
+ */
+function padsFor(touch: boolean, big: boolean): Record<Layout, Pad> {
+  if (big) return { portrait: 'big', landscape: 'side' }
+  return { portrait: 'band', landscape: touch ? 'band' : 'none' }
+}
+/** Wide or tall: whichever lets the board be drawn the larger in this frame, its cross counted. */
+function layoutFor(width: number, height: number, touch = false, big = false): Layout {
   if (!width || !height) return 'landscape'
-  const wide = playSize('landscape', touch), tall = playSize('portrait')
+  const pads = padsFor(touch, big)
+  const wide = playSize('landscape', pads.landscape), tall = playSize('portrait', pads.portrait)
   return Math.min(width / wide.width, height / wide.height) >= Math.min(width / tall.width, height / tall.height) ? 'landscape' : 'portrait'
 }
 
@@ -113,6 +124,8 @@ export default function GamePlayer({
   onRound,
   onLevelCleared,
   onNamed,
+  big = false,
+  align = 'center',
 }: {
   game: GameName
   accent: string
@@ -128,11 +141,17 @@ export default function GamePlayer({
   onLevelCleared?: (level: number) => void
   /** The name typed for a score of the device's ten best. */
   onNamed?: (name: string) => void
+  /** A phone playing full screen: a taller band with a bigger cross, or a band beside the board on its side. Read when a game starts. */
+  big?: boolean
+  /** Where the picture sits in its frame: in the middle, or at the top to leave room under it. */
+  align?: 'center' | 'top'
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, pad: false, dirty: true })
+  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, pad: 'none', dirty: true })
   const roundRef = useRef(round)
+  const bigRef = useRef(big)
+  bigRef.current = big
   const bestRef = useRef(0)
   const callbacks = useRef({ onBest, onResult, onStart, onPlayState, onRound, onLevelCleared, onNamed })
   callbacks.current = { onBest, onResult, onStart, onPlayState, onRound, onLevelCleared, onNamed }
@@ -171,8 +190,9 @@ export default function GamePlayer({
       const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice, ask }
       if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
       if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return renderGameOver(game, s.layout, accent, ended)
-      if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause, pad: s.pad })
-      return renderEaterGame(s.eater!, accent, { pause: s.pause, pad: s.pad })
+      // in a round the pause card only offers RESUME: leaving is the page's business
+      if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
+      return renderEaterGame(s.eater!, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
     }
     let sized = ''
     const paint = () => {
@@ -196,9 +216,12 @@ export default function GamePlayer({
     const tell = (event: RoundEvent) => { if (inRound()) callbacks.current.onRound?.(event) }
     const start = () => {
       const r = roundRef.current
-      s.layout = layoutFor(box.width, box.height, touchScreen)
+      // the frame as it stands this very moment: it may just have gone full screen
+      box.width = frameBox.clientWidth
+      box.height = frameBox.clientHeight
+      s.layout = layoutFor(box.width, box.height, touchScreen, bigRef.current)
       s.seed = gameSeed()
-      s.pad = s.layout === 'portrait' || touchScreen
+      s.pad = padsFor(touchScreen, bigRef.current)[s.layout]
       // a round starts at its level with the score so far, CATCHER with three lives, EATER for that one level
       s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
       s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
@@ -281,7 +304,10 @@ export default function GamePlayer({
     const confirmRetry = () => (s.choice === 0 ? retry() : giveUp())
     if (control) {
       control.togglePause = () => { if (s.pause != null) resume(); else pause() }
+      control.pause = pause
+      control.resume = () => { resume(); clock.reset() }
       control.start = () => { if (s.mode === 'title') start() }
+      control.retry = () => { if (s.mode === 'retry') retry() }
       control.finishRound = (won: boolean) => {
         const r = roundRef.current
         if (!r || s.mode !== 'play') return
@@ -333,7 +359,7 @@ export default function GamePlayer({
         else used = false
       }
       else if (s.mode === 'play' && s.pause != null) {
-        if (dir === 'up' || dir === 'down') { s.pause = s.pause === 0 ? 1 : 0; s.dirty = true }
+        if ((dir === 'up' || dir === 'down') && !inRound()) { s.pause = s.pause === 0 ? 1 : 0; s.dirty = true }
         else if (confirm) confirmPause()
         else if (pauseKey) resume()
         else used = false
@@ -364,7 +390,7 @@ export default function GamePlayer({
       const p = toBuffer(e)
       return crossDirection(p.x, p.y, pad)
     }
-    const inBand = (e: PointerEvent) => { const pad = dpadGeometry(s.layout, s.pad); return pad != null && toBuffer(e).y >= pad.top }
+    const inBand = (e: PointerEvent) => { const pad = dpadGeometry(s.layout, s.pad); if (!pad) return false; const p = toBuffer(e); return p.x >= pad.zone.x && p.y >= pad.zone.y }
     const onDown = (e: PointerEvent) => {
       if (e.button > 0) return
       if (s.mode === 'play' && s.pause == null && inBand(e)) {
@@ -397,7 +423,7 @@ export default function GamePlayer({
       touch = null
       if (!tap) return
       const p = toBuffer(e)
-      if (s.mode === 'title') start()
+      if (s.mode === 'title') { if (!inRound()) start() }
       else if (s.mode === 'retry') {
         const hits = gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) retry()
@@ -409,7 +435,7 @@ export default function GamePlayer({
       } else if (s.mode === 'play' && s.pause != null) {
         const hits = pauseHits(s.layout)
         if (within(hits.resume, p.x, p.y)) resume()
-        else if (within(hits.quit, p.x, p.y)) toTitle()
+        else if (within(hits.quit, p.x, p.y) && !inRound()) toTitle()
       }
     }
     const onCancel = () => { touch = null; thumb = null }
@@ -430,7 +456,7 @@ export default function GamePlayer({
     frameBox.addEventListener('pointerup', onUp)
     frameBox.addEventListener('pointercancel', onCancel)
     return () => {
-      if (control) { control.togglePause = undefined; control.start = undefined; control.finishRound = undefined }
+      if (control) { control.togglePause = undefined; control.pause = undefined; control.resume = undefined; control.start = undefined; control.retry = undefined; control.finishRound = undefined }
       cancelAnimationFrame(raf)
       watch.disconnect()
       window.removeEventListener('keydown', onKey)
@@ -457,7 +483,7 @@ export default function GamePlayer({
   }
 
   return (
-    <div ref={boxRef} className={`game-player${glitching ? ' game-player--glitch' : ''}`}>
+    <div ref={boxRef} className={`game-player${glitching ? ' game-player--glitch' : ''}${align === 'top' ? ' game-player--top' : ''}`}>
       <canvas ref={canvasRef} className="game-player__canvas" aria-label={game === 'catcher' ? 'RANDOM CATCHER' : 'RANDOM EATER'} />
       {naming ? (
         <form className="game-player__name" onSubmit={submitName} style={{ borderColor: accent }}>
@@ -483,6 +509,7 @@ export default function GamePlayer({
       ) : null}
       <style jsx>{`
         .game-player { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        .game-player--top { align-items: flex-start; }
         .game-player__canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; background: #0a0a14; }
         .game-player--glitch .game-player__canvas { animation: game-player-glitch 0.62s steps(1, end) both; }
         @keyframes game-player-glitch {
