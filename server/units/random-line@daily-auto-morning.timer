@@ -1,9 +1,8 @@
 [Unit]
-Description=RANDOM daily ingestion, morning (09:10 and 10:40 Paris, the two passes GitHub ran)
+Description=RANDOM daily ingestion, morning (09:10 Paris; the 10:40 pass was dropped on 27/09 to make room for the targeted lines)
 
 [Timer]
 OnCalendar=*-*-* 09:10:00 Europe/Paris
-OnCalendar=*-*-* 10:40:00 Europe/Paris
 Persistent=true
 RandomizedDelaySec=120
 

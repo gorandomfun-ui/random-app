@@ -48,6 +48,9 @@ const LINE_LABEL: Record<string, string> = {
   images: 'Images',
   'like-pool': 'Pool des likes',
   pools: 'Pools par univers',
+  feeds: 'Sources humaines',
+  authors: 'Auteurs suivis',
+  'music-live': 'Musique live',
 }
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
@@ -76,7 +79,7 @@ type MiniSeriesReport = {
 /** Why a title was taken for a mini-series, as the report says it. */
 const MINI_SERIES_REASON: Record<string, string> = {
   label: 'étiquette', studio: 'studio', cjk: 'titre chinois', trope: 'cliché', 'ai-story': 'histoire IA', narrative: 'titre-récit',
-  shape: 'verticale longue',
+  shape: 'verticale longue', scam: 'arnaque', 'product-top': 'top produits',
 }
 const UNIVERSE_LABEL: Record<string, string> = {
   music: 'Musique', sport: 'Sport', gaming: 'Gaming', 'humor-memes': 'Humour', 'events-parties': 'Fête', food: 'Food', travel: 'Découverte', craft: 'Astuces / artisanat',
@@ -232,10 +235,10 @@ export default function IngestReportsPage() {
 
       {miniSeries && (
         <section style={S.section}>
-          <h2 style={S.h2}>Mini-séries refusées</h2>
+          <h2 style={S.h2}>Refusés à l&apos;entrée : mini-séries et pubs</h2>
           <p style={S.hint}>
-            Les feuilletons verticaux refusés à l&apos;entrée, sur trois jours, et vingt titres tirés au hasard. Si un titre qui
-            devait passer apparaît ici, la règle est à corriger.
+            Les feuilletons verticaux et les pubs (arnaques, tops produits au-delà de dix par jour) refusés à l&apos;entrée, sur
+            trois jours, et vingt titres tirés au hasard. Si un titre qui devait passer apparaît ici, la règle est à corriger.
           </p>
           {miniSeries.days.length === 0 ? (
             <p style={S.hint}>Aucun refus enregistré pour l&apos;instant.</p>

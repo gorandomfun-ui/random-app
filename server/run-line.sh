@@ -67,6 +67,10 @@ case "${LINE}" in
     # The people whose work was liked, and what they have published since.
     run node --import tsx scripts/v3/authors-direct.ts
     ;;
+  music-live)
+    # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.
+    run node --import tsx scripts/v3/music-live-direct.ts
+    ;;
   feeds)
     # Communities where people already did the sorting; the videos found cost one unit per fifty checked.
     run node --import tsx scripts/v3/feeds-direct.ts

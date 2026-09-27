@@ -59,6 +59,7 @@ function countersOf(phase: DailyAutoPhase, result: Record<string, unknown> | und
     rejected: {
       ...(number(result.skippedInvalid) ? { invalid: number(result.skippedInvalid) } : {}),
       ...(number(result.miniSeriesRefused) ? { 'mini-series': number(result.miniSeriesRefused) } : {}),
+      ...(number(result.junkRefused) ? { junk: number(result.junkRefused) } : {}),
     },
     ...(byProvider ? { byProvider } : {}),
   }

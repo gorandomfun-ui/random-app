@@ -11,6 +11,7 @@ import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMeta
 import { ROUTINE_NEWS_RADIO_DAILY_LIMIT } from '@/lib/random/videoEditorial';
 import { applyRoutineVideoIngestCap, isRoutineAtIngest } from './videoEditorialAdmission';
 import { screenMiniSeries } from './miniSeriesStore';
+import { screenJunk } from './junkStore';
 
 export type VideoProvider =
   | 'youtube'
@@ -118,6 +119,8 @@ type IngestResult = {
   remaining?: number;
   /** Vertical soap serials refused at the door (see miniSeries.ts). */
   miniSeriesRefused?: number;
+  /** Ads refused at the door (see junk.ts). */
+  junkRefused?: number;
 };
 
 export type VideoIngestStage = 'ingest-collection' | 'ingest-routine' | 'ingest-admission' | 'ingest-mini-series' |
@@ -1040,8 +1043,16 @@ export async function finalizeVideoIngest(
   if (screened.refused) {
     warnings.push({ label: 'videos:mini-series', message: `${screened.refused} mini-series refused` });
   }
+  // Ads posing as videos: scams refused, product tops let in up to ten a day.
+  const junk = await screenJunk(await getDb(), screened.videos, { dryRun, line }).catch((error) => {
+    console.warn('[ingest:videos] filtre pubs indisponible', error instanceof Error ? error.message : error);
+    return { videos: screened.videos, refused: 0 };
+  });
+  if (junk.refused) {
+    warnings.push({ label: 'videos:junk', message: `${junk.refused} ads refused` });
+  }
 
-  const unique = screened.videos;
+  const unique = junk.videos;
   const documents: VideoDocument[] = [];
   // What a line asked for, by video id: handed to the tagger at insert, kept out of every write.
   const universeHints = new Map<string, Universe>();
@@ -1080,6 +1091,7 @@ export async function finalizeVideoIngest(
     existingSkipped: 0,
     providers: summaryProviders,
     ...(screened.refused ? { miniSeriesRefused: screened.refused } : {}),
+    ...(junk.refused ? { junkRefused: junk.refused } : {}),
   };
 
   if (dryRun || !documents.length) {

@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM live music line (13:40 Paris: concerts from everywhere, recent clips off the charts)
+
+[Timer]
+OnCalendar=*-*-* 13:40:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

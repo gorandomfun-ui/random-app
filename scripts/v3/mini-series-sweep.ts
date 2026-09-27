@@ -75,7 +75,8 @@ const shuffle = <T,>(values: T[]): T[] => {
 }
 
 async function undoSweeps(db: import('mongodb').Db): Promise<void> {
-  const sweeps = await db.collection(SWEEPS).find({ undoneAt: { $exists: false } }).toArray()
+  // The ad sweeps share the collection (the pools table subtracts them too) and have their own undo.
+  const sweeps = await db.collection(SWEEPS).find({ kind: { $ne: 'junk' }, undoneAt: { $exists: false } }).toArray()
   let restored = 0
   for (const sweep of sweeps) {
     const ids = (sweep.ids ?? []) as ObjectId[]

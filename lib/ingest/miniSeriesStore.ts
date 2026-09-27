@@ -35,8 +35,8 @@ export type Refusal = {
   at: Date
   expiresAt: Date
   day: string
-  reason: 'mini-series'
-  detail: MiniSeriesReason
+  reason: 'mini-series' | 'junk'
+  detail: MiniSeriesReason | 'scam' | 'product-top'
   title: string
   provider: string
   videoId: string
@@ -141,7 +141,7 @@ export async function screenMiniSeries<T extends Screenable>(
   return { videos: admitted, refused: refusals.length, keptIds }
 }
 
-async function recordRefusals(db: Db, refusals: Refusal[]): Promise<void> {
+export async function recordRefusals(db: Db, refusals: Refusal[]): Promise<void> {
   try {
     const collection = db.collection(REFUSALS_COLLECTION)
     if (!refusalIndexReady) {
@@ -213,7 +213,7 @@ export async function refusalsReport(db: Db, since: Date): Promise<{
   const grouped = await db
     .collection(REFUSALS_COLLECTION)
     .aggregate<{ _id: { day: string; detail: string }; n: number }>(
-      [{ $match: { reason: 'mini-series', at: { $gte: since } } }, { $group: { _id: { day: '$day', detail: '$detail' }, n: { $sum: 1 } } }],
+      [{ $match: { reason: { $in: ['mini-series', 'junk'] }, at: { $gte: since } } }, { $group: { _id: { day: '$day', detail: '$detail' }, n: { $sum: 1 } } }],
       { maxTimeMS: 5000 },
     )
     .toArray()
@@ -226,7 +226,7 @@ export async function refusalsReport(db: Db, since: Date): Promise<{
   }
   const examples = (await db
     .collection(REFUSALS_COLLECTION)
-    .aggregate([{ $match: { reason: 'mini-series', at: { $gte: since } } }, { $sample: { size: 20 } }, { $project: { _id: 0, at: 1, title: 1, provider: 1, detail: 1, channel: 1 } }], { maxTimeMS: 5000 })
+    .aggregate([{ $match: { reason: { $in: ['mini-series', 'junk'] }, at: { $gte: since } } }, { $sample: { size: 20 } }, { $project: { _id: 0, at: 1, title: 1, provider: 1, detail: 1, channel: 1 } }], { maxTimeMS: 5000 })
     .toArray()) as Array<{ at: Date; title: string; provider: string; detail: string; channel?: string }>
   const studioRows = await db
     .collection(STUDIOS_COLLECTION)
