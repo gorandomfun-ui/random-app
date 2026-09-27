@@ -60,3 +60,20 @@ test('what its channel or title says is made by AI stays off the fresh list', ()
   assert.ok(!isAiMade('Wired', 'How AI is changing hospitals'), 'a report about AI is not made by AI')
   assert.ok(!isAiMade('Mountain Air Studio', 'Faith and Mountains'))
 })
+
+test('when YouTube says no, the day\'s earlier chart reads rebuild the zones', async () => {
+  const { observedFound } = await import('../../lib/v3/fresh/plan')
+  const found = observedFound([
+    { videoId: 'a1', title: 'A', viewCount: 10, discoveryQueries: ['youtube:trending:ng'] },
+    { videoId: 'a2', title: 'B', viewCount: 99, discoveryQueries: ['youtube:trending:ng'] },
+    { videoId: 'm1', title: 'Song', viewCount: 5, discoveryQueries: ['youtube:trending:us:10'] },
+    { videoId: 'u1', title: 'US', viewCount: 7, discoveryQueries: ['youtube:trending:us'] },
+    { videoId: 'x', title: 'Search', discoveryQueries: ['marimba en vivo'] },
+  ])
+  const zones = (id: string) => found.filter((entry) => entry.raw.videoId === id).map((entry) => entry.bucket).sort()
+  assert.deepEqual(zones('a2'), ['africa'])
+  assert.equal(found.find((entry) => entry.raw.videoId === 'a2')?.rank, 0, 'the most viewed first when the chart order is gone')
+  assert.deepEqual(zones('m1'), ['music'])
+  assert.deepEqual(zones('u1'), ['usa', 'world'])
+  assert.deepEqual(zones('x'), [])
+})

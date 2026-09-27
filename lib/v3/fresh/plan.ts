@@ -12,6 +12,8 @@
  * day's list is served in.
  */
 
+import type { RawVideo } from '@/lib/ingest/videos'
+
 export type FreshBucket = 'world' | 'usa' | 'europe' | 'asia' | 'africa' | 'east-europe' | 'oceania' | 'music' | 'fun'
 
 export type BucketPlan = {
@@ -136,3 +138,38 @@ const AI_MADE = /(?:^|[^\p{L}\p{N}])(?:ai|a\.i\.)[\s_-]*(?:studio|studios|music|
 export function isAiMade(channel: string | null | undefined, title: string | null | undefined): boolean {
   return AI_MADE.test(`${channel ?? ''} ${title ?? ''}`)
 }
+
+export type FreshFound = { raw: RawVideo; bucket: FreshBucket; rank: number; region: string }
+
+/**
+ * The chart videos read in the last hours, as the zones they came from: every
+ * chart video keeps where it was seen ("youtube:trending:in", ":10" for the
+ * music chart). When YouTube's allowance is spent, the list is rebuilt from
+ * them instead of shrinking — a third run on 27 September found 93 videos and
+ * replaced the day's thousand.
+ */
+export function observedFound(rows: Array<{ videoId?: unknown; title?: unknown; provider?: unknown; viewCount?: unknown; discoveryQueries?: unknown }>): FreshFound[] {
+  const byRegion = new Map<string, Array<{ raw: RawVideo; region: string; category?: string }>>()
+  for (const row of rows) {
+    const queries = Array.isArray(row.discoveryQueries) ? row.discoveryQueries.map(String) : []
+    const seen = queries.map((query) => /^youtube:trending:([a-z]{2})(?::(\d+))?$/.exec(query)).find(Boolean)
+    if (!seen || typeof row.videoId !== 'string') continue
+    const region = seen[1].toUpperCase(), category = seen[2]
+    const raw = { videoId: row.videoId, url: `https://youtu.be/${row.videoId}`, provider: 'youtube', title: String(row.title ?? ''), viewCount: typeof row.viewCount === 'number' ? row.viewCount : 0 } as RawVideo
+    const key = `${region}:${category ?? ''}`
+    byRegion.set(key, [...(byRegion.get(key) ?? []), { raw, region, category }])
+  }
+  const found: FreshFound[] = []
+  for (const list of byRegion.values()) {
+    // The chart's order is gone; its views stand in for it.
+    list.sort((left, right) => (right.raw.viewCount ?? 0) - (left.raw.viewCount ?? 0))
+    list.forEach((entry, rank) => {
+      for (const plan of FRESH_PLAN) {
+        if ((plan.category ?? '') !== (entry.category ?? '') || !plan.regions.includes(entry.region)) continue
+        found.push({ raw: entry.raw, bucket: plan.bucket, rank, region: entry.region })
+      }
+    })
+  }
+  return found
+}
+

@@ -10,23 +10,27 @@
 
 import type { Document } from 'mongodb'
 
-import { fetchYouTubeChart, type RawVideo } from '@/lib/ingest/videos'
+import { fetchYouTubeChart } from '@/lib/ingest/videos'
 import { junkKind } from '@/lib/ingest/junk'
 import { miniSeriesVerdict } from '@/lib/ingest/miniSeries'
-import { FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, pickBucket, type FreshBucket, type FreshEntry } from '../../fresh/plan'
+import { FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, observedFound, pickBucket, type FreshBucket, type FreshEntry, type FreshFound } from '../../fresh/plan'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
 
 export const FRESH_COLLECTION = 'fresh_daily_v1'
 const ADMIT_CHUNK = 100
+/** Fewer chart videos than this means YouTube said no early: the day's earlier reads fill in. */
+const ENOUGH_FOUND = 2000
+/** How far back those earlier reads may go. */
+const OBSERVED_WINDOW_MS = 20 * 3_600_000
 const WEEK_MS = 7 * 86_400_000
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const parisDay = (date: Date) =>
   new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 
-type Found = { raw: RawVideo; bucket: FreshBucket; rank: number; region: string }
+type Found = FreshFound
 
 export type FreshCursorNote = { day: string; total: number; buckets: Partial<Record<FreshBucket, number>>; note: string }
 
@@ -65,6 +69,17 @@ export async function run(ctx: LineContext): Promise<LineResult> {
         errors.push(`dailymotion ${country} : ${message(error)}`)
       }
     }
+  }
+
+  if (found.length < ENOUGH_FOUND) {
+    const rows = await ctx.db.collection('items').find(
+      { type: 'video', trendObservedAt: { $gte: new Date(now.getTime() - OBSERVED_WINDOW_MS) } } as Document,
+      { projection: { videoId: 1, title: 1, provider: 1, viewCount: 1, discoveryQueries: 1 }, hint: 'discovery_trend_v2', maxTimeMS: 60_000 },
+    ).toArray().catch(() => [] as Document[])
+    const known = new Set(found.map((entry) => `${entry.bucket}:${entry.raw.videoId}`))
+    const extra = observedFound(rows as Array<Record<string, unknown>>).filter((entry) => !known.has(`${entry.bucket}:${entry.raw.videoId}`))
+    found.push(...extra)
+    ctx.log(`youtube a peu répondu (${found.length - extra.length} vidéos) : ${extra.length} reprises des relevés des dernières heures`)
   }
 
   // Through the door, once each. What is already stored is not written again.
@@ -130,7 +145,11 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const note = `frais du jour ${day} : ${order.length} vidéos (${FRESH_PLAN.map((plan) => `${label[plan.bucket]} ${buckets[plan.bucket] ?? 0}`).join(' · ')})${youtubeStopped ? ' · budget YouTube atteint' : ''}`
   ctx.log(note)
 
-  if (!ctx.dryRun && order.length) {
+  // A day's list is never replaced by a smaller one: a late run with little to go on keeps the morning's.
+  const existing = await ctx.db.collection(FRESH_COLLECTION).findOne({ _id: day } as Document, { projection: { total: 1 } }).catch(() => null)
+  const keepExisting = Number(existing?.total ?? 0) > order.length
+  if (keepExisting) ctx.log(`liste du jour gardée : ${existing?.total} vidéos contre ${order.length} cette fois`)
+  if (!ctx.dryRun && order.length && !keepExisting) {
     await ctx.db.collection(FRESH_COLLECTION).replaceOne({ _id: day } as Document, {
       _id: day, at: now, ids: order.map((entry) => entry.id), videoIds: order.map((entry) => entry.videoId),
       buckets: order.map((entry) => entry.bucket), counts: buckets, total: order.length,
