@@ -198,7 +198,7 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
         '--likes-fragment-x': `${Math.round(random() * 900) / 10}%`,
         '--likes-fragment-y': `${Math.round((2 + random() * 30) * 10) / 10}%`,
         '--likes-fragment-w': `${Math.round((34 + random() * 170) * 10) / 10}px`,
-        '--likes-fragment-h': `${Math.round((6 + random() * 18) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((8 + random() * 22) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 42 - 21) * 10) / 10}px`,
         '--likes-fragment-opacity': Math.round((0.18 + random() * 0.34) * 100) / 100,
         '--likes-fragment-bg-x': `${Math.round(random() * 1000) / 10}%`,
@@ -797,12 +797,13 @@ export default function LikesClient({
         }
 
         .likes-glitch-fragment--media {
-          background-image: repeating-linear-gradient(180deg, transparent 0 1px, rgba(2, 2, 2, 0.9) 1px 2px), var(--likes-bg-image);
+          background-image: var(--likes-bg-image);
           background-size: var(--likes-fragment-bg-size);
           background-position: var(--likes-fragment-bg-x) var(--likes-fragment-bg-y);
-          filter: saturate(2.4) contrast(1.8) brightness(0.82);
+          filter: saturate(2) contrast(1.5) brightness(0.9);
           mix-blend-mode: screen;
-          box-shadow: 0 0 18px color-mix(in srgb, var(--likes-bg-accent) 55%, transparent);
+          border-left: 1px solid rgba(var(--glitch-cream), 0.5);
+          box-shadow: 3px 0 0 rgba(var(--glitch-ink), 0.26), -2px 0 0 rgba(var(--glitch-ink-light), 0.18);
         }
 
         .likes-immersive-bg__tone {

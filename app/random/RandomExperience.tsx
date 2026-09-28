@@ -232,7 +232,7 @@ function preloadVisualUrl(url: string): Promise<boolean> {
 
 type GlitchBar = {
   id: string
-  variant: 'line' | 'media' | 'signal' | 'block' | 'void'
+  variant: 'line' | 'media' | 'signal' | 'block' | 'void' | 'chunk'
   top: string
   width: string
   left: string
@@ -341,6 +341,8 @@ type ThemeStyle = CSSProperties & {
 type EncourageStyle = CSSProperties & { ['--encourage-height']?: string }
 type ImmersiveBackgroundStyle = CSSProperties & {
   ['--random-bg-image']?: string
+  ['--random-bg-echo-1']?: string
+  ['--random-bg-echo-2']?: string
   ['--random-bg-tone']?: string
   ['--random-bg-accent']?: string
   ['--random-bg-strength']?: number
@@ -610,10 +612,10 @@ function getImmersiveBackgroundData(
         : kind === 'video'
           ? 0.66
           : 0.56
-      : 0.5
+      : 0.58
     : isPriming
       ? 0
-      : 0.34
+      : 0.4
 
   return {
     image,
@@ -666,6 +668,8 @@ function buildImmersiveFragments(
   const clusterCount = lite ? 2 : 3
   const voidCount = lite ? 4 : (isCompact ? 6 : 9)
   const signalCount = lite ? 4 : (isCompact ? 6 : 8)
+  const pieceCount = lite ? (isCompact ? 4 : 6) : (isCompact ? 9 : 14)
+  const holeCount = lite ? 1 : (isCompact ? 2 : 3)
   const contentZoneTop = isCompact ? 18 : 16
   const contentZoneBottom = isCompact ? 70 : 84
   const sourceZoneTop = isCompact ? 62 : 77
@@ -801,8 +805,9 @@ function buildImmersiveFragments(
   for (let i = 0; i < tearCount; i += 1) {
     const hot = rng() > 0.82
     const smear = rng() > 0.9
+    const mid = rng() > 0.75
     const width = isCompact ? between(12, 96) : between(8, 82)
-    const height = (smear ? between(2.4, 7.2) : between(0.5, 2.3)) * 0.6
+    const height = mid ? between(4, 16) : (smear ? between(2.4, 7.2) : between(0.5, 2.3)) * 0.6
     const top = backdropTop(0.02)
     const quiet = quietFactor(top)
     const left = between(-26, 112)
@@ -811,7 +816,7 @@ function buildImmersiveFragments(
 
     fragments.push({
       id: `tear-${i}`,
-      className: `random-immersive-fragment random-immersive-fragment--tear${hot ? ' random-immersive-fragment--hot' : ''}${smear ? ' random-immersive-fragment--smear' : ''}`,
+      className: `random-immersive-fragment random-immersive-fragment--tear${hot ? ' random-immersive-fragment--hot' : ''}${smear ? ' random-immersive-fragment--smear' : ''}${mid ? ' random-immersive-fragment--mid-tear' : ''}`,
       style: {
         left: `${fixed(left)}%`,
         top: `${fixed(top)}%`,
@@ -820,8 +825,8 @@ function buildImmersiveFragments(
         backgroundPosition: `${fixed(between(-20, 120))}% ${fixed(top + between(-24, 24))}%`,
         backgroundSize: `${intBetween(86, 210)}vw ${intBetween(92, 210)}vh`,
         filter: `saturate(${fixed(between(1.6, 2.8), 2)}) contrast(${fixed(between(1.25, 2), 2)}) brightness(${fixed(hot ? between(0.98, 1.48) : between(0.36, 0.86), 2)}) hue-rotate(${hue}deg)`,
-        mixBlendMode: hot ? blends[intBetween(0, blends.length - 2)] : 'screen',
-        '--fragment-opacity': fixed(between(0.2, hot ? 0.72 : 0.52) * quiet, 2),
+        mixBlendMode: hot && !mid ? blends[intBetween(0, blends.length - 2)] : 'screen',
+        '--fragment-opacity': fixed((mid ? between(0.2, 0.45) : between(0.2, hot ? 0.72 : 0.52)) * quiet, 2),
         '--fragment-pop-opacity': fixed(between(0.62, 0.9) * quiet, 2),
         '--fragment-transform': transform,
         ...motion(18, 3, 8200, 22000),
@@ -866,6 +871,61 @@ function buildImmersiveFragments(
         },
       })
     }
+  }
+
+  // Whole pieces of pictures, as on the home: readable bits of the random on screen and of the two
+  // before it (already in the browser), half see-through, alone rather than heaped, a thin cream edge.
+  const pieceSources = lite
+    ? ['var(--random-bg-image, none)', 'var(--random-bg-echo-1, none)']
+    : ['var(--random-bg-image, none)', 'var(--random-bg-image, none)', 'var(--random-bg-echo-1, none)', 'var(--random-bg-echo-2, none)']
+  for (let i = 0; i < pieceCount; i += 1) {
+    const top = backdropTop(0.04)
+    const quiet = quietFactor(top)
+    const height = isCompact ? between(12, 40) : between(14, 60)
+    const width = isCompact ? between(10, 42) : between(5, 30)
+
+    fragments.push({
+      id: `piece-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--piece',
+      style: {
+        left: `${fixed(between(-4, 96))}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(width)}vw`,
+        height: `${fixed(height, 1)}px`,
+        backgroundImage: pieceSources[intBetween(0, pieceSources.length - 1)],
+        backgroundPosition: `${fixed(between(-10, 110))}% ${fixed(top + between(-20, 20))}%`,
+        backgroundSize: `${intBetween(110, 240)}vw ${intBetween(100, 200)}vh`,
+        filter: lite ? undefined : `saturate(${fixed(between(1.5, 2.2), 2)}) contrast(${fixed(between(1.2, 1.5), 2)}) brightness(${fixed(between(0.85, 1.1), 2)})`,
+        mixBlendMode: 'screen',
+        '--fragment-opacity': fixed(between(0.26, 0.56) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.5, 0.72) * quiet, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-10, 10), 1)}px, 0, 0)`,
+        ...motion(24, 4, 7000, 20000),
+      },
+    })
+  }
+
+  for (let i = 0; i < holeCount; i += 1) {
+    const top = backdropTop(0.02)
+    const quiet = quietFactor(top)
+
+    fragments.push({
+      id: `hole-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--void random-immersive-fragment--hole',
+      style: {
+        left: `${fixed(between(-2, 94))}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(between(4, 18))}vw`,
+        height: `${fixed(between(16, 44), 1)}px`,
+        backgroundImage: 'none',
+        backgroundColor: '#030303',
+        mixBlendMode: 'normal',
+        '--fragment-opacity': fixed(between(0.5, 0.8) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.6, 0.86) * quiet, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-8, 8), 1)}px, 0, 0)`,
+        ...motion(18, 3, 9000, 24000),
+      },
+    })
   }
 
   for (let i = 0; i < voidCount; i += 1) {
@@ -3083,7 +3143,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
       return `linear-gradient(90deg, transparent 0%, ${c1} ${stopA.toFixed(0)}%, ${GLITCH_CREAM} ${((stopA + stopB) / 2).toFixed(0)}%, ${c2} ${stopB.toFixed(0)}%, transparent 100%)`
     }
 
-    return Array.from({ length: count }, (_, index) => {
+    const bars = Array.from({ length: count }, (_, index): GlitchBar => {
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
       const roll = Math.random()
       const kind: GlitchBar['variant'] = roll > lerp(0.9, 0.8, energy) - overdrive * 0.05
@@ -3168,6 +3228,37 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
         popOpacity,
       }
     })
+
+    // A few whole pieces of pictures, as on the home: the random's and the one before it, one or two
+    // on arrival, five or six late in a session.
+    const chunkCount = Math.max(1, Math.round(randomInt(
+      Math.round(lerp(1, 3, energy) + overdrive),
+      Math.round(lerp(2, 5, energy) + overdrive),
+    ) * (lite ? 0.6 : 1)))
+    const chunks = Array.from({ length: chunkCount }, (_, index): GlitchBar => {
+      const topValue = randomBetween(2, 96)
+      const widthValue = randomBetween(6, lerp(20, 28, energy))
+      const source = Math.random() < 0.6 ? 'var(--random-bg-image, none)' : 'var(--random-bg-echo-1, none)'
+      const shiftValue = randomBetween(lerp(8, 18, energy), lerp(20, 40, energy) + overdrive * 16)
+      const opacity = parseFloat(randomBetween(0.5, lerp(0.72, 0.84, energy)).toFixed(2))
+      return {
+        id: `${stamp}-chunk-${index}-${Math.random().toString(16).slice(2, 6)}`,
+        variant: 'chunk',
+        top: `${topValue.toFixed(2)}%`,
+        width: `${widthValue.toFixed(2)}%`,
+        left: `${randomBetween(-2, 100 - widthValue).toFixed(2)}%`,
+        height: `${(randomBetween(20, lerp(48, 66, energy)) * 0.6).toFixed(2)}px`,
+        background: `${source} ${randomBetween(-10, 110).toFixed(0)}% ${(topValue + randomBetween(-15, 15)).toFixed(0)}% / ${randomInt(110, 220)}vw ${randomInt(100, 190)}vh no-repeat, linear-gradient(90deg, rgba(var(--glitch-ink), 0.3), rgba(var(--glitch-cream), 0.12))`,
+        delay: Math.round(randomBetween(0, lerp(60, 100, energy))),
+        duration: Math.round(randomBetween(lerp(200, 280, energy), lerp(320, 480, energy) + overdrive * 80)),
+        shift: `${shiftValue.toFixed(1)}px`,
+        yShift: `${randomBetween(-2.5, 2.5).toFixed(1)}px`,
+        opacity,
+        popOpacity: parseFloat(Math.min(1, opacity + randomBetween(0.06, 0.18)).toFixed(2)),
+      }
+    })
+
+    return [...bars, ...chunks]
   }, [effectsProfile])
 
   const triggerBurgerGlitch = useCallback(() => {
@@ -4776,9 +4867,16 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     [isPriming, viewItem, viewportWidth]
   )
   const lastImmersiveImageRef = useRef<string | null>(currentImmersiveImage)
+  // the pictures of the two randoms seen before, for the backdrop's pieces: already in the browser
+  const [echoImages, setEchoImages] = useState<string[]>([])
 
   useEffect(() => {
-    if (currentImmersiveImage) lastImmersiveImageRef.current = currentImmersiveImage
+    if (!currentImmersiveImage) return
+    const previous = lastImmersiveImageRef.current
+    lastImmersiveImageRef.current = currentImmersiveImage
+    if (previous && previous !== currentImmersiveImage) {
+      setEchoImages((list) => [previous, ...list.filter((url) => url !== previous && url !== currentImmersiveImage)].slice(0, 2))
+    }
   }, [currentImmersiveImage])
 
   const fallbackImmersiveImage = currentImmersiveImage ? null : lastImmersiveImageRef.current
@@ -4788,11 +4886,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   )
   const immersiveBackgroundStyle = useMemo<ImmersiveBackgroundStyle>(() => ({
     '--random-bg-image': cssImageUrl(immersiveBackground.image),
+    '--random-bg-echo-1': cssImageUrl(echoImages[0] || immersiveBackground.image),
+    '--random-bg-echo-2': cssImageUrl(echoImages[1] || echoImages[0] || immersiveBackground.image),
     '--random-bg-tone': immersiveBackground.tone,
     '--random-bg-accent': immersiveBackground.accent,
     '--random-bg-strength': Math.min(1, Number((immersiveBackground.strength * (1 + effectiveProgressionIntensity * 0.28)).toFixed(2))),
     '--random-bg-noise-strength': Math.min(1, Number((immersiveBackground.strength * (0.42 + effectiveProgressionIntensity * 0.24)).toFixed(2))),
-  }), [effectiveProgressionIntensity, immersiveBackground])
+  }), [echoImages, effectiveProgressionIntensity, immersiveBackground])
   const immersiveSeed = useMemo(
     () => getImmersiveSeed(viewItem, immersiveBackground.image),
     [immersiveBackground.image, viewItem]
@@ -5078,6 +5178,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         style={arcade && arcadeCard.url ? {
           ...immersiveBackgroundStyle,
           '--random-bg-image': cssImageUrl(arcadeCard.url),
+          '--random-bg-echo-1': cssImageUrl(arcadeCard.url),
+          '--random-bg-echo-2': cssImageUrl(arcadeCard.url),
           '--random-bg-accent': theme.text,
           '--random-bg-strength': arcadePlay === 'playing' ? 0.5 : 0.85,
           '--random-bg-noise-strength': 0.45,
@@ -5096,7 +5198,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       <div
         key={pageGlitchCycle}
         className={`page-glitch-overlay${pageGlitchActive ? ' page-glitch-overlay--active' : ''}`}
-        style={{ '--random-bg-image': immersiveBackgroundStyle['--random-bg-image'] } as ImmersiveBackgroundStyle}
+        style={{
+          '--random-bg-image': immersiveBackgroundStyle['--random-bg-image'],
+          '--random-bg-echo-1': immersiveBackgroundStyle['--random-bg-echo-1'],
+        } as ImmersiveBackgroundStyle}
         aria-hidden="true"
       >
         <div className="page-glitch-overlay__bars">
@@ -5945,6 +6050,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             -3px 0 0 rgba(var(--glitch-ink), 0.2),
             0 4px 0 rgba(0, 0, 0, 0.34);
         }
+        /* whole pieces of pictures, as on the home: a thin cream edge and a slight echo in the theme's colours */
+        .random-immersive-fragment--piece {
+          will-change: opacity, transform;
+          border-left: 1px solid rgba(var(--glitch-cream), 0.5);
+          box-shadow:
+            3px 0 0 rgba(var(--glitch-ink), 0.26),
+            -2px 0 0 rgba(var(--glitch-ink-light), 0.18);
+        }
+        .random-immersive-fragment--mid-tear {
+          border-left: 1px solid rgba(var(--glitch-cream), 0.4);
+        }
         .random-immersive-fragment--void {
           background-image: none !important;
           animation-name: random-line-corrupt;
@@ -5953,6 +6069,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             0 0 0 1px rgba(0, 0, 0, 0.95),
             6px 0 0 rgba(var(--glitch-ink-light), 0.05),
             -5px 0 0 rgba(var(--glitch-ink), 0.05);
+        }
+        .random-immersive-fragment--hole {
+          border-left: 1px solid rgba(var(--glitch-ink-light), 0.3);
+          border-bottom: 1px solid rgba(var(--glitch-ink), 0.22);
         }
         .random-immersive-fragment--signal {
           animation-name: random-line-corrupt;
@@ -6220,6 +6340,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           box-shadow:
             5px 0 0 rgba(var(--glitch-ink-light), 0.08),
             -5px 0 0 rgba(var(--glitch-ink), 0.08);
+        }
+        .page-glitch-overlay__bar--chunk {
+          mix-blend-mode: screen;
+          border-left: 1px solid rgba(var(--glitch-cream), 0.55);
+          box-shadow:
+            3px 0 0 rgba(var(--glitch-ink), 0.3),
+            -2px 0 0 rgba(var(--glitch-ink-light), 0.22);
         }
         .random-page--lite-effects .random-immersive-bg__noise,
         .random-page--lite-effects .random-immersive-fragment {
