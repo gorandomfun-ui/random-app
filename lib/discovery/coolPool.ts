@@ -18,7 +18,8 @@ import { hardEligible, type Intent, type PoolResult, type Session } from './pool
 import type { Rng } from './random'
 import { drawStart, type StartSource } from '../v3/cool/start'
 import { bagSourceAt, nicheAt, type CoolSource, type NicheSource } from '../v3/cool/bag'
-import type { Popularity } from '../v3/types'
+import { trailersSeenIn } from '../v3/cool/themes'
+import type { Popularity, Universe } from '../v3/types'
 
 /** A draw whose few rows are all refused is tried again from another point. */
 const ATTEMPTS = 3
@@ -45,14 +46,15 @@ type Decoder<T> = (row: CatalogueRow) => T | null
  * caller falls back to the lanes.
  */
 export async function selectCool<T>(
-  db: Db, ticket: Intent, state: Session, decode: Decoder<T>, random: Rng, now: number,
+  db: Db, ticket: Intent, state: Session, decode: Decoder<T>, random: Rng, now: number, theme?: Universe,
 ): Promise<CoolResult<T> | null> {
   const type = ticket.type === 'image' ? 'image' : 'video'
   // The session's bag says what this ticket is for; the ticket count walks it.
   const asked = bagSourceAt(state.seed, state.coolTickets)
   const niche = asked === 'niche' ? nicheAt(state.seed, state.coolTickets) : undefined
   for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
-    const drawn = await drawStart(db, { type, source: asked, niche, random, now })
+    const drawn = await drawStart(db, { type, source: asked, niche, random, now,
+      ...(theme ? { theme, lively: { trailersSeen: trailersSeenIn(state.exposures) } } : {}) })
     if (!drawn) continue
     for (const row of drawn.rows as CatalogueRow[]) {
       const payload = decode(row)

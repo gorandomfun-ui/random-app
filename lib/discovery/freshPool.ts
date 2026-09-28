@@ -17,6 +17,8 @@ import { ObjectId, type Db, type Document } from 'mongodb'
 import { candidateFromRow, type CatalogueRow } from './catalog'
 import { isSeen, seenBytes, type FreshSeen } from './freshSeen'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
+import { byLiveliness, trailersSeenIn } from '../v3/cool/themes'
+import type { Universe } from '../v3/types'
 
 export { parseFreshSeen } from './freshSeen'
 
@@ -30,7 +32,8 @@ const SAMPLE = 24
 /** A fresh video never repeats a channel among the session's last ten contents. */
 const AUTHOR_SPACING = 10
 
-type FreshList = { day: string; ids: string[] }
+/** `universes`: each place's universe, for the theme deck; read with the list. */
+type FreshList = { day: string; ids: string[]; universes: Array<Universe | null> }
 
 export function freshEnabled(): boolean {
   return process.env.RANDOM_FRESH_ENABLED !== '0'
@@ -42,16 +45,24 @@ async function dayList(db: Db, now: number): Promise<FreshList | null> {
   if (cache && now - cache.at < LIST_CACHE_MS) return cache.list
   const docs = await db.collection(FRESH_COLLECTION).find({ at: { $gte: new Date(now - LIST_MAX_AGE_MS) } } as Document, { sort: { at: -1 }, limit: 1, projection: { ids: 1 }, maxTimeMS: 1500 }).toArray()
   const doc = docs[0]
-  const list = doc && Array.isArray(doc.ids) ? { day: String(doc._id), ids: (doc.ids as unknown[]).map(String).filter((id) => /^[a-f\d]{24}$/i.test(id)) } : null
+  const ids = doc && Array.isArray(doc.ids) ? (doc.ids as unknown[]).map(String).filter((id) => /^[a-f\d]{24}$/i.test(id)) : null
+  let universes: Array<Universe | null> = ids ? ids.map(() => null) : []
+  if (ids?.length) {
+    // One read of the list's labels every few minutes: what the theme deck needs to ask for a universe.
+    const rows = await db.collection('items').find({ _id: { $in: ids.map((id) => new ObjectId(id)) } } as Document, { projection: { 'v3.universe': 1 }, maxTimeMS: 3000 }).toArray().catch(() => [])
+    const byId = new Map(rows.map((row) => [String(row._id), ((row.v3 as { universe?: Universe } | undefined)?.universe ?? null)]))
+    universes = ids.map((id) => byId.get(id) ?? null)
+  }
+  const list = ids ? { day: String(doc!._id), ids, universes } : null
   cache = { at: now, list }
   return list
 }
 
-/** Up to `count` places of the list, at random, among those this device has not seen today. */
-export function unseenSample(size: number, day: string, seen: FreshSeen | null, count: number, random: () => number): number[] {
+/** Up to `count` places of the list, at random, among those this device has not seen today (and, with `keep`, only those it keeps). */
+export function unseenSample(size: number, day: string, seen: FreshSeen | null, count: number, random: () => number, keep?: (index: number) => boolean): number[] {
   const bytes = seenBytes(seen, day)
   const open: number[] = []
-  for (let index = 0; index < size; index += 1) if (!isSeen(bytes, index)) open.push(index)
+  for (let index = 0; index < size; index += 1) if (!isSeen(bytes, index) && (!keep || keep(index))) open.push(index)
   for (let index = open.length - 1; index > 0 && open.length - index <= count; index -= 1) {
     const other = Math.floor(random() * (index + 1))
     ;[open[index], open[other]] = [open[other], open[index]]
@@ -59,15 +70,27 @@ export function unseenSample(size: number, day: string, seen: FreshSeen | null, 
   return open.slice(-count).reverse()
 }
 
+/**
+ * `theme`: the universe of the session's card (lib/v3/cool/themes.ts). Only
+ * the day's videos of that universe are drawn, the lively ones first; when
+ * the day holds none, this visual is not a fresh one — the cool or common
+ * draw serves the universe, and the fresh ten go on at the next videos.
+ */
 export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, seen: FreshSeen | null,
-  decode: (row: CatalogueRow) => T | null, now: number, random: () => number = Math.random): Promise<PoolResult<T> | null> {
+  decode: (row: CatalogueRow) => T | null, now: number, random: () => number = Math.random, theme?: Universe): Promise<PoolResult<T> | null> {
   if (ticket.type !== 'video' || (state.freshServed ?? 0) >= FRESH_PER_SESSION) return null
   const list = await dayList(db, now)
   if (!list?.ids.length) return null
-  const picks = unseenSample(list.ids.length, list.day, seen, SAMPLE, random)
+  const picks = unseenSample(list.ids.length, list.day, seen, SAMPLE, random, theme ? (index) => list.universes[index] === theme : undefined)
   if (!picks.length) return null
-  const rows = await db.collection('items').find({ _id: { $in: picks.map((index) => new ObjectId(list.ids[index])) } } as Document, { maxTimeMS: 2000 }).toArray()
+  const fetched = await db.collection('items').find({ _id: { $in: picks.map((index) => new ObjectId(list.ids[index])) } } as Document, { maxTimeMS: 2000 }).toArray()
+  const rows = theme ? byLiveliness(fetched, trailersSeenIn(state.exposures)) : fetched
   const byId = new Map(rows.map((row) => [String(row._id), row]))
+  // With the theme deck, the liveliness order (a trailer past the session's two is gone); without, the sample's random order as before.
+  if (theme) {
+    const rank = new Map(rows.map((row, position) => [String(row._id), position]))
+    picks.splice(0, picks.length, ...picks.filter((index) => rank.has(list.ids[index])).sort((left, right) => rank.get(list.ids[left])! - rank.get(list.ids[right])!))
+  }
   const recentAuthors = new Set(state.recent.slice(-AUTHOR_SPACING).map((entry) => entry.authorKey).filter(Boolean))
   let fallback: PoolResult<T> | null = null
   for (const index of picks) {

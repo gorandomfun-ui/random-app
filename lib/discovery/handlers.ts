@@ -13,6 +13,8 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 import { parseSession } from './sessionCodec'
 export { parseSession } from './sessionCodec'
 import { curatorOwnerId, curatorRequestAllowed } from './curatorAuth'
+import { isAdminRequest } from '../auth/adminAuth'
+import { themeAt, themeDeckSwitchedOn } from '../v3/cool/themes'
 import { withAbortDeadline } from './exploration'
 import { requestSubjectWork } from './subjectWork'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
@@ -50,22 +52,25 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
       const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
+      // The theme deck (lib/v3/cool/themes.ts): this visual's universe, when the switch is on — or for the admin's rehearsal of it.
+      const deckOn = themeDeckSwitchedOn() || (body.themeDeck === true && isAdminRequest(req))
+      const theme = deckOn && isVisual(ticket.type) ? themeAt(state.seed, state.visuals) : undefined
       // What the device saw this week rides along and is left out of the draw, on top of the session's own forty.
       const seen = parseSeen(body.seen)
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
       // Fresh of the day first: the session's first ten videos, at random among the day's list, none this device already saw today.
       const fresh = freshEnabled() && ticket.type === 'video'
-        ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now()).catch(() => null) : null
+        ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now(), Math.random, theme).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
       // The lanes remain the fallback when the pool holds nothing eligible for this visitor.
       const cool = !fresh && coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
-        ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now()).catch(() => null) : null
-      const choice = fresh ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId())
+        ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now(), theme).catch(() => null) : null
+      const choice = fresh ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId(), theme)
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
-      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection,
+      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}),
         ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }
   }

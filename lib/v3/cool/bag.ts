@@ -73,7 +73,7 @@ function greedy<T>(bag: readonly T[], previous: T | null, random: Rng): T[] {
  * shuffled by the seed and drawn again until no ticket repeats the one
  * before it, the previous bag's last ticket included.
  */
-function arrangement<T>(seed: number, name: string, ordinal: number, bag: readonly T[], previous: T | null): T[] {
+export function arrangement<T>(seed: number, name: string, ordinal: number, bag: readonly T[], previous: T | null): T[] {
   if (new Set(bag).size === 1) return [...bag]
   for (let attempt = 0; attempt < 64; attempt += 1) {
     const order = shuffled(bag, seeded(hash(`${seed}:${name}:${ordinal}:${attempt}`)))

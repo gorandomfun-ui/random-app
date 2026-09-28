@@ -17,7 +17,8 @@ import { isCleanTitle, isLatinTitle } from './clean'
 import { LIKE_ITSELF, loadLikePool, pickZone, type LikePool } from './likePool'
 import { isCoolCandidate, type LabelableRow } from './registers'
 import { SERVABLE } from './servable'
-import type { CoolRegister, Popularity } from '../types'
+import { byLiveliness } from './themes'
+import type { CoolRegister, Popularity, Universe } from '../types'
 
 export { SERVABLE } from './servable'
 
@@ -25,8 +26,8 @@ export type Rng = () => number
 export type StartType = 'video' | 'image'
 /** A content of the subject a like names, of its author, or — once in a thousand — the like itself. */
 export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like'
-/** What a start actually came from: a register, a zone around a like, the trend, or the recent. */
-export type StartSource = CoolRegister | LikeZoneKind | 'trend' | 'recent'
+/** What a start actually came from: a register, a zone around a like, the trend, the recent, or the little-seen of the session's universe. */
+export type StartSource = CoolRegister | LikeZoneKind | 'trend' | 'recent' | 'theme'
 export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; niche?: NicheSource; fallback: boolean }
 
 /** Rows read per draw: enough for the eligibility rules to refuse a few. */
@@ -47,6 +48,9 @@ const QUERY_BUDGET_MS = 1_500
 const REGISTER_INDEX = 'v3_register_type_rand'
 const SUBJECT_INDEX = 'v3_subject_type_rand'
 const LINE_INDEX = 'v3_line_type_rand'
+const UNIVERSE_INDEX = 'v3_universe_type_rand'
+/** A draw inside the session's universe reads more rows, so the lively ones can go first. */
+const THEMED_ROWS = 16
 
 /** The register a niche means for a format: old school is the archives for a video, the archives or the vintage GIFs for an image. */
 export function registerFor(source: NicheSource, type: StartType, random: Rng): CoolRegister {
@@ -162,15 +166,61 @@ async function drawRecent(db: Db, type: StartType, random: Rng, excluded: Set<st
   }).slice(0, ROWS)
 }
 
+/**
+ * The same sources inside the universe the session's card names (lib/v3/cool/themes.ts):
+ * the trend, the recent, a niche as its register there — the archives of history,
+ * the elsewhere of travel — or else the little-seen of that universe. Seeks on the
+ * universe index; null when the universe has nothing for this source.
+ */
+async function drawThemed(db: Db, theme: Universe, source: CoolSource, niche: NicheSource | undefined, type: StartType, random: Rng, excluded: Set<string>, now: number): Promise<{ rows: Document[]; source: StartSource } | null> {
+  const inTheme = (filter: Filter<Document>) => seek(db, { 'v3.universe': theme, type, ...SERVABLE, ...filter }, UNIVERSE_INDEX, random, excluded, THEMED_ROWS)
+  if (source === 'trend') {
+    const rows = (await inTheme({ 'v3.line': 'trend' })).filter((row) => isCoolCandidate(row as LabelableRow) && isCleanTitle(row.title as string))
+    if (rows.length) return { rows, source: 'trend' }
+  }
+  if (source === 'trend' || source === 'recent') {
+    const rows = (await inTheme({ 'v3.era': type === 'video' ? 'recent' : 'unknown', 'v3.usable': true }))
+      .filter((row) => isCoolCandidate(row as LabelableRow) && isCleanTitle(row.title as string) && isLatinTitle(row.title as string))
+      .filter((row) => type !== 'video' || (publishedDate(row.publishedAt)?.getTime() ?? 0) >= now - MODERN_MONTHS * 30 * 86_400_000)
+    if (rows.length) return { rows, source: 'recent' }
+  }
+  if (source === 'niche' && niche && niche !== 'music' && niche !== 'gaming') {
+    const register = registerFor(niche, type, random)
+    const rows = await inTheme({ 'v3.registers': register })
+    if (rows.length) return { rows, source: register }
+  }
+  const rows = (await inTheme({ 'v3.popularity': source === 'niche' ? 'niche' : { $in: ['niche', 'mid', 'known'] } })).filter((row) => isCoolCandidate(row as LabelableRow))
+  return rows.length ? { rows, source: 'theme' } : null
+}
+
 export async function drawStart(
   db: Db,
-  options: { type: StartType; source: CoolSource; niche?: NicheSource; excludeIds?: Iterable<string>; random?: Rng; now?: number },
+  options: { type: StartType; source: CoolSource; niche?: NicheSource; excludeIds?: Iterable<string>; random?: Rng; now?: number;
+    /** The universe of the session's card, when the theme deck is on. */
+    theme?: Universe
+    /** Lively first, and no trailer past the session's two (the theme deck's format rule). */
+    lively?: { trailersSeen: number } },
+): Promise<Start | null> {
+  const start = await drawSource(db, options)
+  if (!start || !options.lively) return start
+  const rows = byLiveliness(start.rows, options.lively.trailersSeen)
+  return rows.length ? { ...start, rows: rows.slice(0, ROWS) } : null
+}
+
+async function drawSource(
+  db: Db,
+  options: { type: StartType; source: CoolSource; niche?: NicheSource; excludeIds?: Iterable<string>; random?: Rng; now?: number; theme?: Universe },
 ): Promise<Start | null> {
   const random = options.random ?? Math.random
   const pool = await loadLikePool(db, options.now).catch((): LikePool => ({ zones: [], likeIds: [] }))
   // A like is never shown by a zone, whichever source the draw came from.
   const excluded = new Set([...(options.excludeIds ?? []), ...pool.likeIds])
   const { type, source } = options
+  // The session's card first; a like stays a like (its zone is the curator's taste, not a universe).
+  if (options.theme && source !== 'like') {
+    const themed = await drawThemed(db, options.theme, source, options.niche, type, random, excluded, options.now ?? Date.now()).catch(() => null)
+    if (themed) return { rows: themed.rows, source: themed.source, asked: source, ...(options.niche ? { niche: options.niche } : {}), fallback: false }
+  }
 
   if (source === 'like') {
     const drawn = pool.zones.length ? await drawLike(db, pool, type, random, excluded) : null

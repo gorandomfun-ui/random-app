@@ -8,6 +8,8 @@ import { assignEditorial, type OwnerReference } from './editorial'
 import { retrieveRelatedRows } from './retrieval'
 import type { Candidate, Format } from './types'
 import { randomWindow, sampleCatalogue, sampleWindow, type PoolRetrievalReport } from './sampling'
+import { byLiveliness, trailersSeenIn } from '../v3/cool/themes'
+import type { Universe } from '../v3/types'
 
 const FAMILIES = ['music', 'sport', 'craft', 'food', 'art', 'advertising', 'cinema', 'science', 'gaming', 'technology', 'travel', 'everyday', 'unknown']
 const TYPES: Format[] = ['video', 'image', 'web', 'quote', 'joke', 'fact']
@@ -34,12 +36,25 @@ async function ringSample(db: Db, match: Filter<Document>, limit: number, point:
     .sort({ rand: 1 }).limit(limit - first.length).maxTimeMS(maxTimeMS).toArray()
   return [...first, ...second]
 }
+/** Rows of one universe from a random point of its index, round the end, the lively ones first (the theme deck). */
+const THEMED_ROWS = 48
+const THEMED_CANDIDATES = 24
+async function themedSample(db: Db, match: Filter<Document>, theme: Universe, trailersSeen: number, point: number): Promise<CatalogueRow[]> {
+  const collection = db.collection('items')
+  const inTheme = { $and: [match, { 'v3.universe': theme }] }
+  const read = (range: Filter<Document>, limit: number) => collection.find({ $and: [inTheme, range] }, { hint: 'v3_universe_type_rand', timeoutMS: 850 })
+    .sort({ rand: 1 }).limit(limit).maxTimeMS(700).toArray()
+  const rows = await read({ rand: { $gte: point } }, THEMED_ROWS)
+  if (rows.length < THEMED_ROWS) rows.push(...(await read({ rand: { $lt: point } }, THEMED_ROWS - rows.length)))
+  return byLiveliness(rows as CatalogueRow[], trailersSeen).slice(0, THEMED_CANDIDATES)
+}
 function decodeRows<T>(rows: CatalogueRow[], decode: Decoder<T>, now: number): Candidate<T>[] {
   return rows.flatMap(row => { const payload = decode(row); return payload == null ? [] : [candidateFromRow(row, payload, now)] })
 }
 /** A fresh broad catalogue sample is the backbone of EVERY visual draw.
  * Focused additions can enrich it, but only inside a rotating random window. */
-export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', window = randomWindow(random), report?: PoolRetrievalReport): Promise<Candidate<T>[]> {
+export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', window = randomWindow(random), report?: PoolRetrievalReport,
+  themed?: { theme: Universe; trailersSeen: number }): Promise<Candidate<T>[]> {
   const decodePoolRows = (rows: CatalogueRow[]) => decodeRows(rows, decode, now)
     .filter(candidate => candidate.available && !candidate.suppressed && (!candidate.stock || ticket.allowStock) &&
       !(ticket.mode === 'cool' && candidate.routineEditorial))
@@ -50,6 +65,15 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
   const common: Filter<Document> = { $and: [base(ticket.type, lang, now),
     ...(!ticket.allowStock ? [{ provider: { $nin: ['pexels', 'pixabay'] } }] : []),
   ] }
+  // The theme deck: the candidates are the universe's, the lively first; the broad sample stays the way back when the universe has none.
+  if (themed) {
+    const rows = await themedSample(db, common, themed.theme, themed.trailersSeen, random()).catch(() => { if (report) report.queryFailures++; return [] as CatalogueRow[] })
+    const candidates = decodePoolRows(rows)
+    if (candidates.length) {
+      if (report) report.focusedCandidates += candidates.length
+      return candidates
+    }
+  }
   const broadPromise = sampleCatalogue(db, common).catch(() => { if (report) report.queryFailures++; return [] as CatalogueRow[] })
   // Four rotating families, never a guaranteed allocation to all 13 families.
   // Each extra lookup stays within the SAME random window, even when empty.
@@ -80,12 +104,13 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
   if (report) { report.broadCandidates = general.length; report.focusedCandidates += extra.length }
   return [...new Map([...general, ...extra].map(candidate => [candidate.key, candidate])).values()]
 }
-export async function selectPool<T>(db: Db, ticket: Intent, state: Session, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', ownerId = '') {
+export async function selectPool<T>(db: Db, ticket: Intent, state: Session, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', ownerId = '', theme?: Universe) {
   const started = Date.now()
   const report: PoolRetrievalReport = { broadCandidates: 0, focusedCandidates: 0, queryFailures: 0, broadFallback: false, elapsedMs: 0 }
   const window = randomWindow(random)
   const retrievalTicket = ticket.branch === 'editorial' && !ownerId ? { ...ticket, branch: 'autonomous' as const } : ticket
-  const generalPromise = loadPoolCandidates(db, retrievalTicket, lang, decode, random, now, factVariant, window, report).catch(() => [] as Candidate<T>[])
+  const themed = theme && (ticket.type === 'video' || ticket.type === 'image') ? { theme, trailersSeen: trailersSeenIn(state.exposures) } : undefined
+  const generalPromise = loadPoolCandidates(db, retrievalTicket, lang, decode, random, now, factVariant, window, report, themed).catch(() => [] as Candidate<T>[])
   let references: OwnerReference[] = []
   let directed: Candidate<T>[] = []
   if (ticket.branch === 'editorial' && ownerId && (ticket.type === 'video' || ticket.type === 'image')) {
