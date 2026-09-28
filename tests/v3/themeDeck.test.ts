@@ -36,7 +36,7 @@ test('lively and short first: a clip before a four-hour live, a moving video bef
     { _id: 'b', type: 'video', duration: 'PT1M', title: 'short' },
     { _id: 'c', type: 'video', duration: 'PT2M', title: 'Official Trailer' },
   ]
-  assert.deepEqual(byLiveliness(rows).map((row) => row._id), ['b', 'c', 'a'])
+  assert.deepEqual(byLiveliness(rows).map((row) => row._id), ['b', 'a', 'c'], 'a trailer comes last, after even a long video')
   assert.deepEqual(byLiveliness(rows, TRAILERS_PER_SESSION).map((row) => row._id), ['b', 'a'], 'a trailer past the session\'s two is left out')
   assert.equal(trailersSeenIn([{ practices: ['film-trailer'] }, { practices: [] }, { practices: ['film-trailer', 'cinema'] }]), 2)
 })

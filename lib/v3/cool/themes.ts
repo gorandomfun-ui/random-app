@@ -77,11 +77,13 @@ function seconds(duration: unknown): number | null {
 /**
  * How lively a row is, 0 best: a video between fifteen seconds and eight
  * minutes, moving, not a live stream. 1: a bit long, or its length unknown.
- * 2: a still album cover ("- Topic" channels), a stream, or past twenty
- * minutes. `Infinity`: a trailer when the session has had its two.
+ * 2: a still album cover ("- Topic" channels), a stream, past twenty
+ * minutes — or a trailer, served only when the universe offers nothing
+ * else (a teaser is one: the session's own count misses them).
+ * `Infinity`: a trailer when the session has had its two.
  */
 export function livelyRank(row: Record<string, unknown>, trailersSeen = 0): number {
-  if (trailersSeen >= TRAILERS_PER_SESSION && isTrailerTitle(row.title)) return Infinity
+  if (isTrailerTitle(row.title)) return trailersSeen >= TRAILERS_PER_SESSION ? Infinity : 2
   if (row.type !== 'video') return 0
   const length = seconds(row.duration)
   if (/ - Topic$/.test(String(row.channelTitle ?? ''))) return 2
