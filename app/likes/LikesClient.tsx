@@ -12,7 +12,7 @@ import MonoIcon from '../../components/MonoIcon'
 import PointsText from '@/components/PointsText'
 import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
-import { THEMES } from '@/lib/theme'
+import { THEMES, glitchInkVars, type GlitchInkVars } from '@/lib/theme'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import {
   readWeLikesCache,
@@ -54,7 +54,7 @@ function readWeCache(): { items: GlobalLikeItem[]; timestamp: number } | null {
   return readWeLikesCache<GlobalLikeItem>()
 }
 
-type LikesGlitchBgStyle = CSSProperties & {
+type LikesGlitchBgStyle = CSSProperties & Partial<GlitchInkVars> & {
   ['--likes-bg-image']?: string
   ['--likes-bg-accent']?: string
   ['--likes-bg-media-opacity']?: number
@@ -81,7 +81,15 @@ type LikesGlitchFragment = {
 
 type LikesGlitchSource = Pick<LikeItem, 'id' | 'likedAt' | 'ogImage' | 'provider' | 'thumbUrl' | 'type' | 'url'>
 
-const LIKES_GLITCH_COLORS = ['#18f06a', '#b833ff', '#00e8ff', '#ff2a6d', '#f3ef7d', '#ffffff']
+// the theme's colour, its light and deep shades and the cream, as on the Random page (glitchInkVars)
+const LIKES_GLITCH_COLORS = [
+  'rgb(var(--glitch-ink))',
+  'rgb(var(--glitch-ink-light))',
+  'rgb(var(--glitch-ink-deep))',
+  'rgb(var(--glitch-cream))',
+  'rgb(var(--glitch-ink))',
+  '#ffffff',
+]
 
 function cssImageUrl(value?: string | null) {
   if (!value) return 'none'
@@ -448,6 +456,7 @@ export default function LikesClient({
     [likesGlitchImage, likesGlitchSeed, vw],
   )
   const likesGlitchStyle = useMemo<LikesGlitchBgStyle>(() => ({
+    ...glitchInkVars(accentColor),
     '--likes-bg-image': cssImageUrl(likesGlitchImage),
     '--likes-bg-accent': accentColor,
     '--likes-bg-media-opacity': likesGlitchImage ? 0.28 : 0,
@@ -742,7 +751,7 @@ export default function LikesClient({
           background-size: cover;
           background-position: center 18%;
           opacity: var(--likes-bg-media-opacity);
-          filter: blur(24px) saturate(2) contrast(1.45) brightness(0.35);
+          filter: blur(24px) saturate(2) contrast(1.45) brightness(0.385);
           transform: scale(1.12);
         }
 
@@ -808,7 +817,7 @@ export default function LikesClient({
           inset: 0;
           background:
             repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 4px),
-            repeating-linear-gradient(180deg, transparent 0 13px, rgba(0, 232, 255, 0.05) 13px 14px, transparent 14px 19px);
+            repeating-linear-gradient(180deg, transparent 0 13px, rgba(var(--glitch-ink-light), 0.05) 13px 14px, transparent 14px 19px);
           opacity: 0.32;
           mix-blend-mode: screen;
         }
