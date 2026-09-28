@@ -244,6 +244,7 @@ type GlitchBar = {
   yShift: string
   opacity: number
   popOpacity: number
+  skew?: string
 }
 
 type GlitchBarStyle = CSSProperties & {
@@ -254,6 +255,7 @@ type GlitchBarStyle = CSSProperties & {
   ['--glitch-bar-y-shift']?: string
   ['--glitch-bar-y-reverse']?: string
   ['--glitch-bar-pop-opacity']?: number
+  ['--glitch-bar-skew']?: string
 }
 
 type FullscreenVideoPayload = {
@@ -730,6 +732,16 @@ function buildImmersiveFragments(
       '--fragment-delay': `-${intBetween(0, maxDuration)}ms`,
     } satisfies ImmersiveFragmentStyle
   }
+  // Each random draws a mood for its pieces: calm about one time in two (one big piece at most,
+  // mostly lines), normal one in three, rich one in six. The session's growing intensity is untouched.
+  const moodRoll = rng()
+  const mood: 'calm' | 'normal' | 'rich' = moodRoll < 0.5 ? 'calm' : moodRoll < 0.84 ? 'normal' : 'rich'
+  // Now and then a piece leans like italics, its ends cut on the slant: mostly the same way, rarely
+  // the other, never many.
+  const slant = (chance: number) => {
+    if (rng() >= chance) return ''
+    return ` skewX(${fixed(rng() < 0.85 ? -between(18, 28) : between(16, 22), 1)}deg)`
+  }
 
   for (let i = 0; i < fineLineCount; i += 1) {
     const top = backdropTop(0.025)
@@ -805,14 +817,14 @@ function buildImmersiveFragments(
   for (let i = 0; i < tearCount; i += 1) {
     const hot = rng() > 0.82
     const smear = rng() > 0.9
-    const mid = rng() > 0.75
+    const mid = rng() > (mood === 'calm' ? 0.88 : 0.75)
     const width = isCompact ? between(12, 96) : between(8, 82)
     const height = mid ? between(4, 16) : (smear ? between(2.4, 7.2) : between(0.5, 2.3)) * 0.6
     const top = backdropTop(0.02)
     const quiet = quietFactor(top)
     const left = between(-26, 112)
     const hue = hot ? intBetween(-24, 24) : intBetween(-10, 10)
-    const transform = `translate3d(${fixed(between(-18, 18), 1)}px, ${fixed(between(-1.5, 1.5), 1)}px, 0)`
+    const transform = `translate3d(${fixed(between(-18, 18), 1)}px, ${fixed(between(-1.5, 1.5), 1)}px, 0)${mid ? slant(1 / 14) : ''}`
 
     fragments.push({
       id: `tear-${i}`,
@@ -878,11 +890,22 @@ function buildImmersiveFragments(
   const pieceSources = lite
     ? ['var(--random-bg-image, none)', 'var(--random-bg-echo-1, none)']
     : ['var(--random-bg-image, none)', 'var(--random-bg-image, none)', 'var(--random-bg-echo-1, none)', 'var(--random-bg-echo-2, none)']
-  for (let i = 0; i < pieceCount; i += 1) {
+  const pieces = Math.round(pieceCount * (mood === 'calm' ? 0.45 : mood === 'normal' ? 0.75 : 1))
+  const bigChance = mood === 'calm' ? 0.12 : mood === 'normal' ? 0.2 : 0.3
+  let bigLeft = mood === 'calm' ? 1 : 2
+  const bigBands = new Set<'top' | 'bottom'>()
+  for (let i = 0; i < pieces; i += 1) {
     const top = backdropTop(0.04)
     const quiet = quietFactor(top)
-    const height = isCompact ? between(12, 40) : between(14, 60)
-    const width = isCompact ? between(10, 42) : between(5, 30)
+    // mostly small pieces; now and then a big one, never two at once in the same band
+    const band = top < contentZoneTop ? 'top' : 'bottom'
+    const big = bigLeft > 0 && !bigBands.has(band) && rng() < bigChance
+    if (big) {
+      bigLeft -= 1
+      bigBands.add(band)
+    }
+    const height = big ? (isCompact ? between(24, 30) : between(30, 44)) : (isCompact ? between(8, 22) : between(10, 28))
+    const width = big ? (isCompact ? between(18, 30) : between(12, 22)) : (isCompact ? between(10, 24) : between(5, 16))
 
     fragments.push({
       id: `piece-${i}`,
@@ -897,15 +920,16 @@ function buildImmersiveFragments(
         backgroundSize: `${intBetween(110, 240)}vw ${intBetween(100, 200)}vh`,
         filter: lite ? undefined : `saturate(${fixed(between(1.5, 2.2), 2)}) contrast(${fixed(between(1.2, 1.5), 2)}) brightness(${fixed(between(0.85, 1.1), 2)})`,
         mixBlendMode: 'screen',
-        '--fragment-opacity': fixed(between(0.26, 0.56) * quiet, 2),
-        '--fragment-pop-opacity': fixed(between(0.5, 0.72) * quiet, 2),
-        '--fragment-transform': `translate3d(${fixed(between(-10, 10), 1)}px, 0, 0)`,
+        '--fragment-opacity': fixed(between(0.22, 0.46) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.42, 0.62) * quiet, 2),
+        '--fragment-transform': `translate3d(${fixed(between(-10, 10), 1)}px, 0, 0)${slant(1 / 7)}`,
         ...motion(24, 4, 7000, 20000),
       },
     })
   }
 
-  for (let i = 0; i < holeCount; i += 1) {
+  const holes = mood === 'calm' ? Math.min(1, holeCount) : holeCount
+  for (let i = 0; i < holes; i += 1) {
     const top = backdropTop(0.02)
     const quiet = quietFactor(top)
 
@@ -915,8 +939,8 @@ function buildImmersiveFragments(
       style: {
         left: `${fixed(between(-2, 94))}%`,
         top: `${fixed(top)}%`,
-        width: `${fixed(between(4, 18))}vw`,
-        height: `${fixed(between(16, 44), 1)}px`,
+        width: `${fixed(between(4, 14))}vw`,
+        height: `${fixed(isCompact ? between(10, 22) : between(12, 32), 1)}px`,
         backgroundImage: 'none',
         backgroundColor: '#030303',
         mixBlendMode: 'normal',
@@ -3230,14 +3254,14 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
     })
 
     // A few whole pieces of pictures, as on the home: the random's and the one before it, one or two
-    // on arrival, five or six late in a session.
-    const chunkCount = Math.max(1, Math.round(randomInt(
-      Math.round(lerp(1, 3, energy) + overdrive),
-      Math.round(lerp(2, 5, energy) + overdrive),
-    ) * (lite ? 0.6 : 1)))
+    // on arrival, four at most late in a session, and only the first may be large.
+    const chunkCount = Math.min(4, Math.max(1, Math.round(randomInt(
+      Math.round(lerp(1, 2, energy) + overdrive * 0.5),
+      Math.round(lerp(2, 3, energy) + overdrive),
+    ) * (lite ? 0.6 : 1))))
     const chunks = Array.from({ length: chunkCount }, (_, index): GlitchBar => {
       const topValue = randomBetween(2, 96)
-      const widthValue = randomBetween(6, lerp(20, 28, energy))
+      const widthValue = index === 0 ? randomBetween(6, lerp(18, 22, energy)) : randomBetween(5, 14)
       const source = Math.random() < 0.6 ? 'var(--random-bg-image, none)' : 'var(--random-bg-echo-1, none)'
       const shiftValue = randomBetween(lerp(8, 18, energy), lerp(20, 40, energy) + overdrive * 16)
       const opacity = parseFloat(randomBetween(0.5, lerp(0.72, 0.84, energy)).toFixed(2))
@@ -3247,7 +3271,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
         top: `${topValue.toFixed(2)}%`,
         width: `${widthValue.toFixed(2)}%`,
         left: `${randomBetween(-2, 100 - widthValue).toFixed(2)}%`,
-        height: `${(randomBetween(20, lerp(48, 66, energy)) * 0.6).toFixed(2)}px`,
+        height: `${((index === 0 ? randomBetween(17, lerp(34, 43, energy)) : randomBetween(17, 30)) * 0.6).toFixed(2)}px`,
         background: `${source} ${randomBetween(-10, 110).toFixed(0)}% ${(topValue + randomBetween(-15, 15)).toFixed(0)}% / ${randomInt(110, 220)}vw ${randomInt(100, 190)}vh no-repeat, linear-gradient(90deg, rgba(var(--glitch-ink), 0.3), rgba(var(--glitch-cream), 0.12))`,
         delay: Math.round(randomBetween(0, lerp(60, 100, energy))),
         duration: Math.round(randomBetween(lerp(200, 280, energy), lerp(320, 480, energy) + overdrive * 80)),
@@ -3255,6 +3279,8 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
         yShift: `${randomBetween(-2.5, 2.5).toFixed(1)}px`,
         opacity,
         popOpacity: parseFloat(Math.min(1, opacity + randomBetween(0.06, 0.18)).toFixed(2)),
+        // rarely, the piece leans like italics
+        skew: Math.random() < 1 / 6 ? `${(Math.random() < 0.85 ? -randomBetween(18, 28) : randomBetween(16, 22)).toFixed(1)}deg` : undefined,
       }
     })
 
@@ -5223,6 +5249,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               '--glitch-bar-y-shift': bar.yShift,
               '--glitch-bar-y-reverse': `${(-1 * yShiftValue).toFixed(1)}px`,
               '--glitch-bar-pop-opacity': bar.popOpacity,
+              '--glitch-bar-skew': bar.skew,
               opacity: bar.opacity,
             }
 
@@ -6735,33 +6762,33 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         @keyframes page-glitch-bar {
           0% {
             opacity: 0;
-            transform: translate3d(var(--glitch-bar-start-x, -8px), var(--glitch-bar-y-shift, 0px), 0);
+            transform: translate3d(var(--glitch-bar-start-x, -8px), var(--glitch-bar-y-shift, 0px), 0) skewX(var(--glitch-bar-skew, 0deg));
           }
           12% {
             opacity: var(--glitch-bar-pop-opacity, 1);
-            transform: translate3d(var(--glitch-bar-shift, 12px), var(--glitch-bar-y-reverse, 0px), 0);
+            transform: translate3d(var(--glitch-bar-shift, 12px), var(--glitch-bar-y-reverse, 0px), 0) skewX(var(--glitch-bar-skew, 0deg));
           }
           16% {
             opacity: 0;
           }
           34% {
             opacity: var(--glitch-bar-pop-opacity, 1);
-            transform: translate3d(var(--glitch-bar-mid-x, -4px), var(--glitch-bar-y-shift, 0px), 0);
+            transform: translate3d(var(--glitch-bar-mid-x, -4px), var(--glitch-bar-y-shift, 0px), 0) skewX(var(--glitch-bar-skew, 0deg));
           }
           44% {
             opacity: 0;
           }
           63% {
             opacity: var(--glitch-bar-pop-opacity, 1);
-            transform: translate3d(calc(0.45 * var(--glitch-bar-shift, 12px)), 0, 0);
+            transform: translate3d(calc(0.45 * var(--glitch-bar-shift, 12px)), 0, 0) skewX(var(--glitch-bar-skew, 0deg));
           }
           71% {
             opacity: 0.28;
-            transform: translate3d(var(--glitch-bar-tail-x, -2px), 0, 0);
+            transform: translate3d(var(--glitch-bar-tail-x, -2px), 0, 0) skewX(var(--glitch-bar-skew, 0deg));
           }
           100% {
             opacity: 0;
-            transform: translate3d(0, 0, 0);
+            transform: translate3d(0, 0, 0) skewX(var(--glitch-bar-skew, 0deg));
           }
         }
         .effects-test-meter {

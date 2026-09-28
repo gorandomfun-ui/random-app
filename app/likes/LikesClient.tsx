@@ -66,6 +66,7 @@ type LikesGlitchFragmentStyle = CSSProperties & {
   ['--likes-fragment-w']?: string
   ['--likes-fragment-h']?: string
   ['--likes-fragment-dx']?: string
+  ['--likes-fragment-skew']?: string
   ['--likes-fragment-color']?: string
   ['--likes-fragment-opacity']?: number
   ['--likes-fragment-bg-x']?: string
@@ -191,16 +192,20 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
   }
 
   for (let i = 0; i < mediaBlocks; i += 1) {
+    // mostly small pieces, one in five larger; now and then one leans like italics, as on the Random page
+    const big = random() < 0.2
+    const lean = random() < 1 / 7 ? `${Math.round((random() < 0.85 ? -(18 + random() * 10) : 16 + random() * 6) * 10) / 10}deg` : '0deg'
     fragments.push({
       id: `media-${i}`,
       kind: 'media',
       style: {
         '--likes-fragment-x': `${Math.round(random() * 900) / 10}%`,
         '--likes-fragment-y': `${Math.round((2 + random() * 30) * 10) / 10}%`,
-        '--likes-fragment-w': `${Math.round((34 + random() * 170) * 10) / 10}px`,
-        '--likes-fragment-h': `${Math.round((8 + random() * 22) * 10) / 10}px`,
+        '--likes-fragment-w': `${Math.round((big ? 90 + random() * 90 : 34 + random() * 100) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((big ? 18 + random() * 8 : 6 + random() * 12) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 42 - 21) * 10) / 10}px`,
-        '--likes-fragment-opacity': Math.round((0.18 + random() * 0.34) * 100) / 100,
+        '--likes-fragment-skew': lean,
+        '--likes-fragment-opacity': Math.round((0.16 + random() * 0.26) * 100) / 100,
         '--likes-fragment-bg-x': `${Math.round(random() * 1000) / 10}%`,
         '--likes-fragment-bg-y': `${Math.round(random() * 420) / 10}%`,
         '--likes-fragment-bg-size': `${Math.round((150 + random() * 180) * 10) / 10}%`,
@@ -778,7 +783,7 @@ export default function LikesClient({
           width: var(--likes-fragment-w);
           height: var(--likes-fragment-h);
           opacity: var(--likes-fragment-opacity);
-          transform: translate3d(var(--likes-fragment-dx), 0, 0);
+          transform: translate3d(var(--likes-fragment-dx), 0, 0) skewX(var(--likes-fragment-skew, 0deg));
           display: block;
         }
 
