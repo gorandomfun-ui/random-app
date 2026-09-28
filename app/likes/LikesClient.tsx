@@ -12,7 +12,7 @@ import MonoIcon from '../../components/MonoIcon'
 import PointsText from '@/components/PointsText'
 import HeartIcon from '../../components/HeartIcon'
 import { useI18n } from '../../providers/I18nProvider'
-import { THEMES } from '@/lib/theme'
+import { THEMES, glitchInkVars, type GlitchInkVars } from '@/lib/theme'
 import AadsFooterSlot from '@/components/AadsFooterSlot'
 import {
   readWeLikesCache,
@@ -54,7 +54,7 @@ function readWeCache(): { items: GlobalLikeItem[]; timestamp: number } | null {
   return readWeLikesCache<GlobalLikeItem>()
 }
 
-type LikesGlitchBgStyle = CSSProperties & {
+type LikesGlitchBgStyle = CSSProperties & Partial<GlitchInkVars> & {
   ['--likes-bg-image']?: string
   ['--likes-bg-accent']?: string
   ['--likes-bg-media-opacity']?: number
@@ -66,6 +66,7 @@ type LikesGlitchFragmentStyle = CSSProperties & {
   ['--likes-fragment-w']?: string
   ['--likes-fragment-h']?: string
   ['--likes-fragment-dx']?: string
+  ['--likes-fragment-skew']?: string
   ['--likes-fragment-color']?: string
   ['--likes-fragment-opacity']?: number
   ['--likes-fragment-bg-x']?: string
@@ -81,7 +82,15 @@ type LikesGlitchFragment = {
 
 type LikesGlitchSource = Pick<LikeItem, 'id' | 'likedAt' | 'ogImage' | 'provider' | 'thumbUrl' | 'type' | 'url'>
 
-const LIKES_GLITCH_COLORS = ['#18f06a', '#b833ff', '#00e8ff', '#ff2a6d', '#f3ef7d', '#ffffff']
+// the theme's colour, its light and deep shades and the cream, as on the Random page (glitchInkVars)
+const LIKES_GLITCH_COLORS = [
+  'rgb(var(--glitch-ink))',
+  'rgb(var(--glitch-ink-light))',
+  'rgb(var(--glitch-ink-deep))',
+  'rgb(var(--glitch-cream))',
+  'rgb(var(--glitch-ink))',
+  '#ffffff',
+]
 
 function cssImageUrl(value?: string | null) {
   if (!value) return 'none'
@@ -157,7 +166,7 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
         '--likes-fragment-x': `${Math.round(random() * 1000) / 10}%`,
         '--likes-fragment-y': `${Math.round(random() * 350) / 10}%`,
         '--likes-fragment-w': `${Math.round((longLine ? 22 + random() * 58 : 5 + random() * 28) * 10) / 10}vw`,
-        '--likes-fragment-h': `${Math.round((1 + random() * (compact ? 2 : 3)) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((0.6 + random() * (compact ? 0.9 : 1.2)) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 18 - 9) * 10) / 10}px`,
         '--likes-fragment-color': color,
         '--likes-fragment-opacity': Math.round((0.08 + random() * 0.34) * 100) / 100,
@@ -174,25 +183,29 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
         '--likes-fragment-x': `${Math.round(random() * 920) / 10}%`,
         '--likes-fragment-y': `${Math.round((3 + random() * 28) * 10) / 10}%`,
         '--likes-fragment-w': `${Math.round((20 + random() * 150) * 10) / 10}px`,
-        '--likes-fragment-h': `${Math.round((4 + random() * 28) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((3 + random() * 9) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 32 - 16) * 10) / 10}px`,
         '--likes-fragment-color': color,
-        '--likes-fragment-opacity': Math.round((0.16 + random() * 0.36) * 100) / 100,
+        '--likes-fragment-opacity': Math.round((0.12 + random() * 0.24) * 100) / 100,
       },
     })
   }
 
   for (let i = 0; i < mediaBlocks; i += 1) {
+    // mostly small pieces, one in five larger; now and then one leans like italics, as on the Random page
+    const big = random() < 0.2
+    const lean = random() < 1 / 7 ? `${Math.round((random() < 0.85 ? -(18 + random() * 10) : 16 + random() * 6) * 10) / 10}deg` : '0deg'
     fragments.push({
       id: `media-${i}`,
       kind: 'media',
       style: {
         '--likes-fragment-x': `${Math.round(random() * 900) / 10}%`,
         '--likes-fragment-y': `${Math.round((2 + random() * 30) * 10) / 10}%`,
-        '--likes-fragment-w': `${Math.round((34 + random() * 170) * 10) / 10}px`,
-        '--likes-fragment-h': `${Math.round((8 + random() * 42) * 10) / 10}px`,
+        '--likes-fragment-w': `${Math.round((big ? 90 + random() * 90 : 34 + random() * 100) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((big ? 18 + random() * 8 : 6 + random() * 12) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 42 - 21) * 10) / 10}px`,
-        '--likes-fragment-opacity': Math.round((0.18 + random() * 0.34) * 100) / 100,
+        '--likes-fragment-skew': lean,
+        '--likes-fragment-opacity': Math.round((0.16 + random() * 0.26) * 100) / 100,
         '--likes-fragment-bg-x': `${Math.round(random() * 1000) / 10}%`,
         '--likes-fragment-bg-y': `${Math.round(random() * 420) / 10}%`,
         '--likes-fragment-bg-size': `${Math.round((150 + random() * 180) * 10) / 10}%`,
@@ -448,6 +461,7 @@ export default function LikesClient({
     [likesGlitchImage, likesGlitchSeed, vw],
   )
   const likesGlitchStyle = useMemo<LikesGlitchBgStyle>(() => ({
+    ...glitchInkVars(accentColor),
     '--likes-bg-image': cssImageUrl(likesGlitchImage),
     '--likes-bg-accent': accentColor,
     '--likes-bg-media-opacity': likesGlitchImage ? 0.28 : 0,
@@ -742,7 +756,7 @@ export default function LikesClient({
           background-size: cover;
           background-position: center 18%;
           opacity: var(--likes-bg-media-opacity);
-          filter: blur(24px) saturate(2) contrast(1.45) brightness(0.35);
+          filter: blur(24px) saturate(1.7) contrast(1.3) brightness(0.37);
           transform: scale(1.12);
         }
 
@@ -769,7 +783,7 @@ export default function LikesClient({
           width: var(--likes-fragment-w);
           height: var(--likes-fragment-h);
           opacity: var(--likes-fragment-opacity);
-          transform: translate3d(var(--likes-fragment-dx), 0, 0);
+          transform: translate3d(var(--likes-fragment-dx), 0, 0) skewX(var(--likes-fragment-skew, 0deg));
           display: block;
         }
 
@@ -780,6 +794,7 @@ export default function LikesClient({
 
         .likes-glitch-fragment--block {
           background:
+            repeating-linear-gradient(180deg, transparent 0 1px, rgba(2, 2, 2, 0.9) 1px 2px),
             linear-gradient(90deg, color-mix(in srgb, var(--likes-fragment-color) 68%, transparent), rgba(255, 255, 255, 0.22), transparent),
             var(--likes-fragment-color);
           mix-blend-mode: screen;
@@ -790,9 +805,10 @@ export default function LikesClient({
           background-image: var(--likes-bg-image);
           background-size: var(--likes-fragment-bg-size);
           background-position: var(--likes-fragment-bg-x) var(--likes-fragment-bg-y);
-          filter: saturate(2.4) contrast(1.8) brightness(0.82);
+          filter: saturate(2) contrast(1.5) brightness(0.9);
           mix-blend-mode: screen;
-          box-shadow: 0 0 18px color-mix(in srgb, var(--likes-bg-accent) 55%, transparent);
+          border-left: 1px solid rgba(var(--glitch-cream), 0.5);
+          box-shadow: 3px 0 0 rgba(var(--glitch-ink), 0.26), -2px 0 0 rgba(var(--glitch-ink-light), 0.18);
         }
 
         .likes-immersive-bg__tone {
@@ -808,7 +824,7 @@ export default function LikesClient({
           inset: 0;
           background:
             repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 4px),
-            repeating-linear-gradient(180deg, transparent 0 13px, rgba(0, 232, 255, 0.05) 13px 14px, transparent 14px 19px);
+            repeating-linear-gradient(180deg, transparent 0 13px, rgba(var(--glitch-ink-light), 0.05) 13px 14px, transparent 14px 19px);
           opacity: 0.32;
           mix-blend-mode: screen;
         }
