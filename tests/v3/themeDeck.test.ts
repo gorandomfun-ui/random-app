@@ -98,3 +98,12 @@ test('a session does not show the same film twice, in another language or not', 
   assert.equal(echoesSession(candidate('youtube:b', ['bande', 'annonce', 'toy', 'story']), history), true)
   assert.equal(echoesSession(candidate('youtube:c', ['surf', 'festival', 'round']), history), false)
 })
+
+test('an Italian "ai" is not AI', async () => {
+  const { isAiMarked } = await import('../../lib/v3/cool/themes')
+  assert.equal(isAiMarked('REACTION ai VIDEO POPOLARI di FAVIJ'), false)
+  assert.equal(isAiMarked('Grazie ai fan per il supporto'), false)
+  assert.equal(isAiMarked('Lemon Benefits In Your Stomach Ai Animation'), true)
+  assert.equal(isAiMarked('Math Ain’t Addin’ Up - AI Song'), true)
+  assert.equal(isAiMarked('Cute Baby Fruits Eating ASMR #aivideo'), true)
+})

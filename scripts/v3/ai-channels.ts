@@ -25,6 +25,8 @@ import { count, table } from './reportFormat'
 export const AI_CHANNELS = 'ai_channels_v1'
 const SWEEPS = 'ai_channel_sweeps_v1'
 const REPORT = 'docs/reports/ai-channels.md'
+/** Channels read by hand and kept: real footage whose few marks were words, not tools (28 September). */
+const KEEP = new Set(['GiulioPhotography'])
 const MIN_MARKED = 3
 const MIN_SHARE = 0.3
 const PAUSE_EVERY = 5000
@@ -76,7 +78,7 @@ async function main(): Promise<void> {
       channels.set(key, channel)
     }
     process.stdout.write(`\r${count(read)} lues\n`)
-    const factories = [...channels.values()].filter((channel) => channel.marked >= MIN_MARKED && channel.marked / channel.total >= MIN_SHARE)
+    const factories = [...channels.values()].filter((channel) => !KEEP.has(channel.name) && channel.marked >= MIN_MARKED && channel.marked / channel.total >= MIN_SHARE)
       .sort((left, right) => right.total - left.total)
     const videos = factories.reduce((sum, channel) => sum + channel.total, 0)
     const lines = [

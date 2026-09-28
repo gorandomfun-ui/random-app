@@ -65,7 +65,13 @@ const TRAILER = /\b(trailer|teaser|bande[- ]annonce|tráiler|avance oficial)\b/i
  * "des trucs IA", the owner's constant complaint. Only what is written; an
  * unmarked AI video needs its channel (scripts/v3/ai-channels.ts).
  */
-const AI_MARKS = /(?:^|[^\p{L}\p{N}])(?:#ai(?:art|video|videos|generated|animation|music|story|shorts)?|ai[- ]?generated|generated (?:with|by) ai|made (?:with|by) ai|ai (?:video|art|story|stories|music|song|animation|cover|film|movie|documentary)|(?:ai|a\.i\.)[\s_-]*(?:studio|studios|films?)|midjourney|stable diffusion|sora|kling|hailuo|runway ?ml|pika labs|leonardo ai|suno|udio|dall-?e|généré par (?:l'?)?ia|créé avec (?:l'?)?ia|hecho con ia|feito com ia|gerado por ia)(?=$|[^\p{L}\p{N}])/iu
+const AI_MARKS = /(?:^|[^\p{L}\p{N}])(?:#ai(?:art|video|videos|generated|animation|music|story|shorts)?|ai[- ]?generated|generated (?:with|by) ai|made (?:with|by) ai|midjourney|stable diffusion|sora|kling|hailuo|runway ?ml|pika labs|leonardo ai|suno|udio|dall-?e|généré par (?:l'?)?ia|créé avec (?:l'?)?ia|hecho con ia|feito com ia|gerado por ia)(?=$|[^\p{L}\p{N}])/iu
+/**
+ * "AI video", "Ai Animation", "A.I. Studio" — but never a lowercase "ai": in
+ * Italian it means "to the" ("REACTION ai VIDEO POPOLARI" put an Italian
+ * youtuber among the AI factories on 28 September).
+ */
+const AI_WORD_THEN_NOUN = /(?:^|[^\p{L}\p{N}])(AI|Ai|A\.I\.)[\s_-]*(?:video|videos|art|story|stories|music|song|animation|cover|film|films|movie|documentary|studio|studios|generated|shorts)(?=$|[^\p{L}\p{N}])/iu
 /** News told by its title, whatever universe it was filed under: at most the news card's share. */
 const NEWS_TITLE = /\b(?:breaking(?: news)?|live updates?|update:|mlb update|nba update|nfl update|cosa sappiamo|ce que l'on sait|lo que sabemos|o que se sabe|en direct|latest news|news live|headlines|वनइंडिया|ब्रेकिंग)\b/iu
 /** Lessons, tutorials, exam preparation, court cases explained: dead in a feed. */
@@ -78,7 +84,10 @@ export function isNewsTitle(title: unknown): boolean {
 }
 
 export function isAiMarked(text: unknown): boolean {
-  return AI_MARKS.test(String(text ?? ''))
+  const value = String(text ?? '')
+  if (AI_MARKS.test(value)) return true
+  const word = AI_WORD_THEN_NOUN.exec(value)?.[1]
+  return Boolean(word && word !== 'ai' && word.toLowerCase() !== 'a.i.' ? true : word === 'A.I.')
 }
 const STREAM = /\b(live ?stream|en direct|directo|ao vivo|stream(?:ing)?|🔴)/i
 /** How many trailers a session may see: "1 ou 2 trailers c'est marrant, plus c'est comme regarder de la pub". */
