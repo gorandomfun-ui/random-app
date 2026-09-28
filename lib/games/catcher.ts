@@ -53,6 +53,8 @@ export type CatcherState = {
   modeTimer: number
   steps: number
   random: () => number
+  /** What the last step made happen that can be heard: an ingredient, the sauce, a slip, money, a catch, the list filled. */
+  heard: Array<'item' | 'sauce' | 'slip' | CatcherCash | 'caught' | 'level'>
 }
 
 const SECOND = 60
@@ -189,7 +191,7 @@ export function createCatcher(layout: Layout, level = 1, seed = 1, carry?: { sco
     shoppers, entrances, enterTimer: 2 * SECOND,
     items, need: [...params.need], have: [0, 0, 0, 0],
     sauce: null, sauceTimer: 8 * SECOND, spilling: 0, puddles: new Map(), cash: null, cashTimer: 6 * SECOND,
-    rush: false, modeTimer: params.calm, steps: 0, random,
+    rush: false, modeTimer: params.calm, steps: 0, random, heard: [],
   }
 }
 
@@ -233,10 +235,15 @@ function arrive(s: CatcherState): void {
     const [it] = s.items.splice(found, 1)
     if (s.have[it.kind] < s.need[it.kind]) s.have[it.kind] += 1
     s.score += 10
-    if (s.items.length === 0) { s.phase = 'clear'; s.phaseTimer = 2 * SECOND; s.score += 50 * s.level }
+    s.heard.push('item')
+    if (s.items.length === 0) {
+      s.phase = 'clear'; s.phaseTimer = 2 * SECOND; s.score += 50 * s.level
+      // the last level's jingle is WINNER's fanfare, played by the screen that follows
+      if (s.level < CATCHER_LAST_LEVEL) s.heard.push('level')
+    }
   }
-  if (s.sauce && s.sauce.x === b.x && s.sauce.y === b.y) { s.sauce = null; s.spilling = 5 * SECOND; s.score += 5 }
-  if (s.cash && s.cash.x === b.x && s.cash.y === b.y) { s.score += CATCHER_CASH[s.cash.kind].points; s.cash = null; s.cashTimer = nextCashIn(s) }
+  if (s.sauce && s.sauce.x === b.x && s.sauce.y === b.y) { s.sauce = null; s.spilling = 5 * SECOND; s.score += 5; s.heard.push('sauce') }
+  if (s.cash && s.cash.x === b.x && s.cash.y === b.y) { s.score += CATCHER_CASH[s.cash.kind].points; s.heard.push(s.cash.kind); s.cash = null; s.cashTimer = nextCashIn(s) }
   if (s.spilling > 0) s.puddles.set(key(b.x, b.y), 8 * SECOND)
 }
 
@@ -285,7 +292,7 @@ function stepShopper(s: CatcherState, sh: Shopper, corners: Cell[], index: numbe
     sh.x += DELTA[sh.dir][0]; sh.y += DELTA[sh.dir][1]
     sh.progress = 0
     const puddle = key(sh.x, sh.y)
-    if (s.puddles.has(puddle)) { s.puddles.delete(puddle); sh.stunned = 3 * SECOND; s.score += 20 }
+    if (s.puddles.has(puddle)) { s.puddles.delete(puddle); sh.stunned = 3 * SECOND; s.score += 20; s.heard.push('slip') }
   }
 }
 
@@ -320,6 +327,7 @@ function drawCash(s: CatcherState): CatcherCash {
 
 /** One sixtieth of a second of the game. `want` is the direction the player asks for, if any. */
 export function stepCatcher(s: CatcherState, want?: Direction | null): void {
+  s.heard.length = 0
   s.steps += 1
   if (want) s.burger.want = want
   if (s.phase !== 'play') {
@@ -377,6 +385,7 @@ export function stepCatcher(s: CatcherState, want?: Direction | null): void {
   if (s.shoppers.some((sh) => sh.inside && sh.stunned === 0 && Math.hypot(positionOf(sh).x - bp.x, positionOf(sh).y - bp.y) < 0.7)) {
     s.lives -= 1
     s.phase = 'caught'
+    s.heard.push('caught')
     s.phaseTimer = Math.round(1.5 * SECOND)
   }
 }
