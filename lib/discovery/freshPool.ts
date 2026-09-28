@@ -31,6 +31,12 @@ const LIST_CACHE_MS = 5 * 60_000
 const SAMPLE = 24
 /** A fresh video never repeats a channel among the session's last ten contents. */
 const AUTHOR_SPACING = 10
+/**
+ * With the theme deck, a universe with fewer videos than this in the day's list
+ * gives no fresh video: a handful of them would reach every device alike
+ * (the rehearsal of 28 September: five devices out of six got the same dog).
+ */
+export const FRESH_THEME_MIN = 30
 
 /** `universes`: each place's universe, for the theme deck; read with the list. */
 type FreshList = { day: string; ids: string[]; universes: Array<Universe | null> }
@@ -58,6 +64,15 @@ async function dayList(db: Db, now: number): Promise<FreshList | null> {
   return list
 }
 
+function shuffledRows<T>(rows: T[], random: () => number): T[] {
+  const out = [...rows]
+  for (let index = out.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(random() * (index + 1))
+    ;[out[index], out[other]] = [out[other], out[index]]
+  }
+  return out
+}
+
 /** Up to `count` places of the list, at random, among those this device has not seen today (and, with `keep`, only those it keeps). */
 export function unseenSample(size: number, day: string, seen: FreshSeen | null, count: number, random: () => number, keep?: (index: number) => boolean): number[] {
   const bytes = seenBytes(seen, day)
@@ -81,10 +96,12 @@ export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, see
   if (ticket.type !== 'video' || (state.freshServed ?? 0) >= FRESH_PER_SESSION) return null
   const list = await dayList(db, now)
   if (!list?.ids.length) return null
+  if (theme && list.universes.filter((universe) => universe === theme).length < FRESH_THEME_MIN) return null
   const picks = unseenSample(list.ids.length, list.day, seen, SAMPLE, random, theme ? (index) => list.universes[index] === theme : undefined)
   if (!picks.length) return null
   const fetched = await db.collection('items').find({ _id: { $in: picks.map((index) => new ObjectId(list.ids[index])) } } as Document, { maxTimeMS: 2000 }).toArray()
-  const rows = theme ? byLiveliness(fetched, trailersSeenIn(state.exposures)) : fetched
+  // The database answers in its own order: shuffled first, so the liveliness order ties at random and not alike on every device.
+  const rows = theme ? byLiveliness(shuffledRows(fetched, random), trailersSeenIn(state.exposures)) : fetched
   const byId = new Map(rows.map((row) => [String(row._id), row]))
   // With the theme deck, the liveliness order (a trailer past the session's two is gone); without, the sample's random order as before.
   if (theme) {
