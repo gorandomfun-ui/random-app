@@ -12,6 +12,7 @@ import ShareMenu from '@/components/ShareMenu'
 import type { SharedContent } from '@/lib/share/content'
 import { SHARE_PRESENTATION, type ShareLocale } from '@/lib/share/presentation'
 import type { Theme } from '@/lib/theme'
+import { dailymotionEmbedUrl } from '@/lib/players/dailymotionPlayer'
 
 const TYPE_ICONS: Record<SharedContent['type'], string> = {
   image: '/icons/image.svg',
@@ -55,8 +56,8 @@ function getYouTubeEmbedUrl(url: string): string | null {
 
 function getDailymotionEmbedUrl(url: string): string | null {
   const match = url.match(/(?:dailymotion\.com\/(?:video|embed\/video)\/|dai\.ly\/)([a-zA-Z0-9]+)/i)
-  // The old embed address answers 301 and loses every parameter on the way; this is the one it points at.
-  return match?.[1] ? `https://geo.dailymotion.com/player.html?video=${encodeURIComponent(match[1])}` : null
+  // RANDOM's own player (lib/players/dailymotionPlayer.ts), the muted one: a shared page plays at once, the sound in the controls.
+  return match?.[1] ? dailymotionEmbedUrl(match[1], true) : null
 }
 
 function SharedContentView({ content, theme }: { content: SharedContent; theme: Theme }) {

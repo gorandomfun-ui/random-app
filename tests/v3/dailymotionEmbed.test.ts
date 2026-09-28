@@ -1,52 +1,35 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { DAILYMOTION_PLAYERS, dailymotionEmbedUrl } from '../../lib/players/dailymotionPlayer'
+
 /**
  * The address the Dailymotion player is asked for.
  *
- * Measured on 25 September: `dailymotion.com/embed/video/<id>` answers 301 to
- * `geo.dailymotion.com/player.html?video=<id>` and the redirect drops every
- * parameter. The mute we asked for never arrived, so a video could not be heard
- * on any device. This guards the address and the parameters it carries.
+ * On 28 September 2026 the generic player (`geo.dailymotion.com/player.html`)
+ * answered 403 to everyone and 62 % of the videos turned black; the old
+ * `dailymotion.com/embed/video/<id>` redirects to it. RANDOM's own players are
+ * asked for instead, and the sound is chosen by choosing the player.
  */
 
-/** The rule the page follows, kept in step with `app/random/RandomExperience.tsx`. */
-function embedUrl(videoId: string, muted: boolean): string {
-  const params = new URLSearchParams()
-  params.set('video', videoId)
-  params.set('autoplay', 'true')
-  params.set('mute', muted ? 'true' : 'false')
-  params.set('controls', 'true')
-  params.set('queue-enable', 'false')
-  params.set('sharing-enable', 'false')
-  params.set('ui-logo', 'false')
-  params.set('ui-start-screen-info', 'false')
-  params.set('playsinline', 'true')
-  params.set('quality', '480')
-  params.set('api', 'postMessage')
-  return `https://geo.dailymotion.com/player.html?${params.toString()}`
-}
-
-test('on demande l_adresse qui garde les paramètres, pas celle qui redirige', () => {
-  const url = embedUrl('x8abcde', true)
-  assert.ok(url.startsWith('https://geo.dailymotion.com/player.html?'), url)
-  assert.ok(!url.includes('/embed/video/'), 'l_ancienne adresse perd tout en chemin')
+test('RANDOM\'s own player, never the generic one nor the old embed address', () => {
+  for (const muted of [true, false]) {
+    const url = new URL(dailymotionEmbedUrl('x8abcde', muted))
+    assert.equal(url.hostname, 'geo.dailymotion.com')
+    assert.match(url.pathname, /^\/player\/x[0-9a-z]+\.html$/)
+    assert.notEqual(url.pathname, '/player.html', 'the generic player answers 403')
+    assert.ok(!url.href.includes('/embed/video/'))
+  }
 })
 
-test('le son demandé arrive bien au lecteur, dans les deux sens', () => {
-  assert.ok(embedUrl('x8abcde', true).includes('mute=true'))
-  assert.ok(embedUrl('x8abcde', false).includes('mute=false'))
+test('muted and with sound are two players: switching gives the sound back', () => {
+  assert.equal(new URL(dailymotionEmbedUrl('x8abcde', true)).pathname, `/player/${DAILYMOTION_PLAYERS.muted}.html`)
+  assert.equal(new URL(dailymotionEmbedUrl('x8abcde', false)).pathname, `/player/${DAILYMOTION_PLAYERS.sound}.html`)
+  assert.notEqual(DAILYMOTION_PLAYERS.muted, DAILYMOTION_PLAYERS.sound)
 })
 
-test('la vidéo est nommée en paramètre, pas dans le chemin', () => {
-  const url = new URL(embedUrl('x8abcde', false))
+test('the video is named in the address, and it starts on its own', () => {
+  const url = new URL(dailymotionEmbedUrl('x8abcde', false))
   assert.equal(url.searchParams.get('video'), 'x8abcde')
-  assert.equal(url.pathname, '/player.html')
-})
-
-test('le lecteur garde ses commandes et son canal de messages', () => {
-  const url = new URL(embedUrl('x8abcde', true))
-  assert.equal(url.searchParams.get('controls'), 'true', 'sinon le visiteur n_a aucun moyen de mettre le son')
-  assert.equal(url.searchParams.get('api'), 'postMessage')
-  assert.equal(url.searchParams.get('playsinline'), 'true')
+  assert.equal(url.searchParams.get('autoplay'), 'true')
 })

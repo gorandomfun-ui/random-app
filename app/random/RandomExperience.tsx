@@ -23,6 +23,7 @@ import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES, type Theme } from '@/lib/theme'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
+import { dailymotionEmbedUrl } from '@/lib/players/dailymotionPlayer'
 import { newSession, restartRhythm, rhythmIdle, type Session as DiscoverySession } from '@/lib/discovery/pool'
 import { parseSession as parseDiscoverySession } from '@/lib/discovery/sessionCodec'
 import { adoptHomeAdvance, clearHomeAdvance, readHomeAdvance } from '@/lib/discovery/homePrefetch'
@@ -1919,35 +1920,9 @@ function DailymotionEmbed({
 
 
   const dailymotionId = useMemo(() => extractDailymotionVideoId(url) || '', [url])
-  const embedUrl = useMemo(() => {
-    try {
-      const videoId = dailymotionId
-      // Dailymotion retired `dailymotion.com/embed/video/<id>`: it answers 301 to
-      // `geo.dailymotion.com/player.html?video=<id>` and the redirect **drops every
-      // parameter** — measured 25 September. So the mute we asked for, the controls
-      // and the message channel never reached the player, on any device, and a
-      // video could no longer be heard at all. The address it redirects to is the
-      // one to ask for, and it keeps what it is given.
-      const params = new URLSearchParams()
-      params.set('video', videoId)
-      params.set('autoplay', 'true')
-      params.set('mute', embedMuted ? 'true' : 'false')
-      params.set('controls', 'true')
-      params.set('queue-enable', 'false')
-      params.set('sharing-enable', 'false')
-      params.set('ui-logo', 'false')
-      params.set('ui-start-screen-info', 'false')
-      params.set('playsinline', 'true')
-      params.set('quality', '480')
-      // The player tells the page what happens inside the frame: a dead video is an error event, or no ready event at all.
-      params.set('api', 'postMessage')
-      return videoId
-        ? `https://geo.dailymotion.com/player.html?${params.toString()}`
-        : url
-    } catch {
-      return url
-    }
-  }, [embedMuted, url])
+  // RANDOM's own players (lib/players/dailymotionPlayer.ts): the generic one answers 403 to everyone since
+  // 28 September. The sound is the player's own setting now, so muted and with sound are two players.
+  const embedUrl = useMemo(() => (dailymotionId ? dailymotionEmbedUrl(dailymotionId, embedMuted) : url), [dailymotionId, embedMuted, url])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
   const playerIssueReportedRef = useRef(false)
