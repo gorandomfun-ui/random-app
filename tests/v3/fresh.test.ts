@@ -1,15 +1,39 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
+import { capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
 
 const entry = (videoId: string, bucket: FreshBucket, region: string, rank: number, views = 0, channel?: string): FreshEntry =>
   ({ id: videoId.padStart(24, '0'), videoId, bucket, region, rank, views, channel })
 
-test('the day asks for a thousand videos, two hundred of them the world\'s', () => {
+test('the day asks for a thousand videos, the places and the kinds of video both', () => {
   assert.equal(FRESH_PLAN.reduce((sum, plan) => sum + plan.quota, 0), 1000)
-  assert.equal(FRESH_PLAN.find((plan) => plan.bucket === 'world')?.quota, 200)
+  assert.equal(Math.max(...FRESH_PLAN.map((plan) => plan.quota)), FRESH_PLAN.find((plan) => plan.bucket === 'world')?.quota, 'the world is still the biggest zone')
   assert.equal(FRESH_PLAN.find((plan) => plan.bucket === 'music')?.category, '10')
+  for (const [bucket, category] of [['sport', '17'], ['animals', '15'], ['science', '28'], ['howto', '26'], ['people', '22'], ['autos', '2'], ['film', '1']]) {
+    assert.equal(FRESH_PLAN.find((plan) => plan.bucket === bucket)?.category, category, bucket)
+  }
+})
+
+test('music and gaming keep to their share of the list, the extra leaving from the end of each zone', () => {
+  const zone = (bucket: FreshBucket, universes: string[]) => universes.map((universe, index) => ({ ...entry(`${bucket}${index}`, bucket, 'XX', index), universe }))
+  const picked = new Map<FreshBucket, FreshEntry[]>([
+    ['world', zone('world', ['music', 'music', 'sport', 'music', 'music'])],
+    ['fun', zone('fun', ['humor-memes', 'music', 'gaming', 'gaming', 'gaming'])],
+  ])
+  const capped = capUniverses(picked, { music: 0.25, gaming: 0.15 })
+  const all = [...capped.values()].flat()
+  assert.ok(all.filter((item) => item.universe === 'music').length <= 2, 'a quarter of ten')
+  assert.ok(all.filter((item) => item.universe === 'gaming').length <= 1)
+  assert.deepEqual(capped.get('world')!.slice(0, 2).map((item) => item.videoId), ['world0', 'world1'], 'the best placed stay')
+  assert.ok(all.some((item) => item.universe === 'sport') && all.some((item) => item.universe === 'humor-memes'), 'the others untouched')
+})
+
+test('a still album cover or a long gaming session does not open a feed', () => {
+  assert.equal(isFreshFormat({ channelTitle: 'Mavo - Topic', universe: 'music', duration: 'PT3M' }), false)
+  assert.equal(isFreshFormat({ channelTitle: 'Wisp', universe: 'gaming', duration: 'PT34M' }), false)
+  assert.equal(isFreshFormat({ channelTitle: 'Wisp', universe: 'gaming', duration: 'PT9M' }), true)
+  assert.equal(isFreshFormat({ channelTitle: 'Concert Hall', universe: 'music', duration: 'PT1H2M' }), true, 'only gaming sessions are cut for length')
 })
 
 test('a zone by rank lets every country bring its own; the world takes the biggest', () => {
@@ -22,10 +46,14 @@ test('a zone by rank lets every country bring its own; the world takes the bigge
   assert.deepEqual(top.map((pick) => pick.videoId), ['mid', 'small'], 'the biggest first, and nothing taken twice')
 })
 
+const index0Shared = (bucket: FreshBucket) => FRESH_PLAN.findIndex((plan) => plan.bucket === bucket) < 5
+
 test('the day\'s order: zones take turns by quota, never the same channel within ten', () => {
   const buckets = new Map<FreshBucket, FreshEntry[]>()
   for (const plan of FRESH_PLAN) {
-    buckets.set(plan.bucket, Array.from({ length: plan.quota / 10 }, (_, index) => entry(`${plan.bucket}-${index}`, plan.bucket, 'XX', index, 0, index === 0 ? 'same-channel' : `${plan.bucket}-c${index}`)))
+    // One channel shared by the first video of five zones: sixteen zones start the list, the shared ones must still be ten apart.
+    const shared = index0Shared(plan.bucket)
+    buckets.set(plan.bucket, Array.from({ length: plan.quota / 10 }, (_, index) => entry(`${plan.bucket}-${index}`, plan.bucket, 'XX', index, 0, index === 0 && shared ? 'same-channel' : `${plan.bucket}-c${index}`)))
   }
   const order = interleave(buckets)
   assert.equal(order.length, 100)

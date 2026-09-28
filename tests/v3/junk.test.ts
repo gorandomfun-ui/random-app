@@ -19,6 +19,11 @@ const TOPS = [
   'Ultimate Guide to the Best Top 5 Basketball Defender Dummies For Practice - Basketball Defender',
   'Cheap & Best Top 5 Patellar Tendon Support Straps For Athletes Unboxing & Review - 2PCS Patella',
   'Top 5 Manual Dough Sheeters For Home Bakery: Top 5 Best Sellers - Commercial 18cm Manual D',
+  // The farm's new wording, 28 September.
+  'Top 5 Best Top 5 Vintage Metal Signs For Garage Walls (Must Have!) - Putuo Decor Garage Vi',
+  'Why Everyone Is Buying Top 5 Long Parka Coats With Detachable Hood - Hat Detachable Hooded',
+  'Top 5 Best Soundproofing Felt Rolls For Recording Studios (Must Have!) - 12PCS Fluted Felt',
+  'Why Everyone Is Buying Top 5 Magic Trick And Puzzle Games For Parties - Guess Who Is It Bo',
 ]
 const KEEP = [
   'Top 10 goals of the season',
@@ -28,6 +33,10 @@ const KEEP = [
   'Customer service sketch - Monty Python',
   'My phone number song (Tommy Tutone 867-5309/Jenny) live 1982',
   'The best top 5 moments of the World Cup final',
+  'Top 5 must have apps for students in 2024',
+  '10 camping gadgets (must have!) for your next trip',
+  'Why everyone is buying a Tesla right now',
+  'Top 5 best top scorers in Ligue 1 history',
 ]
 
 test('scams are named as such', () => {

@@ -92,6 +92,9 @@ export function hasCinemaClue(item: Pick<TaggableItem, 'title' | 'categoryId'>):
 function pickUniverse(matches: AliasMatch[], item: TaggableItem): Universe {
   // The line that found the item said what it was looking for (a pool pass asks Dailymotion for "concert rock 90s").
   if (item.universeHint && isUniverse(item.universeHint) && item.universeHint !== 'other') return item.universeHint
+  // The uploader filed it under Music: a song whose title names a motorbike, a footballer or a city is still a song.
+  // On 28 September "LIBASE MOTO (singeli beat)" sat in vehicles and a Top of the Pops in animals, leaking music into other cards.
+  if (item.type === 'video' && universeFromCategory(item.provider, item.categoryId) === 'music') return 'music'
   for (const match of matches) {
     const universe = match.subject.universe
     if (!isUniverse(universe) || universe === 'other') continue

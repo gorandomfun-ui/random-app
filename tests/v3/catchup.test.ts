@@ -83,7 +83,9 @@ test('la catégorie choisie par l_auteur range ce que rien d_autre ne range, jam
   assert.equal(tag('Seleção volta a fazer cinco gols no mesmo jogo', 'youtube', '17'), 'sport')
   assert.equal(tag('Frachtschiff sinkt nach Kollision in der Nordsee', 'dailymotion', 'news'), 'news-society')
   assert.equal(tag('Demolition Racer parte 7', 'dailymotion', 'videogames'), 'gaming')
-  assert.equal(tag('Best goals of the season', 'youtube', '10'), 'sport', 'les mots du titre passent avant la catégorie')
+  assert.equal(tag('Best goals of the season', 'youtube', '22'), 'sport', 'les mots du titre passent avant la catégorie')
+  // Sauf la catégorie Musique, depuis le 28 septembre : une chanson dont le titre parle de moto reste une chanson.
+  assert.equal(tag('Misso misondo LIBASE MOTO (singeli beat)', 'youtube', '10'), 'music', 'la catégorie Musique passe avant les mots du titre')
   assert.equal(tag('Qué bonito día', 'dailymotion', 'shortfilms'), 'other', 'jamais vers le cinéma par la catégorie')
   assert.equal(universeFromCategory('youtube', '1'), null)
   assert.equal(universeFromCategory('youtube', '24'), null, 'Entertainment ne dit rien')

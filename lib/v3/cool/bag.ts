@@ -20,6 +20,11 @@ export type CoolSource = 'trend' | 'like' | 'niche' | 'recent'
 export const COOL_SOURCES: CoolSource[] = ['trend', 'like', 'niche', 'recent']
 export type NicheSource = 'gaming' | 'oldschool' | 'music' | 'elsewhere'
 export const NICHE_SOURCES: NicheSource[] = ['gaming', 'oldschool', 'music', 'elsewhere']
+/**
+ * With the theme deck, music and gaming have their own cards: a niche ticket no
+ * longer reserves them a turn (the owner, 28 September), it is old school or elsewhere.
+ */
+export const THEMED_NICHE_SOURCES: NicheSource[] = ['oldschool', 'elsewhere']
 
 export const DEFAULT_BAG: CoolSource[] = [
   'trend', 'trend', 'like', 'like', 'like', 'niche', 'niche', 'niche', 'recent', 'recent',
@@ -102,12 +107,12 @@ export function bagSourceAt(seed: number, index: number, bag: CoolSource[] = coo
  * decides, never the same one twice in a row. The ticket at `index` is the
  * k-th niche of the session, k counted over the bag sequence.
  */
-export function nicheAt(seed: number, index: number, bag: CoolSource[] = coolBag()): NicheSource {
+export function nicheAt(seed: number, index: number, bag: CoolSource[] = coolBag(), sources: readonly NicheSource[] = NICHE_SOURCES): NicheSource {
   const at = Math.max(0, Math.floor(index))
   const rank = bagSequence(seed, at, bag).filter((source) => source === 'niche').length
   const niches: NicheSource[] = []
   for (let ordinal = 0; niches.length <= rank; ordinal += 1) {
-    niches.push(...arrangement(seed, 'cool-niche', ordinal, NICHE_SOURCES, niches[niches.length - 1] ?? null))
+    niches.push(...arrangement(seed, 'cool-niche', ordinal, sources, niches[niches.length - 1] ?? null))
   }
   return niches[rank]
 }

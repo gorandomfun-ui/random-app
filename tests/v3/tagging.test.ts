@@ -296,6 +296,18 @@ test('étiquetage: sujet principal, secondaires, univers, angle', async () => {
   assert.equal(tags.tagVersion, 1)
 })
 
+test('étiquetage: une vidéo classée Musique par son auteur est de la musique, même si son titre parle de moto', async () => {
+  const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
+  const { tagItem } = await import('@/lib/v3/tagging/tagItem')
+  const index = buildSubjectIndex(DICTIONARY)
+  const at = new Date('2026-09-28T00:00:00Z')
+  const song = { type: 'video' as const, title: 'Misso misondo LIBASE MOTO (singeli beat)', viewCount: 5_000 }
+  assert.equal(tagItem({ ...song, provider: 'youtube', categoryId: '10' }, index, at).universe, 'music')
+  assert.equal(tagItem({ ...song, provider: 'dailymotion', categoryId: 'music' }, index, at).universe, 'music')
+  assert.notEqual(tagItem({ ...song, provider: 'youtube', categoryId: '2' }, index, at).universe, 'music', 'filed under Autos, it is not a song')
+  assert.equal(tagItem({ ...song, provider: 'youtube', categoryId: '10', universeHint: 'events-parties' }, index, at).universe, 'events-parties', 'the line that found it still says first')
+})
+
 test('étiquetage: le japonais est reconnu sans espaces', async () => {
   const { buildSubjectIndex } = await import('@/lib/v3/tagging/subjectIndex')
   const { tagItem } = await import('@/lib/v3/tagging/tagItem')

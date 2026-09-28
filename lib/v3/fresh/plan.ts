@@ -15,6 +15,7 @@
 import type { RawVideo } from '@/lib/ingest/videos'
 
 export type FreshBucket = 'world' | 'usa' | 'europe' | 'asia' | 'africa' | 'east-europe' | 'oceania' | 'music' | 'fun'
+  | 'sport' | 'animals' | 'science' | 'howto' | 'people' | 'autos' | 'film'
 
 export type BucketPlan = {
   bucket: FreshBucket
@@ -31,17 +32,78 @@ export type BucketPlan = {
   order: 'views' | 'rank'
 }
 
+/**
+ * The charts of the places are mostly music and gaming everywhere (28 September:
+ * 339 music and 217 gaming in a list of 732). The kinds YouTube still charts
+ * per country — sport, animals, science, how-to, people, autos, film and
+ * animation — each bring their own share, so the day's list covers what the
+ * theme deck asks for (travel and education are no longer charted).
+ */
+const KIND_REGIONS = ['US', 'GB', 'FR', 'DE', 'IN', 'BR', 'MX', 'JP', 'KR', 'NG', 'ID', 'ES'] as const
+
 export const FRESH_PLAN: readonly BucketPlan[] = [
-  { bucket: 'world', quota: 200, regions: ['US', 'IN', 'BR', 'GB', 'JP', 'MX', 'ID', 'DE', 'FR', 'KR', 'ES', 'PH'], pages: 1, dailymotion: [], order: 'views' },
-  { bucket: 'usa', quota: 100, regions: ['US'], pages: 3, dailymotion: [], order: 'rank' },
-  { bucket: 'europe', quota: 100, regions: ['GB', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'PT', 'BE', 'IE', 'AT', 'CH', 'DK', 'NO', 'FI'], pages: 1, dailymotion: [], order: 'rank' },
-  { bucket: 'asia', quota: 100, regions: ['JP', 'KR', 'IN', 'ID', 'TH', 'VN', 'PH', 'TW', 'MY', 'PK', 'BD', 'SG', 'HK'], pages: 1, dailymotion: [], order: 'rank' },
-  { bucket: 'africa', quota: 100, regions: ['NG', 'KE', 'ZA', 'EG', 'MA', 'GH', 'SN', 'DZ', 'TN', 'UG', 'TZ'], pages: 1, dailymotion: [], order: 'rank' },
-  { bucket: 'east-europe', quota: 100, regions: ['PL', 'UA', 'RO', 'CZ', 'HU', 'RS', 'BG', 'SK', 'HR', 'LT', 'LV', 'EE', 'GE', 'KZ'], pages: 1, dailymotion: [], order: 'rank' },
-  { bucket: 'oceania', quota: 100, regions: ['AU', 'NZ'], pages: 4, dailymotion: [], order: 'rank' },
-  { bucket: 'music', quota: 100, regions: ['US', 'GB', 'BR', 'MX', 'NG', 'KR', 'JP', 'IN', 'FR', 'ES', 'CO', 'ZA'], category: '10', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'world', quota: 110, regions: ['US', 'IN', 'BR', 'GB', 'JP', 'MX', 'ID', 'DE', 'FR', 'KR', 'ES', 'PH'], pages: 1, dailymotion: [], order: 'views' },
+  { bucket: 'usa', quota: 60, regions: ['US'], pages: 3, dailymotion: [], order: 'rank' },
+  { bucket: 'europe', quota: 60, regions: ['GB', 'FR', 'DE', 'IT', 'ES', 'NL', 'SE', 'PT', 'BE', 'IE', 'AT', 'CH', 'DK', 'NO', 'FI'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'asia', quota: 60, regions: ['JP', 'KR', 'IN', 'ID', 'TH', 'VN', 'PH', 'TW', 'MY', 'PK', 'BD', 'SG', 'HK'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'africa', quota: 60, regions: ['NG', 'KE', 'ZA', 'EG', 'MA', 'GH', 'SN', 'DZ', 'TN', 'UG', 'TZ'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'east-europe', quota: 60, regions: ['PL', 'UA', 'RO', 'CZ', 'HU', 'RS', 'BG', 'SK', 'HR', 'LT', 'LV', 'EE', 'GE', 'KZ'], pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'oceania', quota: 40, regions: ['AU', 'NZ'], pages: 4, dailymotion: [], order: 'rank' },
+  { bucket: 'music', quota: 80, regions: ['US', 'GB', 'BR', 'MX', 'NG', 'KR', 'JP', 'IN', 'FR', 'ES', 'CO', 'ZA'], category: '10', pages: 1, dailymotion: [], order: 'rank' },
   { bucket: 'fun', quota: 100, regions: ['US', 'GB', 'IN', 'BR', 'MX', 'FR', 'PH', 'ID', 'NG', 'DE'], category: '23', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'sport', quota: 60, regions: KIND_REGIONS, category: '17', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'animals', quota: 60, regions: KIND_REGIONS, category: '15', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'science', quota: 50, regions: KIND_REGIONS, category: '28', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'howto', quota: 60, regions: KIND_REGIONS, category: '26', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'people', quota: 50, regions: ['US', 'GB', 'FR', 'CA', 'AU', 'DE', 'BR', 'MX', 'IN', 'ES'], category: '22', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'autos', quota: 40, regions: KIND_REGIONS, category: '2', pages: 1, dailymotion: [], order: 'rank' },
+  { bucket: 'film', quota: 50, regions: KIND_REGIONS, category: '1', pages: 1, dailymotion: [], order: 'rank' },
 ]
+
+/** The most of the day's list one universe may take: the charts push music and gaming, the list should not. */
+export const FRESH_UNIVERSE_SHARE: Readonly<Partial<Record<string, number>>> = { music: 0.25, gaming: 0.15 }
+
+/**
+ * The zones' picks, trimmed so no universe passes its share of the whole list:
+ * the extra ones leave from the end of each zone (its least watched), the
+ * zones keeping their turns.
+ */
+export function capUniverses(picked: Map<FreshBucket, FreshEntry[]>, shares: Readonly<Partial<Record<string, number>>> = FRESH_UNIVERSE_SHARE): Map<FreshBucket, FreshEntry[]> {
+  const total = [...picked.values()].reduce((sum, list) => sum + list.length, 0)
+  const out = new Map([...picked].map(([bucket, list]) => [bucket, [...list]]))
+  for (const [universe, share] of Object.entries(shares)) {
+    if (share === undefined) continue
+    const allowed = Math.floor(total * share)
+    let over = [...out.values()].reduce((sum, list) => sum + list.filter((entry) => entry.universe === universe).length, 0) - allowed
+    // Round the zones from the end, one at a time, so no zone loses all of it.
+    while (over > 0) {
+      let removed = false
+      for (const list of out.values()) {
+        if (over <= 0) break
+        for (let index = list.length - 1; index >= 0; index -= 1) {
+          if (list[index].universe !== universe) continue
+          list.splice(index, 1)
+          over -= 1
+          removed = true
+          break
+        }
+      }
+      if (!removed) break
+    }
+  }
+  return out
+}
+
+/** A still album cover ("- Topic" channels), or a gaming session past fifteen minutes: not what opens a feed. */
+export function isFreshFormat(row: { channelTitle?: unknown; duration?: unknown; universe?: unknown }): boolean {
+  if (/ - Topic$/.test(String(row.channelTitle ?? ''))) return false
+  if (row.universe === 'gaming') {
+    const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(row.duration ?? ''))
+    const seconds = match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0
+    if (seconds > 15 * 60) return false
+  }
+  return true
+}
 
 /** News on the fresh list: one or two at most, the owner's rule for TV news anywhere. */
 export const FRESH_NEWS_MAX = 2

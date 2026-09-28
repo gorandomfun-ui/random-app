@@ -19,10 +19,16 @@ const SCAM = new RegExp([
   '\\bphone number\\b.*\\b(?:help|support|care|contact|desk)\\b', '\\b(?:help|support|care|contact|desk)\\b.*\\bphone number\\b',
 ].join('|'), 'i')
 
-/** The product-top farm's own wording, not any "top 10": "Top 10 goals of the season" stays. */
+/**
+ * The product-top farm's own wording, not any "top 10": "Top 10 goals of the season" stays.
+ * On 28 September the farm had changed its words — "Top 5 Best Top 5 … (Must Have!)",
+ * "Why Everyone Is Buying Top 5 …" — and about a thousand had come through; each new
+ * pattern still needs the farm's "Top n" next to it.
+ */
 const PRODUCT_TOP = new RegExp([
   '\\btop \\d{1,2} best sellers?\\b', '\\bcheap (?:&|and) best top \\d{1,2}\\b', '\\bamazing top \\d{1,2}\\b.*\\byou need to see\\b',
   '\\bultimate guide to the best top \\d{1,2}\\b', '\\bunboxing (?:&|and) review\\b', '\\btop \\d{1,2}\\b.*\\bbuying guide\\b',
+  '\\btop \\d{1,2}\\b.*\\(must have!?\\)', '\\bwhy everyone is buying top \\d{1,2}\\b', '\\btop \\d{1,2} best top \\d{1,2}\\b',
 ].join('|'), 'i')
 
 export function junkKind(title: string | null | undefined): JunkKind | null {

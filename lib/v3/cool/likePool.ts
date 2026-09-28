@@ -14,9 +14,10 @@
  * line `like-pool` records the size and the growth. The draw reads them.
  */
 
-import { ObjectId, type Db, type Document } from 'mongodb'
+import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
 import type { LikeZone } from './likes'
+import type { Era, Universe } from '../types'
 import { SERVABLE } from './servable'
 import type { Rng } from '../../discovery/random'
 
@@ -32,16 +33,46 @@ const QUERY_BUDGET_MS = 4_000
 /** A count of a zone: the biggest hold thousands of documents behind an index, and the database is small. */
 const COUNT_BUDGET_MS = 20_000
 
+/**
+ * The vibe of a like (the owner, 28 September: "la zone des likes doit suivre
+ * l'ambiance"): its universe, its format, how watched it is, its era. His likes
+ * are two thirds little-seen; a zone of the same universe, as little-seen, of
+ * the same era, brings that feel back — where a word of the title brought
+ * "Spider-Man GIF by Sony" for a like that merely named the film.
+ */
+export type Vibe = { universe: Universe; type: 'video' | 'image'; tier: 'low' | 'high' | 'any'; era: Exclude<Era, 'trend' | 'unknown'> | 'any' }
+
+export function vibeOf(like: LikeZone): Vibe {
+  const type = like.type === 'image' ? 'image' : 'video'
+  if (type === 'image') return { universe: like.universe, type, tier: 'any', era: 'any' }
+  const tier = like.popularity === 'niche' || like.popularity === 'mid' ? 'low' : like.popularity === 'known' || like.popularity === 'mainstream' ? 'high' : 'any'
+  const era = like.era === 'retro' ? 'retro' : like.era === 'recent' || like.era === 'trend' ? 'recent' : 'any'
+  return { universe: like.universe, type, tier, era }
+}
+
+/** What a vibe zone holds: servable, usable contents of its universe and format, as watched, of its era. */
+export function vibeFilter(vibe: Vibe): Filter<Document> {
+  return {
+    'v3.universe': vibe.universe, type: vibe.type, 'v3.usable': true, ...SERVABLE,
+    ...(vibe.tier === 'low' ? { 'v3.popularity': { $in: ['niche', 'mid'] } } : vibe.tier === 'high' ? { 'v3.popularity': { $in: ['known', 'mainstream'] } } : {}),
+    ...(vibe.era !== 'any' ? { 'v3.era': vibe.era } : {}),
+  }
+}
+
+/** A vibe zone is counted up to this: past it, its weight is the cap anyway and counting on would only load the database. */
+const VIBE_COUNT_LIMIT = 3000
+
 export type PoolZone = {
-  /** `author:<channel key>` or `subject:<subject id>`. */
+  /** `author:<channel key>`, `vibe:<universe>|<format>|<tier>|<era>`, or (before 28 September) `subject:<subject id>`. */
   id: string
-  kind: 'author' | 'subject'
+  kind: 'author' | 'subject' | 'vibe'
   key: string
   /** The likes this zone comes from; a zone never shows them. */
   likeIds: string[]
   /** Contents of each format in the zone, the likes left out. */
   video: number
   image: number
+  vibe?: Vibe
 }
 
 export type PoolSummary = {
@@ -58,18 +89,19 @@ export type LikePool = { zones: PoolZone[]; likeIds: string[] }
 
 const EMPTY: LikePool = { zones: [], likeIds: [] }
 
-/** One zone per liked author and per subject a like names: two likes of one author make one zone. */
+/** One zone per liked author and one per vibe: two likes of one author, or of one vibe, make one zone. */
 export function zonesOfLikes(likes: readonly LikeZone[]): PoolZone[] {
   const zones = new Map<string, PoolZone>()
-  const add = (kind: PoolZone['kind'], key: string, likeId: string) => {
+  const add = (kind: PoolZone['kind'], key: string, likeId: string, vibe?: Vibe) => {
     const id = `${kind}:${key}`
-    const zone = zones.get(id) ?? { id, kind, key, likeIds: [], video: 0, image: 0 }
+    const zone = zones.get(id) ?? { id, kind, key, likeIds: [], video: 0, image: 0, ...(vibe ? { vibe } : {}) }
     if (!zone.likeIds.includes(likeId)) zone.likeIds.push(likeId)
     zones.set(id, zone)
   }
   for (const like of likes) {
     if (like.channelKey) add('author', like.channelKey, like.id)
-    for (const subjectId of like.subjectIds) add('subject', subjectId, like.id)
+    const vibe = vibeOf(like)
+    add('vibe', `${vibe.universe}|${vibe.type}|${vibe.tier}|${vibe.era}`, like.id, vibe)
   }
   return [...zones.values()]
 }
@@ -88,6 +120,10 @@ export async function countZones(
   const uncounted: string[] = []
   const count = async (zone: PoolZone, type: 'video' | 'image'): Promise<number> => {
     try {
+      if (zone.kind === 'vibe') {
+        if (!zone.vibe || zone.vibe.type !== type) return 0
+        return await items.countDocuments({ ...vibeFilter(zone.vibe), ...notALike }, { hint: 'v3_universe_type_rand', limit: VIBE_COUNT_LIMIT, maxTimeMS: budgetMs })
+      }
       return zone.kind === 'author'
         ? await items.countDocuments({ 'v3.channelKey': zone.key, type, ...SERVABLE, ...notALike }, { maxTimeMS: budgetMs })
         : await items.countDocuments({ 'v3.subjects.id': zone.key, type, 'v3.usable': true, ...SERVABLE, ...notALike }, { hint: 'v3_subject_type_rand', maxTimeMS: budgetMs })
@@ -136,10 +172,11 @@ export function __setLikePoolForTests(pool: LikePool | null): void {
 
 /** The zones as last written. */
 export async function readPoolZones(db: Db): Promise<PoolZone[]> {
-  const rows = await db.collection(POOL).find({ kind: { $in: ['author', 'subject'] } }, { maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const rows = await db.collection(POOL).find({ kind: { $in: ['author', 'subject', 'vibe'] } }, { maxTimeMS: QUERY_BUDGET_MS }).toArray()
   return rows.map((row) => ({
     id: String(row._id), kind: row.kind as PoolZone['kind'], key: String(row.key),
     likeIds: Array.isArray(row.likeIds) ? row.likeIds.map(String) : [], video: Number(row.video) || 0, image: Number(row.image) || 0,
+    ...(row.kind === 'vibe' && row.vibe ? { vibe: row.vibe as Vibe } : {}),
   }))
 }
 

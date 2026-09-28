@@ -13,7 +13,7 @@ import type { Document } from 'mongodb'
 import { fetchYouTubeChart, fetchYouTubeViewCounts } from '@/lib/ingest/videos'
 import { junkKind } from '@/lib/ingest/junk'
 import { miniSeriesVerdict } from '@/lib/ingest/miniSeries'
-import { dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
+import { capUniverses, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
@@ -164,6 +164,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     if (!row || row.isSuppressed === true || row.obsoleteVideoStatus === 'obsolete' || before.has(entry.raw.videoId)) continue
     const title = String(row.title ?? '')
     if (junkKind(title) || miniSeriesVerdict({ title, aspectRatio: row.aspectRatio, duration: row.duration }) || isAiMade(row.channelTitle, title)) continue
+    if (!isFreshFormat({ channelTitle: row.channelTitle, duration: row.duration, universe: row.v3?.universe })) continue
     byBucket.set(entry.bucket, [...(byBucket.get(entry.bucket) ?? []), {
       id: String(row._id), videoId: entry.raw.videoId, bucket: entry.bucket, rank: entry.rank, region: entry.region,
       views: entry.daily, channel: row.channelId ? String(row.channelId) : undefined,
@@ -185,9 +186,12 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     })
     picked.set(plan.bucket, pickBucket(pool, plan, taken))
   }
-  const order = interleave(picked)
-  const buckets = Object.fromEntries([...picked].map(([bucket, list]) => [bucket, list.length])) as Partial<Record<FreshBucket, number>>
-  const label: Record<FreshBucket, string> = { world: 'monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l_Est', oceania: 'Océanie', music: 'musique', fun: 'fun' }
+  // Music and gaming kept to their share of the whole list, then the zones take turns.
+  const capped = capUniverses(picked)
+  const order = interleave(capped)
+  const buckets = Object.fromEntries([...capped].map(([bucket, list]) => [bucket, list.length])) as Partial<Record<FreshBucket, number>>
+  const label: Record<FreshBucket, string> = { world: 'monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l_Est', oceania: 'Océanie', music: 'musique', fun: 'fun',
+    sport: 'sport', animals: 'animaux', science: 'sciences', howto: 'pratique', people: 'gens', autos: 'autos', film: 'films et animation' }
   const note = `frais du jour ${day} : ${order.length} vidéos (${FRESH_PLAN.map((plan) => `${label[plan.bucket]} ${buckets[plan.bucket] ?? 0}`).join(' · ')})${youtubeStopped ? ' · budget YouTube atteint' : ''}`
   ctx.log(note)
 

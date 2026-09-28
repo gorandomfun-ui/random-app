@@ -63,3 +63,16 @@ test('a cool ticket looks in the session\'s universe first, and falls back to it
   }
 })
 
+
+test('with the cards, a cool ticket never falls back to the reserved music or gaming source', async () => {
+  const rows = [fakeVideo('music'), fakeVideo('music'), fakeVideo('gaming'), fakeVideo('gaming'), fakeVideo('archive'), fakeVideo('archive'), fakeVideo('elsewhere'), fakeVideo('elsewhere')]
+  for (let seed = 1; seed <= 40; seed += 1) {
+    for (const coolTickets of [0, 1, 2, 3, 4, 5]) {
+      const state: Session = { ...newSession(seed), coolTickets }
+      const result = await selectCool(fakeDb(rows), coolTicket(state), state, (row) => row, seeded(seed * 7 + coolTickets), NOW, 'history')
+      if (!result || result.cool.asked === 'like') continue
+      assert.ok(!['music', 'gaming'].includes(result.cool.source), `seed ${seed}, ticket ${coolTickets}: ${result.cool.source}`)
+      assert.ok(!result.cool.niche || ['oldschool', 'elsewhere'].includes(result.cool.niche))
+    }
+  }
+})

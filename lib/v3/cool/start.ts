@@ -14,7 +14,7 @@ import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
 import type { CoolSource, NicheSource } from './bag'
 import { isCleanTitle, isLatinTitle } from './clean'
-import { LIKE_ITSELF, loadLikePool, pickZone, type LikePool } from './likePool'
+import { LIKE_ITSELF, loadLikePool, pickZone, vibeFilter, type LikePool } from './likePool'
 import { isCoolCandidate, type LabelableRow } from './registers'
 import { SERVABLE } from './servable'
 import { byLiveliness } from './themes'
@@ -25,7 +25,7 @@ export { SERVABLE } from './servable'
 export type Rng = () => number
 export type StartType = 'video' | 'image'
 /** A content of the subject a like names, of its author, or — once in a thousand — the like itself. */
-export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like'
+export type LikeZoneKind = 'like-subject' | 'like-channel' | 'like-vibe' | 'like'
 /** What a start actually came from: a register, a zone around a like, the trend, the recent, or the little-seen of the session's universe. */
 export type StartSource = CoolRegister | LikeZoneKind | 'trend' | 'recent' | 'theme'
 export type Start = { rows: Document[]; source: StartSource; asked: CoolSource; niche?: NicheSource; fallback: boolean }
@@ -58,9 +58,10 @@ export function registerFor(source: NicheSource, type: StartType, random: Rng): 
   return source
 }
 
-/** When a source has nothing to give, a register that is not gaming takes its place. */
-export function nicheFallback(type: StartType, random: Rng): CoolRegister {
-  const registers: CoolRegister[] = type === 'video' ? ['archive', 'music', 'elsewhere'] : ['archive', 'music', 'elsewhere', 'cool-words']
+/** When a source has nothing to give, a register that is not gaming takes its place — nor music, with the theme deck (it has its cards). */
+export function nicheFallback(type: StartType, random: Rng, themed = false): CoolRegister {
+  const registers: CoolRegister[] = (type === 'video' ? ['archive', 'music', 'elsewhere'] : ['archive', 'music', 'elsewhere', 'cool-words'])
+    .filter((register) => !themed || register !== 'music') as CoolRegister[]
   return registers[Math.floor(random() * registers.length)] ?? 'music'
 }
 
@@ -103,15 +104,21 @@ function drawRegister(db: Db, register: CoolRegister, type: StartType, random: R
  * videos of its author from a random point. Once in a thousand, the like
  * itself. Null when the pool holds nothing for this format: a niche then.
  */
-async function drawLike(db: Db, pool: LikePool, type: StartType, random: Rng, excluded: Set<string>): Promise<{ rows: Document[]; kind: LikeZoneKind } | null> {
+async function drawLike(db: Db, pool: LikePool, type: StartType, random: Rng, excluded: Set<string>, theme?: Universe): Promise<{ rows: Document[]; kind: LikeZoneKind } | null> {
   const items = db.collection('items')
   if (pool.likeIds.length && random() < LIKE_ITSELF) {
     const id = pool.likeIds[Math.floor(random() * pool.likeIds.length)]
     const row = ObjectId.isValid(id) ? await items.findOne({ _id: new ObjectId(id), type, ...SERVABLE }, { maxTimeMS: QUERY_BUDGET_MS }) : null
     if (row) return { rows: [row], kind: 'like' }
   }
-  const zone = pickZone(pool.zones, type, random)
+  // The card's universe first, when a like has that vibe: the likes follow the cards like everything else.
+  const inTheme = theme ? pool.zones.filter((candidate) => candidate.vibe?.universe === theme) : []
+  const zone = (inTheme.length ? pickZone(inTheme, type, random) : null) ?? pickZone(pool.zones, type, random)
   if (!zone) return null
+  if (zone.kind === 'vibe' && zone.vibe) {
+    const rows = await seek(db, vibeFilter(zone.vibe), UNIVERSE_INDEX, random, excluded, THEMED_ROWS)
+    return rows.length ? { rows, kind: 'like-vibe' } : null
+  }
   if (zone.kind === 'subject') {
     const rows = await seek(db, { 'v3.subjects.id': zone.key, type, 'v3.usable': true, ...SERVABLE }, SUBJECT_INDEX, random, excluded)
     return rows.length ? { rows, kind: 'like-subject' } : null
@@ -223,7 +230,7 @@ async function drawSource(
   }
 
   if (source === 'like') {
-    const drawn = pool.zones.length ? await drawLike(db, pool, type, random, excluded) : null
+    const drawn = pool.zones.length ? await drawLike(db, pool, type, random, excluded, options.theme) : null
     if (drawn) return { rows: drawn.rows, source: drawn.kind, asked: source, fallback: false }
   } else if (source === 'trend' || source === 'recent') {
     if (source === 'trend') {
@@ -236,12 +243,12 @@ async function drawSource(
   } else {
     // A niche ticket names its register; without one, any register but gaming.
     const niche = options.niche
-    const register = niche ? registerFor(niche, type, random) : nicheFallback(type, random)
+    const register = niche ? registerFor(niche, type, random) : nicheFallback(type, random, Boolean(options.theme))
     const rows = await drawRegister(db, register, type, random, excluded)
     if (rows.length) return { rows, source: register, asked: source, ...(niche ? { niche } : {}), fallback: false }
   }
 
-  const register = nicheFallback(type, random)
+  const register = nicheFallback(type, random, Boolean(options.theme))
   const rows = await drawRegister(db, register, type, random, excluded)
   return rows.length ? { rows, source: register, asked: source, ...(options.niche ? { niche: options.niche } : {}), fallback: true } : null
 }

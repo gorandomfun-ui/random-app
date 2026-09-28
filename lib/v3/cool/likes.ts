@@ -10,7 +10,7 @@
 import { ObjectId, type Db, type Document } from 'mongodb'
 
 import { containsAlias } from '../tagging/normalize'
-import type { Angle, Era, ItemType, SubjectRef, Universe } from '../types'
+import type { Angle, Era, ItemType, Popularity, SubjectRef, Universe } from '../types'
 
 const OWNER_REFERENCES = 'discovery_owner_references_v2'
 /** Forty likes that change a few times a week: one read every ten minutes per server is plenty. */
@@ -26,6 +26,8 @@ export type LikeZone = {
   universe: Universe
   angle: Angle
   era: Era
+  /** How watched the like is: the vibe of a little-seen like is the little-seen. */
+  popularity?: Popularity
 }
 
 let cache: { at: number; zones: LikeZone[] } | null = null
@@ -94,7 +96,7 @@ async function readLikeZones(db: Db, now: number): Promise<LikeZone[]> {
 
   const zones = new Map<string, LikeZone>()
   for (const row of rows) {
-    const v3 = row.v3 as { subjects?: SubjectRef[]; channelKey?: string; universe?: Universe; angle?: Angle; era?: Era } | undefined
+    const v3 = row.v3 as { subjects?: SubjectRef[]; channelKey?: string; universe?: Universe; angle?: Angle; era?: Era; popularity?: Popularity } | undefined
     if (!v3) continue
     zones.set(String(row._id), {
       id: String(row._id),
@@ -104,6 +106,7 @@ async function readLikeZones(db: Db, now: number): Promise<LikeZone[]> {
       universe: v3.universe ?? 'other',
       angle: v3.angle ?? 'other',
       era: v3.era ?? 'unknown',
+      ...(v3.popularity ? { popularity: v3.popularity } : {}),
     })
   }
   cache = { at: now, zones: [...zones.values()] }

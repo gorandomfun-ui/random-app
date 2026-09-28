@@ -8,16 +8,17 @@ const rolls = (values: number[]) => { let index = 0; return () => values[index++
 const like = (id: string, extra: Partial<LikeZone> = {}): LikeZone => ({ id, type: 'video', subjectIds: [], universe: 'other', angle: 'other', era: 'unknown', ...extra })
 const zone = (kind: PoolZone['kind'], key: string, video: number, image = 0): PoolZone => ({ id: `${kind}:${key}`, kind, key, likeIds: ['l'], video, image })
 
-test('une zone par auteur liké et par sujet nommé : deux likes d_un auteur font une zone', () => {
+test('une zone par auteur liké et une par ambiance : deux likes d_un auteur, ou d_une ambiance, font une zone', () => {
   const zones = zonesOfLikes([
-    like('a', { channelKey: 'youtube:UC1', subjectIds: ['artist:x'] }),
-    like('b', { channelKey: 'youtube:UC1' }),
-    like('c', { subjectIds: ['artist:x', 'topic:arcade'] }),
-    like('d'),
+    like('a', { channelKey: 'youtube:UC1', subjectIds: ['artist:x'], universe: 'sport', popularity: 'niche', era: 'recent' }),
+    like('b', { channelKey: 'youtube:UC1', universe: 'sport', popularity: 'mid', era: 'trend' }),
+    like('c', { subjectIds: ['artist:x', 'topic:arcade'], universe: 'music', popularity: 'mainstream', era: 'retro' }),
+    like('d', { type: 'image', universe: 'animation' }),
   ])
-  assert.deepEqual(zones.map((z) => z.id).sort(), ['author:youtube:UC1', 'subject:artist:x', 'subject:topic:arcade'])
+  assert.deepEqual(zones.map((z) => z.id).sort(), ['author:youtube:UC1', 'vibe:animation|image|any|any', 'vibe:music|video|high|retro', 'vibe:sport|video|low|recent'])
   assert.deepEqual(zones.find((z) => z.id === 'author:youtube:UC1')?.likeIds, ['a', 'b'])
-  assert.deepEqual(zones.find((z) => z.id === 'subject:artist:x')?.likeIds, ['a', 'c'])
+  assert.deepEqual(zones.find((z) => z.id === 'vibe:sport|video|low|recent')?.likeIds, ['a', 'b'], 'peu vu et à peine vu, récent et tendance : la même ambiance')
+  assert.ok(!zones.some((z) => z.kind === 'subject'), 'plus de zone sur un mot du titre')
 })
 
 test('les tailles comptent les contenus servables de la zone, les likes exclus', async () => {
@@ -31,10 +32,17 @@ test('les tailles comptent les contenus servables de la zone, les likes exclus',
     fakeVideo('music', { type: 'image', v3: { registers: ['music'], subjects: [{ id: 'artist:x' }], usable: true } }),
     fakeVideo('music', { v3: { registers: ['music'], subjects: [{ id: 'artist:x' }], usable: false } }),
   ]
-  const zones = zonesOfLikes([like(String(liked._id), { channelKey: 'youtube:UC1', subjectIds: ['artist:x'] })])
-  const { zones: counted, uncounted } = await countZones(fakeDb(rows), zones, [String(liked._id)])
+  const zones = zonesOfLikes([like(String(liked._id), { channelKey: 'youtube:UC1', subjectIds: ['artist:x'], universe: 'music', popularity: 'niche', era: 'recent' })])
+  const vibeRows = [
+    fakeVideo('music', { v3: { universe: 'music', popularity: 'niche', era: 'recent', usable: true } }),
+    fakeVideo('music', { v3: { universe: 'music', popularity: 'mid', era: 'recent', usable: true } }),
+    fakeVideo('music', { v3: { universe: 'music', popularity: 'mainstream', era: 'recent', usable: true } }),
+    fakeVideo('music', { v3: { universe: 'music', popularity: 'niche', era: 'retro', usable: true } }),
+    fakeVideo('music', { v3: { universe: 'sport', popularity: 'niche', era: 'recent', usable: true } }),
+  ]
+  const { zones: counted, uncounted } = await countZones(fakeDb([...rows, ...vibeRows]), zones, [String(liked._id)])
   assert.deepEqual(uncounted, [])
-  assert.deepEqual(counted.map((z) => [z.id, z.video, z.image]), [['author:youtube:UC1', 1, 0], ['subject:artist:x', 1, 1]])
+  assert.deepEqual(counted.map((z) => [z.id, z.video, z.image]), [['author:youtube:UC1', 1, 0], ['vibe:music|video|low|recent', 2, 0]])
   const summary = summarise(counted, 1, new Date(0), 300)
   assert.equal(summary.connected, 3)
   assert.equal(summary.effective, 3)
@@ -55,10 +63,10 @@ test('une zone pèse ce qu_elle contient pour le format, plafonné ; une zone vi
 
 test('une zone trop grande pour être comptée garde son compte d_avant, ou pèse le plafond', async () => {
   const failing = { collection: () => ({ countDocuments: async () => { throw new Error('operation exceeded time limit') } }) } as unknown as import('mongodb').Db
-  const zones = zonesOfLikes([like('a', { channelKey: 'youtube:UC1', subjectIds: ['topic:arcade'] })])
+  const zones = zonesOfLikes([like('a', { channelKey: 'youtube:UC1', subjectIds: ['topic:arcade'], universe: 'gaming', popularity: 'niche', era: 'retro' })])
   const previous = new Map([['author:youtube:UC1', { ...zones[0], video: 2847, image: 0 }]])
   const { zones: counted, uncounted } = await countZones(failing, zones, ['a'], previous, 10)
-  assert.deepEqual(uncounted, ['author:youtube:UC1', 'subject:topic:arcade'])
+  assert.deepEqual(uncounted, ['author:youtube:UC1', 'vibe:gaming|video|low|retro'])
   assert.equal(counted.find((z) => z.kind === 'author')?.video, 2847, 'le compte d_avant')
-  assert.equal(counted.find((z) => z.kind === 'subject')?.video, 300, 'sans compte d_avant, le plafond')
+  assert.equal(counted.find((z) => z.kind === 'vibe')?.video, 300, 'sans compte d_avant, le plafond')
 })

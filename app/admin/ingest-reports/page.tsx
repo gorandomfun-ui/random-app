@@ -78,6 +78,7 @@ const WEB_SOURCE: Record<string, string> = { 'google-cse': 'Google', hn: 'Show H
 const WEB_STATUS: Array<[string, string]> = [['new', 'en attente'], ['done', 'ajoutés'], ['dead', 'morts'], ['dull', 'sans intérêt'], ['noimage', 'page vide'], ['failed', 'échecs']]
 const FRESH_ZONE: Record<string, string> = {
   world: 'Monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l\u2019Est', oceania: 'Océanie', music: 'Musique', fun: 'Fun',
+  sport: 'Sport', animals: 'Animaux', science: 'Sciences', howto: 'Pratique', people: 'Gens', autos: 'Autos', film: 'Films et animation',
 }
 type MiniSeriesReport = {
   days: Array<{ day: string; total: number; byDetail: Record<string, number> }>
