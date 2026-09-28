@@ -187,6 +187,8 @@ export default function ArcadeStage({
 
   /** PLAY: the round begins, or takes up where it was; on a phone, full screen first, the game started once the frame has grown — and only upright. */
   const play = useCallback(() => {
+    // this press is the touch a phone waits for before any sound
+    control.touch?.()
     const go = () => {
       if (event.kind === 'retry') control.retry?.()
       else if (started.current) control.resume?.()
@@ -247,7 +249,7 @@ export default function ArcadeStage({
       {full ? (
         <div className="arcade-stage__bar">
           {sideways || waiting ? <span className="arcade-stage__icon arcade-stage__icon--none" aria-hidden="true" /> : (
-            <button type="button" className="arcade-stage__icon" aria-label={playState === 'paused' ? words('resume', 'Resume') : words('pause', 'Pause')} onClick={() => control.togglePause?.()} style={{ borderColor: theme.text }}>
+            <button type="button" className="arcade-stage__icon" aria-label={playState === 'paused' ? words('resume', 'Resume') : words('pause', 'Pause')} onClick={() => { control.touch?.(); control.togglePause?.() }} style={{ borderColor: theme.text }}>
               {playState === 'paused' ? <Play size={20} strokeWidth={2.25} fill="currentColor" /> : <Pause size={20} strokeWidth={2.25} fill="currentColor" />}
             </button>
           )}

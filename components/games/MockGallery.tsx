@@ -13,6 +13,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
+import SoundBench from './SoundBench'
+
 const LABELS: Record<string, string> = {
   titre: 'Écran titre — nuit',
   'titre-jour': 'Écran titre — jour',
@@ -81,6 +83,7 @@ export default function MockGallery() {
           <button key={color} onClick={() => setAccent(color)} aria-label={color} style={{ width: 32, height: 32, borderRadius: 999, background: color, border: color === accent ? '3px solid #F8F5E6' : '3px solid transparent' }} />
         ))}
       </div>
+      <SoundBench accent={accent} />
       {(['catcher', 'eater'] as Game[]).map((game) => (
         <section key={game} style={{ marginBottom: 40 }}>
           <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, color: accent }}>{GAME_NAMES[game]}</h2>

@@ -25,6 +25,42 @@ const VOLUME = 0.55
 const pools = new Map<string, HTMLAudioElement[]>()
 let unlocked = false
 
+/**
+ * Blank players started once during the first touch, for sounds the page does
+ * not know yet — the games', which come later. A phone lets a player it has
+ * met play any file afterwards, so a game's tune can start the moment the
+ * game shows, without a touch of its own.
+ */
+const SPARES = 16
+const spares: HTMLAudioElement[] = []
+/** A tenth of a second of silence, as a file the players can start on. */
+function silence(): string {
+  const samples = 800
+  const bytes = new Uint8Array(44 + samples)
+  const view = new DataView(bytes.buffer)
+  const text = (at: number, s: string) => { for (let i = 0; i < s.length; i += 1) bytes[at + i] = s.charCodeAt(i) }
+  text(0, 'RIFF'); view.setUint32(4, 36 + samples, true); text(8, 'WAVE'); text(12, 'fmt ')
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true)
+  view.setUint32(24, 8000, true); view.setUint32(28, 8000, true); view.setUint16(32, 1, true); view.setUint16(34, 8, true)
+  text(36, 'data'); view.setUint32(40, samples, true)
+  bytes.fill(128, 44)
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return `data:audio/wav;base64,${btoa(binary)}`
+}
+
+/** A player a touch has already met when there is one left, a new one otherwise (it will need a touch of its own). */
+export function spareSoundPlayer(): HTMLAudioElement {
+  return spares.pop() ?? new Audio()
+}
+
+/** A player given back, stopped, for the next game. */
+export function returnSoundPlayer(audio: HTMLAudioElement): void {
+  try { audio.pause() } catch { /* nothing to stop */ }
+  audio.loop = false
+  if (spares.length < SPARES) spares.push(audio)
+}
+
 function fileFor(name: SoundName, progress: number): string {
   const steps = STEPS[name]
   if (steps <= 1) return `/sounds/${name}.wav`
@@ -55,6 +91,13 @@ function poolFor(src: string): HTMLAudioElement[] {
 export function unlockSoundFiles(): void {
   if (unlocked || typeof window === 'undefined') return
   unlocked = true
+  const blank = silence()
+  for (let i = 0; i < SPARES; i += 1) {
+    const audio = new Audio(blank)
+    audio.muted = true
+    spares.push(audio)
+    audio.play().then(() => { audio.pause(); audio.muted = false }, () => { audio.muted = false })
+  }
   for (const name of Object.keys(STEPS) as SoundName[]) {
     for (let step = 0; step < STEPS[name]; step += 1) {
       for (const audio of poolFor(fileFor(name, step))) {

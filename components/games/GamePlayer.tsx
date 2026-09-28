@@ -10,7 +10,9 @@
  * the next without lifting. P or Escape pause, and so does the page's own
  * pause button through `control`; the game pauses by itself when the page
  * is left. Wide or tall is chosen at the start of a game, from the frame's
- * shape, and kept until it ends.
+ * shape, and kept until it ends. Each game has its tune, on the title and
+ * low under the play, and its sounds (`lib/games/sound.ts`), which Random's
+ * sound switch silences with the rest.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
@@ -21,7 +23,9 @@ import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } f
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
 import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout, type Pad } from '@/lib/games/screens'
+import { gameSounds } from '@/lib/games/sound'
 import type { Direction } from '@/lib/games/sprites'
+import { wakeSound } from '@/utils/sound'
 
 export type GameResult = { score: number; level: number; won: boolean; needsName?: boolean }
 /**
@@ -41,7 +45,7 @@ export type PlayState = 'idle' | 'playing' | 'paused'
  * resume, and in a round, start — and, for the effects test page's bench
  * only, end the round won or lost at once.
  */
-export type GameControl = { togglePause?: () => void; pause?: () => void; resume?: () => void; start?: () => void; retry?: () => void; finishRound?: (won: boolean) => void }
+export type GameControl = { togglePause?: () => void; pause?: () => void; resume?: () => void; start?: () => void; retry?: () => void; finishRound?: (won: boolean) => void; touch?: () => void }
 
 type Mode = 'title' | 'play' | 'ending' | 'name' | 'over' | 'winner' | 'cleared' | 'retry' | 'lost'
 
@@ -181,6 +185,9 @@ export default function GamePlayer({
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     // a phone or a tablet: the cross of arrows is always there, the board wide or tall
     const touchScreen = (window.matchMedia?.('(pointer: coarse)').matches ?? false) || 'ontouchstart' in window
+    const sounds = gameSounds(game)
+    /** A touch, a click or a key: the moment a phone lets sound start. */
+    const touched = () => { wakeSound(); sounds.touch() }
     bestRef.current = bestScore(game)
     callbacks.current.onBest?.(bestRef.current)
     s.layout = layoutFor(box.width, box.height, touchScreen)
@@ -250,6 +257,7 @@ export default function GamePlayer({
     }
     const end = (score: number, level: number, hold: number, won: boolean) => { s.mode = 'ending'; s.score = score; s.level = level; s.endSteps = hold; s.won = won }
     const finish = () => {
+      sounds.play(s.won ? 'winner' : 'over')
       s.choice = 0
       s.frame = 0
       s.layout = layoutFor(box.width, box.height, touchScreen)
@@ -281,6 +289,7 @@ export default function GamePlayer({
       if (s.catcher) {
         const c = s.catcher
         stepCatcher(c)
+        for (const heard of c.heard) sounds.play(heard)
         if (c.phase === 'won') end(c.score, c.level, 30, true)
         else if (c.phase === 'clear' && c.phaseTimer === 0) {
           if (inRound()) cleared(c.score, c.level)
@@ -290,6 +299,7 @@ export default function GamePlayer({
         const e = s.eater
         const passed = e.passed
         stepEater(e)
+        for (const heard of e.heard) sounds.play(heard)
         if (e.passed > passed && e.phase === 'play') callbacks.current.onLevelCleared?.(e.level - 1)
         // a second to see the crash before GAME OVER, half a second to take in the last burger before WINNER
         if (e.phase === 'over') end(e.score, e.level, 60, false)
@@ -320,8 +330,9 @@ export default function GamePlayer({
         if (!won) { end(s.catcher?.score ?? s.eater?.score ?? r.score, level, 1, false); return }
         const score = (s.catcher?.score ?? s.eater?.score ?? r.score) + 50 * level
         if (level >= 16) end(score, level, 1, true)
-        else cleared(score, level)
+        else { sounds.play('level'); cleared(score, level) }
       }
+      control.touch = touched
     }
 
     let raf = 0, last = performance.now()
@@ -340,11 +351,14 @@ export default function GamePlayer({
       }
       if (s.dirty) { s.dirty = false; paint() }
       report()
+      // the tune on the title and under the play; paused, over, or between screens, quiet
+      sounds.tune(s.mode === 'title' || (s.mode === 'play' && s.pause == null))
     }
     raf = requestAnimationFrame(loop)
 
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return
+      touched()
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
       // a button or link that has the focus keeps Enter and Space for itself; the arrows still steer
@@ -398,6 +412,7 @@ export default function GamePlayer({
     const inBand = (e: PointerEvent) => { const pad = dpadGeometry(s.layout, s.pad); if (!pad) return false; const p = toBuffer(e); return p.x >= pad.zone.x && p.y >= pad.zone.y }
     const onDown = (e: PointerEvent) => {
       if (e.button > 0) return
+      touched()
       if (s.mode === 'play' && s.pause == null && inBand(e)) {
         const dir = onCross(e)
         thumb = { id: e.pointerId, dir }
@@ -461,8 +476,9 @@ export default function GamePlayer({
     frameBox.addEventListener('pointerup', onUp)
     frameBox.addEventListener('pointercancel', onCancel)
     return () => {
-      if (control) { control.togglePause = undefined; control.pause = undefined; control.resume = undefined; control.start = undefined; control.retry = undefined; control.finishRound = undefined }
+      if (control) { control.togglePause = undefined; control.pause = undefined; control.resume = undefined; control.start = undefined; control.retry = undefined; control.finishRound = undefined; control.touch = undefined }
       cancelAnimationFrame(raf)
+      sounds.dispose()
       watch.disconnect()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('blur', pause)
