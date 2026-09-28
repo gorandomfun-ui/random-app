@@ -58,6 +58,8 @@ export type EaterState = {
   levelUp: number
   islands: Array<{ island: Island; solid: boolean }>
   solid: Set<string>
+  /** What the last step made happen that can be heard: a burger, a bonus, a level, the crash. */
+  heard: Array<'bite' | EaterBonus | 'level' | 'crash'>
   moves: number
   steps: number
   passed: number
@@ -103,7 +105,7 @@ export function createEater(layout: Layout, level = 1, seed = 1, options: { sing
     eaten: 0, target: params.target, food: null, bonus: null, bonusTimer: 12 * SECOND,
     tick: params.interval, interval: params.interval, levelUp: 0,
     islands: islandsFor(layout, level).map((island) => ({ island, solid: false })), solid: new Set(),
-    moves: 0, steps: 0, passed: 0, single: options.single === true, random,
+    moves: 0, steps: 0, passed: 0, single: options.single === true, random, heard: [],
   }
   settleIslands(s)
   s.food = placeFood(s)
@@ -161,6 +163,7 @@ export function turnEater(s: EaterState, dir: Direction): void {
 
 /** One sixtieth of a second of the game. */
 export function stepEater(s: EaterState, want?: Direction | null): void {
+  s.heard.length = 0
   s.steps += 1
   if (s.phase !== 'play') return
   if (want) turnEater(s, want)
@@ -181,7 +184,7 @@ export function stepEater(s: EaterState, want?: Direction | null): void {
   // the tail moves off its cell this very move unless the eater is growing, and one more piece while he digests: those cells are free to enter
   const leaving = (s.grow === 0 ? 1 : 0) + (s.shrink > 0 && s.body.length > 3 ? 1 : 0)
   const bodyHit = s.body.some((c, i) => c.x === next.x && c.y === next.y && i < s.body.length - leaving)
-  if (!inside(s, next.x, next.y) || s.solid.has(key(next.x, next.y)) || bodyHit) { s.phase = 'over'; return }
+  if (!inside(s, next.x, next.y) || s.solid.has(key(next.x, next.y)) || bodyHit) { s.phase = 'over'; s.heard.push('crash'); return }
   s.body.unshift(next)
   if (s.grow > 0) s.grow -= 1
   else s.body.pop()
@@ -192,11 +195,12 @@ export function stepEater(s: EaterState, want?: Direction | null): void {
     s.grow += 1
     s.eaten += 1
     s.score += 5
+    s.heard.push('bite')
     if (s.eaten >= s.target) levelUp(s)
     if (s.phase !== 'play') return
     s.food = placeFood(s)
   }
-  if (s.bonus && next.x === s.bonus.x && next.y === s.bonus.y) { s.score += EATER_BONUSES[s.bonus.kind].points; s.bonus = null; s.bonusTimer = nextBonusIn(s) }
+  if (s.bonus && next.x === s.bonus.x && next.y === s.bonus.y) { s.score += EATER_BONUSES[s.bonus.kind].points; s.heard.push(s.bonus.kind); s.bonus = null; s.bonusTimer = nextBonusIn(s) }
   settleIslands(s)
 }
 
@@ -204,6 +208,8 @@ export function stepEater(s: EaterState, want?: Direction | null): void {
 function levelUp(s: EaterState): void {
   s.score += 50 * s.level
   s.passed += 1
+  // the last level's jingle is WINNER's fanfare, played by the screen that follows
+  if (s.level < EATER_LAST_LEVEL) s.heard.push('level')
   // the last level, or the one level of a round in the flow: won, it ends there
   if (s.level >= EATER_LAST_LEVEL || s.single) { s.phase = 'won'; return }
   s.level += 1

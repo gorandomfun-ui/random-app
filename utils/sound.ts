@@ -122,6 +122,21 @@ function playFile(name: 'random' | 'again' | 'wave-enter' | 'wave-step', progres
 export const setMuted = (v: boolean) => { muted = v }
 export const getMuted = () => muted
 
+/** Whether this device plays its sounds as files (iPhone, iPad) rather than synthesising them. */
+export const soundByFiles = (): boolean => !synthesisAllowed()
+
+/**
+ * The engine for the games' sounds: the same one, only when it can play at
+ * once, never created here (a touch does that, through `wakeSound`).
+ */
+export function gameSoundContext(): AudioContext | null {
+  const context = getAudioContext(false)
+  if (!context) return null
+  if (ready(context)) return context
+  resume(context)
+  return null
+}
+
 type BeepOpts = { freq?: number; attack?: number; decay?: number; sustain?: number; release?: number; type?: OscillatorType; gain?: number }
 function env({ freq=440, attack=0.005, decay=0.06, sustain=0.04, release=0.08, type='square', gain=0.2 }: BeepOpts) {
   if (muted) return
