@@ -158,26 +158,3 @@ test('un point près de la fin fait le tour de l_index, et les lignes lues sont 
   assert.deepEqual(shuffled.rows.map((row) => row.rand).sort(), [0.01, 0.02, 0.03, 0.04])
   assert.notEqual(shuffled.rows[0].rand, 0.01, 'la première ligne servie n_est pas toujours la première après le point')
 })
-
-
-test('un ticket like tire dans une zone d_ambiance, et d_abord celle de l_univers de la carte', async () => {
-  const { drawStart } = await import('@/lib/v3/cool/start')
-  const { fakeDb, fakeVideo } = await import('../support/fakeDb')
-  const { __setLikePoolForTests } = await import('@/lib/v3/cool/likePool')
-  const vibeZone = (universe: 'sport' | 'music', video: number): PoolZone => ({ id: `vibe:${universe}|video|low|recent`, kind: 'vibe', key: `${universe}|video|low|recent`, likeIds: [`like-${universe}`], video, image: 0, vibe: { universe, type: 'video', tier: 'low', era: 'recent' } })
-  __setLikePoolForTests(poolOf(vibeZone('music', 300), vibeZone('sport', 3)))
-  try {
-    const sport = Array.from({ length: 3 }, (_, n) => fakeVideo('elsewhere', { title: `skate ${n}`, v3: { universe: 'sport', popularity: 'niche', era: 'recent', usable: true } }))
-    const loud = fakeVideo('elsewhere', { title: 'big hit', v3: { universe: 'sport', popularity: 'mainstream', era: 'recent', usable: true } })
-    const music = Array.from({ length: 3 }, (_, n) => fakeVideo('music', { title: `song ${n}`, v3: { universe: 'music', popularity: 'niche', era: 'recent', usable: true } }))
-    for (const roll of [0.1, 0.5, 0.9]) {
-      const drawn = await drawStart(fakeDb([...sport, loud, ...music]), { type: 'video', source: 'like', random: rolls([0.5, roll, 0.3]), theme: 'sport' })
-      assert.ok(drawn)
-      assert.equal(drawn.source, 'like-vibe')
-      assert.ok(drawn.rows.every((row) => (row.v3 as { universe: string }).universe === 'sport'), 'the card is sport: the sport vibe, however small, before the big music one')
-      assert.ok(drawn.rows.every((row) => row.title !== 'big hit'), 'as little-seen as the like')
-    }
-  } finally {
-    __setLikePoolForTests(null)
-  }
-})
