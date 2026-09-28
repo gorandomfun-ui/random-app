@@ -656,14 +656,16 @@ function buildImmersiveFragments(
 ): ImmersiveFragment[] {
   const isCompact = viewportWidth != null && viewportWidth < 720
   const lite = effectsProfile === 'webkit-lite'
-  const fineLineCount = lite ? (isCompact ? 36 : 54) : (isCompact ? 96 : 180)
-  const lowerFineLineCount = lite ? (isCompact ? 48 : 72) : (isCompact ? 112 : 210)
-  const extraUpperLineCount = lite ? (isCompact ? 4 : 6) : (isCompact ? 14 : 27)
-  const extraLowerLineCount = lite ? (isCompact ? 5 : 7) : (isCompact ? 16 : 30)
+  // The two bands above and below the content hold few enough lines to read one by one, as on the
+  // home (about 260 over its whole screen); packed any closer they turn into an even texture.
+  const fineLineCount = lite ? (isCompact ? 22 : 32) : (isCompact ? 56 : 90)
+  const lowerFineLineCount = lite ? (isCompact ? 18 : 28) : (isCompact ? 40 : 70)
+  const extraUpperLineCount = lite ? (isCompact ? 2 : 3) : (isCompact ? 6 : 10)
+  const extraLowerLineCount = lite ? (isCompact ? 2 : 3) : (isCompact ? 6 : 10)
   const tearCount = lite ? (isCompact ? 18 : 28) : (isCompact ? 40 : 70)
-  const clusterCount = lite ? 3 : (isCompact ? 4 : 5)
-  const voidCount = lite ? 5 : (isCompact ? 9 : 14)
-  const signalCount = lite ? 7 : (isCompact ? 12 : 18)
+  const clusterCount = lite ? 2 : 3
+  const voidCount = lite ? 4 : (isCompact ? 6 : 9)
+  const signalCount = lite ? 4 : (isCompact ? 6 : 8)
   const contentZoneTop = isCompact ? 18 : 16
   const contentZoneBottom = isCompact ? 70 : 84
   const sourceZoneTop = isCompact ? 62 : 77
@@ -694,14 +696,26 @@ function buildImmersiveFragments(
   }
   const blends: Array<CSSProperties['mixBlendMode']> = ['screen', 'hard-light', 'color-dodge', 'normal', 'difference']
   const signalColors = [GLITCH_INK, GLITCH_INK_LIGHT, GLITCH_INK_DEEP, GLITCH_CREAM, GLITCH_INK, GLITCH_CREAM]
-  const softLineColors = [
-    'rgba(var(--glitch-cream), 0.2)',
-    'rgba(var(--glitch-ink), 0.24)',
-    'rgba(var(--glitch-ink-light), 0.22)',
-    'rgba(178, 227, 255, 0.16)',
-    'rgba(var(--glitch-ink-deep), 0.3)',
-    'rgba(3, 3, 3, 0.76)',
+  const lineInks = [
+    'rgba(var(--glitch-cream), 0.55)',
+    'rgba(var(--glitch-ink), 0.72)',
+    'rgba(var(--glitch-ink-light), 0.66)',
+    'rgba(178, 227, 255, 0.5)',
+    'rgba(var(--glitch-ink), 0.72)',
+    'dark',
   ]
+  // A fine line as on the home: it fades in and out at both ends around a light core, rather than a
+  // flat stroke with hard ends; now and then a dark scratch instead.
+  const softLine = (): CSSProperties => {
+    const ink = lineInks[intBetween(0, lineInks.length - 1)]
+    if (ink === 'dark') return { backgroundImage: 'none', backgroundColor: 'rgba(3, 3, 3, 0.76)' }
+    return {
+      backgroundImage: `linear-gradient(90deg, transparent, ${ink} 16%, rgba(var(--glitch-cream), 0.5) 46%, ${ink} 70%, transparent)`,
+      backgroundColor: 'transparent',
+      backgroundPosition: '0 0',
+      backgroundSize: '100% 100%',
+    }
+  }
   const motion = (jumpRangeX: number, jumpRangeY: number, minDuration: number, maxDuration: number) => {
     const jumpX = fixed(between(-jumpRangeX, jumpRangeX), 1)
     return {
@@ -722,7 +736,7 @@ function buildImmersiveFragments(
     const mediaLine = Boolean(image) && rng() > 0.58
     const hot = !protectedZone && rng() > 0.9
     const long = rng() > 0.78
-    const height = (rng() > 0.9 ? between(0.5, 1) : between(0.14, 0.4)) * 0.6
+    const height = (rng() > 0.9 ? between(1.2, 2) : between(0.7, 1.3)) * 0.6
     const width = long ? between(isCompact ? 26 : 38, isCompact ? 88 : 118) : between(3, isCompact ? 36 : 58)
     const left = edgeOnly
       ? rng() > 0.5
@@ -739,10 +753,9 @@ function buildImmersiveFragments(
         top: `${fixed(top)}%`,
         width: `${fixed(lineWidth)}vw`,
         height: `${fixed(height, 2)}px`,
-        backgroundImage: mediaLine ? undefined : 'none',
-        backgroundColor: mediaLine ? undefined : softLineColors[intBetween(0, softLineColors.length - 1)],
         backgroundPosition: `${fixed(between(-28, 126))}% ${fixed(top + between(-16, 16))}%`,
         backgroundSize: `${intBetween(100, 240)}vw ${intBetween(96, 220)}vh`,
+        ...(mediaLine ? null : softLine()),
         filter: mediaLine
           ? `saturate(${fixed(between(1.05, hot ? 2.8 : 1.7), 2)}) contrast(${fixed(between(1.02, 1.55), 2)}) brightness(${fixed(hot ? between(0.58, 1.02) : between(0.14, 0.5), 2)}) hue-rotate(${intBetween(-14, 14)}deg)`
           : undefined,
@@ -759,9 +772,9 @@ function buildImmersiveFragments(
     const mediaLine = Boolean(image) && rng() > 0.72
     const long = rng() > 0.66
     const bright = rng() > 0.88
-    const height = (rng() > 0.93 ? between(0.5, 0.86) : between(0.16, 0.42)) * 0.6
+    const height = (rng() > 0.93 ? between(1.2, 1.8) : between(0.7, 1.2)) * 0.6
     const width = long ? between(isCompact ? 22 : 30, isCompact ? 92 : 122) : between(5, isCompact ? 46 : 66)
-    const opacity = mediaLine ? between(0.22, bright ? 0.58 : 0.4) : between(0.2, bright ? 0.52 : 0.38)
+    const opacity = mediaLine ? between(0.2, bright ? 0.5 : 0.36) : between(0.14, bright ? 0.42 : 0.3)
 
     fragments.push({
       id: `lower-fine-${i}`,
@@ -771,10 +784,9 @@ function buildImmersiveFragments(
         top: `${fixed(top)}%`,
         width: `${fixed(width)}vw`,
         height: `${fixed(height, 2)}px`,
-        backgroundImage: mediaLine ? undefined : 'none',
-        backgroundColor: mediaLine ? undefined : softLineColors[intBetween(0, softLineColors.length - 1)],
         backgroundPosition: `${fixed(between(-34, 132))}% ${fixed(top + between(-9, 9))}%`,
         backgroundSize: `${intBetween(104, 220)}vw ${intBetween(96, 190)}vh`,
+        ...(mediaLine ? null : softLine()),
         filter: mediaLine
           ? `saturate(${fixed(between(1.25, bright ? 2.65 : 1.85), 2)}) contrast(${fixed(between(1.08, 1.75), 2)}) brightness(${fixed(bright ? between(0.62, 1.05) : between(0.22, 0.62), 2)}) hue-rotate(${intBetween(-16, 16)}deg)`
           : undefined,
@@ -829,8 +841,8 @@ function buildImmersiveFragments(
     for (let part = 0; part < parts; part += 1) {
       const bright = rng() > 0.48
       const wide = rng() > 0.38
-      const width = wide ? between(38, isCompact ? 150 : 260) : between(9, isCompact ? 56 : 86)
-      const height = (rng() > 0.68 ? between(12, 42) : between(3, 16)) * 0.6
+      const width = wide ? between(38, isCompact ? 120 : 190) : between(9, isCompact ? 56 : 86)
+      const height = (rng() > 0.68 ? between(6, 14) : between(2, 7)) * 0.6
       const localLeft = between(0, clusterWidth)
       const localTop = between(0, clusterHeight)
       const transform = `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-4, 4), 1)}px, 0)`
@@ -847,8 +859,8 @@ function buildImmersiveFragments(
           backgroundSize: `${intBetween(88, 146)}vw ${intBetween(88, 146)}vh`,
           filter: `saturate(${fixed(between(1.8, 3), 2)}) contrast(${fixed(between(1.35, 2.1), 2)}) brightness(${fixed(bright ? between(1, 1.5) : between(0.52, 1), 2)}) hue-rotate(${intBetween(-20, 20)}deg)`,
           mixBlendMode: bright ? 'screen' : 'hard-light',
-          '--fragment-opacity': fixed(between(0.58, bright ? 0.98 : 0.86), 2),
-          '--fragment-pop-opacity': fixed(between(0.74, 1), 2),
+          '--fragment-opacity': fixed(between(0.34, bright ? 0.66 : 0.56), 2),
+          '--fragment-pop-opacity': fixed(between(0.5, 0.74), 2),
           '--fragment-transform': transform,
           ...motion(20, 5, 6200, 18000),
         },
@@ -862,7 +874,7 @@ function buildImmersiveFragments(
     const quiet = quietFactor(top)
     const left = between(-20, 105)
     const width = strip ? between(18, 92) : between(8, 32)
-    const height = (strip ? between(1, 8) : between(5, 18)) * 0.6
+    const height = (strip ? between(0.8, 4) : between(3, 10)) * 0.6
 
     fragments.push({
       id: `void-${i}`,
@@ -896,20 +908,20 @@ function buildImmersiveFragments(
         left: `${fixed(between(-4, 102))}%`,
         top: `${fixed(top)}%`,
         width: `${fixed(between(8, isCompact ? 62 : 78))}vw`,
-        height: `${fixed(between(1, 4.8) * 0.6, 2)}px`,
+        height: `${fixed(between(0.8, 2) * 0.6, 2)}px`,
         backgroundImage: 'none',
         mixBlendMode: rng() > 0.36 ? 'screen' : 'normal',
         '--fragment-color': color,
         '--fragment-alt-color': altColor,
-        '--fragment-opacity': fixed(between(0.38, 0.82) * quiet, 2),
-        '--fragment-pop-opacity': fixed(between(0.68, 0.96) * quiet, 2),
+        '--fragment-opacity': fixed(between(0.3, 0.6) * quiet, 2),
+        '--fragment-pop-opacity': fixed(between(0.5, 0.76) * quiet, 2),
         '--fragment-transform': `translate3d(${fixed(between(-12, 12), 1)}px, ${fixed(between(-2, 2), 1)}px, 0)`,
         ...motion(16, 3, 7600, 21000),
       },
     })
   }
 
-  // These final lines add density without another media layer, filter, or animation.
+  // A few more still lines, without another media layer, filter, or animation.
   for (let i = 0; i < extraUpperLineCount; i += 1) {
     fragments.push({
       id: `extra-upper-fine-${i}`,
@@ -918,9 +930,8 @@ function buildImmersiveFragments(
         left: `${fixed(between(-8, 96))}%`,
         top: `${fixed(between(-1, Math.max(1, contentZoneTop - 1)))}%`,
         width: `${fixed(between(5, isCompact ? 40 : 56))}vw`,
-        height: `${fixed(between(0.12, 0.3) * 0.6, 2)}px`,
-        backgroundImage: 'none',
-        backgroundColor: softLineColors[intBetween(0, softLineColors.length - 1)],
+        height: `${fixed(between(0.7, 1.1) * 0.6, 2)}px`,
+        ...softLine(),
         mixBlendMode: 'normal',
         '--fragment-opacity': fixed(between(0.14, 0.3), 2),
         '--fragment-pop-opacity': fixed(between(0.14, 0.3), 2),
@@ -937,9 +948,8 @@ function buildImmersiveFragments(
         left: `${fixed(between(-10, 98))}%`,
         top: `${fixed(between(lowerLineTop, lowerChaosBottom))}%`,
         width: `${fixed(between(6, isCompact ? 44 : 62))}vw`,
-        height: `${fixed(between(0.12, 0.32) * 0.6, 2)}px`,
-        backgroundImage: 'none',
-        backgroundColor: softLineColors[intBetween(0, softLineColors.length - 1)],
+        height: `${fixed(between(0.7, 1.1) * 0.6, 2)}px`,
+        ...softLine(),
         mixBlendMode: 'normal',
         '--fragment-opacity': fixed(between(0.15, 0.32), 2),
         '--fragment-pop-opacity': fixed(between(0.15, 0.32), 2),
@@ -3064,21 +3074,23 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
       if (variant === 'block') {
         const stopA = randomBetween(18, 42)
         const stopB = randomBetween(stopA + 12, 82)
-        return `${imageSlice(topValue)}, linear-gradient(90deg, ${c1} 0% ${stopA.toFixed(0)}%, #030303 ${stopA.toFixed(0)}% ${(stopA + 5).toFixed(0)}%, ${c2} ${(stopA + 5).toFixed(0)}% ${stopB.toFixed(0)}%, ${c3} ${stopB.toFixed(0)}% 100%)`
+        // a comb of one-pixel lines over the slice: the block keeps its weight but reads as fine lines
+        return `repeating-linear-gradient(180deg, transparent 0 1px, rgba(2, 2, 2, 0.9) 1px 2px), ${imageSlice(topValue)}, linear-gradient(90deg, ${c1} 0% ${stopA.toFixed(0)}%, #030303 ${stopA.toFixed(0)}% ${(stopA + 5).toFixed(0)}%, ${c2} ${(stopA + 5).toFixed(0)}% ${stopB.toFixed(0)}%, ${c3} ${stopB.toFixed(0)}% 100%)`
       }
+      // a fine line fading in and out around a light core, as on the home
       const stopA = randomBetween(18, 46)
-      const stopB = randomBetween(stopA + 5, 92)
-      return `linear-gradient(90deg, transparent 0% 2%, ${c1} 2% ${stopA.toFixed(0)}%, ${c2} ${stopA.toFixed(0)}% ${stopB.toFixed(0)}%, transparent ${stopB.toFixed(0)}% 100%)`
+      const stopB = randomBetween(stopA + 5, 88)
+      return `linear-gradient(90deg, transparent 0%, ${c1} ${stopA.toFixed(0)}%, ${GLITCH_CREAM} ${((stopA + stopB) / 2).toFixed(0)}%, ${c2} ${stopB.toFixed(0)}%, transparent 100%)`
     }
 
     return Array.from({ length: count }, (_, index) => {
       const palette = GLITCH_COLOR_SETS[randIdx(GLITCH_COLOR_SETS.length)]
       const roll = Math.random()
-      const kind: GlitchBar['variant'] = roll > lerp(0.85, 0.7, energy) - overdrive * 0.08
+      const kind: GlitchBar['variant'] = roll > lerp(0.9, 0.8, energy) - overdrive * 0.05
         ? 'block'
-        : roll > lerp(0.65, 0.52, energy) - overdrive * 0.07
+        : roll > lerp(0.72, 0.62, energy) - overdrive * 0.05
           ? 'signal'
-          : roll > lerp(0.55, 0.45, energy) - overdrive * 0.04
+          : roll > lerp(0.62, 0.52, energy) - overdrive * 0.04
             ? 'void'
             : 'line'
       // as on the home, a little over half the fine lines are cut from the picture
@@ -3099,9 +3111,9 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
       const leftValue = randomBetween(variant === 'block' ? -2 : -9, maxLeft)
       const topValue = randomBetween(1, 98)
       const heightValue = variant === 'block'
-        ? randomBetween(lerp(4, 6, energy), lerp(15, 26, energy) + overdrive * 10)
+        ? randomBetween(lerp(3, 4, energy), lerp(8, 12, energy) + overdrive * 3)
         : variant === 'signal'
-          ? randomBetween(1.8, lerp(4.2, 6.2, energy) + overdrive * 2)
+          ? randomBetween(1, lerp(2.4, 3.4, energy) + overdrive)
           : variant === 'void'
             ? randomBetween(1.8, lerp(6, 10, energy) + overdrive * 1.2)
             : variant === 'media'
@@ -5830,12 +5842,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           z-index: 3;
           pointer-events: none;
           background:
-            linear-gradient(90deg, transparent 0 5%, rgba(var(--glitch-ink-light), 0.78) 5% 19%, rgba(2, 2, 2, 0.88) 19% 24%, rgba(var(--glitch-ink), 0.72) 24% 51%, transparent 51% 100%) 0 8% / 88% 1.2px no-repeat,
-            linear-gradient(90deg, transparent 0 16%, rgba(var(--glitch-cream), 0.62) 16% 29%, rgba(255, 255, 255, 0.72) 29% 32%, rgba(var(--glitch-ink-deep), 0.78) 32% 73%, transparent 73% 100%) 18% 72% / 90% 1.4px no-repeat,
-            linear-gradient(90deg, rgba(var(--glitch-ink), 0.74) 0 14%, transparent 14% 31%, rgba(var(--glitch-ink-light), 0.66) 31% 62%, rgba(3, 3, 3, 0.92) 62% 68%, transparent 68% 100%) -10% 88% / 76% 1.8px no-repeat,
-            linear-gradient(90deg, transparent 0 37%, rgba(255, 255, 255, 0.52) 37% 41%, rgba(var(--glitch-cream), 0.5) 41% 78%, transparent 78% 100%) 8% 24% / 94% 0.8px no-repeat;
+            linear-gradient(90deg, transparent 0 5%, rgba(var(--glitch-ink-light), 0.78) 5% 19%, rgba(2, 2, 2, 0.88) 19% 24%, rgba(var(--glitch-ink), 0.72) 24% 51%, transparent 51% 100%) 0 8% / 88% 0.8px no-repeat,
+            linear-gradient(90deg, transparent 0 16%, rgba(var(--glitch-cream), 0.62) 16% 29%, rgba(255, 255, 255, 0.72) 29% 32%, rgba(var(--glitch-ink-deep), 0.78) 32% 73%, transparent 73% 100%) 18% 72% / 90% 0.9px no-repeat,
+            linear-gradient(90deg, rgba(var(--glitch-ink), 0.74) 0 14%, transparent 14% 31%, rgba(var(--glitch-ink-light), 0.66) 31% 62%, rgba(3, 3, 3, 0.92) 62% 68%, transparent 68% 100%) -10% 88% / 76% 1px no-repeat,
+            linear-gradient(90deg, transparent 0 37%, rgba(255, 255, 255, 0.52) 37% 41%, rgba(var(--glitch-cream), 0.5) 41% 78%, transparent 78% 100%) 8% 24% / 94% 0.6px no-repeat;
           mix-blend-mode: screen;
-          opacity: min(0.82, calc(var(--random-bg-strength, 0) * 0.9));
+          opacity: min(0.5, calc(var(--random-bg-strength, 0) * 0.55));
           transform: translate3d(0, 0, 0);
           animation: random-bg-signal-drift 8400ms steps(1, end) infinite;
         }
@@ -5845,13 +5857,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           inset: 0;
           z-index: 3;
           pointer-events: none;
-          background:
-            repeating-linear-gradient(180deg, rgba(178, 227, 255, 0.13) 0 0.34px, rgba(0, 0, 0, 0.28) 0.34px 0.68px, transparent 0.68px 1.02px),
-            repeating-linear-gradient(180deg, transparent 0 1.7px, rgba(var(--glitch-cream), 0.06) 1.7px 1.95px, transparent 1.95px 3.15px, rgba(var(--glitch-ink), 0.05) 3.15px 3.4px, transparent 3.4px 4.9px),
-            repeating-linear-gradient(180deg, transparent 0 5px, rgba(255, 255, 255, 0.035) 5px 5.18px, transparent 5.18px 7px),
-            linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 18%, rgba(0, 0, 0, 0.22) 54%, transparent 72%, rgba(0, 0, 0, 0.18));
+          background: repeating-linear-gradient(to bottom, rgba(178, 227, 255, 0.13) 0 1px, transparent 1px 3px);
           mix-blend-mode: screen;
-          opacity: min(0.66, calc(var(--random-bg-strength, 0) * 0.76));
+          /* the home shows it at 0.32; here about 1.3 times that on arrival, up to twice at the end */
+          opacity: min(0.64, calc(var(--random-bg-strength, 0) * 0.64));
           transform: translateZ(0);
         }
         .random-immersive-bg__media {
@@ -5861,7 +5870,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           background-image: var(--random-bg-image, none);
           background-position: center;
           background-size: cover;
-          filter: blur(5px) saturate(2.45) contrast(1.9) brightness(0.355);
+          filter: blur(5px) saturate(2.05) contrast(1.65) brightness(0.34);
           opacity: min(1, calc(var(--random-bg-strength, 0) * 1.82));
           transform: scale(1.12);
           transition: opacity 120ms ease, background-image 120ms ease, filter 120ms ease;
@@ -5928,6 +5937,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             -2px 0 0 rgba(var(--glitch-ink), 0.16);
         }
         .random-immersive-fragment--cluster-block {
+          background-image: repeating-linear-gradient(180deg, transparent 0 1px, rgba(2, 2, 2, 0.88) 1px 2px), var(--random-bg-image, none);
           animation-name: random-block-corrupt;
           box-shadow:
             0 0 0 1px rgba(255, 255, 255, 0.07),
@@ -5987,10 +5997,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           inset: 0;
           z-index: 4;
           background:
-            repeating-linear-gradient(180deg, rgba(120, 140, 170, 0.09) 0 0.42px, rgba(0, 0, 0, 0.1) 0.42px 0.84px, transparent 0.84px 1.4px),
-            repeating-linear-gradient(180deg, transparent 0 3.5px, rgba(var(--glitch-cream), 0.05) 3.5px 3.75px, transparent 3.75px 6.5px, rgba(var(--glitch-ink), 0.045) 6.5px 6.75px, transparent 6.75px 9.5px),
-            linear-gradient(180deg, transparent 0 7%, rgba(var(--glitch-ink-light), 0.1) 7.05% 7.14%, transparent 7.2% 13%, rgba(var(--glitch-ink), 0.1) 13.1% 13.24%, transparent 13.32% 24%, rgba(255, 255, 255, 0.06) 24.08% 24.16%, transparent 24.24% 38%, rgba(var(--glitch-cream), 0.07) 38.04% 38.14%, transparent 38.22% 61%, rgba(var(--glitch-ink-light), 0.1) 61.05% 61.2%, transparent 61.28% 72%, rgba(var(--glitch-ink), 0.09) 72.08% 72.18%, transparent 72.28% 87%, rgba(var(--glitch-cream), 0.07) 87.15% 87.3%, transparent 87.42%),
-            linear-gradient(180deg, transparent 0 4%, rgba(0, 0, 0, 0.5) 4.08% 4.32%, transparent 4.48% 52%, rgba(0, 0, 0, 0.45) 52.1% 52.48%, transparent 52.64% 92%, rgba(0, 0, 0, 0.4) 92.05% 92.35%, transparent 92.52%);
+            linear-gradient(180deg, transparent 0 7%, rgba(var(--glitch-ink-light), 0.1) 7.05% 7.14%, transparent 7.2% 13%, rgba(var(--glitch-ink), 0.1) 13.1% 13.24%, transparent 13.32% 24%, rgba(255, 255, 255, 0.06) 24.08% 24.16%, transparent 24.24% 38%, rgba(var(--glitch-cream), 0.07) 38.04% 38.14%, transparent 38.22% 61%, rgba(var(--glitch-ink-light), 0.1) 61.05% 61.2%, transparent 61.28% 72%, rgba(var(--glitch-ink), 0.09) 72.08% 72.18%, transparent 72.28% 87%, rgba(var(--glitch-cream), 0.07) 87.15% 87.3%, transparent 87.42%);
           mix-blend-mode: screen;
           opacity: calc(var(--random-bg-noise-strength, 0) * 0.75);
           animation: random-bg-noise-pop 18000ms steps(1, end) infinite;
@@ -6015,17 +6022,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           background: rgba(0, 0, 0, 0.38);
         }
         @keyframes random-bg-drift {
-          0% { transform: translate3d(-0.8%, -0.5%, 0) scale(1.12); filter: blur(5px) saturate(2.45) contrast(1.9) brightness(0.355); }
-          20% { transform: translate3d(1.1%, -0.2%, 0) scale(1.15); filter: blur(4px) saturate(2.9) contrast(2.2) brightness(0.31); }
-          43% { transform: translate3d(-0.35%, 1%, 0) scale(1.13); filter: blur(6px) saturate(2.25) contrast(1.95) brightness(0.375); }
-          71% { transform: translate3d(1.35%, 0.1%, 0) scale(1.16); filter: blur(4px) saturate(3.05) contrast(2.15) brightness(0.32); }
-          100% { transform: translate3d(0.5%, 0.9%, 0) scale(1.13); filter: blur(5px) saturate(2.55) contrast(2) brightness(0.355); }
+          0% { transform: translate3d(-0.8%, -0.5%, 0) scale(1.12); filter: blur(5px) saturate(2.05) contrast(1.65) brightness(0.34); }
+          20% { transform: translate3d(1.1%, -0.2%, 0) scale(1.15); filter: blur(4px) saturate(2.45) contrast(1.9) brightness(0.295); }
+          43% { transform: translate3d(-0.35%, 1%, 0) scale(1.13); filter: blur(6px) saturate(1.9) contrast(1.7) brightness(0.355); }
+          71% { transform: translate3d(1.35%, 0.1%, 0) scale(1.16); filter: blur(4px) saturate(2.55) contrast(1.85) brightness(0.305); }
+          100% { transform: translate3d(0.5%, 0.9%, 0) scale(1.13); filter: blur(5px) saturate(2.15) contrast(1.75) brightness(0.34); }
         }
         @keyframes random-bg-signal-drift {
-          0%, 100% { transform: translate3d(-2%, 0, 0); opacity: min(0.82, calc(var(--random-bg-strength, 0) * 0.9)); }
-          24% { transform: translate3d(3.5%, 0.2%, 0); opacity: min(0.94, calc(var(--random-bg-strength, 0) * 1.04)); }
+          0%, 100% { transform: translate3d(-2%, 0, 0); opacity: min(0.5, calc(var(--random-bg-strength, 0) * 0.55)); }
+          24% { transform: translate3d(3.5%, 0.2%, 0); opacity: min(0.58, calc(var(--random-bg-strength, 0) * 0.64)); }
           25% { transform: translate3d(-1%, -0.15%, 0); }
-          61% { transform: translate3d(2%, 0, 0); opacity: min(0.76, calc(var(--random-bg-strength, 0) * 0.82)); }
+          61% { transform: translate3d(2%, 0, 0); opacity: min(0.46, calc(var(--random-bg-strength, 0) * 0.5)); }
           62% { transform: translate3d(-3.5%, 0.25%, 0); }
         }
         @keyframes random-bg-drift-lite {
@@ -6150,7 +6157,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .page-glitch-overlay::before {
           background:
-            repeating-linear-gradient(180deg, rgba(178, 227, 255, 0.16) 0 0.28px, rgba(0, 0, 0, 0.32) 0.28px 0.56px, transparent 0.56px 1.12px),
+            repeating-linear-gradient(180deg, rgba(178, 227, 255, 0.16) 0 1px, transparent 1px 3px),
             repeating-linear-gradient(180deg, transparent 0 3px, rgba(var(--glitch-ink), 0.12) 3px 3.24px, transparent 3.24px 5.2px, rgba(var(--glitch-cream), 0.08) 5.2px 5.42px, transparent 5.42px 7.4px);
           mix-blend-mode: screen;
         }
@@ -6221,7 +6228,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .random-page--lite-effects .random-immersive-bg::before {
           mix-blend-mode: normal;
-          opacity: min(0.62, calc(var(--random-bg-strength, 0) * 0.7));
+          opacity: min(0.4, calc(var(--random-bg-strength, 0) * 0.45));
           animation-duration: 11200ms;
         }
         .random-page--lite-effects .random-immersive-bg__media {
@@ -6333,7 +6340,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .video-fullscreen-glitch-bg .random-immersive-bg__media {
           opacity: calc(var(--random-bg-strength, 0) * 0.86);
-          filter: blur(7px) saturate(2.3) contrast(1.75) brightness(0.375);
+          filter: blur(7px) saturate(1.95) contrast(1.55) brightness(0.36);
         }
         .video-fullscreen-glitch-bg .random-immersive-bg__tone {
           background:

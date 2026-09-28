@@ -356,10 +356,7 @@ export default function ArcadeStage({
             linear-gradient(90deg, var(--random-bg-accent) 0 14%, transparent 14% 31%, color-mix(in srgb, var(--random-bg-accent) 55%, #fff) 31% 62%, rgba(3, 3, 3, 0.92) 62% 68%, transparent 68% 100%) -10% 88% / 76% 2.4px no-repeat;
         }
         .random-page--arcade .random-immersive-bg::after {
-          background:
-            repeating-linear-gradient(180deg, color-mix(in srgb, var(--random-bg-accent) 16%, transparent) 0 0.34px, rgba(0, 0, 0, 0.28) 0.34px 0.68px, transparent 0.68px 1.02px),
-            repeating-linear-gradient(180deg, transparent 0 1.7px, color-mix(in srgb, var(--random-bg-accent) 10%, transparent) 1.7px 1.95px, transparent 1.95px 4.9px),
-            linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 18%, rgba(0, 0, 0, 0.22) 54%, transparent 72%, rgba(0, 0, 0, 0.18));
+          background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--random-bg-accent) 16%, transparent) 0 1px, transparent 1px 3px);
         }
         .random-page--arcade .random-immersive-fragment { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 4px 0 0 color-mix(in srgb, var(--random-bg-accent) 26%, transparent), -3px 0 0 color-mix(in srgb, var(--random-bg-accent) 16%, #000) !important; }
         .random-page--arcade .random-immersive-fragment--signal, .random-page--arcade .random-immersive-fragment--signal-bar {

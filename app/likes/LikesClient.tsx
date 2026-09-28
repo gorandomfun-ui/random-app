@@ -165,7 +165,7 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
         '--likes-fragment-x': `${Math.round(random() * 1000) / 10}%`,
         '--likes-fragment-y': `${Math.round(random() * 350) / 10}%`,
         '--likes-fragment-w': `${Math.round((longLine ? 22 + random() * 58 : 5 + random() * 28) * 10) / 10}vw`,
-        '--likes-fragment-h': `${Math.round((1 + random() * (compact ? 2 : 3)) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((0.6 + random() * (compact ? 0.9 : 1.2)) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 18 - 9) * 10) / 10}px`,
         '--likes-fragment-color': color,
         '--likes-fragment-opacity': Math.round((0.08 + random() * 0.34) * 100) / 100,
@@ -182,10 +182,10 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
         '--likes-fragment-x': `${Math.round(random() * 920) / 10}%`,
         '--likes-fragment-y': `${Math.round((3 + random() * 28) * 10) / 10}%`,
         '--likes-fragment-w': `${Math.round((20 + random() * 150) * 10) / 10}px`,
-        '--likes-fragment-h': `${Math.round((4 + random() * 28) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((3 + random() * 9) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 32 - 16) * 10) / 10}px`,
         '--likes-fragment-color': color,
-        '--likes-fragment-opacity': Math.round((0.16 + random() * 0.36) * 100) / 100,
+        '--likes-fragment-opacity': Math.round((0.12 + random() * 0.24) * 100) / 100,
       },
     })
   }
@@ -198,7 +198,7 @@ function buildLikesGlitchFragments(image: string | null, seed: string, viewportW
         '--likes-fragment-x': `${Math.round(random() * 900) / 10}%`,
         '--likes-fragment-y': `${Math.round((2 + random() * 30) * 10) / 10}%`,
         '--likes-fragment-w': `${Math.round((34 + random() * 170) * 10) / 10}px`,
-        '--likes-fragment-h': `${Math.round((8 + random() * 42) * 10) / 10}px`,
+        '--likes-fragment-h': `${Math.round((6 + random() * 18) * 10) / 10}px`,
         '--likes-fragment-dx': `${Math.round((random() * 42 - 21) * 10) / 10}px`,
         '--likes-fragment-opacity': Math.round((0.18 + random() * 0.34) * 100) / 100,
         '--likes-fragment-bg-x': `${Math.round(random() * 1000) / 10}%`,
@@ -751,7 +751,7 @@ export default function LikesClient({
           background-size: cover;
           background-position: center 18%;
           opacity: var(--likes-bg-media-opacity);
-          filter: blur(24px) saturate(2) contrast(1.45) brightness(0.385);
+          filter: blur(24px) saturate(1.7) contrast(1.3) brightness(0.37);
           transform: scale(1.12);
         }
 
@@ -789,6 +789,7 @@ export default function LikesClient({
 
         .likes-glitch-fragment--block {
           background:
+            repeating-linear-gradient(180deg, transparent 0 1px, rgba(2, 2, 2, 0.9) 1px 2px),
             linear-gradient(90deg, color-mix(in srgb, var(--likes-fragment-color) 68%, transparent), rgba(255, 255, 255, 0.22), transparent),
             var(--likes-fragment-color);
           mix-blend-mode: screen;
@@ -796,7 +797,7 @@ export default function LikesClient({
         }
 
         .likes-glitch-fragment--media {
-          background-image: var(--likes-bg-image);
+          background-image: repeating-linear-gradient(180deg, transparent 0 1px, rgba(2, 2, 2, 0.9) 1px 2px), var(--likes-bg-image);
           background-size: var(--likes-fragment-bg-size);
           background-position: var(--likes-fragment-bg-x) var(--likes-fragment-bg-y);
           filter: saturate(2.4) contrast(1.8) brightness(0.82);
