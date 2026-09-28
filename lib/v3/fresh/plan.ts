@@ -94,6 +94,36 @@ export function capUniverses(picked: Map<FreshBucket, FreshEntry[]>, shares: Rea
   return out
 }
 
+/**
+ * Short spoken sketches from the humour and people charts of countries whose
+ * language most visitors do not share: "KALI INI BENER KADONYAA WKWKWK",
+ * "O Léo bebeu o leite" (the owner, 28 September: "je ne sais pas combien de
+ * vidéos drôles Brésil ou Asie"). A gag without words travels; a sketch does
+ * not. They keep a share of the list, not the list.
+ */
+export const FRESH_SPOKEN_SHARE = 0.1
+const SHARED_LANGUAGE_REGIONS = new Set(['US', 'GB', 'CA', 'AU', 'NZ', 'IE', 'FR', 'BE', 'CH'])
+
+export function isForeignSketch(entry: Pick<FreshEntry, 'bucket' | 'region' | 'universe'>): boolean {
+  return (entry.universe === 'humor-memes' || entry.universe === 'people-everyday') && !SHARED_LANGUAGE_REGIONS.has(entry.region)
+}
+
+export function capForeignSketches(picked: Map<FreshBucket, FreshEntry[]>, share = FRESH_SPOKEN_SHARE): Map<FreshBucket, FreshEntry[]> {
+  const total = [...picked.values()].reduce((sum, list) => sum + list.length, 0)
+  let allowed = Math.floor(total * share)
+  const out = new Map<FreshBucket, FreshEntry[]>()
+  // Zone by zone in the plan's order, each video in its zone's order: the best placed keep their place.
+  for (const [bucket, list] of picked) {
+    out.set(bucket, list.filter((entry) => {
+      if (!isForeignSketch(entry)) return true
+      if (allowed <= 0) return false
+      allowed -= 1
+      return true
+    }))
+  }
+  return out
+}
+
 /** A still album cover ("- Topic" channels), or a gaming session past fifteen minutes: not what opens a feed. */
 export function isFreshFormat(row: { channelTitle?: unknown; duration?: unknown; universe?: unknown }): boolean {
   if (/ - Topic$/.test(String(row.channelTitle ?? ''))) return false

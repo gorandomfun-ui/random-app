@@ -13,7 +13,8 @@ import type { Document } from 'mongodb'
 import { fetchYouTubeChart, fetchYouTubeViewCounts } from '@/lib/ingest/videos'
 import { junkKind } from '@/lib/ingest/junk'
 import { miniSeriesVerdict } from '@/lib/ingest/miniSeries'
-import { capUniverses, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
+import { isNewsTitle } from '../../cool/themes'
+import { capForeignSketches, capUniverses, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
@@ -170,7 +171,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       views: entry.daily, channel: row.channelId ? String(row.channelId) : undefined,
       family: row.v3?.nearFamily ? String(row.v3.nearFamily) : undefined,
       universe: row.v3?.universe ? String(row.v3.universe) : undefined,
-      ...(row.editorialRoutine === true || row.v3?.universe === 'news-society' ? { news: true } : {}),
+      ...(row.editorialRoutine === true || row.v3?.universe === 'news-society' || isNewsTitle(title) ? { news: true } : {}),
     } as FreshEntry & { news?: boolean }])
   }
 
@@ -187,7 +188,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     picked.set(plan.bucket, pickBucket(pool, plan, taken))
   }
   // Music and gaming kept to their share of the whole list, then the zones take turns.
-  const capped = capUniverses(picked)
+  const capped = capForeignSketches(capUniverses(picked))
   const order = interleave(capped)
   const buckets = Object.fromEntries([...capped].map(([bucket, list]) => [bucket, list.length])) as Partial<Record<FreshBucket, number>>
   const label: Record<FreshBucket, string> = { world: 'monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l_Est', oceania: 'Océanie', music: 'musique', fun: 'fun',

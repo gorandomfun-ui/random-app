@@ -9,6 +9,7 @@ import { retrieveRelatedRows } from './retrieval'
 import type { Candidate, Format } from './types'
 import { randomWindow, sampleCatalogue, sampleWindow, type PoolRetrievalReport } from './sampling'
 import { byLiveliness, trailersSeenIn } from '../v3/cool/themes'
+import { echoesSession, type Exposure } from './diversity'
 import type { Universe } from '../v3/types'
 
 const FAMILIES = ['music', 'sport', 'craft', 'food', 'art', 'advertising', 'cinema', 'science', 'gaming', 'technology', 'travel', 'everyday', 'unknown']
@@ -54,7 +55,7 @@ function decodeRows<T>(rows: CatalogueRow[], decode: Decoder<T>, now: number): C
 /** A fresh broad catalogue sample is the backbone of EVERY visual draw.
  * Focused additions can enrich it, but only inside a rotating random window. */
 export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string, decode: Decoder<T>, random: Rng, now: number, factVariant?: 'quiz' | 'text', window = randomWindow(random), report?: PoolRetrievalReport,
-  themed?: { theme: Universe; trailersSeen: number }): Promise<Candidate<T>[]> {
+  themed?: { theme: Universe; trailersSeen: number; exposures?: readonly Exposure[] }): Promise<Candidate<T>[]> {
   const decodePoolRows = (rows: CatalogueRow[]) => decodeRows(rows, decode, now)
     .filter(candidate => candidate.available && !candidate.suppressed && (!candidate.stock || ticket.allowStock) &&
       !(ticket.mode === 'cool' && candidate.routineEditorial))
@@ -68,7 +69,10 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
   // The theme deck: the candidates are the universe's, the lively first; the broad sample stays the way back when the universe has none.
   if (themed) {
     const rows = await themedSample(db, common, themed.theme, themed.trailersSeen, random()).catch(() => { if (report) report.queryFailures++; return [] as CatalogueRow[] })
-    const candidates = decodePoolRows(rows)
+    const decoded = decodePoolRows(rows)
+    // What repeats the session (the same film in another language) is left out while something else remains.
+    const fresh = decoded.filter((candidate) => !echoesSession(candidate, themed.exposures))
+    const candidates = fresh.length ? fresh : decoded
     if (candidates.length) {
       if (report) report.focusedCandidates += candidates.length
       return candidates
@@ -109,7 +113,7 @@ export async function selectPool<T>(db: Db, ticket: Intent, state: Session, lang
   const report: PoolRetrievalReport = { broadCandidates: 0, focusedCandidates: 0, queryFailures: 0, broadFallback: false, elapsedMs: 0 }
   const window = randomWindow(random)
   const retrievalTicket = ticket.branch === 'editorial' && !ownerId ? { ...ticket, branch: 'autonomous' as const } : ticket
-  const themed = theme && (ticket.type === 'video' || ticket.type === 'image') ? { theme, trailersSeen: trailersSeenIn(state.exposures) } : undefined
+  const themed = theme && (ticket.type === 'video' || ticket.type === 'image') ? { theme, trailersSeen: trailersSeenIn(state.exposures), exposures: state.exposures } : undefined
   const generalPromise = loadPoolCandidates(db, retrievalTicket, lang, decode, random, now, factVariant, window, report, themed).catch(() => [] as Candidate<T>[])
   let references: OwnerReference[] = []
   let directed: Candidate<T>[] = []

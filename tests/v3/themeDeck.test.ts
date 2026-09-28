@@ -76,3 +76,25 @@ test('with the cards, a cool ticket never falls back to the reserved music or ga
     }
   }
 })
+
+test('made by AI, news filed elsewhere, lessons and institutions\' GIFs wait; what has none of it comes first', () => {
+  assert.equal(livelyRank({ type: 'video', duration: 'PT1M', title: 'Jai Hanuman: The Power of Devotion | Cinematic 3D Animation #aivideo' }), Infinity)
+  assert.equal(livelyRank({ type: 'video', duration: 'PT2M', title: 'The snail that carries a castle', description: 'Made with AI (Kling)' }), Infinity)
+  assert.equal(livelyRank({ type: 'video', duration: 'PT3M', title: 'BREAKING: Cabinet moves to fire army chief', v3: { universe: 'history' } }), 2)
+  assert.equal(livelyRank({ type: 'video', duration: 'PT3M', title: 'BREAKING: Cabinet moves to fire army chief', v3: { universe: 'news-society' } }), 0, 'the news card may have its news')
+  assert.equal(livelyRank({ type: 'video', duration: 'PT4M', title: 'How to Insert an Image in Adobe InDesign – Easy Beginner Tutorial' }), 2)
+  assert.equal(livelyRank({ type: 'video', duration: 'PT5M', title: 'Top 7 AI Tools to Make Money Online in 2025 | Passive Income' }), 2)
+  assert.equal(livelyRank({ type: 'image', title: 'Indiana Hoosiers Football GIF by Indiana University Bloomington' }), 2)
+  assert.equal(livelyRank({ type: 'image', title: 'Cat Cuteness GIF' }), 0)
+  assert.equal(livelyRank({ type: 'video', duration: 'PT1M', title: 'Cette araignée paon danse sur YMCA' }), 0)
+  assert.equal(livelyRank({ type: 'video', duration: 'PT2M', title: 'A documentary about artificial intelligence and jobs' }), 0, 'a film about AI is not made by AI')
+})
+
+test('a session does not show the same film twice, in another language or not', async () => {
+  const { echoesSession, appendExposure } = await import('../../lib/discovery/diversity')
+  const candidate = (key: string, titleTokens: string[]) => ({ key, type: 'video', provider: 'youtube', payload: null, stock: false, available: true,
+    profile: { family: 'cinema', titleTokens, titlePractices: [] } }) as never
+  const history = appendExposure([], candidate('youtube:a', ['toy', 'story', '2019', 'trailer', 'spanish']))
+  assert.equal(echoesSession(candidate('youtube:b', ['bande', 'annonce', 'toy', 'story']), history), true)
+  assert.equal(echoesSession(candidate('youtube:c', ['surf', 'festival', 'round']), history), false)
+})

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
+import { capForeignSketches, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
 
 const entry = (videoId: string, bucket: FreshBucket, region: string, rank: number, views = 0, channel?: string): FreshEntry =>
   ({ id: videoId.padStart(24, '0'), videoId, bucket, region, rank, views, channel })
@@ -122,4 +122,16 @@ test('views of the day: what a video gained since the count taken about a day ag
   ])
   assert.deepEqual(ranked.filter((entry) => entry.region === 'FR').sort((a, b) => a.rank - b.rank).map((entry) => entry.videoId), ['star', 'giant'])
   assert.equal(ranked.find((entry) => entry.videoId === 'de')?.rank, 0)
+})
+
+test('spoken sketches from countries most visitors do not understand keep a share of the list, not the list', () => {
+  const zone = (bucket: FreshBucket, region: string, universes: string[]) => universes.map((universe, index) => ({ ...entry(`${bucket}${region}${index}`, bucket, region, index), universe }))
+  const picked = new Map<FreshBucket, FreshEntry[]>([
+    ['fun', [...zone('fun', 'ID', ['humor-memes', 'humor-memes', 'humor-memes', 'humor-memes']), ...zone('fun', 'US', ['humor-memes'])]],
+    ['animals', zone('animals', 'BR', ['nature-animals', 'nature-animals', 'nature-animals', 'nature-animals', 'nature-animals'])],
+  ])
+  const capped = capForeignSketches(picked, 0.1)
+  assert.equal(capped.get('fun')!.filter((item) => item.region === 'ID').length, 1, 'one in ten of a list of ten')
+  assert.equal(capped.get('fun')!.filter((item) => item.region === 'US').length, 1, 'a sketch in a shared language stays')
+  assert.equal(capped.get('animals')!.length, 5, 'a dog from Brazil needs no words')
 })

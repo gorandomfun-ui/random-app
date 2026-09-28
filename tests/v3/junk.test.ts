@@ -24,6 +24,7 @@ const TOPS = [
   'Why Everyone Is Buying Top 5 Long Parka Coats With Detachable Hood - Hat Detachable Hooded',
   'Top 5 Best Soundproofing Felt Rolls For Recording Studios (Must Have!) - 12PCS Fluted Felt',
   'Why Everyone Is Buying Top 5 Magic Trick And Puzzle Games For Parties - Guess Who Is It Bo',
+  'Ultimate Guide to the Best Handmade Traditional Kazakh Tush Kiiz Wall Hanging - Kazakh Felt Rug',
 ]
 const KEEP = [
   'Top 10 goals of the season',
@@ -37,6 +38,7 @@ const KEEP = [
   '10 camping gadgets (must have!) for your next trip',
   'Why everyone is buying a Tesla right now',
   'Top 5 best top scorers in Ligue 1 history',
+  'The Ultimate Guide to the Best Street Food in Bangkok',
 ]
 
 test('scams are named as such', () => {

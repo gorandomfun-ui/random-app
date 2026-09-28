@@ -76,11 +76,26 @@ async function main(): Promise<void> {
   await client.connect()
   const ids = rows.map((row) => row.id).filter((id): id is string => Boolean(id && /^[0-9a-f]{24}$/i.test(id)))
   const docs = new Map((await client.db(process.env.MONGODB_DB || 'randomdb').collection('items')
-    .find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, { projection: { title: 1, duration: 1, channelTitle: 1, v3: 1, provider: 1 } }).toArray())
+    .find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, { projection: { title: 1, duration: 1, channelTitle: 1, v3: 1, provider: 1, description: 1, 'source.name': 1 } }).toArray())
     .map((doc: Document) => [String(doc._id), doc]))
   await client.close()
 
   const visual = (row: Row) => row.type === 'video' || row.type === 'image'
+  // Signs read on the stored text only — an estimate, what the owner calls "des trucs IA", "musique avec une image".
+  const AI = /(?:^|[^\p{L}])(?:#ai(?:art|video|generated|animation|music)?|ai[- ]generated|generated (?:with|by) ai|made with ai|ai (?:video|art|story|music|song|animation|cover)|midjourney|stable diffusion|sora|kling|hailuo|runway ?ml|pika labs|leonardo ai|suno|udio|dall-?e|created with|créé avec|hecho con ia|feito com ia|généré par (?:l'?)?ia|\bia\b generativa)(?=$|[^\p{L}])/iu
+  const STILL = /(?:\blyrics?\b|\blyric video\b|\bletra\b|\bparoles\b|\b8d\b|\bslowed\b|\breverb\b|\bsped up\b|\bnightcore\b|\bmashup\b|\bofficial audio\b|\baudio oficial\b|\bvisuali[sz]er\b|\(audio\)|\[audio\])/i
+  const script = (title: string) => /[\u0900-\u097F]/.test(title) ? 'devanagari' : /[\u0E00-\u0E7F]/.test(title) ? 'thai' : /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/.test(title) ? 'cjk' : /[\u0600-\u06FF]/.test(title) ? 'arabic' : /[\u0400-\u04FF]/.test(title) ? 'cyrillic'
+    : /[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i.test(title) ? 'vietnamese' : /\b(?:você|não|muito|pra|com|sua|meu|vídeo|ção|ções)\b|ção\b/i.test(title) ? 'portuguese' : /\b(?:el|los|las|que|con|para|una|por|mi|tu)\b/i.test(title) ? 'spanish' : 'latin-other'
+  const signs = (row: Row) => {
+    const doc = docs.get(row.id ?? '')
+    const text = `${doc?.title ?? row.title} ${doc?.channelTitle ?? ''} ${String(doc?.description ?? '').slice(0, 1500)}`
+    return {
+      ai: AI.test(text),
+      still: / - Topic$/.test(String(doc?.channelTitle ?? '')) || (String(doc?.v3?.universe ?? '') === 'music' && STILL.test(String(doc?.title ?? row.title))),
+      script: script(String(doc?.title ?? row.title)),
+      subject: String(doc?.v3?.subjects?.[0]?.id ?? ''),
+    }
+  }
   const universe = (row: Row) => String(docs.get(row.id ?? '')?.v3?.universe ?? '?')
   const lines: string[] = [`# Sessions rejouées — ${LABEL}`, '', `${SESSIONS} appareils neufs × ${CONTENTS} contenus, ${new Date().toISOString().slice(0, 16)}Z, ${DECK ? 'avec' : 'sans'} les cartes-thèmes.`, '']
   const perSession: string[] = []
@@ -93,14 +108,21 @@ async function main(): Promise<void> {
     const biggest = [...counts].sort((a, b) => b[1] - a[1])[0] ?? ['—', 0]
     const first20 = new Set(visuals.slice(0, 20).map(universe)).size
     const long = visuals.filter((row) => (seconds(docs.get(row.id ?? '')?.duration) ?? 0) > 15 * 60).length
-    const still = visuals.filter((row) => / - Topic$/.test(String(docs.get(row.id ?? '')?.channelTitle ?? ''))).length
+    const still = visuals.filter((row) => signs(row).still).length
+    const ai = visuals.filter((row) => signs(row).ai).length
+    const subjects = visuals.map((row) => signs(row).subject).filter((subject) => subject.startsWith('entity:'))
+    const twice = [...new Set(subjects.filter((subject, index) => subjects.indexOf(subject) !== index))]
     const trailers = visuals.filter((row) => isTrailerTitle(docs.get(row.id ?? '')?.title ?? row.title)).length
     const gifs = visuals.filter((row) => row.type === 'image' && docs.get(row.id ?? '')?.provider === 'giphy').length
     totals.visuals += visuals.length; totals.long += long; totals.still += still; totals.trailers += trailers; totals.gifs += gifs
     for (const row of visuals) shown.set(row.key, (shown.get(row.key) ?? 0) + 1)
-    perSession.push(`| ${session} | ${visuals.length} | ${counts.size} | ${first20} | ${biggest[0]} ${pct(biggest[1], visuals.length)} | ${pct(counts.get('music') ?? 0, visuals.length)} | ${pct(counts.get('gaming') ?? 0, visuals.length)} | ${long} | ${still} | ${trailers} | ${gifs} |`)
+    perSession.push(`| ${session} | ${visuals.length} | ${counts.size} | ${first20} | ${biggest[0]} ${pct(biggest[1], visuals.length)} | ${pct(counts.get('music') ?? 0, visuals.length)} | ${pct(counts.get('gaming') ?? 0, visuals.length)} | ${long} | ${still} | ${trailers} | ${gifs} | ${ai} | ${twice.map((subject) => subject.slice(7)).join(', ') || '—'} |`)
   }
-  lines.push('| Session | Visuels | Univers | Univers dans les 20 premiers | Plus gros univers | Musique | Jeu vidéo | Longs (>15 min) | Images fixes | Bandes-annonces | GIF Giphy |', '|---|---|---|---|---|---|---|---|---|---|---|', ...perSession, '')
+  lines.push('| Session | Visuels | Univers | Univers dans les 20 premiers | Plus gros univers | Musique | Jeu vidéo | Longs (>15 min) | Musique image fixe | Bandes-annonces | GIF Giphy | IA (signes) | Même sujet deux fois |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|', ...perSession, '')
+  const scripts = new Map<string, number>()
+  for (const row of rows.filter((row) => row.type === 'video')) scripts.set(signs(row).script, (scripts.get(signs(row).script) ?? 0) + 1)
+  const videoCount = rows.filter((row) => row.type === 'video').length
+  lines.push(`Langue / écriture des titres des vidéos : ${[...scripts].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${pct(n, videoCount)}`).join(' · ')}`, '')
   const all = new Map<string, number>()
   for (const row of rows.filter(visual)) all.set(universe(row), (all.get(universe(row)) ?? 0) + 1)
   lines.push(`Ensemble : ${[...all].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${pct(n, totals.visuals)}`).join(' · ')}`, '')
@@ -112,7 +134,8 @@ async function main(): Promise<void> {
   for (const row of rows.filter(visual)) {
     const doc = docs.get(row.id ?? '')
     const length = seconds(doc?.duration)
-    lines.push(`- ${row.session}.${row.position} ${row.path} · carte ${row.theme ?? '—'} · ${universe(row)} · ${length === null ? '' : `${Math.round(length / 60)} min · `}${String(doc?.title ?? row.title).slice(0, 80)}`)
+    const flags = signs(row)
+    lines.push(`- ${row.session}.${row.position} ${row.path} · carte ${row.theme ?? '—'} · ${universe(row)} · ${length === null ? '' : `${Math.round(length / 60)} min · `}${flags.ai ? '[IA] ' : ''}${flags.still ? '[image fixe] ' : ''}${String(doc?.title ?? row.title).slice(0, 80)}`)
   }
   mkdirSync('docs/reports', { recursive: true })
   const file = `docs/reports/replay-${LABEL}.md`

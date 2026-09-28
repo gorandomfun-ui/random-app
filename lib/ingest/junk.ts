@@ -29,6 +29,8 @@ const PRODUCT_TOP = new RegExp([
   '\\btop \\d{1,2} best sellers?\\b', '\\bcheap (?:&|and) best top \\d{1,2}\\b', '\\bamazing top \\d{1,2}\\b.*\\byou need to see\\b',
   '\\bultimate guide to the best top \\d{1,2}\\b', '\\bunboxing (?:&|and) review\\b', '\\btop \\d{1,2}\\b.*\\bbuying guide\\b',
   '\\btop \\d{1,2}\\b.*\\(must have!?\\)', '\\bwhy everyone is buying top \\d{1,2}\\b', '\\btop \\d{1,2} best top \\d{1,2}\\b',
+  // …and on the evening of 28 September: "Ultimate Guide to the Best Handmade Traditional Kazakh Tush Kiiz Wall Hanging - Kazakh…"
+  '^ultimate guide to the best [^-]{10,} - \\S',
 ].join('|'), 'i')
 
 export function junkKind(title: string | null | undefined): JunkKind | null {

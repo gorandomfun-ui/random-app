@@ -49,6 +49,23 @@ function resemblance(a: Exposure, b: Exposure): number {
   return score
 }
 
+/**
+ * Whether a candidate repeats something the session already showed: two
+ * words of its title in common with one of the last visuals ("Bande-annonce
+ * de Toy Story 4" after "TOY STORY 4 (2019) Trailer - SPANISH"). The owner,
+ * 28 September: the same film twice, in two languages, in one session.
+ */
+export function echoesSession(candidate: Candidate, history: readonly Exposure[] | undefined, window = 60): boolean {
+  const stamp = exposureOf(candidate)
+  if (!stamp || stamp.terms.length < 2) return false
+  for (const previous of (history ?? []).slice(-window)) {
+    if (previous.content != null && previous.content === stamp.content) return true
+    let common = 0
+    for (const term of stamp.terms) if (previous.terms.includes(term) && ++common >= 2) return true
+  }
+  return false
+}
+
 export function diversityWeights<T>(items: readonly Candidate<T>[], history: readonly Exposure[]): Map<Candidate<T>, number> {
   const recent = history.slice(-EXPOSURE_LIMIT)
   const result = new Map<Candidate<T>, number>()

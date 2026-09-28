@@ -60,6 +60,26 @@ export function themeDeckSwitchedOn(): boolean {
 }
 
 const TRAILER = /\b(trailer|teaser|bande[- ]annonce|tráiler|avance oficial)\b/i
+/**
+ * Marks of a video made by AI, as its title, channel or description says:
+ * "des trucs IA", the owner's constant complaint. Only what is written; an
+ * unmarked AI video needs its channel (scripts/v3/ai-channels.ts).
+ */
+const AI_MARKS = /(?:^|[^\p{L}\p{N}])(?:#ai(?:art|video|videos|generated|animation|music|story|shorts)?|ai[- ]?generated|generated (?:with|by) ai|made (?:with|by) ai|ai (?:video|art|story|stories|music|song|animation|cover|film|movie|documentary)|(?:ai|a\.i\.)[\s_-]*(?:studio|studios|films?)|midjourney|stable diffusion|sora|kling|hailuo|runway ?ml|pika labs|leonardo ai|suno|udio|dall-?e|généré par (?:l'?)?ia|créé avec (?:l'?)?ia|hecho con ia|feito com ia|gerado por ia)(?=$|[^\p{L}\p{N}])/iu
+/** News told by its title, whatever universe it was filed under: at most the news card's share. */
+const NEWS_TITLE = /\b(?:breaking(?: news)?|live updates?|update:|mlb update|nba update|nfl update|cosa sappiamo|ce que l'on sait|lo que sabemos|o que se sabe|en direct|latest news|news live|headlines|वनइंडिया|ब्रेकिंग)\b/iu
+/** Lessons, tutorials, exam preparation, court cases explained: dead in a feed. */
+const LESSON = /\b(?:tutorial|tuto|step[- ]by[- ]step|beginner'?s? guide|full course|crash course|lecture|lesson \d|class \d|syllabus|exam|examen|recruitment|vacancy|previous year|mcq|interview (?:document|preparation)|prep(?:aration)? for|how to (?:insert|install|use|add|fix|set ?up|download|update|create) .* (?:in|on) (?:adobe|excel|word|photoshop|indesign|illustrator|windows|android|iphone|wordpress|canva|powerpoint|google)|v\. .+ \(\d{4}\)|explained \(\d{4}\)|passive income|make money online|side hustles?)\b/i
+/** A GIF an institution or a brand posts for itself: a team, a university, a label, a campaign. */
+const BRAND_GIF = /\bGIF by .*\b(?:university|college|athletics|football|basketball|baseball|hockey|soccer|fc|cougars|terrapins|hoosiers|records|music|brands?|coffee|machine|fabrication|arquitectura|architects?|agency|bank|insurance|hotel|restaurant|official|tv|network|news|radio|democrats|republicans|gop|senate|campaign|for president|city of|county|ministry|government|inc|llc|ltd|company|corp|group|foundation|museum|library)\b/i
+
+export function isNewsTitle(title: unknown): boolean {
+  return NEWS_TITLE.test(String(title ?? ''))
+}
+
+export function isAiMarked(text: unknown): boolean {
+  return AI_MARKS.test(String(text ?? ''))
+}
 const STREAM = /\b(live ?stream|en direct|directo|ao vivo|stream(?:ing)?|🔴)/i
 /** How many trailers a session may see: "1 ou 2 trailers c'est marrant, plus c'est comme regarder de la pub". */
 export const TRAILERS_PER_SESSION = 2
@@ -76,14 +96,18 @@ function seconds(duration: unknown): number | null {
 
 /**
  * How lively a row is, 0 best: a video between fifteen seconds and eight
- * minutes, moving, not a live stream. 1: a bit long, or its length unknown.
- * 2: a still album cover ("- Topic" channels), a stream, past twenty
- * minutes — or a trailer, served only when the universe offers nothing
- * else (a teaser is one: the session's own count misses them).
- * `Infinity`: a trailer when the session has had its two.
+ * minutes, moving, not a live stream. 1: a bit long, or its length unknown,
+ * or a GIF a brand posts. 2: a still album cover ("- Topic" channels), a
+ * stream, past twenty minutes, a trailer, news filed elsewhere, a lesson,
+ * an institution's GIF — served only when the universe offers nothing else.
+ * `Infinity`: marked as made by AI, or a trailer past the session's two.
  */
 export function livelyRank(row: Record<string, unknown>, trailersSeen = 0): number {
-  if (isTrailerTitle(row.title)) return trailersSeen >= TRAILERS_PER_SESSION ? Infinity : 2
+  const title = String(row.title ?? '')
+  if (isAiMarked(`${title} ${row.channelTitle ?? ''} ${String(row.description ?? '').slice(0, 1500)}`)) return Infinity
+  if (isTrailerTitle(title)) return trailersSeen >= TRAILERS_PER_SESSION ? Infinity : 2
+  if (row.type === 'image') return BRAND_GIF.test(title) ? 2 : / GIF by /i.test(title) ? 1 : 0
+  if (LESSON.test(title) || (row.v3 as { universe?: string } | undefined)?.universe !== 'news-society' && NEWS_TITLE.test(title)) return 2
   if (row.type !== 'video') return 0
   const length = seconds(row.duration)
   if (/ - Topic$/.test(String(row.channelTitle ?? ''))) return 2

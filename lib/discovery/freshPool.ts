@@ -18,6 +18,7 @@ import { candidateFromRow, type CatalogueRow } from './catalog'
 import { isSeen, seenBytes, type FreshSeen } from './freshSeen'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
 import { byLiveliness, trailersSeenIn } from '../v3/cool/themes'
+import { echoesSession } from './diversity'
 import type { Universe } from '../v3/types'
 
 export { parseFreshSeen } from './freshSeen'
@@ -118,6 +119,7 @@ export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, see
     const candidate = candidateFromRow(row as CatalogueRow, payload, now)
     if (!hardEligible(candidate, ticket, state)) continue
     const result: PoolResult<T> = { item: { ...candidate, fresh: true, freshDay: list.day, freshPosition: index }, branch: 'general', fallback: false }
+    if (theme && echoesSession(candidate, state.exposures)) { fallback ??= result; continue }
     if (!candidate.authorKey || !recentAuthors.has(candidate.authorKey)) return result
     fallback ??= result
   }
