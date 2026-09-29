@@ -271,14 +271,21 @@ export function observedFound(rows: Array<{ videoId?: unknown; title?: unknown; 
  * chart ranks what is rising, and a video with a huge total climbs every list
  * it is on; ranked by what they gained in a day, the day's real stars come
  * first and the same giants do not come back round. A video needs a count
- * taken twelve to thirty-six hours ago — the day after it was first seen is
+ * taken ten to thirty-six hours ago — the day after it was first seen is
  * soon enough.
  */
 export type ViewSample = { at: number; views: number }
 const HOUR = 3_600_000
 
+/**
+ * A count taken ten to thirty-six hours ago: the evening catch-up of 29
+ * September read the charts at 21:00 and the morning run comes at 09:05,
+ * twelve hours and a few minutes later — a twelve-hour floor left half the
+ * category zones unmeasured, hence empty.
+ */
+export const DAILY_MIN_HOURS = 10
 export function dailyViews(samples: readonly ViewSample[], viewsNow: number, now: number): number | null {
-  const usable = samples.filter((sample) => now - sample.at >= 12 * HOUR && now - sample.at <= 36 * HOUR && sample.views <= viewsNow)
+  const usable = samples.filter((sample) => now - sample.at >= DAILY_MIN_HOURS * HOUR && now - sample.at <= 36 * HOUR && sample.views <= viewsNow)
   if (!usable.length) return null
   const closest = [...usable].sort((left, right) => Math.abs(now - left.at - 24 * HOUR) - Math.abs(now - right.at - 24 * HOUR))[0]
   return Math.round(((viewsNow - closest.views) * 24 * HOUR) / (now - closest.at))

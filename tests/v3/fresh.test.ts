@@ -112,6 +112,7 @@ test('views of the day: what a video gained since the count taken about a day ag
   assert.equal(dailyViews([{ at: now - 24 * HOUR, views: 1_000_000 }], 1_300_000, now), 300_000)
   assert.equal(dailyViews([{ at: now - 18 * HOUR, views: 1_000 }], 1_900, now), 1_200, 'brought to a whole day')
   assert.equal(dailyViews([{ at: now - 2 * HOUR, views: 10 }], 20, now), null, 'too recent to say')
+  assert.equal(dailyViews([{ at: now - 11 * HOUR, views: 1_000 }], 1_550, now), 1_200, 'the evening catch-up read eleven hours before the morning run still counts')
   assert.equal(dailyViews([{ at: now - 60 * HOUR, views: 10 }], 20, now), null, 'too old to say')
   assert.equal(dailyViews([{ at: now - 30 * HOUR, views: 5 }, { at: now - 23 * HOUR, views: 50 }], 150, now), Math.round(100 * 24 / 23), 'the count closest to a day ago')
   // A giant that gains little falls behind a smaller video that exploded today.
