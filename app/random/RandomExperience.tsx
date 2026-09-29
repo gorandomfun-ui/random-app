@@ -670,8 +670,12 @@ function buildImmersiveFragments(
   const clusterCount = lite ? 2 : 3
   const voidCount = lite ? 4 : (isCompact ? 6 : 9)
   const signalCount = lite ? 4 : (isCompact ? 6 : 8)
-  const pieceCount = lite ? (isCompact ? 4 : 6) : (isCompact ? 9 : 14)
+  const pieceCount = lite ? 6 : (isCompact ? 9 : 14)
   const holeCount = lite ? 1 : (isCompact ? 2 : 3)
+  // On a phone, bits of pictures peek out along the content from the margins either side of it, and
+  // an iPhone (the lite effects, fewer of everything) gets a few more short slices in the two bands.
+  const sideBitCount = isCompact ? (lite ? 4 : 6) : 0
+  const extraSliceCount = isCompact && lite ? 12 : 0
   const contentZoneTop = isCompact ? 18 : 16
   const contentZoneBottom = isCompact ? 70 : 84
   const sourceZoneTop = isCompact ? 62 : 77
@@ -760,6 +764,7 @@ function buildImmersiveFragments(
         : between(82, 116)
       : between(-28, 116)
     const lineWidth = edgeOnly ? Math.min(width, between(12, isCompact ? 32 : 44)) : width
+    const glow = hot ? between(0.58, 1.02) : between(0.14, 0.5)
 
     fragments.push({
       id: `fine-${i}`,
@@ -772,11 +777,11 @@ function buildImmersiveFragments(
         backgroundPosition: `${fixed(between(-28, 126))}% ${fixed(top + between(-16, 16))}%`,
         backgroundSize: `${intBetween(100, 240)}vw ${intBetween(96, 220)}vh`,
         ...(mediaLine ? null : softLine()),
-        filter: mediaLine
-          ? `saturate(${fixed(between(1.05, hot ? 2.8 : 1.7), 2)}) contrast(${fixed(between(1.02, 1.55), 2)}) brightness(${fixed(hot ? between(0.58, 1.02) : between(0.14, 0.5), 2)}) hue-rotate(${intBetween(-14, 14)}deg)`
+        filter: mediaLine && !lite
+          ? `saturate(${fixed(between(1.05, hot ? 2.8 : 1.7), 2)}) contrast(${fixed(between(1.02, 1.55), 2)}) brightness(${fixed(glow, 2)}) hue-rotate(${intBetween(-14, 14)}deg)`
           : undefined,
-        mixBlendMode: hot ? 'screen' : mediaLine ? 'hard-light' : rng() > 0.7 ? 'screen' : 'normal',
-        '--fragment-opacity': fixed(between(hot ? 0.28 : 0.12, hot ? 0.58 : 0.38) * quiet, 2),
+        mixBlendMode: hot || (mediaLine && lite) ? 'screen' : mediaLine ? 'hard-light' : rng() > 0.7 ? 'screen' : 'normal',
+        '--fragment-opacity': fixed(between(hot ? 0.28 : 0.12, hot ? 0.58 : 0.38) * quiet * (mediaLine && lite ? glow : 1), 2),
         '--fragment-pop-opacity': fixed(between(0.32, 0.54) * quiet, 2),
         '--fragment-transform': `translate3d(${fixed(between(-8, 8), 1)}px, 0, 0)`,
       },
@@ -790,7 +795,8 @@ function buildImmersiveFragments(
     const bright = rng() > 0.88
     const height = (rng() > 0.93 ? between(1.2, 1.8) : between(0.7, 1.2)) * 0.6
     const width = long ? between(isCompact ? 22 : 30, isCompact ? 92 : 122) : between(5, isCompact ? 46 : 66)
-    const opacity = mediaLine ? between(0.2, bright ? 0.5 : 0.36) : between(0.14, bright ? 0.42 : 0.3)
+    const glow = bright ? between(0.62, 1.05) : between(0.22, 0.62)
+    const opacity = (mediaLine ? between(0.2, bright ? 0.5 : 0.36) : between(0.14, bright ? 0.42 : 0.3)) * (mediaLine && lite ? Math.min(1, glow) : 1)
 
     fragments.push({
       id: `lower-fine-${i}`,
@@ -803,8 +809,8 @@ function buildImmersiveFragments(
         backgroundPosition: `${fixed(between(-34, 132))}% ${fixed(top + between(-9, 9))}%`,
         backgroundSize: `${intBetween(104, 220)}vw ${intBetween(96, 190)}vh`,
         ...(mediaLine ? null : softLine()),
-        filter: mediaLine
-          ? `saturate(${fixed(between(1.25, bright ? 2.65 : 1.85), 2)}) contrast(${fixed(between(1.08, 1.75), 2)}) brightness(${fixed(bright ? between(0.62, 1.05) : between(0.22, 0.62), 2)}) hue-rotate(${intBetween(-16, 16)}deg)`
+        filter: mediaLine && !lite
+          ? `saturate(${fixed(between(1.25, bright ? 2.65 : 1.85), 2)}) contrast(${fixed(between(1.08, 1.75), 2)}) brightness(${fixed(glow, 2)}) hue-rotate(${intBetween(-16, 16)}deg)`
           : undefined,
         mixBlendMode: mediaLine || bright ? 'screen' : rng() > 0.72 ? 'hard-light' : 'normal',
         '--fragment-opacity': fixed(opacity, 2),
@@ -824,6 +830,7 @@ function buildImmersiveFragments(
     const quiet = quietFactor(top)
     const left = between(-26, 112)
     const hue = hot ? intBetween(-24, 24) : intBetween(-10, 10)
+    const glow = hot ? between(0.98, 1.48) : between(0.36, 0.86)
     const transform = `translate3d(${fixed(between(-18, 18), 1)}px, ${fixed(between(-1.5, 1.5), 1)}px, 0)${mid ? slant(1 / 14) : ''}`
 
     fragments.push({
@@ -836,9 +843,9 @@ function buildImmersiveFragments(
         height: `${fixed(height, 2)}px`,
         backgroundPosition: `${fixed(between(-20, 120))}% ${fixed(top + between(-24, 24))}%`,
         backgroundSize: `${intBetween(86, 210)}vw ${intBetween(92, 210)}vh`,
-        filter: `saturate(${fixed(between(1.6, 2.8), 2)}) contrast(${fixed(between(1.25, 2), 2)}) brightness(${fixed(hot ? between(0.98, 1.48) : between(0.36, 0.86), 2)}) hue-rotate(${hue}deg)`,
-        mixBlendMode: hot && !mid ? blends[intBetween(0, blends.length - 2)] : 'screen',
-        '--fragment-opacity': fixed((mid ? between(0.2, 0.45) : between(0.2, hot ? 0.72 : 0.52)) * quiet, 2),
+        filter: lite ? undefined : `saturate(${fixed(between(1.6, 2.8), 2)}) contrast(${fixed(between(1.25, 2), 2)}) brightness(${fixed(glow, 2)}) hue-rotate(${hue}deg)`,
+        mixBlendMode: hot && !mid && !lite ? blends[intBetween(0, blends.length - 2)] : 'screen',
+        '--fragment-opacity': fixed((mid ? between(0.2, 0.45) : between(0.2, hot ? 0.72 : 0.52)) * quiet * (lite ? Math.min(1, glow) : 1), 2),
         '--fragment-pop-opacity': fixed(between(0.62, 0.9) * quiet, 2),
         '--fragment-transform': transform,
         ...motion(18, 3, 8200, 22000),
@@ -874,7 +881,7 @@ function buildImmersiveFragments(
           height: `${fixed(height, 1)}px`,
           backgroundPosition: `${fixed(clusterLeft + between(-16, 16))}% ${fixed(clusterTop + between(-12, 12))}%`,
           backgroundSize: `${intBetween(88, 146)}vw ${intBetween(88, 146)}vh`,
-          filter: `saturate(${fixed(between(1.8, 3), 2)}) contrast(${fixed(between(1.35, 2.1), 2)}) brightness(${fixed(bright ? between(1, 1.5) : between(0.52, 1), 2)}) hue-rotate(${intBetween(-20, 20)}deg)`,
+          filter: lite ? undefined : `saturate(${fixed(between(1.8, 3), 2)}) contrast(${fixed(between(1.35, 2.1), 2)}) brightness(${fixed(bright ? between(1, 1.5) : between(0.52, 1), 2)}) hue-rotate(${intBetween(-20, 20)}deg)`,
           mixBlendMode: bright ? 'screen' : 'hard-light',
           '--fragment-opacity': fixed(between(0.34, bright ? 0.66 : 0.56), 2),
           '--fragment-pop-opacity': fixed(between(0.5, 0.74), 2),
@@ -948,6 +955,51 @@ function buildImmersiveFragments(
         '--fragment-pop-opacity': fixed(between(0.6, 0.86) * quiet, 2),
         '--fragment-transform': `translate3d(${fixed(between(-8, 8), 1)}px, 0, 0)`,
         ...motion(18, 3, 9000, 24000),
+      },
+    })
+  }
+
+  for (let i = 0; i < sideBitCount; i += 1) {
+    const top = between(contentZoneTop + 2, contentZoneBottom - 2)
+    const onLeft = rng() < 0.5
+    const slice = rng() < 0.6
+    const width = between(6, 12)
+
+    fragments.push({
+      id: `side-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--piece random-immersive-fragment--still',
+      style: {
+        left: `${fixed(onLeft ? between(-6, 0) : between(93, 97))}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(width)}vw`,
+        height: `${fixed(slice ? between(2, 6) : between(10, 20), 1)}px`,
+        backgroundImage: pieceSources[intBetween(0, pieceSources.length - 1)],
+        backgroundPosition: `${fixed(onLeft ? between(-10, 30) : between(70, 110))}% ${fixed(top + between(-15, 15))}%`,
+        backgroundSize: `${intBetween(110, 220)}vw ${intBetween(100, 190)}vh`,
+        mixBlendMode: 'screen',
+        '--fragment-opacity': fixed(between(0.3, 0.55), 2),
+        '--fragment-transform': 'translate3d(0, 0, 0)',
+      },
+    })
+  }
+
+  for (let i = 0; i < extraSliceCount; i += 1) {
+    const top = backdropTop(0)
+
+    fragments.push({
+      id: `slice-${i}`,
+      className: 'random-immersive-fragment random-immersive-fragment--fine',
+      style: {
+        left: `${fixed(between(-20, 100))}%`,
+        top: `${fixed(top)}%`,
+        width: `${fixed(between(8, 38))}vw`,
+        height: `${fixed(between(1, 2.6), 2)}px`,
+        backgroundImage: pieceSources[intBetween(0, pieceSources.length - 1)],
+        backgroundPosition: `${fixed(between(-20, 120))}% ${fixed(top + between(-16, 16))}%`,
+        backgroundSize: `${intBetween(100, 220)}vw ${intBetween(96, 200)}vh`,
+        mixBlendMode: 'screen',
+        '--fragment-opacity': fixed(between(0.18, 0.38), 2),
+        '--fragment-transform': 'translate3d(0, 0, 0)',
       },
     })
   }
@@ -6085,6 +6137,10 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             3px 0 0 rgba(var(--glitch-ink), 0.26),
             -2px 0 0 rgba(var(--glitch-ink-light), 0.18);
         }
+        .random-immersive-fragment--still {
+          animation: none;
+          will-change: auto;
+        }
         .random-immersive-fragment--mid-tear {
           border-left: 1px solid rgba(var(--glitch-cream), 0.4);
         }
@@ -6379,6 +6435,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         .random-page--lite-effects .random-immersive-fragment {
           animation: none;
           will-change: auto;
+          filter: none !important;
         }
         .random-page--lite-effects .random-immersive-bg::before {
           mix-blend-mode: normal;
