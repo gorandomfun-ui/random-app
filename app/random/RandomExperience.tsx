@@ -4944,33 +4944,33 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     () => (isPriming ? null : getImmersiveBackgroundImage(viewItem, viewportWidth)),
     [isPriming, viewItem, viewportWidth]
   )
-  const lastImmersiveImageRef = useRef<string | null>(currentImmersiveImage)
-  // the pictures of the two randoms seen before, for the backdrop's pieces: already in the browser
-  const [echoImages, setEchoImages] = useState<string[]>([])
-
-  useEffect(() => {
-    if (!currentImmersiveImage) return
-    const previous = lastImmersiveImageRef.current
-    lastImmersiveImageRef.current = currentImmersiveImage
-    if (previous && previous !== currentImmersiveImage) {
-      setEchoImages((list) => [previous, ...list.filter((url) => url !== previous && url !== currentImmersiveImage)].slice(0, 2))
-    }
+  // The pictures of the last randoms that had one, newest first: the backdrop of a text content and
+  // the pieces cut from the two before (already in the browser). Worked out while the page is drawn,
+  // not after, so a new random is not drawn a second time just to pass them on; running it twice for
+  // the same picture changes nothing.
+  const imageHistoryRef = useRef<string[]>([])
+  const imageHistory = useMemo(() => {
+    const history = imageHistoryRef.current
+    if (!currentImmersiveImage || history[0] === currentImmersiveImage) return history
+    const next = [currentImmersiveImage, ...history.filter((url) => url !== currentImmersiveImage)].slice(0, 3)
+    imageHistoryRef.current = next
+    return next
   }, [currentImmersiveImage])
 
-  const fallbackImmersiveImage = currentImmersiveImage ? null : lastImmersiveImageRef.current
+  const fallbackImmersiveImage = currentImmersiveImage ? null : imageHistory[0] ?? null
   const immersiveBackground = useMemo(
     () => getImmersiveBackgroundData(viewItem, theme, false, isPriming, fallbackImmersiveImage, viewportWidth),
     [fallbackImmersiveImage, isPriming, theme, viewItem, viewportWidth]
   )
   const immersiveBackgroundStyle = useMemo<ImmersiveBackgroundStyle>(() => ({
     '--random-bg-image': cssImageUrl(immersiveBackground.image),
-    '--random-bg-echo-1': cssImageUrl(echoImages[0] || immersiveBackground.image),
-    '--random-bg-echo-2': cssImageUrl(echoImages[1] || echoImages[0] || immersiveBackground.image),
+    '--random-bg-echo-1': cssImageUrl(imageHistory[1] || immersiveBackground.image),
+    '--random-bg-echo-2': cssImageUrl(imageHistory[2] || imageHistory[1] || immersiveBackground.image),
     '--random-bg-tone': immersiveBackground.tone,
     '--random-bg-accent': immersiveBackground.accent,
     '--random-bg-strength': Math.min(1, Number((immersiveBackground.strength * (1 + effectiveProgressionIntensity * 0.28)).toFixed(2))),
     '--random-bg-noise-strength': Math.min(1, Number((immersiveBackground.strength * (0.42 + effectiveProgressionIntensity * 0.24)).toFixed(2))),
-  }), [echoImages, effectiveProgressionIntensity, immersiveBackground])
+  }), [effectiveProgressionIntensity, imageHistory, immersiveBackground])
   const immersiveSeed = useMemo(
     () => getImmersiveSeed(viewItem, immersiveBackground.image),
     [immersiveBackground.image, viewItem]
@@ -6087,7 +6087,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           animation: random-fragment-corrupt var(--fragment-duration, 5200ms) steps(1, end) infinite;
           animation-delay: var(--fragment-delay, 0ms);
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035);
-          transition: background-image 120ms ease;
           contain: layout paint;
           will-change: auto;
         }
