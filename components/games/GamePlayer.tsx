@@ -134,7 +134,6 @@ export default function GamePlayer({
   onLevelCleared,
   onNamed,
   big = false,
-  align = 'center',
 }: {
   game: GameName
   accent: string
@@ -152,8 +151,6 @@ export default function GamePlayer({
   onNamed?: (name: string) => void
   /** A phone playing full screen: a taller band with a bigger cross, or a band beside the board on its side. Read when a game starts. */
   big?: boolean
-  /** Where the picture sits in its frame: in the middle, or at the top to leave room under it. */
-  align?: 'center' | 'top'
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -504,7 +501,7 @@ export default function GamePlayer({
   }
 
   return (
-    <div ref={boxRef} className={`game-player${glitching ? ' game-player--glitch' : ''}${align === 'top' ? ' game-player--top' : ''}`}>
+    <div ref={boxRef} className={`game-player${glitching ? ' game-player--glitch' : ''}`}>
       <canvas ref={canvasRef} className="game-player__canvas" aria-label={game === 'catcher' ? 'RANDOM CATCHER' : 'RANDOM EATER'} />
       {naming ? (
         <form className="game-player__name" onSubmit={submitName} style={{ borderColor: accent }}>
@@ -530,7 +527,6 @@ export default function GamePlayer({
       ) : null}
       <style jsx>{`
         .game-player { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-        .game-player--top { align-items: flex-start; }
         .game-player__canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; background: #0a0a14; }
         .game-player--glitch .game-player__canvas { animation: game-player-glitch 0.62s steps(1, end) both; }
         @keyframes game-player-glitch {

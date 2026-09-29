@@ -236,7 +236,8 @@ export default function ArcadeStage({
   const showPlay = full
     ? waiting && !sideways
     : event.kind === 'title' || (phone && started.current && !ended && (event.kind === 'play' || event.kind === 'retry'))
-  // on a phone held upright in the page, under the picture, in room kept for it; elsewhere, at its foot
+  // on a phone held upright in the page, under the picture, in room kept for it below the game's frame: the picture
+  // centred in what is left, the two together sit in the middle of the page's frame; elsewhere, at its foot
   const under = phone && upright && !full
   const room = !under ? 0 : ended ? (askName ? 156 : 108) : event.kind === 'retry' ? 112 : 72
   // under the picture, the page's width: a narrow picture (a tall board) would squeeze the pill and the panel
@@ -268,7 +269,6 @@ export default function ArcadeStage({
           onPlayState={(state) => { setPlayState(state); onPlayState(state) }}
           control={control}
           big={full}
-          align={under ? 'top' : 'center'}
         />
       </div>
       {sideways ? (
