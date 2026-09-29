@@ -284,3 +284,15 @@ test('la durée des vidéos se lit dans ce que les fournisseurs stockent', () =>
   assert.equal(durationSeconds('n_importe quoi'), undefined)
   assert.equal(durationSeconds(undefined), undefined)
 })
+
+test('the ladder at the click: from a clip at the top, the Wave prefers another level and another pass of the subject', () => {
+  const clip: WaveAnchor = { ...anchor({ subjects: [{ id: 'entity:madonna', role: 'primary', evidence: 'search-verified' }], universe: 'music', angle: 'official-clip', channelKey: 'youtube:madonna' }, { type: 'video', title: 'Madonna - Hung Up (Official Video)' }), digLevel: 1, digPass: 'top' }
+  const sameLevel = { ...candidate('video', 'live-concert', { title: 'Madonna - Live 2012', channelKey: 'youtube:a' }), digLevel: 1, digPass: 'top' }
+  const fan = { ...candidate('video', 'fan-footage', { title: 'Madonna en pâte à modeler', channelKey: 'youtube:b' }), digLevel: 4, digPass: 'around' }
+  const blooper = { ...candidate('video', 'parody-sketch', { title: 'Madonna blooper 1990', channelKey: 'youtube:c' }), digLevel: 2, digPass: 'channel' }
+  const gif = candidate('image', 'meme-gif', { title: 'Madonna vogue GIF', channelKey: 'giphy:x' })
+  const wave = buildWave(clip, [sameLevel, fan, blooper, gif])
+  assert.equal(wave.items.length, 3)
+  assert.deepEqual(wave.items.map((item) => item.title).sort(), [gif.title, fan.title, blooper.title].sort(), 'the other levels and the image; the same level waits')
+  assert.ok(!wave.items.some((item) => item.title === sameLevel.title))
+})

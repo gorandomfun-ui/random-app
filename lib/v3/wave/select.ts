@@ -30,6 +30,9 @@ export type WaveCandidate = {
     nearFamily?: string
   }
   level: WaveLevel
+  /** What the dig knew of it: its level on the ladder (1 mainstream, 4 confidential) and the pass that found it. */
+  digLevel?: number
+  digPass?: string
   /** Texts only: the language they are written in, and whether it matters. */
   lang?: string | null
   languageScope?: string | null
@@ -45,6 +48,8 @@ export type WaveAnchor = {
   /** Its telling words in title order; every content has some, even with no subject. */
   words?: string[]
   duration?: number
+  digLevel?: number
+  digPass?: string
 }
 
 /**
@@ -195,6 +200,20 @@ function popularitySpread(chosen: WaveCandidate[], candidate: WaveCandidate): nu
   return already === 0 ? 2 : already === 1 ? 1 : 0
 }
 
+/**
+ * The ladder, at the click (the owner's "Johnny" idea): from a clip at the top,
+ * the Wave prefers a video from another level — a blooper, a fan, an archive
+ * — found by another pass, and never two of the same level among the three.
+ */
+function levelSpread(anchor: WaveAnchor, chosen: WaveCandidate[], candidate: WaveCandidate): number {
+  if (candidate.digLevel === undefined) return 0
+  let score = 0
+  if (anchor.digLevel !== undefined && candidate.digLevel !== anchor.digLevel) score += 2
+  if (!chosen.some((item) => item.digLevel === candidate.digLevel)) score += 1
+  if (candidate.digPass && anchor.digPass && candidate.digPass !== anchor.digPass) score += 1
+  return score
+}
+
 /** A Wave of three videos is a worse Wave, whatever its subjects. */
 function formatSpread(chosen: WaveCandidate[], candidate: WaveCandidate): number {
   const sameType = chosen.filter((item) => item.type === candidate.type).length
@@ -224,8 +243,8 @@ export function buildWave(
         if (!usable.length) break
         usable.sort(
           (left, right) =>
-            formatSpread(chosen, right) + popularitySpread(chosen, right) -
-            (formatSpread(chosen, left) + popularitySpread(chosen, left)),
+            formatSpread(chosen, right) + popularitySpread(chosen, right) + levelSpread(anchor, chosen, right) -
+            (formatSpread(chosen, left) + popularitySpread(chosen, left) + levelSpread(anchor, chosen, left)),
         )
         const best = usable[0]
         chosen.push(best)

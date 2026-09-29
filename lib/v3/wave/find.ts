@@ -115,6 +115,8 @@ function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
     ...(typeof row.lang === 'string' ? { lang: row.lang } : {}),
     ...(typeof row.languageScope === 'string' ? { languageScope: row.languageScope } : {}),
     ...(duration !== undefined ? { duration } : {}),
+    ...(typeof row.v3?.dig?.level === 'number' ? { digLevel: row.v3.dig.level } : {}),
+    ...(typeof row.v3?.dig?.pass === 'string' ? { digPass: row.v3.dig.pass } : {}),
     v3: {
       subjects: row.v3?.subjects ?? [],
       universe: row.v3?.universe ?? 'other',
@@ -296,6 +298,8 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
       },
       words,
       ...(duration !== undefined ? { duration } : {}),
+      ...(typeof row.v3?.dig?.level === 'number' ? { digLevel: row.v3.dig.level } : {}),
+      ...(typeof row.v3?.dig?.pass === 'string' ? { digPass: row.v3.dig.pass } : {}),
     },
   }
 }
@@ -313,12 +317,15 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
  */
 async function subjectsNamedInTitle(db: Db, subjects: SubjectRef[], title: string | null | undefined): Promise<Set<string>> {
   const named = new Set<string>()
+  // What the dig searched for is the subject, whether or not the title spells it: the #willsmith steak is about Will Smith.
+  for (const subject of subjects) if (subject.evidence === 'search-verified') named.add(subject.id)
   if (!subjects.length || !title?.trim()) return named
 
   // The id spells the name — "entity:south-park" — so most titles settle it
   // without a query. The dictionary is asked only for the subjects left over,
   // whose title may name them in another script or by another alias.
   const unsettled = subjects.filter((subject) => {
+    if (named.has(subject.id)) return false
     const name = subject.id.slice(subject.id.indexOf(':') + 1).replace(/-/g, ' ')
     if (containsAlias(title, name)) { named.add(subject.id); return false }
     return true
