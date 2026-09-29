@@ -122,14 +122,23 @@ export function nextPass(subject: QueuedSubject): DigPass | null {
 /** Ready to be worked: queued or running, not paused, not done. */
 const WORKABLE: QueueState[] = ['queued', 'running']
 
-/** One subject of a base, the most urgent and the least recently served; of one country when the turn names it. */
+/**
+ * One subject of a base: what is begun before what is new, so a star gets
+ * all its passes (its top, then around, its channels, Dailymotion) before
+ * another star is opened — the first run of 29 September opened forty
+ * subjects and went deep into none. Among the begun, the most urgent and the
+ * least recently served; of one country when the turn names it.
+ */
 export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string): Promise<QueuedSubject | null> {
-  const rows = await db.collection<QueuedSubject>(QUEUE)
-    .find({ base, state: { $in: WORKABLE }, ...(country ? { country } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document, { sort: { priority: -1, lastRunAt: 1 }, limit: 5, maxTimeMS: 4000 })
-    .toArray()
-  for (const row of rows) {
-    if (nextPass(row)) return row
-    await db.collection<QueuedSubject>(QUEUE).updateOne({ _id: row._id }, { $set: { state: 'done' } }).catch(() => undefined)
+  const filter = { base, ...(country ? { country } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
+  for (const state of ['running', 'queued'] as const) {
+    const rows = await db.collection<QueuedSubject>(QUEUE)
+      .find({ ...filter, state }, { sort: { priority: -1, lastRunAt: 1 }, limit: 5, maxTimeMS: 4000 })
+      .toArray()
+    for (const row of rows) {
+      if (nextPass(row)) return row
+      await db.collection<QueuedSubject>(QUEUE).updateOne({ _id: row._id }, { $set: { state: 'done' } }).catch(() => undefined)
+    }
   }
   return null
 }
