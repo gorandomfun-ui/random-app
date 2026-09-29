@@ -19,7 +19,7 @@ export function exposureOf(candidate: Candidate): Exposure | null {
     practices: [...new Set(candidate.profile.titlePractices ?? [])].slice(0, 6),
     terms: [...new Set((candidate.profile.titleTokens ?? []).slice(0, 12).map(hash))],
     ...(candidate.profile.pattern ? { pattern: candidate.profile.pattern } : {}),
-    ...(candidate.profile.subject?.primary ? { subject: hash(candidate.profile.subject.primary.key) } : {}),
+    ...(candidate.digSubject ? { subject: hash(candidate.digSubject) } : candidate.profile.subject?.primary ? { subject: hash(candidate.profile.subject.primary.key) } : {}),
     ...(year != null && Number.isFinite(year) ? { publicationYear: year } : {}),
     ...(candidate.authorKey ? { author: hash(candidate.authorKey) } : {}),
     ...(candidate.seriesKey ? { series: hash(candidate.seriesKey) } : {}),

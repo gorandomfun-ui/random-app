@@ -47,6 +47,8 @@ export type QueuedSubject = {
   lastRunAt?: Date
   createdAt: Date
   source?: Record<string, unknown>
+  /** A random key, for the draw to pick a subject from a random point. */
+  rand?: number
 }
 
 /** How deep each fame goes: pages of the top, searches around, channels read, Dailymotion searches. */
@@ -181,7 +183,7 @@ export async function enqueue(db: Db, subjects: NewSubject[]): Promise<{ inserte
       update: {
         $setOnInsert: {
           kind: subject.kind, base: subject.base, fame: subject.fame, state: 'queued', passes: {}, channelsToRead: [], ingested: 0, searches: 0,
-          depthTarget: subject.depthTarget ?? PLAN[subject.fame].depthTarget, createdAt: now, done: [],
+          depthTarget: subject.depthTarget ?? PLAN[subject.fame].depthTarget, createdAt: now, done: [], rand: Math.random(),
           ...(subject.country ? { country: subject.country } : {}), ...(subject.lang ? { lang: subject.lang } : {}), ...(subject.universe ? { universe: subject.universe } : {}),
           ...(subject.ownChannels ? { ownChannels: subject.ownChannels } : {}), ...(subject.angles ? { angles: subject.angles } : {}), ...(subject.source ? { source: subject.source } : {}),
         },
@@ -228,4 +230,6 @@ export async function countryTurns(db: Db, regionOf: Record<string, string>): Pr
 export async function installQueueIndexes(db: Db): Promise<void> {
   await db.collection(QUEUE).createIndex({ base: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick' })
   await db.collection(QUEUE).createIndex({ base: 1, country: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick_country' })
+  // The draw: a subject of a base with something to show, from a random point.
+  await db.collection(QUEUE).createIndex({ base: 1, ingested: 1, rand: 1 }, { name: 'queue_draw' })
 }

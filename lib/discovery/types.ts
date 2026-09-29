@@ -46,6 +46,8 @@ export type Candidate<T = unknown> = {
   profile: Profile
   payload: T
   authorKey?: string
+  /** The subject the dig searched when it found the content: what a session must not show twice. */
+  digSubject?: string
   /** Only populate from an actual series identifier, not a shared adjective. */
   seriesKey?: string
   duplicateKey?: string

@@ -77,6 +77,7 @@ export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number):
   }))
   return { key: canonicalMediaKey(row), type: row.type as Format, provider, payload,
     profile: profileFromRow(row), authorKey: channel ? `${provider === 'reddit-youtube' ? 'youtube' : provider}:${channel}` : undefined,
+    ...(typeof (row.v3 as { dig?: { subjectId?: unknown } } | undefined)?.dig?.subjectId === 'string' ? { digSubject: (row.v3 as { dig: { subjectId: string } }).dig.subjectId } : {}),
     seriesKey: text(row.verifiedSeriesKey), duplicateKey: text(row.verifiedDuplicateKey),
     stock: isStockProvider(provider, text(row.url)), routineEditorial, quiz: row.type === 'fact' && row.variant === 'quiz',
     available: row.obsoleteVideoStatus !== 'obsolete' && (until == null || until <= now) &&

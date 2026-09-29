@@ -27,8 +27,9 @@ const flag = (name: string, fallback: number) => Number(process.argv.find((arg) 
 const SESSIONS = flag('sessions', 6)
 const CONTENTS = flag('contents', 60)
 const DECK = process.argv.includes('--deck')
+const DIG = process.argv.includes('--dig')
 const BASE = process.argv.find((arg) => arg.startsWith('--base='))?.slice(7) || 'https://www.gorandom.fun'
-const LABEL = process.argv.find((arg) => arg.startsWith('--label='))?.slice(8) || (DECK ? 'deck' : 'current')
+const LABEL = process.argv.find((arg) => arg.startsWith('--label='))?.slice(8) || (DIG ? 'dig' : DECK ? 'deck' : 'current')
 
 type Row = { session: number; position: number; type: string; path: string; theme?: string; id?: string; key: string; title: string }
 
@@ -52,19 +53,19 @@ async function play(session: number): Promise<Row[]> {
     const ticket = planDraw(state, type)
     const response = await fetch(`${BASE}/api/discovery/random`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...(DECK ? { 'x-admin-ingest-key': process.env.ADMIN_INGEST_KEY ?? '' } : {}) },
-      body: JSON.stringify({ session: state, type, lang: 'fr', factVariant: next.slot.requireQuiz ? 'quiz' : undefined, seen: seen.slice(-400), ...(fresh ? { fresh } : {}), ...(DECK ? { themeDeck: true } : {}) }),
+      headers: { 'content-type': 'application/json', ...(DECK || DIG ? { 'x-admin-ingest-key': process.env.ADMIN_INGEST_KEY ?? '' } : {}) },
+      body: JSON.stringify({ session: state, type, lang: 'fr', factVariant: next.slot.requireQuiz ? 'quiz' : undefined, seen: seen.slice(-400), ...(fresh ? { fresh } : {}), ...(DECK ? { themeDeck: true } : {}), ...(DIG ? { digDraw: true } : {}) }),
     }).catch(() => null)
     if (!response || response.status !== 200) continue
     type Reply = { candidate?: Parameters<typeof commitDraw>[2] & { fresh?: boolean; freshDay?: string; freshPosition?: number; payload?: { _id?: string; title?: string; text?: string } }
-      cool?: { source?: string }; branch?: string; theme?: string }
+      cool?: { source?: string }; branch?: string; theme?: string; dig?: { base?: string; level?: number | null; label?: string } }
     const body = await response.json() as Reply
     const candidate = body.candidate
     if (!candidate) continue
     try { state = commitDraw(state, ticket, candidate) } catch { continue }
     if (candidate.fresh && candidate.freshDay && typeof candidate.freshPosition === 'number') fresh = markSeen(fresh, candidate.freshDay, candidate.freshPosition)
     seen.push(candidate.key)
-    const path = candidate.fresh ? 'fresh' : body.cool ? `cool:${body.cool.source}` : `pool:${body.branch ?? ''}`
+    const path = candidate.fresh ? 'fresh' : body.dig ? `dig:${body.dig.base}:N${body.dig.level ?? '?'}` : body.cool ? `cool:${body.cool.source}` : `pool:${body.branch ?? ''}`
     rows.push({ session, position: rows.length + 1, type: candidate.type, path, theme: body.theme, id: candidate.payload?._id, key: candidate.key, title: String(candidate.payload?.title ?? candidate.payload?.text ?? '') })
   }
   return rows
