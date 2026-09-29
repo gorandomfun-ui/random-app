@@ -7,7 +7,7 @@ import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v
 import { aliasForms, capMoments, isAddressOf, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
-import { likeSubject, looksLikeName } from '../../lib/v3/dig/likes'
+import { likeSubjects, looksLikeName, practiceTheme, wordsTheme } from '../../lib/v3/dig/likes'
 import { COUNTRIES, fameOf, REGION_OF } from '../../lib/v3/dig/people'
 import { readThemes, themeSubject, validateTheme } from '../../lib/v3/dig/themes'
 import { isOwnChannel } from '../../lib/v3/ingest/lines/dig'
@@ -175,18 +175,25 @@ test('a theme answers to its plural and to its description: "Weird Japanese Ads 
   assert.ok(!namesSubjectFor(video('The strangest thing on TV', { description: 'a commercial from 1987' }), theme, 'top'))
 })
 
-test('the subject of a like, in the owner\'s words: a name is dug like a star, a theme gets its angles, the liked channel is read first', () => {
-  const item = { _id: new ObjectId(), channelId: 'UCamy', channelTitle: 'Amy Winehouse', lang: 'en', v3: { universe: 'music' as const } }
-  const name = likeSubject({ itemId: String(item._id), digSubject: { label: 'Amy Winehouse' } }, item)!
-  assert.equal(name._id, 'entity:amy-winehouse')
-  assert.equal(name.base, 'likes')
-  assert.equal(name.fame, 'star')
-  assert.deepEqual(name.channelsToRead, [{ id: 'UCamy', title: 'Amy Winehouse', hits: 5 }])
-  const theme = likeSubject({ itemId: 'x', digSubject: { label: 'pub tv 1994' } }, undefined)!
-  assert.equal(theme._id, 'topic:pub-tv-1994')
-  assert.equal(theme.kind, 'topic')
-  assert.equal(theme.angles?.length, 11)
-  assert.equal(likeSubject({ itemId: 'x', digSubject: { label: ' ' } }, undefined), null)
+test('a like gives its subjects on its own: the names its title carries, what it says it is, its author', () => {
+  const known = new Map([['entity:amy-winehouse', { _id: 'entity:amy-winehouse', label: 'Amy Winehouse', kind: 'entity' }], ['entity:globe-theatre', { _id: 'entity:globe-theatre', label: 'Globe Theatre', kind: 'entity' }], ['topic:jazz', { _id: 'topic:jazz', label: 'jazz', kind: 'topic' }]])
+  const amy = { _id: new ObjectId(), title: '"Brother" live from Amy\'s first Glastonbury performance in 2004', provider: 'youtube', channelId: 'UCamy', channelTitle: 'Amy Winehouse', lang: 'en', v3: { universe: 'music' as const, subjects: [{ id: 'entity:amy-winehouse', role: 'primary' }, { id: 'topic:jazz', role: 'secondary' }] } }
+  const fromAmy = likeSubjects({ itemId: String(amy._id) }, amy, known)
+  assert.deepEqual(fromAmy.map((subject) => subject._id), ['entity:amy-winehouse', 'topic:live-2004', 'channel:youtube:UCamy'])
+  assert.ok(fromAmy.every((subject) => subject.base === 'likes'))
+  const cats = { _id: new ObjectId(), title: 'Cat Documentary|Types Of Cat|Cat Foods|Cat Life Cycle', provider: 'dailymotion', channelId: 'x1', channelTitle: 'VILLAGE.PK', v3: { subjects: [{ id: 'entity:globe-theatre', role: 'primary' }] } }
+  const fromCats = likeSubjects({ itemId: String(cats._id) }, cats, known)
+  assert.ok(!fromCats.some((subject) => subject._id === 'entity:globe-theatre'), 'a name the title does not carry is not the like\'s subject')
+  assert.equal(fromCats[0]?.kind, 'topic', 'its telling words instead, the like having no channel to read')
+  const rocky = { _id: new ObjectId(), title: 'A$AP Rocky - A$AP Forever (Official Video) ft. Moby', provider: 'youtube', channelId: 'UCasap', channelTitle: 'LIVELOVEASAPVEVO', v3: { subjects: [] } }
+  assert.deepEqual(likeSubjects({ itemId: 'r' }, rocky, known).map((subject) => subject._id), ['channel:youtube:UCasap'], 'the channel carries the like; no word soup beside it')
+  assert.deepEqual(practiceTheme('Frosted Mini-Wheats (Kellogg\'s) TV Commercial - 1994'), { label: 'commercial 1994', aliases: ['commercial', 'commercials', 'advert', 'ad', 'pub', 'publicité', 'werbung', 'anuncio', '1994'] })
+  assert.equal(practiceTheme('1973: JIMMY CLIFF on the uniqueness of REGGAE | BBC Archive')?.label, 'archive footage 1973')
+  assert.equal(practiceTheme('Computer still playing Windows 95 in abandoned hospital'), null)
+  assert.equal(wordsTheme('Computer still playing Windows 95 in abandoned hospital'), 'abandoned computer hospital')
+  const typed = likeSubjects({ itemId: 'x', digSubject: { label: 'Amy Winehouse' } }, amy, known)
+  assert.equal(typed.length, 1)
+  assert.equal(typed[0].fame, 'star', 'a subject the owner wrote himself still wins')
   assert.ok(looksLikeName('Dr. Mike') && !looksLikeName('lieux abandonnés'))
 })
 
