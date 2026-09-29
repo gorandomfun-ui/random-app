@@ -4,7 +4,7 @@ import test from 'node:test'
 import { ObjectId } from 'mongodb'
 
 import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v3/dig/angles'
-import { aliasForms, capMoments, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
+import { aliasForms, capMoments, isAddressOf, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
 import { likeSubject, looksLikeName } from '../../lib/v3/dig/likes'
@@ -188,4 +188,14 @@ test('the subject of a like, in the owner\'s words: a name is dug like a star, a
   assert.equal(theme.angles?.length, 11)
   assert.equal(likeSubject({ itemId: 'x', digSubject: { label: ' ' } }, undefined), null)
   assert.ok(looksLikeName('Dr. Mike') && !looksLikeName('lieux abandonnés'))
+})
+
+test('a street named after the subject is not the subject', () => {
+  const schuman = { label: 'Robert Schuman', aliases: ['robert schuman'] }
+  assert.ok(isAddressOf('Siticash: 26 Bd Robert Schuman, 93 Livry Gargan #bonplan', schuman))
+  assert.ok(isAddressOf('Lycée Robert Schuman - journée portes ouvertes', schuman))
+  assert.ok(!isAddressOf('Robert Schuman, le père de l\'Europe (archive 1950)', schuman))
+  assert.ok(!isAddressOf('Discours de Robert Schuman, 9 mai 1950', schuman))
+  const { refused } = subjectDoor([video('Siticash: 26 Bd Robert Schuman, 93 Livry Gargan', { viewCount: 5 })], { id: 'entity:robert-schuman', ...schuman }, 'top')
+  assert.equal(refused['adresse'], 1)
 })

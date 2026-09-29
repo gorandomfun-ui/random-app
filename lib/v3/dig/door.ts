@@ -41,6 +41,29 @@ const INTERVIEW = /\b(interview|entrevista|entretien|intervista|podcast|talk sho
 const CELEBRITY_NEWS = /\b(dies|died|death|dead|mort|décès|décédé|muere|murió|morreu|funeral|obsèques|arrested|arrêté|court|tribunal|procès|trial|lawsuit|divorce|divorcio|cause of death|autopsy|hospitalized|hospitalisé|breaking news|dernière minute|que devient|what happened to|où en est)\b/i
 const STOP = new Set(['official', 'video', 'videos', 'full', 'live', 'music', 'clip', 'new', 'best', 'funny', 'moment', 'moments', 'shorts', 'short', 'with', 'from', 'this', 'that', 'what', 'when', 'your', 'the', 'and', 'for', 'video', 'avec', 'dans', 'pour', 'plus', 'part', 'episode', 'feat', 'version', 'audio', 'lyrics', 'trailer', 'movie', 'film', 'song', 'remix', 'cover', 'reaction', 'ever', 'most', 'like', 'you', 'all', 'about', 'over', 'into', 'out', 'top', 'compilation', 'highlights', 'react', 'reacts', 'edit', 'vlog', 'show', 'hd', 'hq', 'sub', 'subtitles', 'legendado', 'español', 'english'])
 
+/** A street named after the subject is not the subject: "Siticash : 26 Bd Robert Schuman" came in for Robert Schuman (29 September). */
+const STREET = /\b(?:bd|boulevard|blvd|rue|avenue|av|ave|place|pl|allée|allee|impasse|quai|square|chemin|route|rd|road|street|st|lane|drive|dr|cours|promenade|esplanade|passage|villa|cité|cite|résidence|residence|lycée|lycee|collège|college|école|ecole|stade|gymnase|salle|espace|centre|center|hôpital|hopital|gare|station|parc|jardin)\.?\s+(?:du |de la |de l'|des |de |d')?$/iu
+
+/** Whether every mention of the subject in the title sits right after a street or place word. */
+export function isAddressOf(title: string, subject: Pick<DoorSubject, 'label' | 'aliases'>): boolean {
+  const text = normalize(title)
+  let mentions = 0
+  let addressed = 0
+  for (const alias of [subject.label, ...subject.aliases]) {
+    const needle = normalize(alias)
+    if (!needle || needle.length < 3) continue
+    let from = 0
+    while (true) {
+      const at = text.indexOf(needle, from)
+      if (at < 0) break
+      mentions += 1
+      if (STREET.test(text.slice(Math.max(0, at - 24), at))) addressed += 1
+      from = at + needle.length
+    }
+  }
+  return mentions > 0 && addressed === mentions
+}
+
 export function isInterview(title: string): boolean {
   return INTERVIEW.test(title)
 }
@@ -145,6 +168,7 @@ export function subjectDoor<T extends DoorVideo>(videos: T[], subject: DoorSubje
     if (!video.title) { refuse('sans titre'); continue }
     if (requireName && !namesSubjectFor(video, subject, pass)) { refuse('ne parle pas du sujet'); continue }
     if (video.live) { refuse('direct'); continue }
+    if (isAddressOf(video.title, subject)) { refuse('adresse'); continue }
     if ((video.seconds ?? 0) > MAX_SECONDS) { refuse('plus de deux heures'); continue }
     if (isCelebrityNews(video.title)) { refuse('actu people'); continue }
     if (isInterview(video.title)) {
