@@ -52,6 +52,7 @@ const LINE_LABEL: Record<string, string> = {
   authors: 'Auteurs suivis',
   'music-live': 'Musique live',
   fresh: 'Frais du jour',
+  dig: 'La fouille (4 bases)',
   'web-previews': 'Sites : visites et aperçus',
 }
 

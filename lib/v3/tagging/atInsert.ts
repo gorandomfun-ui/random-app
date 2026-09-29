@@ -11,7 +11,7 @@ import type { Db } from 'mongodb'
 import { lookupSubjectIndex } from './lookup'
 import { tagItem, taggableText, type TaggableItem } from './tagItem'
 import { formatFamilyKey, nearFamilyKey } from '../families'
-import type { ItemTags, Line } from '../types'
+import type { DigTags, ItemTags, Line, SubjectRef } from '../types'
 
 export type TaggableDocument = TaggableItem & {
   title?: string | null
@@ -22,6 +22,17 @@ export type TaggableDocument = TaggableItem & {
 }
 
 export type TaggedDocument<T> = T & { v3: ItemTags & { nearFamily: string; formatFamily: string } }
+
+/**
+ * What the dig found is about what it searched, whatever the aliases read in
+ * the title: the subject goes first, as verified by the search, the line is
+ * the dig's, and the base, level and pass are kept for the draw and the Wave.
+ */
+export function withDig(tags: ItemTags, dig: DigTags): ItemTags {
+  const others: SubjectRef[] = tags.subjects.filter((subject) => subject.id !== dig.subjectId).map((subject) => ({ ...subject, role: 'secondary' }))
+  const first: SubjectRef = { id: dig.subjectId, role: 'primary', evidence: 'search-verified' }
+  return { ...tags, subjects: [first, ...others].slice(0, 6), line: 'dig', dig }
+}
 
 /**
  * Adds the `v3` block to each document.
@@ -57,10 +68,11 @@ export async function tagForInsert<T extends TaggableDocument>(
   }
 
   return documents.map((original) => {
-    const tags = tagItem(original, index, now)
-    // The hint served the tagging; it is not a field of the stored item.
-    const { universeHint: _hint, ...document } = original as T & { universeHint?: unknown }
+    const read = tagItem(original, index, now)
+    // The hints served the tagging; they are not fields of the stored item.
+    const { universeHint: _hint, digHint, ...document } = original as T & { universeHint?: unknown; digHint?: DigTags }
     void _hint
+    const tags = digHint ? withDig(read, digHint) : read
     const labels = tags.subjects
       .map((subject) => index.subjects.get(subject.id)?.label)
       .filter((label): label is string => Boolean(label))

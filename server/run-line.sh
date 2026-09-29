@@ -11,6 +11,7 @@
 #   bash /opt/random-app/server/run-line.sh web-embed
 #   bash /opt/random-app/server/run-line.sh like-pool
 #   bash /opt/random-app/server/run-line.sh pools
+#   bash /opt/random-app/server/run-line.sh dig
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -70,6 +71,10 @@ case "${LINE}" in
   fresh)
     # The charts of the moment, zone by zone, and the day's list the sessions open on.
     run node --import tsx scripts/v3/fresh-direct.ts
+    ;;
+  dig)
+    # The four bases, one line: people, keywords, trends, likes, each subject dug top, around, channels, Dailymotion.
+    run node --import tsx scripts/v3/dig-direct.ts
     ;;
   music-live)
     # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.

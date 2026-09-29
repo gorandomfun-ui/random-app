@@ -4,7 +4,7 @@ import { retroSearchPlan, youtubeSearchBatch } from './retroSearchPlan';
 import type { AnyBulkWriteOperation, Collection, Db, Filter } from 'mongodb';
 import { buildVideoDocument } from './videoDocument';
 import { tagForInsert } from '@/lib/v3/tagging/atInsert';
-import type { Universe } from '@/lib/v3/types';
+import type { DigTags, Universe } from '@/lib/v3/types';
 import type { Line } from '@/lib/v3/types';
 export { buildVideoDocument } from './videoDocument';
 import { videoDiscoveryFields, type DiscoveryVideoFields } from './discoveryMetadata';
@@ -50,6 +50,8 @@ export type RawVideo = {
   editorialRoutineIngestedAt?: Date;
   /** The universe the line that found the video was looking for; read by the tagger at insert, never stored. */
   universeHint?: Universe;
+  /** What the dig knew when it found the video: its subject, base, level and pass; written on the v3 block, never as a field. */
+  digHint?: DigTags;
 };
 
 export type VideoDocument = Partial<DiscoveryVideoFields> & {
@@ -1057,6 +1059,7 @@ export async function finalizeVideoIngest(
   const documents: VideoDocument[] = [];
   // What a line asked for, by video id: handed to the tagger at insert, kept out of every write.
   const universeHints = new Map<string, Universe>();
+  const digHints = new Map<string, DigTags>();
   let skippedInvalid = 0;
   for (const raw of unique) {
     const doc = buildVideoDocument(raw);
@@ -1065,6 +1068,7 @@ export async function finalizeVideoIngest(
       continue;
     }
     if (raw.universeHint) universeHints.set(doc.videoId, raw.universeHint);
+    if (raw.digHint) digHints.set(doc.videoId, raw.digHint);
     if (screened.keptIds.has(doc.videoId)) (doc as VideoDocument & { miniSeriesKept?: boolean }).miniSeriesKept = true;
     documents.push(doc);
   }
@@ -1151,6 +1155,7 @@ export async function finalizeVideoIngest(
       writeDocuments.map((doc) => ({
         ...doc,
         ...(universeHints.has(doc.videoId) ? { universeHint: universeHints.get(doc.videoId) } : {}),
+        ...(digHints.has(doc.videoId) ? { digHint: digHints.get(doc.videoId) } : {}),
         createdAt: now,
         updatedAt: now,
         rand: Math.random(),
