@@ -95,7 +95,17 @@ export const COOL_REGISTERS = ['gaming', 'archive', 'music', 'elsewhere', 'cool-
 export type CoolRegister = (typeof COOL_REGISTERS)[number]
 
 /** Which ingestion line brought the item in. */
-export type Line = 'trend' | 'retro-trend' | 'mainstream' | 'combo' | 'like-dig' | 'subject-dig' | 'pools' | 'feeds' | 'authors' | 'music-live' | 'legacy'
+export type Line = 'trend' | 'retro-trend' | 'mainstream' | 'combo' | 'like-dig' | 'subject-dig' | 'pools' | 'feeds' | 'authors' | 'music-live' | 'legacy' | 'dig'
+
+/** The four bases of the dig, plus what the dig met on its way. */
+export const DIG_BASES = ['people', 'keywords', 'trends', 'likes', 'snowball'] as const
+export type DigBase = (typeof DIG_BASES)[number]
+/** How a dig found a video: the top of the subject, around it, one of its channels, or Dailymotion. */
+export type DigPass = 'top' | 'around' | 'channel' | 'dailymotion'
+/** 1 is the mainstream, 4 the confidential: views corrected by the language's audience (`lib/v3/dig/levels.ts`). */
+export type DigLevel = 1 | 2 | 3 | 4
+/** What the dig wrote on a video: the subject it was looking for, from which base, at which level, by which pass. */
+export type DigTags = { subjectId: string; base: DigBase; level: DigLevel; pass: DigPass; lang?: string }
 
 export type SubjectKind = 'entity' | 'topic' | 'combo'
 
@@ -148,6 +158,8 @@ export type ItemTags = {
   /** The cool registers this content belongs to; absent when none. */
   registers?: CoolRegister[]
   line: Line
+  /** Present on what the dig brought in. */
+  dig?: DigTags
   usable: boolean
   tagVersion: 1
   taggedAt: Date

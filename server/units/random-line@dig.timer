@@ -1,0 +1,12 @@
+[Unit]
+Description=RANDOM dig (09:30, 13:30 and 18:30 Paris: the four bases, one line; the day's YouTube units shared by the three runs)
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 Europe/Paris
+OnCalendar=*-*-* 13:30:00 Europe/Paris
+OnCalendar=*-*-* 18:30:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
