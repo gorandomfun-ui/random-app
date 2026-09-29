@@ -5,7 +5,7 @@ import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v
 import { capMoments, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
-import { fameOf } from '../../lib/v3/dig/people'
+import { COUNTRIES, fameOf, REGION_OF } from '../../lib/v3/dig/people'
 import { readThemes, themeSubject, validateTheme } from '../../lib/v3/dig/themes'
 import { withDig } from '../../lib/v3/tagging/atInsert'
 import type { ItemTags } from '../../lib/v3/types'
@@ -148,4 +148,9 @@ test('what the dig found is about what it searched: the subject first, the line 
   assert.deepEqual(tagged.subjects.map((subject) => [subject.id, subject.role, subject.evidence]), [['entity:will-smith', 'primary', 'search-verified'], ['entity:chris-rock', 'secondary', 'alias']])
   assert.equal(tagged.line, 'dig')
   assert.equal(tagged.dig?.level, 1)
+})
+
+test('every country the dig knows sits in a region, and the world has at least six of them', () => {
+  for (const code of Object.keys(COUNTRIES)) assert.ok(REGION_OF[code], `${code} has a region`)
+  assert.ok(new Set(Object.values(REGION_OF)).size >= 6)
 })

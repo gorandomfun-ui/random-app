@@ -21,7 +21,8 @@ import { subjectDoor, type DoorSubject } from '../../dig/door'
 import { PERSON_ANGLES, personQuery, themeQuery } from '../../dig/angles'
 import { languageOf, levelOf } from '../../dig/levels'
 import { playable, searchDailymotion } from '../../dig/dailymotion'
-import { baseTickets, enqueue, installQueueIndexes, markDone, nextPass, PLAN, QUEUE, recordPass, rememberChannels, takeSubject, ticketOrder, type QueuedSubject } from '../../dig/queue'
+import { REGION_OF } from '../../dig/people'
+import { baseTickets, countryTurns, enqueue, installQueueIndexes, markDone, nextPass, PLAN, QUEUE, recordPass, rememberChannels, takeSubject, ticketOrder, type QueuedSubject } from '../../dig/queue'
 import { queueTrends } from '../../dig/trends'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
@@ -251,6 +252,10 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   }
 
   const tickets = ticketOrder(baseTickets())
+  // The people tickets go round the world: one country of each region before a second of any.
+  const countries = await countryTurns(ctx.db, REGION_OF).catch(() => [] as string[])
+  if (countries.length) ctx.log(`pays, dans l'ordre : ${countries.join(', ')}`)
+  let countryTurn = 0
   const servedIds = new Set<string>()
   const declared = new Set<string>()
   let idle = 0
@@ -258,7 +263,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     let servedThisRound = 0
     for (const base of tickets) {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) { errors.push('échéance atteinte'); break rounds }
-      const subject = (await takeSubject(ctx.db, base, new Set())) ?? (await takeSubject(ctx.db, 'snowball', new Set()))
+      const country = base === 'people' && countries.length ? countries[countryTurn++ % countries.length] : undefined
+      const subject = (await takeSubject(ctx.db, base, new Set(), country)) ?? (country ? await takeSubject(ctx.db, base, new Set()) : null) ?? (await takeSubject(ctx.db, 'snowball', new Set()))
       if (!subject) continue
       const pass = nextPass(subject)
       if (!pass) continue

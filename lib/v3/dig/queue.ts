@@ -122,10 +122,10 @@ export function nextPass(subject: QueuedSubject): DigPass | null {
 /** Ready to be worked: queued or running, not paused, not done. */
 const WORKABLE: QueueState[] = ['queued', 'running']
 
-/** One subject of a base, the most urgent and the least recently served. */
-export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>): Promise<QueuedSubject | null> {
+/** One subject of a base, the most urgent and the least recently served; of one country when the turn names it. */
+export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string): Promise<QueuedSubject | null> {
   const rows = await db.collection<QueuedSubject>(QUEUE)
-    .find({ base, state: { $in: WORKABLE }, ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document, { sort: { priority: -1, lastRunAt: 1 }, limit: 5, maxTimeMS: 4000 })
+    .find({ base, state: { $in: WORKABLE }, ...(country ? { country } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document, { sort: { priority: -1, lastRunAt: 1 }, limit: 5, maxTimeMS: 4000 })
     .toArray()
   for (const row of rows) {
     if (nextPass(row)) return row
@@ -185,7 +185,38 @@ export async function enqueue(db: Db, subjects: NewSubject[]): Promise<{ inserte
   return { inserted: result.upsertedCount, refreshed: result.modifiedCount }
 }
 
+/**
+ * The countries of the people queue, in the order the tickets take them: the
+ * world in turns — one of each region before a second of any (the owner, 29
+ * September: "un élément de chaque hémisphère ou continent par jour au moins").
+ * Within a region, the country served the longest ago first.
+ */
+export async function countryTurns(db: Db, regionOf: Record<string, string>): Promise<string[]> {
+  const rows = await db.collection<QueuedSubject>(QUEUE).aggregate<{ _id: string; last: Date | null }>([
+    { $match: { base: 'people', state: { $in: WORKABLE }, country: { $exists: true } } },
+    { $group: { _id: '$country', last: { $max: '$lastRunAt' } } },
+  ], { maxTimeMS: 8000 }).toArray()
+  const byRegion = new Map<string, Array<{ country: string; last: number }>>()
+  for (const row of rows) {
+    const region = regionOf[row._id] ?? 'elsewhere'
+    byRegion.set(region, [...(byRegion.get(region) ?? []), { country: row._id, last: row.last ? new Date(row.last).getTime() : 0 }])
+  }
+  const queues = [...byRegion.values()].map((list) => list.sort((left, right) => left.last - right.last))
+  queues.sort((left, right) => left[0].last - right[0].last)
+  const turns: string[] = []
+  let left = true
+  while (left) {
+    left = false
+    for (const queue of queues) {
+      const next = queue.shift()
+      if (next) { turns.push(next.country); left = true }
+    }
+  }
+  return turns
+}
+
 /** The indexes the queue is read by; created when absent. */
 export async function installQueueIndexes(db: Db): Promise<void> {
   await db.collection(QUEUE).createIndex({ base: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick' })
+  await db.collection(QUEUE).createIndex({ base: 1, country: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick_country' })
 }

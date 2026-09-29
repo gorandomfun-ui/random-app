@@ -30,6 +30,34 @@ export const COUNTRIES: Record<string, { qid: string; lang: string; label: strin
   KR: { qid: 'Q884', lang: 'ko', label: 'Corée du Sud' },
   AU: { qid: 'Q408', lang: 'en', label: 'Australie' },
   CH: { qid: 'Q39', lang: 'fr', label: 'Suisse' },
+  IN: { qid: 'Q668', lang: 'hi', label: 'Inde' },
+  ZA: { qid: 'Q258', lang: 'en', label: 'Afrique du Sud' },
+  AR: { qid: 'Q414', lang: 'es', label: 'Argentine' },
+  EG: { qid: 'Q79', lang: 'ar', label: 'Égypte' },
+  TR: { qid: 'Q43', lang: 'tr', label: 'Turquie' },
+  ID: { qid: 'Q252', lang: 'id', label: 'Indonésie' },
+  PH: { qid: 'Q928', lang: 'en', label: 'Philippines' },
+  SE: { qid: 'Q34', lang: 'sv', label: 'Suède' },
+  PL: { qid: 'Q36', lang: 'pl', label: 'Pologne' },
+  RU: { qid: 'Q159', lang: 'ru', label: 'Russie' },
+  CN: { qid: 'Q148', lang: 'zh', label: 'Chine' },
+  KE: { qid: 'Q114', lang: 'en', label: 'Kenya' },
+  SN: { qid: 'Q1041', lang: 'fr', label: 'Sénégal' },
+  CI: { qid: 'Q1008', lang: 'fr', label: "Côte d'Ivoire" },
+  CO: { qid: 'Q739', lang: 'es', label: 'Colombie' },
+  NZ: { qid: 'Q664', lang: 'en', label: 'Nouvelle-Zélande' },
+  TH: { qid: 'Q869', lang: 'th', label: 'Thaïlande' },
+  VN: { qid: 'Q881', lang: 'vi', label: 'Vietnam' },
+}
+
+/** Where a country sits, for the turn-taking: one of each part of the world before a second of any. */
+export const REGION_OF: Record<string, string> = {
+  FR: 'europe', BE: 'europe', GB: 'europe', DE: 'europe', ES: 'europe', IT: 'europe', CH: 'europe', SE: 'europe', PL: 'europe', RU: 'europe',
+  US: 'north-america', CA: 'north-america', MX: 'north-america',
+  BR: 'south-america', AR: 'south-america', CO: 'south-america',
+  GH: 'africa', NG: 'africa', ZA: 'africa', EG: 'africa', KE: 'africa', SN: 'africa', CI: 'africa',
+  JP: 'asia', KR: 'asia', IN: 'asia', CN: 'asia', TR: 'asia', ID: 'asia', PH: 'asia', TH: 'asia', VN: 'asia',
+  AU: 'oceania', NZ: 'oceania',
 }
 
 /** The occupations worth a dig, and the universe each one lands in. */

@@ -13,7 +13,7 @@ import { fetchWikidataSubjects, type WikidataSubject } from '../subjects/wikidat
 import type { Universe } from '../types'
 import { enqueue, QUEUE, type NewSubject, type QueuedSubject } from './queue'
 
-export const TREND_LANGUAGES: WikiLanguage[] = ['fr', 'en', 'de', 'es', 'pt', 'it']
+export const TREND_LANGUAGES: WikiLanguage[] = ['fr', 'en', 'de', 'es', 'pt', 'it', 'ja', 'ru', 'ko']
 export const TREND_TOP = 60
 /** Below that, a page is just the weather: not a subject of the day. */
 const MIN_VIEWS = 40_000
