@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v3/dig/angles'
-import { capMoments, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
+import { aliasForms, capMoments, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
 import { COUNTRIES, fameOf, REGION_OF } from '../../lib/v3/dig/people'
@@ -161,4 +161,13 @@ test('the subject\'s own channel is known spaced or glued: AvrilLavigneVEVO is A
   assert.ok(isOwnChannel(avril, 'AvrilLavigneVEVO'))
   assert.ok(isOwnChannel(avril, 'Avril Lavigne'))
   assert.ok(!isOwnChannel(avril, 'Lavigne Fan Club'))
+})
+
+test('a theme answers to its plural and to its description: "Weird Japanese Ads Compilation" is a Japanese commercial', () => {
+  assert.deepEqual(aliasForms('japanese ad').sort(), ['japanese ad', 'japanese ades', 'japanese ads'].sort())
+  assert.ok(aliasForms('commercials').includes('commercial'))
+  const theme = { id: 'topic:pubs-japonaises', label: 'japanese commercials', aliases: ['japanese ad', 'japanese commercial', 'cm'], kind: 'topic' as const }
+  assert.ok(namesSubjectFor(video('Weird Japanese Ads Compilation'), theme, 'top'))
+  assert.ok(namesSubjectFor(video('The strangest thing on TV', { description: 'a japanese commercial from 1987' }), theme, 'top'), 'a theme is read in the description on every pass')
+  assert.ok(!namesSubjectFor(video('The strangest thing on TV', { description: 'a commercial from 1987' }), theme, 'top'))
 })

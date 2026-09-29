@@ -75,6 +75,15 @@ const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - Date.pa
 type UniverseRecapRow = { day: string; at: string; sizes: Record<string, number>; added: Record<string, number> }
 type FreshReport = { day: string; total: number; counts: Record<string, number>; first: string[] }
 type WebReport = { bySource: Record<string, Record<string, number>>; googleToday: number; googleCap: number }
+type DigReport = {
+  day: string; total: number; levels: Record<string, number>; bases: Record<string, number>
+  queue: Array<{ base: string; state: string; n: number }>; countries: Array<{ country: string; n: number }>
+  subjects: Array<{ id: string; label: string; fr?: string; base: string; fame: string; passes: number; ingested: number; lastRunAt?: string; sample: string[] }>
+  runs: Array<{ startedAt: string; status: string; note?: string; errors: number }>
+}
+const DIG_BASE: Record<string, string> = { people: 'Personnes', keywords: 'Mots-clés', trends: 'Tendances', likes: 'Likes', snowball: 'Boule de neige' }
+const DIG_STATE: Record<string, string> = { queued: 'en attente', running: 'en cours', done: 'faits', exhausted: 'épuisés', paused: 'en pause' }
+const DIG_FAME: Record<string, string> = { star: 'star', known: 'connu', small: 'petit' }
 const WEB_SOURCE: Record<string, string> = { 'google-cse': 'Google', hn: 'Show HN', 'set-aside': 'Sites mis de côté', osm: 'OpenStreetMap', wikidata: 'Wikidata' }
 const WEB_STATUS: Array<[string, string]> = [['new', 'en attente'], ['done', 'ajoutés'], ['dead', 'morts'], ['dull', 'sans intérêt'], ['noimage', 'page vide'], ['failed', 'échecs']]
 const FRESH_ZONE: Record<string, string> = {
@@ -125,6 +134,7 @@ export default function IngestReportsPage() {
   const [miniSeries, setMiniSeries] = useState<MiniSeriesReport | null>(null)
   const [fresh, setFresh] = useState<FreshReport | null>(null)
   const [web, setWeb] = useState<WebReport | null>(null)
+  const [dig, setDig] = useState<DigReport | null>(null)
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -141,7 +151,7 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
@@ -149,6 +159,7 @@ export default function IngestReportsPage() {
       setMiniSeries(payload.miniSeries ?? null)
       setFresh(payload.fresh ?? null)
       setWeb(payload.web ?? null)
+      setDig(payload.dig ?? null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -245,6 +256,42 @@ export default function IngestReportsPage() {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {dig && (
+        <section style={S.section}>
+          <h2 style={S.h2}>La fouille (4 bases)</h2>
+          <p style={S.hint}>
+            Entrées le {formatDay(dig.day)} : {dig.total.toLocaleString('fr-FR')} vidéos
+            {dig.total > 0 && <> — niveaux N1 {dig.levels['1'] ?? 0} · N2 {dig.levels['2'] ?? 0} · N3 {dig.levels['3'] ?? 0} · N4 {dig.levels['4'] ?? 0} — par base : {Object.entries(dig.bases).map(([base, n]) => `${DIG_BASE[base] ?? base} ${n}`).join(' · ')}</>}.
+            {dig.runs.length > 0 && <> Passages : {dig.runs.map((run) => `${run.startedAt.slice(11, 16)} ${run.status}${run.note ? ` (${run.note})` : ''}${run.errors ? ` · ${run.errors} erreur(s)` : ''}`).join(' ; ')}.</>}
+          </p>
+          <p style={S.hint}>
+            La file : {Object.keys(DIG_BASE).map((base) => {
+              const rows = dig.queue.filter((row) => row.base === base)
+              if (!rows.length) return null
+              return `${DIG_BASE[base]} ${rows.map((row) => `${row.n} ${DIG_STATE[row.state] ?? row.state}`).join(', ')}`
+            }).filter(Boolean).join(' · ')}.
+            {dig.countries.length > 0 && <> Personnes par pays : {dig.countries.map((row) => `${row.country} ${row.n}`).join(' · ')}.</>}
+          </p>
+          {dig.subjects.length > 0 && (
+            <table style={S.table}>
+              <thead><tr><th style={S.th}>Dernier sujet servi</th><th style={S.th}>Base</th><th style={S.th}>Notoriété</th><th style={S.th}>Passes</th><th style={S.th}>Entrées</th><th style={S.th}>Exemples</th></tr></thead>
+              <tbody>
+                {dig.subjects.map((subject) => (
+                  <tr key={subject.id}>
+                    <td style={S.td}>{subject.fr ?? subject.label}{subject.fr ? <span style={{ color: '#777' }}> · {subject.label}</span> : null}</td>
+                    <td style={S.td}>{DIG_BASE[subject.base] ?? subject.base}</td>
+                    <td style={S.td}>{DIG_FAME[subject.fame] ?? subject.fame}</td>
+                    <td style={S.td}>{subject.passes}</td>
+                    <td style={S.td}>{subject.ingested}</td>
+                    <td style={{ ...S.td, fontSize: 12, color: '#555' }}>{subject.sample.join(' · ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
 

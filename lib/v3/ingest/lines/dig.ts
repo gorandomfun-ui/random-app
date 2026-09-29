@@ -23,6 +23,7 @@ import { languageOf, levelOf } from '../../dig/levels'
 import { playable, searchDailymotion } from '../../dig/dailymotion'
 import { REGION_OF } from '../../dig/people'
 import { baseTickets, countryTurns, enqueue, installQueueIndexes, markDone, nextPass, PLAN, QUEUE, recordPass, rememberChannels, takeSubject, ticketOrder, type QueuedSubject } from '../../dig/queue'
+import { readThemes, themeSubject } from '../../dig/themes'
 import { queueTrends } from '../../dig/trends'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
@@ -50,7 +51,20 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 const sourceOf = (base: DigBase): SubjectSource => (base === 'keywords' ? 'combo' : base === 'trends' ? 'trend' : base === 'likes' ? 'like' : 'mainstream')
 
 function doorSubject(subject: QueuedSubject): DoorSubject {
-  return { id: subject._id, label: subject.label, aliases: subject.aliases, ownChannels: subject.ownChannels }
+  return { id: subject._id, label: subject.label, aliases: subject.aliases, ownChannels: subject.ownChannels, kind: subject.kind }
+}
+
+/**
+ * The theme list as the owner last saved it, taken at every run: a theme he
+ * added is queued, one he removed is paused, the others keep their passes.
+ */
+async function reloadThemes(ctx: LineContext): Promise<void> {
+  let themes: ReturnType<typeof readThemes>
+  try { themes = readThemes() } catch (error) { ctx.log(`thèmes : liste illisible, ${message(error)}`); return }
+  const subjects = themes.map(themeSubject)
+  const result = await enqueue(ctx.db, subjects)
+  const paused = await ctx.db.collection<QueuedSubject>(QUEUE).updateMany({ base: 'keywords', kind: 'topic', _id: { $nin: subjects.map((subject) => subject._id) }, state: { $ne: 'paused' } } as Document, { $set: { state: 'paused' } })
+  if (result.inserted || paused.modifiedCount) ctx.log(`thèmes : ${result.inserted} nouveaux, ${paused.modifiedCount} retirés de la liste`)
 }
 
 /** The subject's own channel: its title carries the subject's name, spaced or glued ("AvrilLavigneVEVO"). */
@@ -246,6 +260,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const runner: Runner = { ctx, key, http, counters, errors, served: [], youtubeStopped: !key, snowballed: 0, units: 0 }
   if (!key) ctx.log('youtube : pas de clé, seule Dailymotion sera lue')
   await installQueueIndexes(ctx.db).catch(() => undefined)
+
+  if (!ctx.dryRun) await reloadThemes(ctx).catch((error) => errors.push(`thèmes : ${message(error)}`))
 
   // The subjects of the day, once a day, before the tickets.
   const today = new Date().toISOString().slice(0, 10)

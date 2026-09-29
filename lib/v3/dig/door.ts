@@ -15,7 +15,7 @@
 import { normalize, containsAlias } from '../tagging/normalize'
 import type { DigPass } from '../types'
 
-export type DoorSubject = { id: string; label: string; aliases: string[]; ownChannels?: string[] }
+export type DoorSubject = { id: string; label: string; aliases: string[]; ownChannels?: string[]; kind?: 'entity' | 'topic' | 'channel' }
 
 export type DoorVideo = {
   videoId: string
@@ -49,19 +49,29 @@ export function isCelebrityNews(title: string): boolean {
   return CELEBRITY_NEWS.test(title)
 }
 
-/** Whether the text names the subject: any alias, whole words in Latin script; a hashtag glues the words ("#willsmith"). */
+/** An alias, its plural and its singular: "japanese ad" answers to "Weird Japanese Ads Compilation". */
+export function aliasForms(alias: string): string[] {
+  const base = normalize(alias)
+  if (!base || !/[a-z]$/.test(base)) return [base]
+  const forms = new Set([base, `${base}s`, `${base}es`])
+  if (base.endsWith('s')) forms.add(base.slice(0, -1))
+  if (base.endsWith('y')) forms.add(`${base.slice(0, -1)}ies`)
+  return [...forms]
+}
+
+/** Whether the text names the subject: any alias, whole words in Latin script, plural or not; a hashtag glues the words ("#willsmith"). */
 export function namesSubject(text: string, subject: Pick<DoorSubject, 'label' | 'aliases'>): boolean {
   return [subject.label, ...subject.aliases].some((alias) => {
     if (alias.length < 3) return false
-    if (containsAlias(text, alias)) return true
+    if (aliasForms(alias).some((form) => containsAlias(text, form))) return true
     const glued = normalize(alias).replace(/ /g, '')
     return glued.length >= 6 && glued !== normalize(alias) && containsAlias(text, glued)
   })
 }
 
-/** Where the subject must appear for a pass: the title, or the whole text around. */
+/** Where the subject must appear for a pass: the title, or the whole text around — and everywhere for a theme, whose words are ordinary. */
 export function namesSubjectFor(video: DoorVideo, subject: DoorSubject, pass: DigPass): boolean {
-  if (pass === 'around' || pass === 'channel') {
+  if (pass === 'around' || pass === 'channel' || subject.kind === 'topic') {
     const hashtags = (video.apiTags ?? []).join(' ')
     return namesSubject(`${video.title} ${video.description ?? ''} ${hashtags}`, subject)
   }

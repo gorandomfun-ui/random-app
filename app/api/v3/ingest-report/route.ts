@@ -34,6 +34,50 @@ async function freshReport(db: Db): Promise<{ day: string; total: number; counts
   const titles = new Map(rows.map((row) => [String(row._id), String(row.title ?? '')]))
   return { day: String(doc._id), total: Number(doc.total) || 0, counts: (doc.counts ?? {}) as Record<string, number>, first: ids.map((id) => titles.get(id) ?? '').filter(Boolean) }
 }
+export type DigReport = {
+  day: string
+  total: number
+  levels: Record<string, number>
+  bases: Record<string, number>
+  queue: Array<{ base: string; state: string; n: number }>
+  countries: Array<{ country: string; n: number }>
+  subjects: Array<{ id: string; label: string; fr?: string; base: string; fame: string; passes: number; ingested: number; lastRunAt?: string; sample: string[] }>
+  runs: Array<{ startedAt: string; status: string; note?: string; errors: number }>
+}
+
+/** The dig: what entered today by base and level, the last subjects served with a few titles, the queue by base and the people by country. */
+async function digReport(db: Db, now: number): Promise<DigReport> {
+  const day = dayKey(new Date(now))
+  const start = new Date(`${day}T00:00:00Z`)
+  const from = ObjectId.createFromTime(Math.floor(start.getTime() / 1000))
+  const entered = await db.collection('items').aggregate<{ _id: { base: string; level: number }; n: number }>([
+    { $match: { 'v3.line': 'dig', type: 'video', _id: { $gte: from } } },
+    { $group: { _id: { base: '$v3.dig.base', level: '$v3.dig.level' }, n: { $sum: 1 } } },
+  ], { hint: 'v3_line_type_rand', maxTimeMS: 8000 }).toArray()
+  const levels: Record<string, number> = {}
+  const bases: Record<string, number> = {}
+  let total = 0
+  for (const row of entered) {
+    total += row.n
+    levels[String(row._id.level)] = (levels[String(row._id.level)] ?? 0) + row.n
+    bases[String(row._id.base)] = (bases[String(row._id.base)] ?? 0) + row.n
+  }
+  const queue = (await db.collection('dig_subjects_v4').aggregate<{ _id: { base: string; state: string }; n: number }>([{ $group: { _id: { base: '$base', state: '$state' }, n: { $sum: 1 } } }], { maxTimeMS: 8000 }).toArray())
+    .map((row) => ({ base: String(row._id.base), state: String(row._id.state), n: row.n }))
+  const countries = (await db.collection('dig_subjects_v4').aggregate<{ _id: string; n: number }>([{ $match: { base: 'people', state: { $in: ['queued', 'running'] } } }, { $group: { _id: '$country', n: { $sum: 1 } } }, { $sort: { n: -1 } }], { maxTimeMS: 8000 }).toArray())
+    .map((row) => ({ country: String(row._id ?? '?'), n: row.n }))
+  const served = await db.collection('dig_subjects_v4').find({ lastRunAt: { $exists: true } }, { sort: { lastRunAt: -1 }, limit: 14, projection: { label: 1, base: 1, fame: 1, passes: 1, ingested: 1, lastRunAt: 1, 'source.fr': 1 }, maxTimeMS: 4000 }).toArray()
+  const subjects: DigReport['subjects'] = []
+  for (const subject of served) {
+    const rows = await db.collection('items').find({ 'v3.subjects.id': String(subject._id), type: 'video', 'v3.line': 'dig' }, { projection: { title: 1 }, sort: { rand: 1 }, limit: 3, hint: 'v3_subject_type_rand', maxTimeMS: 3000 }).toArray().catch(() => [])
+    const passes = Object.values((subject.passes ?? {}) as Record<string, unknown[]>).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0)
+    subjects.push({ id: String(subject._id), label: String(subject.label), ...(subject.source?.fr ? { fr: String(subject.source.fr) } : {}), base: String(subject.base), fame: String(subject.fame), passes, ingested: Number(subject.ingested) || 0, ...(subject.lastRunAt ? { lastRunAt: new Date(subject.lastRunAt).toISOString() } : {}), sample: rows.map((row) => String(row.title ?? '')).filter(Boolean) })
+  }
+  const runs = (await db.collection(RUNS).find({ line: 'dig', startedAt: { $gte: start } }, { sort: { startedAt: -1 }, limit: 6, projection: { startedAt: 1, status: 1, note: 1, errors: 1 }, maxTimeMS: 3000 }).toArray())
+    .map((run) => ({ startedAt: new Date(run.startedAt).toISOString(), status: String(run.status), ...(run.note ? { note: String(run.note) } : {}), errors: Array.isArray(run.errors) ? run.errors.length : 0 }))
+  return { day, total, levels, bases, queue, countries, subjects, runs }
+}
+
 /** The websites waiting for their preview, by source and outcome, and Google's free searches spent today. */
 async function webReport(db: Db): Promise<{ bySource: Record<string, Record<string, number>>; googleToday: number; googleCap: number }> {
   const rows = await db.collection(CANDIDATES).aggregate<{ _id: { source: string; status: string }; n: number }>(
@@ -204,11 +248,14 @@ export async function GET(request: Request) {
     const fresh = await freshReport(db).catch(() => null)
     // Websites: the ones waiting for the server's visit, and what the visits made of the others.
     const web = await webReport(db).catch(() => null)
+    // The dig: the four bases, one line — what entered today, the subjects served, the queue.
+    const dig = await digReport(db, now).catch(() => null)
 
     return NextResponse.json({
       miniSeries,
       fresh,
       web,
+      dig,
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,
