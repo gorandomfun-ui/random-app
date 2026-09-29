@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { ObjectId } from 'mongodb'
+
 import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v3/dig/angles'
 import { aliasForms, capMoments, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
+import { likeSubject, looksLikeName } from '../../lib/v3/dig/likes'
 import { COUNTRIES, fameOf, REGION_OF } from '../../lib/v3/dig/people'
 import { readThemes, themeSubject, validateTheme } from '../../lib/v3/dig/themes'
 import { isOwnChannel } from '../../lib/v3/ingest/lines/dig'
@@ -170,4 +173,19 @@ test('a theme answers to its plural and to its description: "Weird Japanese Ads 
   assert.ok(namesSubjectFor(video('Weird Japanese Ads Compilation'), theme, 'top'))
   assert.ok(namesSubjectFor(video('The strangest thing on TV', { description: 'a japanese commercial from 1987' }), theme, 'top'), 'a theme is read in the description on every pass')
   assert.ok(!namesSubjectFor(video('The strangest thing on TV', { description: 'a commercial from 1987' }), theme, 'top'))
+})
+
+test('the subject of a like, in the owner\'s words: a name is dug like a star, a theme gets its angles, the liked channel is read first', () => {
+  const item = { _id: new ObjectId(), channelId: 'UCamy', channelTitle: 'Amy Winehouse', lang: 'en', v3: { universe: 'music' as const } }
+  const name = likeSubject({ itemId: String(item._id), digSubject: { label: 'Amy Winehouse' } }, item)!
+  assert.equal(name._id, 'entity:amy-winehouse')
+  assert.equal(name.base, 'likes')
+  assert.equal(name.fame, 'star')
+  assert.deepEqual(name.channelsToRead, [{ id: 'UCamy', title: 'Amy Winehouse', hits: 5 }])
+  const theme = likeSubject({ itemId: 'x', digSubject: { label: 'pub tv 1994' } }, undefined)!
+  assert.equal(theme._id, 'topic:pub-tv-1994')
+  assert.equal(theme.kind, 'topic')
+  assert.equal(theme.angles?.length, 11)
+  assert.equal(likeSubject({ itemId: 'x', digSubject: { label: ' ' } }, undefined), null)
+  assert.ok(looksLikeName('Dr. Mike') && !looksLikeName('lieux abandonnés'))
 })

@@ -23,7 +23,9 @@ import { languageOf, levelOf } from '../../dig/levels'
 import { playable, searchDailymotion } from '../../dig/dailymotion'
 import { REGION_OF } from '../../dig/people'
 import { baseTickets, countryTurns, enqueue, installQueueIndexes, markDone, nextPass, PLAN, QUEUE, recordPass, rememberChannels, takeSubject, ticketOrder, type QueuedSubject } from '../../dig/queue'
+import { queueLikes } from '../../dig/likes'
 import { readThemes, themeSubject } from '../../dig/themes'
+import { curatorOwnerId } from '@/lib/discovery/curatorAuth'
 import { queueTrends } from '../../dig/trends'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
@@ -262,6 +264,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   await installQueueIndexes(ctx.db).catch(() => undefined)
 
   if (!ctx.dryRun) await reloadThemes(ctx).catch((error) => errors.push(`thèmes : ${message(error)}`))
+  if (!ctx.dryRun) await queueLikes(ctx.db, curatorOwnerId(), ctx.log).catch((error) => errors.push(`likes : ${message(error)}`))
 
   // The subjects of the day, once a day, before the tickets.
   const today = new Date().toISOString().slice(0, 10)
