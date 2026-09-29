@@ -14,7 +14,7 @@
 import type { Db, Document } from 'mongodb'
 
 import { candidateFromRow, type CatalogueRow } from './catalog'
-import { echoesSession, LONG_SECONDS } from './diversity'
+import { echoesSession } from './diversity'
 import { isTrailerTitle, themeAt, trailersSeenIn } from '../v3/cool/themes'
 import type { Universe } from '../v3/types'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
@@ -26,8 +26,7 @@ export type DrawBase = DigBase | 'random'
 export const DEFAULT_BASE_BAG: DrawBase[] = ['people', 'people', 'people', 'likes', 'likes', 'keywords', 'keywords', 'trends', 'trends', 'random']
 export const DEFAULT_LEVELS_COOL: DigLevel[] = [1, 1, 1, 2, 2, 2, 2, 3, 3, 4]
 export const DEFAULT_LEVELS_RANDOM: DigLevel[] = [1, 2, 2, 3, 3, 3, 3, 4, 4, 4]
-/** Long videos and trailers a session shows before the draw skips them: a couple, not a row (the owner, 28 September). */
-export const LONG_PER_SESSION = 2
+/** Trailers a session shows before the draw skips them: a couple, not a row (the owner, 28 September: past two, it is like watching ads). Length is no rule (29 September). */
 export const TRAILERS_PER_SESSION = 2
 
 /** Subjects tried for one draw, and rows read per subject and level. */
@@ -120,7 +119,6 @@ export async function selectDig<T>(db: Db, ticket: Intent, state: Session, decod
   const level = bagValue(state.seed, cool ? 'dig-level-cool' : 'dig-level-random', index, cool ? levelBag(process.env.RANDOM_DIG_DRAW_LEVELS_COOL, DEFAULT_LEVELS_COOL) : levelBag(process.env.RANDOM_DIG_DRAW_LEVELS_RANDOM, DEFAULT_LEVELS_RANDOM))
   const recent = (state.exposures ?? []).slice(-60)
   const seen = new Set(recent.flatMap((exposure) => (exposure.subject != null ? [exposure.subject] : [])))
-  const longFull = recent.slice(-40).filter((exposure) => exposure.long).length >= LONG_PER_SESSION
   const trailersFull = trailersSeenIn(recent) >= TRAILERS_PER_SESSION
   const card = themeAt(state.seed, state.visuals)
   const subjects = await pickSubjects(db, base, random, seen, card)
@@ -132,7 +130,6 @@ export async function selectDig<T>(db: Db, ticket: Intent, state: Session, decod
         if (payload == null) continue
         const candidate = candidateFromRow(row, payload, now)
         if (!hardEligible(candidate, ticket, state) || echoesSession(candidate, state.exposures)) continue
-        if (longFull && (candidate.seconds ?? 0) > LONG_SECONDS) continue
         if (trailersFull && isTrailerTitle(row.title)) continue
         const dig = (row.v3 as { dig?: { pass?: DigPass } } | undefined)?.dig
         return {

@@ -4,7 +4,7 @@ import test from 'node:test'
 import { ObjectId } from 'mongodb'
 
 import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v3/dig/angles'
-import { aliasForms, capMoments, isAddressOf, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
+import { aliasForms, capMoments, isAddressOf, isLetsPlay, isStillAlbum, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
 import { likeSubjects, looksLikeName, practiceTheme, wordsTheme } from '../../lib/v3/dig/likes'
@@ -77,6 +77,8 @@ test('the subject\'s door: two per channel (five for its own), no live, no news 
     video('Will Smith live now', { channelId: 'x', live: true }), video('Will Smith arrested after court trial', { channelId: 'y', viewCount: 50 }),
     video('Will Smith interview about Bad Boys', { channelId: 'a', viewCount: 5 }), video('Will Smith interview on Aladdin', { channelId: 'b', viewCount: 4 }), video('Will Smith interview in Paris', { channelId: 'c', viewCount: 3 }),
     video('Will Smith full movie', { channelId: 'z', seconds: 3 * 3600, viewCount: 1 }),
+    video('Will Smith - Miami (Lyrics)', { channelId: 'ly1', viewCount: 60 }), video('Will Smith - Switch (Official Audio)', { channelId: 'ly2', viewCount: 55 }),
+    video('Will Smith plays MINECRAFT survival ep 1', { channelId: 'g1', viewCount: 30 }), video('Will Smith Minecraft let\'s play part 2', { channelId: 'g2', viewCount: 29 }), video('Will Smith Minecraft SMP episode 3', { channelId: 'g3', viewCount: 28 }),
   ]
   const { kept, refused } = subjectDoor(rows, { ...will, ownChannels: ['own'] }, 'top')
   assert.equal(kept.filter((item) => item.channelId === 'fan').length, 2)
@@ -84,7 +86,9 @@ test('the subject\'s door: two per channel (five for its own), no live, no news 
   assert.equal(refused['direct'], 1)
   assert.equal(refused['actu people'], 1)
   assert.equal(refused['interview en trop'], 1)
-  assert.equal(refused['plus de deux heures'], 1)
+  assert.equal(refused['plus de deux heures'], undefined, 'length is no rule: the three-hour film enters')
+  assert.equal(refused['album sans image'], 1, 'one still album per pass')
+  assert.equal(refused["let's play en série"], 1, 'two let\'s plays per pass')
   assert.ok(isCelebrityNews('Que devient Amy Winehouse ?'))
   assert.ok(!isCelebrityNews('Amy Winehouse - Rehab live'))
 })
@@ -205,4 +209,14 @@ test('a street named after the subject is not the subject', () => {
   assert.ok(!isAddressOf('Discours de Robert Schuman, 9 mai 1950', schuman))
   const { refused } = subjectDoor([video('Siticash: 26 Bd Robert Schuman, 93 Livry Gargan', { viewCount: 5 })], { id: 'entity:robert-schuman', ...schuman }, 'top')
   assert.equal(refused['adresse'], 1)
+})
+
+test('a still album and a let\'s play are told by their words, not their length', () => {
+  assert.ok(isStillAlbum({ title: 'Panchiko - D>E>A>T>H>M>E>T>A>L', channelTitle: 'Panchiko - Topic' }))
+  assert.ok(isStillAlbum({ title: 'Alina Eremia - Nonstop | Official Visualizer', channelTitle: 'Alina' }))
+  assert.ok(!isStillAlbum({ title: 'Amy Winehouse - Rehab (Live at Glastonbury 2007)', channelTitle: 'Amy' }))
+  assert.ok(isLetsPlay('ICH spiele MINECRAFT zum ERSTEN MAL! | Mohi Plays gameplay'))
+  assert.ok(isLetsPlay('BIRTH TO DEATH of ELEMENTAL VILLAGER in Minecraft 100 days'))
+  assert.ok(!isLetsPlay('The Sift (4th) Dimension, in Minecraft.'), 'a Minecraft video is not a series')
+  assert.ok(!isLetsPlay('The Second World War in colour, part 3'), 'a documentary in parts is not a game')
 })

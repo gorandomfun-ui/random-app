@@ -9,7 +9,8 @@
  *   - at most two per channel, five for the subject's own channel;
  *   - one moment at most three times (the slap), the most watched copies;
  *   - twins keep the most watched (two Will Smiths in clay);
- *   - at most two interviews, no celebrity news, no live, nothing over two hours.
+ *   - at most two interviews, no celebrity news, no live; one still album and
+ *     two let's plays per pass, whatever their length.
  */
 
 import { normalize, containsAlias } from '../tagging/normalize'
@@ -23,6 +24,7 @@ export type DoorVideo = {
   description?: string
   apiTags?: string[]
   channelId?: string
+  channelTitle?: string
   viewCount?: number
   seconds?: number
   live?: boolean
@@ -34,7 +36,26 @@ export const MAX_PER_CHANNEL = 2
 export const MAX_PER_OWN_CHANNEL = 5
 export const MAX_PER_MOMENT = 3
 export const MAX_INTERVIEWS = 2
-export const MAX_SECONDS = 2 * 3600
+/**
+ * Proportions, not exclusions (the owner, 29 September: a one-hour documentary
+ * is welcome; an album with a still cover, or Minecraft by the fifty, is not):
+ * one still album and two let's plays per pass, whatever their length.
+ */
+export const MAX_STILL_ALBUMS = 1
+export const MAX_LETS_PLAYS = 2
+
+const STILL_ALBUM = /\b(?:lyrics?|lyric video|letra|paroles|official audio|audio oficial|visuali[sz]er|full album|album completo|mixtape|playlist|slowed|reverb|sped up|nightcore|8d audio)\b|\((?:audio|lyrics?)\)|\[(?:audio|lyrics?)\]/i
+const LETS_PLAY = /\b(?:let'?s play|lets play|gameplay|playthrough|walkthrough|speedrun|longplay|full game|episode \d+|ep\.? ?\d+|part \d+|#\d+)\b.*\b(?:minecraft|roblox|fortnite|gta|fifa|fc ?2\d|valorant|among us|call of duty|warzone|apex|pubg|free fire|brawl stars|clash|genshin|pokemon|pokémon|zelda|mario|sims|ark|rust|terraria|stardew)\b|\b(?:minecraft|roblox|fortnite|gta ?[56]?|fifa|fc ?2\d|valorant|among us|warzone|free fire|brawl stars)\b.*\b(?:let'?s play|lets play|gameplay|playthrough|walkthrough|speedrun|longplay|full game|episode \d+|ep\.? ?\d+|part \d+|#\d+|smp|survie|survival|hardcore|modded|mods?|challenge|1 ?h|100 days|jours)\b/i
+
+/** An album or a track with a still cover: a "- Topic" channel, or the words of the audio-only. */
+export function isStillAlbum(video: Pick<DoorVideo, 'title' | 'channelTitle'>): boolean {
+  return / - Topic$/.test(video.channelTitle ?? '') || STILL_ALBUM.test(video.title)
+}
+
+/** A let's play of the usual games: the series, the episodes, the hundred days. */
+export function isLetsPlay(title: string): boolean {
+  return LETS_PLAY.test(title)
+}
 
 const INTERVIEW = /\b(interview|entrevista|entretien|intervista|podcast|talk show|q ?& ?a|press conference|conférence de presse|conferencia de prensa|in conversation)\b/i
 /** The owner keeps the weird moments, not the news desk: death, court, divorce, "what happened to". */
@@ -163,14 +184,23 @@ export function subjectDoor<T extends DoorVideo>(videos: T[], subject: DoorSubje
   const own = new Set(subject.ownChannels ?? [])
   const perChannel = new Map<string, number>()
   let interviews = 0
+  let stillAlbums = 0
+  let letsPlays = 0
   const first: T[] = []
   for (const video of [...videos].sort((left, right) => (right.viewCount ?? 0) - (left.viewCount ?? 0))) {
     if (!video.title) { refuse('sans titre'); continue }
     if (requireName && !namesSubjectFor(video, subject, pass)) { refuse('ne parle pas du sujet'); continue }
     if (video.live) { refuse('direct'); continue }
     if (isAddressOf(video.title, subject)) { refuse('adresse'); continue }
-    if ((video.seconds ?? 0) > MAX_SECONDS) { refuse('plus de deux heures'); continue }
     if (isCelebrityNews(video.title)) { refuse('actu people'); continue }
+    if (isStillAlbum(video)) {
+      if (stillAlbums >= MAX_STILL_ALBUMS) { refuse('album sans image'); continue }
+      stillAlbums += 1
+    }
+    if (isLetsPlay(video.title)) {
+      if (letsPlays >= MAX_LETS_PLAYS) { refuse("let's play en série"); continue }
+      letsPlays += 1
+    }
     if (isInterview(video.title)) {
       if (interviews >= MAX_INTERVIEWS) { refuse('interview en trop'); continue }
       interviews += 1

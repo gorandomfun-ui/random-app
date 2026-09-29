@@ -101,26 +101,3 @@ test('the pure random ticket and the texts leave the draw to the older paths', a
   const row = video('x', 'entity:x', 1, 'X', 0.1)
   assert.equal(candidateFromRow(row, row, Date.now()).digSubject, 'entity:x')
 })
-
-test('a session shows a couple of long videos, then the draw skips them', async () => {
-  process.env.RANDOM_DIG_DRAW_BASES = 'people:1'
-  process.env.RANDOM_DIG_DRAW_LEVELS_COOL = '1:1'
-  process.env.RANDOM_DIG_DRAW_LEVELS_RANDOM = '1:1'
-  try {
-    const long = { ...video('l1', 'entity:camus', 1, 'Albert Camus, une vie (documentaire)', 0.2), duration: 'PT58M' }
-    const short = { ...video('s1', 'entity:camus', 1, 'Albert Camus en 1957', 0.6), duration: 'PT2M' }
-    const db = twoCollections([{ _id: 'entity:camus', label: 'Albert Camus', base: 'people', ingested: 2, rand: 0.5 }], [long, short])
-    const fresh = newSession(11)
-    const stamp = exposureOf(candidateFromRow(long, long, Date.now()))!
-    assert.equal(stamp.long, true)
-    // Two long videos of other subjects already shown: Camus is still new to the session.
-    const seenTwoLong: typeof fresh = { ...fresh, exposures: [{ ...stamp, subject: 1, content: 1, terms: [1, 2] }, { ...stamp, subject: 2, content: 2, terms: [3, 4] }] as Exposure[] }
-    const drawn = await selectDig(db, planDraw(seenTwoLong, 'video'), seenTwoLong, (row) => row, () => 0.1, Date.now())
-    assert.ok(drawn)
-    assert.equal(drawn.item.key.includes('s1'), true, 'the short one, the long ones being served already')
-  } finally {
-    delete process.env.RANDOM_DIG_DRAW_BASES
-    delete process.env.RANDOM_DIG_DRAW_LEVELS_COOL
-    delete process.env.RANDOM_DIG_DRAW_LEVELS_RANDOM
-  }
-})
