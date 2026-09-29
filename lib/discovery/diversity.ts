@@ -6,7 +6,10 @@ export type Exposure = {
   type: 'video' | 'image'; family: string; practices: string[]; terms: number[]
   pattern?: string; publicationYear?: number; author?: number; series?: number; subject?: number
   content?: number; metadata?: string
+  /** A video over fifteen minutes: a session shows a couple, not a row of them. */
+  long?: boolean
 }
+export const LONG_SECONDS = 15 * 60
 export const EXPOSURE_LIMIT = 100
 export function exposureOf(candidate: Candidate): Exposure | null {
   if (!isVisual(candidate.type)) return null
@@ -20,6 +23,7 @@ export function exposureOf(candidate: Candidate): Exposure | null {
     terms: [...new Set((candidate.profile.titleTokens ?? []).slice(0, 12).map(hash))],
     ...(candidate.profile.pattern ? { pattern: candidate.profile.pattern } : {}),
     ...(candidate.digSubject ? { subject: hash(candidate.digSubject) } : candidate.profile.subject?.primary ? { subject: hash(candidate.profile.subject.primary.key) } : {}),
+    ...((candidate.seconds ?? 0) > LONG_SECONDS ? { long: true } : {}),
     ...(year != null && Number.isFinite(year) ? { publicationYear: year } : {}),
     ...(candidate.authorKey ? { author: hash(candidate.authorKey) } : {}),
     ...(candidate.seriesKey ? { series: hash(candidate.seriesKey) } : {}),

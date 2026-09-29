@@ -5,6 +5,7 @@ import type { Candidate, Format, Profile } from './types'
 import { isOrdinaryRoutineVideo } from '../random/videoEditorial'
 import { SUBJECT_VERSION } from './subjects'
 import { sourceRevision } from './sourceRevision'
+import { isoSeconds } from '../v3/dig/youtube'
 
 export type CatalogueRow = Record<string, unknown> & { _id?: unknown; type?: string }
 const text = (x: unknown): string | undefined => typeof x === 'string' && x.trim() ? x : undefined
@@ -78,6 +79,7 @@ export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number):
   return { key: canonicalMediaKey(row), type: row.type as Format, provider, payload,
     profile: profileFromRow(row), authorKey: channel ? `${provider === 'reddit-youtube' ? 'youtube' : provider}:${channel}` : undefined,
     ...(typeof (row.v3 as { dig?: { subjectId?: unknown } } | undefined)?.dig?.subjectId === 'string' ? { digSubject: (row.v3 as { dig: { subjectId: string } }).dig.subjectId } : {}),
+    ...(typeof row.duration === 'string' && isoSeconds(row.duration) > 0 ? { seconds: isoSeconds(row.duration) } : {}),
     seriesKey: text(row.verifiedSeriesKey), duplicateKey: text(row.verifiedDuplicateKey),
     stock: isStockProvider(provider, text(row.url)), routineEditorial, quiz: row.type === 'fact' && row.variant === 'quiz',
     available: row.obsoleteVideoStatus !== 'obsolete' && (until == null || until <= now) &&

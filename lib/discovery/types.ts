@@ -48,6 +48,8 @@ export type Candidate<T = unknown> = {
   authorKey?: string
   /** The subject the dig searched when it found the content: what a session must not show twice. */
   digSubject?: string
+  /** The video's length, when the catalogue knows it. */
+  seconds?: number
   /** Only populate from an actual series identifier, not a shared adjective. */
   seriesKey?: string
   duplicateKey?: string

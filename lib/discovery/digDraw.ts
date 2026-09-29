@@ -14,7 +14,9 @@
 import type { Db, Document } from 'mongodb'
 
 import { candidateFromRow, type CatalogueRow } from './catalog'
-import { echoesSession } from './diversity'
+import { echoesSession, LONG_SECONDS } from './diversity'
+import { isTrailerTitle, themeAt, trailersSeenIn } from '../v3/cool/themes'
+import type { Universe } from '../v3/types'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
 import { bagValue, hash, type Rng } from './random'
 import { QUEUE, type QueuedSubject } from '../v3/dig/queue'
@@ -24,6 +26,10 @@ export type DrawBase = DigBase | 'random'
 export const DEFAULT_BASE_BAG: DrawBase[] = ['people', 'people', 'people', 'likes', 'likes', 'keywords', 'keywords', 'trends', 'trends', 'random']
 export const DEFAULT_LEVELS_COOL: DigLevel[] = [1, 1, 1, 2, 2, 2, 2, 3, 3, 4]
 export const DEFAULT_LEVELS_RANDOM: DigLevel[] = [1, 2, 2, 3, 3, 3, 3, 4, 4, 4]
+/** Long videos and trailers a session shows before the draw skips them: a couple, not a row (the owner, 28 September). */
+export const LONG_PER_SESSION = 2
+export const TRAILERS_PER_SESSION = 2
+
 /** Subjects tried for one draw, and rows read per subject and level. */
 const SUBJECTS_PER_DRAW = 4
 const ROWS_PER_SEEK = 8
@@ -63,18 +69,30 @@ export function levelsAround(level: DigLevel): Array<DigLevel | null> {
   return [level, ...others, null]
 }
 
-export type DigChoice = { subjectId: string; label: string; base: DrawBase; level: DigLevel | null; pass?: DigPass; asked: { base: DrawBase; level: DigLevel } }
+export type DigChoice = { subjectId: string; label: string; base: DrawBase; level: DigLevel | null; pass?: DigPass; universe?: Universe; asked: { base: DrawBase; level: DigLevel; universe: Universe } }
 export type DigResult<T> = PoolResult<T> & { dig: DigChoice }
 type Decoder<T> = (row: CatalogueRow) => T | null
 
-/** Subjects of a base with something to show, from a random point of their keys, the session's own left out. */
-async function pickSubjects(db: Db, base: DigBase, random: Rng, seen: Set<number>): Promise<QueuedSubject[]> {
+/**
+ * Subjects of a base with something to show, from a random point of their
+ * keys, the session's own left out. The universe card of this visual comes
+ * first (the deck's one good idea: a session that goes sport, history,
+ * music, comedy), any universe when the base has none of it.
+ */
+async function pickSubjects(db: Db, base: DigBase, random: Rng, seen: Set<number>, universe?: Universe): Promise<QueuedSubject[]> {
   const queue = db.collection<QueuedSubject>(QUEUE)
   const point = random()
-  const read = async (filter: Document) => queue.find({ base, ingested: { $gt: 0 }, ...filter } as Document, { sort: { rand: 1 }, limit: SUBJECTS_PER_DRAW * 2, projection: { label: 1, base: 1 }, hint: 'queue_draw', maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const read = async (filter: Document) => queue.find({ base, ingested: { $gt: 0 }, ...filter } as Document, { sort: { rand: 1 }, limit: SUBJECTS_PER_DRAW * 2, projection: { label: 1, base: 1, universe: 1 }, hint: 'queue_draw', maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const fresh = (rows: QueuedSubject[]) => rows.filter((row) => !seen.has(hash(String(row._id))))
+  if (universe) {
+    let carded = await read({ universe, rand: { $gte: point } })
+    if (carded.length < 2) carded = [...carded, ...await read({ universe, rand: { $lt: point } })]
+    const usable = fresh(carded)
+    if (usable.length) return usable.slice(0, SUBJECTS_PER_DRAW)
+  }
   let rows = await read({ rand: { $gte: point } })
   if (rows.length < SUBJECTS_PER_DRAW) rows = [...rows, ...await read({ rand: { $lt: point } })]
-  return rows.filter((row) => !seen.has(hash(String(row._id)))).slice(0, SUBJECTS_PER_DRAW)
+  return fresh(rows).slice(0, SUBJECTS_PER_DRAW)
 }
 
 /** A few videos of a subject at a level, from a random point; the level left out reads any of its videos. */
@@ -100,8 +118,12 @@ export async function selectDig<T>(db: Db, ticket: Intent, state: Session, decod
   if (base === 'random') return null
   const cool = ticket.mode === 'cool'
   const level = bagValue(state.seed, cool ? 'dig-level-cool' : 'dig-level-random', index, cool ? levelBag(process.env.RANDOM_DIG_DRAW_LEVELS_COOL, DEFAULT_LEVELS_COOL) : levelBag(process.env.RANDOM_DIG_DRAW_LEVELS_RANDOM, DEFAULT_LEVELS_RANDOM))
-  const seen = new Set((state.exposures ?? []).slice(-60).flatMap((exposure) => (exposure.subject != null ? [exposure.subject] : [])))
-  const subjects = await pickSubjects(db, base, random, seen)
+  const recent = (state.exposures ?? []).slice(-60)
+  const seen = new Set(recent.flatMap((exposure) => (exposure.subject != null ? [exposure.subject] : [])))
+  const longFull = recent.slice(-40).filter((exposure) => exposure.long).length >= LONG_PER_SESSION
+  const trailersFull = trailersSeenIn(recent) >= TRAILERS_PER_SESSION
+  const card = themeAt(state.seed, state.visuals)
+  const subjects = await pickSubjects(db, base, random, seen, card)
   for (const subject of subjects) {
     for (const tryLevel of levelsAround(level)) {
       const rows = await seekRows(db, String(subject._id), tryLevel, random)
@@ -110,11 +132,13 @@ export async function selectDig<T>(db: Db, ticket: Intent, state: Session, decod
         if (payload == null) continue
         const candidate = candidateFromRow(row, payload, now)
         if (!hardEligible(candidate, ticket, state) || echoesSession(candidate, state.exposures)) continue
+        if (longFull && (candidate.seconds ?? 0) > LONG_SECONDS) continue
+        if (trailersFull && isTrailerTitle(row.title)) continue
         const dig = (row.v3 as { dig?: { pass?: DigPass } } | undefined)?.dig
         return {
           item: candidate, branch: base === 'likes' ? 'editorial' : 'autonomous', fallback: tryLevel !== level,
           selection: { requestedLane: ticket.lane, servedLane: 'any', reasons: ['dig'] },
-          dig: { subjectId: String(subject._id), label: String(subject.label), base, level: tryLevel, ...(dig?.pass ? { pass: dig.pass } : {}), asked: { base, level } },
+          dig: { subjectId: String(subject._id), label: String(subject.label), base, level: tryLevel, ...(dig?.pass ? { pass: dig.pass } : {}), ...(subject.universe ? { universe: subject.universe } : {}), asked: { base, level, universe: card } },
         }
       }
     }

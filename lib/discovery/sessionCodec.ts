@@ -30,6 +30,7 @@ export function parseSession(value: unknown): Session | null {
         !Array.isArray(entry.terms) || entry.terms.length > 12 ||
         entry.terms.some(x => !Number.isSafeInteger(x) || x < 0 || x > 0xffffffff)) return null
       if (entry.pattern != null && (typeof entry.pattern !== 'string' || entry.pattern.length > 80)) return null
+      if (entry.long != null && typeof entry.long !== 'boolean') return null
       if (entry.publicationYear != null && (!Number.isSafeInteger(entry.publicationYear) ||
         Number(entry.publicationYear) < 1800 || Number(entry.publicationYear) > 2200)) return null
       if (entry.metadata != null && (typeof entry.metadata !== 'string' || !/^\d{1,10}:\d{1,10}$/.test(entry.metadata))) return null
