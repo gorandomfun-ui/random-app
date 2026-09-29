@@ -7,6 +7,7 @@ import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
 import { COUNTRIES, fameOf, REGION_OF } from '../../lib/v3/dig/people'
 import { readThemes, themeSubject, validateTheme } from '../../lib/v3/dig/themes'
+import { isOwnChannel } from '../../lib/v3/ingest/lines/dig'
 import { withDig } from '../../lib/v3/tagging/atInsert'
 import type { ItemTags } from '../../lib/v3/types'
 
@@ -153,4 +154,11 @@ test('what the dig found is about what it searched: the subject first, the line 
 test('every country the dig knows sits in a region, and the world has at least six of them', () => {
   for (const code of Object.keys(COUNTRIES)) assert.ok(REGION_OF[code], `${code} has a region`)
   assert.ok(new Set(Object.values(REGION_OF)).size >= 6)
+})
+
+test('the subject\'s own channel is known spaced or glued: AvrilLavigneVEVO is Avril Lavigne', () => {
+  const avril = { label: 'Avril Lavigne', aliases: [] }
+  assert.ok(isOwnChannel(avril, 'AvrilLavigneVEVO'))
+  assert.ok(isOwnChannel(avril, 'Avril Lavigne'))
+  assert.ok(!isOwnChannel(avril, 'Lavigne Fan Club'))
 })

@@ -12,7 +12,7 @@
  * subject's door (names it, two per channel, one moment three times, twins,
  * interviews, news) stand in front.
  *
- * Written in the runner's form: `run(ctx)`, nothing else exported.
+ * Written in the runner's form: `run(ctx)`; `isOwnChannel` is exported for its test.
  */
 
 import type { Document } from 'mongodb'
@@ -53,11 +53,15 @@ function doorSubject(subject: QueuedSubject): DoorSubject {
   return { id: subject._id, label: subject.label, aliases: subject.aliases, ownChannels: subject.ownChannels }
 }
 
-/** The subject's own channel: its title carries the subject's name. */
-function isOwnChannel(subject: QueuedSubject, channelTitle: string | undefined): boolean {
+/** The subject's own channel: its title carries the subject's name, spaced or glued ("AvrilLavigneVEVO"). */
+export function isOwnChannel(subject: Pick<QueuedSubject, 'label' | 'aliases'>, channelTitle: string | undefined): boolean {
   if (!channelTitle) return false
   const title = normalize(channelTitle)
-  return [subject.label, ...subject.aliases].some((alias) => alias.length >= 4 && title.includes(normalize(alias)))
+  const glued = title.replace(/ /g, '')
+  return [subject.label, ...subject.aliases].some((alias) => {
+    const name = normalize(alias)
+    return name.length >= 4 && (title.includes(name) || glued.includes(name.replace(/ /g, '')))
+  })
 }
 
 /** The subject in the dictionary the tagger and the Wave read, once per run. */
