@@ -12,7 +12,7 @@ for dropins in /opt/random-app/server/units/*.d; do
 done
 mkdir -p /home/random/locks && chown random:random /home/random/locks
 systemctl daemon-reload
-for timer in random-line@daily-auto-morning random-line@daily-auto-evening random-line@video-enrich random-line@trend-subjects random-line@web-embed random-line@like-pool random-line@pools random-line@feeds random-line@authors random-line@music-live random-line@fresh random-line@web-previews random-status; do
+for timer in random-line@daily-auto-morning random-line@daily-auto-evening random-line@video-enrich random-line@trend-subjects random-line@web-embed random-line@like-pool random-line@pools random-line@feeds random-line@authors random-line@music-live random-line@fresh random-line@web-previews random-line@dig random-status; do
   systemctl enable --now "${timer}.timer"
 done
 systemctl list-timers 'random-*' --no-pager
