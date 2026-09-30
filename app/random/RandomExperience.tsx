@@ -76,7 +76,7 @@ import {
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
 import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
-import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, saveFlow, withTicket, type FlowState } from '@/lib/games/flow'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, levelWon, loadFlow, newGame, offered, resumable, saveFlow, withTicket, type FlowState, type Run } from '@/lib/games/flow'
 import { formatI18n as formatArcade } from '@/lib/i18n/format'
 import type { GameName } from '@/lib/games/scores'
 import type { Decision } from '@/components/games/ArcadeStage'
@@ -97,6 +97,9 @@ const Encourage3DOverlay = dynamic(() => import('@/components/encourage3d/Encour
 const GAMES_ON = process.env.NEXT_PUBLIC_GAMES_ENABLED === '1'
 const ArcadeStage = dynamic(() => import('@/components/games/ArcadeStage'), { ssr: false })
 const ScoresPanel = dynamic(() => import('@/components/games/ScoresPanel'), { ssr: false })
+
+/** A game's signed ticket for the world's table, when the server gave one. */
+const ticketOf = (run: Run | undefined): Ticket | null => (run?.token && run.runId && run.startedAt ? { runId: run.runId, token: run.token, startedAt: run.startedAt } : null)
 const PixelWords = dynamic(() => import('@/components/games/PixelWords'), { ssr: false })
 const ArcadeBench = dynamic(() => import('@/components/games/ArcadeBench'), { ssr: false })
 const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
@@ -2758,7 +2761,8 @@ export function RandomExperience({
   const heldEntryRef = useRef<{ entry: PreparedRandomEntry; reward: boolean; advance: boolean } | null>(null)
   const arcadeDueRef = useRef<((entry: PreparedRandomEntry, reward: boolean, advance: boolean) => boolean) | null>(null)
   const forcedGameRef = useRef<GameName | null>(null)
-  const [arcade, setArcade] = useState<{ game: GameName; round: Round; id: number } | null>(null)
+  /** `resume`: a game under way from another visit, offered to take up again or start anew. */
+  const [arcade, setArcade] = useState<{ game: GameName; round: Round; id: number; resume: { level: number; score: number } | null } | null>(null)
   const arcadeShown = arcade != null
   const [arcadePlay, setArcadePlay] = useState<PlayState>('idle')
   const [arcadeFull, setArcadeFull] = useState(false)
@@ -2771,6 +2775,16 @@ export function RandomExperience({
   const [flowView, setFlowView] = useState<FlowState | null>(null)
   const arcadeStageRef = useRef<'offer' | 'play' | 'ended'>('offer')
   const arcadePendingRef = useRef<{ game: GameName; score: number; level: number; won: boolean; ticket: Ticket | null; runId?: string } | null>(null)
+  /** The name in the field of a high score at a game's end, so RANDOM AGAIN keeps it too; null when the score does not make the ten. */
+  const arcadeNameRef = useRef<string | null>(null)
+  /** This visit, written on the game played in it: another visit asks RESUME or NEW GAME. From crypto, never the page's Math.random. */
+  const visitIdRef = useRef('')
+  const visitId = useCallback(() => {
+    if (!visitIdRef.current) {
+      try { const a = new Uint32Array(2); crypto.getRandomValues(a); visitIdRef.current = `${a[0].toString(36)}${a[1].toString(36)}` } catch { visitIdRef.current = `${Date.now().toString(36)}${Math.round(performance.now()).toString(36)}` }
+    }
+    return visitIdRef.current
+  }, [])
   const arcadeTicketPendingRef = useRef(false)
   const arcadeControl = useRef<GameControl>({}).current
   useEffect(() => {
@@ -4562,12 +4576,14 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     writeFlow(offered(flow, now))
     heldEntryRef.current = { entry, reward, advance }
     const run = flow.runs[game] ?? { level: 1, score: 0 }
+    const resume = resumable(flow, game, visitId())
     arcadeStageRef.current = 'offer'
     arcadePendingRef.current = null
+    arcadeNameRef.current = null
     void import('@/lib/games/scores').then(({ bestScore }) => setArcadeBest(bestScore(game)))
     setArcadePlay('idle')
     // no page glitch here: it draws from the page's random, which the format cycle draws from too; the game comes in with its own
-    setArcade({ game, round: { level: run.level, score: run.score, retries: FLOW.retries }, id: now })
+    setArcade({ game, round: { level: run.level, score: run.score, retries: FLOW.retries }, id: now, resume: resume ? { level: resume.level, score: resume.score } : null })
     return true
   }
 
@@ -4588,7 +4604,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const game = arcade?.game
     if (!game || !flowRef.current) return
     arcadeStageRef.current = 'play'
-    writeFlow(accepted(flowRef.current, game).state)
+    writeFlow(accepted(flowRef.current, game, visitId()).state)
     // the game's ticket for the world's table, once per game
     if (!flowRef.current.runs[game]?.token && !arcadeTicketPendingRef.current) {
       arcadeTicketPendingRef.current = true
@@ -4597,50 +4613,66 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (ticket && flowRef.current) writeFlow(withTicket(flowRef.current, game, ticket))
       }).catch(() => { arcadeTicketPendingRef.current = false })
     }
-  }, [arcade, writeFlow])
+  }, [arcade, visitId, writeFlow])
 
   /** No thanks (RANDOM on the offer): the refusal was counted when the offer showed. */
   const arcadeDeclined = useCallback(() => {
     closeArcade()
   }, [closeArcade])
 
-  /** A round decided: the game's place in the flow, the site's points (one a level, five more for all sixteen). */
+  /** A finished game's score into this device's ten best and the world's table, under the name given. */
+  const recordScore = useCallback((score: { game: GameName; name: string; score: number; level: number; won: boolean; ticket: Ticket | null; runId?: string }) => {
+    void import('@/lib/games/scores').then(({ addScore }) => {
+      addScore(score.game, { name: score.name, score: score.score, level: score.level, runId: score.ticket ? score.runId : undefined })
+      if (score.ticket) void import('@/components/games/world').then(({ sendScore }) => sendScore(score.game, score.ticket!, { name: score.name, score: score.score, level: score.level, won: score.won }))
+    })
+  }, [])
+
+  /**
+   * A round decided: the game's place in the flow and the site's points (one a
+   * level, five more for all sixteen). GAME OVER and WINNER end the game: its
+   * score waits for the name, if it makes the ten.
+   */
   const arcadeDecided = useCallback((decision: Decision) => {
     const game = arcade?.game
     if (!game || !flowRef.current) return
     arcadeStageRef.current = 'ended'
     const run = flowRef.current.runs[game]
+    arcadePendingRef.current = decision.kind === 'winner' || decision.kind === 'lost'
+      ? { game, score: decision.score, level: decision.level, won: decision.kind === 'winner', ticket: ticketOf(run), runId: run?.runId }
+      : null
     if (decision.kind === 'won' || decision.kind === 'winner') {
-      const ticket = run?.token && run.runId && run.startedAt ? { runId: run.runId, token: run.token, startedAt: run.startedAt } : null
-      arcadePendingRef.current = { game, score: decision.score, level: decision.level, won: decision.kind === 'winner', ticket, runId: run?.runId }
       writeFlow(levelWon(flowRef.current, game, decision.score))
       addPoints(decision.kind === 'winner' ? 6 : 1)
-    } else {
-      arcadePendingRef.current = null
-      writeFlow(levelLost(flowRef.current, game))
-    }
+    } else if (decision.kind === 'lost') writeFlow(gameOver(flowRef.current, game))
+    else writeFlow(levelLeft(flowRef.current, game))
   }, [arcade, addPoints, writeFlow])
 
-  /** Back to the randoms after a round: its score into this device's ten best and the world's table, under the name given. */
-  const arcadeContinue = useCallback((typed: string | null) => {
+  /** Back to the randoms after a round: a finished game's score recorded when a name came with it (it made the ten). */
+  const arcadeContinue = useCallback((name: string | null) => {
     const pending = arcadePendingRef.current
     arcadePendingRef.current = null
-    if (pending) {
-      void import('@/lib/games/scores').then(({ addScore, lastName }) => {
-        const name = typed || lastName() || 'PLAYER'
-        addScore(pending.game, { name, score: pending.score, level: pending.level, runId: pending.runId })
-        if (pending.ticket) void import('@/components/games/world').then(({ sendScore }) => sendScore(pending.game, pending.ticket!, { name, score: pending.score, level: pending.level, won: pending.won }))
-      })
-    }
+    arcadeNameRef.current = null
+    if (pending && name) recordScore({ ...pending, name })
     closeArcade()
-  }, [closeArcade])
+  }, [closeArcade, recordScore])
 
-  /** RANDOM pressed while a game is up: no thanks on the offer, leaving mid-level counts as a level lost, after a round it is the way back. */
+  /** NEW GAME instead of the game under way: that one ends (its score recorded when a name came with it), the round starts again from level 1. */
+  const arcadeNewGame = useCallback((name: string | null) => {
+    const game = arcade?.game
+    if (!game || !flowRef.current) return
+    const run = flowRef.current.runs[game]
+    if (name && run) recordScore({ game, name, score: run.score, level: run.level, won: false, ticket: ticketOf(run), runId: run.runId })
+    writeFlow(newGame(flowRef.current, game))
+    setArcade((current) => (current ? { ...current, round: { level: 1, score: 0, retries: FLOW.retries }, resume: null } : current))
+  }, [arcade, recordScore, writeFlow])
+
+  /** RANDOM pressed while a game is up: no thanks on the offer; mid-level, the game waits at that level; after a round, the way back (a high score kept under the name in its field). */
   const arcadeLeave = useCallback(() => {
     const stage = arcadeStageRef.current
     if (stage === 'offer') { arcadeDeclined(); return }
-    if (stage === 'play' && arcade && flowRef.current) { writeFlow(levelLost(flowRef.current, arcade.game)); closeArcade(); return }
-    arcadeContinue(null)
+    if (stage === 'play' && arcade && flowRef.current) { writeFlow(levelLeft(flowRef.current, arcade.game)); closeArcade(); return }
+    arcadeContinue(arcadeNameRef.current)
   }, [arcade, arcadeContinue, arcadeDeclined, closeArcade, writeFlow])
 
   const shareArcade = useCallback(async () => {
@@ -5478,6 +5510,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               onDeclined={arcadeDeclined}
               onDecided={arcadeDecided}
               onContinue={arcadeContinue}
+              resume={arcade.resume}
+              onNewGame={arcadeNewGame}
+              onName={(name) => { arcadeNameRef.current = name }}
               onCard={(file, url) => setArcadeCard({ file, url })}
               onFull={setArcadeFull}
             />
@@ -5586,7 +5621,6 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           game={arcade.game}
           theme={theme}
           onClose={() => setArcadeScoresOpen(false)}
-          mine={Object.values(flowView?.runs ?? {}).map((run) => run?.runId).filter((id): id is string => Boolean(id))}
         />
       ) : null}
       {arcadeNote ? (

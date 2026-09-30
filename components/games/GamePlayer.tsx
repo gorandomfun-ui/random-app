@@ -156,6 +156,8 @@ export default function GamePlayer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, pad: 'none', dirty: true })
   const roundRef = useRef(round)
+  // a round changes only between two: NEW GAME puts the next one back at level 1 before it starts
+  roundRef.current = round
   const bigRef = useRef(big)
   bigRef.current = big
   const bestRef = useRef(0)
@@ -263,8 +265,8 @@ export default function GamePlayer({
       if (r) {
         if (s.won) { s.mode = 'winner'; tell({ kind: 'winner', score: s.score, level: s.level }) }
         else if (s.retriesLeft > 0) { s.mode = 'retry'; tell({ kind: 'retry', retriesLeft: s.retriesLeft }) }
-        // lost for now: the score stands where the round found it
-        else { s.mode = 'lost'; s.score = r.score; tell({ kind: 'lost', score: r.score, level: s.level }) }
+        // GAME OVER: the game ends with the score shown, the last try's points counted
+        else { s.mode = 'lost'; tell({ kind: 'lost', score: s.score, level: s.level }) }
         return
       }
       const needsName = qualifies(game, s.score)
@@ -281,7 +283,8 @@ export default function GamePlayer({
       tell({ kind: 'quit', score: r.score, level: r.level })
     }
     const retry = () => { s.retriesLeft -= 1; start() }
-    const giveUp = () => { const r = roundRef.current!; s.retriesLeft = 0; s.mode = 'lost'; s.score = r.score; s.dirty = true; tell({ kind: 'lost', score: r.score, level: s.level }) }
+    // NO to PLAY AGAIN?: GAME OVER with the score shown
+    const giveUp = () => { s.retriesLeft = 0; s.mode = 'lost'; s.dirty = true; tell({ kind: 'lost', score: s.score, level: s.level }) }
     const stepGame = () => {
       if (s.catcher) {
         const c = s.catcher
