@@ -32,7 +32,7 @@ async function bundle(games) {
         if (p.includes('CookieConsent')) return { contents: `export const useCookieConsent=()=>({consent:null})` }
         if (p.includes('/Encourage3DOverlay')) return { contents: `import React from 'react'; export const preloadEncourage3DEvent=async()=>{};export default function Overlay(p){React.useEffect(()=>{p.onComplete()},[p.onComplete]);return null}` }
         if (p === 'next/dynamic') return { contents: `import React from 'react';export default loader=>function Dynamic(p){const [C,setC]=React.useState(null);React.useEffect(()=>{let a=true;loader().then(m=>{if(a)setC(()=>m.default)});return()=>{a=false}},[]);return C?React.createElement(C,p):null}` }
-        if (p.includes('/utils/sound')) return { contents: `export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},setMuted=()=>{},soundStatus=()=>'off',wakeSound=()=>{}` }
+        if (p.includes('/utils/sound')) return { contents: `export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},prepareSound=()=>{},setMuted=()=>{},soundStatus=()=>'off',wakeSound=()=>{}` }
         if (p.includes('RandomContentRenderer')) return { contents: `import React from 'react'; export const FactQuizCard=()=>React.createElement('div',null,'Quiz')` }
         // the game's stage: a marker the test can see; its own play is tested elsewhere
         if (p.includes('ArcadeStage')) return { contents: `import React from 'react'; export default function Stage(p){return React.createElement('div',{'data-arcade-stage':p.game})}` }

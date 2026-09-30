@@ -98,6 +98,11 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const reset = () => { device.starts.length = 0; device.interrupted = false; device.slow = false }
 
 const visibility: Array<() => void> = []
+const touches = new Map<string, Set<() => void>>()
+function touch() {
+  // what a finger lifted from the page does: touchend, then click
+  for (const name of ['touchend', 'click']) for (const handler of [...(touches.get(name) ?? [])]) handler()
+}
 const page = { visibilityState: 'visible', hidden: false }
 function hide(hidden: boolean) {
   page.hidden = hidden
@@ -116,16 +121,31 @@ Object.defineProperty(globalThis, 'navigator', {
 ;(globalThis as unknown as { document: unknown }).document = {
   get visibilityState() { return page.visibilityState },
   get hidden() { return page.hidden },
-  addEventListener: (name: string, handler: () => void) => { if (name === 'visibilitychange') visibility.push(handler) },
+  addEventListener: (name: string, handler: () => void) => {
+    if (name === 'visibilitychange') visibility.push(handler)
+    else touches.set(name, new Set([...(touches.get(name) ?? []), handler]))
+  },
+  removeEventListener: (name: string, handler: () => void) => { touches.get(name)?.delete(handler) },
 }
 
+
+test('la page ouverte, le premier toucher n_importe où réchauffe les lecteurs pendant ce toucher', async () => {
+  // Warmed after downloading the files' code, outside the touch, the first
+  // sounds of a visit came too late and were dropped.
+  sound.prepareSound()
+  for (let i = 0; i < 100 && !sound.soundStatus().files; i += 1) await wait(10)
+  assert.ok(sound.soundStatus().files, 'le code des sons est là avant le toucher')
+  assert.equal(device.players.length, 0, 'rien avant le toucher')
+  device.slow = true
+  touch()
+  assert.ok(device.players.length >= 32, `${device.players.length} lecteurs démarrés pendant le toucher`)
+  assert.equal(touches.get('touchend')?.size, 0, 'une seule fois')
+})
 
 test('au premier toucher, les lecteurs réchauffés restent muets même si leurs fichiers arrivent tard', async () => {
   // They used to be turned down, which an iPhone ignores: all sixteen then
   // sounded together a moment after the first touch, when the files arrived.
-  reset()
-  device.slow = true
-  files.unlockSoundFiles()
+  device.starts.length = 0
   filesArrive()
   await wait(0)
   assert.ok(device.starts.length >= 16, `${device.starts.length} lecteurs démarrés`)
@@ -138,7 +158,7 @@ test('un son qui part tout de suite se joue en entier', async () => {
   reset()
   const before = files.fileSoundTally()
   files.playSoundFile('random', 1)
-  await wait(files.DEADLINE_MS + 50)
+  await wait(files.LATE_MS + 50)
   assert.deepEqual(audible().map((s) => s.src), ['/sounds/random-1.wav'])
   const player = device.players.find((audio) => audio.src === '/sounds/random-1.wav' && !audio.paused)
   assert.ok(player, 'toujours en train de jouer après le délai')
@@ -153,7 +173,7 @@ test('des sons retenus par Safari sont annulés et ne sortent jamais plus tard, 
   sound.playRandom(2)
   sound.playAgain(1)
   sound.playWaveStep()
-  await wait(files.DEADLINE_MS + 50)
+  await wait(files.HELD_MS + 50)
   endInterruption()
   await wait(0)
   assert.deepEqual(audible(), [], 'rien ne sort à la fin de l_interruption')
@@ -164,10 +184,33 @@ test('des sons retenus par Safari sont annulés et ne sortent jamais plus tard, 
   assert.deepEqual(audible().map((s) => s.src), ['/sounds/random-0.wav'])
 })
 
+test('un son pris par Safari mais encore en chargement part s_il arrive dans la seconde', async () => {
+  // the first sound of a visit, the first Wave: their file is still on its way
+  reset()
+  device.slow = true
+  sound.playWaveEnter()
+  await wait(files.HELD_MS + 250)
+  filesArrive()
+  await wait(0)
+  assert.deepEqual(audible().map((s) => s.src), ['/sounds/wave-enter.wav'])
+})
+
+test('un son encore en chargement après une seconde est jeté', async () => {
+  reset()
+  const before = files.fileSoundTally()
+  device.slow = true
+  files.playSoundFile('again', 1)
+  await wait(files.LATE_MS + 50)
+  filesArrive()
+  await wait(0)
+  assert.deepEqual(audible(), [])
+  assert.equal(files.fileSoundTally().dropped, before.dropped + 1)
+})
+
 test('un son demandé il y a trop longtemps (le temps de charger son code) est jeté sans jouer', async () => {
   reset()
   const before = files.fileSoundTally()
-  files.playSoundFile('again', 0, performance.now() - files.DEADLINE_MS - 100)
+  files.playSoundFile('again', 0, performance.now() - files.LATE_MS - 100)
   await wait(20)
   assert.deepEqual(device.starts, [])
   assert.equal(files.fileSoundTally().dropped, before.dropped + 1)
@@ -187,7 +230,7 @@ test('page cachée : rien ne part, et un son en attente est oublié', async () =
   await wait(20)
   hide(true)
   endInterruption()
-  await wait(files.DEADLINE_MS + 50)
+  await wait(files.LATE_MS + 50)
   hide(false)
   assert.deepEqual(audible(), [], 'rien au retour sur la page')
 })
@@ -199,7 +242,7 @@ test('les sons d_un jeu obéissent à la même règle', async () => {
   sounds.play('bite')
   sounds.play('fries')
   sounds.play('bite')
-  await wait(files.DEADLINE_MS + 50)
+  await wait(files.HELD_MS + 50)
   endInterruption()
   await wait(0)
   assert.deepEqual(audible(), [], 'aucune bouchée en retard')

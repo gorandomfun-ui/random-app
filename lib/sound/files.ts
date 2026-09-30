@@ -17,8 +17,9 @@
  * sound, while the page comes back from another app or from a locked screen, it
  * keeps the request and plays it when it can. Every sound asked in between then
  * came out together, a burst the owner heard on his iPhone (29/09). A sound here
- * starts at once or never: one that has not started within `DEADLINE_MS` is
- * stopped, which is also what makes Safari forget it.
+ * starts in time or never: one Safari holds back is stopped after `HELD_MS`,
+ * which is also what makes Safari forget it, and one still loading after
+ * `LATE_MS` is stopped too.
  */
 
 export type SoundName = 'random' | 'again' | 'wave-enter' | 'wave-step'
@@ -28,8 +29,14 @@ const STEPS: Record<SoundName, number> = { random: 3, again: 3, 'wave-enter': 1,
 /** Players kept per file: enough for sounds that overlap, few enough to stay light. */
 const VOICES = 2
 const VOLUME = 0.55
-/** How late a sound may start. Later, it belongs to another moment: it is dropped. */
-export const DEADLINE_MS = 250
+/** A sound Safari has not taken after this long is held back (its player stays paused): it is dropped. */
+export const HELD_MS = 250
+/**
+ * A sound Safari took but is still loading — the first of a visit, the first
+ * Wave — may start until this long after it was asked. Dropped at 250 ms too,
+ * those first sounds were lost (30/09); later than this, it belongs to another moment.
+ */
+export const LATE_MS = 1000
 
 /** What the players were asked for and what came of it, for the page's witness. */
 const tally = { asked: 0, started: 0, dropped: 0 }
@@ -85,11 +92,35 @@ function fileFor(name: SoundName, progress: number): string {
   return `/sounds/${name}-${step}.wav`
 }
 
+/**
+ * Each file fetched once as the page opens and kept in memory, so a player has
+ * nothing left to download when its sound is due. A download needs no touch; a
+ * player loading at the moment of its sound missed it: the first Wave, whose
+ * file is the largest, was often silent (30/09).
+ */
+const inMemory = new Map<string, string>()
+let fetching = false
+
+export function fetchSoundFiles(): void {
+  if (fetching || typeof fetch !== 'function' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return
+  fetching = true
+  for (const name of Object.keys(STEPS) as SoundName[]) {
+    for (let step = 0; step < STEPS[name]; step += 1) {
+      const src = fileFor(name, step)
+      fetch(src)
+        .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(String(response.status)))))
+        // players made already keep their address; the next ones read from memory
+        .then((blob) => { if (!pools.has(src)) inMemory.set(src, URL.createObjectURL(blob)) })
+        .catch(() => undefined)
+    }
+  }
+}
+
 function poolFor(src: string): HTMLAudioElement[] {
   const held = pools.get(src)
   if (held) return held
   const made = Array.from({ length: VOICES }, () => {
-    const audio = new Audio(src)
+    const audio = new Audio(inMemory.get(src) ?? src)
     audio.preload = 'auto'
     audio.volume = VOLUME
     return audio
@@ -163,8 +194,7 @@ function drop(audio: HTMLAudioElement, counted: boolean): void {
  */
 export function playNowOrNever(audio: HTMLAudioElement, askedAt = performance.now()): void {
   tally.asked += 1
-  const left = askedAt + DEADLINE_MS - performance.now()
-  if (left <= 0 || (typeof document !== 'undefined' && document.hidden)) { tally.dropped += 1; return }
+  if (performance.now() - askedAt >= LATE_MS || (typeof document !== 'undefined' && document.hidden)) { tally.dropped += 1; return }
   watchHiding()
   const turn = (turns.get(audio) ?? 0) + 1
   turns.set(audio, turn)
@@ -179,13 +209,20 @@ export function playNowOrNever(audio: HTMLAudioElement, askedAt = performance.no
   } catch {
     /* A browser that refuses simply stays quiet. */
   }
-  setTimeout(() => {
-    audio.removeEventListener('playing', mark)
-    if (turns.get(audio) !== turn) return
+  /** Whether this request is settled: started, dropped, or replaced by a newer one. */
+  const settle = (last: boolean): boolean => {
+    const done = () => { audio.removeEventListener('playing', mark); return true }
+    if (turns.get(audio) !== turn) return done()
     // a busy page can run this after the sound began: a clock that moves means it did
-    if (started || (!audio.paused && audio.currentTime > 0)) { pending.delete(audio); tally.started += 1; return }
-    drop(audio, true)
-  }, left)
+    if (started || (!audio.paused && audio.currentTime > 0)) { pending.delete(audio); tally.started += 1; return done() }
+    // still paused: Safari is holding it back; not paused: taken, still loading
+    if (last || audio.paused) { drop(audio, true); return done() }
+    return false
+  }
+  const untilLate = () => Math.max(0, askedAt + LATE_MS - performance.now())
+  setTimeout(() => {
+    if (!settle(false)) setTimeout(() => settle(true), untilLate())
+  }, Math.min(HELD_MS, untilLate()))
 }
 
 /** Plays a sound, on the first of its players that is free. */
