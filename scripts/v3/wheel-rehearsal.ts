@@ -39,7 +39,7 @@ async function main(): Promise<void> {
       state = commitDraw(state, ticket, result.item)
       shown.set(result.item.key, (shown.get(result.item.key) ?? 0) + 1)
       const w = result.wheel
-      console.log(`${String(video + 1).padStart(2)}  ${w.slot.padEnd(6)} ${(w.from + (w.universe ? `/${w.universe}` : '')).padEnd(26)} servi ${String(w.served).padStart(3)}  ${String(result.item.seconds ? `${Math.round(result.item.seconds / 60)} min` : '').padStart(7)}  ${Date.now() - at} ms  ${(result.item.title ?? '').slice(0, 70)}`)
+      console.log(`${String(video + 1).padStart(2)}  ${w.slot.padEnd(6)} ${w.from.padEnd(16)} ${(result.item.universe ?? '?').padEnd(16)} servi ${String(w.served).padStart(3)}  ${String(result.item.seconds ? `${Math.round(result.item.seconds / 60)} min` : '').padStart(7)}  ${Date.now() - at} ms  ${(result.item.title ?? '').slice(0, 70)}`)
     }
     console.log(`   ${VIDEOS - empty} vidéos, ${empty} sans réponse, ${Math.round((Date.now() - started) / VIDEOS)} ms par vidéo`)
   }

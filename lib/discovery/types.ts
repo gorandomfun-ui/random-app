@@ -47,6 +47,8 @@ export type Candidate<T = unknown> = {
   title?: string
   /** How many times the site has served this content (lib/discovery/served.ts). */
   served?: number
+  /** The universe the labels filed it under (lib/v3/types.ts): the wheel keeps two in a row apart. */
+  universe?: string
   type: Format
   provider: string
   profile: Profile

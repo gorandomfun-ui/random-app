@@ -140,8 +140,11 @@ export function choose<T>(rows: readonly CatalogueRow[], slot: Slot, context: Co
   const subjects = new Set(recent.flatMap((exposure) => (exposure.subject != null ? [exposure.subject] : [])))
   const authors = new Set(recent.flatMap((exposure) => (exposure.author != null ? [exposure.author] : [])))
   const foreignFull = recent.filter((exposure) => exposure.foreign).length >= FOREIGN_IN_TEN
+  // The universes lead (the owner, 28 September): not the one of the previous video when another fits, and the last three set aside when the count allows.
+  const previousUniverse = recent[recent.length - 1]?.universe
+  const lastUniverses = new Set(recent.slice(-3).flatMap((exposure) => (exposure.universe ? [exposure.universe] : [])))
   const trailersSeen = trailersSeenIn(state.exposures)
-  const fitting: Array<{ candidate: Candidate<T>; rank: number; order: number }> = []
+  const fitting: Array<{ candidate: Candidate<T>; rank: number; order: number; again: number; near: number }> = []
   for (const row of rows) {
     const rank = livelyRank(row, trailersSeen)
     if (!Number.isFinite(rank)) continue
@@ -156,9 +159,11 @@ export function choose<T>(rows: readonly CatalogueRow[], slot: Slot, context: Co
     if (slot !== 'chance' && isStillAlbum({ title: String(row.title ?? ''), channelTitle: typeof row.channelTitle === 'string' ? row.channelTitle : undefined })) continue
     if (!keep(row, candidate)) continue
     // The lively rank orders the other cards; a long one is long by design, so an hour's documentary ranks with a twenty-minute one.
-    fitting.push({ candidate, rank: slot === 'long' ? 0 : rank, order: random() })
+    const universe = candidate.universe
+    fitting.push({ candidate, rank: slot === 'long' ? 0 : rank, order: random(),
+      again: Number(Boolean(universe && universe === previousUniverse)), near: Number(Boolean(universe && lastUniverses.has(universe))) })
   }
-  fitting.sort((left, right) => (left.candidate.served ?? 0) - (right.candidate.served ?? 0) || left.rank - right.rank || left.order - right.order)
+  fitting.sort((left, right) => left.again - right.again || (left.candidate.served ?? 0) - (right.candidate.served ?? 0) || left.near - right.near || left.rank - right.rank || left.order - right.order)
   return fitting[0]?.candidate ?? null
 }
 

@@ -115,3 +115,14 @@ test('the served count: one write by id, the least served wins next time', async
   assert.deepEqual(writes[0].update.$inc, { 'served.n': 1 })
   assert.equal(await countServed(db, 'not-an-id', 1_000), false)
 })
+
+test('the universes lead: never the previous video\'s universe when another fits', () => {
+  const seen = [video('Trailer of a film', { universe: 'cinema-tv' })]
+  let state = newSession(11)
+  for (const row of seen) state = { ...state, exposures: appendExposure(state.exposures, candidateFromRow(row, {}, Date.now())) }
+  const rows = [video('Another film scene', { universe: 'cinema-tv' }), video('A goal from midfield', { universe: 'sport', served: 1 })]
+  const db = fakeDb(rows)
+  assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A goal from midfield')
+  // The card's universe only: the previous universe answers rather than nothing.
+  assert.equal(choose(rows.slice(0, 1), 'joker', context(db, state))?.title, 'Another film scene')
+})
