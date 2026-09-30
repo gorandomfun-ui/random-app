@@ -41,7 +41,7 @@ import { isCleanTitle } from '../v3/cool/clean'
 import { isCoolCandidate, type LabelableRow } from '../v3/cool/registers'
 import { SERVABLE } from '../v3/cool/servable'
 import { drawStart } from '../v3/cool/start'
-import { livelyRank, trailersSeenIn } from '../v3/cool/themes'
+import { isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isStillAlbum } from '../v3/dig/door'
 import type { DigBase, Popularity, Universe } from '../v3/types'
 
@@ -183,7 +183,8 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
     case 'buzz': {
       // The day's list, none this device already saw today; the trend line when the day is spent.
       const fresh = await selectFresh(db, ticket, state, context.freshSeen, decode, now, random).catch(() => null)
-      if (fresh) return { item: fresh.item, from: 'fresh' }
+      // The day's list is drawn without the cards' liveliness order: the session's two trailers are counted here (three came through on 1 October).
+      if (fresh && !(trailersSeenIn(state.exposures) >= TRAILERS_PER_SESSION && isTrailerTitle(fresh.item.title))) return { item: fresh.item, from: 'fresh' }
       const rows = (await seek(db, { 'v3.line': 'trend', type: 'video', ...SERVABLE }, LINE_INDEX, random, ROWS))
         .filter((row) => isCoolCandidate(row as LabelableRow) && isCleanTitle(row.title as string))
       const trend = choose(rows, slot, context)
