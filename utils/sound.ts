@@ -2,6 +2,7 @@ let ctx: AudioContext | null = null
 /** The files' player once loaded, so the witness can tell what became of their sounds. */
 let files: typeof import('@/lib/sound/files') | null = null
 const loadFiles = () => import('@/lib/sound/files').then((m) => { files = m; return m })
+let prepared = false
 let transitionNoiseBuffer: AudioBuffer | null = null
 let muted = false
 let watching = false
@@ -33,10 +34,36 @@ function ready(context: AudioContext): boolean {
 export function wakeSound(): void {
   if (muted) return
   // Where the engine is off, the files are warmed during this very touch instead.
-  if (!synthesisAllowed()) { void loadFiles().then((m) => m.unlockSoundFiles()).catch(() => undefined); return }
+  if (!synthesisAllowed()) {
+    // inside this very touch when the files' code is already here, as `prepareSound` makes sure
+    if (files) files.unlockSoundFiles()
+    else void loadFiles().then((m) => m.unlockSoundFiles()).catch(() => undefined)
+    return
+  }
   const context = getAudioContext(true)
   if (!context || ready(context)) return
   resume(context)
+}
+
+/**
+ * Gets the files ready as the page opens, on the devices that play them (iPhone,
+ * iPad): their code and the sounds themselves come now rather than at the first
+ * touch, and the first touch anywhere on the page warms the players inside that touch. Warmed after
+ * a download, outside the touch, the first sounds of a visit came too late and
+ * were dropped (30/09).
+ */
+export function prepareSound(): void {
+  if (prepared || typeof document === 'undefined' || synthesisAllowed()) return
+  prepared = true
+  void loadFiles().then((m) => m.fetchSoundFiles()).catch(() => undefined)
+  const warm = () => {
+    if (muted || !files) return
+    files.unlockSoundFiles()
+    document.removeEventListener('touchend', warm, true)
+    document.removeEventListener('click', warm, true)
+  }
+  document.addEventListener('touchend', warm, true)
+  document.addEventListener('click', warm, true)
 }
 
 /** The engine's state, for the witness the page can show on a device. */
@@ -119,6 +146,7 @@ function resume(context: AudioContext): void {
 
 /** Plays one of the rendered files, loading the player the first time it is needed (that wait counts against the sound's deadline). */
 function playFile(name: 'random' | 'again' | 'wave-enter' | 'wave-step', progress: number): void {
+  if (files) { files.playSoundFile(name, progress); return }
   const askedAt = performance.now()
   void loadFiles().then((m) => m.playSoundFile(name, progress, askedAt)).catch(() => undefined)
 }

@@ -64,7 +64,7 @@ import {
 } from '@/utils/videoSuspects'
 import { reportWaveFeedback } from '@/utils/waveFeedback'
 import RandomPlayerFrame from '@/components/players/RandomPlayerFrame'
-import { playAgain, playRandom, playWaveEnter, playWaveStep, setMuted, soundStatus, wakeSound } from '@/utils/sound'
+import { playAgain, playRandom, playWaveEnter, playWaveStep, prepareSound, setMuted, soundStatus, wakeSound } from '@/utils/sound'
 import {
   advanceProductionEncourage3DSchedule,
   createEncourage3DSchedule,
@@ -2975,6 +2975,9 @@ export function RandomExperience({
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
   }, [])
+
+  // an iPhone or an iPad gets its sound files ready before the first touch
+  useEffect(() => { prepareSound() }, [])
 
   const [soundWitness, setSoundWitness] = useState('')
   useEffect(() => {
