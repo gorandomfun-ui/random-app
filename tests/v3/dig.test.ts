@@ -104,23 +104,33 @@ const queued = (extra: Partial<QueuedSubject>): QueuedSubject => ({
   _id: 'entity:x', label: 'X', aliases: [], kind: 'entity', base: 'people', fame: 'known', state: 'queued', priority: 0, passes: {}, channelsToRead: [], ingested: 0, searches: 0, depthTarget: 150, createdAt: new Date(), ...extra,
 })
 
-test('the passes of a name: top, around as many times as its fame allows, its channels, Dailymotion, then done', () => {
+test('the passes of a name: top, Dailymotion at once, around as many times as its fame allows, its channels, Dailymotion again, then done', () => {
   const rec = { at: new Date(), read: 0, kept: 0, inserted: 0, searches: 1 }
   assert.equal(nextPass(queued({})), 'top')
-  assert.equal(nextPass(queued({ passes: { top: [rec] } })), 'around')
-  assert.equal(nextPass(queued({ passes: { top: [rec], around: [rec, rec] } })), 'dailymotion', 'no channel met: straight to Dailymotion')
-  assert.equal(nextPass(queued({ passes: { top: [rec], around: [rec, rec] }, channelsToRead: [{ id: 'c', title: 'c', hits: 2 }] })), 'channel')
-  assert.equal(nextPass(queued({ fame: 'star', passes: { top: [rec], around: [rec, rec] } })), 'around', 'a star goes around five times')
-  assert.equal(nextPass(queued({ passes: { top: [rec], around: [rec, rec], dailymotion: [rec] } })), null)
+  assert.equal(nextPass(queued({ passes: { top: [rec] } })), 'dailymotion', 'Dailymotion right after the top: it has no quota')
+  assert.equal(nextPass(queued({ passes: { top: [rec], dailymotion: [rec] } })), 'around')
+  assert.equal(nextPass(queued({ passes: { top: [rec], dailymotion: [rec], around: [rec, rec] } })), 'dailymotion', 'no channel met: Dailymotion again')
+  assert.equal(nextPass(queued({ passes: { top: [rec], dailymotion: [rec], around: [rec, rec] }, channelsToRead: [{ id: 'c', title: 'c', hits: 2 }] })), 'channel')
+  assert.equal(nextPass(queued({ fame: 'star', passes: { top: [rec], dailymotion: [rec], around: [rec, rec] } })), 'around', 'a star goes around five times')
+  assert.equal(nextPass(queued({ passes: { top: [rec], dailymotion: [rec, rec, rec], around: [rec, rec] } })), null)
+  assert.equal(nextPass(queued({}), false), 'dailymotion', 'YouTube out and no top yet: the name is searched on Dailymotion')
 })
 
-test('the passes of a theme: top once, then one angle per call until they run out', () => {
+test('with YouTube out, a name still gets its Dailymotion passes', () => {
+  const rec = { at: new Date(), read: 0, kept: 0, inserted: 0, searches: 1 }
+  assert.equal(nextPass(queued({ passes: { top: [rec] } }), false), 'dailymotion')
+  assert.equal(nextPass(queued({ passes: { top: [rec], dailymotion: [rec] } }), false), 'dailymotion', 'the around waits for YouTube, Dailymotion goes on')
+  assert.equal(nextPass(queued({ passes: { top: [rec], dailymotion: [rec, rec, rec] } }), false), null)
+})
+
+test('the passes of a theme: top once, Dailymotion, then one angle per call until they run out', () => {
   const rec = { at: new Date(), read: 0, kept: 0, inserted: 0, searches: 1 }
   const theme = queued({ _id: 'topic:ventriloque', kind: 'topic', base: 'keywords', angles: ['amateur', '1980s'], done: [] })
   assert.equal(nextPass(theme), 'top')
-  assert.equal(nextPass({ ...theme, passes: { top: [rec] } }), 'around')
-  assert.equal(nextPass({ ...theme, passes: { top: [rec] }, done: ['amateur'] }), 'around')
-  assert.equal(nextPass({ ...theme, passes: { top: [rec] }, done: ['amateur', '1980s'] }), 'dailymotion')
+  assert.equal(nextPass({ ...theme, passes: { top: [rec] } }), 'dailymotion')
+  assert.equal(nextPass({ ...theme, passes: { top: [rec], dailymotion: [rec] } }), 'around')
+  assert.equal(nextPass({ ...theme, passes: { top: [rec], dailymotion: [rec] }, done: ['amateur'] }), 'around')
+  assert.equal(nextPass({ ...theme, passes: { top: [rec], dailymotion: [rec] }, done: ['amateur', '1980s'] }), 'dailymotion')
   assert.equal(themeQuery('ventriloquist', 'amateur', undefined), 'ventriloquist amateur|homemade|home video|backyard')
   assert.equal(themeQuery('ventriloquist', '1980s', undefined), 'ventriloquist 1980s')
   assert.equal(themeAngles().length, 11)

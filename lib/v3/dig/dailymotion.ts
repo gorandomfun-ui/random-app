@@ -13,9 +13,9 @@ const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/
 
 type Row = { id: string; title?: string; description?: string; tags?: string[]; url?: string; thumbnail_720_url?: string; duration?: number; created_time?: number; views_total?: number; 'owner.id'?: string; 'owner.screenname'?: string; private?: boolean; allow_embed?: boolean; language?: string; onair?: boolean }
 
-/** One search, fifty results; the visited sort is refused for some queries, relevance then stands in. */
-export async function searchDailymotion(query: string, sort: DailymotionSort, request: typeof fetch = fetch, signal?: AbortSignal): Promise<DigVideo[]> {
-  const params = new URLSearchParams({ search: query, sort, limit: '50', fields: FIELDS })
+/** One search, a hundred results at most; the visited sort is refused for some queries, relevance then stands in. */
+export async function searchDailymotion(query: string, sort: DailymotionSort, request: typeof fetch = fetch, signal?: AbortSignal, limit = 100): Promise<DigVideo[]> {
+  const params = new URLSearchParams({ search: query, sort, limit: String(Math.max(1, Math.min(100, limit))), fields: FIELDS })
   let response = await request(`https://api.dailymotion.com/videos?${params}`, { signal })
   if (!response.ok && sort !== 'relevance') {
     params.set('sort', 'relevance')

@@ -53,9 +53,9 @@ export type QueuedSubject = {
 
 /** How deep each fame goes: pages of the top, searches around, channels read, Dailymotion searches. */
 export const PLAN: Record<Fame, { topPages: number; around: number; channels: number; dailymotion: number; depthTarget: number }> = {
-  star: { topPages: 2, around: 5, channels: 8, dailymotion: 2, depthTarget: 600 },
-  known: { topPages: 1, around: 2, channels: 3, dailymotion: 1, depthTarget: 150 },
-  small: { topPages: 1, around: 1, channels: 1, dailymotion: 1, depthTarget: 50 },
+  star: { topPages: 2, around: 5, channels: 15, dailymotion: 4, depthTarget: 600 },
+  known: { topPages: 1, around: 2, channels: 6, dailymotion: 3, depthTarget: 150 },
+  small: { topPages: 1, around: 1, channels: 2, dailymotion: 2, depthTarget: 50 },
 }
 
 export const PASS_ORDER: DigPass[] = ['top', 'around', 'channel', 'dailymotion']
@@ -98,26 +98,31 @@ function passesDone(subject: QueuedSubject, pass: DigPass): number {
 }
 
 /**
- * The next pass a subject needs, or null when it is done. A name goes top,
- * around (as many searches as its fame allows, one per call), its channels,
- * then Dailymotion. A theme goes top once, then one angle combination per
- * call until its angles run out.
+ * The next pass a subject needs, or null when it is done. Dailymotion comes
+ * right after the top, not last (the owner, 30 September: "pourquoi Dailymotion
+ * n'est pas dans le mix ?"): it has no quota, so it never waits for YouTube.
+ * A name goes top, Dailymotion, around (as many searches as its fame allows),
+ * its channels, then Dailymotion again. A theme goes top once, Dailymotion,
+ * then one angle combination per call until its angles run out.
  */
-export function nextPass(subject: QueuedSubject): DigPass | null {
+export function nextPass(subject: QueuedSubject, youtube = true): DigPass | null {
   const plan = PLAN[subject.fame]
+  const dm = passesDone(subject, 'dailymotion')
+  const wantsDailymotion = () => dm < plan.dailymotion
   if (subject.kind === 'topic') {
-    if (!passesDone(subject, 'top')) return 'top'
-    // A theme is a hundred subjects: one angle combination per call, until its angles run out.
+    if (!passesDone(subject, 'top')) return youtube ? 'top' : wantsDailymotion() ? 'dailymotion' : null
+    if (dm < 1) return 'dailymotion'
     const left = (subject.angles ?? []).filter((angle) => !(subject.done ?? []).includes(angle))
-    if (left.length) return 'around'
-    if (passesDone(subject, 'dailymotion') < plan.dailymotion) return 'dailymotion'
+    if (left.length && youtube) return 'around'
+    if (wantsDailymotion()) return 'dailymotion'
     return null
   }
-  if (subject.kind === 'channel') return passesDone(subject, 'channel') ? null : 'channel'
-  if (passesDone(subject, 'top') < 1) return 'top'
-  if (passesDone(subject, 'around') < plan.around) return 'around'
-  if (passesDone(subject, 'channel') < 1 && subject.channelsToRead.some((channel) => !channel.read)) return 'channel'
-  if (passesDone(subject, 'dailymotion') < plan.dailymotion) return 'dailymotion'
+  if (subject.kind === 'channel') return passesDone(subject, 'channel') || !youtube ? null : 'channel'
+  if (passesDone(subject, 'top') < 1) return youtube ? 'top' : wantsDailymotion() ? 'dailymotion' : null
+  if (dm < 1) return 'dailymotion'
+  if (youtube && passesDone(subject, 'around') < plan.around) return 'around'
+  if (youtube && passesDone(subject, 'channel') < 1 && subject.channelsToRead.some((channel) => !channel.read)) return 'channel'
+  if (wantsDailymotion()) return 'dailymotion'
   return null
 }
 
@@ -131,15 +136,15 @@ const WORKABLE: QueueState[] = ['queued', 'running']
  * subjects and went deep into none. Among the begun, the most urgent and the
  * least recently served; of one country when the turn names it.
  */
-export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string): Promise<QueuedSubject | null> {
+export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true): Promise<QueuedSubject | null> {
   const filter = { base, ...(country ? { country } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
   for (const state of ['running', 'queued'] as const) {
     const rows = await db.collection<QueuedSubject>(QUEUE)
-      .find({ ...filter, state }, { sort: { priority: -1, lastRunAt: 1 }, limit: 5, maxTimeMS: 4000 })
+      .find({ ...filter, state }, { sort: { priority: -1, lastRunAt: 1 }, limit: 8, maxTimeMS: 4000 })
       .toArray()
     for (const row of rows) {
-      if (nextPass(row)) return row
-      await db.collection<QueuedSubject>(QUEUE).updateOne({ _id: row._id }, { $set: { state: 'done' } }).catch(() => undefined)
+      if (nextPass(row, youtube)) return row
+      if (!nextPass(row, true)) await db.collection<QueuedSubject>(QUEUE).updateOne({ _id: row._id }, { $set: { state: 'done' } }).catch(() => undefined)
     }
   }
   return null

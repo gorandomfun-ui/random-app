@@ -38,13 +38,22 @@ import type { DigBase, DigLevel, DigPass, DigTags, SubjectSource } from '../../t
 const META = 'dig_meta_v4'
 /** Left before the deadline, the run stops between two passes. */
 const DEADLINE_MARGIN_MS = 60_000
-/** Rounds over the tickets in one run: a star needs several to get all its passes. */
-const MAX_ROUNDS = 12
-/** Pages of a channel read in one pass: a hundred videos. */
-const CHANNEL_PAGES = 2
+/** Rounds over the tickets in one run; a round with nothing to serve twice ends it. */
+const MAX_ROUNDS = 40
+/** Pages of a channel read in one pass: two hundred videos, for four units. */
+const CHANNEL_PAGES = 4
 /** A channel that named the subject this often is worth a subject of its own. */
 const SNOWBALL_HITS = 3
-const SNOWBALL_PER_RUN = 5
+const SNOWBALL_PER_RUN = 20
+/**
+ * Passes a subject gets in a row in one run: one YouTube search (its top, or
+ * one search around), then everything that costs nothing — Dailymotion, the
+ * channels met — until it is done. The searches stay spread over many
+ * subjects; the depth comes from the free passes (the owner, 30 September:
+ * never the whole quota on one thing).
+ */
+const PASSES_IN_A_ROW = 12
+const SEARCHES_PER_SUBJECT_PER_RUN = 1
 
 type Served = { id: string; label: string; base: DigBase; pass: DigPass; query?: string; read: number; kept: number; inserted: number; levels: Record<string, number> }
 export type DigCursorNote = { served: Served[]; units: number; note: string }
@@ -210,7 +219,7 @@ async function runChannel(runner: Runner, subject: QueuedSubject): Promise<void>
       runner.units += LIST_UNITS; units += LIST_UNITS
       try { videos.push(...await videoDetails(runner.key, ids.slice(start, start + PAGE_SIZE), runner.http)) } catch (error) { runner.errors.push(`chaîne ${channel.title} : ${message(error)}`) }
     }
-    await admitPass(runner.ctx, { subject, pass: 'channel', query: `chaîne ${channel.title}`, videos: own ? videos.slice(0, 40) : videos, provider: 'youtube', units, requireName: !own }, runner.counters, runner.served)
+    await admitPass(runner.ctx, { subject, pass: 'channel', query: `chaîne ${channel.title}`, videos: own ? videos.slice(0, 100) : videos, provider: 'youtube', units, requireName: !own }, runner.counters, runner.served)
     readIds.push(channel.id)
     if (runner.youtubeStopped) break
   }
@@ -220,9 +229,18 @@ async function runChannel(runner: Runner, subject: QueuedSubject): Promise<void>
   if (own) await markDone(runner.ctx.db, subject._id)
 }
 
+/** The Dailymotion queries of a subject, one per pass: the name, then the archives, the rare, the live; a theme goes amateur, archive, vintage. */
+function dailymotionQuery(subject: QueuedSubject, done: number): string {
+  const fr = subject.lang === 'fr'
+  const words = subject.kind === 'topic'
+    ? [subject.label, `${subject.label} ${fr ? 'amateur' : 'amateur'}`, `${subject.label} ${fr ? 'archive' : 'archive'}`, `${subject.label} ${fr ? 'vintage' : 'vintage'}`]
+    : [subject.label, `${subject.label} ${fr ? 'archive' : 'archive'}`, `${subject.label} ${fr ? 'rare' : 'rare'}`, `${subject.label} ${fr ? 'live' : 'live'}`]
+  return words[done % words.length]
+}
+
 async function runDailymotion(runner: Runner, subject: QueuedSubject): Promise<void> {
   const done = (subject.passes.dailymotion ?? []).length
-  const query = done === 0 ? subject.label : `${subject.label} ${subject.lang === 'fr' ? 'archive' : 'rare'}`
+  const query = dailymotionQuery(subject, done)
   let videos: DigVideo[] = []
   try { videos = await searchDailymotion(query, done === 0 ? 'visited' : 'relevance', runner.http) } catch (error) { runner.errors.push(`dailymotion "${query}" : ${message(error)}`) }
   // The player refuses one in eight of what the API lists: asked before the video is stored, never after.
@@ -286,27 +304,33 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     let servedThisRound = 0
     for (const base of tickets) {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) { errors.push('échéance atteinte'); break rounds }
+      const youtube = !runner.youtubeStopped
       const country = base === 'people' && countries.length ? countries[countryTurn++ % countries.length] : undefined
-      const subject = (await takeSubject(ctx.db, base, new Set(), country)) ?? (country ? await takeSubject(ctx.db, base, new Set()) : null) ?? (await takeSubject(ctx.db, 'snowball', new Set()))
+      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube)) ?? (country ? await takeSubject(ctx.db, base, servedIds, undefined, youtube) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
       if (!subject) continue
-      const pass = nextPass(subject)
-      if (!pass) continue
-      if (runner.youtubeStopped && pass !== 'dailymotion') continue
       servedIds.add(subject._id)
       servedThisRound += 1
       await declareSubject(ctx, subject, declared)
-      try {
-        await runPass(runner, subject, pass)
-        await snowball(runner, subject)
-      } catch (error) {
-        errors.push(`${subject.label} (${pass}) : ${message(error)}`)
-        if (/HTTP 403|HTTP 429/.test(message(error))) { runner.youtubeStopped = true; ctx.log('youtube : refus, plus de YouTube ce passage') }
+      // The subject is dug in a row: one YouTube search, then Dailymotion and its channels — until it is done, the budget out, or the time up.
+      let current: QueuedSubject | null = subject
+      let searches = 0
+      for (let step = 0; current && step < PASSES_IN_A_ROW; step += 1) {
+        if (ctx.timeLeft() < DEADLINE_MARGIN_MS) break
+        const pass = nextPass(current, !runner.youtubeStopped && searches < SEARCHES_PER_SUBJECT_PER_RUN)
+        if (!pass) break
+        if (pass === 'top' || pass === 'around') searches += 1
+        try {
+          await runPass(runner, current, pass)
+          await snowball(runner, current)
+        } catch (error) {
+          errors.push(`${current.label} (${pass}) : ${message(error)}`)
+          if (/HTTP 403|HTTP 429/.test(message(error))) { runner.youtubeStopped = true; ctx.log('youtube : refus, plus de YouTube ce passage') }
+        }
+        current = await ctx.db.collection<QueuedSubject>(QUEUE).findOne({ _id: subject._id })
       }
-      const refreshed = await ctx.db.collection<QueuedSubject>(QUEUE).findOne({ _id: subject._id })
-      if (refreshed && !nextPass(refreshed)) await markDone(ctx.db, subject._id)
+      if (current && !nextPass(current, true)) await markDone(ctx.db, subject._id)
     }
     if (!servedThisRound) { idle += 1; if (idle >= 2) break }
-    if (runner.youtubeStopped && !runner.served.some((entry) => entry.pass === 'dailymotion' && entry.read)) break
   }
 
   const note = `${servedIds.size} sujets · ${runner.served.length} passes · ${runner.units} unités · ${counters.inserted} vidéos entrées`
