@@ -53,10 +53,11 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!body || !state || !FORMATS.includes(body.type as Format)) return json({ error: 'invalid-request' }, 400)
       const db = await withAbortDeadline(1500, req.signal, () => deps.getDb()); if (!db) return json({ error: 'unavailable' }, 503)
       const ticket = planDraw(state, body.type as Format)
-      // The draw over the dig (lib/discovery/digDraw.ts), when its switch is on — or for the admin's rehearsal; it replaces the theme deck.
+      // The draw over the dig (lib/discovery/digDraw.ts), when its switch is on — or for the admin's rehearsal.
       const digOn = digDrawSwitchedOn() || (body.digDraw === true && isAdminRequest(req))
       // The theme deck (lib/v3/cool/themes.ts): this visual's universe, when the switch is on — or for the admin's rehearsal of it.
-      const deckOn = !digOn && (themeDeckSwitchedOn() || (body.themeDeck === true && isAdminRequest(req)))
+      // The dig draws inside the same card; where it has nothing of that universe, the deck's own paths answer (the owner, 30 September: the themes stay).
+      const deckOn = themeDeckSwitchedOn() || (body.themeDeck === true && isAdminRequest(req)) || digOn
       const theme = deckOn && isVisual(ticket.type) ? themeAt(state.seed, state.visuals) : undefined
       // What the device saw this week rides along and is left out of the draw, on top of the session's own forty.
       const seen = parseSeen(body.seen)

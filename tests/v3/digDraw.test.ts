@@ -7,6 +7,7 @@ import { baseBag, DEFAULT_BASE_BAG, DEFAULT_LEVELS_COOL, levelBag, levelsAround,
 import { commitDraw, newSession, planDraw } from '../../lib/discovery/pool'
 import { exposureOf, type Exposure } from '../../lib/discovery/diversity'
 import { candidateFromRow } from '../../lib/discovery/catalog'
+import { themeAt } from '../../lib/v3/cool/themes'
 
 test('the bags read their settings, or keep their defaults', () => {
   assert.deepEqual(baseBag('people:2,random:1'), ['people', 'people', 'random'])
@@ -55,8 +56,9 @@ test('a video draw over the dig: a base, a level, a subject the session has not 
   process.env.RANDOM_DIG_DRAW_LEVELS_COOL = '2:1'
   process.env.RANDOM_DIG_DRAW_LEVELS_RANDOM = '2:1'
   try {
+    // The card of each visual commands the universe: the subjects wear the cards the session will draw.
     const db = twoCollections(
-      [{ _id: 'entity:bardot', label: 'Brigitte Bardot', base: 'people', ingested: 3, rand: 0.2 }, { _id: 'entity:delon', label: 'Alain Delon', base: 'people', ingested: 2, rand: 0.7 }],
+      [{ _id: 'entity:bardot', label: 'Brigitte Bardot', base: 'people', ingested: 3, rand: 0.2, universe: themeAt(7, 0) }, { _id: 'entity:delon', label: 'Alain Delon', base: 'people', ingested: 2, rand: 0.7, universe: themeAt(7, 1) }],
       [video('b1', 'entity:bardot', 1, 'Brigitte Bardot - Venus', 0.1), video('b2', 'entity:bardot', 2, 'Bardot en 1968 à Saint-Tropez', 0.5), video('d1', 'entity:delon', 2, 'Alain Delon et Romy Schneider', 0.3)],
     )
     let state = newSession(7)
@@ -100,4 +102,16 @@ test('the pure random ticket and the texts leave the draw to the older paths', a
   assert.equal(await selectDig(twoCollections([], []), planDraw(state, 'quote'), state, (row) => row, Math.random, Date.now()), null)
   const row = video('x', 'entity:x', 1, 'X', 0.1)
   assert.equal(candidateFromRow(row, row, Date.now()).digSubject, 'entity:x')
+})
+
+test('the card commands: a base with nothing of the visual\'s universe gives no dig draw, so the stock of that universe answers', async () => {
+  process.env.RANDOM_DIG_DRAW_BASES = 'people:1'
+  try {
+    const other = themeAt(7, 0) === 'music' ? 'sport' : 'music'
+    const db = twoCollections([{ _id: 'entity:x', label: 'X', base: 'people', ingested: 3, rand: 0.2, universe: other }], [video('x1', 'entity:x', 1, 'X clip', 0.1)])
+    const state = newSession(7)
+    assert.equal(await selectDig(db, planDraw(state, 'video'), state, (row) => row, () => 0.1, Date.now()), null)
+  } finally {
+    delete process.env.RANDOM_DIG_DRAW_BASES
+  }
 })

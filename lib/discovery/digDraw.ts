@@ -74,23 +74,20 @@ type Decoder<T> = (row: CatalogueRow) => T | null
 
 /**
  * Subjects of a base with something to show, from a random point of their
- * keys, the session's own left out. The universe card of this visual comes
- * first (the deck's one good idea: a session that goes sport, history,
- * music, comedy), any universe when the base has none of it.
+ * keys, the session's own left out — of the universe the visual's card names
+ * (the owner, 30 September: the themes stay, dig or not). When the base has
+ * none of that universe, the draw answers nothing and the stock of that
+ * universe takes the visual, as it did before the dig.
  */
 async function pickSubjects(db: Db, base: DigBase, random: Rng, seen: Set<number>, universe?: Universe): Promise<QueuedSubject[]> {
   const queue = db.collection<QueuedSubject>(QUEUE)
   const point = random()
   const read = async (filter: Document) => queue.find({ base, ingested: { $gt: 0 }, ...filter } as Document, { sort: { rand: 1 }, limit: SUBJECTS_PER_DRAW * 2, projection: { label: 1, base: 1, universe: 1 }, hint: 'queue_draw', maxTimeMS: QUERY_BUDGET_MS }).toArray()
   const fresh = (rows: QueuedSubject[]) => rows.filter((row) => !seen.has(hash(String(row._id))))
-  if (universe) {
-    let carded = await read({ universe, rand: { $gte: point } })
-    if (carded.length < 2) carded = [...carded, ...await read({ universe, rand: { $lt: point } })]
-    const usable = fresh(carded)
-    if (usable.length) return usable.slice(0, SUBJECTS_PER_DRAW)
-  }
-  let rows = await read({ rand: { $gte: point } })
-  if (rows.length < SUBJECTS_PER_DRAW) rows = [...rows, ...await read({ rand: { $lt: point } })]
+  // The card commands: no subject of its universe in this base, no dig for this visual — the stock of that universe answers, as before.
+  const filter = universe ? { universe } : {}
+  let rows = await read({ ...filter, rand: { $gte: point } })
+  if (rows.length < 2) rows = [...rows, ...await read({ ...filter, rand: { $lt: point } })]
   return fresh(rows).slice(0, SUBJECTS_PER_DRAW)
 }
 
