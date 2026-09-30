@@ -26,9 +26,13 @@ class FakeContext {
   readonly notes: Note[] = []
   /** Safari refuses to come back outside a touch; the fake can do the same. */
   grantResume = true
+  /** Chrome keeps the promise of a refused resume and settles it at the next touch. */
+  holdResume = false
+  readonly held: Array<() => void> = []
 
   resume(): Promise<void> {
     this.resumed += 1
+    if (this.holdResume) return new Promise((resolve) => { this.held.push(() => { this.state = 'running'; resolve() }) })
     if (!this.grantResume) return Promise.reject(new Error('refused'))
     this.state = 'running'
     return Promise.resolve()
@@ -168,6 +172,7 @@ test('sur iPad, les sons passent par les fichiers et non par la synthèse', asyn
   const before = births
   class FakeAudio {
     volume = 1
+    muted = false
     paused = true
     ended = false
     currentTime = 0
@@ -175,6 +180,8 @@ test('sur iPad, les sons passent par les fichiers et non par la synthèse', asyn
     constructor(readonly src: string) { asked.push(src) }
     play() { this.paused = false; return Promise.resolve() }
     pause() { this.paused = true }
+    addEventListener() {}
+    removeEventListener() {}
   }
   ;(globalThis as unknown as { Audio: unknown }).Audio = FakeAudio
   Object.defineProperty(globalThis, 'navigator', {
@@ -202,4 +209,27 @@ test('le fichier choisi suit la progression et reste dans ce qui existe', async 
     const step = Math.max(0, Math.min(2, Math.round(asked)))
     assert.equal(step, expected, `${asked} → ${step}`)
   }
+})
+
+test('moteur endormi : les sons de la Wave et des encouragements sont jetés, pas gardés pour plus tard', async () => {
+  // They used to wait for the engine and all came out together the moment it
+  // woke: a burst of swooshes and chimes at the next touch.
+  await new Promise((resolve) => setTimeout(resolve, 200)) // the notes earlier tests left on timers
+  context.state = 'suspended'
+  context.holdResume = true
+  context.notes.length = 0
+  for (let i = 0; i < 4; i += 1) sound.playWaveStep()
+  sound.playWaveEnter()
+  sound.playEncourage3D(0.8, 'gold')
+  sound.playEncourage3D(0.2)
+  assert.ok(context.held.length > 0, 'le moteur est réveillé pour la suite')
+  for (const wake of context.held.splice(0)) wake()
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  assert.equal(context.notes.length, 0, 'rien ne sort au réveil')
+
+  context.holdResume = false
+  sound.playWaveStep()
+  sound.playEncourage3D(0.2)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.ok(context.notes.length > 0, 'éveillé, le moteur sonne de nouveau')
 })
