@@ -12,6 +12,8 @@ export type Session = {
   recent: Seen[]; visualHistory: Seen[]; exposures?: Exposure[]
   /** Fresh videos of the day served since the session (re)started: the first ten videos are fresh. */
   freshServed?: number
+  /** Videos the session has drawn: where the wheel stands (lib/discovery/wheel.ts). A session from before the wheel starts it at zero. */
+  videos?: number
 }
 /** Draws a session may hold ahead of display: the home's advance, the page's queue. */
 export const PREFETCH_LIMIT = 8
@@ -19,7 +21,7 @@ export type Intent = { revision: number; type: Format; mode: 'random' | 'cool';
   branch: 'editorial' | 'autonomous' | 'general'; lane: 'trend' | 'recent' | 'unknown' | 'described' | 'any'; allowStock: boolean; allowDirectReference: boolean }
 export function newSession(seed: number): Session {
   return { version: 2, seed, revision: 0, displayed: 0, visuals: 0, mixedVisuals: 0,
-    coolTickets: 0, editorialTickets: 0, autonomousTickets: 0, beat: 0, recent: [], visualHistory: [], exposures: [] }
+    coolTickets: 0, editorialTickets: 0, autonomousTickets: 0, beat: 0, videos: 0, recent: [], visualHistory: [], exposures: [] }
 }
 export function planDraw(state: Session, type: Format): Intent {
   const visual = isVisual(type)
@@ -48,7 +50,7 @@ export function projectDraw(state: Session, ticket: Intent, type: Format): Sessi
   const visual = isVisual(type)
   return { ...state, revision: state.revision + 1, displayed: state.displayed + 1,
     visuals: state.visuals + Number(visual), mixedVisuals: state.mixedVisuals + Number(visual && state.displayed >= 10),
-    beat: state.beat + Number(visual),
+    beat: state.beat + Number(visual), videos: (state.videos ?? 0) + Number(type === 'video'),
     coolTickets: state.coolTickets + Number(ticket.mode === 'cool'),
     editorialTickets: state.editorialTickets + Number(ticket.branch === 'editorial'),
     autonomousTickets: state.autonomousTickets + Number(ticket.branch === 'autonomous') }

@@ -76,7 +76,11 @@ export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number):
     categoryId: text(row.categoryId),
     liveBroadcastContent: text(row.liveBroadcastContent),
   }))
+  const served = (row.served as { n?: unknown } | undefined)?.n
   return { key: canonicalMediaKey(row), type: row.type as Format, provider, payload,
+    ...(row._id != null && /^[a-f\d]{24}$/i.test(String(row._id)) ? { id: String(row._id) } : {}),
+    ...(text(row.title) ? { title: (row.title as string).slice(0, 200) } : {}),
+    ...(typeof served === 'number' && served > 0 ? { served } : {}),
     profile: profileFromRow(row), authorKey: channel ? `${provider === 'reddit-youtube' ? 'youtube' : provider}:${channel}` : undefined,
     ...(typeof (row.v3 as { dig?: { subjectId?: unknown } } | undefined)?.dig?.subjectId === 'string' ? { digSubject: (row.v3 as { dig: { subjectId: string } }).dig.subjectId } : {}),
     ...(typeof row.duration === 'string' && isoSeconds(row.duration) > 0 ? { seconds: isoSeconds(row.duration) } : {}),

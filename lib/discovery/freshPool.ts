@@ -109,6 +109,9 @@ export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, see
     const rank = new Map(rows.map((row, position) => [String(row._id), position]))
     picks.splice(0, picks.length, ...picks.filter((index) => rank.has(list.ids[index])).sort((left, right) => rank.get(list.ids[left])! - rank.get(list.ids[right])!))
   }
+  // The least served by the site first, the order above kept among equals: the day's list is one for every device (lib/discovery/served.ts).
+  const served = (index: number) => Number((byId.get(list.ids[index])?.served as { n?: unknown } | undefined)?.n ?? 0) || 0
+  picks.sort((left, right) => served(left) - served(right))
   const recentAuthors = new Set(state.recent.slice(-AUTHOR_SPACING).map((entry) => entry.authorKey).filter(Boolean))
   let fallback: PoolResult<T> | null = null
   for (const index of picks) {

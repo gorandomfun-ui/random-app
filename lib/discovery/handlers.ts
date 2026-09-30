@@ -16,6 +16,8 @@ import { curatorOwnerId, curatorRequestAllowed } from './curatorAuth'
 import { isAdminRequest } from '../auth/adminAuth'
 import { themeAt, themeDeckSwitchedOn } from '../v3/cool/themes'
 import { digDrawSwitchedOn, selectDig } from './digDraw'
+import { selectWheel, wheelSwitchedOn } from './wheel'
+import { countServed, servedCountOn } from './served'
 import { withAbortDeadline } from './exploration'
 import { requestSubjectWork } from './subjectWork'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
@@ -57,27 +59,33 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       const digOn = digDrawSwitchedOn() || (body.digDraw === true && isAdminRequest(req))
       // The theme deck (lib/v3/cool/themes.ts): this visual's universe, when the switch is on — or for the admin's rehearsal of it.
       // The dig draws inside the same card; where it has nothing of that universe, the deck's own paths answer (the owner, 30 September: the themes stay).
-      const deckOn = themeDeckSwitchedOn() || (body.themeDeck === true && isAdminRequest(req)) || digOn
+      // The wheel (lib/discovery/wheel.ts): every video of a session, when its switch is on — or for the admin's rehearsal; it deals inside the universe cards.
+      const wheelOn = wheelSwitchedOn() || (body.wheel === true && isAdminRequest(req))
+      const deckOn = themeDeckSwitchedOn() || (body.themeDeck === true && isAdminRequest(req)) || digOn || wheelOn
       const theme = deckOn && isVisual(ticket.type) ? themeAt(state.seed, state.visuals) : undefined
       // What the device saw this week rides along and is left out of the draw, on top of the session's own forty.
       const seen = parseSeen(body.seen)
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
       // Fresh of the day first: the session's first ten videos, at random among the day's list, none this device already saw today.
-      const fresh = freshEnabled() && ticket.type === 'video'
+      const wheel = wheelOn && ticket.type === 'video'
+        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals)).catch(() => null) : null
+      const fresh = !wheel && freshEnabled() && ticket.type === 'video'
         ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now(), Math.random, theme).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
       // The lanes remain the fallback when the pool holds nothing eligible for this visitor.
       // The dig: a base, a level, a subject the session has not seen, one of its videos.
-      const dig = !fresh && digOn && ticket.type === 'video'
+      const dig = !wheel && !fresh && digOn && ticket.type === 'video'
         ? await selectDig(db, ticket, drawState, deps.decode, Math.random, Date.now()).catch(() => null) : null
-      const cool = !fresh && !dig && coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
+      const cool = !wheel && !fresh && !dig && coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
         ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now(), theme).catch(() => null) : null
-      const choice = fresh ?? dig ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId(), theme)
+      const choice = wheel ?? fresh ?? dig ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId(), theme)
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
+      // The site's count of what it served (lib/discovery/served.ts): one write per visual, so the least served wins next time on every device.
+      if (servedCountOn() && isVisual(choice.item.type) && choice.item.id) await countServed(db, choice.item.id, Date.now()).catch(() => false)
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
-      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}), ...(dig ? { dig: dig.dig } : {}),
+      return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}), ...(wheel ? { wheel: wheel.wheel } : {}), ...(dig ? { dig: dig.dig } : {}),
         ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }
   }

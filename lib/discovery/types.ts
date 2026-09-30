@@ -41,6 +41,12 @@ export type Profile = {
 }
 export type Candidate<T = unknown> = {
   key: string
+  /** The catalogue's id, what the site's count of served contents is written to. */
+  id?: string
+  /** The title as stored: what the session's proportions read (the script it is written in). */
+  title?: string
+  /** How many times the site has served this content (lib/discovery/served.ts). */
+  served?: number
   type: Format
   provider: string
   profile: Profile

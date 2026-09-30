@@ -31,6 +31,7 @@ export function parseSession(value: unknown): Session | null {
         entry.terms.some(x => !Number.isSafeInteger(x) || x < 0 || x > 0xffffffff)) return null
       if (entry.pattern != null && (typeof entry.pattern !== 'string' || entry.pattern.length > 80)) return null
       if (entry.long != null && typeof entry.long !== 'boolean') return null
+      if (entry.foreign != null && typeof entry.foreign !== 'boolean') return null
       if (entry.publicationYear != null && (!Number.isSafeInteger(entry.publicationYear) ||
         Number(entry.publicationYear) < 1800 || Number(entry.publicationYear) > 2200)) return null
       if (entry.metadata != null && (typeof entry.metadata !== 'string' || !/^\d{1,10}:\d{1,10}$/.test(entry.metadata))) return null
@@ -39,8 +40,9 @@ export function parseSession(value: unknown): Session | null {
     }
   }
   if (value.freshServed != null && (typeof value.freshServed !== 'number' || !Number.isSafeInteger(value.freshServed) || value.freshServed < 0 || value.freshServed > 0xffffffff)) return null
+  if (value.videos != null && (typeof value.videos !== 'number' || !Number.isSafeInteger(value.videos) || value.videos < 0 || value.videos > 0xffffffff)) return null
   const s: Session = { ...(value as unknown as Session), beat: typeof value.beat === 'number' ? value.beat : 0 }
-  if ((s.freshServed ?? 0) > s.visuals) return null
+  if ((s.freshServed ?? 0) > s.visuals || (s.videos ?? 0) > s.visuals) return null
   if (s.visuals > s.displayed || s.mixedVisuals > s.visuals || s.coolTickets > s.visuals || s.beat > s.visuals ||
     s.editorialTickets + s.autonomousTickets !== s.coolTickets) return null
   const canonical = (entry: Session['recent'][number]) => entry.type === 'image' && entry.key.startsWith('image:http')

@@ -8,8 +8,12 @@ export type Exposure = {
   content?: number; metadata?: string
   /** A video over fifteen minutes: a session shows a couple, not a row of them. */
   long?: boolean
+  /** A title in a script most visitors cannot read: a few in ten, never a row (the owner, 30 September). */
+  foreign?: boolean
 }
 export const LONG_SECONDS = 15 * 60
+/** The alphabet, not a list: any letter outside the Latin scripts (lib/v3/cool/clean.ts reads the same ranges server-side). */
+const NON_LATIN = /[\u0400-\u04ff\u0590-\u05ff\u0600-\u06ff\u0900-\u0dff\u0e00-\u0e7f\u1100-\u11ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/
 export const EXPOSURE_LIMIT = 100
 export function exposureOf(candidate: Candidate): Exposure | null {
   if (!isVisual(candidate.type)) return null
@@ -24,6 +28,7 @@ export function exposureOf(candidate: Candidate): Exposure | null {
     ...(candidate.profile.pattern ? { pattern: candidate.profile.pattern } : {}),
     ...(candidate.digSubject ? { subject: hash(candidate.digSubject) } : candidate.profile.subject?.primary ? { subject: hash(candidate.profile.subject.primary.key) } : {}),
     ...((candidate.seconds ?? 0) > LONG_SECONDS ? { long: true } : {}),
+    ...(candidate.title && NON_LATIN.test(candidate.title) ? { foreign: true } : {}),
     ...(year != null && Number.isFinite(year) ? { publicationYear: year } : {}),
     ...(candidate.authorKey ? { author: hash(candidate.authorKey) } : {}),
     ...(candidate.seriesKey ? { series: hash(candidate.seriesKey) } : {}),
