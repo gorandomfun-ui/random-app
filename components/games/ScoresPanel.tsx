@@ -2,8 +2,9 @@
 
 /**
  * HIGH SCORE: the ten best of this device, the world's ten best, and the
- * world's two hundred, one tab each. The player's own game is lit when it
- * is there. The world's table is read when its tab opens.
+ * world's two hundred, one tab each. This device's latest game is lit in its
+ * ten, and its games in the world's. The world's table is read when its tab
+ * opens.
  */
 
 import { X } from 'lucide-react'
@@ -19,7 +20,7 @@ import { GAME_TITLES } from './share'
 type Tab = 'device' | 'world' | 'all'
 const pad = (n: number) => String(n).padStart(5, '0')
 
-export default function ScoresPanel({ game, theme, onClose, mine }: { game: GameName; theme: Theme; onClose: () => void; mine?: string[] }) {
+export default function ScoresPanel({ game, theme, onClose }: { game: GameName; theme: Theme; onClose: () => void }) {
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('device')
   const [device] = useState<ScoreEntry[]>(() => topScores(game))
@@ -38,10 +39,12 @@ export default function ScoresPanel({ game, theme, onClose, mine }: { game: Game
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const latest = device.reduce((top, e) => Math.max(top, e.at), 0)
+  const mine = new Set(device.map((e) => e.runId).filter(Boolean))
   const rows: Array<{ key: string; name: string; score: number; level: number; own: boolean }> =
     tab === 'device'
-      ? device.map((e, i) => ({ key: `${e.at}-${i}`, name: e.name, score: e.score, level: e.level, own: Boolean(e.runId && mine?.includes(e.runId)) }))
-      : (world ?? []).slice(0, tab === 'world' ? 10 : 200).map((e, i) => ({ key: `${e.runId}-${i}`, name: e.name, score: e.score, level: e.level, own: Boolean(mine?.includes(e.runId)) }))
+      ? device.map((e, i) => ({ key: `${e.at}-${i}`, name: e.name, score: e.score, level: e.level, own: e.at === latest }))
+      : (world ?? []).slice(0, tab === 'world' ? 10 : 200).map((e, i) => ({ key: `${e.runId}-${i}`, name: e.name, score: e.score, level: e.level, own: mine.has(e.runId) }))
   const tabs: Array<[Tab, string]> = [['device', t('arcade.tabDevice', 'This device')], ['world', t('arcade.tabWorld', 'World')], ['all', t('arcade.tabAll', 'Top 200')]]
 
   return (

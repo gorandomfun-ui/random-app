@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { accepted, countVisual, dueGame, FLOW, freshFlow, levelLost, levelWon, loadFlow, offered, refused, type FlowMoment, type FlowState } from '@/lib/games/flow'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, levelWon, loadFlow, newGame, offered, refused, resumable, type FlowMoment, type FlowState } from '@/lib/games/flow'
 
 /** A moment outside a Wave. */
 const calm = (): FlowMoment => ({ inWave: false, visitSeen: 99 })
@@ -30,7 +30,7 @@ test('à 20 pile, où que soit le rythme — seule une Wave le retient — et le
   assert.deepEqual([...firsts].sort(), ['catcher', 'eater'], 'CATCHER ou EATER, au hasard')
 })
 
-test('quelqu_un qui joue : le niveau suivant revient 10 visuels après, 20 après une défaite — jamais dans une Wave', () => {
+test('quelqu_un qui joue : le niveau suivant revient 10 visuels après ; GAME OVER finit la partie, une nouvelle revient 20 visuels après — jamais dans une Wave', () => {
   let s = seeTo(freshFlow('catcher'), 20)
   // an offer left unanswered already counts as refused: reloading does not bring it straight back
   const shown = offered(s, 1)
@@ -44,16 +44,38 @@ test('quelqu_un qui joue : le niveau suivant revient 10 visuels après, 20 aprè
   assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin - 1), calm()), null)
   assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), calm()), 'catcher')
   assert.equal(dueGame(seeTo(s, 20 + FLOW.afterWin), { inWave: true, visitSeen: 99 }), null)
-  s = levelLost(seeTo(s, 40), 'catcher')
-  assert.equal(s.nextAt, 40 + FLOW.afterLoss)
-  assert.equal(s.runs.catcher?.level, 2, 'le même niveau revient')
+  // RANDOM in the middle of a level: the game waits at that level
+  const left = levelLeft(seeTo(s, 40), 'catcher')
+  assert.equal(left.nextAt, 40 + FLOW.afterLoss)
+  assert.equal(left.runs.catcher?.level, 2, 'le même niveau revient')
+  // GAME OVER: the game ends; the same game again twenty visuals on, from level 1
+  const over = gameOver(seeTo(s, 40), 'catcher')
+  assert.equal(over.runs.catcher, undefined, 'la partie est finie')
+  assert.equal(over.nextAt, 40 + FLOW.afterLoss)
+  assert.equal(dueGame(seeTo(over, 40 + FLOW.afterLoss), calm()), 'catcher')
+  assert.deepEqual(accepted(seeTo(over, 60), 'catcher').run, { level: 1, score: 0 }, 'une nouvelle partie, niveau 1')
   // refused mid-way: back on the ladder, the other game next, the game kept for later
-  s = refused(seeTo(s, 60))
+  s = refused(seeTo(left, 60))
   assert.equal(s.playing, null); assert.equal(s.next, 'eater'); assert.equal(s.nextAt, 60 + FLOW.ladder[0])
   assert.equal(accepted(s, 'catcher').run.level, 2)
   // the sixteenth level won: the game is over and won, the other one comes next time
   const done = levelWon({ ...s, runs: { catcher: { level: 16, score: 9000 } } }, 'catcher', 9500)
   assert.equal(done.runs.catcher, undefined); assert.equal(done.next, 'eater'); assert.equal(done.playing, null)
+})
+
+test('une partie en cours revue dans une autre visite : RESUME au niveau, ou NEW GAME qui la finit', () => {
+  let s = seeTo(freshFlow('eater'), 20)
+  s = accepted(offered(s, 1), 'eater', 'visite-1').state
+  assert.equal(s.runs.eater?.visit, 'visite-1', 'la visite est notée sur la partie')
+  assert.equal(resumable(s, 'eater', 'visite-2'), null, 'pas encore commencée : rien à reprendre')
+  s = levelWon(s, 'eater', 270)
+  assert.equal(resumable(s, 'eater', 'visite-1'), null, 'dans la même visite, elle continue simplement')
+  assert.deepEqual(resumable(s, 'eater', 'visite-2'), { level: 2, score: 270, visit: 'visite-1' })
+  // taken up again in the second visit: written on it, no more question in that visit
+  const again = accepted(s, 'eater', 'visite-2')
+  assert.equal(again.run.level, 2); assert.equal(resumable(again.state, 'eater', 'visite-2'), null)
+  // NEW GAME: the one under way ends, the next round from level 1
+  assert.deepEqual(accepted(newGame(s, 'eater'), 'eater', 'visite-2').run, { level: 1, score: 0, visit: 'visite-2' })
 })
 
 test('sans stockage (navigation privée) : pas d_état, pas de jeu, aucune erreur', () => {
@@ -97,15 +119,20 @@ test('les scores du monde : un plafond tiré des règles, un ticket signé, des 
   assert.equal(worldName('la pute'), 'PLAYER'); assert.equal(worldName('p.d'), 'P.D')
 })
 
-test('une partie jouée en plusieurs fois garde une seule ligne dans le top 10 de l_appareil, qui ne fait que monter', async () => {
-  const { addScore, topScores } = await import('@/lib/games/scores')
+test('le top 10 de l_appareil : une ligne par partie finie ; plein de meilleurs scores, un score plus bas n_y entre pas', async () => {
+  const { addScore, lastName, qualifies, topScores } = await import('@/lib/games/scores')
   const store = new Map<string, string>()
   ;(globalThis as { window?: unknown }).window = { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) } } }
-  addScore('eater', { name: 'ana', score: 100, level: 1, runId: 'r1' })
-  addScore('eater', { name: 'ana', score: 380, level: 2, runId: 'r1' })
-  addScore('eater', { name: 'ana', score: 200, level: 2, runId: 'r1' })
+  assert.equal(qualifies('eater', 0), false, 'un score nul ne compte pas')
+  assert.equal(qualifies('eater', 5), true, 'la table vide : tout score y entre')
+  addScore('eater', { name: 'ana', score: 380, level: 3 })
   addScore('eater', { name: 'bob', score: 250, level: 2 })
-  const top = topScores('eater')
-  assert.deepEqual(top.map((e) => [e.name, e.score]), [['ANA', 380], ['BOB', 250]])
+  addScore('eater', { name: 'ana', score: 380, level: 3 })
+  assert.deepEqual(topScores('eater').map((e) => [e.name, e.score]), [['ANA', 380], ['ANA', 380], ['BOB', 250]], 'deux parties au même score : deux lignes')
+  assert.equal(lastName(), 'ANA')
+  for (let i = 0; i < 10; i += 1) addScore('eater', { name: 'cy', score: 500 + i, level: 4 })
+  assert.equal(topScores('eater').length, 10)
+  assert.equal(qualifies('eater', 499), false, 'dix meilleurs scores : pas de high score')
+  assert.equal(qualifies('eater', 501), true, 'il déloge quelqu_un : high score')
   delete (globalThis as { window?: unknown }).window
 })

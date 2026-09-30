@@ -3,10 +3,13 @@
 /**
  * A game in the Random flow, in the content's frame: the game's title screen
  * with a PLAY button like Random's own — nothing else, no box, no sentence:
- * to pass, RANDOM AGAIN, as for any content. Then one level, then what comes
- * next, said in the visitor's language on a quiet panel — the next level in
- * so many randoms, a retry, try again later, all sixteen won — with CONTINUE
- * back to the randoms. The first level won asks for a name, once.
+ * to pass, RANDOM AGAIN, as for any content. A game under way from another
+ * visit offers RESUME at its level or NEW GAME instead. Then one level, then
+ * what comes next, said in the visitor's language on a quiet panel — the
+ * next level in so many randoms, a retry, try again later, all sixteen won —
+ * with CONTINUE back to the randoms. A game that ends (GAME OVER, WINNER, or
+ * NEW GAME over it) with a score that makes this device's ten asks for a
+ * name: NEW HIGH SCORE, the last name already in the field.
  *
  * On a phone, PLAY takes the game full screen: a bar on top (play/pause on
  * the left, RANDOM in pixel letters in the theme's colour, × on the right),
@@ -31,7 +34,7 @@ import GamePlayer, { type GameControl, type PlayState, type Round, type RoundEve
 import { formatI18n } from '@/lib/i18n/format'
 import { drawLogo, LOGO_HEIGHT, LOGO_WIDTH } from '@/lib/games/logo'
 import { PixelBuffer } from '@/lib/games/pixels'
-import { lastName, NAME_MAX, type GameName } from '@/lib/games/scores'
+import { lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
 import type { Theme } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 
@@ -77,6 +80,9 @@ export default function ArcadeStage({
   onContinue,
   onCard,
   onFull,
+  resume,
+  onNewGame,
+  onName,
 }: {
   game: GameName
   theme: Theme
@@ -92,11 +98,21 @@ export default function ArcadeStage({
   onCard: (card: File | null, url: string | null) => void
   /** The game goes full screen on a phone, or comes back into the page. */
   onFull: (full: boolean) => void
+  /** A game under way from another visit: RESUME at its level, or NEW GAME. */
+  resume: { level: number; score: number } | null
+  /** NEW GAME: the game under way ends — with a name when its score makes the ten — and the round goes back to level 1. */
+  onNewGame: (name: string | null) => void
+  /** The name a high score would be kept under, as it is typed; null when the game's end made no high score. */
+  onName: (name: string | null) => void
 }) {
   const { t } = useI18n()
   const [event, setEvent] = useState<RoundEvent>({ kind: 'title' })
   const [name, setName] = useState('')
-  const [askName, setAskName] = useState(false)
+  /** The game just ended with a score that makes the ten: its name is asked. */
+  const [highScore, setHighScore] = useState(false)
+  /** NEW GAME pressed over a game whose score makes the ten: its name first. */
+  const [newGameAsk, setNewGameAsk] = useState(false)
+  const newGameStart = useRef(false)
   const [phone, setPhone] = useState(false)
   const [upright, setUpright] = useState(true)
   const [full, setFull] = useState(false)
@@ -175,15 +191,24 @@ export default function ArcadeStage({
     else if (e.kind === 'declined') onDeclined()
     else if ((e.kind === 'won' || e.kind === 'winner' || e.kind === 'lost' || e.kind === 'quit') && !decided.current) {
       decided.current = true
-      if ((e.kind === 'won' || e.kind === 'winner') && !lastName()) { setAskName(true); setName('') }
+      // a game over, lost or won: NEW HIGH SCORE if it makes this device's ten
+      const high = (e.kind === 'lost' || e.kind === 'winner') && qualifies(game, e.score)
+      setHighScore(high)
+      if (high) setName(lastName())
       // the round is over: the page comes back, with what comes next
       goFull(false)
       onDecided(e)
     }
-  }, [goFull, onStarted, onDeclined, onDecided])
+  }, [game, goFull, onStarted, onDeclined, onDecided])
 
   const ended = event.kind === 'won' || event.kind === 'winner' || event.kind === 'lost' || event.kind === 'quit'
-  const leave = useCallback(() => onContinue(askName ? name.trim() || null : null), [askName, name, onContinue])
+  /** The name a high score goes under: the one typed, or the last one, or PLAYER. */
+  const keptName = useCallback(() => name.trim() || lastName() || 'PLAYER', [name])
+  const leave = useCallback(() => onContinue(highScore ? keptName() : null), [highScore, keptName, onContinue])
+  // the page keeps the name too, for RANDOM AGAIN pressed instead of CONTINUE
+  const nameTo = useRef(onName)
+  nameTo.current = onName
+  useEffect(() => { nameTo.current(ended && highScore ? keptName() : null) }, [ended, highScore, keptName])
 
   /** PLAY: the round begins, or takes up where it was; on a phone, full screen first, the game started once the frame has grown — and only upright. */
   const play = useCallback(() => {
@@ -201,6 +226,24 @@ export default function ArcadeStage({
     if (!upright) { setWaiting(true); return }
     requestAnimationFrame(() => requestAnimationFrame(go))
   }, [control, event.kind, full, goFull, phone, upright])
+
+  /** NEW GAME: the game under way ends (its name first, if its score makes the ten); the round starts again at level 1 as soon as the page has put it back there. */
+  const startNew = useCallback((recorded: string | null) => {
+    control.touch?.()
+    newGameStart.current = true
+    setNewGameAsk(false)
+    onNewGame(recorded)
+  }, [control, onNewGame])
+  const chooseNew = () => {
+    control.touch?.()
+    if (resume && qualifies(game, resume.score)) { setName(lastName()); setNewGameAsk(true); return }
+    startNew(null)
+  }
+  useEffect(() => {
+    if (!newGameStart.current || round.level !== 1 || round.score !== 0) return
+    newGameStart.current = false
+    play()
+  }, [round, play])
 
   /** ×: the game pauses and the page comes back; nothing is lost. */
   const close = useCallback(() => {
@@ -225,6 +268,7 @@ export default function ArcadeStage({
   }, [ended, leave])
 
   const submit = (e: FormEvent) => { e.preventDefault(); leave() }
+  const submitNew = (e: FormEvent) => { e.preventDefault(); startNew(keptName()) }
   const line =
     event.kind === 'won' ? words('nextLevel', 'Next level in {count} randoms', { count: after.won })
     : event.kind === 'winner' ? words('winnerLine', 'All 16 levels won!')
@@ -232,14 +276,16 @@ export default function ArcadeStage({
     : event.kind === 'retry' ? (event.retriesLeft === 1 ? words('retryLeft', '1 try left') : words('retriesLeft', '{count} tries left', { count: event.retriesLeft }))
     : null
 
+  // a game under way from another visit: RESUME or NEW GAME on the title, instead of PLAY
+  const choosing = !full && event.kind === 'title' && resume != null && !started.current && !newGameAsk
   // PLAY shows on the title; on a phone also in the page while a round waits, paused or for a retry, and full screen once a phone pressed on its side is upright
   const showPlay = full
     ? waiting && !sideways
-    : event.kind === 'title' || (phone && started.current && !ended && (event.kind === 'play' || event.kind === 'retry'))
+    : (event.kind === 'title' && !choosing && !newGameAsk) || (phone && started.current && !ended && (event.kind === 'play' || event.kind === 'retry'))
   // on a phone held upright in the page, under the picture, in room kept for it below the game's frame: the picture
   // centred in what is left, the two together sit in the middle of the page's frame; elsewhere, at its foot
   const under = phone && upright && !full
-  const room = !under ? 0 : ended ? (askName ? 156 : 108) : event.kind === 'retry' ? 112 : 72
+  const room = !under ? 0 : ended ? (highScore ? 184 : 108) : newGameAsk ? 170 : choosing ? 128 : event.kind === 'retry' ? 112 : 72
   // under the picture, the page's width: a narrow picture (a tall board) would squeeze the pill and the panel
   const footOf = (gap: number) => shot && (under
     ? { left: 0, width: '100%', top: shot.top + shot.height + gap }
@@ -282,6 +328,37 @@ export default function ArcadeStage({
           <button type="button" className="arcade-stage__pill" style={{ background: theme.text, color: theme.cream }} onClick={play}>Play</button>
         </div>
       ) : null}
+      {choosing && resume && shot ? (
+        <div className={`arcade-stage__foot arcade-stage__pair${under ? ' arcade-stage__pair--column' : ''}`} style={footOf(14) ?? undefined}>
+          <button type="button" className="arcade-stage__pill" style={{ background: theme.text, color: theme.cream }} onClick={play}>Resume · Level {resume.level}</button>
+          <button type="button" className="arcade-stage__pill arcade-stage__pill--second" style={{ borderColor: theme.text, color: theme.cream }} onClick={chooseNew}>New game</button>
+        </div>
+      ) : null}
+      {newGameAsk && resume && shot ? (
+        <form
+          className="arcade-stage__panel"
+          onSubmit={submitNew}
+          style={under
+            ? { left: '50%', width: 'min(320px, calc(100% - 32px))', top: shot.top + shot.height + 10, transform: 'translateX(-50%)' }
+            : { left: shot.left + shot.width * 0.06, width: shot.width * 0.88, top: shot.top + shot.height - 10, transform: 'translateY(-100%)' }}
+        >
+          <p className="arcade-stage__high" style={{ color: theme.text }}>New high score · {String(resume.score).padStart(5, '0')}</p>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9 ._-]/g, '').slice(0, NAME_MAX))}
+            maxLength={NAME_MAX}
+            placeholder={words('yourName', 'Your name')}
+            aria-label={words('yourName', 'Your name')}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            enterKeyHint="done"
+            className="arcade-stage__name"
+            style={{ borderColor: theme.text }}
+          />
+          <button type="submit" className="arcade-stage__pill" style={{ background: theme.text, color: theme.cream }}>New game</button>
+        </form>
+      ) : null}
       {event.kind === 'retry' && line && shot && !full && under ? (
         <div className="arcade-stage__foot" style={{ left: 0, width: '100%', top: shot.top + shot.height + 76 }}>
           <p className="arcade-stage__note">{line}</p>
@@ -299,8 +376,9 @@ export default function ArcadeStage({
             ? { left: '50%', width: 'min(320px, calc(100% - 32px))', top: shot.top + shot.height + 10, transform: 'translateX(-50%)' }
             : { left: shot.left + shot.width * 0.06, width: shot.width * 0.88, top: shot.top + shot.height - 10, transform: 'translateY(-100%)' }}
         >
+          {highScore ? <p className="arcade-stage__high" style={{ color: theme.text }}>New high score · {String(event.kind === 'lost' || event.kind === 'winner' ? event.score : 0).padStart(5, '0')}</p> : null}
           <p className="arcade-stage__line">{line}</p>
-          {askName ? (
+          {highScore ? (
             <input
               value={name}
               onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9 ._-]/g, '').slice(0, NAME_MAX))}
@@ -337,6 +415,13 @@ export default function ArcadeStage({
         /* the same pill as Random's own button, with a shadow to stand out */
         .arcade-stage__pill { min-width: 160px; max-width: 260px; width: 62%; padding: 12px 24px; border: 0; border-radius: 28px; font-family: var(--font-tomorrow), sans-serif; font-weight: 700; font-size: 16px; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55), 0 3px 0 rgba(0, 0, 0, 0.35); transition: transform 120ms ease; }
         .arcade-stage__pill:hover { transform: scale(1.02); }
+        /* RESUME and NEW GAME side by side at the picture's foot; one above the other under it on a phone */
+        .arcade-stage__pair { gap: 12px; }
+        .arcade-stage__pair .arcade-stage__pill { width: auto; min-width: 150px; max-width: none; flex: 0 1 auto; }
+        .arcade-stage__pair--column { flex-direction: column; align-items: center; gap: 10px; }
+        .arcade-stage__pair--column .arcade-stage__pill { width: 62%; max-width: 260px; }
+        .arcade-stage__pill--second { background: rgba(8, 8, 16, 0.55); border: 2px solid; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45); }
+        .arcade-stage__high { margin: 0; font-family: var(--font-tomorrow), sans-serif; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
         .arcade-stage__note { margin: 0; padding: 4px 12px; border-radius: 12px; background: rgba(8, 8, 16, 0.55); color: #f8f5e6; font-family: var(--font-inter-tight), 'Inter Tight', sans-serif; font-size: 13px; font-weight: 600; }
         /* a quiet panel with the game: the line, a name once, CONTINUE */
         .arcade-stage__panel { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: rgba(8, 8, 16, 0.5); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); font-family: var(--font-inter-tight), 'Inter Tight', sans-serif; color: #f8f5e6; text-align: center; z-index: 2; }

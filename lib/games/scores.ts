@@ -3,15 +3,17 @@
  * the name the player left, and the last name typed so it is offered
  * again. Stored like the quiz points, in localStorage, every read and
  * write guarded: a private window that refuses storage simply keeps no
- * scores, and nothing breaks. The world's best scores come later, in the
- * database.
+ * scores, and nothing breaks. A score is a whole game's, entered when the
+ * game ends (GAME OVER or WINNER) and only if it makes the ten; the world's
+ * two hundred best are in the database.
  */
 
 export type GameName = 'catcher' | 'eater'
-/** `runId`: a game played over several visits (the Random flow), whose entry is updated as it goes on. */
+/** `runId`: that game's line in the world's table, when it was sent there — so the panel can light it. */
 export type ScoreEntry = { name: string; score: number; level: number; at: number; runId?: string }
 
-const KEY = 'random_games_scores_v1'
+/** Version 2 from 30 September: the tables started again, the scores of games not finished left behind. */
+const KEY = 'random_games_scores_v2'
 const NAME_KEY = 'random_games_name_v1'
 export const TOP = 10
 export const NAME_MAX = 10
@@ -50,18 +52,11 @@ export function qualifies(game: GameName, score: number): boolean {
   return list.length < TOP || score > list[list.length - 1].score
 }
 
-/**
- * Puts a score in the table, keeps the ten best; returns its place (1 is the
- * best), or 0 if it did not enter or could not be kept. A score with a
- * `runId` replaces that game's earlier entry, and only ever goes up.
- */
+/** Puts a finished game's score in the table, keeps the ten best; returns its place (1 is the best), or 0 if it did not enter or could not be kept. */
 export function addScore(game: GameName, entry: Omit<ScoreEntry, 'at'> & { at?: number }): number {
   const name = cleanName(entry.name) || 'PLAYER'
   const row: ScoreEntry = { name, score: Math.max(0, Math.floor(entry.score)), level: Math.max(1, Math.floor(entry.level)), at: entry.at ?? Date.now(), ...(entry.runId ? { runId: entry.runId } : {}) }
-  const current = topScores(game)
-  const earlier = entry.runId ? current.find((e) => e.runId === entry.runId) : undefined
-  if (earlier && earlier.score >= row.score) return current.indexOf(earlier) + 1
-  const list = [...current.filter((e) => e !== earlier), row].sort((a, b) => b.score - a.score || a.at - b.at).slice(0, TOP)
+  const list = [...topScores(game), row].sort((a, b) => b.score - a.score || a.at - b.at).slice(0, TOP)
   const place = list.indexOf(row) + 1
   const st = storage()
   if (!st) return 0

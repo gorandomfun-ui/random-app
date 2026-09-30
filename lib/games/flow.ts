@@ -13,12 +13,17 @@
  * - An offer counts as refused the moment it shows, and PLAY takes that
  *   back: an offer left unanswered (the page closed or reloaded) moves the
  *   ladder on instead of coming back at the start of the next visit.
- * - Once someone plays, the next level is back ten visuals after a level
- *   won, twenty after a level lost (two retries come straight away).
- *   A game refused mid-way puts the player back on the ladder; the game
- *   is kept, and taken up again at its level.
+ * - A game runs from level 1 to GAME OVER or WINNER, one level each time it
+ *   comes up; its score adds up level after level. The next level is back
+ *   ten visuals after a level won. A level lost, after its two retries
+ *   straight away (or NO), is GAME OVER: the game ends there and a new one,
+ *   from level 1, comes twenty visuals later. The score counts only then, at
+ *   the end of a game, if it enters this device's ten best.
+ * - A game left half-way — refused, or RANDOM in the middle of a level — is
+ *   kept at its level. Coming back to it in another visit, the player
+ *   chooses: take it up again, or a new game (which ends the old one).
  * - Every level is its own round in the flow: CATCHER starts each with three
- *   lives, EATER with his one; the score of a game adds up level after level.
+ *   lives, EATER with his one.
  *
  * Storage refused (a private window on an iPhone): no state, no game, no
  * error.
@@ -48,8 +53,12 @@ export const FLOW = {
   retries: 2,
 }
 
-/** A game under way in the flow: the level it is at, the score so far, its id and signed ticket for the world's scores. */
-export type Run = { level: number; score: number; runId?: string; token?: string; startedAt?: number }
+/**
+ * A game under way in the flow: the level it is at, the score so far, its id
+ * and signed ticket for the world's scores, and the visit it was last played
+ * in (another visit offers to take it up again or start anew).
+ */
+export type Run = { level: number; score: number; runId?: string; token?: string; startedAt?: number; visit?: string }
 
 export type FlowState = {
   v: 1
@@ -124,10 +133,29 @@ export function refused(s: FlowState): FlowState {
   return { ...s, refusals, nextAt: s.count + gap, playing: null, next: other(game) }
 }
 
-/** The offer taken: off the ladder, playing this game; its game under way, or a new one from level 1. */
-export function accepted(s: FlowState, game: GameName): { state: FlowState; run: Run } {
-  const run = s.runs[game] ?? { level: 1, score: 0 }
+/** The offer taken: off the ladder, playing this game; its game under way, or a new one from level 1. `visit`: this visit, written on the game. */
+export function accepted(s: FlowState, game: GameName, visit?: string): { state: FlowState; run: Run } {
+  const kept = s.runs[game] ?? { level: 1, score: 0 }
+  const run = visit ? { ...kept, visit } : kept
   return { state: { ...s, refusals: 0, stopped: false, playing: game, runs: { ...s.runs, [game]: run } }, run }
+}
+
+/**
+ * The game under way that another visit should offer to take up again —
+ * RESUME at its level, or NEW GAME — or null: none, one not begun, or one
+ * already played in this visit (it simply goes on).
+ */
+export function resumable(s: FlowState, game: GameName, visit: string): Run | null {
+  const run = s.runs[game]
+  if (!run || (run.level <= 1 && run.score <= 0)) return null
+  return run.visit === visit ? null : run
+}
+
+/** NEW GAME: the game under way ends here; the next round starts from level 1. */
+export function newGame(s: FlowState, game: GameName): FlowState {
+  const runs = { ...s.runs }
+  delete runs[game]
+  return { ...s, runs }
 }
 
 /** A level won: the score kept; the next level ten visuals on; the sixteenth, the game is over and won, the other game next time. */
@@ -141,8 +169,15 @@ export function levelWon(s: FlowState, game: GameName, score: number, lastLevel 
   return { ...s, playing: game, next: game, nextAt: s.count + FLOW.afterWin, runs: { ...s.runs, [game]: { ...run, level: run.level + 1, score } } }
 }
 
-/** A level lost after its retries: the same level twenty visuals on, the score as it stood before it. */
-export const levelLost = (s: FlowState, game: GameName): FlowState => ({ ...s, playing: game, next: game, nextAt: s.count + FLOW.afterLoss })
+/** GAME OVER: the level lost after its retries, the game ends; a new one of the same game twenty visuals on, from level 1. */
+export function gameOver(s: FlowState, game: GameName): FlowState {
+  const runs = { ...s.runs }
+  delete runs[game]
+  return { ...s, runs, playing: null, next: game, refusals: 0, nextAt: s.count + FLOW.afterLoss }
+}
+
+/** A level left half-way (RANDOM in the middle of it): the game waits at that level, twenty visuals on. */
+export const levelLeft = (s: FlowState, game: GameName): FlowState => ({ ...s, playing: game, next: game, nextAt: s.count + FLOW.afterLoss })
 
 /** The signed ticket of a game's run, once the server has given it. */
 export function withTicket(s: FlowState, game: GameName, ticket: { runId: string; token: string; startedAt: number }): FlowState {
