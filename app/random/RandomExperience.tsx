@@ -2982,7 +2982,8 @@ export function RandomExperience({
     if (!new URLSearchParams(window.location.search).has('sound-debug')) return
     const tick = () => {
       const state = soundStatus()
-      setSoundWitness(`${state.state} · ne:${state.born || '-'} · coupe:${state.muted ? 'oui' : 'non'} · demandes:${state.asked} · joues:${state.played} · reveils:${state.resumes} · dernier:${state.last || '-'}`)
+      const files = state.files ? ` · fichiers demandes:${state.files.asked} partis:${state.files.started} annules:${state.files.dropped}` : ''
+      setSoundWitness(`${state.state} · ne:${state.born || '-'} · coupe:${state.muted ? 'oui' : 'non'} · demandes:${state.asked} · joues:${state.played} · reveils:${state.resumes} · dernier:${state.last || '-'}${files}`)
     }
     tick()
     const timer = window.setInterval(tick, 400)

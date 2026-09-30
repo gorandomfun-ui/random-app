@@ -13,7 +13,7 @@
  * a page turn a file down.
  */
 
-import { returnSoundPlayer, spareSoundPlayer } from '@/lib/sound/files'
+import { playNowOrNever, returnSoundPlayer, spareSoundPlayer } from '@/lib/sound/files'
 import { gameSoundContext, getMuted, soundByFiles } from '@/utils/sound'
 
 import { renderSound, renderTuneSoftly, SOUND_RATE, type SoundName, type TuneName } from './chiptune'
@@ -168,11 +168,8 @@ function filePlayers(game: GameName): GameSounds {
       if (silent()) return
       const pool = players.get(name)
       if (!pool) return
-      const free = pool.find((audio) => audio.paused || audio.ended) ?? pool[0]
-      try {
-        free.currentTime = 0
-        void free.play().catch(() => undefined)
-      } catch { /* a browser that refuses stays quiet */ }
+      // now or never: a sound Safari held back would come out later with all the others
+      playNowOrNever(pool.find((audio) => audio.paused || audio.ended) ?? pool[0])
     },
     tune(on) {
       want = on && !silent()

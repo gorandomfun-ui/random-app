@@ -1,4 +1,7 @@
 let ctx: AudioContext | null = null
+/** The files' player once loaded, so the witness can tell what became of their sounds. */
+let files: typeof import('@/lib/sound/files') | null = null
+const loadFiles = () => import('@/lib/sound/files').then((m) => { files = m; return m })
 let transitionNoiseBuffer: AudioBuffer | null = null
 let muted = false
 let watching = false
@@ -30,15 +33,15 @@ function ready(context: AudioContext): boolean {
 export function wakeSound(): void {
   if (muted) return
   // Where the engine is off, the files are warmed during this very touch instead.
-  if (!synthesisAllowed()) { void import('@/lib/sound/files').then((m) => m.unlockSoundFiles()).catch(() => undefined); return }
+  if (!synthesisAllowed()) { void loadFiles().then((m) => m.unlockSoundFiles()).catch(() => undefined); return }
   const context = getAudioContext(true)
   if (!context || ready(context)) return
   resume(context)
 }
 
 /** The engine's state, for the witness the page can show on a device. */
-export function soundStatus(): { state: string; muted: boolean; asked: number; played: number; resumes: number; born: string; last: string } {
-  return { state: ctx ? (ctx.state as string) : (synthesisAllowed() ? 'absent' : 'coupe-ios'), muted, asked: tally.asked, played: tally.played, resumes: tally.resumes, born: tally.born, last: tally.last }
+export function soundStatus(): { state: string; muted: boolean; asked: number; played: number; resumes: number; born: string; last: string; files: { asked: number; started: number; dropped: number } | null } {
+  return { state: ctx ? (ctx.state as string) : (synthesisAllowed() ? 'absent' : 'coupe-ios'), muted, asked: tally.asked, played: tally.played, resumes: tally.resumes, born: tally.born, last: tally.last, files: files ? files.fileSoundTally() : null }
 }
 
 /** Coming back to the tab is the other moment the engine may have to be woken. */
@@ -114,9 +117,10 @@ function resume(context: AudioContext): void {
   )
 }
 
-/** Plays one of the rendered files, loading the player the first time it is needed. */
+/** Plays one of the rendered files, loading the player the first time it is needed (that wait counts against the sound's deadline). */
 function playFile(name: 'random' | 'again' | 'wave-enter' | 'wave-step', progress: number): void {
-  void import('@/lib/sound/files').then((m) => m.playSoundFile(name, progress)).catch(() => undefined)
+  const askedAt = performance.now()
+  void loadFiles().then((m) => m.playSoundFile(name, progress, askedAt)).catch(() => undefined)
 }
 
 export const setMuted = (v: boolean) => { muted = v }
@@ -247,11 +251,9 @@ export function playEncourage3D(
     }
   }
 
-  if (ready(c)) {
-    play()
-  } else {
-    void c.resume().then(() => { if (!muted && ready(c)) play() }).catch(() => undefined)
-  }
+  // Waiting for the engine would pile these up and play them all when it came back.
+  if (!ready(c)) { resume(c); return }
+  play()
 }
 
 function soundFinalPush(progress: number): number {
@@ -477,10 +479,9 @@ async function swoosh(duration: number, gainValue: number, startFrequency: numbe
   tally.asked += 1
   const c = getAudioContext(false)
   if (!c) return
-  if (!ready(c)) {
-    try { await c.resume() } catch { return }
-    if (!ready(c)) return
-  }
+  // Dropped, not delayed: every Wave step asked while the engine slept came out together when it woke.
+  if (!ready(c)) { resume(c); return }
+  tally.played += 1
 
   const start = c.currentTime + 0.01
   const sampleCount = Math.max(1, Math.floor(c.sampleRate * duration))
