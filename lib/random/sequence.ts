@@ -71,13 +71,35 @@ export function createRandomSequence(random: () => number = Math.random): Sequen
     imageCount -= 1
   }
 
-  return shuffle([
-    ...repeat({ kind: 'fixed', itemType: 'video' }, videoCount),
-    ...repeat({ kind: 'fixed', itemType: 'image' }, imageCount),
-    ...repeat({ kind: 'fixed', itemType: 'web' }, webCount),
-    ...repeat({ kind: 'quiz', itemType: 'fact' }, RANDOM_SEQUENCE_QUIZ_COUNT),
-    ...repeat({ kind: 'text' }, 3),
-  ], random)
+  return spaced(
+    repeat({ kind: 'fixed', itemType: 'video' }, videoCount),
+    shuffle([
+      ...repeat({ kind: 'fixed', itemType: 'image' }, imageCount),
+      ...repeat({ kind: 'fixed', itemType: 'web' }, webCount),
+      ...repeat({ kind: 'quiz', itemType: 'fact' }, RANDOM_SEQUENCE_QUIZ_COUNT),
+      ...repeat({ kind: 'text' }, 3),
+    ], random),
+    random,
+  )
+}
+
+/**
+ * The others, one at most between two videos: the plain shuffle put three GIFs
+ * or two quizzes in a row (the owner, 30 September: "POURQUOI"). Each of the
+ * gaps around the videos takes at most one non-video; the gaps are drawn at
+ * random, so where they fall still varies from one cycle to the next.
+ */
+export function spaced(videos: SequenceEntry[], others: SequenceEntry[], random: () => number): SequenceEntry[] {
+  const gaps = videos.length + 1
+  if (others.length > gaps) return shuffle([...videos, ...others], random)
+  const chosen = shuffle(Array.from({ length: gaps }, (_, index) => index), random).slice(0, others.length).sort((left, right) => left - right)
+  const out: SequenceEntry[] = []
+  let next = 0
+  for (let gap = 0; gap < gaps; gap += 1) {
+    if (chosen[next] === gap) { out.push(others[next]); next += 1 }
+    if (gap < videos.length) out.push(videos[gap])
+  }
+  return out
 }
 
 export const createSequenceState = (random: () => number = Math.random): RandomSequenceState => ({
