@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
-import { baseBag, DEFAULT_BASE_BAG, DEFAULT_LEVELS_COOL, levelBag, levelsAround, selectDig } from '../../lib/discovery/digDraw'
+import { baseBag, DEFAULT_BASE_BAG, DEFAULT_LEVELS_COOL, levelBag, levelsAround, MIN_SUBJECTS_PER_BASE, selectDig } from '../../lib/discovery/digDraw'
 import { commitDraw, newSession, planDraw } from '../../lib/discovery/pool'
 import { exposureOf, type Exposure } from '../../lib/discovery/diversity'
 import { candidateFromRow } from '../../lib/discovery/catalog'
@@ -35,6 +35,8 @@ function twoCollections(subjects: Document[], items: Document[]): Db {
     return holds(value, condition)
   })
   const collection = (name: string) => ({
+    // The queue is declared big enough for the draw: the gate is tested on its own below.
+    countDocuments: async (filter: Filter<Document>) => (name === 'items' ? items : subjects).filter((row) => matches(row, filter)).length + (name === 'items' ? 0 : 200),
     find: (filter: Filter<Document>, options?: { limit?: number; sort?: Record<string, number> }) => ({
       toArray: async () => {
         let rows = (name === 'items' ? items : subjects).filter((row) => matches(row, filter))
@@ -111,6 +113,20 @@ test('the card commands: a base with nothing of the visual\'s universe gives no 
     const db = twoCollections([{ _id: 'entity:x', label: 'X', base: 'people', ingested: 3, rand: 0.2, universe: other }], [video('x1', 'entity:x', 1, 'X clip', 0.1)])
     const state = newSession(7)
     assert.equal(await selectDig(db, planDraw(state, 'video'), state, (row) => row, () => 0.1, Date.now()), null)
+  } finally {
+    delete process.env.RANDOM_DIG_DRAW_BASES
+  }
+})
+
+test('a base too small to draw from gives nothing: the stock answers until it holds two hundred subjects with videos', async () => {
+  process.env.RANDOM_DIG_DRAW_BASES = 'likes:1'
+  try {
+    const db = twoCollections([{ _id: 'entity:x', label: 'X', base: 'likes', ingested: 3, rand: 0.2, universe: themeAt(5, 0) }], [video('x1', 'entity:x', 1, 'X clip', 0.1)])
+    ;(db.collection('dig_subjects_v4') as unknown as { countDocuments: () => Promise<number> }).countDocuments = async () => 3
+    const small = { collection: (name: string) => (name === 'dig_subjects_v4' ? { ...db.collection(name), countDocuments: async () => 3 } : db.collection(name)) } as unknown as Db
+    const state = newSession(5)
+    assert.ok(MIN_SUBJECTS_PER_BASE >= 100)
+    assert.equal(await selectDig(small, planDraw(state, 'video'), state, (row) => row, () => 0.1, Date.now()), null)
   } finally {
     delete process.env.RANDOM_DIG_DRAW_BASES
   }

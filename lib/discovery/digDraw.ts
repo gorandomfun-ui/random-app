@@ -29,6 +29,25 @@ export const DEFAULT_LEVELS_RANDOM: DigLevel[] = [1, 2, 2, 3, 3, 3, 3, 4, 4, 4]
 /** Trailers a session shows before the draw skips them: a couple, not a row (the owner, 28 September: past two, it is like watching ads). Length is no rule (29 September). */
 export const TRAILERS_PER_SESSION = 2
 
+/**
+ * A base answers the draw only once it holds this many subjects with videos:
+ * drawn from ninety subjects (three for the likes), the same Avengers,
+ * Spider-Man and parade came back from one session and one device to the next
+ * (the owner, 30 September). Below that, the stock of the universe answers,
+ * as it did before the dig; the counts are read again every ten minutes.
+ */
+export const MIN_SUBJECTS_PER_BASE = 200
+const COUNT_TTL_MS = 10 * 60_000
+const counts = new Map<string, { at: number; n: number }>()
+
+async function subjectsWithVideos(db: Db, base: DigBase, now: number): Promise<number> {
+  const known = counts.get(base)
+  if (known && now - known.at < COUNT_TTL_MS) return known.n
+  const n = await db.collection(QUEUE).countDocuments({ base, ingested: { $gt: 0 } }, { hint: 'queue_draw', limit: MIN_SUBJECTS_PER_BASE, maxTimeMS: QUERY_BUDGET_MS }).catch(() => 0)
+  counts.set(base, { at: now, n })
+  return n
+}
+
 /** Subjects tried for one draw, and rows read per subject and level. */
 const SUBJECTS_PER_DRAW = 4
 const ROWS_PER_SEEK = 8
@@ -112,6 +131,7 @@ export async function selectDig<T>(db: Db, ticket: Intent, state: Session, decod
   const index = state.visuals
   const base = bagValue(state.seed, 'dig-base', index, baseBag())
   if (base === 'random') return null
+  if ((await subjectsWithVideos(db, base, now)) < MIN_SUBJECTS_PER_BASE) return null
   const cool = ticket.mode === 'cool'
   const level = bagValue(state.seed, cool ? 'dig-level-cool' : 'dig-level-random', index, cool ? levelBag(process.env.RANDOM_DIG_DRAW_LEVELS_COOL, DEFAULT_LEVELS_COOL) : levelBag(process.env.RANDOM_DIG_DRAW_LEVELS_RANDOM, DEFAULT_LEVELS_RANDOM))
   const recent = (state.exposures ?? []).slice(-60)

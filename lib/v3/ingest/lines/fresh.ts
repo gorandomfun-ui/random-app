@@ -18,6 +18,7 @@ import { capForeignSketches, capUniverses, dailyViews, FRESH_MEMORY_DAYS, FRESH_
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
+import { isStillAlbum } from '../../dig/door'
 
 export const FRESH_COLLECTION = 'fresh_daily_v1'
 const ADMIT_CHUNK = 100
@@ -166,6 +167,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     const title = String(row.title ?? '')
     if (junkKind(title) || miniSeriesVerdict({ title, aspectRatio: row.aspectRatio, duration: row.duration }) || isAiMade(row.channelTitle, title)) continue
     if (!isFreshFormat({ channelTitle: row.channelTitle, duration: row.duration, universe: row.v3?.universe })) continue
+    // A lyric video or an audio-only track opens no session (the owner, 30 September: "2 vidéos de musique sans image à nouveau").
+    if (isStillAlbum({ title, channelTitle: String(row.channelTitle ?? '') })) continue
     byBucket.set(entry.bucket, [...(byBucket.get(entry.bucket) ?? []), {
       id: String(row._id), videoId: entry.raw.videoId, bucket: entry.bucket, rank: entry.rank, region: entry.region,
       views: entry.daily, channel: row.channelId ? String(row.channelId) : undefined,
