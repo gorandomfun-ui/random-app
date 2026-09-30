@@ -27,6 +27,7 @@ import { queueLikes } from '../../dig/likes'
 import { readThemes, themeSubject } from '../../dig/themes'
 import { curatorOwnerId } from '@/lib/discovery/curatorAuth'
 import { queueTrends } from '../../dig/trends'
+import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
@@ -331,6 +332,19 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       if (current && !nextPass(current, true)) await markDone(ctx.db, subject._id)
     }
     if (!servedThisRound) { idle += 1; if (idle >= 2) break }
+  }
+
+  // The day's recap by universe, once a day: the nightly pools line used to write it, and the admin page reads it.
+  const recapMeta = await ctx.db.collection(META).findOne({ _id: 'recap' } as Document).catch(() => null)
+  if (recapMeta?.day !== today && !ctx.dryRun) {
+    try {
+      const recap = await computeUniverseRecap(ctx.db, new Date())
+      await writeUniverseRecap(ctx.db, recap)
+      await ctx.db.collection(META).updateOne({ _id: 'recap' } as Document, { $set: { day: today, at: new Date() } }, { upsert: true })
+      ctx.log(`récap par univers : ${recapNote(recap)}`)
+    } catch (error) {
+      errors.push(`récap par univers : ${message(error)}`)
+    }
   }
 
   const note = `${servedIds.size} sujets · ${runner.served.length} passes · ${runner.units} unités · ${counters.inserted} vidéos entrées`
