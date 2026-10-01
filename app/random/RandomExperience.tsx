@@ -4474,7 +4474,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         // The device remembers for a week what the session remembers for six hours.
         if (entry.discoveryKey) rememberSeen(entry.discoveryKey)
         // How long the previous visual stayed on screen closes here; this one opens (utils/keptMemory.ts).
-        markShown(entry.item.type === 'video' || entry.item.type === 'image' ? (entry.item as { _id?: string })._id ?? null : null)
+        markShown(entry.item.type === 'video' || entry.item.type === 'image' ? (entry.item as { _id?: string })._id ?? null : null, (entry.item as { card?: string }).card)
       }
       // the games count the images and videos seen on this device, visit after visit
       if (flowRef.current && (entry.item.type === 'image' || entry.item.type === 'video')) {

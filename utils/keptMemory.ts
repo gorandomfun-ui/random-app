@@ -10,25 +10,25 @@
  * a number of seconds, capped, a few at a time.
  */
 
-export type Kept = { id: string; seconds: number }
+export type Kept = { id: string; seconds: number; card?: string }
 /** Past this, the visitor has walked away, not watched. */
 export const KEPT_CAP_SECONDS = 120
 /** Reports a draw carries at most; older ones fall off. */
 export const KEPT_PER_DRAW = 4
 
-type Open = { id: string; at: number }
+type Open = { id: string; at: number; card?: string }
 
 export function createKeptMemory(clock: () => number = Date.now) {
   let open: Open | null = null
   let pending: Kept[] = []
   return {
-    /** A visual is on screen now (null: something that is not a visual); the previous one closes. */
-    markShown(id: string | null, now = clock()): void {
+    /** A visual is on screen now (null: something that is not a visual), with the card that served it; the previous one closes. */
+    markShown(id: string | null, card?: string, now = clock()): void {
       if (open) {
         const seconds = Math.min(KEPT_CAP_SECONDS, Math.max(0, Math.round((now - open.at) / 1000)))
-        pending = [...pending, { id: open.id, seconds }].slice(-KEPT_PER_DRAW * 2)
+        pending = [...pending, { id: open.id, seconds, ...(open.card ? { card: open.card } : {}) }].slice(-KEPT_PER_DRAW * 2)
       }
-      open = id && /^[a-f\d]{24}$/i.test(id) ? { id, at: now } : null
+      open = id && /^[a-f\d]{24}$/i.test(id) ? { id, at: now, ...(card ? { card } : {}) } : null
     },
     /** The reports ready to ride with a draw; taken once. */
     takeKept(): Kept[] {
@@ -40,5 +40,5 @@ export function createKeptMemory(clock: () => number = Date.now) {
 }
 
 const memory = createKeptMemory()
-export const markShown = (id: string | null): void => memory.markShown(id)
+export const markShown = (id: string | null, card?: string): void => memory.markShown(id, card)
 export const takeKept = (): Kept[] => memory.takeKept()

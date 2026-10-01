@@ -13,12 +13,12 @@
  * rest stay pure, the surprise is built in.
  */
 
-import { ObjectId, type Db } from 'mongodb'
+import { ObjectId, type Db, type Document } from 'mongodb'
 
 import type { Candidate } from './types'
 import type { Slot } from './wheel'
 
-export type Kept = { id: string; seconds: number }
+export type Kept = { id: string; seconds: number; card?: string }
 export type KeptCount = { n: number; seconds: number }
 
 export const KEPT_PER_DRAW = 4
@@ -33,6 +33,12 @@ export const TILT_MAX = 2
 export const CURATED_SLOTS: ReadonlySet<Slot> = new Set<Slot>(['taste', 'deep', 'joker', 'bonus'])
 
 const WRITE_BUDGET_MS = 400
+/** The day's tally by card: how many reports and how many seconds, one document a day. */
+export const KEPT_CARDS_COLLECTION = 'kept_cards_v1'
+const CARD = /^[a-z-]+(?::[a-z-]+)?$/
+
+/** The Paris day of a moment, `YYYY-MM-DD`. */
+export const parisDay = (at: Date): string => new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
 
 /** The reports of a request body: an id and capped seconds, a few at most; anything else is dropped. */
 export function parseKept(value: unknown): Kept[] {
@@ -40,20 +46,38 @@ export function parseKept(value: unknown): Kept[] {
   const kept: Kept[] = []
   for (const entry of value.slice(0, KEPT_PER_DRAW)) {
     if (!entry || typeof entry !== 'object') continue
-    const { id, seconds } = entry as { id?: unknown; seconds?: unknown }
+    const { id, seconds, card } = entry as { id?: unknown; seconds?: unknown; card?: unknown }
     if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id) || typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) continue
-    kept.push({ id, seconds: Math.min(KEPT_CAP_SECONDS, Math.round(seconds)) })
+    kept.push({ id, seconds: Math.min(KEPT_CAP_SECONDS, Math.round(seconds)), ...(typeof card === 'string' && card.length <= 24 && CARD.test(card) ? { card } : {}) })
   }
   return kept
 }
 
-/** One write for all the reports of a draw. */
-export async function recordKept(db: Db, kept: readonly Kept[]): Promise<number> {
+/** One write for all the reports of a draw on the contents, and one on the day's tally by card. */
+export async function recordKept(db: Db, kept: readonly Kept[], now = new Date()): Promise<number> {
   if (!kept.length) return 0
   const result = await db.collection('items').bulkWrite(kept.map((report) => ({
     updateOne: { filter: { _id: new ObjectId(report.id) }, update: { $inc: { 'served.kept': 1, 'served.seconds': report.seconds } } },
   })), { ordered: false, maxTimeMS: WRITE_BUDGET_MS } as { ordered: boolean })
+  const byCard: Record<string, number> = {}
+  for (const report of kept) {
+    if (!report.card) continue
+    byCard[`cards.${report.card}.n`] = (byCard[`cards.${report.card}.n`] ?? 0) + 1
+    byCard[`cards.${report.card}.seconds`] = (byCard[`cards.${report.card}.seconds`] ?? 0) + report.seconds
+  }
+  if (Object.keys(byCard).length) {
+    const day = parisDay(now)
+    await db.collection(KEPT_CARDS_COLLECTION).updateOne({ _id: day } as Document, { $inc: byCard, $setOnInsert: { day } }, { upsert: true, maxTimeMS: WRITE_BUDGET_MS }).catch(() => undefined)
+  }
   return result.matchedCount
+}
+
+export type KeptCards = { day: string; cards: Record<string, { n: number; seconds: number }> }
+
+/** The last few days' tallies by card, the latest first. */
+export async function readKeptCards(db: Db, days = 7): Promise<KeptCards[]> {
+  const rows = await db.collection(KEPT_CARDS_COLLECTION).find({}, { sort: { day: -1 }, limit: days, maxTimeMS: 3000 }).toArray()
+  return rows.map((row) => ({ day: String(row.day), cards: (row.cards ?? {}) as KeptCards['cards'] }))
 }
 
 /** How a content's kept seconds compare with the expected mean, smoothed, between half and double. */

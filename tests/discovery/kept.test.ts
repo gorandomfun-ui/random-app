@@ -14,12 +14,12 @@ const id = (n: number) => n.toString(16).padStart(24, '0')
 test('the device closes a visual with the seconds it stayed, capped, and hands a few reports to the next draw', () => {
   let now = 1_000
   const memory = createKeptMemory(() => now)
-  memory.markShown(id(1)); now += 12_400
+  memory.markShown(id(1), 'long'); now += 12_400
   memory.markShown(id(2)); now += 500_000
   memory.markShown(null); now += 3_000
   memory.markShown('not-an-id'); now += 2_000
   memory.markShown(id(3))
-  assert.deepEqual(memory.takeKept(), [{ id: id(1), seconds: 12 }, { id: id(2), seconds: KEPT_CAP_SECONDS }])
+  assert.deepEqual(memory.takeKept(), [{ id: id(1), seconds: 12, card: 'long' }, { id: id(2), seconds: KEPT_CAP_SECONDS }])
   assert.deepEqual(memory.takeKept(), [])
   for (let n = 10; n < 10 + KEPT_PER_DRAW * 3; n += 1) { now += 1_000; memory.markShown(id(n)) }
   assert.equal(memory.takeKept().length, KEPT_PER_DRAW)
@@ -32,15 +32,19 @@ test('the reports ride with the draw, and the site keeps only well-formed ones',
   const load = makeRandomLoader('fr', request, () => [], store, () => [{ id: id(7), seconds: 9 }])
   await load(newSession(1), 'video', new AbortController().signal)
   assert.deepEqual(bodies[0].kept, [{ id: id(7), seconds: 9 }])
-  assert.deepEqual(parseKept([{ id: id(7), seconds: 9.6 }, { id: 'nope', seconds: 3 }, { id: id(8), seconds: -1 }, { id: id(9), seconds: 999 }, 'x']), [{ id: id(7), seconds: 10 }, { id: id(9), seconds: KEPT_CAP_SECONDS }])
+  assert.deepEqual(parseKept([{ id: id(7), seconds: 9.6, card: 'bonus:music' }, { id: 'nope', seconds: 3 }, { id: id(8), seconds: -1 }, { id: id(9), seconds: 999, card: 'Bad Card!' }, 'x']), [{ id: id(7), seconds: 10, card: 'bonus:music' }, { id: id(9), seconds: KEPT_CAP_SECONDS }])
   assert.deepEqual(parseKept('x'), [])
 })
 
-test('one write adds the reports to the contents', async () => {
+test('one write adds the reports to the contents, one more to the day\'s tally by card', async () => {
   const writes: Document[] = []
-  const db = { collection: () => ({ bulkWrite: async (ops: Document[]) => { writes.push(...ops); return { matchedCount: ops.length } } }) } as unknown as Db
-  assert.equal(await recordKept(db, [{ id: id(1), seconds: 12 }, { id: id(2), seconds: 0 }]), 2)
+  const tallies: Document[] = []
+  const db = { collection: (name: string) => ({ bulkWrite: async (ops: Document[]) => { writes.push(...ops); return { matchedCount: ops.length } }, updateOne: async (filter: Document, update: Document) => { tallies.push({ name, filter, update }); return { matchedCount: 1 } } }) } as unknown as Db
+  assert.equal(await recordKept(db, [{ id: id(1), seconds: 12, card: 'long' }, { id: id(2), seconds: 0 }], new Date('2026-10-01T21:00:00Z')), 2)
   assert.equal(writes.length, 2)
+  assert.equal(tallies.length, 1)
+  assert.equal(tallies[0].filter._id, '2026-10-01')
+  assert.deepEqual(tallies[0].update.$inc, { 'cards.long.n': 1, 'cards.long.seconds': 12 })
   assert.ok(writes[0].updateOne.filter._id instanceof ObjectId)
   assert.deepEqual(writes[0].updateOne.update, { $inc: { 'served.kept': 1, 'served.seconds': 12 } })
   assert.equal(await recordKept(db, []), 0)

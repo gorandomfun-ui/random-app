@@ -81,6 +81,7 @@ type DigReport = {
   subjects: Array<{ id: string; label: string; fr?: string; base: string; fame: string; passes: number; ingested: number; lastRunAt?: string; sample: string[] }>
   runs: Array<{ startedAt: string; status: string; note?: string; errors: number }>
 }
+type KeptCardsRow = { day: string; cards: Record<string, { n: number; seconds: number }> }
 type CardCensusRow = { day: string; at: string; total: number; cards: Record<string, number>; refused: { ai: number; still: number } }
 const CARD_LABEL: Record<string, string> = { buzz: 'Buzz', long: 'Long', retro: 'Rétro', taste: 'Goût', world: 'Monde', short: 'Court', deep: 'Confidentiel', weird: 'Weird / fun', 'bonus:music': 'Bonus musique', 'bonus:gaming': 'Bonus jeu vidéo', 'bonus:humor-memes': 'Bonus drôle' }
 const DIG_BASE: Record<string, string> = { people: 'Personnes', keywords: 'Mots-clés', trends: 'Tendances', likes: 'Likes', snowball: 'Boule de neige' }
@@ -138,6 +139,7 @@ export default function IngestReportsPage() {
   const [web, setWeb] = useState<WebReport | null>(null)
   const [dig, setDig] = useState<DigReport | null>(null)
   const [cards, setCards] = useState<CardCensusRow[]>([])
+  const [keptCards, setKeptCards] = useState<KeptCardsRow[]>([])
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -154,7 +156,7 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null; cards?: CardCensusRow[] }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null; cards?: CardCensusRow[]; keptCards?: KeptCardsRow[] }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
@@ -164,6 +166,7 @@ export default function IngestReportsPage() {
       setWeb(payload.web ?? null)
       setDig(payload.dig ?? null)
       setCards(payload.cards ?? [])
+      setKeptCards(payload.keptCards ?? [])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -282,6 +285,22 @@ export default function IngestReportsPage() {
               ))}
             </tbody>
           </table>
+          {keptCards.length > 0 && (
+            <>
+              <p style={S.hint}>Combien de secondes les visiteurs restent sur la vidéo de chaque carte (moyenne, et le nombre de vidéos mesurées).</p>
+              <table style={S.table}>
+                <thead><tr><th style={S.th}>Jour</th>{Object.keys(CARD_LABEL).map((card) => <th key={card} style={S.th}>{CARD_LABEL[card]}</th>)}<th style={S.th}>Hasard</th><th style={S.th}>Joker</th></tr></thead>
+                <tbody>
+                  {keptCards.map((row) => (
+                    <tr key={row.day}>
+                      <td style={S.td}>{formatDay(row.day)}</td>
+                      {[...Object.keys(CARD_LABEL), 'chance', 'joker'].map((card) => { const cell = row.cards[card]; return <td key={card} style={S.td}>{cell && cell.n > 0 ? `${Math.round(cell.seconds / cell.n)} s (${cell.n})` : '—'}</td> })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </section>
       )}
       {dig && (

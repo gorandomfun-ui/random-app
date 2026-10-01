@@ -15,6 +15,8 @@ type DiscoveryMetadata = {
 
 type Identifiable = {
   _id?: string
+  /** The card of the wheel that served it (lib/discovery/wheel.ts): the page sends it back with the seconds it was kept. */
+  card?: string
 }
 
 export type SourceInfo = {

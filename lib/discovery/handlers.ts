@@ -89,6 +89,8 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
+      // The card rides on the item, so the device can say how long each card's video was kept (lib/discovery/kept.ts).
+      if (wheel) publicCandidate.payload = { ...(publicCandidate.payload as object), card: wheel.wheel.slot === 'bonus' && wheel.wheel.universe ? `bonus:${wheel.wheel.universe}` : wheel.wheel.slot } as T
       return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}), ...(wheel ? { wheel: wheel.wheel } : {}), ...(dig ? { dig: dig.dig } : {}),
         ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }

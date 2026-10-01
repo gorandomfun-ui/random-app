@@ -13,6 +13,7 @@ import { refusalsReport } from '@/lib/ingest/miniSeriesStore'
 import { CANDIDATES } from '@/lib/v3/web/candidates'
 import { CSE_DAILY_FREE, cseUsed } from '@/lib/v3/web/cseQuota'
 import { readCardCensus } from '@/lib/v3/cards/census'
+import { readKeptCards } from '@/lib/discovery/kept'
 import { ObjectId } from 'mongodb'
 
 /**
@@ -253,6 +254,8 @@ export async function GET(request: Request) {
     const dig = await digReport(db, now).catch(() => null)
     // What each card of the wheel received, day by day (written by the dig line after every run).
     const cards = await readCardCensus(db, 7).catch(() => [])
+    // How long the visitors kept each card's videos, day by day (lib/discovery/kept.ts).
+    const keptCards = await readKeptCards(db, 7).catch(() => [])
 
     return NextResponse.json({
       miniSeries,
@@ -260,6 +263,7 @@ export async function GET(request: Request) {
       web,
       dig,
       cards,
+      keptCards,
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,
