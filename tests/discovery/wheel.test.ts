@@ -87,7 +87,7 @@ test('a card the universe cannot fill is filled from the whole stock', async () 
 })
 
 test('the session rules hold on every card: not the same author within ten videos, a few foreign scripts, never a row of them', () => {
-  const seen = [video('Skate session at the park', { channel: 'skater' }), video('東京の朝', {}), video('서울의 밤', {}), video('北京の夜', {})]
+  const seen = [video('Skate session at the park', { channel: 'skater', universe: 'travel' }), video('東京の朝', { universe: 'food' }), video('서울의 밤', { universe: 'art' }), video('北京の夜', { universe: 'craft' })]
   let state = newSession(5)
   for (const row of seen) state = { ...state, exposures: appendExposure(state.exposures, withSignals(candidateFromRow(row, {}, Date.now()))) }
   const rows = [
@@ -135,7 +135,7 @@ const remembered = (seed: number, rows: Document[]): Session => {
 
 test('three titles of one language in the last ten: the next one in that language waits for another', () => {
   const french = ['Les meilleures recettes de cuisine de grand-mère pour le dimanche', 'Le journal du matin présenté depuis les studios parisiens', 'Une promenade tranquille dans les rues du vieux Lyon un soir']
-  const state = remembered(21, french.map((title) => video(title)))
+  const state = remembered(21, french.map((title, index) => video(title, { universe: ['food', 'news-society', 'travel'][index] })))
   const rows = [video('Un reportage complet sur les marchés de Provence en été', { served: 0 }), video('A quiet walk through the old streets of Edinburgh at night', { served: 2 })]
   const db = fakeDb(rows)
   assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A quiet walk through the old streets of Edinburgh at night')
@@ -165,4 +165,14 @@ test('the bonus card names music, gaming and humour in turn, and keeps its quali
   const filled = await fillSlot(db, 'bonus', context(db, state))
   assert.equal(filled?.item.title, 'Speedrun history of a classic platformer')
   assert.equal(filled?.from, 'bonus:gaming')
+})
+
+test('two of one universe in the last ten videos: a third waits, the bonus card included', async () => {
+  const state = remembered(24, [video('Concert in the park', { universe: 'music' }), video('Studio session with the band', { universe: 'music' })])
+  const rows = [video('A new single, live on stage', { universe: 'music' }), video('A goal from midfield', { universe: 'sport', served: 5 })]
+  const db = fakeDb(rows)
+  assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A goal from midfield')
+  assert.equal(sessionRules(state).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'universe')
+  const musicRound = [0, 1, 2].map((round) => round * WHEEL.length).find((index) => bonusAt(24, index) === 'music')!
+  assert.equal(await fillSlot(db, 'bonus', context(db, { ...state, videos: musicRound })), null)
 })

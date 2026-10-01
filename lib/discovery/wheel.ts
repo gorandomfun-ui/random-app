@@ -25,7 +25,7 @@
  * The session's rules hold on every card (`sessionRules`): not the same
  * content, not the same story, not the same subject or author within ten
  * videos, three in ten at most of one language or of a script most visitors
- * cannot read, one news video in ten, trailers two a session, still album
+ * cannot read, one news video in ten, two of one universe in ten, trailers two a session, still album
  * covers only by chance. Proportions read on labels and detectors, never a
  * list. Behind `RANDOM_WHEEL=1`, or the admin's `wheel: true` for a rehearsal.
  */
@@ -69,6 +69,8 @@ export const DEEP_VIEWS = 10_000
 export const FOREIGN_IN_TEN = 3
 export const LANGUAGE_IN_TEN = 3
 export const NEWS_IN_TEN = 1
+/** One universe among the last ten videos: two at most (the owner, 30 September: "pas deux fois le même thème sur dix randoms"; 1 October: music at a fifth of a session with the bonus card). */
+export const UNIVERSE_IN_TEN = 2
 /** Not the same subject, nor the same author, within this many videos. */
 export const SPACING = 10
 
@@ -131,7 +133,7 @@ export function withSignals<T>(candidate: Candidate<T>): Candidate<T> {
   return { ...candidate, ...(lang ? { lang } : {}), ...(news ? { news: true } : {}) }
 }
 
-export type Refusal = 'subject' | 'author' | 'foreign' | 'language' | 'news' | 'trailer'
+export type Refusal = 'subject' | 'author' | 'foreign' | 'language' | 'news' | 'trailer' | 'universe'
 export type SessionRules = {
   /** Why the session refuses this candidate now, or null. */
   refuses: (candidate: Candidate) => Refusal | null
@@ -142,8 +144,8 @@ export type SessionRules = {
 /**
  * What the last ten videos of the session allow: the same subject or author
  * not again, at most three titles of one language or in a foreign script, one
- * news video, two trailers in the whole session. Read on the exposures the
- * page keeps (lib/discovery/diversity.ts).
+ * news video, two of one universe, two trailers in the whole session. Read on
+ * the exposures the page keeps (lib/discovery/diversity.ts).
  */
 export function sessionRules(state: Session): SessionRules {
   const recent = (state.exposures ?? []).filter((exposure) => exposure.type === 'video').slice(-SPACING)
@@ -153,6 +155,8 @@ export function sessionRules(state: Session): SessionRules {
   const languages = new Map<string, number>()
   for (const exposure of recent) if (exposure.lang) languages.set(exposure.lang, (languages.get(exposure.lang) ?? 0) + 1)
   const newsFull = recent.filter((exposure) => exposure.news).length >= NEWS_IN_TEN
+  const universes = new Map<string, number>()
+  for (const exposure of recent) if (exposure.universe) universes.set(exposure.universe, (universes.get(exposure.universe) ?? 0) + 1)
   const trailersFull = trailersSeenIn(state.exposures) >= TRAILERS_PER_SESSION
   // The universes lead (the owner, 28 September): not the one of the previous video when another fits, the last three set aside when the count allows.
   const previousUniverse = recent[recent.length - 1]?.universe
@@ -165,6 +169,7 @@ export function sessionRules(state: Session): SessionRules {
       if (stamp?.foreign && foreignFull) return 'foreign'
       if (candidate.lang && (languages.get(candidate.lang) ?? 0) >= LANGUAGE_IN_TEN) return 'language'
       if (candidate.news && newsFull) return 'news'
+      if (candidate.universe && (universes.get(candidate.universe) ?? 0) >= UNIVERSE_IN_TEN) return 'universe'
       if (trailersFull && isTrailerTitle(candidate.title)) return 'trailer'
       return null
     },
