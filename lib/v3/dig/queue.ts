@@ -49,7 +49,12 @@ export type QueuedSubject = {
   source?: Record<string, unknown>
   /** A random key, for the draw to pick a subject from a random point. */
   rand?: number
+  /** A subject from a Wikipedia list (lib/v3/dig/lists.ts): Dailymotion first, YouTube only once it has bitten. */
+  probe?: boolean
 }
+
+/** How many videos a probe must bring in from Dailymotion before YouTube is asked for it. */
+export const PROBE_HITS = 8
 
 /** How deep each fame goes: pages of the top, searches around, channels read, Dailymotion searches. */
 export const PLAN: Record<Fame, { topPages: number; around: number; channels: number; dailymotion: number; depthTarget: number }> = {
@@ -103,13 +108,18 @@ function passesDone(subject: QueuedSubject, pass: DigPass): number {
  * n'est pas dans le mix ?"): it has no quota, so it never waits for YouTube.
  * A name goes top, Dailymotion, around (as many searches as its fame allows),
  * its channels, then Dailymotion again. A theme goes top once, Dailymotion,
- * then one angle combination per call until its angles run out.
+ * then one angle combination per call until its angles run out. A probe
+ * (a Wikipedia list entry) goes Dailymotion first and is done unless it bit.
  */
 export function nextPass(subject: QueuedSubject, youtube = true): DigPass | null {
   const plan = PLAN[subject.fame]
   const dm = passesDone(subject, 'dailymotion')
   const wantsDailymotion = () => dm < plan.dailymotion
   if (subject.kind === 'topic') {
+    if (subject.probe) {
+      if (dm < 1) return 'dailymotion'
+      if (subject.ingested < PROBE_HITS) return null
+    }
     if (!passesDone(subject, 'top')) return youtube ? 'top' : wantsDailymotion() ? 'dailymotion' : null
     if (dm < 1) return 'dailymotion'
     const left = (subject.angles ?? []).filter((angle) => !(subject.done ?? []).includes(angle))
@@ -134,11 +144,13 @@ const WORKABLE: QueueState[] = ['queued', 'running']
  * all its passes (its top, then around, its channels, Dailymotion) before
  * another star is opened — the first run of 29 September opened forty
  * subjects and went deep into none. Among the begun, the most urgent and the
- * least recently served; of one country when the turn names it.
+ * least recently served; of one country or one universe when the turn names
+ * it; the new before the begun when `prefer` says so (the keywords base opens
+ * a probe every other ticket, so the lists are tried in breadth).
  */
-export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true): Promise<QueuedSubject | null> {
-  const filter = { base, ...(country ? { country } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
-  for (const state of ['running', 'queued'] as const) {
+export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true, universe?: Universe, prefer: 'running' | 'queued' = 'running'): Promise<QueuedSubject | null> {
+  const filter = { base, ...(country ? { country } : {}), ...(universe ? { universe } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
+  for (const state of (prefer === 'queued' ? ['queued', 'running'] : ['running', 'queued']) as Array<'running' | 'queued'>) {
     const rows = await db.collection<QueuedSubject>(QUEUE)
       .find({ ...filter, state }, { sort: { priority: -1, lastRunAt: 1 }, limit: 8, maxTimeMS: 4000 })
       .toArray()
@@ -191,6 +203,7 @@ export async function enqueue(db: Db, subjects: NewSubject[]): Promise<{ inserte
           depthTarget: subject.depthTarget ?? PLAN[subject.fame].depthTarget, createdAt: now, done: [], rand: Math.random(),
           ...(subject.country ? { country: subject.country } : {}), ...(subject.lang ? { lang: subject.lang } : {}), ...(subject.universe ? { universe: subject.universe } : {}),
           ...(subject.ownChannels ? { ownChannels: subject.ownChannels } : {}), ...(subject.angles ? { angles: subject.angles } : {}), ...(subject.source ? { source: subject.source } : {}),
+          ...(subject.probe ? { probe: true } : {}),
         },
         $set: { label: subject.label, priority: subject.priority ?? 0 },
         $addToSet: { aliases: { $each: subject.aliases } },
@@ -207,6 +220,19 @@ export async function enqueue(db: Db, subjects: NewSubject[]): Promise<{ inserte
  * September: "un élément de chaque hémisphère ou continent par jour au moins").
  * Within a region, the country served the longest ago first.
  */
+/**
+ * The universes of the keywords queue, the one served the longest ago first:
+ * the keywords tickets take them in turn, so the lists are dug in breadth
+ * across the universes rather than one universe to the end.
+ */
+export async function universeTurns(db: Db, base: DigBase = 'keywords'): Promise<Universe[]> {
+  const rows = await db.collection<QueuedSubject>(QUEUE).aggregate<{ _id: Universe; last: Date | null }>([
+    { $match: { base, state: { $in: WORKABLE }, universe: { $exists: true } } },
+    { $group: { _id: '$universe', last: { $max: '$lastRunAt' } } },
+  ], { maxTimeMS: 8000 }).toArray()
+  return rows.sort((left, right) => (left.last ? new Date(left.last).getTime() : 0) - (right.last ? new Date(right.last).getTime() : 0)).map((row) => row._id)
+}
+
 export async function countryTurns(db: Db, regionOf: Record<string, string>): Promise<string[]> {
   const rows = await db.collection<QueuedSubject>(QUEUE).aggregate<{ _id: string; last: Date | null }>([
     { $match: { base: 'people', state: { $in: WORKABLE }, country: { $exists: true } } },
@@ -235,6 +261,7 @@ export async function countryTurns(db: Db, regionOf: Record<string, string>): Pr
 export async function installQueueIndexes(db: Db): Promise<void> {
   await db.collection(QUEUE).createIndex({ base: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick' })
   await db.collection(QUEUE).createIndex({ base: 1, country: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick_country' })
+  await db.collection(QUEUE).createIndex({ base: 1, universe: 1, state: 1, priority: -1, lastRunAt: 1 }, { name: 'queue_pick_universe' })
   // The draw: a subject of a base with something to show, from a random point.
   await db.collection(QUEUE).createIndex({ base: 1, ingested: 1, rand: 1 }, { name: 'queue_draw' })
 }

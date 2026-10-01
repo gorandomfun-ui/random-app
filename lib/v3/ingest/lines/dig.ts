@@ -22,7 +22,7 @@ import { PERSON_ANGLES, personQuery, themeQuery } from '../../dig/angles'
 import { languageOf, levelOf } from '../../dig/levels'
 import { playable, searchDailymotion } from '../../dig/dailymotion'
 import { REGION_OF } from '../../dig/people'
-import { baseTickets, countryTurns, enqueue, installQueueIndexes, markDone, nextPass, PLAN, QUEUE, recordPass, rememberChannels, takeSubject, ticketOrder, type QueuedSubject } from '../../dig/queue'
+import { baseTickets, countryTurns, enqueue, installQueueIndexes, markDone, nextPass, PLAN, QUEUE, recordPass, rememberChannels, takeSubject, ticketOrder, universeTurns, type QueuedSubject } from '../../dig/queue'
 import { queueLikes } from '../../dig/likes'
 import { readThemes, themeSubject } from '../../dig/themes'
 import { curatorOwnerId } from '@/lib/discovery/curatorAuth'
@@ -34,7 +34,7 @@ import { writeSubjects } from '../../subjects/build'
 import { normalize } from '../../tagging/normalize'
 import { emptyCounters } from '../journal'
 import { addAdmission, type LineContext, type LineResult } from '../context'
-import type { DigBase, DigLevel, DigPass, DigTags, SubjectSource } from '../../types'
+import type { DigBase, DigLevel, DigPass, DigTags, SubjectSource, Universe } from '../../types'
 
 const META = 'dig_meta_v4'
 /** Left before the deadline, the run stops between two passes. */
@@ -298,6 +298,10 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const countries = await countryTurns(ctx.db, REGION_OF).catch(() => [] as string[])
   if (countries.length) ctx.log(`pays, dans l'ordre : ${countries.join(', ')}`)
   let countryTurn = 0
+  // The keywords tickets go round the universes, and open a new probe every other ticket (lib/v3/dig/lists.ts).
+  const universes = await universeTurns(ctx.db).catch(() => [] as Universe[])
+  let universeTurn = 0
+  let keywordTickets = 0
   const servedIds = new Set<string>()
   const declared = new Set<string>()
   let idle = 0
@@ -307,7 +311,9 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) { errors.push('échéance atteinte'); break rounds }
       const youtube = !runner.youtubeStopped
       const country = base === 'people' && countries.length ? countries[countryTurn++ % countries.length] : undefined
-      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube)) ?? (country ? await takeSubject(ctx.db, base, servedIds, undefined, youtube) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
+      const universe = base === 'keywords' && universes.length ? universes[universeTurn++ % universes.length] : undefined
+      const prefer = base === 'keywords' && keywordTickets++ % 2 === 1 ? 'queued' : 'running'
+      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube, universe, prefer)) ?? (country || universe ? await takeSubject(ctx.db, base, servedIds, undefined, youtube, undefined, prefer) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
       if (!subject) continue
       servedIds.add(subject._id)
       servedThisRound += 1
