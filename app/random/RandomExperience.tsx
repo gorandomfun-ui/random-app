@@ -57,6 +57,7 @@ import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { reportImageLoadIssue, type ImageLoadIssue } from '@/utils/imageSuspects'
 import { isMediaBlockedThisSession } from '@/utils/mediaSuspects'
 import { rememberSeen, seenKeys } from '@/utils/seenMemory'
+import { markShown } from '@/utils/keptMemory'
 import { dailymotionVerdict } from '@/lib/v3/mediaAvailability'
 import {
   reportVideoPlaybackIssue,
@@ -3870,6 +3871,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const candidate = pendingWaveRef.current
     if (!candidate || !waveDiscoveryMode) return
     discoveryWaveRef.current?.displayed(candidate.key)
+    markShown(candidate.type === 'video' || candidate.type === 'image' ? String(candidate.payload._id ?? '') || null : null)
     recordWaveAudit({ stage: 'display', anchorId: String(candidate.payload._id ?? ''), type: candidate.type })
     pendingWaveRef.current = null
     if (discoveryEnabled) {
@@ -4471,6 +4473,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (entry.item.type !== 'encourage' && entry.item.type !== 'minigame') { const key = getContentKey(entry.item); if (key) registerRecentKey(key) }
         // The device remembers for a week what the session remembers for six hours.
         if (entry.discoveryKey) rememberSeen(entry.discoveryKey)
+        // How long the previous visual stayed on screen closes here; this one opens (utils/keptMemory.ts).
+        markShown(entry.item.type === 'video' || entry.item.type === 'image' ? (entry.item as { _id?: string })._id ?? null : null)
       }
       // the games count the images and videos seen on this device, visit after visit
       if (flowRef.current && (entry.item.type === 'image' || entry.item.type === 'video')) {

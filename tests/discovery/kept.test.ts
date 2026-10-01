@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { ObjectId, type Db, type Document } from 'mongodb'
+
+import { createKeptMemory, KEPT_CAP_SECONDS, KEPT_PER_DRAW } from '../../utils/keptMemory'
+import { CURATED_SLOTS, effectiveServed, parseKept, recordKept, tilt, TILT_MAX, TILT_MIN } from '../../lib/discovery/kept'
+import { makeRandomLoader } from '../../lib/discovery/controller'
+import { newSession } from '../../lib/discovery/pool'
+import type { Candidate } from '../../lib/discovery/types'
+
+const id = (n: number) => n.toString(16).padStart(24, '0')
+
+test('the device closes a visual with the seconds it stayed, capped, and hands a few reports to the next draw', () => {
+  let now = 1_000
+  const memory = createKeptMemory(() => now)
+  memory.markShown(id(1)); now += 12_400
+  memory.markShown(id(2)); now += 500_000
+  memory.markShown(null); now += 3_000
+  memory.markShown('not-an-id'); now += 2_000
+  memory.markShown(id(3))
+  assert.deepEqual(memory.takeKept(), [{ id: id(1), seconds: 12 }, { id: id(2), seconds: KEPT_CAP_SECONDS }])
+  assert.deepEqual(memory.takeKept(), [])
+  for (let n = 10; n < 10 + KEPT_PER_DRAW * 3; n += 1) { now += 1_000; memory.markShown(id(n)) }
+  assert.equal(memory.takeKept().length, KEPT_PER_DRAW)
+})
+
+test('the reports ride with the draw, and the site keeps only well-formed ones', async () => {
+  const bodies: Record<string, unknown>[] = []
+  const request: typeof fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return new Response(null, { status: 204 }) }
+  const store = { read: () => null, mark: () => undefined }
+  const load = makeRandomLoader('fr', request, () => [], store, () => [{ id: id(7), seconds: 9 }])
+  await load(newSession(1), 'video', new AbortController().signal)
+  assert.deepEqual(bodies[0].kept, [{ id: id(7), seconds: 9 }])
+  assert.deepEqual(parseKept([{ id: id(7), seconds: 9.6 }, { id: 'nope', seconds: 3 }, { id: id(8), seconds: -1 }, { id: id(9), seconds: 999 }, 'x']), [{ id: id(7), seconds: 10 }, { id: id(9), seconds: KEPT_CAP_SECONDS }])
+  assert.deepEqual(parseKept('x'), [])
+})
+
+test('one write adds the reports to the contents', async () => {
+  const writes: Document[] = []
+  const db = { collection: () => ({ bulkWrite: async (ops: Document[]) => { writes.push(...ops); return { matchedCount: ops.length } } }) } as unknown as Db
+  assert.equal(await recordKept(db, [{ id: id(1), seconds: 12 }, { id: id(2), seconds: 0 }]), 2)
+  assert.equal(writes.length, 2)
+  assert.ok(writes[0].updateOne.filter._id instanceof ObjectId)
+  assert.deepEqual(writes[0].updateOne.update, { $inc: { 'served.kept': 1, 'served.seconds': 12 } })
+  assert.equal(await recordKept(db, []), 0)
+})
+
+test('the tilt is slow and bounded, and only the curated cards read it', () => {
+  assert.equal(tilt(undefined), 1)
+  // One report of thirty seconds against a prior of five at ten: (30 + 50) / 6 = 13.3 s, a third more than the mean.
+  assert.ok(Math.abs(tilt({ n: 1, seconds: 30 }) - 80 / 60) < 1e-9)
+  assert.equal(tilt({ n: 1, seconds: 120 }), TILT_MAX)
+  assert.equal(tilt({ n: 100, seconds: 0 }), TILT_MIN)
+  assert.equal(tilt({ n: 100, seconds: 100 * 60 }), TILT_MAX)
+  const loved = { served: 4, kept: { n: 20, seconds: 20 * 40 } } as Candidate
+  const skipped = { served: 2, kept: { n: 20, seconds: 20 } } as Candidate
+  assert.ok(CURATED_SLOTS.has('joker') && !CURATED_SLOTS.has('chance'))
+  assert.ok(effectiveServed(loved, 'joker') < effectiveServed(skipped, 'joker'))
+  assert.equal(effectiveServed(loved, 'chance'), 4)
+  assert.equal(effectiveServed(skipped, 'chance'), 2)
+})

@@ -18,6 +18,7 @@ import { themeAt, themeDeckSwitchedOn } from '../v3/cool/themes'
 import { digDrawSwitchedOn, selectDig } from './digDraw'
 import { selectWheel, wheelSwitchedOn } from './wheel'
 import { countServed, servedCountOn } from './served'
+import { parseKept, recordKept } from './kept'
 import { withAbortDeadline } from './exploration'
 import { requestSubjectWork } from './subjectWork'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
@@ -82,6 +83,9 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       // The site's count of what it served (lib/discovery/served.ts): one write per visual, so the least served wins next time on every device.
       if (servedCountOn() && isVisual(choice.item.type) && choice.item.id) await countServed(db, choice.item.id, Date.now()).catch(() => false)
+      // What the device kept on screen since its last draw (lib/discovery/kept.ts): the slow curation's only input.
+      const kept = parseKept(body.kept)
+      if (servedCountOn() && kept.length) await recordKept(db, kept).catch(() => 0)
       await deps.onSelected?.(choice.item, language(body), req).catch(() => undefined)
       const publicCandidate = { ...choice.item }
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference

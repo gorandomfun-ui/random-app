@@ -36,6 +36,7 @@ import { candidateFromRow, type CatalogueRow } from './catalog'
 import { echoesSession, exposureOf } from './diversity'
 import { selectFresh } from './freshPool'
 import type { FreshSeen } from './freshSeen'
+import { effectiveServed } from './kept'
 import { titleLanguage } from './language'
 import { base as baseFilter } from './mongo'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
@@ -225,7 +226,8 @@ export function choose<T>(rows: readonly CatalogueRow[], slot: Slot, context: Co
     fitting.push({ candidate, rank: slot === 'long' ? 0 : rank, order: random(),
       again: Number(Boolean(universe && universe === rules.previousUniverse)), near: Number(Boolean(universe && rules.lastUniverses.has(universe))) })
   }
-  fitting.sort((left, right) => left.again - right.again || (left.candidate.served ?? 0) - (right.candidate.served ?? 0) || left.near - right.near || left.rank - right.rank || left.order - right.order)
+  // The least served first — on a curated card, as the slow curation tilts it (lib/discovery/kept.ts).
+  fitting.sort((left, right) => left.again - right.again || effectiveServed(left.candidate, slot) - effectiveServed(right.candidate, slot) || left.near - right.near || left.rank - right.rank || left.order - right.order)
   return fitting[0]?.candidate ?? null
 }
 

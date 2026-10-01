@@ -1,6 +1,7 @@
 import { PREFETCH_LIMIT, planDraw, ReservationQueue, recordWave, restartRhythm, type Intent, type Session } from './pool'
 import { markSeen, parseFreshSeen, type FreshSeen } from './freshSeen'
 import type { Candidate, Format } from './types'
+import { takeKept, type Kept } from '@/utils/keptMemory'
 
 export type Prepared<T> = { candidate: Candidate<T>; item: T }
 export type RandomLoader<T> = (session: Session, type: Format, signal: AbortSignal, factVariant?: 'quiz' | 'text') => Promise<Candidate<T> | null>
@@ -63,12 +64,13 @@ export function browserFreshStore(): FreshStore {
   }
 }
 
-/** `seen`: what this device saw lately, sent with every draw so it is left out; the session's own memory stays in the session. */
-export function makeRandomLoader<T>(lang: string, request: typeof fetch = fetch, seen: () => string[] = () => [], fresh: FreshStore = browserFreshStore()): RandomLoader<T> {
+/** `seen`: what this device saw lately, sent with every draw so it is left out; the session's own memory stays in the session. `kept`: how long the last visuals stayed on screen (utils/keptMemory.ts). */
+export function makeRandomLoader<T>(lang: string, request: typeof fetch = fetch, seen: () => string[] = () => [], fresh: FreshStore = browserFreshStore(), kept: () => Kept[] = takeKept): RandomLoader<T> {
   return async (session, type, signal, factVariant) => {
     const memory = fresh.read()
+    const reports = kept()
     const response = await request('/api/discovery/random', { method: 'POST', signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session, type, lang, factVariant, seen: seen(), ...(memory ? { fresh: memory } : {}) }) })
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session, type, lang, factVariant, seen: seen(), ...(memory ? { fresh: memory } : {}), ...(reports.length ? { kept: reports } : {}) }) })
     if (response.status === 204) return null
     if (!response.ok) throw new Error(`Discovery request failed (${response.status})`)
     const body = await response.json() as { candidate: Candidate<T> }
