@@ -24,7 +24,7 @@ import { isCleanTitle } from '../../cool/clean'
 import { loadLikePool } from '../../cool/likePool'
 import { isAiMarked } from '../../cool/themes'
 import { playable, relatedDailymotion, searchDailymotion, uploaderVideos } from '../../dig/dailymotion'
-import { isStillAlbum } from '../../dig/door'
+import { isCelebrityNews, isLetsPlay, isStillAlbum, MAX_LETS_PLAYS } from '../../dig/door'
 import { newGuardState, underWeeklyCap, withoutMedia } from '../../dig/guards'
 import { readThemes } from '../../dig/themes'
 import type { DigVideo } from '../../dig/video'
@@ -94,17 +94,20 @@ function shuffle<T>(list: T[], random: () => number): T[] {
   return out
 }
 
-/** The drift's own door, before the common one: a clean title, no AI mark, no live, one still album a batch. */
+/** The drift's own door, before the common one: a clean title, no AI mark, no live, no celebrity news, one still album and two let's plays a batch — the subject door's rules that need no subject. */
 export function driftDoor(videos: DigVideo[]): { kept: DigVideo[]; refused: Record<string, number> } {
   const refused: Record<string, number> = {}
   const refuse = (why: string) => { refused[why] = (refused[why] ?? 0) + 1 }
   let stills = 0
+  let letsPlays = 0
   const kept: DigVideo[] = []
   for (const video of videos) {
     if (!isCleanTitle(video.title)) { refuse('titre'); continue }
     if (video.live) { refuse('direct'); continue }
     if (isAiMarked(`${video.title} ${video.channelTitle ?? ''} ${(video.description ?? '').slice(0, 1500)}`)) { refuse('IA'); continue }
+    if (isCelebrityNews(video.title)) { refuse('actu people'); continue }
     if (isStillAlbum({ title: video.title, channelTitle: video.channelTitle })) { if (stills >= STILL_ALBUMS_PER_BATCH) { refuse('album sans image'); continue } stills += 1 }
+    if (isLetsPlay(video.title)) { if (letsPlays >= MAX_LETS_PLAYS) { refuse("let's play"); continue } letsPlays += 1 }
     kept.push(video)
   }
   return { kept, refused }
