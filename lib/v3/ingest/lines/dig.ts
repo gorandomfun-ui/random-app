@@ -340,6 +340,9 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const universes = await universeTurns(ctx.db).catch(() => [] as Universe[])
   let universeTurn = 0
   let keywordTickets = 0
+  // The people tickets turn by universe of occupation as well as by country: the audit of 1 October found cinema at 43 % of what entered, actors first.
+  const peopleUniverses = await universeTurns(ctx.db, 'people').catch(() => [] as Universe[])
+  let peopleTurn = 0
   const servedIds = new Set<string>()
   const declared = new Set<string>()
   let idle = 0
@@ -349,9 +352,11 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) { errors.push('échéance atteinte'); break rounds }
       const youtube = !runner.youtubeStopped
       const country = base === 'people' && countries.length ? countries[countryTurn++ % countries.length] : undefined
-      const universe = base === 'keywords' && universes.length ? universes[universeTurn++ % universes.length] : undefined
+      const universe = base === 'keywords' && universes.length ? universes[universeTurn++ % universes.length]
+        : base === 'people' && peopleUniverses.length ? peopleUniverses[peopleTurn++ % peopleUniverses.length] : undefined
       const prefer = base === 'keywords' && keywordTickets++ % 2 === 1 ? 'queued' : 'running'
-      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube, universe, prefer)) ?? (country || universe ? await takeSubject(ctx.db, base, servedIds, undefined, youtube, undefined, prefer) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
+      // The country and the universe together; the country alone when that universe has no one there; anyone of the base after that.
+      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube, universe, prefer)) ?? (country && universe ? await takeSubject(ctx.db, base, servedIds, country, youtube, undefined, prefer) : null) ?? (country || universe ? await takeSubject(ctx.db, base, servedIds, undefined, youtube, undefined, prefer) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
       if (!subject) continue
       servedIds.add(subject._id)
       servedThisRound += 1
