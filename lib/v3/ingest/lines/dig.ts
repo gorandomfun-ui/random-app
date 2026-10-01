@@ -29,6 +29,7 @@ import { curatorOwnerId } from '@/lib/discovery/curatorAuth'
 import { queueTrends } from '../../dig/trends'
 import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
 import { censusNote, computeCardCensus, writeCardCensus } from '../../cards/census'
+import { channelKey } from '../../tagging/classify'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
@@ -56,6 +57,35 @@ const SNOWBALL_PER_RUN = 20
  */
 const PASSES_IN_A_ROW = 12
 const SEARCHES_PER_SUBJECT_PER_RUN = 1
+/**
+ * What one channel may bring in over a week, whatever the subject or the pass:
+ * the audit of 30 September–1 October found the biggest channels were all
+ * media outlets on Dailymotion — showbiz agencies, trailer and press
+ * channels — at eighty videos each in two days. A limit, not a refusal: a
+ * person who posts three videos a week gives all three. The subject's own
+ * channels are not counted (a star's channel is read on purpose).
+ */
+const WEEKLY_PER_CHANNEL = Number(process.env.RANDOM_DIG_WEEKLY_PER_CHANNEL ?? 20)
+const WEEK_MS = 7 * 86_400_000
+/** This run's counts per channel: what the week already holds, plus what the run admits. */
+let weekCounts = new Map<string, number>()
+
+/** The kept videos under the week's cap per channel; the refused count goes with the door's. */
+async function underWeeklyCap(ctx: LineContext, kept: DigVideo[], provider: string, own: Set<string>): Promise<{ kept: DigVideo[]; refused: number }> {
+  const out: DigVideo[] = []
+  let refused = 0
+  const since = new Date(Date.now() - WEEK_MS)
+  for (const video of kept) {
+    const key = channelKey({ provider, channelId: video.channelId })
+    if (!key || own.has(video.channelId ?? '')) { out.push(video); continue }
+    let count = weekCounts.get(key)
+    if (count === undefined) count = await ctx.db.collection('items').countDocuments({ 'v3.channelKey': key, createdAt: { $gte: since } }, { hint: 'v3_channel_key', maxTimeMS: 4000 }).catch(() => 0)
+    if (count >= WEEKLY_PER_CHANNEL) { refused += 1; weekCounts.set(key, count); continue }
+    weekCounts.set(key, count + 1)
+    out.push(video)
+  }
+  return { kept: out, refused }
+}
 
 type Served = { id: string; label: string; base: DigBase; pass: DigPass; query?: string; read: number; kept: number; inserted: number; levels: Record<string, number> }
 export type DigCursorNote = { served: Served[]; units: number; note: string }
@@ -108,7 +138,12 @@ type Pass = { subject: QueuedSubject; pass: DigPass; query: string; videos: DigV
 async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['counters'], served: Served[]): Promise<{ kept: DigVideo[]; inserted: number }> {
   const { subject, pass, videos } = run
   const own = subject.ownChannels ?? []
-  const door = subjectDoor(videos, { ...doorSubject(subject), ownChannels: [...own, ...videos.filter((video) => isOwnChannel(subject, video.channelTitle)).map((video) => video.channelId ?? '')] }, pass, run.requireName ?? true)
+  const ownIds = [...own, ...videos.filter((video) => isOwnChannel(subject, video.channelTitle)).map((video) => video.channelId ?? '')]
+  const door = subjectDoor(videos, { ...doorSubject(subject), ownChannels: ownIds }, pass, run.requireName ?? true)
+  // The week's cap per channel, on what the door kept (the audit of 1 October: media outlets at eighty videos in two days).
+  const weekly = await underWeeklyCap(ctx, door.kept, run.provider, new Set(ownIds))
+  if (weekly.refused) door.refused['chaîne cette semaine'] = (door.refused['chaîne cette semaine'] ?? 0) + weekly.refused
+  door.kept = weekly.kept
   const levels: Record<string, number> = {}
   const admitted = door.kept.map((video) => {
     const lang = languageOf(video.declaredLang, video.title, subject.lang)
@@ -281,6 +316,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const key = process.env.YOUTUBE_API_KEY ?? ''
   const http = ctx.http ?? fetch
   const runner: Runner = { ctx, key, http, counters, errors, served: [], youtubeStopped: !key, snowballed: 0, units: 0 }
+  weekCounts = new Map()
   if (!key) ctx.log('youtube : pas de clé, seule Dailymotion sera lue')
   await installQueueIndexes(ctx.db).catch(() => undefined)
 
