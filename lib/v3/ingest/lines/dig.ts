@@ -30,8 +30,9 @@ import { queueTrends } from '../../dig/trends'
 import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
 import { censusNote, computeCardCensus, writeCardCensus } from '../../cards/census'
 import { channelKey } from '../../tagging/classify'
+import { withoutOutlets } from '../../dig/outlet'
 import type { DigVideo } from '../../dig/video'
-import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
+import { channelCounts, LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
 import { normalize } from '../../tagging/normalize'
 import { emptyCounters } from '../journal'
@@ -69,6 +70,20 @@ const WEEKLY_PER_CHANNEL = Number(process.env.RANDOM_DIG_WEEKLY_PER_CHANNEL ?? 2
 const WEEK_MS = 7 * 86_400_000
 /** This run's counts per channel: what the week already holds, plus what the run admits. */
 let weekCounts = new Map<string, number>()
+/** This run's YouTube channel sizes, read once per channel (one unit per fifty). */
+let channelSizes = new Map<string, number>()
+
+/** The kept videos without those of media outlets (lib/v3/dig/outlet.ts): Dailymotion says a channel's size in the search, YouTube in one call per fifty. */
+async function withoutMedia(ctx: LineContext, key: string, kept: DigVideo[], provider: string, own: ReadonlySet<string>): Promise<{ kept: DigVideo[]; refused: number; outlets: string[] }> {
+  if (provider === 'youtube' && key) {
+    const unknown = [...new Set(kept.map((video) => video.channelId ?? '').filter((id) => id && !own.has(id) && !channelSizes.has(id)))]
+    if (unknown.length && (await ctx.quota.reserve(LIST_UNITS * Math.ceil(unknown.length / PAGE_SIZE)))) {
+      const counts = await channelCounts(key, unknown, ctx.http ?? fetch).catch(() => new Map<string, number>())
+      for (const id of unknown) channelSizes.set(id, counts.get(id) ?? 0)
+    }
+  }
+  return withoutOutlets(kept, (video) => (provider === 'youtube' ? channelSizes.get(video.channelId ?? '') : video.channelVideos), own)
+}
 
 /** The kept videos under the week's cap per channel; the refused count goes with the door's. */
 async function underWeeklyCap(ctx: LineContext, kept: DigVideo[], provider: string, own: Set<string>): Promise<{ kept: DigVideo[]; refused: number }> {
@@ -143,7 +158,10 @@ async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['coun
   // The week's cap per channel, on what the door kept (the audit of 1 October: media outlets at eighty videos in two days).
   const weekly = await underWeeklyCap(ctx, door.kept, run.provider, new Set(ownIds))
   if (weekly.refused) door.refused['chaîne cette semaine'] = (door.refused['chaîne cette semaine'] ?? 0) + weekly.refused
-  door.kept = weekly.kept
+  // Media outlets out (the owner, 1 October: "des trucs chiants, on ne doit pas avoir ça"); archives stay.
+  const media = await withoutMedia(ctx, process.env.YOUTUBE_API_KEY ?? '', weekly.kept, run.provider, new Set(ownIds))
+  if (media.refused) door.refused['média'] = (door.refused['média'] ?? 0) + media.refused
+  door.kept = media.kept
   const levels: Record<string, number> = {}
   const admitted = door.kept.map((video) => {
     const lang = languageOf(video.declaredLang, video.title, subject.lang)
@@ -317,6 +335,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const http = ctx.http ?? fetch
   const runner: Runner = { ctx, key, http, counters, errors, served: [], youtubeStopped: !key, snowballed: 0, units: 0 }
   weekCounts = new Map()
+  channelSizes = new Map()
   if (!key) ctx.log('youtube : pas de clé, seule Dailymotion sera lue')
   await installQueueIndexes(ctx.db).catch(() => undefined)
 

@@ -71,6 +71,19 @@ export async function videoDetails(key: string, ids: string[], request: typeof f
   })
 }
 
+/** How many videos each channel has published, by channel id: fifty channels for one unit. */
+export async function channelCounts(key: string, channelIds: string[], request: typeof fetch = fetch, signal?: AbortSignal): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  for (let start = 0; start < channelIds.length; start += PAGE_SIZE) {
+    const payload = await call(key, 'channels', { part: 'statistics', id: channelIds.slice(start, start + PAGE_SIZE).join(','), maxResults: String(PAGE_SIZE) }, request, signal)
+    for (const item of (payload.items as Array<{ id?: string; statistics?: { videoCount?: string } }> | undefined) ?? []) {
+      const n = Number(item.statistics?.videoCount)
+      if (item.id && Number.isFinite(n)) counts.set(item.id, n)
+    }
+  }
+  return counts
+}
+
 /** The uploads playlist of a channel, or null. One unit. */
 export async function uploadsPlaylist(key: string, channelId: string, request: typeof fetch = fetch, signal?: AbortSignal): Promise<string | null> {
   const payload = await call(key, 'channels', { part: 'contentDetails', id: channelId }, request, signal)

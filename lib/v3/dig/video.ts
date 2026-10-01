@@ -8,4 +8,6 @@ export type DigVideo = RawVideo & {
   live: boolean
   /** The language the provider declares, when it does. */
   declaredLang?: string
+  /** How many videos the channel has published in all, when the provider says: an outlet has thousands (lib/v3/dig/outlet.ts). */
+  channelVideos?: number
 }
