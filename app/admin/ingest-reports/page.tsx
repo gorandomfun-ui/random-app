@@ -53,6 +53,7 @@ const LINE_LABEL: Record<string, string> = {
   'music-live': 'Musique live',
   fresh: 'Frais du jour',
   dig: 'La fouille (4 bases)',
+  drift: 'La dérive (Dailymotion)',
   'web-previews': 'Sites : visites et aperçus',
 }
 

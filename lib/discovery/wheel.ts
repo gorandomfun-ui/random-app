@@ -366,10 +366,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return picked ? { item: picked, from: (picked as Candidate & { line?: string }).line === 'dig' ? 'dig:people' : 'register:elsewhere' } : null
     }
     case 'weird': {
-      // The odd old words the whole stock carries, and the themes the dig digs on purpose — bloopers, ventriloquists, weird commercials — one pool.
-      const [words, themes] = await Promise.all([seek(db, { 'v3.registers': 'cool-words', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, SIFTED_ROWS), seekDig(db, 'keywords', random)])
-      const picked = choose([...words, ...themes], slot, context)
-      return picked ? { item: picked, from: (picked as Candidate & { line?: string }).line === 'dig' ? 'dig:keywords' : 'register:cool-words' } : null
+      // The odd old words the whole stock carries, the themes the dig digs on purpose — bloopers, ventriloquists, weird commercials — and what the drift found by browsing: one pool.
+      const [words, themes, drifted] = await Promise.all([seek(db, { 'v3.registers': 'cool-words', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, ROWS), seekDig(db, 'keywords', random), seek(db, { 'v3.line': 'drift', type: 'video', ...SERVABLE }, LINE_INDEX, random, ROWS)])
+      const picked = choose([...words, ...themes, ...drifted], slot, context)
+      const line = (picked as Candidate & { line?: string } | null)?.line
+      return picked ? { item: picked, from: line === 'dig' ? 'dig:keywords' : line === 'drift' ? 'drift' : 'register:cool-words' } : null
     }
     case 'bonus': {
       // One universe named on purpose, in turn, each under its own quality rule (the owner, 1 October).

@@ -50,6 +50,7 @@ export const LINE_LABELS: Record<string, string> = {
   feeds: 'Sources humaines',
   authors: 'Auteurs suivis',
   'music-live': 'Musique live',
+  drift: 'La dérive (Dailymotion)',
   fresh: 'Frais du jour',
 }
 

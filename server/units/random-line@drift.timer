@@ -1,0 +1,13 @@
+[Unit]
+Description=RANDOM drift (four runs a day, Paris: Dailymotion's related videos and small uploaders, from the likes and the weird themes; no YouTube unit)
+
+[Timer]
+OnCalendar=*-*-* 10:40:00 Europe/Paris
+OnCalendar=*-*-* 14:40:00 Europe/Paris
+OnCalendar=*-*-* 19:40:00 Europe/Paris
+OnCalendar=*-*-* 23:10:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

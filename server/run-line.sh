@@ -76,6 +76,10 @@ case "${LINE}" in
     # The four bases, one line: people, keywords, trends, likes, each subject dug top, around, channels, Dailymotion.
     run node --import tsx scripts/v3/dig-direct.ts
     ;;
+  drift)
+    # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.
+    run node --import tsx scripts/v3/drift-direct.ts
+    ;;
   music-live)
     # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.
     run node --import tsx scripts/v3/music-live-direct.ts

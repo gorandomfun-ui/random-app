@@ -29,10 +29,9 @@ import { curatorOwnerId } from '@/lib/discovery/curatorAuth'
 import { queueTrends } from '../../dig/trends'
 import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
 import { censusNote, computeCardCensus, writeCardCensus } from '../../cards/census'
-import { channelKey } from '../../tagging/classify'
-import { ofAnotherTime, withoutOutlets } from '../../dig/outlet'
+import { newGuardState, underWeeklyCap, withoutMedia, type GuardState } from '../../dig/guards'
 import type { DigVideo } from '../../dig/video'
-import { channelCounts, LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
+import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
 import { normalize } from '../../tagging/normalize'
 import { emptyCounters } from '../journal'
@@ -58,49 +57,9 @@ const SNOWBALL_PER_RUN = 20
  */
 const PASSES_IN_A_ROW = 12
 const SEARCHES_PER_SUBJECT_PER_RUN = 1
-/**
- * What one channel may bring in over a week, whatever the subject or the pass:
- * the audit of 30 September–1 October found the biggest channels were all
- * media outlets on Dailymotion — showbiz agencies, trailer and press
- * channels — at eighty videos each in two days. A limit, not a refusal: a
- * person who posts three videos a week gives all three. The subject's own
- * channels are not counted (a star's channel is read on purpose).
- */
-const WEEKLY_PER_CHANNEL = Number(process.env.RANDOM_DIG_WEEKLY_PER_CHANNEL ?? 20)
-const WEEK_MS = 7 * 86_400_000
-/** This run's counts per channel: what the week already holds, plus what the run admits. */
-let weekCounts = new Map<string, number>()
-/** This run's YouTube channel sizes, read once per channel (one unit per fifty). */
-let channelSizes = new Map<string, number>()
+/** This run's guard counts (lib/v3/dig/guards.ts), reset at every run. */
+let guards: GuardState = newGuardState()
 
-/** The kept videos without those of media outlets (lib/v3/dig/outlet.ts): Dailymotion says a channel's size in the search, YouTube in one call per fifty. */
-async function withoutMedia(ctx: LineContext, key: string, kept: DigVideo[], provider: string, own: ReadonlySet<string>): Promise<{ kept: DigVideo[]; moment: DigVideo[]; refused: number; outlets: string[] }> {
-  if (provider === 'youtube' && key) {
-    const unknown = [...new Set(kept.map((video) => video.channelId ?? '').filter((id) => id && !own.has(id) && !channelSizes.has(id)))]
-    if (unknown.length && (await ctx.quota.reserve(LIST_UNITS * Math.ceil(unknown.length / PAGE_SIZE)))) {
-      const counts = await channelCounts(key, unknown, ctx.http ?? fetch).catch(() => new Map<string, number>())
-      for (const id of unknown) channelSizes.set(id, counts.get(id) ?? 0)
-    }
-  }
-  return withoutOutlets(kept, (video) => (provider === 'youtube' ? channelSizes.get(video.channelId ?? '') : video.channelVideos), own)
-}
-
-/** The kept videos under the week's cap per channel; the refused count goes with the door's. What is of another time — an archive's — is never capped. */
-async function underWeeklyCap(ctx: LineContext, kept: DigVideo[], provider: string, own: Set<string>): Promise<{ kept: DigVideo[]; refused: number }> {
-  const out: DigVideo[] = []
-  let refused = 0
-  const since = new Date(Date.now() - WEEK_MS)
-  for (const video of kept) {
-    const key = channelKey({ provider, channelId: video.channelId })
-    if (!key || own.has(video.channelId ?? '') || ofAnotherTime(video)) { out.push(video); continue }
-    let count = weekCounts.get(key)
-    if (count === undefined) count = await ctx.db.collection('items').countDocuments({ 'v3.channelKey': key, createdAt: { $gte: since } }, { hint: 'v3_channel_key', maxTimeMS: 4000 }).catch(() => 0)
-    if (count >= WEEKLY_PER_CHANNEL) { refused += 1; weekCounts.set(key, count); continue }
-    weekCounts.set(key, count + 1)
-    out.push(video)
-  }
-  return { kept: out, refused }
-}
 
 type Served = { id: string; label: string; base: DigBase; pass: DigPass; query?: string; read: number; kept: number; inserted: number; levels: Record<string, number> }
 export type DigCursorNote = { served: Served[]; units: number; note: string }
@@ -157,10 +116,10 @@ async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['coun
   const ownIds = [...own, ...videos.filter((video) => isOwnChannel(subject, video.channelTitle)).map((video) => video.channelId ?? '')]
   const door = subjectDoor(videos, { ...doorSubject(subject), ownChannels: ownIds }, pass, run.requireName ?? true)
   // The week's cap per channel, on what the door kept (the audit of 1 October: media outlets at eighty videos in two days).
-  const weekly = await underWeeklyCap(ctx, door.kept, run.provider, new Set(ownIds))
+  const weekly = await underWeeklyCap(ctx, guards, door.kept, run.provider, new Set(ownIds))
   if (weekly.refused) door.refused['chaîne cette semaine'] = (door.refused['chaîne cette semaine'] ?? 0) + weekly.refused
   // Media outlets under their windows (the owner, 1 October): the week's news clip stays as a clip of the moment, a trailer keeps a year, archives stay, the rest is refused.
-  const media = await withoutMedia(ctx, process.env.YOUTUBE_API_KEY ?? '', weekly.kept, run.provider, new Set(ownIds))
+  const media = await withoutMedia(ctx, guards, process.env.YOUTUBE_API_KEY ?? '', weekly.kept, run.provider, new Set(ownIds))
   if (media.refused) door.refused['média'] = (door.refused['média'] ?? 0) + media.refused
   door.kept = media.kept
   // A clip of the moment is of the trend: the buzz card reads the trend era and serves it soon; past the window the draw lets it fade.
@@ -340,8 +299,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const key = process.env.YOUTUBE_API_KEY ?? ''
   const http = ctx.http ?? fetch
   const runner: Runner = { ctx, key, http, counters, errors, served: [], youtubeStopped: !key, snowballed: 0, units: 0 }
-  weekCounts = new Map()
-  channelSizes = new Map()
+  guards = newGuardState()
   if (!key) ctx.log('youtube : pas de clé, seule Dailymotion sera lue')
   await installQueueIndexes(ctx.db).catch(() => undefined)
 
