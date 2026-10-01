@@ -12,6 +12,10 @@ export type Exposure = {
   foreign?: boolean
   /** The universe of the labels: never the same one twice in a row when the stock offers another. */
   universe?: string
+  /** The language of the title, as detected: three in ten of one language at most. */
+  lang?: string
+  /** A news video: one in ten at most. */
+  news?: boolean
 }
 export const LONG_SECONDS = 15 * 60
 /** The alphabet, not a list: any letter outside the Latin scripts (lib/v3/cool/clean.ts reads the same ranges server-side). */
@@ -32,6 +36,8 @@ export function exposureOf(candidate: Candidate): Exposure | null {
     ...((candidate.seconds ?? 0) > LONG_SECONDS ? { long: true } : {}),
     ...(candidate.title && NON_LATIN.test(candidate.title) ? { foreign: true } : {}),
     ...(candidate.universe ? { universe: candidate.universe } : {}),
+    ...(candidate.lang ? { lang: candidate.lang } : {}),
+    ...(candidate.news ? { news: true } : {}),
     ...(year != null && Number.isFinite(year) ? { publicationYear: year } : {}),
     ...(candidate.authorKey ? { author: hash(candidate.authorKey) } : {}),
     ...(candidate.seriesKey ? { series: hash(candidate.seriesKey) } : {}),

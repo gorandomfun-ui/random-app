@@ -21,7 +21,8 @@ import { MongoClient, ObjectId, type Document } from 'mongodb'
 import { markSeen, type FreshSeen } from '@/lib/discovery/freshSeen'
 import { commitDraw, newSession, planDraw } from '@/lib/discovery/pool'
 import { ALL_ITEM_TYPES, createSequenceState, nextSlot } from '@/lib/random/sequence'
-import { isTrailerTitle } from '@/lib/v3/cool/themes'
+import { isNewsTitle, isTrailerTitle } from '@/lib/v3/cool/themes'
+import { titleLanguage } from '@/lib/discovery/language'
 
 const flag = (name: string, fallback: number) => Number(process.argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1]) || fallback
 const SESSIONS = flag('sessions', 6)
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
   const lines: string[] = [`# Sessions rejouées — ${LABEL}`, '', `${SESSIONS} appareils neufs × ${CONTENTS} contenus, ${new Date().toISOString().slice(0, 16)}Z, ${DECK ? 'avec' : 'sans'} les cartes-thèmes.`, '']
   const perSession: string[] = []
   const totals = { visuals: 0, long: 0, still: 0, trailers: 0, gifs: 0 }
+  const isNews = (row: Row) => { const doc = docs.get(row.id ?? ''); return String(doc?.v3?.universe ?? '') === 'news-society' || isNewsTitle(doc?.title ?? row.title) }
   const shown = new Map<string, number>()
   for (let session = 1; session <= SESSIONS; session += 1) {
     const visuals = rows.filter((row) => row.session === session && visual(row))
@@ -116,15 +118,22 @@ async function main(): Promise<void> {
     const twice = [...new Set(subjects.filter((subject, index) => subjects.indexOf(subject) !== index))]
     const trailers = visuals.filter((row) => isTrailerTitle(docs.get(row.id ?? '')?.title ?? row.title)).length
     const gifs = visuals.filter((row) => row.type === 'image' && docs.get(row.id ?? '')?.provider === 'giphy').length
+    const news = visuals.filter((row) => row.type === 'video' && isNews(row)).length
+    const languages = new Map<string, number>()
+    for (const row of visuals.filter((row) => row.type === 'video')) { const code = titleLanguage(docs.get(row.id ?? '')?.title ?? row.title) ?? '?'; languages.set(code, (languages.get(code) ?? 0) + 1) }
+    const topLanguage = [...languages].filter(([code]) => code !== '?').sort((a, b) => b[1] - a[1])[0]
     totals.visuals += visuals.length; totals.long += long; totals.still += still; totals.trailers += trailers; totals.gifs += gifs
     for (const row of visuals) shown.set(row.key, (shown.get(row.key) ?? 0) + 1)
-    perSession.push(`| ${session} | ${visuals.length} | ${counts.size} | ${first20} | ${biggest[0]} ${pct(biggest[1], visuals.length)} | ${pct(counts.get('music') ?? 0, visuals.length)} | ${pct(counts.get('gaming') ?? 0, visuals.length)} | ${long} | ${still} | ${trailers} | ${gifs} | ${ai} | ${twice.map((subject) => subject.slice(7)).join(', ') || '—'} |`)
+    perSession.push(`| ${session} | ${visuals.length} | ${counts.size} | ${first20} | ${biggest[0]} ${pct(biggest[1], visuals.length)} | ${pct(counts.get('music') ?? 0, visuals.length)} | ${pct(counts.get('gaming') ?? 0, visuals.length)} | ${long} | ${still} | ${trailers} | ${gifs} | ${ai} | ${twice.map((subject) => subject.slice(7)).join(', ') || '—'} | ${news} | ${topLanguage ? `${topLanguage[0]} ${topLanguage[1]}` : '—'} |`)
   }
-  lines.push('| Session | Visuels | Univers | Univers dans les 20 premiers | Plus gros univers | Musique | Jeu vidéo | Longs (>15 min) | Musique image fixe | Bandes-annonces | GIF Giphy | IA (signes) | Même sujet deux fois |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|', ...perSession, '')
+  lines.push('| Session | Visuels | Univers | Univers dans les 20 premiers | Plus gros univers | Musique | Jeu vidéo | Longs (>15 min) | Musique image fixe | Bandes-annonces | GIF Giphy | IA (signes) | Même sujet deux fois | Infos | Langue la plus fréquente |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|', ...perSession, '')
   const scripts = new Map<string, number>()
   for (const row of rows.filter((row) => row.type === 'video')) scripts.set(signs(row).script, (scripts.get(signs(row).script) ?? 0) + 1)
   const videoCount = rows.filter((row) => row.type === 'video').length
   lines.push(`Langue / écriture des titres des vidéos : ${[...scripts].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${pct(n, videoCount)}`).join(' · ')}`, '')
+  const detected = new Map<string, number>()
+  for (const row of rows.filter((row) => row.type === 'video')) { const code = titleLanguage(docs.get(row.id ?? '')?.title ?? row.title) ?? 'inconnue'; detected.set(code, (detected.get(code) ?? 0) + 1) }
+  lines.push(`Langue détectée (titres) : ${[...detected].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, n]) => `${name} ${pct(n, videoCount)}`).join(' · ')}`, '')
   const all = new Map<string, number>()
   for (const row of rows.filter(visual)) all.set(universe(row), (all.get(universe(row)) ?? 0) + 1)
   lines.push(`Ensemble : ${[...all].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${pct(n, totals.visuals)}`).join(' · ')}`, '')

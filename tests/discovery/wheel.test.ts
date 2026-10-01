@@ -7,7 +7,7 @@ import { candidateFromRow } from '../../lib/discovery/catalog'
 import { appendExposure } from '../../lib/discovery/diversity'
 import { newSession, planDraw, type Session } from '../../lib/discovery/pool'
 import { countServed } from '../../lib/discovery/served'
-import { choose, fillSlot, slotAt, WHEEL } from '../../lib/discovery/wheel'
+import { BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, WHEEL, withSignals } from '../../lib/discovery/wheel'
 
 test('the wheel: a session opens on the buzz, a round deals every card, never the same card twice in a row', () => {
   for (const seed of [1, 7, 4242, 987654321]) {
@@ -61,7 +61,7 @@ const video = (title: string, options: { universe?: string; duration?: string; s
   v3: { universe: options.universe ?? 'sport', usable: true },
 })
 
-const context = (db: Db, state: Session) => ({ ticket: planDraw(state, 'video'), state, decode: (row: Document) => ({ _id: String(row._id), title: row.title }), lang: 'fr', random: Math.random, now: Date.now(), card: 'sport' as const, freshSeen: null })
+const context = (db: Db, state: Session) => ({ ticket: planDraw(state, 'video'), state, decode: (row: Document) => ({ _id: String(row._id), title: row.title }), lang: 'fr', random: Math.random, now: Date.now(), card: 'sport' as const, freshSeen: null, rules: sessionRules(state) })
 
 test('a long card: over fifteen minutes, in the universe of the card, the least served first; never a live', async () => {
   const rows = [
@@ -89,7 +89,7 @@ test('a card the universe cannot fill is filled from the whole stock', async () 
 test('the session rules hold on every card: not the same author within ten videos, a few foreign scripts, never a row of them', () => {
   const seen = [video('Skate session at the park', { channel: 'skater' }), video('東京の朝', {}), video('서울의 밤', {}), video('北京の夜', {})]
   let state = newSession(5)
-  for (const row of seen) state = { ...state, exposures: appendExposure(state.exposures, candidateFromRow(row, {}, Date.now())) }
+  for (const row of seen) state = { ...state, exposures: appendExposure(state.exposures, withSignals(candidateFromRow(row, {}, Date.now()))) }
   const rows = [
     video('Skate session at the beach', { channel: 'skater', served: 0 }),
     video('大阪の夕方', { served: 0 }),
@@ -119,10 +119,50 @@ test('the served count: one write by id, the least served wins next time', async
 test('the universes lead: never the previous video\'s universe when another fits', () => {
   const seen = [video('Trailer of a film', { universe: 'cinema-tv' })]
   let state = newSession(11)
-  for (const row of seen) state = { ...state, exposures: appendExposure(state.exposures, candidateFromRow(row, {}, Date.now())) }
+  for (const row of seen) state = { ...state, exposures: appendExposure(state.exposures, withSignals(candidateFromRow(row, {}, Date.now()))) }
   const rows = [video('Another film scene', { universe: 'cinema-tv' }), video('A goal from midfield', { universe: 'sport', served: 1 })]
   const db = fakeDb(rows)
   assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A goal from midfield')
   // The card's universe only: the previous universe answers rather than nothing.
   assert.equal(choose(rows.slice(0, 1), 'joker', context(db, state))?.title, 'Another film scene')
+})
+
+const remembered = (seed: number, rows: Document[]): Session => {
+  let state = newSession(seed)
+  for (const row of rows) state = { ...state, exposures: appendExposure(state.exposures, withSignals(candidateFromRow(row, {}, Date.now()))) }
+  return state
+}
+
+test('three titles of one language in the last ten: the next one in that language waits for another', () => {
+  const french = ['Les meilleures recettes de cuisine de grand-mère pour le dimanche', 'Le journal du matin présenté depuis les studios parisiens', 'Une promenade tranquille dans les rues du vieux Lyon un soir']
+  const state = remembered(21, french.map((title) => video(title)))
+  const rows = [video('Un reportage complet sur les marchés de Provence en été', { served: 0 }), video('A quiet walk through the old streets of Edinburgh at night', { served: 2 })]
+  const db = fakeDb(rows)
+  assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A quiet walk through the old streets of Edinburgh at night')
+  assert.equal(sessionRules(state).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'language')
+  assert.equal(sessionRules(newSession(21)).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), null)
+})
+
+test('one news video in ten: a second one waits, by its universe or its title', () => {
+  const state = remembered(22, [video('Evening report from the regional assembly', { universe: 'news-society' })])
+  const rows = [video('Breaking news: storm reaches the coast', { universe: 'sport' }), video('Another evening report', { universe: 'news-society' }), video('A goal from midfield', { universe: 'sport', served: 3 })]
+  const db = fakeDb(rows)
+  assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A goal from midfield')
+  assert.equal(sessionRules(state).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'news')
+})
+
+test('the bonus card names music, gaming and humour in turn, and keeps its quality rules', async () => {
+  const seed = 23
+  const universes = Array.from({ length: 3 }, (_, round) => bonusAt(seed, round * WHEEL.length))
+  assert.deepEqual([...universes].sort(), [...BONUS].sort())
+  assert.equal(bonusAt(seed, 0), bonusAt(seed, WHEEL.length - 1))
+  const rows = [
+    video('Minecraft survival let\'s play episode 12', { universe: 'gaming' }),
+    { ...video('Speedrun history of a classic platformer', { universe: 'gaming', served: 1 }), v3: { universe: 'gaming', usable: true, subjects: [{ id: 'entity:game', role: 'primary' }] } },
+  ]
+  const db = fakeDb(rows)
+  const state = { ...newSession(seed), videos: [0, 1, 2].map((round) => round * WHEEL.length).find((index) => bonusAt(seed, index) === 'gaming')! }
+  const filled = await fillSlot(db, 'bonus', context(db, state))
+  assert.equal(filled?.item.title, 'Speedrun history of a classic platformer')
+  assert.equal(filled?.from, 'bonus:gaming')
 })

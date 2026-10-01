@@ -17,6 +17,7 @@ import { ObjectId, type Db, type Document } from 'mongodb'
 import { candidateFromRow, type CatalogueRow } from './catalog'
 import { isSeen, seenBytes, type FreshSeen } from './freshSeen'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
+import type { Candidate } from './types'
 import { byLiveliness, trailersSeenIn } from '../v3/cool/themes'
 import { echoesSession } from './diversity'
 import type { Universe } from '../v3/types'
@@ -93,7 +94,9 @@ export function unseenSample(size: number, day: string, seen: FreshSeen | null, 
  * draw serves the universe, and the fresh ten go on at the next videos.
  */
 export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, seen: FreshSeen | null,
-  decode: (row: CatalogueRow) => T | null, now: number, random: () => number = Math.random, theme?: Universe): Promise<PoolResult<T> | null> {
+  decode: (row: CatalogueRow) => T | null, now: number, random: () => number = Math.random, theme?: Universe,
+  /** The wheel's proportions (lib/discovery/wheel.ts): a place the session refuses is passed over. */
+  accept: (candidate: Candidate<T>) => boolean = () => true): Promise<PoolResult<T> | null> {
   if (ticket.type !== 'video' || (state.freshServed ?? 0) >= FRESH_PER_SESSION) return null
   const list = await dayList(db, now)
   if (!list?.ids.length) return null
@@ -120,7 +123,7 @@ export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, see
     const payload = decode(row as CatalogueRow)
     if (payload == null) continue
     const candidate = candidateFromRow(row as CatalogueRow, payload, now)
-    if (!hardEligible(candidate, ticket, state)) continue
+    if (!hardEligible(candidate, ticket, state) || !accept(candidate)) continue
     const result: PoolResult<T> = { item: { ...candidate, fresh: true, freshDay: list.day, freshPosition: index }, branch: 'general', fallback: false }
     if (theme && echoesSession(candidate, state.exposures)) { fallback ??= result; continue }
     if (!candidate.authorKey || !recentAuthors.has(candidate.authorKey)) return result

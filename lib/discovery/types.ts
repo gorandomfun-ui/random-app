@@ -49,6 +49,10 @@ export type Candidate<T = unknown> = {
   served?: number
   /** The universe the labels filed it under (lib/v3/types.ts): the wheel keeps two in a row apart. */
   universe?: string
+  /** The language of the title as a detector reads it (lib/discovery/language.ts): three in ten of one language at most. */
+  lang?: string
+  /** A news video, by its universe or its title: one in ten at most. */
+  news?: boolean
   type: Format
   provider: string
   profile: Profile
