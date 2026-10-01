@@ -21,13 +21,14 @@ test('the wheel: a session opens on the buzz, a round deals every card, never th
 })
 
 /** The items collection, enough for a seek: nested paths, ranges, `$ne`, sort by rand, limit; and the served count's write. */
-function fakeDb(items: Document[], writes: Document[] = []): Db {
+function fakeDb(items: Document[], writes: Document[] = [], sweeps: Document[] = []): Db {
   const read = (row: Document, path: string) => path.split('.').reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], row)
   const holds = (value: unknown, wanted: unknown) => (Array.isArray(value) ? value.includes(wanted) : value === wanted)
   const matches = (row: Document, filter: Filter<Document>) => Object.entries(filter).every(([key, condition]) => {
     const value = read(row, key)
     if (condition && typeof condition === 'object' && !(condition instanceof ObjectId)) {
       const ops = condition as Record<string, unknown>
+      if ('$exists' in ops) return (value !== undefined) === ops.$exists
       if ('$ne' in ops && value === ops.$ne) return false
       if ('$gte' in ops && !((value as number) >= (ops.$gte as number))) return false
       if ('$gt' in ops && !((value as number) > (ops.$gt as number))) return false
@@ -37,10 +38,10 @@ function fakeDb(items: Document[], writes: Document[] = []): Db {
     }
     return holds(value, condition)
   })
-  const collection = () => ({
+  const collection = (name = 'items') => ({
     find: (filter: Filter<Document>, options?: { limit?: number; sort?: Record<string, number> }) => ({
       toArray: async () => {
-        let rows = items.filter((row) => matches(row, filter))
+        let rows = (name === 'mini_series_sweeps_v3' ? sweeps : items).filter((row) => matches(row, filter))
         if (options?.sort?.rand) rows = [...rows].sort((a, b) => (a.rand as number) - (b.rand as number))
         return options?.limit ? rows.slice(0, options.limit) : rows
       },
@@ -175,4 +176,19 @@ test('two of one universe in the last ten videos: a third waits, the bonus card 
   assert.equal(sessionRules(state).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'universe')
   const musicRound = [0, 1, 2].map((round) => round * WHEEL.length).find((index) => bonusAt(24, index) === 'music')!
   assert.equal(await fillSlot(db, 'bonus', context(db, { ...state, videos: musicRound })), null)
+})
+
+test('now and then the chance card lets one of the set-aside media clips through, the mark lifted for that draw', async () => {
+  const rows = [
+    { ...video('Russell Crowe reveals his new film', { universe: 'cinema-tv' }), isSuppressed: true, suppressedReason: 'outlet', v3: { universe: 'cinema-tv', usable: true, channelKey: 'dailymotion:showbiz' } },
+    video('A goal from midfield', { universe: 'sport' }),
+  ]
+  const sweeps = [{ kind: 'outlet', channels: ['dailymotion:showbiz'] }, { kind: 'outlet', channels: ['dailymotion:gone'], undoneAt: new Date() }]
+  const db = fakeDb(rows, [], sweeps)
+  const state = newSession(31)
+  const base = context(db, state)
+  const slipped = await fillSlot(db, 'chance', { ...base, random: () => 0 })
+  assert.equal(slipped?.from, 'media-trickle')
+  assert.equal(slipped?.item.title, 'Russell Crowe reveals his new film')
+  assert.equal(slipped?.item.suppressed, false)
 })

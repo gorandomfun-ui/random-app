@@ -74,6 +74,15 @@ export const NEWS_IN_TEN = 1
 export const UNIVERSE_IN_TEN = 2
 /** Not the same subject, nor the same author, within this many videos. */
 export const SPACING = 10
+/**
+ * Of the media clips set aside (scripts/v3/outlet-sweep.ts, ninety-seven
+ * thousand on 1 October), one slips through the chance card now and then:
+ * one or two in three hundred randoms, for now (the owner, 1 October).
+ */
+export const MEDIA_TRICKLE = 1 / 13
+const SWEEPS = 'mini_series_sweeps_v3'
+const MEDIA_CACHE_MS = 10 * 60_000
+let mediaChannels: { at: number; keys: string[] } | null = null
 
 const QUERY_BUDGET_MS = 1_500
 const UNIVERSE_INDEX = 'v3_universe_type_rand'
@@ -246,6 +255,27 @@ async function inUniverse<T>(db: Db, universe: Universe, slot: Slot, context: Co
   return own ? { item: own, from: `bonus:${universe}`, universe } : null
 }
 
+/** The channels of the media sweeps still in force, read every ten minutes. */
+async function mediaChannelKeys(db: Db, now: number): Promise<string[]> {
+  if (mediaChannels && now - mediaChannels.at < MEDIA_CACHE_MS) return mediaChannels.keys
+  const sweeps = await db.collection(SWEEPS).find({ kind: 'outlet', undoneAt: { $exists: false } } as Document, { projection: { channels: 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[])
+  const keys = [...new Set(sweeps.flatMap((sweep) => (Array.isArray(sweep.channels) ? (sweep.channels as string[]) : [])))]
+  mediaChannels = { at: now, keys }
+  return keys
+}
+
+/** One of the set-aside media clips, from one of their channels at random, under the session's rules. */
+async function mediaTrickle<T>(db: Db, context: Context<T>): Promise<Filled<T> | null> {
+  const keys = await mediaChannelKeys(db, context.now)
+  if (!keys.length) return null
+  const key = keys[Math.floor(context.random() * keys.length)]
+  const rows = await db.collection('items').find({ 'v3.channelKey': key, type: 'video', isSuppressed: true, suppressedReason: 'outlet' } as Document, { hint: 'v3_channel_key', limit: 24, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  // Set aside for the draw at large; for this one draw the mark is lifted.
+  const lifted = rows.map(({ isSuppressed: _mark, suppressedReason: _why, ...row }) => row as CatalogueRow)
+  const pick = choose(lifted, 'chance', context)
+  return pick ? { item: pick, from: 'media-trickle' } : null
+}
+
 /** One card, filled from the stock; null when nothing fits it. */
 export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Promise<Filled<T> | null> {
   const { ticket, state, decode, lang, random, now, card, rules } = context
@@ -309,7 +339,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return inUniverse(db, universe, slot, context, ROWS, (row, candidate) => seconds(candidate) <= SHORT_SECONDS && livelyRank(row) === 0)
     }
     case 'chance': {
-      // Anywhere in the stock: the broad sample every draw used to start from.
+      // Now and then, one of the media clips set aside; else anywhere in the stock, the broad sample every draw used to start from.
+      if (random() < MEDIA_TRICKLE) {
+        const slipped = await mediaTrickle(db, context).catch(() => null)
+        if (slipped) return slipped
+      }
       const rows = await sampleCatalogue(db, baseFilter('video', lang, now))
       const any = choose(rows, slot, context)
       return any ? { item: any, from: 'sample' } : null
