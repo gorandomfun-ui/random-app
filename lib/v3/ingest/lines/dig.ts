@@ -121,7 +121,8 @@ async function reloadThemes(ctx: LineContext): Promise<void> {
   try { themes = readThemes() } catch (error) { ctx.log(`thèmes : liste illisible, ${message(error)}`); return }
   const subjects = themes.map(themeSubject)
   const result = await enqueue(ctx.db, subjects)
-  const paused = await ctx.db.collection<QueuedSubject>(QUEUE).updateMany({ base: 'keywords', kind: 'topic', _id: { $nin: subjects.map((subject) => subject._id) }, state: { $ne: 'paused' } } as Document, { $set: { state: 'paused' } })
+  // A theme taken off the owner's list is paused; a probe from a Wikipedia list (lib/v3/dig/lists.ts) is not on that list and stays (the run of 1 October 21:30 paused 4,522 of them).
+  const paused = await ctx.db.collection<QueuedSubject>(QUEUE).updateMany({ base: 'keywords', kind: 'topic', probe: { $ne: true }, _id: { $nin: subjects.map((subject) => subject._id) }, state: { $ne: 'paused' } } as Document, { $set: { state: 'paused' } })
   if (result.inserted || paused.modifiedCount) ctx.log(`thèmes : ${result.inserted} nouveaux, ${paused.modifiedCount} retirés de la liste`)
 }
 
