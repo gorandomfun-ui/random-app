@@ -62,7 +62,7 @@ const video = (title: string, options: { universe?: string; duration?: string; s
   v3: { universe: options.universe ?? 'sport', usable: true },
 })
 
-const context = (db: Db, state: Session) => ({ ticket: planDraw(state, 'video'), state, decode: (row: Document) => ({ _id: String(row._id), title: row.title }), lang: 'fr', random: Math.random, now: Date.now(), card: 'sport' as const, freshSeen: null, rules: sessionRules(state) })
+const context = (db: Db, state: Session) => ({ ticket: planDraw(state, 'video'), state, decode: (row: Document) => ({ _id: String(row._id), title: row.title }), lang: 'fr', random: Math.random, now: Date.now(), card: 'sport' as const, freshSeen: null, rules: sessionRules(state), media: new Set<string>() })
 
 test('a long card: over fifteen minutes, in the universe of the card, the least served first; never a live', async () => {
   const rows = [
@@ -178,17 +178,19 @@ test('two of one universe in the last ten videos: a third waits, the bonus card 
   assert.equal(await fillSlot(db, 'bonus', context(db, { ...state, videos: musicRound })), null)
 })
 
-test('now and then the chance card lets one of the set-aside media clips through, the mark lifted for that draw', async () => {
+test('a media channel\'s clip is served within its window only: a news clip of the week or of another time, never a six-month-old one', async () => {
+  const media = (title: string, publishedAt: Date, over: Record<string, unknown> = {}) => ({ ...video(title, { universe: 'news-society' }), publishedAt, categoryId: 'news', ...over, v3: { universe: 'news-society', usable: true, channelKey: 'dailymotion:press' } })
   const rows = [
-    { ...video('Russell Crowe reveals his new film', { universe: 'cinema-tv' }), isSuppressed: true, suppressedReason: 'outlet', v3: { universe: 'cinema-tv', usable: true, channelKey: 'dailymotion:showbiz' } },
-    video('A goal from midfield', { universe: 'sport' }),
+    media('Election results tonight', new Date('2026-04-01')),
+    media('Storm reaches the coast tonight', new Date('2026-09-29')),
+    media('The 1983 flood, as reported then', new Date('2026-09-01')),
+    { ...video('A goal from midfield', { universe: 'sport', served: 9 }), publishedAt: new Date('2026-04-01') },
   ]
-  const sweeps = [{ kind: 'outlet', channels: ['dailymotion:showbiz'] }, { kind: 'outlet', channels: ['dailymotion:gone'], undoneAt: new Date() }]
-  const db = fakeDb(rows, [], sweeps)
-  const state = newSession(31)
-  const base = context(db, state)
-  const slipped = await fillSlot(db, 'chance', { ...base, random: () => 0 })
-  assert.equal(slipped?.from, 'media-trickle')
-  assert.equal(slipped?.item.title, 'Russell Crowe reveals his new film')
-  assert.equal(slipped?.item.suppressed, false)
+  const db = fakeDb(rows, [], [{ kind: 'outlet', channels: ['dailymotion:press'] }])
+  const base = { ...context(db, newSession(31)), now: new Date('2026-10-01T20:00:00Z').getTime(), media: new Set(['dailymotion:press']) }
+  const chosen = [choose(rows.slice(0, 1), 'joker', base), choose(rows.slice(1, 2), 'joker', base), choose(rows.slice(2, 3), 'joker', base)]
+  assert.equal(chosen[0], null)
+  assert.equal(chosen[1]?.title, 'Storm reaches the coast tonight')
+  assert.equal(chosen[2]?.title, 'The 1983 flood, as reported then')
+  assert.equal(choose(rows.slice(0, 1), 'joker', { ...base, media: new Set() })?.title, 'Election results tonight')
 })

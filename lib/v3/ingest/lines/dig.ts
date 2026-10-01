@@ -74,7 +74,7 @@ let weekCounts = new Map<string, number>()
 let channelSizes = new Map<string, number>()
 
 /** The kept videos without those of media outlets (lib/v3/dig/outlet.ts): Dailymotion says a channel's size in the search, YouTube in one call per fifty. */
-async function withoutMedia(ctx: LineContext, key: string, kept: DigVideo[], provider: string, own: ReadonlySet<string>): Promise<{ kept: DigVideo[]; refused: number; outlets: string[] }> {
+async function withoutMedia(ctx: LineContext, key: string, kept: DigVideo[], provider: string, own: ReadonlySet<string>): Promise<{ kept: DigVideo[]; moment: DigVideo[]; refused: number; outlets: string[] }> {
   if (provider === 'youtube' && key) {
     const unknown = [...new Set(kept.map((video) => video.channelId ?? '').filter((id) => id && !own.has(id) && !channelSizes.has(id)))]
     if (unknown.length && (await ctx.quota.reserve(LIST_UNITS * Math.ceil(unknown.length / PAGE_SIZE)))) {
@@ -159,18 +159,21 @@ async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['coun
   // The week's cap per channel, on what the door kept (the audit of 1 October: media outlets at eighty videos in two days).
   const weekly = await underWeeklyCap(ctx, door.kept, run.provider, new Set(ownIds))
   if (weekly.refused) door.refused['chaîne cette semaine'] = (door.refused['chaîne cette semaine'] ?? 0) + weekly.refused
-  // Media outlets out (the owner, 1 October: "des trucs chiants, on ne doit pas avoir ça"); archives stay.
+  // Media outlets under their windows (the owner, 1 October): the week's news clip stays as a clip of the moment, a trailer keeps a year, archives stay, the rest is refused.
   const media = await withoutMedia(ctx, process.env.YOUTUBE_API_KEY ?? '', weekly.kept, run.provider, new Set(ownIds))
   if (media.refused) door.refused['média'] = (door.refused['média'] ?? 0) + media.refused
   door.kept = media.kept
+  // A clip of the moment is of the trend: the buzz card reads the trend era and serves it soon; past the window the draw lets it fade.
+  const moment = new Set(media.moment.map((video) => video.videoId))
   const levels: Record<string, number> = {}
   const admitted = door.kept.map((video) => {
     const lang = languageOf(video.declaredLang, video.title, subject.lang)
     const level: DigLevel = levelOf(video.viewCount, lang)
     levels[level] = (levels[level] ?? 0) + 1
     const dig: DigTags = { subjectId: subject._id, base: subject.base, level, pass, ...(lang ? { lang } : {}) }
-    const { seconds: _seconds, live: _live, declaredLang: _lang, ...raw } = video
-    void _seconds; void _live; void _lang
+    const { seconds: _seconds, live: _live, declaredLang: _lang, channelVideos: _size, ...raw } = video
+    void _seconds; void _live; void _lang; void _size
+    if (moment.has(video.videoId)) raw.trendObservedAt = new Date()
     // A probe's universe is its list's, not necessarily the video's ("South Korea" in the street foods): the tagger reads the video itself.
     return { ...raw, digHint: dig, ...(subject.universe && !subject.probe ? { universeHint: subject.universe } : {}), contextQueries: [`dig:${subject.base}:${subject._id}`, run.query], source: { name: `dig:${subject.base}` } }
   })

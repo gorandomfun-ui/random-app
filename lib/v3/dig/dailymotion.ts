@@ -8,10 +8,10 @@
 import type { DigVideo } from './video'
 
 export type DailymotionSort = 'visited' | 'relevance' | 'recent'
-const FIELDS = 'id,title,description,tags,url,thumbnail_720_url,duration,created_time,views_total,owner.id,owner.screenname,owner.videos_total,private,allow_embed,language,onair'
+const FIELDS = 'id,title,description,tags,url,thumbnail_720_url,duration,created_time,views_total,owner.id,owner.screenname,owner.videos_total,channel,private,allow_embed,language,onair'
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
 
-type Row = { id: string; title?: string; description?: string; tags?: string[]; url?: string; thumbnail_720_url?: string; duration?: number; created_time?: number; views_total?: number; 'owner.videos_total'?: number; 'owner.id'?: string; 'owner.screenname'?: string; private?: boolean; allow_embed?: boolean; language?: string; onair?: boolean }
+type Row = { id: string; title?: string; description?: string; tags?: string[]; url?: string; thumbnail_720_url?: string; duration?: number; created_time?: number; views_total?: number; 'owner.videos_total'?: number; channel?: string; 'owner.id'?: string; 'owner.screenname'?: string; private?: boolean; allow_embed?: boolean; language?: string; onair?: boolean }
 
 /** One search, a hundred results at most; the visited sort is refused for some queries, relevance then stands in. */
 export async function searchDailymotion(query: string, sort: DailymotionSort, request: typeof fetch = fetch, signal?: AbortSignal, limit = 100): Promise<DigVideo[]> {
@@ -32,6 +32,8 @@ export async function searchDailymotion(query: string, sort: DailymotionSort, re
       viewCount: row.views_total, duration: row.duration ? `PT${row.duration}S` : undefined, seconds: row.duration ?? 0,
       live: Boolean(row.onair), thumb: row.thumbnail_720_url, declaredLang: row.language,
       ...(typeof row['owner.videos_total'] === 'number' ? { channelVideos: row['owner.videos_total'] } : {}),
+      // The platform's own category ("news", "people", "fun"…): what the media windows read (lib/v3/dig/outlet.ts).
+      ...(typeof row.channel === 'string' && row.channel ? { categoryId: row.channel } : {}),
     }]
   })
 }

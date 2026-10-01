@@ -5,6 +5,7 @@
  *   node --env-file=.env.local --import tsx scripts/v3/outlet-sweep.ts            read only: candidates, counts, a report
  *   node --env-file=.env.local --import tsx scripts/v3/outlet-sweep.ts --apply    sets their recent-time videos aside (suppressedReason 'outlet')
  *   node --env-file=.env.local --import tsx scripts/v3/outlet-sweep.ts --undo     gives back what this sweep set aside
+ *   node --env-file=.env.local --import tsx scripts/v3/outlet-sweep.ts --release  gives back what the media windows keep: the moment's news, the year's trailers, the rest
  *
  * No pass over the whole catalogue: a random sample of videos names the
  * channels that weigh (five in the sample is about two hundred in the
@@ -21,7 +22,7 @@ import { dirname } from 'node:path'
 
 import { MongoClient, type Document } from 'mongodb'
 
-import { OLD_UPLOAD_YEARS, OUTLET_VIDEOS } from '@/lib/v3/dig/outlet'
+import { MOMENT_DAYS, OLD_UPLOAD_YEARS, OUTLET_VIDEOS, TRAILER_DAYS } from '@/lib/v3/dig/outlet'
 import { channelCounts } from '@/lib/v3/dig/youtube'
 import { SWEEPS_COLLECTION } from '@/lib/v3/pools/recap'
 
@@ -34,6 +35,11 @@ const UPLOAD_CUTOFF = new Date(Date.now() - OLD_UPLOAD_YEARS * 365.25 * 86_400_0
 const recentOf = (key: string): Document => ({ 'v3.channelKey': key, isSuppressed: { $ne: true }, publishedAt: { $gte: UPLOAD_CUTOFF }, title: { $not: { $regex: OLD_TITLE.source } } })
 const apply = process.argv.includes('--apply')
 const undo = process.argv.includes('--undo')
+const release = process.argv.includes('--release')
+/** The platforms' categories by family, as lib/v3/dig/outlet.ts reads them. */
+const NEWS_CATEGORIES = ['news', 'sport', 'people', 'tv', '25', '17', '24']
+const TRAILER_CATEGORIES = ['shortfilms', 'videogames', '1', '20']
+const REST_CATEGORIES = ['fun', 'lifestyle', 'music', 'school', 'travel', 'creation', 'tech', 'auto', 'animals', 'kids', 'webcam', '10', '15', '19', '22', '23', '26', '27', '28', '29', '2']
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 type Candidate = { key: string; provider: string; title: string; inSample: number; size?: number; stock?: number; recent?: number; outlet?: boolean }
@@ -43,6 +49,27 @@ async function main(): Promise<void> {
   await client.connect()
   const db = client.db(process.env.MONGODB_DB || 'randomdb')
   const items = db.collection('items')
+  if (release) {
+    // What the windows keep, given back channel by channel through the channel index: the moment's news clips, the year's trailers, the rest without a window.
+    const sweeps = await db.collection(SWEEPS_COLLECTION).find({ kind: 'outlet', undoneAt: { $exists: false } }).toArray()
+    const now = new Date()
+    const lift = { $unset: { isSuppressed: '', suppressedReason: '', suppressedAt: '', suppressedDetail: '' } }
+    let given = 0
+    for (const sweep of sweeps) {
+      for (const key of (sweep.channels as string[]) ?? []) {
+        const base = { 'v3.channelKey': key, suppressedReason: 'outlet' }
+        const results = await Promise.all([
+          items.updateMany({ ...base, categoryId: { $in: NEWS_CATEGORIES }, publishedAt: { $gte: new Date(now.getTime() - MOMENT_DAYS * 86_400_000) } }, lift, { hint: 'v3_channel_key' } as Document),
+          items.updateMany({ ...base, categoryId: { $in: TRAILER_CATEGORIES }, publishedAt: { $gte: new Date(now.getTime() - TRAILER_DAYS * 86_400_000) } }, lift, { hint: 'v3_channel_key' } as Document),
+          items.updateMany({ ...base, categoryId: { $in: REST_CATEGORIES } }, lift, { hint: 'v3_channel_key' } as Document),
+        ])
+        given += results.reduce((sum, result) => sum + result.modifiedCount, 0)
+        await wait(100)
+      }
+    }
+    console.log(`${given} vidéos rendues au tirage par les fenêtres (moment ${MOMENT_DAYS} j, bandes-annonces ${TRAILER_DAYS} j, le reste sans fenêtre)`)
+    await client.close(); return
+  }
   if (undo) {
     const sweeps = await db.collection(SWEEPS_COLLECTION).find({ kind: 'outlet', undoneAt: { $exists: false } }).toArray()
     for (const sweep of sweeps) {

@@ -50,6 +50,7 @@ import { SERVABLE } from '../v3/cool/servable'
 import { drawStart } from '../v3/cool/start'
 import { isNewsTitle, isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isLetsPlay, isStillAlbum } from '../v3/dig/door'
+import { mediaVerdict } from '../v3/dig/outlet'
 import type { DigBase, Popularity, Universe } from '../v3/types'
 
 export const SLOTS = ['buzz', 'long', 'retro', 'taste', 'chance', 'world', 'short', 'deep', 'joker', 'weird', 'bonus'] as const
@@ -75,14 +76,15 @@ export const UNIVERSE_IN_TEN = 2
 /** Not the same subject, nor the same author, within this many videos. */
 export const SPACING = 10
 /**
- * Of the media clips set aside (scripts/v3/outlet-sweep.ts, ninety-seven
- * thousand on 1 October), one slips through the chance card now and then:
- * one or two in three hundred randoms, for now (the owner, 1 October).
+ * The media channels the sweeps named (scripts/v3/outlet-sweep.ts): their
+ * videos are served under the media windows of lib/v3/dig/outlet.ts — a
+ * news clip of the moment or of another time, a trailer within the year —
+ * so what entered as a clip of the moment fades out by itself (the owner,
+ * 1 October). Read every ten minutes.
  */
-export const MEDIA_TRICKLE = 1 / 13
 const SWEEPS = 'mini_series_sweeps_v3'
 const MEDIA_CACHE_MS = 10 * 60_000
-let mediaChannels: { at: number; keys: string[] } | null = null
+let mediaChannels: { at: number; keys: Set<string> } | null = null
 
 const QUERY_BUDGET_MS = 1_500
 const UNIVERSE_INDEX = 'v3_universe_type_rand'
@@ -133,7 +135,7 @@ export type WheelChoice = {
 }
 export type WheelResult<T> = PoolResult<T> & { wheel: WheelChoice }
 type Decoder<T> = (row: CatalogueRow) => T | null
-type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules }
+type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string> }
 type Filled<T> = { item: Candidate<T>; from: string; universe?: Universe }
 
 /** The signals the session's proportions read, written on the candidate so the page keeps them in its exposures. */
@@ -224,6 +226,8 @@ export function choose<T>(rows: readonly CatalogueRow[], slot: Slot, context: Co
   for (const row of rows) {
     const rank = livelyRank(row, trailersSeen)
     if (!Number.isFinite(rank)) continue
+    // A media channel's clip outside its window (a six-month-old news clip): skipped, it has faded.
+    if (!withinMediaWindow(row, context.media, new Date(now))) continue
     const payload = decode(row)
     if (payload == null) continue
     const candidate = withSignals(candidateFromRow(row, payload, now))
@@ -256,24 +260,19 @@ async function inUniverse<T>(db: Db, universe: Universe, slot: Slot, context: Co
 }
 
 /** The channels of the media sweeps still in force, read every ten minutes. */
-async function mediaChannelKeys(db: Db, now: number): Promise<string[]> {
+async function mediaChannelKeys(db: Db, now: number): Promise<Set<string>> {
   if (mediaChannels && now - mediaChannels.at < MEDIA_CACHE_MS) return mediaChannels.keys
   const sweeps = await db.collection(SWEEPS).find({ kind: 'outlet', undoneAt: { $exists: false } } as Document, { projection: { channels: 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[])
-  const keys = [...new Set(sweeps.flatMap((sweep) => (Array.isArray(sweep.channels) ? (sweep.channels as string[]) : [])))]
+  const keys = new Set(sweeps.flatMap((sweep) => (Array.isArray(sweep.channels) ? (sweep.channels as string[]) : [])))
   mediaChannels = { at: now, keys }
   return keys
 }
 
-/** One of the set-aside media clips, from one of their channels at random, under the session's rules. */
-async function mediaTrickle<T>(db: Db, context: Context<T>): Promise<Filled<T> | null> {
-  const keys = await mediaChannelKeys(db, context.now)
-  if (!keys.length) return null
-  const key = keys[Math.floor(context.random() * keys.length)]
-  const rows = await db.collection('items').find({ 'v3.channelKey': key, type: 'video', isSuppressed: true, suppressedReason: 'outlet' } as Document, { hint: 'v3_channel_key', limit: 24, maxTimeMS: QUERY_BUDGET_MS }).toArray()
-  // Set aside for the draw at large; for this one draw the mark is lifted.
-  const lifted = rows.map(({ isSuppressed: _mark, suppressedReason: _why, ...row }) => row as CatalogueRow)
-  const pick = choose(lifted, 'chance', context)
-  return pick ? { item: pick, from: 'media-trickle' } : null
+/** Whether a stored row of a media channel is still within its window. */
+export function withinMediaWindow(row: CatalogueRow, media: ReadonlySet<string>, now: Date): boolean {
+  const key = (row.v3 as { channelKey?: string } | undefined)?.channelKey
+  if (!key || !media.has(key)) return true
+  return mediaVerdict({ title: String(row.title ?? ''), description: typeof row.description === 'string' ? row.description : undefined, publishedAt: row.publishedAt as string | Date | undefined, categoryId: typeof row.categoryId === 'string' ? row.categoryId : undefined }, now) !== 'refuse'
 }
 
 /** One card, filled from the stock; null when nothing fits it. */
@@ -281,13 +280,21 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
   const { ticket, state, decode, lang, random, now, card, rules } = context
   switch (slot) {
     case 'buzz': {
-      // The day's list, none this device already saw today, under the session's proportions; the trend line when the day is spent.
-      const fresh = await selectFresh(db, ticket, state, context.freshSeen, decode, now, random, undefined, (candidate) => !rules.refuses(withSignals(candidate))).catch(() => null)
-      if (fresh) return { item: withSignals(fresh.item), from: 'fresh' }
-      const rows = (await seek(db, { 'v3.line': 'trend', type: 'video', ...SERVABLE }, LINE_INDEX, random, ROWS))
-        .filter((row) => isCoolCandidate(row as LabelableRow) && isCleanTitle(row.title as string))
-      const trend = choose(rows, slot, context)
-      return trend ? { item: trend, from: 'trend' } : null
+      // The day's list, none this device already saw today, under the session's proportions — or, one time in two, the moment first:
+      // what the trend era holds, the week's media clips among it (the owner, 1 October: being up to date); each the other's fallback.
+      const momentFirst = random() < 0.5
+      const theMoment = async (): Promise<Filled<T> | null> => {
+        const rows = (await seek(db, { 'v3.era': 'trend', type: 'video', ...SERVABLE }, ERA_INDEX, random, ROWS))
+          .filter((row) => isCoolCandidate(row as LabelableRow) && isCleanTitle(row.title as string))
+        const picked = choose(rows, slot, context)
+        return picked ? { item: picked, from: 'moment' } : null
+      }
+      const theDay = async (): Promise<Filled<T> | null> => {
+        const fresh = await selectFresh(db, ticket, state, context.freshSeen, decode, now, random, undefined, (candidate) => !rules.refuses(withSignals(candidate))).catch(() => null)
+        return fresh ? { item: withSignals(fresh.item), from: 'fresh' } : null
+      }
+      if (momentFirst) return (await theMoment()) ?? theDay()
+      return (await theDay()) ?? theMoment()
     }
     case 'long':
       return inUniverseThenAny(db, slot, context, SIFTED_ROWS, (row, candidate) => seconds(candidate) > LONG_SECONDS && !isLive(row))
@@ -339,11 +346,7 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return inUniverse(db, universe, slot, context, ROWS, (row, candidate) => seconds(candidate) <= SHORT_SECONDS && livelyRank(row) === 0)
     }
     case 'chance': {
-      // Now and then, one of the media clips set aside; else anywhere in the stock, the broad sample every draw used to start from.
-      if (random() < MEDIA_TRICKLE) {
-        const slipped = await mediaTrickle(db, context).catch(() => null)
-        if (slipped) return slipped
-      }
+      // Anywhere in the stock: the broad sample every draw used to start from.
       const rows = await sampleCatalogue(db, baseFilter('video', lang, now))
       const any = choose(rows, slot, context)
       return any ? { item: any, from: 'sample' } : null
@@ -363,7 +366,8 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
 export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe): Promise<WheelResult<T> | null> {
   if (ticket.type !== 'video') return null
   const slot = slotAt(state.seed, state.videos ?? 0)
-  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state) }
+  const media = await mediaChannelKeys(db, now).catch(() => new Set<string>())
+  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state), media }
   let filled = await fillSlot(db, slot, context).catch(() => null)
   let fallback = false
   if (!filled && slot !== 'joker') {
