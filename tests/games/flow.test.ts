@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, levelWon, loadFlow, newGame, offered, refused, resumable, type FlowMoment, type FlowState } from '@/lib/games/flow'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, levelWon, loadFlow, newGame, newVisit, offered, refused, resumable, type FlowMoment, type FlowState } from '@/lib/games/flow'
 
 /** A moment outside a Wave. */
 const calm = (): FlowMoment => ({ inWave: false, visitSeen: 99 })
@@ -135,4 +135,24 @@ test('le top 10 de l_appareil : une ligne par partie finie ; plein de meilleurs 
   assert.equal(qualifies('eater', 499), false, 'dix meilleurs scores : pas de high score')
   assert.equal(qualifies('eater', 501), true, 'il déloge quelqu_un : high score')
   delete (globalThis as { window?: unknown }).window
+})
+
+test('une nouvelle visite après un jour sans venir repart au 20e, même l_échelle épuisée ; plus tôt, rien ne bouge', () => {
+  let s = freshFlow('catcher')
+  // the ladder spent on this device
+  for (let n = 0; n < 6; n += 1) { s = seeTo(s, s.nextAt); s = offered(s, 1_000 + n) }
+  assert.equal(s.stopped, true)
+  const day = 24 * 3_600_000
+  s = newVisit(s, 10 * day)
+  assert.equal(s.stopped, false)
+  assert.equal(s.refusals, 0)
+  assert.equal(s.nextAt, s.count + FLOW.first, 'the first offer at the 20th visual of the visit')
+  assert.equal(dueGame(s, { inWave: false, visitSeen: 19 }), null)
+  // six refusals toggled the game six times: back to the first one
+  assert.equal(dueGame(seeTo(s, s.nextAt), { inWave: false, visitSeen: 20 }), 'catcher')
+  // the same day: the ladder goes on where it was
+  const later = refused(s)
+  const same = newVisit(later, 10 * day + 3_600_000)
+  assert.equal(same.refusals, 1)
+  assert.equal(same.nextAt, later.nextAt)
 })

@@ -8,8 +8,10 @@
  *   visit. A game — CATCHER or EATER, drawn by chance the first time — is
  *   offered at the 20th exactly, wherever the rhythm stands; refused, the
  *   other game comes at the 50th, then the 90th, the 150th, the 290th, the
- *   590th — and after that, no more. Only a Wave holds it back, and never
- *   before the 20th image or video of a visit.
+ *   590th — and after that, no more in that visit. A new visit after a day
+ *   away starts the ladder over at the 20th (the owner, 2 October: "sinon on
+ *   ne repropose jamais, et on peut toujours dire non"). Only a Wave holds
+ *   it back, and never before the 20th image or video of a visit.
  * - An offer counts as refused the moment it shows, and PLAY takes that
  *   back: an offer left unanswered (the page closed or reloaded) moves the
  *   ladder on instead of coming back at the start of the next visit.
@@ -51,6 +53,8 @@ export const FLOW = {
   afterWin: envNumber(process.env.NEXT_PUBLIC_GAMES_AFTER_WIN, 10),
   afterLoss: envNumber(process.env.NEXT_PUBLIC_GAMES_AFTER_LOSS, 20),
   retries: 2,
+  /** A visit this long after the last one starts the ladder over. */
+  newVisitAfterMs: envNumber(process.env.NEXT_PUBLIC_GAMES_NEW_VISIT_HOURS, 24) * 3_600_000,
 }
 
 /**
@@ -76,6 +80,8 @@ export type FlowState = {
   playing: GameName | null
   lastOfferAt: number
   runs: Partial<Record<GameName, Run>>
+  /** When this device last opened Random: a day away, and the ladder starts over. */
+  lastVisitAt?: number
 }
 
 const KEY = 'random_games_v1'
@@ -111,6 +117,18 @@ export function saveFlow(state: FlowState): void {
 
 /** One more image or video seen. */
 export const countVisual = (s: FlowState): FlowState => ({ ...s, count: s.count + 1 })
+
+/**
+ * The page opens: a day or more since the last visit, and the ladder starts
+ * over — the first offer at the 20th visual of this visit, refusals
+ * forgotten, a spent ladder alive again; the game under way, if any, is
+ * kept and offered first. Any sooner, nothing changes but the stamp.
+ */
+export function newVisit(s: FlowState, now: number): FlowState {
+  const away = s.lastVisitAt === undefined || now - s.lastVisitAt >= FLOW.newVisitAfterMs
+  if (!away) return { ...s, lastVisitAt: now }
+  return { ...s, lastVisitAt: now, refusals: 0, stopped: false, nextAt: s.count + FLOW.first }
+}
 
 /** What the page knows at the moment a content is about to show: a Wave under way, the images and videos seen in this visit. */
 export type FlowMoment = { inWave: boolean; visitSeen: number }

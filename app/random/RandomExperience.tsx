@@ -79,7 +79,7 @@ import {
   type Encourage3DScheduleState,
 } from '@/lib/encourage3d/catalog'
 import { PUBLIC_APP_PATHS, type AppNavigationPaths } from '@/lib/navigation/appPaths'
-import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, levelWon, loadFlow, newGame, offered, resumable, saveFlow, withTicket, type FlowState, type Run } from '@/lib/games/flow'
+import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, levelWon, loadFlow, newGame, newVisit, offered, resumable, saveFlow, withTicket, type FlowState, type Run } from '@/lib/games/flow'
 import { formatI18n as formatArcade } from '@/lib/i18n/format'
 import type { GameName } from '@/lib/games/scores'
 import type { Decision } from '@/components/games/ArcadeStage'
@@ -2807,7 +2807,10 @@ export function RandomExperience({
   const arcadeControl = useRef<GameControl>({}).current
   useEffect(() => {
     if (!gamesOn) return
-    flowRef.current = loadFlow()
+    // A visit a day or more after the last one starts the offers over at the 20th visual (the owner, 2 October).
+    const loaded = loadFlow()
+    flowRef.current = loaded ? newVisit(loaded, Date.now()) : null
+    if (flowRef.current) saveFlow(flowRef.current)
     setFlowView(flowRef.current)
   }, [gamesOn])
   const discoveryRef = useRef(new DiscoveryController<RandomContentItem>(newSession(Math.floor(Math.random() * 0xffffffff))))
