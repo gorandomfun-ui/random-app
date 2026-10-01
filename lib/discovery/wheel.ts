@@ -30,7 +30,7 @@
  * list. Behind `RANDOM_WHEEL=1`, or the admin's `wheel: true` for a rehearsal.
  */
 
-import type { Db, Document, Filter } from 'mongodb'
+import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
 import { candidateFromRow, type CatalogueRow } from './catalog'
 import { echoesSession, exposureOf } from './diversity'
@@ -47,6 +47,7 @@ import { arrangement } from '../v3/cool/bag'
 import { isCleanTitle } from '../v3/cool/clean'
 import { isCoolCandidate, type LabelableRow } from '../v3/cool/registers'
 import { SERVABLE } from '../v3/cool/servable'
+import { loadLikePool } from '../v3/cool/likePool'
 import { drawStart } from '../v3/cool/start'
 import { isNewsTitle, isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isLetsPlay, isStillAlbum } from '../v3/dig/door'
@@ -55,8 +56,8 @@ import type { DigBase, Popularity, Universe } from '../v3/types'
 
 export const SLOTS = ['buzz', 'long', 'retro', 'taste', 'chance', 'world', 'short', 'deep', 'joker', 'weird', 'bonus'] as const
 export type Slot = (typeof SLOTS)[number]
-/** One round of the wheel: the buzz and chance twice, every other card once. */
-export const WHEEL: readonly Slot[] = ['buzz', 'buzz', 'long', 'retro', 'taste', 'chance', 'chance', 'world', 'short', 'deep', 'joker', 'weird', 'bonus']
+/** One round of the wheel: the buzz, the long and the retro twice (the owner, 1 October: fewer long reports and retro things since the thirteen cards), every other card once. */
+export const WHEEL: readonly Slot[] = ['buzz', 'buzz', 'long', 'long', 'retro', 'retro', 'taste', 'chance', 'world', 'short', 'deep', 'joker', 'weird', 'bonus']
 /** The universes the bonus card names, one per round in turn. */
 export const BONUS: readonly Universe[] = ['music', 'gaming', 'humor-memes']
 
@@ -71,8 +72,8 @@ export const DEEP_VIEWS = 10_000
 export const FOREIGN_IN_TEN = 3
 export const LANGUAGE_IN_TEN = 3
 export const NEWS_IN_TEN = 1
-/** One universe among the last ten videos: two at most (the owner, 30 September: "pas deux fois le même thème sur dix randoms"; 1 October: music at a fifth of a session with the bonus card). */
-export const UNIVERSE_IN_TEN = 2
+/** One universe once among the last six videos — ten randoms (the owner, 30 September: "pas deux fois le même thème sur dix randoms"; 1 October: two in ten still put music at a fifth of a session). */
+export const UNIVERSE_WINDOW = 6
 /** Not the same subject, nor the same author, within this many videos. */
 export const SPACING = 10
 /**
@@ -140,12 +141,13 @@ type Filled<T> = { item: Candidate<T>; from: string; universe?: Universe }
 
 /** The signals the session's proportions read, written on the candidate so the page keeps them in its exposures. */
 export function withSignals<T>(candidate: Candidate<T>): Candidate<T> {
-  const lang = titleLanguage(candidate.title)
+  // The language the platform declared, when the row carries it; the detector reads the title otherwise.
+  const lang = candidate.declaredLang ?? titleLanguage(candidate.title)
   const news = candidate.universe === 'news-society' || isNewsTitle(candidate.title)
   return { ...candidate, ...(lang ? { lang } : {}), ...(news ? { news: true } : {}) }
 }
 
-export type Refusal = 'subject' | 'author' | 'foreign' | 'language' | 'news' | 'trailer' | 'universe'
+export type Refusal = 'subject' | 'author' | 'foreign' | 'language' | 'news' | 'trailer' | 'universe' | 'remembered'
 export type SessionRules = {
   /** Why the session refuses this candidate now, or null. */
   refuses: (candidate: Candidate) => Refusal | null
@@ -156,10 +158,12 @@ export type SessionRules = {
 /**
  * What the last ten videos of the session allow: the same subject or author
  * not again, at most three titles of one language or in a foreign script, one
- * news video, two of one universe, two trailers in the whole session. Read on
+ * news video, one universe once in six, two trailers in the whole session —
+ * and nothing the device remembers having seen these two weeks, subject or
+ * author (utils/subjectMemory.ts), on every card, chance included. Read on
  * the exposures the page keeps (lib/discovery/diversity.ts).
  */
-export function sessionRules(state: Session): SessionRules {
+export function sessionRules(state: Session, remembered: ReadonlySet<number> = new Set()): SessionRules {
   const recent = (state.exposures ?? []).filter((exposure) => exposure.type === 'video').slice(-SPACING)
   const subjects = new Set(recent.flatMap((exposure) => (exposure.subject != null ? [exposure.subject] : [])))
   const authors = new Set(recent.flatMap((exposure) => (exposure.author != null ? [exposure.author] : [])))
@@ -167,8 +171,7 @@ export function sessionRules(state: Session): SessionRules {
   const languages = new Map<string, number>()
   for (const exposure of recent) if (exposure.lang) languages.set(exposure.lang, (languages.get(exposure.lang) ?? 0) + 1)
   const newsFull = recent.filter((exposure) => exposure.news).length >= NEWS_IN_TEN
-  const universes = new Map<string, number>()
-  for (const exposure of recent) if (exposure.universe) universes.set(exposure.universe, (universes.get(exposure.universe) ?? 0) + 1)
+  const universes = new Set(recent.slice(-UNIVERSE_WINDOW).flatMap((exposure) => (exposure.universe ? [exposure.universe] : [])))
   const trailersFull = trailersSeenIn(state.exposures) >= TRAILERS_PER_SESSION
   // The universes lead (the owner, 28 September): not the one of the previous video when another fits, the last three set aside when the count allows.
   const previousUniverse = recent[recent.length - 1]?.universe
@@ -176,12 +179,14 @@ export function sessionRules(state: Session): SessionRules {
   return {
     refuses: (candidate) => {
       const stamp = exposureOf(candidate)
+      if (stamp?.subject != null && remembered.has(stamp.subject)) return 'remembered'
+      if (stamp?.author != null && remembered.has(stamp.author)) return 'remembered'
       if (stamp?.subject != null && subjects.has(stamp.subject)) return 'subject'
       if (stamp?.author != null && authors.has(stamp.author)) return 'author'
       if (stamp?.foreign && foreignFull) return 'foreign'
       if (candidate.lang && (languages.get(candidate.lang) ?? 0) >= LANGUAGE_IN_TEN) return 'language'
       if (candidate.news && newsFull) return 'news'
-      if (candidate.universe && (universes.get(candidate.universe) ?? 0) >= UNIVERSE_IN_TEN) return 'universe'
+      if (candidate.universe && universes.has(candidate.universe)) return 'universe'
       if (trailersFull && isTrailerTitle(candidate.title)) return 'trailer'
       return null
     },
@@ -230,7 +235,7 @@ export function choose<T>(rows: readonly CatalogueRow[], slot: Slot, context: Co
     if (!withinMediaWindow(row, context.media, new Date(now))) continue
     const payload = decode(row)
     if (payload == null) continue
-    const candidate = withSignals(candidateFromRow(row, payload, now))
+    const candidate = { ...withSignals(candidateFromRow(row, payload, now)), line: (row.v3 as { line?: string } | undefined)?.line } as Candidate<T> & { line?: string }
     if (!hardEligible(candidate, ticket, state) || echoesSession(candidate, state.exposures) || rules.refuses(candidate)) continue
     if (slot !== 'chance' && isStillAlbum({ title: String(row.title ?? ''), channelTitle: typeof row.channelTitle === 'string' ? row.channelTitle : undefined })) continue
     if (!keep(row, candidate)) continue
@@ -275,6 +280,28 @@ export function withinMediaWindow(row: CatalogueRow, media: ReadonlySet<string>,
   return mediaVerdict({ title: String(row.title ?? ''), description: typeof row.description === 'string' ? row.description : undefined, publishedAt: row.publishedAt as string | Date | undefined, categoryId: typeof row.categoryId === 'string' ? row.categoryId : undefined }, now) !== 'refuse'
 }
 
+/**
+ * The shape of the curator's taste, read from the labels of the likes: how
+ * the liked videos spread over the universes and eras. Until the little AI
+ * measures resemblance, the taste card draws anywhere in the stock in those
+ * proportions (the owner, 1 October). Read every ten minutes.
+ */
+const TASTE_CACHE_MS = 10 * 60_000
+let tasteProfile: { at: number; bag: Array<{ universe: Universe; era?: string }> } | null = null
+async function tasteBag(db: Db, now: number): Promise<Array<{ universe: Universe; era?: string }>> {
+  if (tasteProfile && now - tasteProfile.at < TASTE_CACHE_MS) return tasteProfile.bag
+  const pool = await loadLikePool(db, now).catch(() => ({ zones: [], likeIds: [] as string[] }))
+  const ids = pool.likeIds.filter((id) => ObjectId.isValid(id)).slice(0, 400).map((id) => new ObjectId(id))
+  const liked = ids.length ? await db.collection('items').find({ _id: { $in: ids }, type: 'video' } as Document, { projection: { 'v3.universe': 1, 'v3.era': 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[]) : []
+  const bag = liked.flatMap((row) => {
+    const universe = universeOf(row as CatalogueRow)
+    const era = (row.v3 as { era?: string } | undefined)?.era
+    return universe ? [{ universe, ...(era ? { era } : {}) }] : []
+  })
+  tasteProfile = { at: now, bag }
+  return bag
+}
+
 /** One card, filled from the stock; null when nothing fits it. */
 export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Promise<Filled<T> | null> {
   const { ticket, state, decode, lang, random, now, card, rules } = context
@@ -301,8 +328,9 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
     case 'short':
       return inUniverseThenAny(db, slot, context, ROWS, (row, candidate) => seconds(candidate) >= 15 && seconds(candidate) <= SHORT_SECONDS && livelyRank(row) === 0)
     case 'deep': {
+      // Little seen, anywhere in the universe of the card: the whole stock, a named subject or not (1 October: preferring named subjects meant preferring the dig's one per cent).
       const little = (row: CatalogueRow) => (row.v3 as { popularity?: Popularity } | undefined)?.popularity === 'niche' || (typeof row.viewCount === 'number' && row.viewCount < DEEP_VIEWS)
-      return (await inUniverseThenAny(db, slot, context, ROWS, (row) => little(row) && named(row))) ?? inUniverseThenAny(db, slot, context, ROWS, (row) => little(row))
+      return inUniverseThenAny(db, slot, context, ROWS, (row) => little(row))
     }
     case 'retro': {
       // The archives, the card's universe first when it has any.
@@ -313,26 +341,35 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return any ? { item: any, from: 'era:retro' } : null
     }
     case 'taste': {
-      // A zone around one of the curator's likes; else what the dig's likes base brought in.
-      const start = await drawStart(db, { type: 'video', source: 'like', random, now }).catch(() => null)
-      const liked = start && start.source.startsWith('like') ? choose(start.rows as CatalogueRow[], slot, context) : null
-      if (liked) return { item: liked, from: start!.source }
+      // One time in ten, a zone around one of the curator's likes (the same author, the same named subject); the rest of the time, the shape of
+      // the likes applied to the whole stock — a universe and an era the likes hold, drawn anywhere; the dig's likes base when nothing else.
+      if (random() < 0.1) {
+        const start = await drawStart(db, { type: 'video', source: 'like', random, now }).catch(() => null)
+        const liked = start && start.source.startsWith('like') ? choose(start.rows as CatalogueRow[], slot, context) : null
+        if (liked) return { item: liked, from: start!.source }
+      }
+      const bag = await tasteBag(db, now).catch(() => [] as Array<{ universe: Universe; era?: string }>)
+      if (bag.length) {
+        const shape = bag[Math.floor(random() * bag.length)]
+        const rows = await seekUniverse(db, shape.universe, random, SIFTED_ROWS)
+        const alike = shape.era ? rows.filter((row) => (row.v3 as { era?: string } | undefined)?.era === shape.era) : rows
+        const picked = choose(alike.length >= 8 ? alike : rows, slot, context)
+        if (picked) return { item: picked, from: `taste:${shape.universe}${shape.era ? `/${shape.era}` : ''}`, universe: shape.universe }
+      }
       const dug = choose(await seekDig(db, 'likes', random), slot, context)
       return dug ? { item: dug, from: 'dig:likes' } : null
     }
     case 'world': {
-      // A person or a work of a country, as the dig's people base found it; else the register of the elsewhere.
-      const person = choose(await seekDig(db, 'people', random), slot, context)
-      if (person) return { item: person, from: 'dig:people' }
-      const elsewhere = choose(await seek(db, { 'v3.registers': 'elsewhere', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, ROWS), slot, context)
-      return elsewhere ? { item: elsewhere, from: 'register:elsewhere' } : null
+      // Elsewhere: the register the whole stock carries, and the people the dig found round the world — one pool, the least served first.
+      const [elsewhere, people] = await Promise.all([seek(db, { 'v3.registers': 'elsewhere', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, SIFTED_ROWS), seekDig(db, 'people', random)])
+      const picked = choose([...elsewhere, ...people], slot, context)
+      return picked ? { item: picked, from: (picked as Candidate & { line?: string }).line === 'dig' ? 'dig:people' : 'register:elsewhere' } : null
     }
     case 'weird': {
-      // The themes the dig digs on purpose — bloopers, ventriloquists, weird commercials (lib/v3/dig/themes.json) — else the register of odd old words.
-      const theme = choose(await seekDig(db, 'keywords', random), slot, context)
-      if (theme) return { item: theme, from: 'dig:keywords' }
-      const words = choose(await seek(db, { 'v3.registers': 'cool-words', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, ROWS), slot, context)
-      return words ? { item: words, from: 'register:cool-words' } : null
+      // The odd old words the whole stock carries, and the themes the dig digs on purpose — bloopers, ventriloquists, weird commercials — one pool.
+      const [words, themes] = await Promise.all([seek(db, { 'v3.registers': 'cool-words', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, SIFTED_ROWS), seekDig(db, 'keywords', random)])
+      const picked = choose([...words, ...themes], slot, context)
+      return picked ? { item: picked, from: (picked as Candidate & { line?: string }).line === 'dig' ? 'dig:keywords' : 'register:cool-words' } : null
     }
     case 'bonus': {
       // One universe named on purpose, in turn, each under its own quality rule (the owner, 1 October).
@@ -363,11 +400,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
  * joker when the card has nothing; null when the wheel has nothing at all,
  * and the older paths answer.
  */
-export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe): Promise<WheelResult<T> | null> {
+export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set()): Promise<WheelResult<T> | null> {
   if (ticket.type !== 'video') return null
   const slot = slotAt(state.seed, state.videos ?? 0)
   const media = await mediaChannelKeys(db, now).catch(() => new Set<string>())
-  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state), media }
+  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media }
   let filled = await fillSlot(db, slot, context).catch(() => null)
   let fallback = false
   if (!filled && slot !== 'joker') {

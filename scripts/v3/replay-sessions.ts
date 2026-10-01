@@ -7,6 +7,7 @@
  *   node --import tsx scripts/v3/replay-sessions.ts                     6 devices × 60 contents
  *   node --import tsx scripts/v3/replay-sessions.ts --deck              the same with the theme deck (admin rehearsal)
  *   node --import tsx scripts/v3/replay-sessions.ts --sessions=3 --contents=40 --label=test
+ *   node --import tsx scripts/v3/replay-sessions.ts --sessions=4 --device-sessions=3   each device plays three sessions in a row, its memory carried (seen keys, subjects two weeks)
  *
  * Built on 28 September to judge variety by measure, not by feel: distinct
  * universes in the first twenty visuals, the biggest universe's share, long
@@ -22,6 +23,7 @@ import { markSeen, type FreshSeen } from '@/lib/discovery/freshSeen'
 import { commitDraw, newSession, planDraw } from '@/lib/discovery/pool'
 import { ALL_ITEM_TYPES, createSequenceState, nextSlot } from '@/lib/random/sequence'
 import { isNewsTitle, isTrailerTitle } from '@/lib/v3/cool/themes'
+import { exposureOf } from '@/lib/discovery/diversity'
 import { titleLanguage } from '@/lib/discovery/language'
 
 const flag = (name: string, fallback: number) => Number(process.argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=')[1]) || fallback
@@ -30,10 +32,11 @@ const CONTENTS = flag('contents', 60)
 const DECK = process.argv.includes('--deck')
 const DIG = process.argv.includes('--dig')
 const WHEEL = process.argv.includes('--wheel')
+const DEVICE_SESSIONS = flag('device-sessions', 1)
 const BASE = process.argv.find((arg) => arg.startsWith('--base='))?.slice(7) || 'https://www.gorandom.fun'
 const LABEL = process.argv.find((arg) => arg.startsWith('--label='))?.slice(8) || (WHEEL ? 'wheel' : DIG ? 'dig' : DECK ? 'deck' : 'current')
 
-type Row = { session: number; position: number; type: string; path: string; theme?: string; id?: string; key: string; title: string }
+type Row = { session: number; position: number; type: string; path: string; theme?: string; id?: string; key: string; title: string; subject?: number; author?: number; visit: number }
 
 const seconds = (value: unknown) => {
   const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(value ?? ''))
@@ -41,12 +44,12 @@ const seconds = (value: unknown) => {
 }
 const pct = (part: number, whole: number) => (whole ? `${Math.round((100 * part) / whole)} %` : '—')
 
-async function play(session: number): Promise<Row[]> {
+async function play(session: number, device: { seen: string[]; subjects: number[]; fresh: FreshSeen | null } = { seen: [], subjects: [], fresh: null }, visit = 1): Promise<Row[]> {
   const rows: Row[] = []
   let sequence = createSequenceState()
   let state = newSession(Math.floor(Math.random() * 0xffffffff))
-  let fresh: FreshSeen | null = null
-  const seen: string[] = []
+  let fresh: FreshSeen | null = device.fresh
+  const seen = device.seen
   for (let guard = 0; rows.length < CONTENTS && guard < CONTENTS * 3; guard += 1) {
     const next = nextSlot(sequence, new Set(ALL_ITEM_TYPES), ALL_ITEM_TYPES)
     sequence = next.state
@@ -56,7 +59,7 @@ async function play(session: number): Promise<Row[]> {
     const response = await fetch(`${BASE}/api/discovery/random`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(DECK || DIG || WHEEL ? { 'x-admin-ingest-key': process.env.ADMIN_INGEST_KEY ?? '' } : {}) },
-      body: JSON.stringify({ session: state, type, lang: 'fr', factVariant: next.slot.requireQuiz ? 'quiz' : undefined, seen: seen.slice(-400), ...(fresh ? { fresh } : {}), ...(DECK ? { themeDeck: true } : {}), ...(DIG ? { digDraw: true } : {}), ...(WHEEL ? { wheel: true } : {}) }),
+      body: JSON.stringify({ session: state, type, lang: 'fr', factVariant: next.slot.requireQuiz ? 'quiz' : undefined, seen: seen.slice(-400), seenSubjects: device.subjects.slice(-600), ...(fresh ? { fresh } : {}), ...(DECK ? { themeDeck: true } : {}), ...(DIG ? { digDraw: true } : {}), ...(WHEEL ? { wheel: true } : {}) }),
     }).catch(() => null)
     if (!response || response.status !== 200) continue
     type Reply = { candidate?: Parameters<typeof commitDraw>[2] & { fresh?: boolean; freshDay?: string; freshPosition?: number; payload?: { _id?: string; title?: string; text?: string } }
@@ -67,14 +70,25 @@ async function play(session: number): Promise<Row[]> {
     try { state = commitDraw(state, ticket, candidate) } catch { continue }
     if (candidate.fresh && candidate.freshDay && typeof candidate.freshPosition === 'number') fresh = markSeen(fresh, candidate.freshDay, candidate.freshPosition)
     seen.push(candidate.key)
+    const stamp = exposureOf(candidate)
+    for (const hash of [stamp?.subject, stamp?.author]) if (typeof hash === 'number' && !device.subjects.includes(hash)) device.subjects.push(hash)
     const path = body.wheel ? `wheel:${body.wheel.slot}:${body.wheel.from}` : candidate.fresh ? 'fresh' : body.dig ? `dig:${body.dig.base}:N${body.dig.level ?? '?'}` : body.cool ? `cool:${body.cool.source}` : `pool:${body.branch ?? ''}`
-    rows.push({ session, position: rows.length + 1, type: candidate.type, path, theme: body.theme, id: candidate.payload?._id, key: candidate.key, title: String(candidate.payload?.title ?? candidate.payload?.text ?? '') })
+    rows.push({ session, position: rows.length + 1, type: candidate.type, path, theme: body.theme, id: candidate.payload?._id, key: candidate.key, title: String(candidate.payload?.title ?? candidate.payload?.text ?? ''), ...(stamp?.subject != null ? { subject: stamp.subject } : {}), ...(stamp?.author != null ? { author: stamp.author } : {}), visit })
   }
+  device.fresh = fresh
+  return rows
+}
+
+/** One device, several sessions in a row, its memory carried from one to the next. */
+async function playDevice(session: number): Promise<Row[]> {
+  const device = { seen: [] as string[], subjects: [] as number[], fresh: null as FreshSeen | null }
+  const rows: Row[] = []
+  for (let visit = 1; visit <= DEVICE_SESSIONS; visit += 1) rows.push(...await play(session, device, visit))
   return rows
 }
 
 async function main(): Promise<void> {
-  const rows = (await Promise.all(Array.from({ length: SESSIONS }, (_, index) => play(index + 1)))).flat()
+  const rows = (await Promise.all(Array.from({ length: SESSIONS }, (_, index) => playDevice(index + 1)))).flat()
   const client = new MongoClient(process.env.MONGODB_URI as string, { serverSelectionTimeoutMS: 20000 })
   await client.connect()
   const ids = rows.map((row) => row.id).filter((id): id is string => Boolean(id && /^[0-9a-f]{24}$/i.test(id)))
@@ -141,6 +155,23 @@ async function main(): Promise<void> {
   for (const row of rows.filter(visual)) paths.set(row.path, (paths.get(row.path) ?? 0) + 1)
   lines.push(`Par où : ${[...paths].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${n}`).join(' · ')}`, '')
   lines.push(`Vus par deux appareils ou plus : ${[...shown.values()].filter((n) => n > 1).length} contenus sur ${shown.size}.`, '')
+  if (DEVICE_SESSIONS > 1) {
+    // The same subject or author again on the same device, in a later session: what the two-week memory must bring to zero.
+    let again = 0, pairs = 0
+    const examples: string[] = []
+    for (let session = 1; session <= SESSIONS; session += 1) {
+      const videos = rows.filter((row) => row.session === session && row.type === 'video')
+      const earlier = new Map<number, string>()
+      for (const row of videos) {
+        const marks = [row.subject, row.author].filter((hash): hash is number => typeof hash === 'number')
+        const hit = marks.find((hash) => earlier.has(hash) && earlier.get(hash) !== `${row.visit}`)
+        pairs += 1
+        if (hit !== undefined) { again += 1; if (examples.length < 8) examples.push(`${session}.${row.visit} ${row.title.slice(0, 50)}`) }
+        for (const hash of marks) if (!earlier.has(hash)) earlier.set(hash, `${row.visit}`)
+      }
+    }
+    lines.push(`Même sujet ou même chaîne revus par le même appareil dans une session suivante : **${again}** vidéos sur ${pairs} (${DEVICE_SESSIONS} sessions par appareil)${examples.length ? ` — ${examples.join(' · ')}` : ''}.`, '')
+  }
   lines.push('## Les visuels, session par session', '')
   for (const row of rows.filter(visual)) {
     const doc = docs.get(row.id ?? '')

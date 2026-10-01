@@ -22,7 +22,8 @@ import { SWEEPS_COLLECTION } from '@/lib/v3/pools/recap'
 import { count, table } from './reportFormat'
 
 const REPORT = 'docs/reports/junk-sweep.md'
-const KEEP_TOP_ONE_IN = 20
+/** None kept any more (the owner, 1 October: "le spam commercial à zéro"); the real commercials are themes, never touched here. */
+const KEEP_TOP_ONE_IN = Number.POSITIVE_INFINITY
 const PAUSE_EVERY = 10_000
 const PAUSE_MS = 400
 const WRITE_BATCH = 500
@@ -74,8 +75,8 @@ async function main(): Promise<void> {
 
     const scams = found.filter((row) => row.kind === 'scam')
     const tops = found.filter((row) => row.kind === 'product-top')
-    const keptTops = tops.filter((_, index) => index % KEEP_TOP_ONE_IN === 0)
-    const setAside = [...scams, ...tops.filter((_, index) => index % KEEP_TOP_ONE_IN !== 0)]
+    const keptTops = Number.isFinite(KEEP_TOP_ONE_IN) ? tops.filter((_, index) => index % KEEP_TOP_ONE_IN === 0) : []
+    const setAside = [...scams, ...(Number.isFinite(KEEP_TOP_ONE_IN) ? tops.filter((_, index) => index % KEEP_TOP_ONE_IN !== 0) : tops)]
     const byUniverse: Record<string, number> = {}
     for (const row of setAside) byUniverse[row.universe] = (byUniverse[row.universe] ?? 0) + 1
 

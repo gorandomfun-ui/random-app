@@ -7,7 +7,7 @@ import { candidateFromRow } from '../../lib/discovery/catalog'
 import { appendExposure } from '../../lib/discovery/diversity'
 import { newSession, planDraw, type Session } from '../../lib/discovery/pool'
 import { countServed } from '../../lib/discovery/served'
-import { BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, WHEEL, withSignals } from '../../lib/discovery/wheel'
+import { BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, UNIVERSE_WINDOW, WHEEL, withSignals } from '../../lib/discovery/wheel'
 
 test('the wheel: a session opens on the buzz, a round deals every card, never the same card twice in a row', () => {
   for (const seed of [1, 7, 4242, 987654321]) {
@@ -124,8 +124,8 @@ test('the universes lead: never the previous video\'s universe when another fits
   const rows = [video('Another film scene', { universe: 'cinema-tv' }), video('A goal from midfield', { universe: 'sport', served: 1 })]
   const db = fakeDb(rows)
   assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A goal from midfield')
-  // The card's universe only: the previous universe answers rather than nothing.
-  assert.equal(choose(rows.slice(0, 1), 'joker', context(db, state))?.title, 'Another film scene')
+  // The card's universe only: a universe seen within six videos is refused outright, and the card passes to the joker or another universe.
+  assert.equal(choose(rows.slice(0, 1), 'joker', context(db, state)), null)
 })
 
 const remembered = (seed: number, rows: Document[]): Session => {
@@ -168,14 +168,37 @@ test('the bonus card names music, gaming and humour in turn, and keeps its quali
   assert.equal(filled?.from, 'bonus:gaming')
 })
 
-test('two of one universe in the last ten videos: a third waits, the bonus card included', async () => {
-  const state = remembered(24, [video('Concert in the park', { universe: 'music' }), video('Studio session with the band', { universe: 'music' })])
+test('one universe once in the last six videos: a second waits, the bonus card included', async () => {
+  const state = remembered(24, [video('Concert in the park', { universe: 'music' })])
   const rows = [video('A new single, live on stage', { universe: 'music' }), video('A goal from midfield', { universe: 'sport', served: 5 })]
   const db = fakeDb(rows)
+  assert.equal(UNIVERSE_WINDOW, 6)
   assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A goal from midfield')
   assert.equal(sessionRules(state).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'universe')
   const musicRound = [0, 1, 2].map((round) => round * WHEEL.length).find((index) => bonusAt(24, index) === 'music')!
   assert.equal(await fillSlot(db, 'bonus', context(db, { ...state, videos: musicRound })), null)
+  // Seven videos later the universe is free again.
+  const later = remembered(24, [video('Concert in the park', { universe: 'music' }), ...['travel', 'food', 'art', 'craft', 'sport', 'tech'].map((universe) => video(`Something ${universe}`, { universe }))])
+  assert.equal(sessionRules(later).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), null)
+})
+
+test('what the device remembers — a subject, an author — is refused on every card, chance included', () => {
+  const seen = video('Pelé scores in 1970', { channel: 'pele-fan', universe: 'sport' })
+  const seenCandidate = withSignals(candidateFromRow({ ...seen, v3: { ...seen.v3, dig: { subjectId: 'entity:pele', base: 'people', level: 2, pass: 'top' } } }, {}, Date.now()))
+  const { hash } = require('../../lib/discovery/random') as typeof import('../../lib/discovery/random')
+  const remembered = new Set([hash('entity:pele'), hash(seenCandidate.authorKey!)])
+  const rows = [
+    { ...video('Pelé, the king, a documentary', { universe: 'history' }), v3: { universe: 'history', usable: true, dig: { subjectId: 'entity:pele', base: 'people', level: 3, pass: 'around' } } },
+    video('Another video of the same fan channel', { channel: 'pele-fan', universe: 'sport' }),
+    video('A goal from midfield', { universe: 'food', served: 9 }),
+  ]
+  const db = fakeDb(rows)
+  const state = newSession(41)
+  const base = { ...context(db, state), rules: sessionRules(state, remembered) }
+  assert.equal(choose(rows, 'joker', base)?.title, 'A goal from midfield')
+  assert.equal(choose(rows, 'chance', base)?.title, 'A goal from midfield')
+  assert.equal(base.rules.refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'remembered')
+  assert.equal(base.rules.refuses(withSignals(candidateFromRow(rows[1], {}, Date.now()))), 'remembered')
 })
 
 test('a media channel\'s clip is served within its window only: a news clip of the week or of another time, never a six-month-old one', async () => {

@@ -58,6 +58,8 @@ import { reportImageLoadIssue, type ImageLoadIssue } from '@/utils/imageSuspects
 import { isMediaBlockedThisSession } from '@/utils/mediaSuspects'
 import { rememberSeen, seenKeys } from '@/utils/seenMemory'
 import { markShown } from '@/utils/keptMemory'
+import { rememberSubjects } from '@/utils/subjectMemory'
+import { exposureOf } from '@/lib/discovery/diversity'
 import { dailymotionVerdict } from '@/lib/v3/mediaAvailability'
 import {
   reportVideoPlaybackIssue,
@@ -272,10 +274,18 @@ type PlaybackIssueHandler = (item: VideoContentItem, issue: VideoPlaybackIssue) 
 
 type EncourageItem = EncourageContentItem
 
+/** The subject and author hashes of a candidate, for the device's two-week memory (utils/subjectMemory.ts). */
+function memoryOf(candidate: Parameters<typeof exposureOf>[0]): number[] {
+  const stamp = exposureOf(candidate)
+  return stamp ? [stamp.subject, stamp.author].filter((hash): hash is number => typeof hash === 'number') : []
+}
+
 type PreparedRandomEntry = {
   slot: SequenceSlot
   item: DisplayItem
   discoveryKey?: string
+  /** What the device will remember of it for two weeks: its subject and its author. */
+  discoveryMemory?: number[]
   generation?: number
   sequenceAfter?: RandomSequenceState
 }
@@ -1813,6 +1823,8 @@ function YouTubeEmbed({
   const muteOnIOSPlaybackStart = shouldBypassNativeFullscreen()
   const soundMutedRef = useRef(soundMuted)
   const [originParam, setOriginParam] = useState('')
+  // The page's language, for the player's subtitles; read once the page is on screen.
+  const [uiLang, setUiLang] = useState('en')
   const [isMuted, setIsMuted] = useState(soundMuted || muteOnIOSPlaybackStart)
   const [embedMuted, setEmbedMuted] = useState(soundMuted || muteOnIOSPlaybackStart)
   const [playerReady, setPlayerReady] = useState(false)
@@ -1820,6 +1832,7 @@ function YouTubeEmbed({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setOriginParam(window.location.origin)
+      setUiLang(document.documentElement.lang.slice(0, 2) || 'en')
     }
   }, [])
 
@@ -1856,10 +1869,14 @@ function YouTubeEmbed({
       playsinline: '1',
       modestbranding: '1',
       enablejsapi: '1',
+      // Subtitles in the site's language, on by default (the owner, 1 October: videos opened with German subtitles, the browser's choice).
+      cc_load_policy: '1',
+      cc_lang_pref: uiLang,
+      hl: uiLang,
     })
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
-  }, [videoId, embedMuted, originParam])
+  }, [videoId, embedMuted, originParam, uiLang])
   const { loaded: iframeLoaded, markLoaded, reloadNonce } = useVideoEmbedWatchdog(src, item, onPlaybackIssue)
   const posterUrl = useMemo(() => getImmersiveBackgroundImage(item, null), [item])
 
@@ -3745,7 +3762,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
     sequenceStateRef.current = cloneSequenceState(entries[entries.length - 1]?.sequenceAfter ?? advance.sequence)
     const generation = randomReadyGenerationRef.current
     randomReadyQueueRef.current = entries.map((entry) => ({
-      slot: entry.slot, item: entry.candidate.payload, discoveryKey: entry.candidate.key, sequenceAfter: cloneSequenceState(entry.sequenceAfter), generation,
+      slot: entry.slot, item: entry.candidate.payload, discoveryKey: entry.candidate.key, discoveryMemory: memoryOf(entry.candidate), sequenceAfter: cloneSequenceState(entry.sequenceAfter), generation,
     }))
     lastInteractionAtRef.current = Date.now()
     return entries.length > 0
@@ -3871,6 +3888,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     const candidate = pendingWaveRef.current
     if (!candidate || !waveDiscoveryMode) return
     discoveryWaveRef.current?.displayed(candidate.key)
+    rememberSubjects(memoryOf(candidate))
     markShown(candidate.type === 'video' || candidate.type === 'image' ? String(candidate.payload._id ?? '') || null : null)
     recordWaveAudit({ stage: 'display', anchorId: String(candidate.payload._id ?? ''), type: candidate.type })
     pendingWaveRef.current = null
@@ -4223,7 +4241,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (languageVersion !== langVersionRef.current || discoveryGeneration !== randomReadyGenerationRef.current) return null
         if (!prepared) continue
         sequenceStateRef.current = preparedState
-        return { slot, item: prepared.item, discoveryKey: prepared.candidate.key, sequenceAfter: preparedState, generation: discoveryGeneration }
+        return { slot, item: prepared.item, discoveryKey: prepared.candidate.key, discoveryMemory: memoryOf(prepared.candidate), sequenceAfter: preparedState, generation: discoveryGeneration }
       }
       // Keep this format slot pending. A slow video never becomes an image.
       return null
@@ -4473,6 +4491,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         if (entry.item.type !== 'encourage' && entry.item.type !== 'minigame') { const key = getContentKey(entry.item); if (key) registerRecentKey(key) }
         // The device remembers for a week what the session remembers for six hours.
         if (entry.discoveryKey) rememberSeen(entry.discoveryKey)
+        // And its subject and author, for two weeks: not Pelé again tomorrow (utils/subjectMemory.ts).
+        if (entry.discoveryMemory?.length) rememberSubjects(entry.discoveryMemory)
         // How long the previous visual stayed on screen closes here; this one opens (utils/keptMemory.ts).
         markShown(entry.item.type === 'video' || entry.item.type === 'image' ? (entry.item as { _id?: string })._id ?? null : null, (entry.item as { card?: string }).card)
       }

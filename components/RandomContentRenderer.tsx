@@ -349,6 +349,10 @@ function Video({ block, theme }: { block: VideoItem; theme: Theme }) {
       modestbranding: '1',
       enablejsapi: '1',
       controls: '1',
+      // Subtitles in the page's language, on by default.
+      cc_load_policy: '1',
+      cc_lang_pref: typeof document !== 'undefined' && document.documentElement.lang ? document.documentElement.lang.slice(0, 2) : 'en',
+      hl: typeof document !== 'undefined' && document.documentElement.lang ? document.documentElement.lang.slice(0, 2) : 'en',
     })
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`

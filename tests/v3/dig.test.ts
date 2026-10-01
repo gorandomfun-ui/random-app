@@ -198,7 +198,7 @@ test('a like gives its subjects on its own: the names its title carries, what it
   const cats = { _id: new ObjectId(), title: 'Cat Documentary|Types Of Cat|Cat Foods|Cat Life Cycle', provider: 'dailymotion', channelId: 'x1', channelTitle: 'VILLAGE.PK', v3: { subjects: [{ id: 'entity:globe-theatre', role: 'primary' }] } }
   const fromCats = likeSubjects({ itemId: String(cats._id) }, cats, known)
   assert.ok(!fromCats.some((subject) => subject._id === 'entity:globe-theatre'), 'a name the title does not carry is not the like\'s subject')
-  assert.equal(fromCats[0]?.kind, 'topic', 'its telling words instead, the like having no channel to read')
+  assert.equal(fromCats.length, 0, 'never its words: a like without a name and without a channel gives nothing (the owner, 1 October)')
   const rocky = { _id: new ObjectId(), title: 'A$AP Rocky - A$AP Forever (Official Video) ft. Moby', provider: 'youtube', channelId: 'UCasap', channelTitle: 'LIVELOVEASAPVEVO', v3: { subjects: [] } }
   assert.deepEqual(likeSubjects({ itemId: 'r' }, rocky, known).map((subject) => subject._id), ['channel:youtube:UCasap'], 'the channel carries the like; no word soup beside it')
   assert.deepEqual(practiceTheme('Frosted Mini-Wheats (Kellogg\'s) TV Commercial - 1994'), { label: 'commercial 1994', aliases: ['commercial', 'commercials', 'advert', 'ad', 'pub', 'publicité', 'werbung', 'anuncio', '1994'] })

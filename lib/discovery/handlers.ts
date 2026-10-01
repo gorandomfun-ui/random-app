@@ -44,6 +44,12 @@ export function parseSeen(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((key): key is string => typeof key === 'string' && key.length > 0 && key.length <= 2048).slice(-SEEN_KEYS_MAX)
 }
+/** The subjects and authors the device saw these two weeks (utils/subjectMemory.ts): at most six hundred hashes. */
+export const SEEN_SUBJECTS_MAX = 600
+export function parseSeenSubjects(value: unknown): Set<number> {
+  if (!Array.isArray(value)) return new Set()
+  return new Set(value.filter((hash): hash is number => Number.isSafeInteger(hash) && hash >= 0 && hash <= 0xffffffff).slice(-SEEN_SUBJECTS_MAX))
+}
 /** One switch on Vercel turns the cool pool off without a deployment. */
 const coolPoolEnabled = () => process.env.RANDOM_COOL_POOL_ENABLED !== '0'
 function language(body: Record<string, unknown>): string { return ['en', 'fr', 'de', 'es', 'jp'].includes(String(body.lang)) ? String(body.lang) : 'en' }
@@ -69,7 +75,7 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
       // Fresh of the day first: the session's first ten videos, at random among the day's list, none this device already saw today.
       const wheel = wheelOn && ticket.type === 'video'
-        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals)).catch(() => null) : null
+        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals), parseSeenSubjects(body.seenSubjects)).catch(() => null) : null
       const fresh = !wheel && freshEnabled() && ticket.type === 'video'
         ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now(), Math.random, theme).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.
@@ -90,7 +96,7 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       const publicCandidate = { ...choice.item }
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
       // The card rides on the item, so the device can say how long each card's video was kept (lib/discovery/kept.ts).
-      if (wheel) publicCandidate.payload = { ...(publicCandidate.payload as object), card: wheel.wheel.slot === 'bonus' && wheel.wheel.universe ? `bonus:${wheel.wheel.universe}` : wheel.wheel.slot } as T
+      if (wheel) publicCandidate.payload = { ...(publicCandidate.payload as object), card: wheel.wheel.fallback ? 'joker' : wheel.wheel.slot === 'bonus' && wheel.wheel.universe ? `bonus:${wheel.wheel.universe}` : wheel.wheel.slot } as T
       return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}), ...(wheel ? { wheel: wheel.wheel } : {}), ...(dig ? { dig: dig.dig } : {}),
         ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }

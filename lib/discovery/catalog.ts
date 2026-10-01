@@ -8,6 +8,9 @@ import { sourceRevision } from './sourceRevision'
 import { isoSeconds } from '../v3/dig/youtube'
 
 export type CatalogueRow = Record<string, unknown> & { _id?: unknown; type?: string }
+/** The platforms declare two-letter codes; the detector speaks three-letter ones (lib/discovery/language.ts). The same word for the same language. */
+const ISO_THREE: Record<string, string> = { fr: 'fra', en: 'eng', es: 'spa', pt: 'por', de: 'deu', it: 'ita', ja: 'jpn', ko: 'kor', ar: 'ara', hi: 'hin', id: 'ind', tr: 'tur', ru: 'rus', nl: 'nld', pl: 'pol', sv: 'swe', zh: 'cmn', vi: 'vie', th: 'tha', uk: 'ukr', el: 'ell', cs: 'ces', ro: 'ron', hu: 'hun', da: 'dan', fi: 'fin', no: 'nor', he: 'heb', fa: 'pes', bn: 'ben', ta: 'tam', te: 'tel', ms: 'msa', tl: 'tgl' }
+export const isoThree = (code: string): string => ISO_THREE[code.toLowerCase()] ?? code.toLowerCase()
 const text = (x: unknown): string | undefined => typeof x === 'string' && x.trim() ? x : undefined
 function date(x: unknown): number | undefined {
   const n = x instanceof Date ? x.getTime() : typeof x === 'string' || typeof x === 'number' ? new Date(x).getTime() : NaN
@@ -84,6 +87,7 @@ export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number):
     ...(typeof served === 'number' && served > 0 ? { served } : {}),
     ...(typeof counts?.kept === 'number' && counts.kept > 0 ? { kept: { n: counts.kept, seconds: typeof counts.seconds === 'number' ? counts.seconds : 0 } } : {}),
     ...(typeof (row.v3 as { universe?: unknown } | undefined)?.universe === 'string' ? { universe: (row.v3 as { universe: string }).universe.slice(0, 40) } : {}),
+    ...(row.type === 'video' && typeof row.lang === 'string' && /^[a-z]{2,3}$/.test(row.lang) ? { declaredLang: isoThree(row.lang) } : {}),
     profile: profileFromRow(row), authorKey: channel ? `${provider === 'reddit-youtube' ? 'youtube' : provider}:${channel}` : undefined,
     ...(typeof (row.v3 as { dig?: { subjectId?: unknown } } | undefined)?.dig?.subjectId === 'string' ? { digSubject: (row.v3 as { dig: { subjectId: string } }).dig.subjectId } : {}),
     ...(typeof row.duration === 'string' && isoSeconds(row.duration) > 0 ? { seconds: isoSeconds(row.duration) } : {}),

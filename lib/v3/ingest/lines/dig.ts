@@ -171,8 +171,10 @@ async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['coun
     const level: DigLevel = levelOf(video.viewCount, lang)
     levels[level] = (levels[level] ?? 0) + 1
     const dig: DigTags = { subjectId: subject._id, base: subject.base, level, pass, ...(lang ? { lang } : {}) }
-    const { seconds: _seconds, live: _live, declaredLang: _lang, channelVideos: _size, ...raw } = video
-    void _seconds; void _live; void _lang; void _size
+    const { seconds: _seconds, live: _live, declaredLang, channelVideos: _size, ...raw } = video
+    void _seconds; void _live; void _size
+    // The language the platform declared, kept on the row: the draw's language rule counts it even when the title is too short to read.
+    if (declaredLang && /^[a-z]{2,3}$/i.test(declaredLang)) (raw as { lang?: string }).lang = declaredLang.toLowerCase().slice(0, 2)
     if (moment.has(video.videoId)) raw.trendObservedAt = new Date()
     // A probe's universe is its list's, not necessarily the video's ("South Korea" in the street foods): the tagger reads the video itself.
     return { ...raw, digHint: dig, ...(subject.universe && !subject.probe ? { universeHint: subject.universe } : {}), contextQueries: [`dig:${subject.base}:${subject._id}`, run.query], source: { name: `dig:${subject.base}` } }

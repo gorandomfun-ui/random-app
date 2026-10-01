@@ -100,11 +100,7 @@ export function likeSubjects(reference: LikeReference, item: LikedItem | undefin
     ? { _id: `channel:youtube:${item.channelId}`, label: item.channelTitle, aliases: [], kind: 'channel' as const, base: 'likes' as const, fame: 'small' as const, ...(item.lang ? { lang: item.lang } : {}), ...(item.v3?.universe ? { universe: item.v3.universe } : {}), priority: 30, source }
     : null
   if (channel) subjects.push(channel)
-  // Its telling words, only when nothing else carries the like: "devastating continuous vehicles" is not a subject when the channel is.
-  if (!subjects.length) {
-    const words = wordsTheme(title)
-    if (words) subjects.push(topicSubject(words, [], item, 'small', 25, source))
-  }
+  // Never its words: "The Walk" as a subject caught anything called The Walk (the owner, 1 October). A like without a name gives its channel, or nothing.
   return subjects
 }
 

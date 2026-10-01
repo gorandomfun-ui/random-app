@@ -53,6 +53,8 @@ export type Candidate<T = unknown> = {
   universe?: string
   /** The language of the title as a detector reads it (lib/discovery/language.ts): three in ten of one language at most. */
   lang?: string
+  /** The language the platform declared for the video, when the row keeps it (three-letter code). */
+  declaredLang?: string
   /** A news video, by its universe or its title: one in ten at most. */
   news?: boolean
   type: Format
