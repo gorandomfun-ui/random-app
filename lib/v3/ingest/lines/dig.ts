@@ -116,7 +116,8 @@ async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['coun
     const dig: DigTags = { subjectId: subject._id, base: subject.base, level, pass, ...(lang ? { lang } : {}) }
     const { seconds: _seconds, live: _live, declaredLang: _lang, ...raw } = video
     void _seconds; void _live; void _lang
-    return { ...raw, digHint: dig, ...(subject.universe ? { universeHint: subject.universe } : {}), contextQueries: [`dig:${subject.base}:${subject._id}`, run.query], source: { name: `dig:${subject.base}` } }
+    // A probe's universe is its list's, not necessarily the video's ("South Korea" in the street foods): the tagger reads the video itself.
+    return { ...raw, digHint: dig, ...(subject.universe && !subject.probe ? { universeHint: subject.universe } : {}), contextQueries: [`dig:${subject.base}:${subject._id}`, run.query], source: { name: `dig:${subject.base}` } }
   })
   const result = await ctx.admit({ subjectId: subject._id, videos: admitted, keepAngles: run.keepAngles ?? false })
   addAdmission(counters, { ...result, scanned: videos.length, rejected: { ...result.rejected, ...door.refused } })
