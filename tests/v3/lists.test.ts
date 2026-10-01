@@ -106,6 +106,7 @@ test('the keywords tickets take the universes in turn, and open a new probe when
   assert.deepEqual(await universeTurns(db), ['food', 'music', 'art'])
   assert.equal((await takeSubject(db, 'keywords', new Set(), undefined, true, 'art', 'running'))?._id, 'topic:a')
   assert.equal((await takeSubject(db, 'keywords', new Set(), undefined, true, 'art', 'queued'))?._id, 'topic:b')
+  assert.equal((await takeSubject(db, 'keywords', new Set(), undefined, true, 'art', 'probe'))?._id, 'topic:b')
   assert.equal((await takeSubject(db, 'keywords', new Set(), undefined, true, 'food'))?._id, 'topic:c')
   assert.equal(await takeSubject(db, 'keywords', new Set(), undefined, true, 'sport'), null)
 })

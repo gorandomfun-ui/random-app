@@ -30,7 +30,7 @@ import { queueTrends } from '../../dig/trends'
 import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
 import { censusNote, computeCardCensus, writeCardCensus } from '../../cards/census'
 import { channelKey } from '../../tagging/classify'
-import { withoutOutlets } from '../../dig/outlet'
+import { ofAnotherTime, withoutOutlets } from '../../dig/outlet'
 import type { DigVideo } from '../../dig/video'
 import { channelCounts, LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
@@ -85,14 +85,14 @@ async function withoutMedia(ctx: LineContext, key: string, kept: DigVideo[], pro
   return withoutOutlets(kept, (video) => (provider === 'youtube' ? channelSizes.get(video.channelId ?? '') : video.channelVideos), own)
 }
 
-/** The kept videos under the week's cap per channel; the refused count goes with the door's. */
+/** The kept videos under the week's cap per channel; the refused count goes with the door's. What is of another time — an archive's — is never capped. */
 async function underWeeklyCap(ctx: LineContext, kept: DigVideo[], provider: string, own: Set<string>): Promise<{ kept: DigVideo[]; refused: number }> {
   const out: DigVideo[] = []
   let refused = 0
   const since = new Date(Date.now() - WEEK_MS)
   for (const video of kept) {
     const key = channelKey({ provider, channelId: video.channelId })
-    if (!key || own.has(video.channelId ?? '')) { out.push(video); continue }
+    if (!key || own.has(video.channelId ?? '') || ofAnotherTime(video)) { out.push(video); continue }
     let count = weekCounts.get(key)
     if (count === undefined) count = await ctx.db.collection('items').countDocuments({ 'v3.channelKey': key, createdAt: { $gte: since } }, { hint: 'v3_channel_key', maxTimeMS: 4000 }).catch(() => 0)
     if (count >= WEEKLY_PER_CHANNEL) { refused += 1; weekCounts.set(key, count); continue }
@@ -374,7 +374,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       const country = base === 'people' && countries.length ? countries[countryTurn++ % countries.length] : undefined
       const universe = base === 'keywords' && universes.length ? universes[universeTurn++ % universes.length]
         : base === 'people' && peopleUniverses.length ? peopleUniverses[peopleTurn++ % peopleUniverses.length] : undefined
-      const prefer = base === 'keywords' && keywordTickets++ % 2 === 1 ? 'queued' : 'running'
+      // The keywords tickets in turn: a begun subject, a new theme of the owner's list, a new probe from Wikipedia's lists.
+      const prefer = base === 'keywords' ? (['running', 'queued', 'probe'] as const)[keywordTickets++ % 3] : 'running'
       // The country and the universe together; the country alone when that universe has no one there; anyone of the base after that.
       const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube, universe, prefer)) ?? (country && universe ? await takeSubject(ctx.db, base, servedIds, country, youtube, undefined, prefer) : null) ?? (country || universe ? await takeSubject(ctx.db, base, servedIds, undefined, youtube, undefined, prefer) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
       if (!subject) continue

@@ -148,9 +148,10 @@ const WORKABLE: QueueState[] = ['queued', 'running']
  * it; the new before the begun when `prefer` says so (the keywords base opens
  * a probe every other ticket, so the lists are tried in breadth).
  */
-export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true, universe?: Universe, prefer: 'running' | 'queued' = 'running'): Promise<QueuedSubject | null> {
-  const filter = { base, ...(country ? { country } : {}), ...(universe ? { universe } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
-  for (const state of (prefer === 'queued' ? ['queued', 'running'] : ['running', 'queued']) as Array<'running' | 'queued'>) {
+export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true, universe?: Universe, prefer: 'running' | 'queued' | 'probe' = 'running'): Promise<QueuedSubject | null> {
+  // A probe ticket opens a Wikipedia list entry: the hand-written themes carry a higher priority and would otherwise come first for days.
+  const filter = { base, ...(country ? { country } : {}), ...(universe ? { universe } : {}), ...(prefer === 'probe' ? { probe: true } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
+  for (const state of (prefer === 'running' ? ['running', 'queued'] : ['queued', 'running']) as Array<'running' | 'queued'>) {
     const rows = await db.collection<QueuedSubject>(QUEUE)
       .find({ ...filter, state }, { sort: { priority: -1, lastRunAt: 1 }, limit: 8, maxTimeMS: 4000 })
       .toArray()
