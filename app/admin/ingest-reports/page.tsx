@@ -81,6 +81,8 @@ type DigReport = {
   subjects: Array<{ id: string; label: string; fr?: string; base: string; fame: string; passes: number; ingested: number; lastRunAt?: string; sample: string[] }>
   runs: Array<{ startedAt: string; status: string; note?: string; errors: number }>
 }
+type CardCensusRow = { day: string; at: string; total: number; cards: Record<string, number>; refused: { ai: number; still: number } }
+const CARD_LABEL: Record<string, string> = { buzz: 'Buzz', long: 'Long', retro: 'Rétro', taste: 'Goût', world: 'Monde', short: 'Court', deep: 'Confidentiel', weird: 'Weird / fun', 'bonus:music': 'Bonus musique', 'bonus:gaming': 'Bonus jeu vidéo', 'bonus:humor-memes': 'Bonus drôle' }
 const DIG_BASE: Record<string, string> = { people: 'Personnes', keywords: 'Mots-clés', trends: 'Tendances', likes: 'Likes', snowball: 'Boule de neige' }
 const DIG_STATE: Record<string, string> = { queued: 'en attente', running: 'en cours', done: 'faits', exhausted: 'épuisés', paused: 'en pause' }
 const DIG_FAME: Record<string, string> = { star: 'star', known: 'connu', small: 'petit' }
@@ -135,6 +137,7 @@ export default function IngestReportsPage() {
   const [fresh, setFresh] = useState<FreshReport | null>(null)
   const [web, setWeb] = useState<WebReport | null>(null)
   const [dig, setDig] = useState<DigReport | null>(null)
+  const [cards, setCards] = useState<CardCensusRow[]>([])
   const [health, setHealth] = useState<HealthRow[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
@@ -151,7 +154,7 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null; cards?: CardCensusRow[] }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
       setServer(payload.server ?? null)
@@ -160,6 +163,7 @@ export default function IngestReportsPage() {
       setFresh(payload.fresh ?? null)
       setWeb(payload.web ?? null)
       setDig(payload.dig ?? null)
+      setCards(payload.cards ?? [])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chargement impossible')
     } finally {
@@ -259,6 +263,27 @@ export default function IngestReportsPage() {
         </section>
       )}
 
+      {cards.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Ce que chaque carte de la roue reçoit</h2>
+          <p style={S.hint}>
+            Les vidéos entrées chaque jour, triées dans les cartes qu'elles peuvent remplir (une vidéo peut en remplir plusieurs ; le hasard et le joker prennent tout). Écrit après chaque passe de la fouille.
+          </p>
+          <table style={S.table}>
+            <thead><tr><th style={S.th}>Jour</th><th style={S.th}>Entrées</th>{Object.keys(CARD_LABEL).map((card) => <th key={card} style={S.th}>{CARD_LABEL[card]}</th>)}<th style={S.th}>Refusées (IA / image fixe)</th></tr></thead>
+            <tbody>
+              {cards.map((row) => (
+                <tr key={row.day}>
+                  <td style={S.td}>{formatDay(row.day)}</td>
+                  <td style={S.td}>{row.total.toLocaleString('fr-FR')}</td>
+                  {Object.keys(CARD_LABEL).map((card) => <td key={card} style={S.td}>{(row.cards[card] ?? 0).toLocaleString('fr-FR')}</td>)}
+                  <td style={S.td}>{row.refused.ai} / {row.refused.still}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
       {dig && (
         <section style={S.section}>
           <h2 style={S.h2}>La fouille (4 bases)</h2>

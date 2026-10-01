@@ -28,6 +28,7 @@ import { readThemes, themeSubject } from '../../dig/themes'
 import { curatorOwnerId } from '@/lib/discovery/curatorAuth'
 import { queueTrends } from '../../dig/trends'
 import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
+import { censusNote, computeCardCensus, writeCardCensus } from '../../cards/census'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
@@ -351,6 +352,17 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       ctx.log(`récap par univers : ${recapNote(recap)}`)
     } catch (error) {
       errors.push(`récap par univers : ${message(error)}`)
+    }
+  }
+
+  // What each card of the wheel received today, after every run: the admin page reads it (lib/v3/cards/census.ts).
+  if (!ctx.dryRun) {
+    try {
+      const census = await computeCardCensus(ctx.db, new Date())
+      await writeCardCensus(ctx.db, census)
+      ctx.log(`cartes : ${censusNote(census)}`)
+    } catch (error) {
+      errors.push(`cartes : ${message(error)}`)
     }
   }
 

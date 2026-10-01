@@ -12,6 +12,7 @@ import { assessHealth, summariseDays, type DaySummary, type JournalRun, type Jou
 import { refusalsReport } from '@/lib/ingest/miniSeriesStore'
 import { CANDIDATES } from '@/lib/v3/web/candidates'
 import { CSE_DAILY_FREE, cseUsed } from '@/lib/v3/web/cseQuota'
+import { readCardCensus } from '@/lib/v3/cards/census'
 import { ObjectId } from 'mongodb'
 
 /**
@@ -250,12 +251,15 @@ export async function GET(request: Request) {
     const web = await webReport(db).catch(() => null)
     // The dig: the four bases, one line — what entered today, the subjects served, the queue.
     const dig = await digReport(db, now).catch(() => null)
+    // What each card of the wheel received, day by day (written by the dig line after every run).
+    const cards = await readCardCensus(db, 7).catch(() => [])
 
     return NextResponse.json({
       miniSeries,
       fresh,
       web,
       dig,
+      cards,
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,
