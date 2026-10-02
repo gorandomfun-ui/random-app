@@ -30,6 +30,7 @@ import { queueTrends } from '../../dig/trends'
 import { computeUniverseRecap, recapNote, writeUniverseRecap } from '../../pools/recap'
 import { censusNote, computeCardCensus, writeCardCensus } from '../../cards/census'
 import { newGuardState, underWeeklyCap, withoutMedia, type GuardState } from '../../dig/guards'
+import { queueMetChannels } from '../../dig/channels'
 import type { DigVideo } from '../../dig/video'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, searchPage, SEARCH_UNITS, uploadsPlaylist, videoDetails } from '../../dig/youtube'
 import { writeSubjects } from '../../subjects/build'
@@ -305,6 +306,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
 
   if (!ctx.dryRun) await reloadThemes(ctx).catch((error) => errors.push(`thèmes : ${message(error)}`))
   if (!ctx.dryRun) await queueLikes(ctx.db, curatorOwnerId(), ctx.log).catch((error) => errors.push(`likes : ${message(error)}`))
+  // The YouTube drift: the small channels of the day's finds, queued for the channel pass (lib/v3/dig/channels.ts); one unit per fifty for their sizes.
+  if (!ctx.dryRun && key && (await ctx.quota.reserve(LIST_UNITS * 4))) await queueMetChannels(ctx.db, key, http, ctx.log).catch((error) => errors.push(`chaînes rencontrées : ${message(error)}`))
 
   // The subjects of the day, once a day, before the tickets.
   const today = new Date().toISOString().slice(0, 10)

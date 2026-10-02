@@ -69,7 +69,8 @@ export const PASS_ORDER: DigPass[] = ['top', 'around', 'channel', 'dailymotion']
  * The tickets of a run, from `RANDOM_DIG_BASES` — "people:4,likes:2,keywords:2,trends:2" —
  * else the default. Snowball subjects are served when a base has nothing.
  */
-export const DEFAULT_TICKETS: DigBase[] = ['people', 'people', 'people', 'people', 'likes', 'likes', 'keywords', 'keywords', 'trends', 'trends']
+/** Two tickets a round for the channels met on the way — the YouTube drift (lib/v3/dig/channels.ts) — read at one unit a page whatever the searches' cap. */
+export const DEFAULT_TICKETS: DigBase[] = ['people', 'people', 'people', 'people', 'likes', 'likes', 'keywords', 'keywords', 'trends', 'trends', 'snowball', 'snowball']
 
 export function baseTickets(setting: string | undefined = process.env.RANDOM_DIG_BASES): DigBase[] {
   if (!setting?.trim()) return DEFAULT_TICKETS

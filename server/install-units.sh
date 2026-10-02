@@ -15,7 +15,7 @@ systemctl daemon-reload
 # Only the lines in service since 28 September (the owner paused the rest to keep the YouTube quota; the install of 1 October
 # re-enabled them all by mistake and 2 October brought twenty thousand unsorted videos): the dig, the day's list, the drift,
 # the sites' visits and framing checks (no Google search in them — the owner wants sites found without CSE), the status.
-for timer in random-line@fresh random-line@dig random-line@drift random-line@vec random-line@web-previews random-line@web-embed random-status; do
+for timer in random-line@fresh random-line@dig random-line@drift random-line@vec random-line@web-previews random-line@web-embed random-line@web-search random-status; do
   systemctl enable --now "${timer}.timer"
 done
 systemctl list-timers 'random-*' --no-pager

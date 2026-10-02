@@ -97,7 +97,7 @@ test('the tickets: every base served in turns, the setting read or the default k
   assert.deepEqual(ticketOrder(['people', 'people', 'likes', 'keywords']).slice(0, 3), ['people', 'likes', 'keywords'])
   assert.deepEqual(baseTickets('people:2,likes:1'), ['people', 'people', 'likes'])
   assert.deepEqual(baseTickets('nope:3'), DEFAULT_TICKETS)
-  assert.equal(DEFAULT_TICKETS.length, 10)
+  assert.equal(DEFAULT_TICKETS.length, 12, 'ten for the bases, two for the channels met on the way')
 })
 
 const queued = (extra: Partial<QueuedSubject>): QueuedSubject => ({

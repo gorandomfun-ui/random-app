@@ -96,6 +96,10 @@ case "${LINE}" in
     # The sites waiting for a visit: alive or not, their own image or a capture by Chromium, then into the catalogue.
     run node --import tsx scripts/v3/web-previews.ts --minutes="${RANDOM_WEB_PREVIEW_MINUTES:-20}" --max="${RANDOM_WEB_PREVIEW_MAX:-300}"
     ;;
+  web-search)
+    # New small sites, once a day, from the sources that cost nothing — Hacker News, the curated lists, Neocities, Wikipedia — never Google (the owner, 2 October).
+    run curl -sS -m 280 -H "x-admin-ingest-key: ${ADMIN_INGEST_KEY:?}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,wikipedia&per=10&pages=3"
+    ;;
   web-embed)
     # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
     run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-2000}"

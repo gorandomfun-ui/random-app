@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM web search (once a day, Paris: new small sites from Hacker News, the curated lists, Neocities and Wikipedia — never Google)
+
+[Timer]
+OnCalendar=*-*-* 04:10:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
