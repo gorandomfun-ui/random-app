@@ -17,7 +17,7 @@ import { disposeModel, FIELD, fingerprints, textOf, toBinary } from '@/lib/v3/ai
 import { loadLikePool } from '@/lib/v3/cool/likePool'
 
 const MAX_MINUTES = Number(process.env.RANDOM_VEC_MINUTES ?? 20)
-const MAX_VIDEOS = Number(process.env.RANDOM_VEC_MAX ?? 20_000)
+const MAX_VIDEOS = Number(process.env.RANDOM_VEC_MAX ?? 10_000)
 const BATCH = 200
 const META = 'dig_meta_v4'
 const dry = process.argv.includes('--dry')

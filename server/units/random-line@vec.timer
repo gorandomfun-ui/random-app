@@ -2,10 +2,10 @@
 Description=RANDOM fingerprints (four runs a day, Paris, after the dig's: the small model writes what each new video is about, then the old stock a slice at a time)
 
 [Timer]
-OnCalendar=*-*-* 10:15:00 Europe/Paris
-OnCalendar=*-*-* 14:15:00 Europe/Paris
-OnCalendar=*-*-* 19:15:00 Europe/Paris
-OnCalendar=*-*-* 00:15:00 Europe/Paris
+OnCalendar=*-*-* 10:30:00 Europe/Paris
+OnCalendar=*-*-* 14:30:00 Europe/Paris
+OnCalendar=*-*-* 19:30:00 Europe/Paris
+OnCalendar=*-*-* 00:30:00 Europe/Paris
 Persistent=true
 RandomizedDelaySec=60
 
