@@ -19,6 +19,7 @@ import { digDrawSwitchedOn, selectDig } from './digDraw'
 import { selectWheel, wheelSwitchedOn } from './wheel'
 import { countServed, servedCountOn } from './served'
 import { parseKept, recordKept } from './kept'
+import { exposureOf } from './diversity'
 import { withAbortDeadline } from './exploration'
 import { requestSubjectWork } from './subjectWork'
 const isObject = (value: unknown): value is Record<string, unknown> => value != null && typeof value === 'object' && !Array.isArray(value)
@@ -85,7 +86,14 @@ export function randomHandler<T>(deps: Dependencies<T>) {
         ? await selectDig(db, ticket, drawState, deps.decode, Math.random, Date.now()).catch(() => null) : null
       const cool = !wheel && !fresh && !dig && coolPoolEnabled() && ticket.mode === 'cool' && isVisual(ticket.type)
         ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now(), theme).catch(() => null) : null
-      const choice = wheel ?? fresh ?? dig ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId(), theme)
+      const remembered = parseSeenSubjects(body.seenSubjects)
+      // The device's two-week memory of subjects and authors (utils/subjectMemory.ts) holds for the GIFs too: one the device remembers is drawn again, twice at most.
+      const remembers = (item: Candidate) => { const stamp = exposureOf(item); return Boolean(stamp && ((stamp.subject != null && remembered.has(stamp.subject)) || (stamp.author != null && remembered.has(stamp.author)))) }
+      let choice = wheel ?? fresh ?? dig ?? cool ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), body.factVariant === 'quiz' || body.factVariant === 'text' ? body.factVariant : undefined, curatorOwnerId(), theme)
+      for (let again = 0; choice && !wheel && ticket.type === 'image' && remembered.size && remembers(choice.item) && again < 2; again += 1) {
+        choice = (coolPoolEnabled() && ticket.mode === 'cool' ? await selectCool(db, ticket, drawState, deps.decode, Math.random, Date.now(), theme).catch(() => null) : null)
+          ?? await selectPool(db, ticket, drawState, language(body), deps.decode, Math.random, Date.now(), undefined, curatorOwnerId(), theme).catch(() => null) ?? choice
+      }
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       // The site's count of what it served (lib/discovery/served.ts): one write per visual, so the least served wins next time on every device.
       if (servedCountOn() && isVisual(choice.item.type) && choice.item.id) await countServed(db, choice.item.id, Date.now()).catch(() => false)

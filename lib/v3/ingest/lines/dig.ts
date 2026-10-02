@@ -158,7 +158,7 @@ function channelsOf(subject: QueuedSubject, kept: DigVideo[]): Array<{ id: strin
   return [...seen.values()]
 }
 
-type Runner = { ctx: LineContext; key: string; http: typeof fetch; counters: LineResult['counters']; errors: string[]; served: Served[]; youtubeStopped: boolean; snowballed: number; units: number }
+type Runner = { ctx: LineContext; key: string; http: typeof fetch; counters: LineResult['counters']; errors: string[]; served: Served[]; youtubeStopped: boolean; searchStopped: boolean; snowballed: number; units: number }
 
 /** A YouTube search page, then its details: null when the quota is out. */
 async function readSearch(runner: Runner, query: string, order: 'viewCount' | 'relevance', lang: string | undefined, pageToken?: string): Promise<{ videos: DigVideo[]; next?: string; units: number } | null> {
@@ -298,7 +298,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const errors: string[] = []
   const key = process.env.YOUTUBE_API_KEY ?? ''
   const http = ctx.http ?? fetch
-  const runner: Runner = { ctx, key, http, counters, errors, served: [], youtubeStopped: !key, snowballed: 0, units: 0 }
+  const runner: Runner = { ctx, key, http, counters, errors, served: [], youtubeStopped: !key, searchStopped: false, snowballed: 0, units: 0 }
   guards = newGuardState()
   if (!key) ctx.log('youtube : pas de clé, seule Dailymotion sera lue')
   await installQueueIndexes(ctx.db).catch(() => undefined)
@@ -333,14 +333,16 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     let servedThisRound = 0
     for (const base of tickets) {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) { errors.push('échéance atteinte'); break rounds }
-      const youtube = !runner.youtubeStopped
+      // YouTube's cap on searches (a few dozen a day) comes long before our units: past it, the searches stop and the channels go on at one unit a page.
+      const youtube = !runner.youtubeStopped && !runner.searchStopped
+      const lists = !runner.youtubeStopped
       const country = base === 'people' && countries.length ? countries[countryTurn++ % countries.length] : undefined
       const universe = base === 'keywords' && universes.length ? universes[universeTurn++ % universes.length]
         : base === 'people' && peopleUniverses.length ? peopleUniverses[peopleTurn++ % peopleUniverses.length] : undefined
       // The keywords tickets in turn: a begun subject, a new theme of the owner's list, a new probe from Wikipedia's lists.
       const prefer = base === 'keywords' ? (['running', 'queued', 'probe'] as const)[keywordTickets++ % 3] : 'running'
       // The country and the universe together; the country alone when that universe has no one there; anyone of the base after that.
-      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube, universe, prefer)) ?? (country && universe ? await takeSubject(ctx.db, base, servedIds, country, youtube, undefined, prefer) : null) ?? (country || universe ? await takeSubject(ctx.db, base, servedIds, undefined, youtube, undefined, prefer) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube))
+      const subject = (await takeSubject(ctx.db, base, servedIds, country, youtube, universe, prefer, lists)) ?? (country && universe ? await takeSubject(ctx.db, base, servedIds, country, youtube, undefined, prefer, lists) : null) ?? (country || universe ? await takeSubject(ctx.db, base, servedIds, undefined, youtube, undefined, prefer, lists) : null) ?? (await takeSubject(ctx.db, 'snowball', servedIds, undefined, youtube, undefined, 'running', lists))
       if (!subject) continue
       servedIds.add(subject._id)
       servedThisRound += 1
@@ -350,7 +352,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       let searches = 0
       for (let step = 0; current && step < PASSES_IN_A_ROW; step += 1) {
         if (ctx.timeLeft() < DEADLINE_MARGIN_MS) break
-        const pass = nextPass(current, !runner.youtubeStopped && searches < SEARCHES_PER_SUBJECT_PER_RUN)
+        const pass = nextPass(current, youtube && searches < SEARCHES_PER_SUBJECT_PER_RUN, lists)
         if (!pass) break
         if (pass === 'top' || pass === 'around') searches += 1
         try {
@@ -358,7 +360,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
           await snowball(runner, current)
         } catch (error) {
           errors.push(`${current.label} (${pass}) : ${message(error)}`)
-          if (/HTTP 403|HTTP 429/.test(message(error))) { runner.youtubeStopped = true; ctx.log('youtube : refus, plus de YouTube ce passage') }
+          if (/Search Queries/i.test(message(error))) { if (!runner.searchStopped) ctx.log('youtube : plus de recherches ce passage, les chaînes continuent'); runner.searchStopped = true }
+          else if (/HTTP 403|HTTP 429/.test(message(error))) { runner.youtubeStopped = true; ctx.log('youtube : refus, plus de YouTube ce passage') }
         }
         current = await ctx.db.collection<QueuedSubject>(QUEUE).findOne({ _id: subject._id })
       }

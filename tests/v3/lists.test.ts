@@ -110,3 +110,13 @@ test('the keywords tickets take the universes in turn, and open a new probe when
   assert.equal((await takeSubject(db, 'keywords', new Set(), undefined, true, 'food'))?._id, 'topic:c')
   assert.equal(await takeSubject(db, 'keywords', new Set(), undefined, true, 'sport'), null)
 })
+
+test('with the searches spent, a name still gets its channel pass and a channel subject its read; a topic waits', () => {
+  const entity = { ...probe({ _id: 'entity:x', label: 'X', kind: 'entity', probe: false, passes: { top: [{ at: new Date(), read: 1, kept: 1, inserted: 1, searches: 1 }], dailymotion: [{ at: new Date(), read: 1, kept: 1, inserted: 1, searches: 0 }] }, channelsToRead: [{ id: 'c', title: 'c', hits: 3 }] }) } as QueuedSubject
+  assert.equal(nextPass(entity, true, true), 'around')
+  assert.equal(nextPass(entity, false, true), 'channel')
+  assert.equal(nextPass(entity, false, false), 'dailymotion')
+  const channel = { ...probe({ _id: 'channel:youtube:c', label: 'c', kind: 'channel', probe: false, passes: {} }) } as QueuedSubject
+  assert.equal(nextPass(channel, false, true), 'channel')
+  assert.equal(nextPass(channel, false, false), null)
+})

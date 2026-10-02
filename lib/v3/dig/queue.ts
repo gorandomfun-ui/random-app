@@ -111,7 +111,7 @@ function passesDone(subject: QueuedSubject, pass: DigPass): number {
  * then one angle combination per call until its angles run out. A probe
  * (a Wikipedia list entry) goes Dailymotion first and is done unless it bit.
  */
-export function nextPass(subject: QueuedSubject, youtube = true): DigPass | null {
+export function nextPass(subject: QueuedSubject, youtube = true, lists = youtube): DigPass | null {
   const plan = PLAN[subject.fame]
   const dm = passesDone(subject, 'dailymotion')
   const wantsDailymotion = () => dm < plan.dailymotion
@@ -127,11 +127,12 @@ export function nextPass(subject: QueuedSubject, youtube = true): DigPass | null
     if (wantsDailymotion()) return 'dailymotion'
     return null
   }
-  if (subject.kind === 'channel') return passesDone(subject, 'channel') || !youtube ? null : 'channel'
+  if (subject.kind === 'channel') return passesDone(subject, 'channel') || !lists ? null : 'channel'
   if (passesDone(subject, 'top') < 1) return youtube ? 'top' : wantsDailymotion() ? 'dailymotion' : null
   if (dm < 1) return 'dailymotion'
   if (youtube && passesDone(subject, 'around') < plan.around) return 'around'
-  if (youtube && passesDone(subject, 'channel') < 1 && subject.channelsToRead.some((channel) => !channel.read)) return 'channel'
+  // The channels are read at one unit a page: YouTube's cap on searches does not stop them (2 October: the dig stopped whole at the first 429).
+  if (lists && passesDone(subject, 'channel') < 1 && subject.channelsToRead.some((channel) => !channel.read)) return 'channel'
   if (wantsDailymotion()) return 'dailymotion'
   return null
 }
@@ -148,7 +149,7 @@ const WORKABLE: QueueState[] = ['queued', 'running']
  * it; the new before the begun when `prefer` says so (the keywords base opens
  * a probe every other ticket, so the lists are tried in breadth).
  */
-export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true, universe?: Universe, prefer: 'running' | 'queued' | 'probe' = 'running'): Promise<QueuedSubject | null> {
+export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, country?: string, youtube = true, universe?: Universe, prefer: 'running' | 'queued' | 'probe' = 'running', lists = youtube): Promise<QueuedSubject | null> {
   // A probe ticket opens a Wikipedia list entry: the hand-written themes carry a higher priority and would otherwise come first for days.
   const filter = { base, ...(country ? { country } : {}), ...(universe ? { universe } : {}), ...(prefer === 'probe' ? { probe: true } : {}), ...(exclude.size ? { _id: { $nin: [...exclude] } } : {}) } as Document
   for (const state of (prefer === 'running' ? ['running', 'queued'] : ['queued', 'running']) as Array<'running' | 'queued'>) {
@@ -156,7 +157,7 @@ export async function takeSubject(db: Db, base: DigBase, exclude: Set<string>, c
       .find({ ...filter, state }, { sort: { priority: -1, lastRunAt: 1 }, limit: 8, maxTimeMS: 4000 })
       .toArray()
     for (const row of rows) {
-      if (nextPass(row, youtube)) return row
+      if (nextPass(row, youtube, lists)) return row
       if (!nextPass(row, true)) await db.collection<QueuedSubject>(QUEUE).updateOne({ _id: row._id }, { $set: { state: 'done' } }).catch(() => undefined)
     }
   }
