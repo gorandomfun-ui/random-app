@@ -11,6 +11,12 @@
  * inattendues parfois"). Only the curated cards read the tilt — the taste,
  * the little-seen, the joker, the bonus; chance, weird, the world and the
  * rest stay pure, the surprise is built in.
+ *
+ * "Pas ça" (the owner, 1 October) is the same report with the refusal on
+ * it: the content's count of refusals grows, and each refusal weighs like
+ * a few silent reports on the tilt — a refused content comes back later,
+ * slowly, for everyone. What it does for the device that refused it is in
+ * utils/dislikeMemory.ts and the wheel's taste card.
  */
 
 import { ObjectId, type Db, type Document } from 'mongodb'
@@ -18,8 +24,8 @@ import { ObjectId, type Db, type Document } from 'mongodb'
 import type { Candidate } from './types'
 import type { Slot } from './wheel'
 
-export type Kept = { id: string; seconds: number; card?: string }
-export type KeptCount = { n: number; seconds: number }
+export type Kept = { id: string; seconds: number; card?: string; dislike?: true }
+export type KeptCount = { n: number; seconds: number; dislikes?: number }
 
 export const KEPT_PER_DRAW = 4
 export const KEPT_CAP_SECONDS = 120
@@ -29,6 +35,8 @@ export const MEAN_SECONDS = 10
 export const PRIOR_REPORTS = 5
 export const TILT_MIN = 0.5
 export const TILT_MAX = 2
+/** A refusal weighs this many silent reports on the tilt, on top of its own. */
+export const DISLIKE_WEIGHT = 2
 /** The cards the curation may tilt; every other card stays pure. */
 export const CURATED_SLOTS: ReadonlySet<Slot> = new Set<Slot>(['taste', 'deep', 'joker', 'bonus'])
 
@@ -46,9 +54,9 @@ export function parseKept(value: unknown): Kept[] {
   const kept: Kept[] = []
   for (const entry of value.slice(0, KEPT_PER_DRAW)) {
     if (!entry || typeof entry !== 'object') continue
-    const { id, seconds, card } = entry as { id?: unknown; seconds?: unknown; card?: unknown }
+    const { id, seconds, card, dislike } = entry as { id?: unknown; seconds?: unknown; card?: unknown; dislike?: unknown }
     if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id) || typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) continue
-    kept.push({ id, seconds: Math.min(KEPT_CAP_SECONDS, Math.round(seconds)), ...(typeof card === 'string' && card.length <= 24 && CARD.test(card) ? { card } : {}) })
+    kept.push({ id, seconds: Math.min(KEPT_CAP_SECONDS, Math.round(seconds)), ...(typeof card === 'string' && card.length <= 24 && CARD.test(card) ? { card } : {}), ...(dislike === true ? { dislike: true as const } : {}) })
   }
   return kept
 }
@@ -57,13 +65,14 @@ export function parseKept(value: unknown): Kept[] {
 export async function recordKept(db: Db, kept: readonly Kept[], now = new Date()): Promise<number> {
   if (!kept.length) return 0
   const result = await db.collection('items').bulkWrite(kept.map((report) => ({
-    updateOne: { filter: { _id: new ObjectId(report.id) }, update: { $inc: { 'served.kept': 1, 'served.seconds': report.seconds } } },
+    updateOne: { filter: { _id: new ObjectId(report.id) }, update: { $inc: { 'served.kept': 1, 'served.seconds': report.seconds, ...(report.dislike ? { 'served.dislikes': 1 } : {}) } } },
   })), { ordered: false, maxTimeMS: WRITE_BUDGET_MS } as { ordered: boolean })
   const byCard: Record<string, number> = {}
   for (const report of kept) {
     if (!report.card) continue
     byCard[`cards.${report.card}.n`] = (byCard[`cards.${report.card}.n`] ?? 0) + 1
     byCard[`cards.${report.card}.seconds`] = (byCard[`cards.${report.card}.seconds`] ?? 0) + report.seconds
+    if (report.dislike) byCard[`cards.${report.card}.dislikes`] = (byCard[`cards.${report.card}.dislikes`] ?? 0) + 1
   }
   if (Object.keys(byCard).length) {
     const day = parisDay(now)
@@ -80,10 +89,10 @@ export async function readKeptCards(db: Db, days = 7): Promise<KeptCards[]> {
   return rows.map((row) => ({ day: String(row.day), cards: (row.cards ?? {}) as KeptCards['cards'] }))
 }
 
-/** How a content's kept seconds compare with the expected mean, smoothed, between half and double. */
+/** How a content's kept seconds compare with the expected mean, smoothed, between half and double; each refusal counts as silent reports on top of its own. */
 export function tilt(kept: KeptCount | undefined): number {
   if (!kept || kept.n <= 0) return 1
-  const mean = (kept.seconds + PRIOR_REPORTS * MEAN_SECONDS) / (kept.n + PRIOR_REPORTS)
+  const mean = (kept.seconds + PRIOR_REPORTS * MEAN_SECONDS) / (kept.n + PRIOR_REPORTS + DISLIKE_WEIGHT * (kept.dislikes ?? 0))
   return Math.min(TILT_MAX, Math.max(TILT_MIN, mean / MEAN_SECONDS))
 }
 

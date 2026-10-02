@@ -79,13 +79,13 @@ export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number):
     categoryId: text(row.categoryId),
     liveBroadcastContent: text(row.liveBroadcastContent),
   }))
-  const counts = row.served as { n?: unknown; kept?: unknown; seconds?: unknown } | undefined
+  const counts = row.served as { n?: unknown; kept?: unknown; seconds?: unknown; dislikes?: unknown } | undefined
   const served = counts?.n
   return { key: canonicalMediaKey(row), type: row.type as Format, provider, payload,
     ...(row._id != null && /^[a-f\d]{24}$/i.test(String(row._id)) ? { id: String(row._id) } : {}),
     ...(text(row.title) ? { title: (row.title as string).slice(0, 200) } : {}),
     ...(typeof served === 'number' && served > 0 ? { served } : {}),
-    ...(typeof counts?.kept === 'number' && counts.kept > 0 ? { kept: { n: counts.kept, seconds: typeof counts.seconds === 'number' ? counts.seconds : 0 } } : {}),
+    ...(typeof counts?.kept === 'number' && counts.kept > 0 ? { kept: { n: counts.kept, seconds: typeof counts.seconds === 'number' ? counts.seconds : 0, ...(typeof counts.dislikes === 'number' && counts.dislikes > 0 ? { dislikes: counts.dislikes } : {}) } } : {}),
     ...(typeof (row.v3 as { universe?: unknown } | undefined)?.universe === 'string' ? { universe: (row.v3 as { universe: string }).universe.slice(0, 40) } : {}),
     ...(row.type === 'video' && typeof row.lang === 'string' && /^[a-z]{2,3}$/.test(row.lang) ? { declaredLang: isoThree(row.lang) } : {}),
     profile: profileFromRow(row), authorKey: channel ? `${provider === 'reddit-youtube' ? 'youtube' : provider}:${channel}` : undefined,

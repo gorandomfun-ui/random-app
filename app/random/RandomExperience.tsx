@@ -57,8 +57,9 @@ import { addLike, isLiked, removeLike } from '@/utils/likes'
 import { reportImageLoadIssue, type ImageLoadIssue } from '@/utils/imageSuspects'
 import { isMediaBlockedThisSession } from '@/utils/mediaSuspects'
 import { rememberSeen, seenKeys } from '@/utils/seenMemory'
-import { markShown } from '@/utils/keptMemory'
+import { markDisliked, markShown } from '@/utils/keptMemory'
 import { rememberSubjects } from '@/utils/subjectMemory'
+import { rememberDislike } from '@/utils/dislikeMemory'
 import { exposureOf } from '@/lib/discovery/diversity'
 import { dailymotionVerdict } from '@/lib/v3/mediaAvailability'
 import {
@@ -2886,6 +2887,7 @@ export function RandomExperience({
   const previousEncourage3dMainRef = useRef<string | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement | null>(null)
   const [heartGlitch, setHeartGlitch] = useState(false)
+  const [dislikeGlitch, setDislikeGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
   const [waveRemaining, setWaveRemaining] = useState(0)
   const [waveAvailability, setWaveAvailability] = useState<WaveAvailabilityState>({ key: null, status: 'idle' })
@@ -3176,6 +3178,7 @@ export function RandomExperience({
 
   const shareLabel = useMemo(() => t('modal.share', 'Share'), [t])
   const likeLabel = useMemo(() => t('modal.like', 'Like'), [t])
+  const dislikeLabel = useMemo(() => t('modal.dislike', 'Not this'), [t])
   const waveLabel = useMemo(() => t('modal.wave', 'Wave'), [t])
   const randomAgainLabel = useMemo(() => t('modal.randomAgain', 'RANDOM AGAIN'), [t])
   const likesLabel = useMemo(() => t('likes.title', 'Likes'), [t])
@@ -3208,6 +3211,7 @@ const sequenceStateRef = useRef<RandomSequenceState>(createSequenceState())
   const burgerGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const burgerPointPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heartGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dislikeGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageGlitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const waveTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -5288,6 +5292,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     handleWave()
   }, [handleRandomAgain, handleWave])
 
+  /**
+   * "Pas ça" (the owner, 1 October): the visual on screen closes now as refused — its seconds and the refusal ride with the next
+   * draw and the site counts them on the content (lib/discovery/kept.ts); the device keeps the id a month, so the content never
+   * comes back here and the taste card keeps its lookalikes away (utils/dislikeMemory.ts); its subject and author were already
+   * put in the two-week memory when it showed. Then the next content, at once.
+   */
+  const handleDislike = useCallback(() => {
+    const item = currentItemRef.current
+    if (!item || (item.type !== 'video' && item.type !== 'image') || !('_id' in item) || !item._id) return
+    if (controlsDisabled || transitionLockedRef.current) return
+    markDisliked()
+    rememberDislike(String(item._id))
+    setDislikeGlitch(true)
+    if (dislikeGlitchTimeoutRef.current) clearTimeout(dislikeGlitchTimeoutRef.current)
+    dislikeGlitchTimeoutRef.current = setTimeout(() => setDislikeGlitch(false), 420)
+    handlePrimaryAction()
+  }, [controlsDisabled, handlePrimaryAction])
+
   useEffect(() => {
     if (!menuOpen) return
     const onKey = (event: KeyboardEvent) => {
@@ -5590,20 +5612,36 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               <PixelWords lines={['HIGH', 'SCORE']} color={theme.text} />
             </button>
           ) : (
-            <button
-              type="button"
-              aria-label={likeLabel}
-              onClick={handleLike}
-              className="p-3"
-              disabled={controlsDisabled}
-            >
-              <MonoIcon
-                src="/icons/Heart.svg"
-                color={liked ? '#FF4D78' : theme.cream}
-                size={30}
-                className={`heart-icon${liked ? ' heart-icon--liked' : ''}${heartGlitch ? ' heart-icon--glitch' : ''}`}
-              />
-            </button>
+            <div className="flex items-center">
+              <button
+                type="button"
+                aria-label={likeLabel}
+                onClick={handleLike}
+                className="p-3"
+                disabled={controlsDisabled}
+              >
+                <MonoIcon
+                  src="/icons/Heart.svg"
+                  color={liked ? '#FF4D78' : theme.cream}
+                  size={30}
+                  className={`heart-icon${liked ? ' heart-icon--liked' : ''}${heartGlitch ? ' heart-icon--glitch' : ''}`}
+                />
+              </button>
+              <button
+                type="button"
+                aria-label={dislikeLabel}
+                onClick={handleDislike}
+                className="p-3"
+                disabled={controlsDisabled}
+              >
+                <MonoIcon
+                  src="/icons/Dislike.svg"
+                  color={theme.cream}
+                  size={24}
+                  className={`dislike-icon${dislikeGlitch ? ' dislike-icon--glitch' : ''}`}
+                />
+              </button>
+            </div>
           )}
 
           <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
@@ -7180,6 +7218,20 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         .heart-icon {
           transition: transform 200ms ease, filter 200ms ease;
+        }
+        .dislike-icon {
+          opacity: 0.78;
+          transition: transform 200ms ease, opacity 200ms ease;
+        }
+        .dislike-icon--glitch {
+          animation: dislike-shake 420ms steps(4, jump-start) forwards;
+        }
+        @keyframes dislike-shake {
+          0% { transform: translate(0, 0); opacity: 0.78; }
+          25% { transform: translate(-4px, 0) rotate(-10deg); opacity: 1; }
+          50% { transform: translate(4px, 0) rotate(10deg); opacity: 1; }
+          75% { transform: translate(-2px, 0) rotate(-4deg); opacity: 0.9; }
+          100% { transform: translate(0, 0); opacity: 0.78; }
         }
         .wave-action {
           position: relative;

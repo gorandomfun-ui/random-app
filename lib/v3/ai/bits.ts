@@ -37,6 +37,11 @@ export function alike(a: Uint8Array, b: Uint8Array): number {
   return 1 - differ / DIMS
 }
 
+/** Whether a fingerprint comes within `threshold` likeness of any of the others: a lookalike of something refused. */
+export function nearAny(bits: Uint8Array, others: readonly Uint8Array[], threshold: number): boolean {
+  return others.some((other) => alike(bits, other) >= threshold)
+}
+
 /** The likeness of a fingerprint to a centre of taste (a mean of ±1 vectors): the cosine, between -1 and 1. */
 export function towards(bits: Uint8Array, centre: Float32Array): number {
   let dot = 0, norm = 0

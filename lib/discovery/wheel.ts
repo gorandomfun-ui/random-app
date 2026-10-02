@@ -48,7 +48,7 @@ import { isCleanTitle } from '../v3/cool/clean'
 import { isCoolCandidate, type LabelableRow } from '../v3/cool/registers'
 import { SERVABLE } from '../v3/cool/servable'
 import { loadLikePool } from '../v3/cool/likePool'
-import { centres, FIELD as VEC, fromRow, towards } from '../v3/ai/bits'
+import { centres, FIELD as VEC, fromRow, nearAny, towards } from '../v3/ai/bits'
 import { drawStart } from '../v3/cool/start'
 import { isNewsTitle, isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isLetsPlay, isStillAlbum } from '../v3/dig/door'
@@ -137,7 +137,8 @@ export type WheelChoice = {
 }
 export type WheelResult<T> = PoolResult<T> & { wheel: WheelChoice }
 type Decoder<T> = (row: CatalogueRow) => T | null
-type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string> }
+/** `disliked`: the contents this device refused with "pas ça" — never chosen again here, their lookalikes kept off the taste card. */
+type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string>; disliked: ReadonlySet<string> }
 type Filled<T> = { item: Candidate<T>; from: string; universe?: Universe }
 
 /** The signals the session's proportions read, written on the candidate so the page keeps them in its exposures. */
@@ -238,6 +239,7 @@ export function choose<T>(rows: readonly CatalogueRow[], slot: Slot, context: Co
     if (payload == null) continue
     const candidate = { ...withSignals(candidateFromRow(row, payload, now)), line: (row.v3 as { line?: string } | undefined)?.line } as Candidate<T> & { line?: string }
     if (!hardEligible(candidate, ticket, state) || echoesSession(candidate, state.exposures) || rules.refuses(candidate)) continue
+    if (candidate.id && context.disliked.has(candidate.id)) continue
     if (slot !== 'chance' && isStillAlbum({ title: String(row.title ?? ''), channelTitle: typeof row.channelTitle === 'string' ? row.channelTitle : undefined })) continue
     if (!keep(row, candidate)) continue
     const universe = candidate.universe
@@ -303,6 +305,14 @@ async function likedCentres(db: Db, now: number): Promise<Float32Array[]> {
 /** How many of the rows read must carry a fingerprint for the taste to be measured on them. */
 const TASTE_MEASURED_MIN = 8
 const TASTE_NEAREST = 12
+/** Two fingerprints this alike are the same kind of thing: a lookalike of what the device refused stays off the taste card. */
+export const DISLIKE_ALIKE = 0.7
+/** The fingerprints of what the device refused, when they have one. */
+async function dislikedPrints(db: Db, ids: ReadonlySet<string>): Promise<Uint8Array[]> {
+  if (!ids.size) return []
+  const rows = await db.collection('items').find({ _id: { $in: [...ids].map((id) => new ObjectId(id)) }, [VEC]: { $exists: true } } as Document, { projection: { [VEC]: 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  return rows.flatMap((row) => { const bits = fromRow(row[VEC]); return bits ? [bits] : [] })
+}
 let tasteProfile: { at: number; bag: Array<{ universe: Universe; era?: string }> } | null = null
 async function tasteBag(db: Db, now: number): Promise<Array<{ universe: Universe; era?: string }>> {
   if (tasteProfile && now - tasteProfile.at < TASTE_CACHE_MS) return tasteProfile.bag
@@ -364,10 +374,12 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
         const liked = start && start.source.startsWith('like') ? choose(start.rows as CatalogueRow[], slot, context) : null
         if (liked) return { item: liked, from: start!.source }
       }
-      // The likes have fingerprints: anywhere in the stock, the dozen nearest to a centre of the curator's taste, then the session's rules among them.
+      // The likes have fingerprints: anywhere in the stock, the dozen nearest to a centre of the curator's taste, then the session's rules among them —
+      // never a lookalike of what this device refused with "pas ça".
       const taste = await likedCentres(db, now).catch(() => [] as Float32Array[])
       if (taste.length) {
-        const rows = (await seekAny(db, random, SIFTED_ROWS)).filter((row) => fromRow(row[VEC]))
+        const refused = await dislikedPrints(db, context.disliked).catch(() => [] as Uint8Array[])
+        const rows = (await seekAny(db, random, SIFTED_ROWS)).filter((row) => { const bits = fromRow(row[VEC]); return bits && !nearAny(bits, refused, DISLIKE_ALIKE) })
         if (rows.length >= TASTE_MEASURED_MIN) {
           const scored = rows.map((row) => ({ row, score: Math.max(...taste.map((centre) => towards(fromRow(row[VEC])!, centre))) })).sort((left, right) => right.score - left.score)
           const picked = choose(scored.slice(0, TASTE_NEAREST).map((entry) => entry.row), slot, context)
@@ -427,11 +439,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
  * joker when the card has nothing; null when the wheel has nothing at all,
  * and the older paths answer.
  */
-export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set()): Promise<WheelResult<T> | null> {
+export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set(), disliked: readonly string[] = []): Promise<WheelResult<T> | null> {
   if (ticket.type !== 'video') return null
   const slot = slotAt(state.seed, state.videos ?? 0)
   const media = await mediaChannelKeys(db, now).catch(() => new Set<string>())
-  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media }
+  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media, disliked: new Set(disliked) }
   let filled = await fillSlot(db, slot, context).catch(() => null)
   let fallback = false
   if (!filled && slot !== 'joker') {

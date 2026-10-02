@@ -62,7 +62,7 @@ const video = (title: string, options: { universe?: string; duration?: string; s
   v3: { universe: options.universe ?? 'sport', usable: true },
 })
 
-const context = (db: Db, state: Session) => ({ ticket: planDraw(state, 'video'), state, decode: (row: Document) => ({ _id: String(row._id), title: row.title }), lang: 'fr', random: Math.random, now: Date.now(), card: 'sport' as const, freshSeen: null, rules: sessionRules(state), media: new Set<string>() })
+const context = (db: Db, state: Session) => ({ ticket: planDraw(state, 'video'), state, decode: (row: Document) => ({ _id: String(row._id), title: row.title }), lang: 'fr', random: Math.random, now: Date.now(), card: 'sport' as const, freshSeen: null, rules: sessionRules(state), media: new Set<string>(), disliked: new Set<string>() })
 
 test('a long card: over fifteen minutes, in the universe of the card, the least served first; never a live', async () => {
   const rows = [
@@ -216,4 +216,14 @@ test('a media channel\'s clip is served within its window only: a news clip of t
   assert.equal(chosen[1]?.title, 'Storm reaches the coast tonight')
   assert.equal(chosen[2]?.title, 'The 1983 flood, as reported then')
   assert.equal(choose(rows.slice(0, 1), 'joker', { ...base, media: new Set() })?.title, 'Election results tonight')
+})
+
+test('"pas ça": a content the device refused is never chosen again on any card, however little served', () => {
+  const rows = [video('Goal of the week', { served: 0 }), video('Best saves of the season', { served: 5 })]
+  const db = fakeDb(rows)
+  const state = newSession(3)
+  assert.equal(choose(rows, 'chance', context(db, state))?.id, String(rows[0]._id))
+  const refused = { ...context(db, state), disliked: new Set([String(rows[0]._id)]) }
+  assert.equal(choose(rows, 'chance', refused)?.id, String(rows[1]._id))
+  assert.equal(choose(rows, 'deep', { ...refused, disliked: new Set(rows.map((row) => String(row._id))) }), null)
 })

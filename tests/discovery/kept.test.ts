@@ -64,3 +64,28 @@ test('the tilt is slow and bounded, and only the curated cards read it', () => {
   assert.equal(effectiveServed(loved, 'chance'), 4)
   assert.equal(effectiveServed(skipped, 'chance'), 2)
 })
+
+test('"pas ça": the visual closes at once as refused, the site counts the refusal on the content and the day, and the tilt falls', async () => {
+  let now = 1_000
+  const memory = createKeptMemory(() => now)
+  memory.markShown(id(1), 'taste'); now += 4_400
+  memory.markDisliked(); now += 1_000
+  memory.markDisliked() // nothing on screen: nothing more
+  memory.markShown(id(2)); now += 2_000
+  memory.markShown(id(3))
+  assert.deepEqual(memory.takeKept(), [{ id: id(1), seconds: 4, card: 'taste', dislike: true }, { id: id(2), seconds: 2 }])
+  assert.deepEqual(parseKept([{ id: id(1), seconds: 4, dislike: true }, { id: id(2), seconds: 4, dislike: 'yes' }]), [{ id: id(1), seconds: 4, dislike: true }, { id: id(2), seconds: 4 }])
+  const writes: Document[] = []
+  const tallies: Document[] = []
+  const db = { collection: (name: string) => ({ bulkWrite: async (ops: Document[]) => { writes.push(...ops); return { matchedCount: ops.length } }, updateOne: async (filter: Document, update: Document) => { tallies.push({ name, filter, update }); return { matchedCount: 1 } } }) } as unknown as Db
+  await recordKept(db, [{ id: id(1), seconds: 4, card: 'taste', dislike: true }, { id: id(2), seconds: 2, card: 'long' }], new Date('2026-10-02T21:00:00Z'))
+  assert.deepEqual(writes[0].updateOne.update, { $inc: { 'served.kept': 1, 'served.seconds': 4, 'served.dislikes': 1 } })
+  assert.deepEqual(writes[1].updateOne.update, { $inc: { 'served.kept': 1, 'served.seconds': 2 } })
+  assert.deepEqual(tallies[0].update.$inc, { 'cards.taste.n': 1, 'cards.taste.seconds': 4, 'cards.taste.dislikes': 1, 'cards.long.n': 1, 'cards.long.seconds': 2 })
+  assert.ok(tilt({ n: 1, seconds: 4, dislikes: 1 }) < tilt({ n: 1, seconds: 4 }))
+  assert.equal(tilt({ n: 3, seconds: 0, dislikes: 3 }), TILT_MIN)
+  const refused = { served: 1, kept: { n: 2, seconds: 20, dislikes: 2 } } as Candidate
+  const plain = { served: 1, kept: { n: 2, seconds: 20 } } as Candidate
+  assert.ok(effectiveServed(refused, 'taste') > effectiveServed(plain, 'taste'))
+  assert.equal(effectiveServed(refused, 'chance'), 1)
+})

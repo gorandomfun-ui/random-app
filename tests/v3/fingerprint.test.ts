@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { alike, BYTES, centres, DIMS, fromRow, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/bits'
+import { alike, BYTES, centres, DIMS, fromRow, nearAny, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/bits'
 import { CHUNK, fingerprints, type Extractor } from '../../lib/v3/ai/fingerprint'
 
 /** A seeded vector in [-1, 1]; `near(base, n)` is the base with a little noise, a stranger is another seed. */
@@ -56,4 +56,12 @@ test('the texts reach the model in slices of CHUNK, and their fingerprints come 
   assert.equal(prints.length, texts.length)
   texts.forEach((text, index) => assert.deepEqual(prints[index], pack(vector(Number(text)))))
   assert.deepEqual(await fingerprints([], fake), [])
+})
+
+test('a fingerprint is near a refused one when they agree on most bits, and not near a stranger', () => {
+  const refused = pack(vector(21))
+  assert.equal(nearAny(refused, [refused], 0.7), true)
+  assert.equal(nearAny(pack(near(vector(21), 31)), [pack(vector(4)), refused], 0.7), true)
+  assert.equal(nearAny(pack(vector(5)), [refused, pack(vector(6))], 0.7), false)
+  assert.equal(nearAny(refused, [], 0.7), false)
 })
