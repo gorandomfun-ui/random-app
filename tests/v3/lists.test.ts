@@ -34,10 +34,13 @@ test('the entries of a list are the first links of its bullet and table lines, n
 | [[Capoeira]] || [[Brazil]]
 |}
 * [[Cat (2004 film)]]
+* {{flag|JP}} '''[[Bon dance]]''' – a festival dance
+| [[File:Bob cut.jpg|120px]] || [[Bob cut]] || short
+| [[Image:Nothing.png]]
 == See also ==
 * [[Tap dance]]
 * [[List of sports]]`
-  assert.deepEqual(titlesInWikitext(wikitext), ['Acro dance', 'Belly dance', 'Breakdancing', 'Capoeira'])
+  assert.deepEqual(titlesInWikitext(wikitext), ['Acro dance', 'Belly dance', 'Breakdancing', 'Capoeira', 'Bon dance', 'Bob cut'])
 })
 
 const probe = (over: Partial<QueuedSubject> = {}): QueuedSubject => ({

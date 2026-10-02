@@ -88,21 +88,34 @@ export function keepTitle(title: string): boolean {
 /** Past these headings a page cites and links out; the list is over. */
 const END_OF_LIST = /^==+\s*(See also|References|Notes|Further reading|External links|Bibliography|Sources)\s*==+/i
 
+/** A picture, a file, a category: a link that is not an entry. */
+const NOT_AN_ENTRY = /^(?:File|Image|Category|Fichier|Media|Wikipedia|Template):/i
+
 /**
- * The entries of a list page: the link that opens each bullet or table line
- * of its wikitext, up to the "See also" — the list itself, never the
- * navigation boxes around it nor the prose that mentions a country.
+ * The entries of a list page: the link that opens each bullet line — after
+ * a flag template or a bold mark, within its first forty characters — or the
+ * first link of a table row that is not a picture, up to the "See also":
+ * the list itself, never the navigation boxes around it nor the prose that
+ * mentions a country (the hairstyles and the handheld consoles are tables
+ * with a picture first; the fads are bullets with a template first).
  */
 export function titlesInWikitext(wikitext: string): string[] {
   const titles = new Set<string>()
   for (const raw of wikitext.split('\n')) {
     const line = raw.trim()
     if (END_OF_LIST.test(line)) break
-    if (!/^(\*|#|\||!)/.test(line) || line.startsWith('|-') || line.startsWith('|}')) continue
-    const link = /^[*#|!]+\s*(?:'''?)?\s*\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]/.exec(line)
-    if (!link) continue
-    const title = link[1].trim()
-    if (keepTitle(title)) titles.add(title)
+    if (!/^(\*|#|\||!)/.test(line) || line.startsWith('|-') || line.startsWith('|}') || line.startsWith('|+')) continue
+    const table = line.startsWith('|') || line.startsWith('!')
+    // Templates and bold marks stripped from a bullet's opening, so "* {{flag|JP}} '''[[Name]]'''" reads as "* [[Name]]".
+    const opening = table ? line : line.replace(/\{\{[^}]*\}\}/g, '').replace(/'''?/g, '')
+    for (const match of opening.matchAll(/\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]/g)) {
+      const title = match[1].trim()
+      if (NOT_AN_ENTRY.test(title)) continue
+      // In a bullet, the entry opens the line (once the templates and bold marks are gone); a link further on is prose.
+      if (!table && (match.index ?? 0) > 3) break
+      if (keepTitle(title)) titles.add(title)
+      break
+    }
   }
   return [...titles]
 }

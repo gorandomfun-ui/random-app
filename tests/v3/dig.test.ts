@@ -4,7 +4,7 @@ import test from 'node:test'
 import { ObjectId } from 'mongodb'
 
 import { PERSON_ANGLES, personQuery, themeAngles, themeQuery } from '../../lib/v3/dig/angles'
-import { aliasForms, capMoments, isAddressOf, isLetsPlay, isStillAlbum, isCelebrityNews, keepMostWatchedTwin, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
+import { aliasForms, capMoments, isAddressOf, isLetsPlay, isStillAlbum, isCelebrityNews, keepMostWatchedTwin, namesSubject, namesSubjectFor, subjectDoor, tellingWords } from '../../lib/v3/dig/door'
 import { languageOf, levelOf } from '../../lib/v3/dig/levels'
 import { baseTickets, DEFAULT_TICKETS, nextPass, ticketOrder, type QueuedSubject } from '../../lib/v3/dig/queue'
 import { likeSubjects, looksLikeName, practiceTheme, wordsTheme } from '../../lib/v3/dig/likes'
@@ -229,4 +229,13 @@ test('a still album and a let\'s play are told by their words, not their length'
   assert.ok(isLetsPlay('BIRTH TO DEATH of ELEMENTAL VILLAGER in Minecraft 100 days'))
   assert.ok(!isLetsPlay('The Sift (4th) Dimension, in Minecraft.'), 'a Minecraft video is not a series')
   assert.ok(!isLetsPlay('The Second World War in colour, part 3'), 'a documentary in parts is not a game')
+})
+
+test('a short accented name is matched with its accents only: Pelé, not pele the skin', () => {
+  const pele = { label: 'Pelé', aliases: ['Pelé'] }
+  assert.ok(namesSubject('Pelé - O Rei do futebol', pele))
+  assert.ok(namesSubject('PELÉ 1970 World Cup', pele))
+  assert.ok(!namesSubject('PEELING DE FENOL: o que é', pele))
+  assert.ok(!namesSubject('Pior namorado do mundo sofre na pele', pele))
+  assert.ok(namesSubject('Zidane et le PSG', { label: 'Zinédine Zidane', aliases: ['Zidane'] }), 'a longer name reads without its accents')
 })

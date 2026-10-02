@@ -104,9 +104,19 @@ export function aliasForms(alias: string): string[] {
 }
 
 /** Whether the text names the subject: any alias, whole words in Latin script, plural or not; a hashtag glues the words ("#willsmith"). */
+/** A name this short loses its meaning without its accents: "Pelé" normalised is "pele", Portuguese for skin, and the door took skin-care videos for the king (2 October). */
+const SHORT_NAME = 5
+function spelledExactly(text: string, alias: string): boolean {
+  const needle = alias.trim()
+  if (!needle) return false
+  return new RegExp(`(^|[^\\p{L}])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}])`, 'iu').test(text)
+}
+
 export function namesSubject(text: string, subject: Pick<DoorSubject, 'label' | 'aliases'>): boolean {
   return [subject.label, ...subject.aliases].some((alias) => {
     if (alias.length < 3) return false
+    // A short name must be spelled exactly, accents included; a longer one may be read without them.
+    if (normalize(alias).replace(/ /g, '').length <= SHORT_NAME && /[^\x00-\x7f]/.test(alias)) return spelledExactly(text, alias)
     if (aliasForms(alias).some((form) => containsAlias(text, form))) return true
     const glued = normalize(alias).replace(/ /g, '')
     return glued.length >= 6 && glued !== normalize(alias) && containsAlias(text, glued)
