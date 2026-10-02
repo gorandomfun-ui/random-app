@@ -79,9 +79,15 @@ case "${LINE}" in
   vec)
     # The fingerprints: the small model writes what each new video is about, then the old stock a slice at a time (lib/v3/ai/fingerprint.ts).
     # Alone on the machine: the model fills 700 MB of its 969, so beside the dig, the drift or the previews' Chromium it swaps to a
-    # standstill (2 October, twice). It waits for their locks and holds them while it runs — twelve minutes at most — so a run of
+    # standstill (2 October, twice). It waits for their locks and holds them while it runs — twelve to forty-five minutes — so a run of
     # theirs that fires meanwhile skips once (the previews come back half an hour later); its timer sits after the drift's, before the dig's.
-    RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock node --import tsx scripts/v3/vec-direct.ts
+    # The pass's budget by the hour (Paris): twelve minutes before the 11:30 dig, forty when the next dig is an hour away or more, forty-five at night.
+    case "$(TZ=Europe/Paris date +%H)" in
+      11) vec_minutes=12 ;;
+      00|01) vec_minutes=45 ;;
+      *) vec_minutes=40 ;;
+    esac
+    RANDOM_VEC_MINUTES="${RANDOM_VEC_MINUTES:-${vec_minutes}}" RANDOM_VEC_MAX="${RANDOM_VEC_MAX:-20000}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock node --import tsx scripts/v3/vec-direct.ts
     ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.

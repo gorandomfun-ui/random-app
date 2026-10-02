@@ -79,8 +79,17 @@ export function fromRow(value: unknown): Uint8Array | null {
   return buffer && buffer.length === BYTES ? new Uint8Array(buffer) : null
 }
 
-/** What the model reads for a video: its title, then the first lines of its description. */
+/** Characters of the description the model reads after the title: the title says what a video is, the description's first line confirms it. */
+export const DESCRIPTION_CHARS = 120
+
+/**
+ * What the model reads for a video: its title, then the start of its
+ * description. Short on purpose: the model's time grows with the words,
+ * and the ingestion server's shared core read two videos a second with
+ * three hundred characters of description (2 October) — too slow for the
+ * day's intake. The first line is enough to tell a dinner from a match.
+ */
 export function textOf(row: { title?: unknown; description?: unknown }): string {
-  return `${String(row.title ?? '')}. ${String(row.description ?? '').replace(/\s+/g, ' ').slice(0, 300)}`.trim()
+  return `${String(row.title ?? '')}. ${String(row.description ?? '').replace(/\s+/g, ' ').slice(0, DESCRIPTION_CHARS)}`.trim()
 }
 

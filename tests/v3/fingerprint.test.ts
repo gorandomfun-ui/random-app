@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { alike, BYTES, centres, DIMS, fromRow, nearAny, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/bits'
+import { alike, BYTES, centres, DESCRIPTION_CHARS, DIMS, fromRow, nearAny, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/bits'
 import { CHUNK, fingerprints, type Extractor } from '../../lib/v3/ai/fingerprint'
 
 /** A seeded vector in [-1, 1]; `near(base, n)` is the base with a little noise, a stranger is another seed. */
@@ -40,6 +40,7 @@ test('centres of taste sit nearer the likes they summarise than strangers, and a
 test('the model reads the title then the first lines of the description', () => {
   assert.equal(textOf({ title: 'Jacques Brel - Ne me quitte pas', description: 'Diffusé   le 12/03/1972\nsur la première chaîne.' }), 'Jacques Brel - Ne me quitte pas. Diffusé le 12/03/1972 sur la première chaîne.')
   assert.equal(textOf({ title: 'A' }), 'A.')
+  assert.equal(textOf({ title: 'T', description: 'x'.repeat(500) }), `T. ${'x'.repeat(DESCRIPTION_CHARS)}`)
 })
 
 test('the texts reach the model in slices of CHUNK, and their fingerprints come back in order', async () => {
