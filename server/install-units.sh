@@ -12,7 +12,9 @@ for dropins in /opt/random-app/server/units/*.d; do
 done
 mkdir -p /home/random/locks && chown random:random /home/random/locks
 systemctl daemon-reload
-for timer in random-line@daily-auto-morning random-line@daily-auto-evening random-line@video-enrich random-line@trend-subjects random-line@web-embed random-line@like-pool random-line@pools random-line@feeds random-line@authors random-line@music-live random-line@fresh random-line@web-previews random-line@dig random-line@drift random-status; do
+# Only the lines in service since 28 September (the owner paused the rest to keep the YouTube quota; the install of 1 October
+# re-enabled them all by mistake and 2 October brought twenty thousand unsorted videos): the dig, the day's list, the drift, the status.
+for timer in random-line@fresh random-line@dig random-line@drift random-status; do
   systemctl enable --now "${timer}.timer"
 done
 systemctl list-timers 'random-*' --no-pager

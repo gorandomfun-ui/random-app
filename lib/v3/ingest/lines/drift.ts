@@ -144,8 +144,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     addAdmission(counters, { ...result, scanned: videos.length, rejected: { ...result.rejected, ...door.refused } })
     counters.byProvider = { ...(counters.byProvider ?? {}), dailymotion: ((counters.byProvider ?? {}).dailymotion ?? 0) + result.inserted }
     await ctx.search({ provider: 'dailymotion', query, scanned: videos.length, kept: checked.length, inserted: result.inserted, duplicates: result.duplicates, rejected: { ...result.rejected, ...door.refused }, quotaUnits: 0, insertedIds: result.insertedIds }).catch(() => undefined)
-    const inserted = new Set(result.insertedIds)
-    return checked.filter((video) => inserted.has(video.videoId) || result.insertedIds.length === 0 && ctx.dryRun)
+    // What got through, new or already known: a known video is a good one, and its neighbours are worth the walk too (the first live runs walked nothing: the ids the admission returns are not the videos').
+    return checked
   }
 
   /** A small uploader met on the way is read whole, once. */
