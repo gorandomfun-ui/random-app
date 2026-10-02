@@ -76,6 +76,10 @@ case "${LINE}" in
     # The four bases, one line: people, keywords, trends, likes, each subject dug top, around, channels, Dailymotion.
     run node --import tsx scripts/v3/dig-direct.ts
     ;;
+  vec)
+    # The fingerprints: the small model writes what each new video is about, then the old stock a slice at a time (lib/v3/ai/fingerprint.ts).
+    RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run node --import tsx scripts/v3/vec-direct.ts
+    ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.
     run node --import tsx scripts/v3/drift-direct.ts

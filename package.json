@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.6.1",
+    "@huggingface/transformers": "^3.8.1",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/cheerio": "^0.22.35",
     "cheerio": "^1.1.2",

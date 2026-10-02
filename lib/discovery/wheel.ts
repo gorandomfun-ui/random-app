@@ -48,6 +48,7 @@ import { isCleanTitle } from '../v3/cool/clean'
 import { isCoolCandidate, type LabelableRow } from '../v3/cool/registers'
 import { SERVABLE } from '../v3/cool/servable'
 import { loadLikePool } from '../v3/cool/likePool'
+import { centres, FIELD as VEC, fromRow, towards } from '../v3/ai/fingerprint'
 import { drawStart } from '../v3/cool/start'
 import { isNewsTitle, isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isLetsPlay, isStillAlbum } from '../v3/dig/door'
@@ -287,6 +288,21 @@ export function withinMediaWindow(row: CatalogueRow, media: ReadonlySet<string>,
  * proportions (the owner, 1 October). Read every ten minutes.
  */
 const TASTE_CACHE_MS = 10 * 60_000
+/** The centres of the curator's taste, out of the fingerprints of the liked videos (lib/v3/ai/fingerprint.ts); none until the likes carry fingerprints. */
+let tasteCentres: { at: number; centres: Float32Array[] } | null = null
+async function likedCentres(db: Db, now: number): Promise<Float32Array[]> {
+  if (tasteCentres && now - tasteCentres.at < TASTE_CACHE_MS) return tasteCentres.centres
+  const pool = await loadLikePool(db, now).catch(() => ({ zones: [], likeIds: [] as string[] }))
+  const ids = pool.likeIds.filter((id) => ObjectId.isValid(id)).slice(0, 400).map((id) => new ObjectId(id))
+  const rows = ids.length ? await db.collection('items').find({ _id: { $in: ids }, type: 'video', [VEC]: { $exists: true } } as Document, { projection: { [VEC]: 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[]) : []
+  const prints = rows.flatMap((row) => { const bits = fromRow(row[VEC]); return bits ? [bits] : [] })
+  const found = prints.length >= 5 ? centres(prints, Math.min(4, Math.max(1, Math.floor(prints.length / 5)))) : []
+  tasteCentres = { at: now, centres: found }
+  return found
+}
+/** How many of the rows read must carry a fingerprint for the taste to be measured on them. */
+const TASTE_MEASURED_MIN = 8
+const TASTE_NEAREST = 12
 let tasteProfile: { at: number; bag: Array<{ universe: Universe; era?: string }> } | null = null
 async function tasteBag(db: Db, now: number): Promise<Array<{ universe: Universe; era?: string }>> {
   if (tasteProfile && now - tasteProfile.at < TASTE_CACHE_MS) return tasteProfile.bag
@@ -347,6 +363,16 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
         const start = await drawStart(db, { type: 'video', source: 'like', random, now }).catch(() => null)
         const liked = start && start.source.startsWith('like') ? choose(start.rows as CatalogueRow[], slot, context) : null
         if (liked) return { item: liked, from: start!.source }
+      }
+      // The likes have fingerprints: anywhere in the stock, the dozen nearest to a centre of the curator's taste, then the session's rules among them.
+      const taste = await likedCentres(db, now).catch(() => [] as Float32Array[])
+      if (taste.length) {
+        const rows = (await seekAny(db, random, SIFTED_ROWS)).filter((row) => fromRow(row[VEC]))
+        if (rows.length >= TASTE_MEASURED_MIN) {
+          const scored = rows.map((row) => ({ row, score: Math.max(...taste.map((centre) => towards(fromRow(row[VEC])!, centre))) })).sort((left, right) => right.score - left.score)
+          const picked = choose(scored.slice(0, TASTE_NEAREST).map((entry) => entry.row), slot, context)
+          if (picked) return { item: picked, from: 'taste:ai' }
+        }
       }
       const bag = await tasteBag(db, now).catch(() => [] as Array<{ universe: Universe; era?: string }>)
       if (bag.length) {
