@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { alike, BYTES, centres, DIMS, fromRow, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/bits'
+import { CHUNK, fingerprints, type Extractor } from '../../lib/v3/ai/fingerprint'
 
 /** A seeded vector in [-1, 1]; `near(base, n)` is the base with a little noise, a stranger is another seed. */
 const vector = (seed: number) => { let x = Math.floor(seed * 2654435761) >>> 0 || 1; return Float32Array.from({ length: DIMS }, () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return (x / 0xffffffff) * 2 - 1 }) }
@@ -39,4 +40,20 @@ test('centres of taste sit nearer the likes they summarise than strangers, and a
 test('the model reads the title then the first lines of the description', () => {
   assert.equal(textOf({ title: 'Jacques Brel - Ne me quitte pas', description: 'Diffusé   le 12/03/1972\nsur la première chaîne.' }), 'Jacques Brel - Ne me quitte pas. Diffusé le 12/03/1972 sur la première chaîne.')
   assert.equal(textOf({ title: 'A' }), 'A.')
+})
+
+test('the texts reach the model in slices of CHUNK, and their fingerprints come back in order', async () => {
+  const calls: number[] = []
+  const fake: Extractor = async (texts) => {
+    calls.push(texts.length)
+    const data = new Float32Array(texts.length * DIMS)
+    texts.forEach((text, index) => data.set(vector(Number(text)), index * DIMS))
+    return { dims: [texts.length, DIMS], data }
+  }
+  const texts = Array.from({ length: CHUNK * 2 + 3 }, (_, i) => String(i + 1))
+  const prints = await fingerprints(texts, fake)
+  assert.deepEqual(calls, [CHUNK, CHUNK, 3])
+  assert.equal(prints.length, texts.length)
+  texts.forEach((text, index) => assert.deepEqual(prints[index], pack(vector(Number(text)))))
+  assert.deepEqual(await fingerprints([], fake), [])
 })

@@ -1,11 +1,11 @@
 [Unit]
-Description=RANDOM fingerprints (four runs a day, Paris, after the dig's: the small model writes what each new video is about, then the old stock a slice at a time)
+Description=RANDOM fingerprints (four runs a day, Paris, each after a drift's run and before the next dig's: the small model writes what each new video is about, then the old stock a slice at a time, alone on the machine)
 
 [Timer]
-OnCalendar=*-*-* 10:30:00 Europe/Paris
-OnCalendar=*-*-* 14:30:00 Europe/Paris
-OnCalendar=*-*-* 19:30:00 Europe/Paris
-OnCalendar=*-*-* 00:30:00 Europe/Paris
+OnCalendar=*-*-* 11:00:00 Europe/Paris
+OnCalendar=*-*-* 15:00:00 Europe/Paris
+OnCalendar=*-*-* 20:00:00 Europe/Paris
+OnCalendar=*-*-* 00:35:00 Europe/Paris
 Persistent=true
 RandomizedDelaySec=60
 

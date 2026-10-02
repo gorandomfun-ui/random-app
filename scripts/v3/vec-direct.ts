@@ -2,11 +2,13 @@
  * The fingerprints, written on the videos that have none: today's entries
  * first, then the old stock, a slice a run, from the newest back.
  *
- *   node --import tsx scripts/v3/vec-direct.ts                 up to RANDOM_VEC_MAX videos (20,000) within RANDOM_VEC_MINUTES (20)
+ *   node --import tsx scripts/v3/vec-direct.ts                 up to RANDOM_VEC_MAX videos (10,000) within RANDOM_VEC_MINUTES (12)
  *   node --import tsx scripts/v3/vec-direct.ts --dry           reads and fingerprints, writes nothing
  *
- * Runs on the ingestion server after the dig's runs (lib/v3/ai/fingerprint.ts:
- * 410 MB of memory, 45 videos a second). The backfill keeps its place in
+ * Runs on the ingestion server, alone, between the drift's and the dig's
+ * runs (lib/v3/ai/fingerprint.ts: 700 MB of memory, some forty videos a
+ * second there, so ten thousand take four minutes and the twelve-minute
+ * deadline leaves the dig its hour). The backfill keeps its place in
  * `dig_meta_v4` ({_id: 'vec'}): the oldest id it has reached, so a run that
  * stops picks up where it left.
  */
@@ -16,7 +18,7 @@ import { MongoClient, ObjectId, type Document } from 'mongodb'
 import { disposeModel, FIELD, fingerprints, textOf, toBinary } from '@/lib/v3/ai/fingerprint'
 import { loadLikePool } from '@/lib/v3/cool/likePool'
 
-const MAX_MINUTES = Number(process.env.RANDOM_VEC_MINUTES ?? 20)
+const MAX_MINUTES = Number(process.env.RANDOM_VEC_MINUTES ?? 12)
 const MAX_VIDEOS = Number(process.env.RANDOM_VEC_MAX ?? 10_000)
 const BATCH = 200
 const META = 'dig_meta_v4'

@@ -5,11 +5,19 @@
  * pays, un autre auteur").
  *
  * The model (paraphrase-multilingual-MiniLM-L12-v2, quantised, ~120 MB on
- * disk, 410 MB in memory on the ingestion server, 45 titles a second there)
- * gives 384 numbers; only their signs are kept — 384 bits, 48 bytes a video,
- * 58 MB for the whole stock — and two videos are as close as their bits
- * agree. Coarser than the full numbers, good enough to tell a family dinner
- * on VHS from a Minecraft episode, and cheap enough to live on every row.
+ * disk) gives 384 numbers; only their signs are kept — 384 bits, 48 bytes a
+ * video, 58 MB for the whole stock — and two videos are as close as their
+ * bits agree. Coarser than the full numbers, good enough to tell a family
+ * dinner on VHS from a Minecraft episode, and cheap enough to live on every
+ * row.
+ *
+ * Memory, measured 2 October: 700 MB once loaded (270 MB for the word
+ * cutter's 250,000-entry vocabulary, 340 MB for the weights), and the texts
+ * handed to it at once add their activations on top — two hundred at once
+ * added 400 MB and swapped the ingestion server (969 MB) to a standstill, so
+ * the texts go through in slices of `CHUNK`, 50 MB more at most, as fast.
+ * The server's unit gives the line that room and makes it run alone
+ * (server/units/random-line@vec.service.d, server/run-line.sh).
  *
  * Nothing here calls anyone: the model runs on our machine, from its cache.
  */
@@ -19,7 +27,7 @@ import { DIMS, pack } from './bits'
 export * from './bits'
 export const MODEL = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
 
-type Extractor = (texts: string[], options: Record<string, unknown>) => Promise<{ dims: number[]; data: Float32Array }>
+export type Extractor = (texts: string[], options: Record<string, unknown>) => Promise<{ dims: number[]; data: Float32Array }>
 
 let loaded: Promise<Extractor> | null = null
 let disposer: (() => Promise<void>) | null = null
@@ -43,11 +51,19 @@ export async function model(): Promise<Extractor> {
   return loaded
 }
 
-/** The fingerprints of a batch of texts. */
-export async function fingerprints(texts: string[]): Promise<Uint8Array[]> {
+/** Texts handed to the model at once: its activations grow with the slice, not the run. */
+export const CHUNK = 16
+
+/** The fingerprints of a batch of texts, in order; the model is `run`, loaded from its cache unless a test hands one in. */
+export async function fingerprints(texts: string[], run?: Extractor): Promise<Uint8Array[]> {
   if (!texts.length) return []
-  const extractor = await model()
-  const out = await extractor(texts, { pooling: 'mean', normalize: true, batch_size: 32 })
-  const width = out.dims[1] ?? DIMS
-  return texts.map((_, index) => pack(out.data.subarray(index * width, index * width + DIMS)))
+  const extractor = run ?? await model()
+  const prints: Uint8Array[] = []
+  for (let start = 0; start < texts.length; start += CHUNK) {
+    const slice = texts.slice(start, start + CHUNK)
+    const out = await extractor(slice, { pooling: 'mean', normalize: true })
+    const width = out.dims[1] ?? DIMS
+    for (let index = 0; index < slice.length; index += 1) prints.push(pack(out.data.subarray(index * width, index * width + DIMS)))
+  }
+  return prints
 }

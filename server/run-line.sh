@@ -78,8 +78,10 @@ case "${LINE}" in
     ;;
   vec)
     # The fingerprints: the small model writes what each new video is about, then the old stock a slice at a time (lib/v3/ai/fingerprint.ts).
-    # Never beside the dig: the model and a dig together swap the machine to a standstill (2 October, 22:03 Paris). Waits for the dig's lock, a quarter of an hour at most.
-    RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock node --import tsx scripts/v3/vec-direct.ts
+    # Alone on the machine: the model fills 700 MB of its 969, so beside the dig, the drift or the previews' Chromium it swaps to a
+    # standstill (2 October, twice). It waits for their locks and holds them while it runs — twelve minutes at most — so a run of
+    # theirs that fires meanwhile skips once (the previews come back half an hour later); its timer sits after the drift's, before the dig's.
+    RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock node --import tsx scripts/v3/vec-direct.ts
     ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.
