@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { alike, BYTES, centres, DIMS, fromRow, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/fingerprint'
+import { alike, BYTES, centres, DIMS, fromRow, pack, textOf, toBinary, towards, unpack } from '../../lib/v3/ai/bits'
 
 /** A seeded vector in [-1, 1]; `near(base, n)` is the base with a little noise, a stranger is another seed. */
 const vector = (seed: number) => { let x = Math.floor(seed * 2654435761) >>> 0 || 1; return Float32Array.from({ length: DIMS }, () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return (x / 0xffffffff) * 2 - 1 }) }
