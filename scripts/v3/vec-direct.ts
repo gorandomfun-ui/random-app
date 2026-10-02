@@ -14,6 +14,7 @@
 import { MongoClient, ObjectId, type Document } from 'mongodb'
 
 import { disposeModel, FIELD, fingerprints, textOf, toBinary } from '@/lib/v3/ai/fingerprint'
+import { loadLikePool } from '@/lib/v3/cool/likePool'
 
 const MAX_MINUTES = Number(process.env.RANDOM_VEC_MINUTES ?? 20)
 const MAX_VIDEOS = Number(process.env.RANDOM_VEC_MAX ?? 20_000)
@@ -41,6 +42,13 @@ async function main(): Promise<void> {
     written += result.modifiedCount
   }
 
+  // The liked videos first, whatever their age: the taste card needs their fingerprints before anything else (lib/discovery/wheel.ts, likedCentres).
+  const pool = await loadLikePool(db).catch(() => ({ zones: [], likeIds: [] as string[] }))
+  const likeIds = pool.likeIds.filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id))
+  const likesWithout = likeIds.length ? await items.find({ _id: { $in: likeIds }, type: 'video', [FIELD]: { $exists: false } } as Document, { projection: { title: 1, description: 1 } }).toArray() : []
+  for (let start = 0; start < likesWithout.length; start += BATCH) await write(likesWithout.slice(start, start + BATCH))
+  const likesDone = read
+
   // Today's entries first, by id, those without a fingerprint.
   const dayStart = new Date(new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) + 'T00:00:00+02:00')
   const todayFrom = ObjectId.createFromTime(Math.floor(dayStart.getTime() / 1000))
@@ -65,7 +73,7 @@ async function main(): Promise<void> {
     if (!dry) await meta.updateOne({ _id: 'vec' } as Document, { $set: { before, at: new Date() } }, { upsert: true })
   }
 
-  console.log(JSON.stringify({ vec: 'ok', dry, today: todayDone, read, written, before: String(before), durationMs: Date.now() - startedAt, rss: Math.round(process.memoryUsage().rss / 1e6) }))
+  console.log(JSON.stringify({ vec: 'ok', dry, likes: likesDone, today: todayDone - likesDone, read, written, before: String(before), durationMs: Date.now() - startedAt, rss: Math.round(process.memoryUsage().rss / 1e6) }))
   await client.close()
   await disposeModel()
   setTimeout(() => process.exit(0), 200).unref()
