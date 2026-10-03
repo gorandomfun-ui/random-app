@@ -22,6 +22,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { drawDiner } from './attacks-diner'
 import { decodePng, encodeIndexedPng, encodePng } from './png'
 
 const ROOT = process.cwd()
@@ -314,8 +315,6 @@ for (let i = 0; i < holes.length; i += 1) skyHoles[i] = holes[i] && Math.floor(i
 nebula(base, skyHoles, 3, 0.18, 30)
 sprinkle(base, skyHoles, 7)
 
-const titleWide = quantize(base, palette, holes)
-
 // the pieces
 const isDark = ([r, g, b]: RGB) => lum(r, g, b) < 46
 const cookMask = cutByHand(base, traced(570, 210, 5, [
@@ -340,10 +339,76 @@ const signShapes = (x: number, y: number) =>
 for (let y = 110; y < 366; y += 1) for (let x = 0; x < 200; x += 1) if (signShapes(x + 0.5, y + 0.5)) sign[y * W + x] = 1
 // burgers over the sky: the sky flooded in around them, through what looks like sky
 const isSky = ([r, g, b]: RGB) => (b >= r * 0.72 && lum(r, g, b) < 150) || (lum(r, g, b) > 205 && Math.abs(r - b) < 70)
-const burgerBoxes: Array<[number, number, number, number]> = [[642, 102, 708, 168], [608, 156, 650, 194], [716, 134, 760, 170]]
+const burgerBoxes: Array<[number, number, number, number]> = [[642, 102, 708, 168], [608, 156, 650, 194], [716, 134, 760, 170], [696, 34, 768, 112]]
 const burgerMasks = burgerBoxes.map(([x0, y0, x1, y1]) => cutByFlood(base, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], (c) => !isSky(c)))
 const moon = new Uint8Array(W * H)
 for (let y = 36; y < 104; y += 1) for (let x = 60; x < 132; x += 1) if (Math.hypot(x + 0.5 - 95.5, y + 0.5 - 69.5) <= 28) moon[y * W + x] = 1
+
+// ---------------------------------------------------------------- what moves on the title, taken out of the picture
+
+// the rover drives to and fro: kept as a sprite of its own (index 0 clear), the ground drawn again where it stood
+const ROVER: [number, number, number, number] = [74, 346, 162, 404]
+const nearestIn = (c: RGB) => { let best = 0, bd = Infinity; palette.forEach((q, j) => { const d = (c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2 + (c[2] - q[2]) ** 2; if (d < bd) { bd = d; best = j } }); return best }
+const roverSprite = new Uint8Array((ROVER[2] - ROVER[0]) * (ROVER[3] - ROVER[1]))
+for (let y = ROVER[1]; y < ROVER[3]; y += 1) for (let x = ROVER[0]; x < ROVER[2]; x += 1) if (roverMask[y * W + x]) roverSprite[(y - ROVER[1]) * (ROVER[2] - ROVER[0]) + x - ROVER[0]] = 1 + nearestIn(get(base, x, y))
+/**
+ * A figure taken out: the ground under it from `from` pixels aside (rows from `groundFrom` down); above, if `rocks`
+ * is given, the rocks right of it laid back and forth across it (it is wider than they are); the rest drawn again
+ * from around it.
+ */
+function takeOut(mask: Uint8Array, groundFrom: number, from: number, rocks?: { edge: number; width: number }): void {
+  const hole = grow(mask, W, H, 2)
+  const source = new Float32Array(base.rgb)
+  const at = (x: number, y: number): RGB => { const o = (y * W + x) * 3; return [source[o], source[o + 1], source[o + 2]] }
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+    if (!hole[y * W + x]) continue
+    if (y >= groundFrom) put(base, x, y, at(Math.max(0, Math.min(W - 1, x + from)), y))
+    else if (rocks && x <= rocks.edge) put(base, x, y, at(rocks.edge + 1 + pingpong(rocks.edge - x, rocks.width), y))
+    else continue
+    hole[y * W + x] = 0
+  }
+  inpaint(base, hole, 220)
+}
+takeOut(roverMask, 366, 100)
+// the cook: the game's own, drawn larger by the game, stands there now
+takeOut(cookMask, 370, -140, { edge: 712, width: 55 })
+// the burgers: the game's own fly there now. The three big ones, then every small one of the stream — a patch with
+// lettuce or a jet in it, small, over the sky or the rocks
+for (const m of burgerMasks) inpaint(base, grow(m, W, H, 2), 220)
+const STREAM: [number, number, number, number] = [430, 150, 768, 272]
+// the bun, the cheese, the jet; the lettuce; the bright orange of the ring
+const burgerish = ([r, g, b]: RGB) => (r > 170 && g > 112 && b < 150) || (g > r + 8 && g > 70 && b < 110) || (r > 238 && g < 150 && b < 90)
+const stream = new Uint8Array(W * H)
+const seen = new Uint8Array(W * H)
+let streamCount = 0
+for (let y0 = STREAM[1]; y0 < STREAM[3]; y0 += 1) for (let x0 = STREAM[0]; x0 < STREAM[2]; x0 += 1) {
+  if (seen[y0 * W + x0] || !burgerish(get(base, x0, y0))) continue
+  const queue = [y0 * W + x0], cells: number[] = []
+  seen[y0 * W + x0] = 1
+  while (queue.length) {
+    const i = queue.pop()!, x = i % W, y = Math.floor(i / W)
+    cells.push(i)
+    for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+      const X = x + dx, Y = y + dy, j = Y * W + X
+      if (X < STREAM[0] || Y < STREAM[1] || X >= STREAM[2] || Y >= STREAM[3] || seen[j] || !burgerish(get(base, X, Y))) continue
+      seen[j] = 1; queue.push(j)
+    }
+  }
+  const xs = cells.map((i) => i % W), ys = cells.map((i) => Math.floor(i / W))
+  const bw = Math.max(...xs) - Math.min(...xs) + 1, bh = Math.max(...ys) - Math.min(...ys) + 1
+  const green = cells.some((i) => { const c = get(base, i % W, Math.floor(i / W)); return c[1] > c[0] + 8 })
+  const jet = cells.some((i) => { const c = get(base, i % W, Math.floor(i / W)); return c[0] > 240 && c[1] > 180 })
+  if (cells.length < 5 || bw > 30 || bh > 22 || !(green || jet)) continue
+  streamCount += 1
+  for (let y = Math.min(...ys) - 3; y <= Math.max(...ys) + 3; y += 1) for (let x = Math.min(...xs) - 9; x <= Math.max(...xs) + 9; x += 1) if (x >= 0 && y >= 0 && x < W && y < H) stream[y * W + x] = 1
+}
+inpaint(base, stream, 220)
+console.log('stream burgers taken out', streamCount)
+
+const signWide = grow(sign, W, H, 3)
+// the fast food drawn again, calmer, on its own shapes; the sign stays in front of it
+drawDiner((x, y, c) => put(base, x, y, c), (x, y) => signWide[y * W + x] === 1)
+const titleWide = quantize(base, palette, holes)
 
 // ---------------------------------------------------------------- the tall title
 
@@ -354,14 +419,10 @@ for (let y = 0; y < 186; y += 1) for (let x = 336; x < W; x += 1) skyPart[y * W 
 for (let y = 96; y < 186; y += 1) for (let x = 336; x < W; x += 1) if (y >= 146 || (x >= 590 && y >= 100)) skyPart[y * W + x] = 0
 paste(tall, base, [336, 0, 768, 186], -336, 0, skyPart)
 const scenePart = new Uint8Array(W * H)
-const signWide = grow(sign, W, H, 3)
-// the cook left out too: his foot reaches into the crop's right edge, and he is laid down again where he stands on this picture
-const cookWide = grow(cookMask, W, H, 2)
-for (let y = 140; y < H; y += 1) for (let x = 168; x < 600; x += 1) scenePart[y * W + x] = signWide[y * W + x] || cookWide[y * W + x] ? 0 : 1
+for (let y = 140; y < H; y += 1) for (let x = 168; x < 600; x += 1) scenePart[y * W + x] = signWide[y * W + x] ? 0 : 1
 // the scene a little higher than the picture's foot, so PRESS START, LEVEL and BEST fall on the ground under it
 paste(tall, base, [168, 140, 600, 432], -168, 302, scenePart)
-const notCook = cookWide.map((v) => (v ? 0 : 1))
-paste(tall, base, [168, 398, 600, 432], -168, 336, notCook)
+paste(tall, base, [168, 398, 600, 432], -168, 336)
 paste(tall, base, [60, 36, 132, 104], -24, 26, moon)
 const tallHoles = new Uint8Array(432 * 768)
 for (let i = 0; i < tallHoles.length; i += 1) tallHoles[i] = tall.known[i] ? 0 : 1
@@ -375,15 +436,9 @@ for (let y = 146; y < 442; y += 1) for (let x = 0; x < 432; x += 1) {
 }
 nebula(tall, tallHoles, 5, -0.35, 330)
 sprinkle(tall, tallHoles, 11, 1 / 220)
-// the sign on the roof's left, smaller; the cook at the right; the rover at the bottom left
+// the sign on the roof's left, smaller (the cook, the rover and the burgers are the game's, drawn over it)
 const smallSign = shrink(base, sign, [24, 110, 190, 366], 0.62)
 paste(tall, smallSign.pic, [0, 0, smallSign.pic.w, smallSign.pic.h], 6, 494 - smallSign.pic.h, smallSign.mask)
-paste(tall, base, [580, 248, 716, 412], -286, 300, cookMask)
-paste(tall, base, [66, 352, 170, 408], -58, 296, roverMask)
-// the stream in the tall sky: the medium burger and two small ones, coming down to the left of the big one
-paste(tall, base, burgerBoxes[0], -350, 14, burgerMasks[0])
-paste(tall, base, burgerBoxes[1], -350, -6, burgerMasks[1])
-paste(tall, base, burgerBoxes[2], -340, 6, burgerMasks[2])
 const titleTall = quantize(tall, palette, tallHoles)
 
 // ---------------------------------------------------------------- the play
@@ -526,40 +581,32 @@ function starsOf(idx: Uint8Array, w: number, horizon: number, avoid: Array<[numb
   const step = Math.max(1, Math.floor(found.length / limit))
   return found.filter((_, i) => i % step === 0).slice(0, limit)
 }
-/** The jets' fire: its hottest yellow inside the areas given. */
-function flamesOf(idx: Uint8Array, w: number, areas: Array<[number, number, number, number]>): Array<[number, number]> {
-  const out: Array<[number, number]> = []
-  for (const [x0, y0, x1, y1] of areas) for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) {
-    const [r, g, b] = palette[idx[y * w + x]]
-    // the hottest yellow only — the buns are orange too
-    if (r > 238 && g > 188 && b < 150) out.push([x, y])
-  }
-  return out
-}
-
 // ---------------------------------------------------------------- out
 
 const playWideIdx = quantize(playWide.pic, palette, playWide.holes, skyPalette), playTallIdx = quantize(playTall.pic, palette, playTall.holes, skyPalette)
 const motion = {
-  wide: { stars: starsOf(titleWide, W, 236, [[60, 36, 132, 104], [620, 0, 768, 236], [0, 110, 200, 300]], 80), flames: flamesOf(titleWide, W, [[540, 30, 768, 290]]) },
-  tall: { stars: starsOf(titleTall, 432, 486, [[36, 62, 108, 130], [250, 0, 432, 200], [0, 330, 140, 500]], 90), flames: flamesOf(titleTall, 432, [[250, 20, 432, 200], [330, 486, 432, 590]]) },
+  wide: { stars: starsOf(titleWide, W, 236, [[60, 36, 132, 104], [620, 0, 768, 236], [0, 110, 200, 300]], 80) },
+  tall: { stars: starsOf(titleTall, 432, 486, [[36, 62, 108, 130], [250, 0, 432, 200], [0, 330, 140, 500]], 90) },
   playWide: { stars: starsOf(playWideIdx, 448, playWide.horizon, [[40, 30, 112, 98]], 50) },
   playTall: { stars: starsOf(playTallIdx, 320, playTall.horizon, [[24, 40, 96, 108]], 60) },
+  rover: { x: ROVER[0], y: ROVER[1], w: ROVER[2] - ROVER[0], h: ROVER[3] - ROVER[1] },
 }
 writeFileSync(DATA, `/**
  * What moves on RANDOM ATTACKS' traced pictures, found by
- * \`scripts/games/attacks-trace.ts\`: the stars that twinkle and the
- * pixels of the burgers' jets that flicker, as [x, y] on each picture.
+ * \`scripts/games/attacks-trace.ts\`: the stars that twinkle, as [x, y] on
+ * each picture, and where the rover stood on the wide title (its sprite is
+ * \`public/games/attacks/rover.png\`).
  * Generated — do not edit by hand.
  */
 
 export const ATTACKS_MOTION = ${JSON.stringify(motion)} as const
 `)
-console.log('stars', motion.wide.stars.length, motion.tall.stars.length, 'flames', motion.wide.flames.length, motion.tall.flames.length)
+console.log('stars', motion.wide.stars.length, motion.tall.stars.length)
 
 mkdirSync(OUT, { recursive: true })
 writeFileSync(path.join(OUT, 'title-wide.png'), encodeIndexedPng(W, H, titleWide, palette))
 writeFileSync(path.join(OUT, 'title-tall.png'), encodeIndexedPng(432, 768, titleTall, palette))
+writeFileSync(path.join(OUT, 'rover.png'), encodeIndexedPng(ROVER[2] - ROVER[0], ROVER[3] - ROVER[1], roverSprite, [[0, 0, 0], ...palette], true))
 writeFileSync(path.join(OUT, 'play-wide.png'), encodeIndexedPng(448, 320, playWideIdx, palette))
 writeFileSync(path.join(OUT, 'play-tall.png'), encodeIndexedPng(320, 448, playTallIdx, palette))
 
@@ -574,5 +621,9 @@ if (PREVIEW) {
   show('trace-title-tall.png', 432, 768, titleTall, 2)
   show('trace-play-wide.png', 448, 320, playWideIdx, 3)
   show('trace-play-tall.png', 320, 448, playTallIdx, 3)
+  const pal0: RGB[] = [[255, 0, 255], ...palette]
+  const rgba = new Uint8ClampedArray(roverSprite.length * 4)
+  roverSprite.forEach((k, i) => { rgba[i * 4] = pal0[k][0]; rgba[i * 4 + 1] = pal0[k][1]; rgba[i * 4 + 2] = pal0[k][2]; rgba[i * 4 + 3] = 255 })
+  writeFileSync(path.join(PREVIEW, 'trace-rover.png'), encodePng(ROVER[2] - ROVER[0], ROVER[3] - ROVER[1], rgba, 4))
 }
 console.log('palette', palette.length, 'colours')

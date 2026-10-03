@@ -8,13 +8,14 @@
 
 import { PixelBuffer } from './pixels'
 
-export type AttacksArtName = 'titleWide' | 'titleTall' | 'playWide' | 'playTall'
+export type AttacksArtName = 'titleWide' | 'titleTall' | 'playWide' | 'playTall' | 'rover'
 
 const FILES: Record<AttacksArtName, string> = {
   titleWide: '/games/attacks/title-wide.png',
   titleTall: '/games/attacks/title-tall.png',
   playWide: '/games/attacks/play-wide.png',
   playTall: '/games/attacks/play-tall.png',
+  rover: '/games/attacks/rover.png',
 }
 
 const ready = new Map<AttacksArtName, PixelBuffer>()

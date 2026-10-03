@@ -20,7 +20,7 @@
 
 import { attacksArt } from './attacks-art'
 import { ATTACKS_MOTION } from './attacks-art-data'
-import { type Bite, BONUS_PALETTE, BURGER_BIG, BURGER_PALETTE, burgerCentre, BURGERS, COOK, COOK_HEAD, COOK_PALETTE, drawPlates, GOLD_PALETTE, KETCHUP_PALETTE, MUSTARD, platesHeight, SQUIRT, THROW_PALETTE, THROWS } from './attacks-sprites'
+import { type Bite, BONUS_PALETTE, BURGER_BIG, BURGER_FAR, BURGER_MID, BURGER_PALETTE, BURGER_SMALL, BURGER_SPECK, burgerCentre, BURGERS, COOK, COOK_BIG, COOK_HEAD, COOK_PALETTE, drawPlates, GOLD_PALETTE, KETCHUP_PALETTE, MUSTARD, platesHeight, SQUIRT, THROW_PALETTE, THROWS } from './attacks-sprites'
 import { ATTACKS_LETTERING, type AttacksLettering } from './attacks-lettering-data'
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { dim, dither, drawText, drawText7, mix, PixelBuffer, text7Width, textWidth } from './pixels'
@@ -174,13 +174,57 @@ const MARKS: Record<Layout, { randomY: number; markY: number; markWidth: number;
   portrait: { randomY: 196, markY: 244, markWidth: 412, stretch: 1.5, press: 724, info: 'bottom' },
 }
 
+/** A burger in the title's stream: which, where its middle is, at what size. */
+type Flyer = readonly [kind: 'big' | 'mid' | 'small' | 'far' | 'speck', cx: number, cy: number, scale: 1 | 2]
+/**
+ * The stream of burgers coming down toward the restaurant, as in the
+ * owner's picture: two big ones by the planet, two smaller, then smaller
+ * and smaller over the rocks, specks at the horizon.
+ */
+const FLYERS: Record<Layout, readonly Flyer[]> = {
+  landscape: [
+    ['speck', 470, 258, 1], ['speck', 532, 258, 1], ['speck', 566, 252, 1], ['speck', 662, 252, 1], ['speck', 722, 250, 1], ['speck', 500, 249, 1],
+    ['far', 456, 246, 1], ['far', 540, 241, 1], ['far', 592, 236, 1], ['far', 626, 246, 1], ['far', 700, 236, 1], ['far', 752, 238, 1],
+    ['small', 516, 226, 1], ['small', 562, 220, 1], ['small', 652, 222, 1], ['small', 736, 212, 1],
+    ['mid', 602, 202, 1], ['mid', 690, 200, 1],
+    ['big', 630, 174, 1], ['big', 740, 152, 1],
+    ['big', 672, 130, 2], ['big', 732, 66, 2],
+  ],
+  portrait: [
+    ['speck', 300, 548, 1], ['speck', 352, 550, 1], ['speck', 404, 544, 1], ['speck', 330, 538, 1],
+    ['far', 290, 528, 1], ['far', 340, 522, 1], ['far', 386, 530, 1], ['far', 420, 516, 1],
+    ['small', 318, 498, 1], ['small', 372, 494, 1], ['small', 414, 484, 1],
+    ['mid', 346, 466, 1],
+    ['big', 278, 172, 1], ['big', 398, 156, 1],
+    ['big', 328, 136, 2], ['big', 396, 68, 2],
+  ],
+}
+const FLYER_SPRITES = { big: BURGER_BIG, mid: BURGER_MID, small: BURGER_SMALL, far: BURGER_FAR, speck: BURGER_SPECK } as const
+/** Where the cook stands (his top left, drawn twice the size), and the stretch of ground the rover drives to and fro. */
+const COOK_AT: Record<Layout, readonly [number, number]> = { landscape: [589, 256], portrait: [303, 556] }
+const ROVER_PATH: Record<Layout, { from: number; to: number; y: number }> = { landscape: { from: 40, to: 232, y: 346 }, portrait: { from: 2, to: 122, y: 642 } }
+
+/** A picture with clear pixels laid over the screen, mirrored if asked. */
+function overlay(buffer: PixelBuffer, art: PixelBuffer, x: number, y: number, flip: boolean): void {
+  for (let yy = 0; yy < art.height; yy += 1) for (let xx = 0; xx < art.width; xx += 1) {
+    const o = (yy * art.width + xx) * 4
+    if (art.data[o + 3] < 128) continue
+    const X = x + (flip ? art.width - 1 - xx : xx), Y = y + yy
+    if (X < 0 || Y < 0 || X >= buffer.width || Y >= buffer.height) continue
+    const t = (Y * buffer.width + X) * 4
+    buffer.data[t] = art.data[o]; buffer.data[t + 1] = art.data[o + 1]; buffer.data[t + 2] = art.data[o + 2]
+  }
+}
+
 export type AttacksTitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; press?: boolean }
 
 /**
  * RANDOM ATTACKS' title, wide (768 × 432) or tall (432 × 768): the traced
- * picture, its stars twinkling and the burgers' jets flickering; over it
- * RANDOM, ATTACKS in the theme's colour, LEVEL, BEST and PRESS START, where
- * the other games have them.
+ * night, its stars twinkling; the game's burgers coming down in a stream,
+ * bobbing on their jets; the rover driving to and fro; the game's cook,
+ * twice the size, blinking now and then; over it RANDOM, ATTACKS in the
+ * theme's colour, LEVEL, BEST and PRESS START, where the other games have
+ * them.
  */
 export function renderAttacksTitle(layout: Layout, accent: string, lettering: AttacksLettering = 'zen', options: AttacksTitleOptions = {}): PixelBuffer {
   const wide = layout === 'landscape'
@@ -191,13 +235,26 @@ export function renderAttacksTitle(layout: Layout, accent: string, lettering: At
   const art = attacksArt(wide ? 'titleWide' : 'titleTall')
   if (art) {
     buffer.data.set(art.data)
-    const motion = ATTACKS_MOTION[wide ? 'wide' : 'tall']
-    motion.stars.forEach(([x, y], i) => { if ((i + frame) % 5 === 0) buffer.set(x, y, mix(buffer.hex(x, y), '#1c1036', 0.7)) })
-    if (frame % 2) for (const [x, y] of motion.flames) buffer.set(x, y, '#ff8a2a')
+    ATTACKS_MOTION[wide ? 'wide' : 'tall'].stars.forEach(([x, y], i) => { if ((i + frame) % 5 === 0) buffer.set(x, y, mix(buffer.hex(x, y), '#1c1036', 0.7)) })
   } else {
     // the picture on its way: the night alone
     for (let y = 0; y < H; y += 1) buffer.rect(0, y, W, 1, mix('#0a0718', '#45224f', y / H))
   }
+  // the stream, far ones first; the big ones rise and fall on their jets, the middle ones by a pixel
+  FLYERS[layout].forEach(([kind, cx, cy, scale], i) => {
+    const sprite = FLYER_SPRITES[kind][(frame + i) % 2]
+    const bob = scale === 2 ? Math.round(Math.sin((frame + i * 1.7) * 0.9) * 2) : kind === 'far' || kind === 'speck' ? 0 : (frame + i) % 4 < 2 ? 0 : 1
+    buffer.blit(sprite, Math.round(cx - (sprite[0].length * scale) / 2), Math.round(cy - (sprite.length * scale) / 2) + bob, BURGER_PALETTE, { scale })
+  })
+  // the rover, to and fro, a jolt now and then
+  const rover = attacksArt('rover'), path = ROVER_PATH[layout]
+  if (rover) {
+    const span = path.to - path.from, t = (frame * 3) % (span * 2), ahead = t < span
+    overlay(buffer, rover, path.from + (ahead ? t : span * 2 - t), path.y - (frame % 4 === 1 ? 1 : 0), !ahead)
+  }
+  // the cook, blinking
+  const [cookX, cookY] = COOK_AT[layout]
+  buffer.blit(COOK_BIG[frame % 9 === 8 ? 1 : 0], cookX, cookY, COOK_PALETTE, { scale: 2 })
   const rx = Math.round(W / 2 - LOGO_WIDTH)
   drawLogo(buffer, rx + 3, m.randomY + 4, INK, 2)
   drawLogo(buffer, rx, m.randomY, mix(accent, CREAM, 0.25), 2)
