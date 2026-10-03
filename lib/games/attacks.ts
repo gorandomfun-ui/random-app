@@ -19,6 +19,7 @@
  */
 
 import { attacksArt } from './attacks-art'
+import { drawCook } from './attacks-cook'
 import { ATTACKS_MOTION } from './attacks-art-data'
 import { type Bite, BONUS_PALETTE, BURGER_BIG, BURGER_BIG_TILT, BURGER_FAR, BURGER_FINE_TILT, BURGER_PALETTE, BURGER_SMALL_TILT, BURGER_SPECK, burgerCentre, BURGERS, COOK, COOK_HEAD, COOK_PALETTE, drawPlates, GOLD_PALETTE, KETCHUP_PALETTE, MUSTARD, platesHeight, SQUIRT, THROW_PALETTE, THROWS } from './attacks-sprites'
 import { ATTACKS_LETTERING, type AttacksLettering } from './attacks-lettering-data'
@@ -246,9 +247,8 @@ export function renderAttacksTitle(layout: Layout, accent: string, lettering: At
     const span = path.to - path.from, t = (frame * 3) % (span * 2), ahead = t < span
     overlay(buffer, rover, path.from + (ahead ? t : span * 2 - t), path.y - (frame % 4 === 1 ? 1 : 0), !ahead)
   }
-  // the cook as the picture has him, in the game's colours
-  const cook = attacksArt('cook')
-  if (cook) { const [cx, cy] = ATTACKS_MOTION.cook[wide ? 'wide' : 'tall']; overlay(buffer, cook, cx, cy, false) }
+  // the game's cook, built at the landscape's fineness, where the picture's stood
+  drawCook(buffer, wide ? 587 : 301, wide ? 237 : 537, frame)
   const rx = Math.round(W / 2 - LOGO_WIDTH)
   drawLogo(buffer, rx + 3, m.randomY + 4, INK, 2)
   drawLogo(buffer, rx, m.randomY, mix(accent, CREAM, 0.25), 2)
