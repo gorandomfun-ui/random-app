@@ -22,7 +22,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { drawDiner } from './attacks-diner'
+import { DINER_FOOT, DINER_GLASS, drawDiner } from './attacks-diner'
 import { decodePng, encodeIndexedPng, encodePng } from './png'
 
 const ROOT = process.cwd()
@@ -255,23 +255,6 @@ function paste(to: Pic, from: Pic, rect: [number, number, number, number], dx: n
   }
 }
 
-/** A cut-out made smaller: each new pixel the average of the old ones it covers that belong to the figure. */
-function shrink(from: Pic, mask: Uint8Array, rect: [number, number, number, number], scale: number): { pic: Pic; mask: Uint8Array } {
-  const [x0, y0, x1, y1] = rect
-  const w = Math.round((x1 - x0) * scale), h = Math.round((y1 - y0) * scale)
-  const pic = blank(w, h), m = new Uint8Array(w * h)
-  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
-    let r = 0, g = 0, b = 0, n = 0, all = 0
-    for (let yy = Math.floor(y0 + y / scale); yy < Math.ceil(y0 + (y + 1) / scale); yy += 1) for (let xx = Math.floor(x0 + x / scale); xx < Math.ceil(x0 + (x + 1) / scale); xx += 1) {
-      all += 1
-      if (!mask[yy * from.w + xx]) continue
-      const c = get(from, xx, yy); r += c[0]; g += c[1]; b += c[2]; n += 1
-    }
-    if (n * 2 >= all && n) { put(pic, x, y, [r / n, g / n, b / n]); m[y * w + x] = 1 }
-  }
-  return { pic, mask: m }
-}
-
 // ---------------------------------------------------------------- the pieces of the reference, on the grid
 
 const base = trace()
@@ -374,8 +357,17 @@ takeOut(roverMask, 366, 100)
 takeOut(cookMask, 370, -140, { edge: 712, width: 55 })
 // the burgers: the game's own fly there now. The three big ones, then every small one of the stream — a patch with
 // lettuce or a jet in it, small, over the sky or the rocks
-for (const m of burgerMasks) inpaint(base, grow(m, W, H, 2), 220)
+/** Where each burger of the picture flew: its middle and its width (ring included), for the game's own to fly there. */
+const flyers: Array<[number, number, number]> = []
+const flyerOf = (xs: number[], ys: number[]) => { const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); flyers.push([Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2), x1 - x0 + 1]) }
+for (const m of burgerMasks) {
+  const xs: number[] = [], ys: number[] = []
+  m.forEach((v, i) => { if (v) { xs.push(i % W); ys.push(Math.floor(i / W)) } })
+  flyerOf(xs, ys)
+  inpaint(base, grow(m, W, H, 2), 220)
+}
 const STREAM: [number, number, number, number] = [430, 150, 768, 272]
+const oldBuilding = drawDiner(() => {}, () => false, 1)
 // the bun, the cheese, the jet; the lettuce; the bright orange of the ring
 const burgerish = ([r, g, b]: RGB) => (r > 170 && g > 112 && b < 150) || (g > r + 8 && g > 70 && b < 110) || (r > 238 && g < 150 && b < 90)
 const stream = new Uint8Array(W * H)
@@ -398,73 +390,19 @@ for (let y0 = STREAM[1]; y0 < STREAM[3]; y0 += 1) for (let x0 = STREAM[0]; x0 < 
   const bw = Math.max(...xs) - Math.min(...xs) + 1, bh = Math.max(...ys) - Math.min(...ys) + 1
   const green = cells.some((i) => { const c = get(base, i % W, Math.floor(i / W)); return c[1] > c[0] + 8 })
   const jet = cells.some((i) => { const c = get(base, i % W, Math.floor(i / W)); return c[0] > 240 && c[1] > 180 })
-  if (cells.length < 5 || bw > 30 || bh > 22 || !(green || jet)) continue
+  // the picture's roof has the ring's orange too: nothing inside the building is a burger
+  const inBuilding = oldBuilding[Math.round((Math.min(...ys) + Math.max(...ys)) / 2) * W + Math.round((Math.min(...xs) + Math.max(...xs)) / 2)] === 1
+  if (cells.length < 5 || bw > 30 || bh > 22 || !(green || jet) || inBuilding) continue
   streamCount += 1
+  flyerOf(xs, ys)
   for (let y = Math.min(...ys) - 3; y <= Math.max(...ys) + 3; y += 1) for (let x = Math.min(...xs) - 9; x <= Math.max(...xs) + 9; x += 1) if (x >= 0 && y >= 0 && x < W && y < H) stream[y * W + x] = 1
 }
 inpaint(base, stream, 220)
 console.log('stream burgers taken out', streamCount)
 
 const signWide = grow(sign, W, H, 3)
-// the fast food drawn again, calmer, on its own shapes; the sign stays in front of it
-drawDiner((x, y, c) => put(base, x, y, c), (x, y) => signWide[y * W + x] === 1)
-const titleWide = quantize(base, palette, holes)
-
-// ---------------------------------------------------------------- the tall title
-
-const tall = blank(432, 768)
-const skyPart = new Uint8Array(W * H)
-for (let y = 0; y < 186; y += 1) for (let x = 336; x < W; x += 1) skyPart[y * W + x] = 1
-// nothing the edge would cut in two: the burgers crossing it, the spire's tip
-for (let y = 96; y < 186; y += 1) for (let x = 336; x < W; x += 1) if (y >= 146 || (x >= 590 && y >= 100)) skyPart[y * W + x] = 0
-paste(tall, base, [336, 0, 768, 186], -336, 0, skyPart)
-const scenePart = new Uint8Array(W * H)
-for (let y = 140; y < H; y += 1) for (let x = 168; x < 600; x += 1) scenePart[y * W + x] = signWide[y * W + x] ? 0 : 1
-// the scene a little higher than the picture's foot, so PRESS START, LEVEL and BEST fall on the ground under it
-paste(tall, base, [168, 140, 600, 432], -168, 302, scenePart)
-paste(tall, base, [168, 398, 600, 432], -168, 336)
-paste(tall, base, [60, 36, 132, 104], -24, 26, moon)
-const tallHoles = new Uint8Array(432 * 768)
-for (let i = 0; i < tallHoles.length; i += 1) tallHoles[i] = tall.known[i] ? 0 : 1
-inpaint(tall, tallHoles, 420)
-// the long stretch drawn again between the sky and the scene, drawn toward the reference's night blue there: settled colour
-// sits between two of the palette's, and the smallest drift would turn a whole stretch violet
-for (let y = 146; y < 442; y += 1) for (let x = 0; x < 432; x += 1) {
-  if (!tallHoles[y * 432 + x]) continue
-  const t = Math.min(1, (y - 146) / 24) * 0.55, c = get(tall, x, y)
-  put(tall, x, y, [c[0] + (21 - c[0]) * t, c[1] + (22 - c[1]) * t, c[2] + (71 - c[2]) * t])
-}
-nebula(tall, tallHoles, 5, -0.35, 330)
-sprinkle(tall, tallHoles, 11, 1 / 220)
-// the sign on the roof's left, smaller (the cook, the rover and the burgers are the game's, drawn over it)
-const smallSign = shrink(base, sign, [24, 110, 190, 366], 0.62)
-paste(tall, smallSign.pic, [0, 0, smallSign.pic.w, smallSign.pic.h], 6, 494 - smallSign.pic.h, smallSign.mask)
-const titleTall = quantize(tall, palette, tallHoles)
-
-// ---------------------------------------------------------------- the play
-
-const isRock = (c: RGB) => !isSky(c)
-/** A stamp of rock: the rock pixels of an area of the reference, the sky around them left out (and, if given, what lies below `floor`). */
-function rockStamp(rect: [number, number, number, number], floor?: (x: number) => number): Uint8Array {
-  const [x0, y0, x1, y1] = rect
-  const mask = new Uint8Array(W * H)
-  for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) if (isRock(get(base, x, y)) && (!floor || y < floor(x))) mask[y * W + x] = 1
-  return mask
-}
-/** A stamp laid down at `x`, `y`, mirrored if asked. */
-function stamp(to: Pic, rect: [number, number, number, number], mask: Uint8Array, x: number, y: number, flip = false): void {
-  const [x0, y0, x1, y1] = rect
-  for (let yy = y0; yy < y1; yy += 1) for (let xx = x0; xx < x1; xx += 1) {
-    if (!mask[yy * W + xx]) continue
-    put(to, x + (flip ? x1 - 1 - xx : xx - x0), y + (yy - y0), get(base, xx, yy))
-  }
-}
-const SPIRE: [number, number, number, number] = [714, 208, 768, 300]
-const SPIRES: [number, number, number, number] = [386, 186, 512, 262]
 /** The far ranges with the haze behind them, a band of the reference taken whole: its top row is the sky's own colour there. */
 const FAR: [number, number, number, number] = [560, 228, 712, 262]
-const spire = rockStamp(SPIRE)
-const spires = rockStamp(SPIRES, (x) => 224 + 0.283 * (x - 380))
 
 /** How far down the reference's sky is clear across the middle: above the restaurant's spire, under the sign's antenna. */
 const CLEAR = 148
@@ -493,6 +431,102 @@ const skyAt = (r: number): RGB => {
   const a = skyRows[i], b = skyRows[Math.min(skyRows.length - 1, i + 1)]
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 }
+// the fast food drawn again, calmer and a little smaller, on its own shapes, standing in the landscape. First the
+// landscape where the picture's building stood: its sky row by row with stars, its far ranges, the rocks and the
+// plain from beside it (the smaller building leaves some of it to be seen)
+const DINER_SCALE = 0.86
+const sourceRGB = new Float32Array(base.rgb)
+const original = (x: number, y: number): RGB => { const o = (y * W + x) * 3; return [sourceRGB[o], sourceRGB[o + 1], sourceRGB[o + 2]] }
+const isSign = (x: number, y: number) => signWide[y * W + x] === 1
+const footprint = grow(drawDiner(() => {}, isSign, 1), W, H, 2)
+const behindSky = new Uint8Array(W * H)
+for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+  if (!footprint[y * W + x] || isSign(x, y) || y > DINER_FOOT.y) continue
+  if (y < FAR[1]) { put(base, x, y, skyAt(y)); behindSky[y * W + x] = 1; holes[y * W + x] = 1 }
+  else if (y < FAR[3]) put(base, x, y, original(FAR[0] + pingpong(x - FAR[0], FAR[2] - FAR[0]), y))
+  else put(base, x, y, original(612 + pingpong(x - 612, 96), y))
+}
+sprinkle(base, behindSky, 23, 1 / 280)
+const dinerMask = drawDiner((x, y, c) => put(base, x, y, c), isSign, DINER_SCALE)
+// standing on the ground: a shadow at its foot, the warm light of its glass on the ground in front of it
+const at = (v: number, s: number) => DINER_FOOT.x + (v - DINER_FOOT.x) * s
+for (let x = Math.floor(at(150, DINER_SCALE)); x < Math.ceil(at(606, DINER_SCALE)); x += 1) for (let dy = 0; dy < 22; dy += 1) {
+  const y = DINER_FOOT.y + dy
+  if (y >= H || dinerMask[y * W + x]) continue
+  const c = get(base, x, y)
+  if (dy < 3) { put(base, x, y, [c[0] * (0.62 + dy * 0.1), c[1] * (0.62 + dy * 0.1), c[2] * (0.66 + dy * 0.1)]); continue }
+  const g0 = at(DINER_GLASS.x0, DINER_SCALE), g1 = at(DINER_GLASS.x1, DINER_SCALE)
+  const along = Math.min(1, Math.max(0, Math.min(x - g0, g1 - x) / 24))
+  const t = 0.3 * (1 - dy / 22) * along
+  if (t <= 0) continue
+  put(base, x, y, [c[0] + (255 - c[0]) * t, c[1] + (176 - c[1]) * t, c[2] + (90 - c[2]) * t])
+  holes[y * W + x] = 1
+}
+// the rocks that stood in front of the picture's building stand in front of this one: dark red-brown heaps,
+// several pixels high in a column (a lone dark pixel was the old building's, not a rock)
+const isRockHeap = (c: RGB) => c[0] > c[1] + 25 && c[2] < 100 && lum(...c) < 100
+for (let x = 150; x < 606; x += 1) {
+  let n = 0
+  for (let y = 356; y < DINER_FOOT.y; y += 1) if (isRockHeap(original(x, y))) n += 1
+  if (n < 4) continue
+  for (let y = 356; y < DINER_FOOT.y; y += 1) if (!isSign(x, y) && isRockHeap(original(x, y))) put(base, x, y, original(x, y))
+}
+const titleWide = quantize(base, palette, holes)
+
+// ---------------------------------------------------------------- the tall title
+
+const tall = blank(432, 768)
+const skyPart = new Uint8Array(W * H)
+for (let y = 0; y < 186; y += 1) for (let x = 336; x < W; x += 1) skyPart[y * W + x] = 1
+// nothing the edge would cut in two: the burgers crossing it, the spire's tip
+for (let y = 96; y < 186; y += 1) for (let x = 336; x < W; x += 1) if (y >= 146 || (x >= 590 && y >= 100)) skyPart[y * W + x] = 0
+paste(tall, base, [336, 0, 768, 186], -336, 0, skyPart)
+const scenePart = new Uint8Array(W * H)
+for (let y = 140; y < H; y += 1) for (let x = 168; x < 600; x += 1) scenePart[y * W + x] = signWide[y * W + x] ? 0 : 1
+// the scene a little higher than the picture's foot, so PRESS START, LEVEL and BEST fall on the ground under it
+paste(tall, base, [168, 140, 600, 432], -168, 302, scenePart)
+paste(tall, base, [168, 398, 600, 432], -168, 336)
+paste(tall, base, [60, 36, 132, 104], -24, 26, moon)
+const tallHoles = new Uint8Array(432 * 768)
+for (let i = 0; i < tallHoles.length; i += 1) tallHoles[i] = tall.known[i] ? 0 : 1
+inpaint(tall, tallHoles, 420)
+// the long stretch drawn again between the sky and the scene, drawn toward the reference's night blue there: settled colour
+// sits between two of the palette's, and the smallest drift would turn a whole stretch violet
+for (let y = 146; y < 442; y += 1) for (let x = 0; x < 432; x += 1) {
+  if (!tallHoles[y * 432 + x]) continue
+  const t = Math.min(1, (y - 146) / 24) * 0.55, c = get(tall, x, y)
+  put(tall, x, y, [c[0] + (21 - c[0]) * t, c[1] + (22 - c[1]) * t, c[2] + (71 - c[2]) * t])
+}
+nebula(tall, tallHoles, 5, -0.35, 330)
+sprinkle(tall, tallHoles, 11, 1 / 220)
+// the sign as it is, sharp, planted on the ground at the left as on the wide title (the cook, the rover and the
+// burgers are the game's, drawn over it)
+paste(tall, base, [20, 110, 192, 368], -20, 302, sign)
+const titleTall = quantize(tall, palette, tallHoles)
+
+// ---------------------------------------------------------------- the play
+
+const isRock = (c: RGB) => !isSky(c)
+/** A stamp of rock: the rock pixels of an area of the reference, the sky around them left out (and, if given, what lies below `floor`). */
+function rockStamp(rect: [number, number, number, number], floor?: (x: number) => number): Uint8Array {
+  const [x0, y0, x1, y1] = rect
+  const mask = new Uint8Array(W * H)
+  for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) if (isRock(get(base, x, y)) && (!floor || y < floor(x))) mask[y * W + x] = 1
+  return mask
+}
+/** A stamp laid down at `x`, `y`, mirrored if asked. */
+function stamp(to: Pic, rect: [number, number, number, number], mask: Uint8Array, x: number, y: number, flip = false): void {
+  const [x0, y0, x1, y1] = rect
+  for (let yy = y0; yy < y1; yy += 1) for (let xx = x0; xx < x1; xx += 1) {
+    if (!mask[yy * W + xx]) continue
+    put(to, x + (flip ? x1 - 1 - xx : xx - x0), y + (yy - y0), get(base, xx, yy))
+  }
+}
+const SPIRE: [number, number, number, number] = [714, 208, 768, 300]
+const SPIRES: [number, number, number, number] = [386, 186, 512, 262]
+const spire = rockStamp(SPIRE)
+const spires = rockStamp(SPIRES, (x) => 224 + 0.283 * (x - 380))
+
 /** The colours the reference's open night is painted in: a sky drawn again is dithered in those, never in the restaurant's greys and greens. */
 const skyPalette = (() => {
   const count = new Map<number, number>()
@@ -590,12 +624,19 @@ const motion = {
   playWide: { stars: starsOf(playWideIdx, 448, playWide.horizon, [[40, 30, 112, 98]], 50) },
   playTall: { stars: starsOf(playTallIdx, 320, playTall.horizon, [[24, 40, 96, 108]], 60) },
   rover: { x: ROVER[0], y: ROVER[1], w: ROVER[2] - ROVER[0], h: ROVER[3] - ROVER[1] },
+  // the burgers, biggest first drawn last; on the tall title where its sky and its scene put them, and the ones
+  // between (over the rocks right of the restaurant) on the way down from one to the other
+  flyers: {
+    wide: [...flyers].sort((a, b) => a[2] - b[2]),
+    tall: [...flyers].sort((a, b) => a[2] - b[2]).flatMap(([x, y, w]): Array<[number, number, number]> => (y < 186 && x >= 336 ? [[x - 336, y, w]] : x >= 168 && x < 600 && y >= 140 ? [[x - 168, y + 302, w]] : x >= 600 ? [[x - 356, y + 200, w]] : [])),
+  },
 }
 writeFileSync(DATA, `/**
  * What moves on RANDOM ATTACKS' traced pictures, found by
  * \`scripts/games/attacks-trace.ts\`: the stars that twinkle, as [x, y] on
- * each picture, and where the rover stood on the wide title (its sprite is
- * \`public/games/attacks/rover.png\`).
+ * each picture; where the rover stood on the wide title (its sprite is
+ * \`public/games/attacks/rover.png\`); where the picture's burgers flew, as
+ * [x, y, width], for the game's own to fly there.
  * Generated — do not edit by hand.
  */
 
