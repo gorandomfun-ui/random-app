@@ -686,7 +686,9 @@ export async function GET(req: NextRequest) {
     .filter(Boolean)
   const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia', 'hn'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
-  const providers = requestedProviders.length ? requestedProviders : ['hn', 'curated', 'cse']
+  // Google's search only when a caller names it: the owner wants sites found without CSE (2 October), and a caller
+  // without providers — the old lines, back by mistake on 1-2 October — spent the free searches of two days.
+  const providers = requestedProviders.length ? requestedProviders : ['hn', 'curated']
 
   const requireOgParam = req.nextUrl.searchParams.get('requireOg')
   const requireOg = requireOgParam == null
