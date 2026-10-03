@@ -9,7 +9,7 @@
  * Proportions and poses are numbers, so a character can walk, blink, eat.
  */
 
-import { PixelBuffer } from './pixels'
+import { mix, PixelBuffer } from './pixels'
 
 /** A stuff's four tones: lit, itself, in shade, in deep shade. */
 export type Ramp = readonly [string, string, string, string]
@@ -25,7 +25,13 @@ export type Shape =
  * false leaves out the dark edge where it lies over another part; `erase`
  * takes away what is under it instead (a bite out of a burger).
  */
-export type Part = { shape: Shape; ramp: Ramp; paint?: (x: number, y: number, tone: number) => string; line?: boolean; erase?: boolean }
+export type Part = {
+  shape: Shape; ramp: Ramp; paint?: (x: number, y: number, tone: number) => string; line?: boolean; erase?: boolean
+  /** A garment round a body: shaded across like a cylinder whose middle is `cx`, `half` wide each side. */
+  round?: { cx: number; half: number }
+  /** A shadow cast on what is already drawn: each pixel under it a tone darker, in its own stuff. */
+  shadow?: boolean
+}
 
 /** A detail drawn over the parts: single pixels in one colour. */
 export type Mark = { color: string; points: ReadonlyArray<readonly [number, number]> }
@@ -70,36 +76,47 @@ function bounds(shape: Shape): [number, number, number, number] {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
 }
 
+/** Light from one side, as a warm lamp beside a character: its colour and the side it comes from. */
+export type Rim = { color: string; from: 'left' | 'right' }
+
 /**
  * A character drawn on `buffer` with its top left at `x`, `y`, inside a box
- * `w` × `h`: the parts from back to front, then the marks, the ink around
- * it; `flip` mirrors it.
+ * `w` × `h`: the parts from back to front (shadows cast as they come), then
+ * the marks, a rim of light if given, the ink around it; `flip` mirrors it.
  */
-export function drawFigure(buffer: PixelBuffer, x: number, y: number, w: number, h: number, parts: readonly Part[], marks: readonly Mark[] = [], flip = false): void {
+export function drawFigure(buffer: PixelBuffer, x: number, y: number, w: number, h: number, parts: readonly Part[], marks: readonly Mark[] = [], flip = false, rim?: Rim): void {
   const id = new Int16Array(w * h).fill(-1)
-  const color: string[] = new Array(w * h)
+  const tone = new Uint8Array(w * h)
+  const markColor: Array<string | undefined> = new Array(w * h)
+  const toneOf = (light: number) => (light > 0.78 ? 0 : light > 0.42 ? 1 : light > 0.1 ? 2 : 3)
   parts.forEach((part, index) => {
     const [x0, y0, x1, y1] = bounds(part.shape)
     for (let py = Math.max(0, Math.floor(y0)); py <= Math.min(h - 1, Math.ceil(y1)); py += 1) for (let px = Math.max(0, Math.floor(x0)); px <= Math.min(w - 1, Math.ceil(x1)); px += 1) {
       const p = probe(part.shape, px + 0.5, py + 0.5)
       if (!p.inside) continue
-      if (part.erase) { id[py * w + px] = -1; continue }
-      let tone: number
-      if (part.shape.kind === 'poly') {
+      const i = py * w + px
+      if (part.erase) { id[i] = -1; continue }
+      if (part.shadow) { if (id[i] >= 0) tone[i] = Math.min(3, tone[i] + 1); continue }
+      let t: number
+      if (part.round) {
+        // round across the body: lit on the light's side, the far side in shade; its top edge catching the light
+        const u = Math.max(-1, Math.min(1, (px + 0.5 - part.round.cx) / part.round.half))
+        const light = u * L[0] + Math.sqrt(1 - u * u) * L[2] - 0.08
+        t = toneOf(light)
+        if (part.shape.kind === 'poly' && !inPolygon(px + 0.5, py - 1, part.shape.points) && t > 0) t -= 1
+      } else if (part.shape.kind === 'poly') {
         // a flat part: lit along its edge toward the light, shaded along the edge away from it
         const shape = part.shape
         const lit = !inPolygon(px - 1, py - 1.5, shape.points)
         const shade = !inPolygon(px + 2.5, py + 2, shape.points)
         const deep = !inPolygon(px + 1.2, py + 1, shape.points)
-        tone = lit ? 0 : deep ? 3 : shade ? 2 : 1
+        t = lit ? 0 : deep ? 3 : shade ? 2 : 1
       } else {
         const nz = Math.sqrt(Math.max(0, 1 - p.nx * p.nx - p.ny * p.ny))
-        const light = p.nx * L[0] + p.ny * L[1] + nz * L[2]
-        tone = light > 0.78 ? 0 : light > 0.42 ? 1 : light > 0.1 ? 2 : 3
+        t = toneOf(p.nx * L[0] + p.ny * L[1] + nz * L[2])
       }
-      const i = py * w + px
       id[i] = index
-      color[i] = part.paint ? part.paint(px, py, tone) : part.ramp[tone]
+      tone[i] = t
     }
   })
   // where a part lies over another of a different stuff, its edge in its own darkest tone
@@ -114,20 +131,36 @@ export function drawFigure(buffer: PixelBuffer, x: number, y: number, w: number,
       if (other >= 0 && other < k && parts[other].ramp !== parts[k].ramp) { edged.push(i); break }
     }
   }
-  for (const i of edged) color[i] = parts[id[i]].ramp[3]
+  for (const i of edged) tone[i] = 3
   for (const mark of marks) for (const [mx, my] of mark.points) {
     const px = Math.round(mx), py = Math.round(my)
     if (px < 0 || py < 0 || px >= w || py >= h) continue
     const i = py * w + px
     if (id[i] < 0) id[i] = parts.length
-    color[i] = mark.color
+    markColor[i] = mark.color
   }
-  // the ink round it all
+  const colorAt = (px: number, py: number): string => {
+    const i = py * w + px, k = id[i]
+    if (markColor[i]) return markColor[i] as string
+    const part = parts[k]
+    return part.paint ? part.paint(px, py, tone[i]) : part.ramp[tone[i]]
+  }
+  const outside = (px: number, py: number) => px < 0 || py < 0 || px >= w || py >= h || id[py * w + px] < 0
+  // the ink round it all; the rim of light on the side it comes from
   for (let py = 0; py < h; py += 1) for (let px = 0; px < w; px += 1) {
     const i = py * w + px
     const tx = x + (flip ? w - 1 - px : px)
-    if (id[i] >= 0) { buffer.set(tx, y + py, color[i]); continue }
-    const touches = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const X = px + dx, Y = py + dy; return X >= 0 && Y >= 0 && X < w && Y < h && id[Y * w + X] >= 0 })
+    if (id[i] >= 0) {
+      let c = colorAt(px, py)
+      if (rim) {
+        const d = rim.from === 'left' ? -1 : 1
+        if (outside(px + d, py)) c = mix(c, rim.color, 0.42)
+        else if (outside(px + 2 * d, py)) c = mix(c, rim.color, 0.18)
+      }
+      buffer.set(tx, y + py, c)
+      continue
+    }
+    const touches = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !outside(px + dx, py + dy))
     if (touches) buffer.set(tx, y + py, INK)
   }
 }
