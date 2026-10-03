@@ -6,15 +6,16 @@
  * shooting star now and then; the building's light falls on the sidewalk;
  * the road is wet and shimmers with the windows, the neon and the lamps;
  * the cars light the road ahead; the characters have a lit edge and a
- * shaded one. Shown on the test page only, next to the titles in play.
+ * shaded one, and EATER's eater stands, swaying, eating a burger; CATCHER's
+ * tree has leaves, its drinks machine, bin and hydrant their details. Shown on the test page only, next to the titles in play.
  */
 
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { drawEaterLogo, eaterLogoSize } from './logos'
-import { dither, mix, PixelBuffer, rgbOf, scale2x, type Palette, type Sprite } from './pixels'
+import { dither, mix, PixelBuffer, rgbOf, rotateSprite, scale2x, type Palette, type Sprite } from './pixels'
 import { car, cloud, drawDiner, drawStore, moon, NIGHTS, railing, rng, signFrame, skyline, sky, stars, street, wisp, type Night } from './scenes'
-import { CAR_SCALE, drawMarks, drawProp, smooth, stage, type Game, type Layout, type Stage, type TitleOptions } from './screens'
-import { BURGER, BURGER_PALETTE, CELL, CRAWL_ARMS, CRAWL_HEAD, CRAWL_LEGS, eaterPalette, MINI_BURGER, MINI_BURGER_PALETTE, torsoLook, tubePiece } from './sprites'
+import { CAR_SCALE, drawMarks, drawProp, smooth, stage, type Game, type Layout, type Prop, type Stage, type TitleOptions } from './screens'
+import { BURGER, BURGER_PALETTE, CELL, CRAWL_HEAD, CRAWL_LEGS, eaterPalette, MINI_BURGER, MINI_BURGER_PALETTE, torsoLook, tubePiece } from './sprites'
 import { CREAM, infoLine, INK, pressStart } from './ui'
 
 const SIZE: Record<Layout, { width: number; height: number }> = { landscape: { width: 768, height: 432 }, portrait: { width: 432, height: 768 } }
@@ -51,16 +52,55 @@ function blitShaded(buffer: PixelBuffer, sprite: Sprite, x: number, y: number, p
   for (const [dx, dy, hex] of pixels) buffer.set(x + dx, y + dy, hex)
 }
 
-/** The eater crawling right, as in play but with volume: legs, `torso` pieces, shoulders and arms, the head at `x`. */
-function crawler(buffer: PixelBuffer, x: number, y: number, accent: string, frame: number, torso: number): void {
+/**
+ * The eater standing, with volume: from the ground up his legs, a striped
+ * piece of his body, his shirt with an arm holding a burger to his mouth,
+ * his head — each piece swaying a little further than the one under it, so
+ * one sees he is made of parts. He bites every other moment.
+ */
+function standingEater(buffer: PixelBuffer, x: number, feet: number, accent: string, frame: number): void {
   const palette = eaterPalette(accent)
   const step = CELL * 2
-  const shirt = tubePiece('right', 'left', { pattern: 'plain', cloth: accent, print: accent })
-  let cx = x - (torso + 2) * step
-  blitShaded(buffer, smooth(CRAWL_LEGS[frame % 2]), cx, y, palette); cx += step
-  for (let i = 0; i < torso; i += 1) { const t = tubePiece('right', 'left', torsoLook(i)); blitShaded(buffer, scale2x(t.sprite), cx, y, t.palette); cx += step }
-  blitShaded(buffer, scale2x(shirt.sprite), cx, y, shirt.palette); blitShaded(buffer, smooth(CRAWL_ARMS[frame % 2]), cx, y, palette); cx += step
-  blitShaded(buffer, smooth(CRAWL_HEAD), cx, y, palette)
+  const sway = Math.sin(frame * 0.7)
+  const at = (k: number) => Math.round(x + sway * k * 2.5)
+  const legs = smooth(rotateSprite(CRAWL_LEGS[frame % 2], 3))
+  const stripes = tubePiece('up', 'down', torsoLook(1))
+  const shirt = tubePiece('up', 'down', { pattern: 'plain', cloth: accent, print: accent })
+  // pieces overlap by a few pixels, as the body's joints do
+  const lap = 4
+  const legsY = feet - step, torsoY = legsY - step + lap, shirtY = torsoY - step + lap, headY = shirtY - step + lap + 2
+  blitShaded(buffer, legs, at(0), legsY, palette)
+  blitShaded(buffer, scale2x(stripes.sprite), at(1), torsoY, stripes.palette)
+  blitShaded(buffer, scale2x(shirt.sprite), at(2), shirtY, shirt.palette)
+  blitShaded(buffer, standingHead(), at(3), headY, palette)
+  // the arm up from the shirt to the mouth: the sleeve, then the hand under the burger
+  const burgerX = at(3) + 30, burgerY = headY + 12
+  const sx = at(2) + 27, sy = shirtY + 8, hx = burgerX + 8, hy = burgerY + 22
+  // the ink round the whole arm first, then the arm over it
+  for (const inner of [false, true]) for (let t = 0; t <= 1; t += 0.04) {
+    const cx = sx + (hx - sx) * t, cy = sy + (hy - sy) * t, r = inner ? 2.2 : 3.2
+    for (let dy = -4; dy <= 4; dy += 1) for (let dx = -4; dx <= 4; dx += 1) {
+      if (Math.hypot(dx, dy) > r) continue
+      buffer.set(Math.round(cx + dx), Math.round(cy + dy), !inner ? '#1c1210' : t > 0.72 ? (dx + dy > 0 ? '#d8946c' : '#f6c49c') : dx + dy > 0 ? mix(accent, '#160a26', 0.3) : accent)
+    }
+  }
+  // the burger in his hand: whole, then with a bite out of it
+  blitShaded(buffer, frame % 2 === 1 ? bitten() : smooth(MINI_BURGER), burgerX, burgerY, MINI_BURGER_PALETTE)
+}
+
+let headUp: Sprite | null = null
+/** The crawler's head without the collar behind it (lying, his shirt; standing, a flag). */
+const standingHead = (): Sprite => (headUp ??= smooth(CRAWL_HEAD.map((row) => row.replace(/c/g, '.'))))
+let bite: Sprite | null = null
+/** The burger with a mouthful gone from its left side, its edge outlined. */
+const bitten = (): Sprite => {
+  if (bite) return bite
+  const rows = smooth(MINI_BURGER).map((row) => row.split(''))
+  const h = rows.length
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < rows[y].length; x += 1) if (Math.hypot(x - 1, y - h / 2) < 7.5) rows[y][x] = '.'
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < rows[y].length; x += 1) if (rows[y][x] !== '.' && rows[y][x] !== 'k' && Math.hypot(x - 1, y - h / 2) < 9) rows[y][x] = 'k'
+  bite = rows.map((row) => row.join(''))
+  return bite
 }
 
 // ---------------------------------------------------------------- depth and light
@@ -157,6 +197,145 @@ function headlights(buffer: PixelBuffer, x: number, y: number, dir: 1 | -1, s: n
   for (let i = 0; i < 16; i += 1) for (let k = -3; k <= 3; k += 1) if (dither(Math.round(tx - dir * i), Math.round(hy + k), 0.5 * (1 - i / 16))) buffer.tint(Math.round(tx - dir * i), Math.round(hy + k), '#ff3a2a', 0.35)
 }
 
+// ---------------------------------------------------------------- the street's furniture, finer
+
+const noise = (x: number, y: number, seed: number) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 1442695041)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296 }
+
+/**
+ * A street tree with real leaves: a forked trunk, a crown of many small
+ * clusters, each lit from above and shaded under, the leaves' grain and
+ * ragged edges, the branches seen in the gaps.
+ */
+function leafyTree(buffer: PixelBuffer, x: number, ground: number, size: number, night: Night, seed: number): void {
+  const next = rng(seed)
+  const [deep, dark, mid, light] = night.leaf
+  for (let dx = -16; dx <= 16; dx += 1) for (let dy = 0; dy < 3; dy += 1) if ((dx / 16) ** 2 + ((dy - 1) / 2) ** 2 <= 1) buffer.tint(x + dx, ground - 1 + dy, '#000000', 0.35)
+  // the trunk and its two branches
+  for (let y = ground - size; y < ground; y += 1) for (let k = -2; k <= 2; k += 1) buffer.set(x + k, y, k === -2 ? '#6a3c20' : k === 2 ? '#2a160c' : noise(x + k, y, 3) < 0.25 ? '#3a2012' : '#4e2c18')
+  const cy = ground - size - size * 0.5, rx = size * 0.95, ry = size * 0.72
+  for (const [tx, ty] of [[x - size * 0.5, cy - size * 0.2], [x + size * 0.45, cy - size * 0.3], [x + size * 0.05, cy - size * 0.55]] as const) {
+    for (let t = 0; t <= 1; t += 0.02) { const bx = Math.round(x + (tx - x) * t), by = Math.round(ground - size + (ty - (ground - size)) * t); buffer.set(bx, by, '#3a2012'); buffer.set(bx + 1, by, '#4e2c18') }
+  }
+  // the crown: clusters of leaves inside an ellipse
+  const clusters: Array<[number, number, number]> = []
+  while (clusters.length < 34) {
+    const px = (next() * 2 - 1) * rx, py = (next() * 2 - 1) * ry
+    if ((px / rx) ** 2 + (py / ry) ** 2 > 1) continue
+    clusters.push([x + px, cy + py, size * (0.16 + next() * 0.12)])
+  }
+  for (let Y = Math.floor(cy - ry - size * 0.3); Y <= cy + ry + size * 0.3; Y += 1) for (let X = Math.floor(x - rx - size * 0.3); X <= x + rx + size * 0.3; X += 1) {
+    let best = -1, bd = Infinity
+    for (let i = 0; i < clusters.length; i += 1) { const [ccx, ccy, r] = clusters[i]; const d = Math.hypot(X + 0.5 - ccx, Y + 0.5 - ccy) / r; if (d < bd) { bd = d; best = i } }
+    // ragged edges: each leaf's pixel in or out by its own grain
+    if (bd > 1 + (noise(X, Y, seed) - 0.5) * 0.5) continue
+    const [ccx, ccy, r] = clusters[best]
+    const lit = -(X + 0.5 - ccx) * 0.5 - (Y + 0.5 - ccy) * 0.9
+    const low = (Y - (cy - ry)) / (ry * 2)
+    let tone = lit > r * 0.45 ? 3 : lit > -r * 0.1 ? 2 : lit > -r * 0.6 ? 1 : 0
+    if (low > 0.7 && tone > 0) tone -= 1
+    const g = noise(X, Y, seed + 1)
+    if (g < 0.12 && tone > 0) tone -= 1
+    else if (g > 0.9 && tone < 3) tone += 1
+    buffer.set(X, Y, [deep, dark, mid, light][tone])
+  }
+}
+
+/**
+ * A drinks machine: a lit panel on top with its name, the glass with three
+ * shelves of cans and bottles, the buttons with their lights, the coin slot,
+ * the tray, the cold glow it throws on the sidewalk.
+ */
+function drinksMachine(buffer: PixelBuffer, x: number, ground: number, accent: string): void {
+  const h = 78, w = 40, top = ground - h
+  for (let dy = 0; dy < 8; dy += 1) for (let dx = -6; dx < w + 6; dx += 1) if (dither(x + dx, ground + dy, 0.5 * (1 - dy / 8))) buffer.tint(x + dx, ground + dy, '#bfe6ff', 0.25)
+  buffer.rect(x - 1, top - 1, w + 2, h + 1, INK)
+  for (let y = top; y < ground; y += 1) for (let X = x; X < x + w; X += 1) {
+    const u = (X - x) / w
+    buffer.set(X, y, u < 0.06 ? mix(accent, '#ffffff', 0.35) : u > 0.92 ? mix(accent, '#000000', 0.35) : u > 0.8 ? mix(accent, '#000000', 0.15) : accent)
+  }
+  // the lit panel and its name
+  buffer.rect(x + 4, top + 4, w - 8, 10, '#fff6dc'); buffer.rect(x + 4, top + 13, w - 8, 1, '#e8c890')
+  for (let k = 0; k < 5; k += 1) buffer.rect(x + 8 + k * 5, top + 7, 3, 4, k % 2 ? '#e8412c' : mix(accent, '#000000', 0.2))
+  // the glass, three shelves of cans and bottles, a gleam across
+  const gx = x + 4, gy = top + 17, gw = 24, gh = 40
+  buffer.rect(gx, gy, gw, gh, '#0e1830')
+  const goods = ['#e8412c', '#ffcc33', '#4a7cff', '#5ad06a', '#ff7ab0', '#f8f5e6']
+  for (let shelf = 0; shelf < 3; shelf += 1) {
+    const sy = gy + 4 + shelf * 13
+    for (let k = 0; k < 4; k += 1) {
+      const c = goods[(k + shelf * 2) % goods.length], cx = gx + 2 + k * 6
+      buffer.rect(cx, sy, 4, 8, c); buffer.rect(cx, sy, 1, 8, mix(c, '#ffffff', 0.45)); buffer.rect(cx + 3, sy, 1, 8, mix(c, '#000000', 0.35)); buffer.rect(cx + 1, sy - 1, 2, 1, '#c8ccd8')
+    }
+    buffer.rect(gx, sy + 9, gw, 2, '#5a6488')
+  }
+  for (let k = 0; k < gh; k += 1) { buffer.tint(gx + 3 + Math.floor(k * 0.4), gy + k, '#ffffff', 0.18); buffer.tint(gx + 4 + Math.floor(k * 0.4), gy + k, '#ffffff', 0.12) }
+  buffer.rect(gx - 1, gy - 1, gw + 2, 1, INK); buffer.rect(gx - 1, gy + gh, gw + 2, 1, mix(accent, '#ffffff', 0.3))
+  // the buttons, their lights, the coin slot
+  for (let k = 0; k < 6; k += 1) { buffer.rect(x + 31, gy + 1 + k * 5, 5, 3, '#f8f5e6'); buffer.rect(x + 31, gy + 3 + k * 5, 5, 1, '#9aa0ae'); buffer.set(x + 30, gy + 2 + k * 5, k === 2 ? '#ff4a4a' : '#7aff9a') }
+  buffer.rect(x + 31, gy + 32, 5, 7, '#2a2e3a'); buffer.rect(x + 33, gy + 33, 1, 5, '#c8ccd8')
+  // the tray
+  buffer.rect(x + 7, ground - 17, 22, 10, INK); buffer.rect(x + 8, ground - 16, 20, 1, '#5a6488'); buffer.rect(x + 8, ground - 10, 20, 2, mix(accent, '#000000', 0.4))
+  buffer.rect(x + 2, ground - 3, w - 4, 3, mix(accent, '#000000', 0.45))
+}
+
+/** A street bin: a barrel of slats rounded by the light, its domed lid with the mouth, a bag's edge showing. */
+function streetBin(buffer: PixelBuffer, x: number, ground: number, color: string): void {
+  const w = 24, h = 30, top = ground - h
+  for (let dx = -2; dx < w + 4; dx += 1) buffer.tint(x + dx, ground, '#000000', 0.35)
+  buffer.rect(x - 1, top, w + 2, h, INK)
+  for (let X = x; X < x + w; X += 1) {
+    const u = (X - x + 0.5) / w, light = Math.cos((u - 0.3) * Math.PI)
+    const slat = (X - x) % 4 === 3
+    for (let y = top + 1; y < ground; y += 1) buffer.set(X, y, slat ? mix(color, '#000000', 0.45) : mix(color, light > 0.6 ? '#ffffff' : '#000000', light > 0.6 ? (light - 0.6) * 0.6 : (0.6 - light) * 0.5))
+  }
+  for (const band of [top + 4, ground - 6]) { buffer.rect(x, band, w, 2, mix(color, '#000000', 0.3)); buffer.rect(x, band, w, 1, mix(color, '#ffffff', 0.25)) }
+  // the lid: a flat dome over the rim, its dark mouth
+  buffer.rect(x - 3, top - 6, w + 6, 7, INK)
+  for (let X = x - 2; X < x + w + 2; X += 1) for (let y = top - 5; y < top; y += 1) {
+    const u = (X - x + 2) / (w + 4)
+    buffer.set(X, y, y === top - 5 ? mix(color, '#ffffff', 0.35) : u < 0.3 ? mix(color, '#ffffff', 0.15) : mix(color, '#000000', 0.15 + u * 0.2))
+  }
+  buffer.rect(x + 6, top - 4, 12, 3, '#0a0a14'); buffer.rect(x + 7, top - 5, 3, 1, '#d8dce6')
+  buffer.rect(x + 9, top - 9, 6, 3, INK); buffer.rect(x + 10, top - 8, 4, 1, mix(color, '#ffffff', 0.3))
+}
+
+/** A fire hydrant: its foot, the barrel rounded by the light, the two side caps on their chains, the dome and its nut, bolts. */
+function fireHydrant(buffer: PixelBuffer, x: number, ground: number): void {
+  const red = '#d0302a', light = '#ff7a5a', dark = '#8a1a14', deep = '#5a0e0a'
+  const shade = (X: number, x0: number, w: number) => { const u = (X - x0 + 0.5) / w; return u < 0.22 ? light : u > 0.75 ? dark : red }
+  for (let dx = -10; dx <= 12; dx += 1) buffer.tint(x + dx, ground, '#000000', 0.35)
+  buffer.rect(x - 9, ground - 6, 18, 6, INK)
+  for (let X = x - 8; X < x + 8; X += 1) for (let y = ground - 5; y < ground; y += 1) buffer.set(X, y, y === ground - 5 ? light : shade(X, x - 8, 16))
+  buffer.rect(x - 7, ground - 31, 14, 26, INK)
+  for (let X = x - 6; X < x + 6; X += 1) for (let y = ground - 30; y < ground - 5; y += 1) buffer.set(X, y, shade(X, x - 6, 12))
+  // the side caps and their chains
+  for (const side of [-1, 1] as const) {
+    const cx = side === -1 ? x - 11 : x + 7
+    buffer.rect(cx - 1, ground - 23, 6, 8, INK)
+    for (let X = cx; X < cx + 4; X += 1) for (let y = ground - 22; y < ground - 16; y += 1) buffer.set(X, y, y === ground - 22 ? light : shade(X, cx, 4))
+    buffer.set(cx + (side === -1 ? 1 : 2), ground - 19, deep)
+    for (let k = 0; k < 4; k += 1) buffer.set(x + side * (3 + k), ground - 14 + (k % 2), '#c8ccd8')
+  }
+  // the band, the dome, the nut, bolts
+  buffer.rect(x - 8, ground - 33, 16, 4, INK); buffer.rect(x - 7, ground - 32, 14, 2, light); buffer.rect(x - 7, ground - 30, 14, 1, dark)
+  for (let y = ground - 41; y < ground - 33; y += 1) for (let X = x - 7; X < x + 7; X += 1) {
+    const d = Math.hypot((X + 0.5 - x) / 7, (y + 0.5 - (ground - 33)) / 8)
+    if (d > 1) continue
+    buffer.set(X, y, d > 0.86 ? INK : X < x - 2 && y < ground - 37 ? light : X > x + 2 ? dark : red)
+  }
+  buffer.rect(x - 2, ground - 45, 5, 5, INK); buffer.rect(x - 1, ground - 44, 3, 3, '#9aa0ae'); buffer.set(x - 1, ground - 44, '#e0e4ee')
+  for (const bx of [x - 5, x - 1, x + 3]) buffer.set(bx, ground - 31, '#f0c8a0')
+}
+
+/** The street's things, finer ones where the proposal has them. */
+function drawPropV2(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, index: number): void {
+  if (prop.kind === 'tree') leafyTree(buffer, prop.x, s.ground, prop.size, night, 3 + index)
+  else if (prop.kind === 'vending') drinksMachine(buffer, prop.x, s.ground, accent)
+  else if (prop.kind === 'bin') streetBin(buffer, prop.x, s.ground, mix(accent, '#000000', 0.45))
+  else if (prop.kind === 'hydrant') fireHydrant(buffer, prop.x, s.ground + 4)
+  else drawProp(buffer, prop, s, night, accent, true, index)
+}
+
 // ---------------------------------------------------------------- the scene
 
 function scene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, frame: number): Stage {
@@ -190,7 +369,7 @@ function scene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, 
     drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), s.markY, accent, lettering, { lit: frame % 13 !== 12, swashLit: frame % 7 !== 6, glow: true })
     drawDiner(buffer, bx, bw, s.ground, accent, frame, true)
   }
-  s.props.forEach((prop, i) => { if (prop.kind !== 'palm') drawProp(buffer, prop, s, night, accent, true, i) })
+  s.props.forEach((prop, i) => { if (prop.kind !== 'palm') drawPropV2(buffer, prop, s, night, accent, i) })
   street(buffer, night, s.ground, 22, s.road.bottom, s.road.line)
   lightSpill(buffer, bx, bx + bw, s.ground, 22, '#ffd27a')
   wetRoad(buffer, s.ground, s.ground + 28, s.road.bottom, frame)
@@ -204,11 +383,7 @@ function scene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, 
   if (game === 'catcher') {
     const up = frame % 4 === 1
     blitShaded(buffer, smooth(BURGER[frame % 2]), door - 16, s.ground - 26 - (up ? 4 : 0), BURGER_PALETTE)
-  } else {
-    const head = door - 60 + (frame % 4) * 3
-    crawler(buffer, head, s.ground - 6, accent, frame, 1)
-    blitShaded(buffer, smooth(MINI_BURGER), head + 40, s.ground + 3, MINI_BURGER_PALETTE)
-  }
+  } else standingEater(buffer, door - 88, s.ground + 18, accent, frame)
   // traffic, each car lighting the road ahead
   const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
   const carLength = Math.round(104 * CAR_SCALE)
