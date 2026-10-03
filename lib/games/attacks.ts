@@ -20,7 +20,7 @@
 
 import { attacksArt } from './attacks-art'
 import { ATTACKS_MOTION } from './attacks-art-data'
-import { type Bite, BONUS_PALETTE, BURGER_BIG, BURGER_BIG_TILT, BURGER_FAR, BURGER_FINE_TILT, BURGER_PALETTE, BURGER_SMALL_TILT, BURGER_SPECK, burgerCentre, BURGERS, COOK, COOK_FINE, COOK_FINE_PALETTE, COOK_HEAD, COOK_PALETTE, drawPlates, GOLD_PALETTE, KETCHUP_PALETTE, MUSTARD, platesHeight, SQUIRT, THROW_PALETTE, THROWS } from './attacks-sprites'
+import { type Bite, BONUS_PALETTE, BURGER_BIG, BURGER_BIG_TILT, BURGER_FAR, BURGER_FINE_TILT, BURGER_PALETTE, BURGER_SMALL_TILT, BURGER_SPECK, burgerCentre, BURGERS, COOK, COOK_HEAD, COOK_PALETTE, drawPlates, GOLD_PALETTE, KETCHUP_PALETTE, MUSTARD, platesHeight, SQUIRT, THROW_PALETTE, THROWS } from './attacks-sprites'
 import { ATTACKS_LETTERING, type AttacksLettering } from './attacks-lettering-data'
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { dim, dither, drawText, drawText7, mix, PixelBuffer, type Sprite, text7Width, textWidth } from './pixels'
@@ -179,30 +179,20 @@ const MARKS: Record<Layout, { randomY: number; markY: number; markWidth: number;
  * only its bright parts for the far ones): the game's own of about that
  * size, diving like them for the near ones, and how big to draw it.
  */
-function flyerSprite(width: number): { frames: readonly Sprite[]; near: boolean; trail: number } {
-  if (width >= 56) return { frames: BURGER_FINE_TILT, near: true, trail: 46 }
-  if (width >= 30) return { frames: BURGER_BIG_TILT, near: false, trail: 26 }
-  if (width >= 14) return { frames: BURGER_SMALL_TILT, near: false, trail: 14 }
-  if (width >= 5) return { frames: BURGER_FAR, near: false, trail: 6 }
-  return { frames: BURGER_SPECK, near: false, trail: 0 }
+function flyerSprite(width: number): { frames: readonly Sprite[]; near: boolean } {
+  if (width >= 56) return { frames: BURGER_FINE_TILT, near: true }
+  if (width >= 30) return { frames: BURGER_BIG_TILT, near: false }
+  if (width >= 14) return { frames: BURGER_SMALL_TILT, near: false }
+  if (width >= 5) return { frames: BURGER_FAR, near: false }
+  return { frames: BURGER_SPECK, near: false }
 }
 /** The picture's burgers, the ones closer than 9 pixels to a bigger one left out (bits of the same burger). */
 const flyersOf = (layout: Layout) => {
   const all = ATTACKS_MOTION.flyers[layout === 'landscape' ? 'wide' : 'tall']
   return all.filter(([x, y, w]) => !all.some(([x2, y2, w2]) => w2 > w && Math.hypot(x2 - x, y2 - y) < 9))
 }
-/** A streak of speed behind a burger, up and to the right whence it came: hot near the burger, cooling, breaking up. */
-function trail(buffer: PixelBuffer, x: number, y: number, length: number, frame: number): void {
-  const len = Math.round(length * (0.85 + 0.15 * Math.sin(frame * 1.3 + x)))
-  for (let i = 0; i < len; i += 1) {
-    const t = i / Math.max(1, len), X = Math.round(x + i * 0.95), Y = Math.round(y - i * 0.31)
-    if (t > 0.6 && (i + frame) % 2 === 0) continue
-    buffer.set(X, Y, t < 0.25 ? '#ffd27a' : t < 0.6 ? '#ff7a2a' : '#c8402a')
-  }
-}
 
-/** Where the cook stands (his top left), and the stretch of ground the rover drives to and fro. */
-const COOK_AT: Record<Layout, readonly [number, number]> = { landscape: [589, 256], portrait: [303, 556] }
+/** The stretch of ground the rover drives to and fro. */
 const ROVER_PATH: Record<Layout, { from: number; to: number; y: number }> = { landscape: { from: 40, to: 232, y: 346 }, portrait: { from: 2, to: 122, y: 642 } }
 
 /** A picture with clear pixels laid over the screen, mirrored if asked. */
@@ -222,7 +212,7 @@ export type AttacksTitleOptions = { level?: number; best?: number; frame?: numbe
 /**
  * RANDOM ATTACKS' title, wide (768 × 432) or tall (432 × 768): the traced
  * night, its stars twinkling; the game's burgers diving where the picture's
- * flew, bobbing on their jets, trailing speed; the rover driving to and fro; the game's cook,
+ * flew, bobbing on their jets; the rover driving to and fro; the game's cook,
  * drawn as fine as the landscape, blinking now and then; over it RANDOM, ATTACKS in the
  * theme's colour, LEVEL, BEST and PRESS START, where the other games have
  * them.
@@ -241,14 +231,13 @@ export function renderAttacksTitle(layout: Layout, accent: string, lettering: At
     // the picture on its way: the night alone
     for (let y = 0; y < H; y += 1) buffer.rect(0, y, W, 1, mix('#0a0718', '#45224f', y / H))
   }
-  // the stream as in the picture, far ones first: the near ones dive, rise and fall on their jets, trailing speed
+  // the stream as in the picture, far ones first: the near ones dive, rise and fall on their jets
   flyersOf(layout).forEach(([cx, cy, width], i) => {
-    const { frames, near, trail: length } = flyerSprite(width)
+    const { frames, near } = flyerSprite(width)
     const sprite = frames[(frame + i) % 2]
     const w = sprite[0].length, h = sprite.length
     const bob = near ? Math.round(Math.sin((frame + i * 1.7) * 0.9) * 2) : width >= 14 && (frame + i) % 4 >= 2 ? 1 : 0
     const x = Math.round(cx - w / 2), y = Math.round(cy - h / 2) + bob
-    if (length) trail(buffer, x + Math.round(w * 0.86), y + Math.round(h * 0.34), length, frame + i)
     buffer.blit(sprite, x, y, BURGER_PALETTE)
   })
   // the rover, to and fro, a jolt now and then
@@ -257,9 +246,9 @@ export function renderAttacksTitle(layout: Layout, accent: string, lettering: At
     const span = path.to - path.from, t = (frame * 3) % (span * 2), ahead = t < span
     overlay(buffer, rover, path.from + (ahead ? t : span * 2 - t), path.y - (frame % 4 === 1 ? 1 : 0), !ahead)
   }
-  // the cook, blinking
-  const [cookX, cookY] = COOK_AT[layout]
-  buffer.blit(COOK_FINE[frame % 9 === 8 ? 1 : 0], cookX, cookY, COOK_FINE_PALETTE)
+  // the cook as the picture has him, in the game's colours
+  const cook = attacksArt('cook')
+  if (cook) { const [cx, cy] = ATTACKS_MOTION.cook[wide ? 'wide' : 'tall']; overlay(buffer, cook, cx, cy, false) }
   const rx = Math.round(W / 2 - LOGO_WIDTH)
   drawLogo(buffer, rx + 3, m.randomY + 4, INK, 2)
   drawLogo(buffer, rx, m.randomY, mix(accent, CREAM, 0.25), 2)

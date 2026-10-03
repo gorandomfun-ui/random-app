@@ -23,6 +23,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { DINER_FOOT, DINER_GLASS, drawDiner } from './attacks-diner'
+import { drawSignTop } from './attacks-sign'
 import { decodePng, encodeIndexedPng, encodePng } from './png'
 
 const ROOT = process.cwd()
@@ -352,6 +353,93 @@ function takeOut(mask: Uint8Array, groundFrom: number, from: number, rocks?: { e
   }
   inpaint(base, hole, 220)
 }
+// the cook as the picture has him, brought to the game's colours: each pixel to the nearest of the game cook's
+// tones, the lone specks folded into their neighbours, an ink line round him (index 0 clear)
+const COOK_COLORS: RGB[] = [
+  [26, 12, 10],
+  [255, 255, 255], [250, 246, 236], [206, 198, 186], [168, 158, 182],
+  [255, 116, 104], [226, 48, 56], [150, 28, 36], [94, 12, 20],
+  [255, 220, 192], [246, 195, 155], [212, 142, 102], [168, 92, 60], [255, 140, 120],
+  [178, 106, 52], [134, 72, 32], [88, 44, 18], [58, 26, 8],
+  [112, 214, 194], [42, 170, 154], [22, 112, 104], [12, 74, 68],
+  [78, 98, 156], [52, 68, 120], [30, 40, 74], [20, 26, 52],
+  [255, 242, 168], [242, 196, 62], [196, 146, 24],
+  [224, 228, 238], [154, 160, 174], [90, 94, 106],
+]
+const xsC: number[] = [], ysC: number[] = []
+cookMask.forEach((v, i) => { if (v) { xsC.push(i % W); ysC.push(Math.floor(i / W)) } })
+const COOK_BOX: [number, number, number, number] = [Math.min(...xsC) - 1, Math.min(...ysC) - 1, Math.max(...xsC) + 2, Math.max(...ysC) + 2]
+const cookW = COOK_BOX[2] - COOK_BOX[0], cookH = COOK_BOX[3] - COOK_BOX[1]
+const cookSprite = new Uint8Array(cookW * cookH)
+const nearestCook = ([r, g, b]: RGB) => { let best = 0, bd = Infinity; COOK_COLORS.forEach((q, j) => { const d = 2 * (r - q[0]) ** 2 + 4 * (g - q[1]) ** 2 + 3 * (b - q[2]) ** 2; if (d < bd) { bd = d; best = j } }); return best }
+const cookEdge = (() => { const out = new Uint8Array(W * H); for (let i = 0; i < out.length; i += 1) out[i] = cookMask[i] ? 0 : 1; return grow(out, W, H, 1) })()
+for (let y = 0; y < cookH; y += 1) for (let x = 0; x < cookW; x += 1) {
+  const i = (y + COOK_BOX[1]) * W + x + COOK_BOX[0]
+  if (!cookMask[i]) continue
+  const c = get(base, x + COOK_BOX[0], y + COOK_BOX[1])
+  // only at his edge, where the cut may have taken a little ground with him: Mars' orange, the rocks' dark red
+  if (cookEdge[i] && ((c[0] > 150 && c[1] > 60 && c[1] < 125 && c[2] < 95 && c[0] - c[1] > 80) || (c[0] > 60 && c[0] < 140 && c[1] < 50 && c[2] < 50 && c[0] > c[1] * 2))) continue
+  cookSprite[y * cookW + x] = 1 + nearestCook(c)
+}
+// only the cook himself: his pieces (the spatula's blade may stand apart from its handle), the specks of ground
+// left out; his own dark edge taken off, so the ink line put round him is one pixel all the way
+{
+  for (let pass = 0; pass < 1; pass += 1) {
+    const before = new Uint8Array(cookSprite)
+    for (let y = 0; y < cookH; y += 1) for (let x = 0; x < cookW; x += 1) {
+      // ink only (index 1: the first of his colours)
+      if (before[y * cookW + x] !== 1) continue
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const X = x + dx, Y = y + dy; return X < 0 || Y < 0 || X >= cookW || Y >= cookH || !before[Y * cookW + X] })) cookSprite[y * cookW + x] = 0
+    }
+  }
+  const seen = new Uint8Array(cookSprite.length)
+  const pieces: number[][] = []
+  for (let i = 0; i < cookSprite.length; i += 1) {
+    if (!cookSprite[i] || seen[i]) continue
+    const piece: number[] = [], queue = [i]
+    seen[i] = 1
+    while (queue.length) {
+      const j = queue.pop()!, x = j % cookW, y = Math.floor(j / cookW)
+      piece.push(j)
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy, k = Y * cookW + X; if (X >= 0 && Y >= 0 && X < cookW && Y < cookH && cookSprite[k] && !seen[k]) { seen[k] = 1; queue.push(k) } }
+    }
+    pieces.push(piece)
+  }
+  const keep = new Uint8Array(cookSprite.length)
+  for (const piece of pieces) if (piece.length >= 30) for (const j of piece) keep[j] = 1
+  for (let i = 0; i < cookSprite.length; i += 1) if (!keep[i]) cookSprite[i] = 0
+}
+{
+  const before = new Uint8Array(cookSprite)
+  for (let y = 1; y < cookH - 1; y += 1) for (let x = 1; x < cookW - 1; x += 1) {
+    const k = before[y * cookW + x]
+    if (!k) continue
+    const around = [before[y * cookW + x - 1], before[y * cookW + x + 1], before[(y - 1) * cookW + x], before[(y + 1) * cookW + x]]
+    if (around.includes(k)) continue
+    const count = new Map<number, number>()
+    for (const a of around) if (a) count.set(a, (count.get(a) ?? 0) + 1)
+    const best = [...count].sort((p, q) => q[1] - p[1])[0]
+    if (best && best[1] >= 2) cookSprite[y * cookW + x] = best[0]
+  }
+  // the arm up with the spatula, in the picture lost in the red shadow of Mars: the forearm, the fist and the
+  // handle drawn again
+  // (his colours: 7 red, 8 its shade, 11 skin, 12 its shade — one more than their place in COOK_COLORS)
+  for (let t = 0; t <= 1; t += 0.04) {
+    const cx = 88 + (95 - 88) * t, cy = 47 + (40 - 47) * t
+    for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) if (dx * dx + dy * dy <= 4.5) cookSprite[Math.round(cy + dy) * cookW + Math.round(cx + dx)] = dx + dy > 1 ? 12 : 11
+  }
+  for (let y = 33; y <= 41; y += 1) for (let x = 94; x <= 101; x += 1) if (((x - 97.5) / 3.6) ** 2 + ((y - 37.5) / 4.2) ** 2 <= 1) cookSprite[y * cookW + x] = x + y > 136 ? 12 : 11
+  for (let t = 0; t <= 1; t += 0.05) {
+    const x = Math.round(101 + (98 - 101) * t), y = Math.round(26 + (34 - 26) * t)
+    cookSprite[y * cookW + x] = 7; cookSprite[y * cookW + x + 1] = 8
+  }
+  cookSprite[36 * cookW + 96] = 1; cookSprite[38 * cookW + 96] = 1
+  const solid = new Uint8Array(cookSprite)
+  for (let y = 0; y < cookH; y += 1) for (let x = 0; x < cookW; x += 1) {
+    if (solid[y * cookW + x]) continue
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const X = x + dx, Y = y + dy; return X >= 0 && Y >= 0 && X < cookW && Y < cookH && solid[Y * cookW + X] })) cookSprite[y * cookW + x] = 1
+  }
+}
 takeOut(roverMask, 366, 100)
 // the cook: the game's own, drawn larger by the game, stands there now
 takeOut(cookMask, 370, -140, { edge: 712, width: 55 })
@@ -435,16 +523,30 @@ const skyAt = (r: number): RGB => {
 // landscape where the picture's building stood: its sky row by row with stars, its far ranges, the rocks and the
 // plain from beside it (the smaller building leaves some of it to be seen)
 const DINER_SCALE = 0.86
+// the sign's top, drawn again sharp where it had melted into the night
+drawSignTop((x, y, c) => put(base, x, y, c), skyAt)
 const sourceRGB = new Float32Array(base.rgb)
 const original = (x: number, y: number): RGB => { const o = (y * W + x) * 3; return [sourceRGB[o], sourceRGB[o + 1], sourceRGB[o + 2]] }
 const isSign = (x: number, y: number) => signWide[y * W + x] === 1
 const footprint = grow(drawDiner(() => {}, isSign, 1), W, H, 2)
 const behindSky = new Uint8Array(W * H)
-for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
-  if (!footprint[y * W + x] || isSign(x, y) || y > DINER_FOOT.y) continue
-  if (y < FAR[1]) { put(base, x, y, skyAt(y)); behindSky[y * W + x] = 1; holes[y * W + x] = 1 }
-  else if (y < FAR[3]) put(base, x, y, original(FAR[0] + pingpong(x - FAR[0], FAR[2] - FAR[0]), y))
-  else put(base, x, y, original(612 + pingpong(x - 612, 96), y))
+// a column whose rock the building cut carries its rock on down — the face above it, folded back and darkening
+// toward the foot — to where the plain begins; a column of open sky goes on as sky, the far ranges, the plain
+const ROCK_FOOT = 300
+for (let x = 0; x < W; x += 1) {
+  let top = -1
+  for (let y = 0; y <= DINER_FOOT.y; y += 1) if (footprint[y * W + x] && !isSign(x, y)) { top = y; break }
+  if (top < 1) continue
+  const rock = !isSky(original(x, top - 2)) && !isSky(original(x, top - 6))
+  for (let y = top; y <= DINER_FOOT.y; y += 1) {
+    if (!footprint[y * W + x] || isSign(x, y)) continue
+    if (rock && y < ROCK_FOOT) {
+      const c = original(x, top - 1 - pingpong(y - top, 16)), t = 1 - 0.28 * ((y - top) / Math.max(1, ROCK_FOOT - top))
+      put(base, x, y, [c[0] * t, c[1] * t, c[2] * (t + 0.04)])
+    } else if (!rock && y < FAR[1]) { put(base, x, y, skyAt(y)); behindSky[y * W + x] = 1; holes[y * W + x] = 1 }
+    else if (!rock && y < FAR[3]) put(base, x, y, original(FAR[0] + pingpong(x - FAR[0], FAR[2] - FAR[0]), y))
+    else put(base, x, y, original(612 + pingpong(x - 612, 96), y))
+  }
 }
 sprinkle(base, behindSky, 23, 1 / 280)
 const dinerMask = drawDiner((x, y, c) => put(base, x, y, c), isSign, DINER_SCALE)
@@ -624,6 +726,8 @@ const motion = {
   playWide: { stars: starsOf(playWideIdx, 448, playWide.horizon, [[40, 30, 112, 98]], 50) },
   playTall: { stars: starsOf(playTallIdx, 320, playTall.horizon, [[24, 40, 96, 108]], 60) },
   rover: { x: ROVER[0], y: ROVER[1], w: ROVER[2] - ROVER[0], h: ROVER[3] - ROVER[1] },
+  // the cook where he stands on the wide title, and on the tall one
+  cook: { wide: [COOK_BOX[0], COOK_BOX[1]], tall: [COOK_BOX[0] - 286, COOK_BOX[1] + 300] },
   // the burgers, biggest first drawn last; on the tall title where its sky and its scene put them, and the ones
   // between (over the rocks right of the restaurant) on the way down from one to the other
   flyers: {
@@ -647,6 +751,7 @@ console.log('stars', motion.wide.stars.length, motion.tall.stars.length)
 mkdirSync(OUT, { recursive: true })
 writeFileSync(path.join(OUT, 'title-wide.png'), encodeIndexedPng(W, H, titleWide, palette))
 writeFileSync(path.join(OUT, 'title-tall.png'), encodeIndexedPng(432, 768, titleTall, palette))
+writeFileSync(path.join(OUT, 'cook.png'), encodeIndexedPng(cookW, cookH, cookSprite, [[0, 0, 0], ...COOK_COLORS], true))
 writeFileSync(path.join(OUT, 'rover.png'), encodeIndexedPng(ROVER[2] - ROVER[0], ROVER[3] - ROVER[1], roverSprite, [[0, 0, 0], ...palette], true))
 writeFileSync(path.join(OUT, 'play-wide.png'), encodeIndexedPng(448, 320, playWideIdx, palette))
 writeFileSync(path.join(OUT, 'play-tall.png'), encodeIndexedPng(320, 448, playTallIdx, palette))
@@ -665,6 +770,10 @@ if (PREVIEW) {
   const pal0: RGB[] = [[255, 0, 255], ...palette]
   const rgba = new Uint8ClampedArray(roverSprite.length * 4)
   roverSprite.forEach((k, i) => { rgba[i * 4] = pal0[k][0]; rgba[i * 4 + 1] = pal0[k][1]; rgba[i * 4 + 2] = pal0[k][2]; rgba[i * 4 + 3] = 255 })
+  const cookRgba = new Uint8ClampedArray(cookSprite.length * 4)
+  const cookPal: RGB[] = [[178, 72, 44], ...COOK_COLORS]
+  cookSprite.forEach((k, i) => { cookRgba[i * 4] = cookPal[k][0]; cookRgba[i * 4 + 1] = cookPal[k][1]; cookRgba[i * 4 + 2] = cookPal[k][2]; cookRgba[i * 4 + 3] = 255 })
+  writeFileSync(path.join(PREVIEW, 'trace-cook.png'), encodePng(cookW, cookH, cookRgba, 4))
   writeFileSync(path.join(PREVIEW, 'trace-rover.png'), encodePng(ROVER[2] - ROVER[0], ROVER[3] - ROVER[1], rgba, 4))
 }
 console.log('palette', palette.length, 'colours')
