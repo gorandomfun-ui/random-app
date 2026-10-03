@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { renderAttacksTitle } from '@/lib/games/attacks'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -25,9 +26,14 @@ const LABELS: Record<string, string> = {
   'game-over': 'Game over',
   winner: 'Winner — nuit',
   'winner-jour': 'Winner — jour',
+  'attacks-zen': 'Titre — Zen Dots, en gras ×2',
+  'attacks-crisis': 'Titre — Climate Crisis',
 }
 
-function Screen({ spec, room }: { spec: ShotSpec; room: number }) {
+/** A picture to show: its size and how to draw it at a moment. */
+type Shot = Pick<ShotSpec, 'name' | 'width' | 'height' | 'draw'>
+
+function Screen({ spec, room }: { spec: Shot; room: number }) {
   const ref = useRef<HTMLCanvasElement | null>(null)
   const [visible, setVisible] = useState(false)
   useEffect(() => {
@@ -72,6 +78,16 @@ export default function MockGallery() {
   }, [])
   const specs = useMemo(() => shotSpecs(accent), [accent])
   const group = (game: Game, layout: Layout): ShotSpec[] => specs.filter((spec) => spec.game === game && spec.layout === layout)
+  // RANDOM ATTACKS, the third game: its title sketched in two letterings, to choose from
+  const attacks = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
+    layout,
+    shots: (['zen', 'crisis'] as const).map((lettering): Shot => ({
+      name: `attacks-${lettering}`,
+      width: layout === 'landscape' ? 768 : 432,
+      height: layout === 'landscape' ? 432 : 768,
+      draw: (frame) => renderAttacksTitle(layout, accent, lettering, { frame }),
+    })),
+  })), [accent])
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
       <h1 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 22, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Jeux — visuels de base</h1>
@@ -83,6 +99,20 @@ export default function MockGallery() {
           <button key={color} onClick={() => setAccent(color)} aria-label={color} style={{ width: 32, height: 32, borderRadius: 999, background: color, border: color === accent ? '3px solid #F8F5E6' : '3px solid transparent' }} />
         ))}
       </div>
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks — maquette du titre</h2>
+        <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
+          Le chef devant son resto sur Mars, les burgers qui arrivent. ATTACKS en perspective, en deux typographies à comparer, dans la couleur choisie ci-dessus.
+        </p>
+        {attacks.map(({ layout, shots }) => (
+          <div key={layout} style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6, marginBottom: 8 }}>{layout === 'landscape' ? 'Paysage' : 'Portrait'}</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+              {shots.map((shot) => <Screen key={`${shot.name}-${layout}-${accent}`} spec={shot} room={layout === 'landscape' ? room : Math.min(room, 700)} />)}
+            </div>
+          </div>
+        ))}
+      </section>
       <SoundBench accent={accent} />
       {(['catcher', 'eater'] as Game[]).map((game) => (
         <section key={game} style={{ marginBottom: 40 }}>

@@ -94,6 +94,8 @@ const ERA_INDEX = 'v3_era_type_rand'
 const LINE_INDEX = 'v3_line_type_rand'
 const REGISTER_INDEX = 'v3_register_type_rand'
 const ANY_INDEX = 'type_rand_lookup'
+/** The videos the little AI has read (lib/v3/ai/fingerprint.ts): a partial index on the fingerprint's presence, so the taste card reads six hundred of them at once however few they are in the stock. */
+const VEC_INDEX = 'vec_type_rand'
 /** Rows read for a card: more when the card is rare in a universe (long, retro, the world). */
 const ROWS = 48
 const SIFTED_ROWS = 96
@@ -209,6 +211,8 @@ async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng,
 const seekUniverse = (db: Db, universe: Universe, random: Rng, limit: number) =>
   seek(db, { 'v3.universe': universe, type: 'video', ...SERVABLE }, UNIVERSE_INDEX, random, limit)
 const seekAny = (db: Db, random: Rng, limit: number) => seek(db, { type: 'video', ...SERVABLE }, ANY_INDEX, random, limit)
+/** A shuffled window of the videos that carry a fingerprint, wherever they are in the stock. */
+const seekPrinted = (db: Db, random: Rng, limit: number) => seek(db, { [VEC]: { $exists: true }, type: 'video', ...SERVABLE }, VEC_INDEX, random, limit)
 const seekDig = (db: Db, base: DigBase, random: Rng) =>
   seek(db, { 'v3.line': 'dig', type: 'video', ...SERVABLE }, LINE_INDEX, random, SIFTED_ROWS).then((rows) => rows.filter((row) => digBase(row) === base))
 
@@ -374,12 +378,13 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
         const liked = start && start.source.startsWith('like') ? choose(start.rows as CatalogueRow[], slot, context) : null
         if (liked) return { item: liked, from: start!.source }
       }
-      // The likes have fingerprints: anywhere in the stock, the dozen nearest to a centre of the curator's taste, then the session's rules among them —
-      // never a lookalike of what this device refused with "pas ça".
+      // The likes have fingerprints: among the videos the little AI has read — wherever they are in the stock, six hundred at a time through their own
+      // index (the owner, 3 October: the list is a coverage that grows, not a limit; the shape of the likes over the whole stock answers while it is thin) —
+      // the dozen nearest to a centre of the curator's taste, then the session's rules among them; never a lookalike of what this device refused with "pas ça".
       const taste = await likedCentres(db, now).catch(() => [] as Float32Array[])
       if (taste.length) {
         const refused = await dislikedPrints(db, context.disliked).catch(() => [] as Uint8Array[])
-        const rows = (await seekAny(db, random, SIFTED_ROWS)).filter((row) => { const bits = fromRow(row[VEC]); return bits && !nearAny(bits, refused, DISLIKE_ALIKE) })
+        const rows = (await seekPrinted(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[])).filter((row) => { const bits = fromRow(row[VEC]); return bits && !nearAny(bits, refused, DISLIKE_ALIKE) })
         if (rows.length >= TASTE_MEASURED_MIN) {
           const scored = rows.map((row) => ({ row, score: Math.max(...taste.map((centre) => towards(fromRow(row[VEC])!, centre))) })).sort((left, right) => right.score - left.score)
           const picked = choose(scored.slice(0, TASTE_NEAREST).map((entry) => entry.row), slot, context)
