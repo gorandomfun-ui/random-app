@@ -248,7 +248,7 @@ export function renderAttacksTitle(layout: Layout, accent: string, lettering: At
     overlay(buffer, rover, path.from + (ahead ? t : span * 2 - t), path.y - (frame % 4 === 1 ? 1 : 0), !ahead)
   }
   // the game's cook, built at the landscape's fineness, where the picture's stood
-  drawCook(buffer, wide ? 587 : 301, wide ? 237 : 537, frame)
+  drawCook(buffer, wide ? 587 : 301, wide ? 231 : 531, frame)
   const rx = Math.round(W / 2 - LOGO_WIDTH)
   drawLogo(buffer, rx + 3, m.randomY + 4, INK, 2)
   drawLogo(buffer, rx, m.randomY, mix(accent, CREAM, 0.25), 2)
