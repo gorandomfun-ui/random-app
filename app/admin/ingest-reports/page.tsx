@@ -83,7 +83,7 @@ type DigReport = {
   subjects: Array<{ id: string; label: string; fr?: string; base: string; fame: string; passes: number; ingested: number; lastRunAt?: string; sample: string[] }>
   runs: Array<{ startedAt: string; status: string; note?: string; errors: number }>
 }
-type KeptCardsRow = { day: string; cards: Record<string, { n: number; seconds: number; dislikes?: number }> }
+type KeptCardsRow = { day: string; cards: Record<string, { n: number; seconds: number }> }
 type CardCensusRow = { day: string; at: string; total: number; cards: Record<string, number>; refused: { ai: number; still: number } }
 const CARD_LABEL: Record<string, string> = { buzz: 'Buzz', long: 'Long', retro: 'Rétro', taste: 'Goût', world: 'Monde', short: 'Court', deep: 'Confidentiel', weird: 'Weird / fun', 'bonus:music': 'Bonus musique', 'bonus:gaming': 'Bonus jeu vidéo', 'bonus:humor-memes': 'Bonus drôle' }
 const DIG_BASE: Record<string, string> = { people: 'Personnes', keywords: 'Mots-clés', trends: 'Tendances', likes: 'Likes', snowball: 'Boule de neige' }
@@ -296,7 +296,7 @@ export default function IngestReportsPage() {
                   {keptCards.map((row) => (
                     <tr key={row.day}>
                       <td style={S.td}>{formatDay(row.day)}</td>
-                      {[...Object.keys(CARD_LABEL), 'chance', 'joker'].map((card) => { const cell = row.cards[card]; return <td key={card} style={S.td}>{cell && cell.n > 0 ? `${Math.round(cell.seconds / cell.n)} s (${cell.n}${cell.dislikes ? `, ${cell.dislikes} pas ça` : ''})` : '—'}</td> })}
+                      {[...Object.keys(CARD_LABEL), 'chance', 'joker'].map((card) => { const cell = row.cards[card]; return <td key={card} style={S.td}>{cell && cell.n > 0 ? `${Math.round(cell.seconds / cell.n)} s (${cell.n})` : '—'}</td> })}
                     </tr>
                   ))}
                 </tbody>

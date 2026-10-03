@@ -47,8 +47,8 @@ export type Candidate<T = unknown> = {
   title?: string
   /** How many times the site has served this content (lib/discovery/served.ts). */
   served?: number
-  /** How often it was kept on screen, for how many seconds in all, and how often refused with "pas ça" (lib/discovery/kept.ts). */
-  kept?: { n: number; seconds: number; dislikes?: number }
+  /** How often it was kept on screen and for how many seconds in all (lib/discovery/kept.ts). */
+  kept?: { n: number; seconds: number }
   /** The universe the labels filed it under (lib/v3/types.ts): the wheel keeps two in a row apart. */
   universe?: string
   /** The language of the title as a detector reads it (lib/discovery/language.ts): three in ten of one language at most. */
