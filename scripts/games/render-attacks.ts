@@ -5,12 +5,22 @@
  *   node --import tsx scripts/games/render-attacks.ts <out dir> [accent] [frame]
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { renderAttacksPlay, renderAttacksTitle } from '@/lib/games/attacks'
+import { provideAttacksArt } from '@/lib/games/attacks-art'
+import { PixelBuffer } from '@/lib/games/pixels'
 import { TEXT_COLORS } from '@/lib/theme'
-import { encodePng } from './png'
+import { decodePng, encodePng } from './png'
+
+// the traced pictures, as the browser would have them
+for (const [name, file] of [['titleWide', 'title-wide.png'], ['titleTall', 'title-tall.png'], ['playWide', 'play-wide.png'], ['playTall', 'play-tall.png']] as const) {
+  const png = decodePng(readFileSync(join(process.cwd(), 'public/games/attacks', file)))
+  const buffer = new PixelBuffer(png.width, png.height)
+  buffer.data.set(png.rgba)
+  provideAttacksArt(name, buffer)
+}
 
 const out = process.argv[2] ?? 'docs/reports/jeux-v1/attacks'
 const accent = process.argv[3] ?? TEXT_COLORS[0]
