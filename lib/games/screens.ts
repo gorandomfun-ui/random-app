@@ -72,10 +72,10 @@ const standing = (): Sprite => (stood ??= scale2x(scale2x(WINNER_STAND)))
 
 /** The title screens' sprites: the play sprites, smoothed to the finer grid. */
 const fine = new Map<Sprite, Sprite>()
-const smooth = (sprite: Sprite): Sprite => { let out = fine.get(sprite); if (!out) { out = scale2x(sprite); fine.set(sprite, out) } return out }
+export const smooth = (sprite: Sprite): Sprite => { let out = fine.get(sprite); if (!out) { out = scale2x(sprite); fine.set(sprite, out) } return out }
 
 /** Something standing on the street, left or right of the building. */
-type Prop =
+export type Prop =
   | { kind: 'lamp'; x: number; h: number; left?: boolean }
   | { kind: 'tree'; x: number; size: number }
   | { kind: 'palm'; x: number; h: number; lean: number }
@@ -86,7 +86,7 @@ type Prop =
   | { kind: 'hedge'; x: number; w: number }
 
 /** Where things stand on a street scene, for a game and a layout. Left and right are never mirrored. */
-type Stage = {
+export type Stage = {
   ground: number; building: [number, number]; horizon: number
   randomY: number; markY: number; markSize: number
   road: { bottom: number; line: number; lanes: Array<[number, number]> }
@@ -96,9 +96,9 @@ type Stage = {
 }
 
 /** How much bigger than the play sprites the cars are drawn: a car is about twice as long as the door is high. */
-const CAR_SCALE = 2.1
+export const CAR_SCALE = 2.1
 
-function stage(game: Game, layout: Layout): Stage {
+export function stage(game: Game, layout: Layout): Stage {
   if (layout === 'landscape') {
     return game === 'catcher'
       ? {
@@ -140,7 +140,7 @@ function stage(game: Game, layout: Layout): Stage {
 /** `hero`: the title's (the burger at the door, the eater crawling in), the winner's (the burger hopping, the eater standing with his cup) or none; `winner` puts WINNER on the building instead of the game's name. */
 type SceneOptions = { frame: number; lit: boolean; hero: 'title' | 'winner' | false; building: boolean; day?: boolean; winner?: boolean }
 
-function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, lit: boolean, index: number): void {
+export function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, lit: boolean, index: number): void {
   if (prop.kind === 'lamp') lamp(buffer, prop.x, s.ground, prop.h, prop.left, !night.day)
   else if (prop.kind === 'tree') tree(buffer, prop.x, s.ground, prop.size, night, 3 + index)
   else if (prop.kind === 'palm') palm(buffer, prop.x, s.ground - 10, prop.h, prop.lean, night)
@@ -249,7 +249,7 @@ function drawCrawler(buffer: PixelBuffer, x: number, y: number, accent: string, 
 }
 
 /** CATCHER's letters in volume over the store — or WINNER in the same letters (RANDOM is drawn with the street, EATER's neon hangs on its diner). */
-function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, frame: number, winner = false): void {
+export function drawMarks(buffer: PixelBuffer, game: Game, s: Stage, accent: string, frame: number, winner = false): void {
   const W = buffer.width
   if (game === 'catcher') {
     const word = winner ? 'WINNER' : undefined
