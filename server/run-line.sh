@@ -87,6 +87,7 @@ case "${LINE}" in
       00|01) vec_minutes=45 ;;
       *) vec_minutes=40 ;;
     esac
+    echo "[$(date -u +%FT%TZ)] ${LINE}: budget ${RANDOM_VEC_MINUTES:-${vec_minutes}} min"
     RANDOM_VEC_MINUTES="${RANDOM_VEC_MINUTES:-${vec_minutes}}" RANDOM_VEC_MAX="${RANDOM_VEC_MAX:-20000}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock node --import tsx scripts/v3/vec-direct.ts
     ;;
   drift)
@@ -107,7 +108,10 @@ case "${LINE}" in
     ;;
   web-search)
     # New small sites, once a day, from the sources that cost nothing — Hacker News, the curated lists, Neocities, Wikipedia — never Google (the owner, 2 October).
-    run curl -sS -m 280 -H "x-admin-ingest-key: ${ADMIN_INGEST_KEY:?}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,wikipedia&per=10&pages=3"
+    # The key goes through a private file, never through the journal (the run's echo logged it on 3 October).
+    header_file="/home/random/.admin-header"
+    (umask 077; printf 'x-admin-ingest-key: %s\n' "${ADMIN_INGEST_KEY:?}" > "${header_file}")
+    run curl -sS -m 280 -H "@${header_file}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,wikipedia&per=10&pages=3"
     ;;
   web-embed)
     # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
