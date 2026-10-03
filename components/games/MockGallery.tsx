@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { renderAttacksTitle } from '@/lib/games/attacks'
+import { renderAttacksPlay, renderAttacksTitle } from '@/lib/games/attacks'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -26,8 +26,9 @@ const LABELS: Record<string, string> = {
   'game-over': 'Game over',
   winner: 'Winner — nuit',
   'winner-jour': 'Winner — jour',
-  'attacks-zen': 'Titre — Zen Dots, en gras ×2',
+  'attacks-zen': 'Titre — Zen Dots, en gras ×1,5 (angles carrés)',
   'attacks-crisis': 'Titre — Climate Crisis',
+  'attacks-jeu': 'En jeu',
 }
 
 /** A picture to show: its size and how to draw it at a moment. */
@@ -81,12 +82,15 @@ export default function MockGallery() {
   // RANDOM ATTACKS, the third game: its title sketched in two letterings, to choose from
   const attacks = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
     layout,
-    shots: (['zen', 'crisis'] as const).map((lettering): Shot => ({
-      name: `attacks-${lettering}`,
-      width: layout === 'landscape' ? 768 : 432,
-      height: layout === 'landscape' ? 432 : 768,
-      draw: (frame) => renderAttacksTitle(layout, accent, lettering, { frame }),
-    })),
+    shots: [
+      ...(['zen', 'crisis'] as const).map((lettering): Shot => ({
+        name: `attacks-${lettering}`,
+        width: layout === 'landscape' ? 768 : 432,
+        height: layout === 'landscape' ? 432 : 768,
+        draw: (frame) => renderAttacksTitle(layout, accent, lettering, { frame }),
+      })),
+      { name: 'attacks-jeu', width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 472, draw: (frame: number) => renderAttacksPlay(layout, accent, { frame }) },
+    ],
   })), [accent])
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
@@ -102,7 +106,7 @@ export default function MockGallery() {
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks — maquette du titre</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Le chef devant son resto sur Mars, les burgers qui arrivent. ATTACKS en perspective, en deux typographies à comparer, dans la couleur choisie ci-dessus.
+          Le chef à côté de son fast-food sur Mars, l&apos;enseigne RANDOM BURGER, l&apos;essaim de burgers qui arrive. ATTACKS en perspective, en deux typographies à comparer, puis un moment de jeu ; dans la couleur choisie ci-dessus.
         </p>
         {attacks.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
