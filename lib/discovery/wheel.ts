@@ -308,7 +308,8 @@ async function likedCentres(db: Db, now: number): Promise<Float32Array[]> {
 }
 /** How many of the rows read must carry a fingerprint for the taste to be measured on them. */
 const TASTE_MEASURED_MIN = 8
-const TASTE_NEAREST = 12
+/** The nearest rows the session's rules then choose among: enough that a device's memories and the universe window leave some (twelve left none in replays, 3 October). */
+const TASTE_NEAREST = 40
 /** Two fingerprints this alike are the same kind of thing: a lookalike of what the device refused stays off the taste card. */
 export const DISLIKE_ALIKE = 0.7
 /** The fingerprints of what the device refused, when they have one. */
