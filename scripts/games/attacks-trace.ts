@@ -94,7 +94,7 @@ function quantize(p: Pic, palette: RGB[], smooth?: Uint8Array, only?: number[]):
   return out
 }
 
-/** Pixels marked in `hole` drawn again from their neighbours: interpolated along the row, then let settle. */
+/** Pixels marked in `hole` drawn again from their neighbours: interpolated along the row (down the column where the whole row is missing), then let settle. */
 function inpaint(p: Pic, hole: Uint8Array, rounds = 260): void {
   for (let y = 0; y < p.h; y += 1) {
     for (let x = 0; x < p.w; x += 1) {
@@ -105,7 +105,15 @@ function inpaint(p: Pic, hole: Uint8Array, rounds = 260): void {
       const cl = l >= 0 ? get(p, l, y) : null, cr = r < p.w ? get(p, r, y) : null
       let c: RGB
       if (cl && cr) { const t = (x - l) / (r - l); c = [cl[0] + (cr[0] - cl[0]) * t, cl[1] + (cr[1] - cl[1]) * t, cl[2] + (cr[2] - cl[2]) * t] }
-      else c = cl ?? cr ?? [20, 16, 40]
+      else if (cl || cr) c = (cl ?? cr) as RGB
+      else {
+        // a whole row missing: down the column instead, from the row just drawn above toward what is known below
+        let d = y + 1
+        while (d < p.h && hole[d * p.w + x]) d += 1
+        const cu = y > 0 ? get(p, x, y - 1) : null, cd = d < p.h ? get(p, x, d) : null
+        if (cu && cd) { const t = 1 / (d - y + 1); c = [cu[0] + (cd[0] - cu[0]) * t, cu[1] + (cd[1] - cu[1]) * t, cu[2] + (cd[2] - cu[2]) * t] }
+        else c = cu ?? cd ?? [20, 16, 40]
+      }
       const o = (y * p.w + x) * 3; p.rgb[o] = c[0]; p.rgb[o + 1] = c[1]; p.rgb[o + 2] = c[2]
     }
   }
@@ -343,7 +351,7 @@ const tall = blank(432, 768)
 const skyPart = new Uint8Array(W * H)
 for (let y = 0; y < 186; y += 1) for (let x = 336; x < W; x += 1) skyPart[y * W + x] = 1
 // nothing the edge would cut in two: the burgers crossing it, the spire's tip
-for (let y = 96; y < 186; y += 1) for (let x = 336; x < W; x += 1) if (y >= 146 || (x >= 590 && x < 692 && y >= 98) || (x >= 692 && y >= 120)) skyPart[y * W + x] = 0
+for (let y = 96; y < 186; y += 1) for (let x = 336; x < W; x += 1) if (y >= 146 || (x >= 590 && y >= 100)) skyPart[y * W + x] = 0
 paste(tall, base, [336, 0, 768, 186], -336, 0, skyPart)
 const scenePart = new Uint8Array(W * H)
 const signWide = grow(sign, W, H, 3)
@@ -358,6 +366,13 @@ paste(tall, base, [60, 36, 132, 104], -24, 26, moon)
 const tallHoles = new Uint8Array(432 * 768)
 for (let i = 0; i < tallHoles.length; i += 1) tallHoles[i] = tall.known[i] ? 0 : 1
 inpaint(tall, tallHoles, 420)
+// the long stretch drawn again between the sky and the scene, drawn toward the reference's night blue there: settled colour
+// sits between two of the palette's, and the smallest drift would turn a whole stretch violet
+for (let y = 146; y < 442; y += 1) for (let x = 0; x < 432; x += 1) {
+  if (!tallHoles[y * 432 + x]) continue
+  const t = Math.min(1, (y - 146) / 24) * 0.55, c = get(tall, x, y)
+  put(tall, x, y, [c[0] + (21 - c[0]) * t, c[1] + (22 - c[1]) * t, c[2] + (71 - c[2]) * t])
+}
 nebula(tall, tallHoles, 5, -0.35, 330)
 sprinkle(tall, tallHoles, 11, 1 / 220)
 // the sign on the roof's left, smaller; the cook at the right; the rover at the bottom left
