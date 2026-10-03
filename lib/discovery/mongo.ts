@@ -1,5 +1,5 @@
 import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
-import { candidateFromRow, type CatalogueRow } from './catalog'
+import { candidateFromRow, DRAW_PROJECTION, type CatalogueRow } from './catalog'
 import { shuffled, type Rng } from './random'
 import { pickPool, type Intent, type Session } from './pool'
 import { composeWave, composeAvailableWave, relation, type WavePlan } from './waves'
@@ -30,10 +30,10 @@ export function base(type: Format, lang: string, now: number): Filter<Document> 
 }
 async function ringSample(db: Db, match: Filter<Document>, limit: number, point: number, maxTimeMS = 700): Promise<CatalogueRow[]> {
   const collection = db.collection('items')
-  const first = await collection.find({ $and: [match, { rand: { $gte: point } }] }, { timeoutMS: maxTimeMS + 150 })
+  const first = await collection.find({ $and: [match, { rand: { $gte: point } }] }, { timeoutMS: maxTimeMS + 150, projection: DRAW_PROJECTION })
     .sort({ rand: 1 }).limit(limit).maxTimeMS(maxTimeMS).toArray()
   if (first.length === limit) return first
-  const second = await collection.find({ $and: [match, { rand: { $lt: point } }] }, { timeoutMS: maxTimeMS + 150 })
+  const second = await collection.find({ $and: [match, { rand: { $lt: point } }] }, { timeoutMS: maxTimeMS + 150, projection: DRAW_PROJECTION })
     .sort({ rand: 1 }).limit(limit - first.length).maxTimeMS(maxTimeMS).toArray()
   return [...first, ...second]
 }
@@ -43,7 +43,7 @@ const THEMED_CANDIDATES = 24
 async function themedSample(db: Db, match: Filter<Document>, theme: Universe, trailersSeen: number, point: number): Promise<CatalogueRow[]> {
   const collection = db.collection('items')
   const inTheme = { $and: [match, { 'v3.universe': theme }] }
-  const read = (range: Filter<Document>, limit: number) => collection.find({ $and: [inTheme, range] }, { hint: 'v3_universe_type_rand', timeoutMS: 850 })
+  const read = (range: Filter<Document>, limit: number) => collection.find({ $and: [inTheme, range] }, { hint: 'v3_universe_type_rand', timeoutMS: 850, projection: DRAW_PROJECTION })
     .sort({ rand: 1 }).limit(limit).maxTimeMS(700).toArray()
   const rows = await read({ rand: { $gte: point } }, THEMED_ROWS)
   if (rows.length < THEMED_ROWS) rows.push(...(await read({ rand: { $lt: point } }, THEMED_ROWS - rows.length)))

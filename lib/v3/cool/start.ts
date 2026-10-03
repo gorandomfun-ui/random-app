@@ -19,6 +19,7 @@ import { isCoolCandidate, type LabelableRow } from './registers'
 import { SERVABLE } from './servable'
 import { byLiveliness } from './themes'
 import type { CoolRegister, Popularity, Universe } from '../types'
+import { DRAW_PROJECTION } from '../../discovery/catalog'
 
 export { SERVABLE } from './servable'
 
@@ -88,7 +89,7 @@ async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng,
   const items = db.collection('items')
   const point = random()
   const read = (range: Filter<Document>, take: number) =>
-    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: take, hint, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: take, hint, maxTimeMS: QUERY_BUDGET_MS, projection: DRAW_PROJECTION }).toArray()
   const rows = await read({ rand: { $gte: point } }, limit)
   if (rows.length < limit) rows.push(...(await read({ rand: { $lt: point } }, limit - rows.length)))
   return shuffle(rows.filter((row) => !excluded.has(String(row._id))), random)
@@ -121,7 +122,7 @@ async function drawLike(db: Db, pool: LikePool, type: StartType, random: Rng, ex
   const filter = { 'v3.channelKey': zone.key, type, ...SERVABLE }
   const total = zone.video + zone.likeIds.length
   const skip = total > CHANNEL_ROWS ? Math.floor(random() * (total - CHANNEL_ROWS + 1)) : 0
-  const rows = await items.find(filter, { skip, limit: CHANNEL_ROWS, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const rows = await items.find(filter, { skip, limit: CHANNEL_ROWS, maxTimeMS: QUERY_BUDGET_MS, projection: DRAW_PROJECTION }).toArray()
   const usable = shuffle(rows.filter((row) => !excluded.has(String(row._id))), random)
   return usable.length ? { rows: usable.slice(0, ROWS), kind: 'like-channel' } : null
 }

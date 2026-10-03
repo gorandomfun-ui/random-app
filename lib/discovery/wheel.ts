@@ -32,7 +32,7 @@
 
 import { ObjectId, type Db, type Document, type Filter } from 'mongodb'
 
-import { candidateFromRow, type CatalogueRow } from './catalog'
+import { candidateFromRow, DRAW_PROJECTION, type CatalogueRow } from './catalog'
 import { echoesSession, exposureOf } from './diversity'
 import { selectFresh } from './freshPool'
 import type { FreshSeen } from './freshSeen'
@@ -203,7 +203,7 @@ async function seek(db: Db, filter: Filter<Document>, hint: string, random: Rng,
   const items = db.collection('items')
   const point = random()
   const read = (range: Filter<Document>, take: number) =>
-    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: take, hint, maxTimeMS: QUERY_BUDGET_MS }).toArray()
+    items.find({ ...filter, ...range }, { sort: { rand: 1 }, limit: take, hint, maxTimeMS: QUERY_BUDGET_MS, projection: DRAW_PROJECTION }).toArray()
   const rows = await read({ rand: { $gte: point } }, limit)
   if (rows.length < limit) rows.push(...(await read({ rand: { $lt: point } }, limit - rows.length)))
   return rows as CatalogueRow[]

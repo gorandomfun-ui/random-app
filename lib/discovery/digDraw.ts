@@ -13,7 +13,7 @@
 
 import type { Db, Document } from 'mongodb'
 
-import { candidateFromRow, type CatalogueRow } from './catalog'
+import { candidateFromRow, DRAW_PROJECTION, type CatalogueRow } from './catalog'
 import { echoesSession } from './diversity'
 import { isTrailerTitle, themeAt, trailersSeenIn } from '../v3/cool/themes'
 import type { Universe } from '../v3/types'
@@ -115,7 +115,7 @@ async function seekRows(db: Db, subjectId: string, level: DigLevel | null, rando
   const items = db.collection('items')
   const point = random()
   const filter: Document = { 'v3.subjects.id': subjectId, type: 'video', ...(level ? { 'v3.dig.level': level } : {}) }
-  const read = async (range: Document) => items.find({ ...filter, rand: range } as Document, { sort: { rand: 1 }, limit: ROWS_PER_SEEK, hint: 'v3_subject_type_rand', maxTimeMS: QUERY_BUDGET_MS }).toArray()
+  const read = async (range: Document) => items.find({ ...filter, rand: range } as Document, { sort: { rand: 1 }, limit: ROWS_PER_SEEK, hint: 'v3_subject_type_rand', maxTimeMS: QUERY_BUDGET_MS, projection: DRAW_PROJECTION }).toArray()
   let rows = await read({ $gte: point })
   if (rows.length < 3) rows = [...rows, ...await read({ $lt: point })]
   return rows as CatalogueRow[]

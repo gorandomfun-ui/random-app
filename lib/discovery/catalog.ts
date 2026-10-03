@@ -67,6 +67,16 @@ export function profileFromRow(row: CatalogueRow): Profile {
   // Bounded read-time refresh only: no writes, no provider calls, no catalogue-wide migration.
   return buildProfile(source)
 }
+/**
+ * What a draw's reads leave out: fields no card, rule or page item ever reads
+ * (the ingestion's own notes, the wave's retrieval profile, the old token
+ * lists). A row weighs 2.9 KB; these are a seventh of it, on every seek of
+ * every draw — the function's time and the small database's work (the owner,
+ * 2 October: Vercel's free-tier warning). The description stays: the AI
+ * marks and the media windows read it.
+ */
+export const DRAW_PROJECTION: Record<string, 0> = { apiTags: 0, obsoleteVideoScanId: 0, discoveryQueries: 0, contextQueries: 0, pageImages: 0, waveProfile: 0, createdAt: 0, updatedAt: 0, 'discoveryProfile.tokens': 0 }
+
 export function candidateFromRow<T>(row: CatalogueRow, payload: T, now: number): Candidate<T> {
   const provider = text(row.provider) ?? 'unknown'
   const status = row.sourceStatus as { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string } | undefined

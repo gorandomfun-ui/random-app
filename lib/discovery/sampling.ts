@@ -1,5 +1,5 @@
 import type { Db, Document, Filter } from 'mongodb'
-import type { CatalogueRow } from './catalog'
+import { DRAW_PROJECTION, type CatalogueRow } from './catalog'
 import type { Rng } from './random'
 
 export type PoolRetrievalReport = { broadCandidates: number; focusedCandidates: number;
@@ -33,6 +33,6 @@ export async function sampleCatalogue(db: Db, match: Filter<Document>): Promise<
 }
 
 export async function sampleWindow(db: Db, match: Filter<Document>, window: Filter<Document>, limit: number): Promise<CatalogueRow[]> {
-  return db.collection('items').find({ $and: [match, window] }, { timeoutMS: 750 })
+  return db.collection('items').find({ $and: [match, window] }, { timeoutMS: 750, projection: DRAW_PROJECTION })
     .sort({ rand: 1 }).limit(limit).maxTimeMS(550).toArray()
 }

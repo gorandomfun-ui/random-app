@@ -14,7 +14,7 @@
 
 import { ObjectId, type Db, type Document } from 'mongodb'
 
-import { candidateFromRow, type CatalogueRow } from './catalog'
+import { candidateFromRow, DRAW_PROJECTION, type CatalogueRow } from './catalog'
 import { isSeen, seenBytes, type FreshSeen } from './freshSeen'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
 import type { Candidate } from './types'
@@ -103,7 +103,7 @@ export async function selectFresh<T>(db: Db, ticket: Intent, state: Session, see
   if (theme && list.universes.filter((universe) => universe === theme).length < FRESH_THEME_MIN) return null
   const picks = unseenSample(list.ids.length, list.day, seen, SAMPLE, random, theme ? (index) => list.universes[index] === theme : undefined)
   if (!picks.length) return null
-  const fetched = await db.collection('items').find({ _id: { $in: picks.map((index) => new ObjectId(list.ids[index])) } } as Document, { maxTimeMS: 2000 }).toArray()
+  const fetched = await db.collection('items').find({ _id: { $in: picks.map((index) => new ObjectId(list.ids[index])) } } as Document, { maxTimeMS: 2000, projection: DRAW_PROJECTION }).toArray()
   // The database answers in its own order: shuffled first, so the liveliness order ties at random and not alike on every device.
   const rows = theme ? byLiveliness(shuffledRows(fetched, random), trailersSeenIn(state.exposures)) : fetched
   const byId = new Map(rows.map((row) => [String(row._id), row]))
