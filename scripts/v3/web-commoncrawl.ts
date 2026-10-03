@@ -87,7 +87,8 @@ async function main(): Promise<void> {
     for (const country of countries) {
       if (rows.length >= MAX_SITES || hitDeadline) break
       const seen = new Map<string, RootPage>()
-      const own = await blocksOf(file, country)
+      // A big country has thousands of blocks and a run reads a hundred: in a random order, so each visit of the country reads other hosts than the last.
+      const own = (await blocksOf(file, country)).map((block) => ({ block, order: Math.random() })).sort((a, b) => a.order - b.order).map(({ block }) => block)
       blocks += own.length
       visited.push(country)
       for (const block of own) {
