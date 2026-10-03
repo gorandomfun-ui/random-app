@@ -6,16 +6,17 @@
  * shooting star now and then; the building's light falls on the sidewalk;
  * the road is wet and shimmers with the windows, the neon and the lamps;
  * the cars light the road ahead; the characters have a lit edge and a
- * shaded one, and EATER's eater stands, swaying, eating a burger; CATCHER's
+ * shaded one, and EATER's eater walks along his diner eating a burger; CATCHER's
  * tree has leaves, its drinks machine, bin and hydrant their details. Shown on the test page only, next to the titles in play.
  */
 
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { drawEaterLogo, eaterLogoSize } from './logos'
-import { dither, mix, PixelBuffer, rgbOf, rotateSprite, scale2x, type Palette, type Sprite } from './pixels'
+import { dither, mix, PixelBuffer, rgbOf, type Palette, type Sprite } from './pixels'
 import { car, cloud, drawDiner, drawStore, moon, NIGHTS, railing, rng, signFrame, skyline, sky, stars, street, wisp, type Night } from './scenes'
 import { CAR_SCALE, drawMarks, drawProp, smooth, stage, type Game, type Layout, type Prop, type Stage, type TitleOptions } from './screens'
-import { BURGER, BURGER_PALETTE, CELL, CRAWL_HEAD, CRAWL_LEGS, eaterPalette, MINI_BURGER, MINI_BURGER_PALETTE, torsoLook, tubePiece } from './sprites'
+import { drawWalkingEater, WALKER_SIZE } from './eater-walk'
+import { BURGER, BURGER_PALETTE } from './sprites'
 import { CREAM, infoLine, INK, pressStart } from './ui'
 
 const SIZE: Record<Layout, { width: number; height: number }> = { landscape: { width: 768, height: 432 }, portrait: { width: 432, height: 768 } }
@@ -50,57 +51,6 @@ function blitShaded(buffer: PixelBuffer, sprite: Sprite, x: number, y: number, p
     byPalette.set(key, pixels)
   }
   for (const [dx, dy, hex] of pixels) buffer.set(x + dx, y + dy, hex)
-}
-
-/**
- * The eater standing, with volume: from the ground up his legs, a striped
- * piece of his body, his shirt with an arm holding a burger to his mouth,
- * his head — each piece swaying a little further than the one under it, so
- * one sees he is made of parts. He bites every other moment.
- */
-function standingEater(buffer: PixelBuffer, x: number, feet: number, accent: string, frame: number): void {
-  const palette = eaterPalette(accent)
-  const step = CELL * 2
-  const sway = Math.sin(frame * 0.7)
-  const at = (k: number) => Math.round(x + sway * k * 2.5)
-  const legs = smooth(rotateSprite(CRAWL_LEGS[frame % 2], 3))
-  const stripes = tubePiece('up', 'down', torsoLook(1))
-  const shirt = tubePiece('up', 'down', { pattern: 'plain', cloth: accent, print: accent })
-  // pieces overlap by a few pixels, as the body's joints do
-  const lap = 4
-  const legsY = feet - step, torsoY = legsY - step + lap, shirtY = torsoY - step + lap, headY = shirtY - step + lap + 2
-  blitShaded(buffer, legs, at(0), legsY, palette)
-  blitShaded(buffer, scale2x(stripes.sprite), at(1), torsoY, stripes.palette)
-  blitShaded(buffer, scale2x(shirt.sprite), at(2), shirtY, shirt.palette)
-  blitShaded(buffer, standingHead(), at(3), headY, palette)
-  // the arm up from the shirt to the mouth: the sleeve, then the hand under the burger
-  const burgerX = at(3) + 30, burgerY = headY + 12
-  const sx = at(2) + 27, sy = shirtY + 8, hx = burgerX + 8, hy = burgerY + 22
-  // the ink round the whole arm first, then the arm over it
-  for (const inner of [false, true]) for (let t = 0; t <= 1; t += 0.04) {
-    const cx = sx + (hx - sx) * t, cy = sy + (hy - sy) * t, r = inner ? 2.2 : 3.2
-    for (let dy = -4; dy <= 4; dy += 1) for (let dx = -4; dx <= 4; dx += 1) {
-      if (Math.hypot(dx, dy) > r) continue
-      buffer.set(Math.round(cx + dx), Math.round(cy + dy), !inner ? '#1c1210' : t > 0.72 ? (dx + dy > 0 ? '#d8946c' : '#f6c49c') : dx + dy > 0 ? mix(accent, '#160a26', 0.3) : accent)
-    }
-  }
-  // the burger in his hand: whole, then with a bite out of it
-  blitShaded(buffer, frame % 2 === 1 ? bitten() : smooth(MINI_BURGER), burgerX, burgerY, MINI_BURGER_PALETTE)
-}
-
-let headUp: Sprite | null = null
-/** The crawler's head without the collar behind it (lying, his shirt; standing, a flag). */
-const standingHead = (): Sprite => (headUp ??= smooth(CRAWL_HEAD.map((row) => row.replace(/c/g, '.'))))
-let bite: Sprite | null = null
-/** The burger with a mouthful gone from its left side, its edge outlined. */
-const bitten = (): Sprite => {
-  if (bite) return bite
-  const rows = smooth(MINI_BURGER).map((row) => row.split(''))
-  const h = rows.length
-  for (let y = 0; y < h; y += 1) for (let x = 0; x < rows[y].length; x += 1) if (Math.hypot(x - 1, y - h / 2) < 7.5) rows[y][x] = '.'
-  for (let y = 0; y < h; y += 1) for (let x = 0; x < rows[y].length; x += 1) if (rows[y][x] !== '.' && rows[y][x] !== 'k' && Math.hypot(x - 1, y - h / 2) < 9) rows[y][x] = 'k'
-  bite = rows.map((row) => row.join(''))
-  return bite
 }
 
 // ---------------------------------------------------------------- depth and light
@@ -383,7 +333,11 @@ function scene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, 
   if (game === 'catcher') {
     const up = frame % 4 === 1
     blitShaded(buffer, smooth(BURGER[frame % 2]), door - 16, s.ground - 26 - (up ? 4 : 0), BURGER_PALETTE)
-  } else standingEater(buffer, door - 88, s.ground + 18, accent, frame)
+  } else {
+    // the eater walking along the diner's front and back, eating his burger
+    const from = bx + 6, span = Math.max(40, bw - WALKER_SIZE.width - 12), t = (frame * 3) % (span * 2), ahead = t < span
+    drawWalkingEater(buffer, from + (ahead ? t : span * 2 - t), s.ground + 20 - WALKER_SIZE.height, accent, frame, ahead ? 1 : -1)
+  }
   // traffic, each car lighting the road ahead
   const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
   const carLength = Math.round(104 * CAR_SCALE)
