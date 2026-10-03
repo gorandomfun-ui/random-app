@@ -26,8 +26,7 @@ const LABELS: Record<string, string> = {
   'game-over': 'Game over',
   winner: 'Winner — nuit',
   'winner-jour': 'Winner — jour',
-  'attacks-zen': 'Titre — Zen Dots, en gras ×1,5 (angles carrés)',
-  'attacks-crisis': 'Titre — Climate Crisis',
+  'attacks-titre': 'Titre',
   'attacks-jeu': 'En jeu',
 }
 
@@ -83,14 +82,9 @@ export default function MockGallery() {
   const attacks = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
     layout,
     shots: [
-      ...(['zen', 'crisis'] as const).map((lettering): Shot => ({
-        name: `attacks-${lettering}`,
-        width: layout === 'landscape' ? 768 : 432,
-        height: layout === 'landscape' ? 432 : 768,
-        draw: (frame) => renderAttacksTitle(layout, accent, lettering, { frame }),
-      })),
+      { name: 'attacks-titre', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksTitle(layout, accent, 'zen', { frame }) },
       { name: 'attacks-jeu', width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 472, draw: (frame: number) => renderAttacksPlay(layout, accent, { frame }) },
-    ],
+    ] as Shot[],
   })), [accent])
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
@@ -106,7 +100,7 @@ export default function MockGallery() {
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks — maquette du titre</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Le chef à côté de son fast-food sur Mars, l&apos;enseigne RANDOM BURGER, l&apos;essaim de burgers qui arrive. ATTACKS en perspective, en deux typographies à comparer, puis un moment de jeu ; dans la couleur choisie ci-dessus.
+          Le fast-food RANDOM BURGER sur Mars, le cuisinier, les burgers qui arrivent sur leurs réacteurs ; ATTACKS en Zen Dots. Puis un moment de jeu. Dans la couleur choisie ci-dessus.
         </p>
         {attacks.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
