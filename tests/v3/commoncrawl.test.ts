@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { gzipSync } from 'node:zlib'
 
-import { blocksFor, countryOfDay, parseClusterLine, recordsOf, rootPagesIn } from '../../lib/v3/web/commoncrawl'
+import { blocksFor, countriesFrom, countryOfDay, parseClusterLine, recordsOf, rootPagesIn } from '../../lib/v3/web/commoncrawl'
 
 const cluster = [
   'cl,zzz)/ 20260909041627\tcdx-00022.gz\t0\t100\t1',
@@ -53,4 +53,7 @@ test('the countries take turns, one a day', () => {
   assert.equal(countryOfDay(countries, day(1)), 'sn')
   assert.equal(countryOfDay(countries, day(5)), 'pe')
   assert.equal(countryOfDay(countries, day(6)), 'cm')
+  assert.deepEqual(countriesFrom(countries, 2, day(5)), ['pe', 'cm'])
+  assert.deepEqual(countriesFrom(countries, 9, day(1)), ['sn', 'pe', 'cm'])
+  assert.deepEqual(countriesFrom([], 3, day(1)), [])
 })

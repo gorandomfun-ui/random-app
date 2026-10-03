@@ -115,8 +115,15 @@ export function rootPagesIn(lines: Iterable<string>, tld: string, seen: Map<stri
 
 /** The country of the day: the places take turns, one a day, round and round. */
 export function countryOfDay(countries: readonly string[], now = new Date()): string {
+  return countriesFrom(countries, 1, now)[0]
+}
+
+/** The day's country and the next few in the round: a small country gives a hundred front pages, so a run goes on to the next until it has its fill. */
+export function countriesFrom(countries: readonly string[], count: number, now = new Date()): string[] {
+  if (!countries.length) return []
   const day = Math.floor(now.getTime() / 86_400_000)
-  return countries[((day % countries.length) + countries.length) % countries.length]
+  const start = ((day % countries.length) + countries.length) % countries.length
+  return Array.from({ length: Math.min(count, countries.length) }, (_, index) => countries[(start + index) % countries.length])
 }
 
 /** One block, fetched by range and read. */
