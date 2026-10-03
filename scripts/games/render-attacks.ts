@@ -15,7 +15,7 @@ import { TEXT_COLORS } from '@/lib/theme'
 import { decodePng, encodePng } from './png'
 
 // the traced pictures, as the browser would have them
-for (const [name, file] of [['titleWide', 'title-wide.png'], ['titleTall', 'title-tall.png'], ['playWide', 'play-wide.png'], ['playTall', 'play-tall.png']] as const) {
+for (const [name, file] of [['titleWide', 'title-wide.png'], ['titleTall', 'title-tall.png'], ['playWide', 'play-wide.png'], ['playTall', 'play-tall.png'], ['rover', 'rover.png']] as const) {
   const png = decodePng(readFileSync(join(process.cwd(), 'public/games/attacks', file)))
   const buffer = new PixelBuffer(png.width, png.height)
   buffer.data.set(png.rgba)
