@@ -1,6 +1,7 @@
 /**
  * ATTACKS — RANDOM ATTACKS' title — in two free fonts, to choose from:
- * Zen Dots (The Dots Project Authors) with its strokes made twice as thick,
+ * Zen Dots (The Dots Project Authors) with its strokes made one and a half
+ * times as thick — grown square, so its corners stay sharp —
  * and Climate Crisis (The Climate Crisis Project Authors) as drawn, both
  * under the SIL Open Font License 1.1, files and licences in
  * `scripts/games/fonts/`. Each is written flat and large into a pixel mask
@@ -29,35 +30,39 @@ const WIDTH = 1200
 
 type Variant = { name: string; file: string; bold: number }
 const VARIANTS: Variant[] = [
-  { name: 'zen', file: 'ZenDots-Regular.ttf', bold: 2 },
+  { name: 'zen', file: 'ZenDots-Regular.ttf', bold: 1.5 },
   { name: 'crisis', file: 'ClimateCrisis-Variable.ttf', bold: 1 },
 ]
 const TEXT = 'ATTACKS'
 
 type Mask = { w: number; h: number; data: Uint8Array }
 
-/** Squared distance to the nearest set pixel (two passes of the lower-envelope method). */
-function distance(mask: Mask): Float64Array {
+/**
+ * A mask grown by `r` pixels as a square grows — every pixel within `r`
+ * across and `r` up or down — so a corner stays a corner; growing by
+ * distance (a disc) would round every one of them.
+ */
+function dilate(mask: Mask, r: number): Mask {
+  const k = Math.round(r)
+  if (k <= 0) return mask
   const { w, h, data } = mask
-  const INF = 1e12, n = Math.max(w, h)
-  const f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1)
-  const pass = (len: number) => {
-    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF
-    for (let q = 1; q < len; q += 1) {
-      let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k])
-      while (s <= z[k]) { k -= 1; s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]) }
-      k += 1; v[k] = q; z[k] = s; z[k + 1] = INF
-    }
-    k = 0
-    for (let q = 0; q < len; q += 1) { while (z[k + 1] < q) k += 1; d[q] = (q - v[k]) ** 2 + f[v[k]] }
+  const rows = new Uint8Array(w * h)
+  for (let y = 0; y < h; y += 1) {
+    let last = -Infinity
+    // forward and back: within k of a set pixel along the row
+    for (let x = 0; x < w; x += 1) { if (data[y * w + x]) last = x; if (x - last <= k) rows[y * w + x] = 1 }
+    last = Infinity
+    for (let x = w - 1; x >= 0; x -= 1) { if (data[y * w + x]) last = x; if (last - x <= k) rows[y * w + x] = 1 }
   }
-  const out = new Float64Array(w * h)
-  for (let x = 0; x < w; x += 1) { for (let y = 0; y < h; y += 1) f[y] = data[y * w + x] ? 0 : INF; pass(h); for (let y = 0; y < h; y += 1) out[y * w + x] = d[y] }
-  for (let y = 0; y < h; y += 1) { for (let x = 0; x < w; x += 1) f[x] = out[y * w + x]; pass(w); for (let x = 0; x < w; x += 1) out[y * w + x] = d[x] }
-  return out
+  const out = new Uint8Array(w * h)
+  for (let x = 0; x < w; x += 1) {
+    let last = -Infinity
+    for (let y = 0; y < h; y += 1) { if (rows[y * w + x]) last = y; if (y - last <= k) out[y * w + x] = 1 }
+    last = Infinity
+    for (let y = h - 1; y >= 0; y -= 1) { if (rows[y * w + x]) last = y; if (last - y <= k) out[y * w + x] = 1 }
+  }
+  return { w, h, data: out }
 }
-
-const dilate = (mask: Mask, r: number): Mask => (r <= 0 ? mask : { ...mask, data: Uint8Array.from(distance(mask), (d) => (d <= r * r ? 1 : 0)) })
 
 /** A stroke's width, from the area and the length of the outline. */
 function strokeWidth(mask: Mask): number {
@@ -124,7 +129,7 @@ const parts = VARIANTS.map((v) => {
 
 writeFileSync(join(__dirname, '../../lib/games/attacks-lettering-data.ts'), `/**
  * ATTACKS as flat pixel masks, written by \`scripts/games/attacks-lettering.ts\`
- * from Zen Dots (The Dots Project Authors; strokes twice as thick) and
+ * from Zen Dots (The Dots Project Authors; strokes one and a half times as thick, grown square) and
  * Climate Crisis (The Climate Crisis Project Authors), both SIL Open Font
  * License 1.1. Each row is the lengths of its alternating runs of pixels,
  * off first, in base 36. Generated — do not edit by hand.
