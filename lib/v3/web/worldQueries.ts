@@ -133,3 +133,5 @@ export function worldWebQueries(count: number, random: () => number = Math.rando
 }
 
 export const WORLD_PLACES = PLACES.length
+/** The countries of the places, as their domains (cm, sn, pe…): the sources that work by country read this list. */
+export const WORLD_COUNTRIES: readonly string[] = [...new Set(PLACES.map((place) => place.gl))]

@@ -113,6 +113,10 @@ case "${LINE}" in
     (umask 077; printf 'x-admin-ingest-key: %s\n' "${ADMIN_INGEST_KEY:?}" > "${header_file}")
     run curl -sS -m 280 -H "@${header_file}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,wikipedia&per=10&pages=3"
     ;;
+  web-commoncrawl)
+    # One country a day from Common Crawl's public index: the live front pages under its domain, onto the waiting list (lib/v3/web/commoncrawl.ts). Free, no key.
+    RANDOM_CC_CACHE="${RANDOM_CC_CACHE:-/home/random/cache/cc}" run node --import tsx scripts/v3/web-commoncrawl.ts
+    ;;
   web-embed)
     # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
     run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-2000}"

@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM sites from Common Crawl (05:10 Paris, one country a day: the live front pages under its domain, put on the waiting list the previews line visits; free, no key)
+
+[Timer]
+OnCalendar=*-*-* 05:10:00 Europe/Paris
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

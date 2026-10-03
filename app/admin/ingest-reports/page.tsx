@@ -55,6 +55,7 @@ const LINE_LABEL: Record<string, string> = {
   dig: 'La fouille (4 bases)',
   drift: 'La dérive (Dailymotion)',
   'web-previews': 'Sites : visites et aperçus',
+  'web-commoncrawl': 'Sites : Common Crawl (un pays par jour)',
 }
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
