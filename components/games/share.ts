@@ -11,6 +11,8 @@ export const GAME_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER'
 
 /** The game's title card as a PNG file, drawn twice as large. */
 export async function titleCard(game: GameName, accent: string, best: number): Promise<File | null> {
+  // ATTACKS' title is its picture: waited for, so the card is not drawn without it
+  if (game === 'attacks') await (await import('@/lib/games/attacks-art')).attacksArtReady(['titleWide', 'rover'])
   const b = game === 'attacks'
     ? (await import('@/lib/games/attacks')).renderAttacksTitle('landscape', accent, 'zen', { level: 1, best, frame: 0, blink: true })
     : (await import('@/lib/games/titles')).renderGameTitle(game, 'landscape', accent, { level: 1, best, frame: 0, blink: true, day: isDaytime() })

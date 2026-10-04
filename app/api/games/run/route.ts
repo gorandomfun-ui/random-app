@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 
+import { isGameName } from '@/lib/games/scores'
 import { issueTicket } from '@/lib/games/ticket'
 import { checkRateLimit } from '@/lib/utils/rate-limit'
 
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   if (!checkRateLimit(`games-run:${who}`, 30, 10 * 60 * 1000)) return NextResponse.json({ error: 'Too many games' }, { status: 429 })
   const body = await request.json().catch(() => null) as { game?: unknown } | null
   const game = body?.game
-  if (game !== 'catcher' && game !== 'eater') return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
+  if (!isGameName(game)) return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
   const ticket = issueTicket(game)
   if (!ticket) return NextResponse.json({ error: 'Scores unavailable' }, { status: 503 })
   return NextResponse.json(ticket, { headers: { 'Cache-Control': 'no-store' } })

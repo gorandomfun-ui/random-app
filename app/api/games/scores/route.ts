@@ -4,11 +4,12 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 
 import { readWorld } from '@/lib/games/leaderboard'
+import { isGameName } from '@/lib/games/scores'
 
 /** The world's two hundred best of a game, best first. */
 export async function GET(request: Request) {
   const game = new URL(request.url).searchParams.get('game')
-  if (game !== 'catcher' && game !== 'eater') return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
+  if (!isGameName(game)) return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
   try {
     const entries = await readWorld(game)
     return NextResponse.json(
