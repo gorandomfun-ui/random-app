@@ -7,7 +7,7 @@ import { accepted, countVisual, dueGame, FLOW, freshFlow, gameOver, levelLeft, l
 const calm = (): FlowMoment => ({ inWave: false, visitSeen: 99 })
 const seeTo = (s: FlowState, count: number) => { let out = s; while (out.count < count) out = countVisual(out); return out }
 
-test('l_échelle des propositions : 20, puis l_autre jeu à 50, 90, 150, 290, 590, puis plus rien', () => {
+test('l_échelle des propositions : 20, puis le jeu suivant à 50, 90, 150, 290, 590, puis plus rien', () => {
   let s = freshFlow('catcher')
   const offers: Array<[number, string]> = []
   for (let i = 0; i < 2000 && !s.stopped; i += 1) {
@@ -16,7 +16,7 @@ test('l_échelle des propositions : 20, puis l_autre jeu à 50, 90, 150, 290, 59
     if (game) { offers.push([s.count, game]); s = offered(s, i) }
   }
   assert.deepEqual(offers.map(([n]) => n), [20, 50, 90, 150, 290, 590])
-  assert.deepEqual(offers.map(([, g]) => g), ['catcher', 'eater', 'catcher', 'eater', 'catcher', 'eater'], 'un jeu différent à chaque fois')
+  assert.deepEqual(offers.map(([, g]) => g), ['catcher', 'eater', 'attacks', 'catcher', 'eater', 'attacks'], 'les trois jeux chacun leur tour')
   assert.ok(s.stopped)
 })
 
@@ -26,8 +26,8 @@ test('à 20 pile, où que soit le rythme — seule une Wave le retient — et le
   assert.equal(dueGame(s, calm()), 'eater', 'à 20, en plein bloc cool ou pas')
   assert.equal(dueGame(s, { inWave: true, visitSeen: 99 }), null, 'une Wave')
   assert.equal(dueGame(s, { inWave: false, visitSeen: 19 }), null, 'jamais avant le 20e visuel de la visite')
-  const firsts = new Set(Array.from({ length: 40 }, () => freshFlow().next))
-  assert.deepEqual([...firsts].sort(), ['catcher', 'eater'], 'CATCHER ou EATER, au hasard')
+  const firsts = new Set(Array.from({ length: 60 }, () => freshFlow().next))
+  assert.deepEqual([...firsts].sort(), ['attacks', 'catcher', 'eater'], 'CATCHER, EATER ou ATTACKS, au hasard')
 })
 
 test('quelqu_un qui joue : le niveau suivant revient 10 visuels après ; GAME OVER finit la partie, une nouvelle revient 20 visuels après — jamais dans une Wave', () => {
@@ -155,4 +155,11 @@ test('une nouvelle visite après un jour sans venir repart au 20e, même l_éche
   const same = newVisit(later, 10 * day + 3_600_000)
   assert.equal(same.refusals, 1)
   assert.equal(same.nextAt, later.nextAt)
+})
+
+test('ATTACKS dans le tour : après EATER vient ATTACKS, après ATTACKS revient CATCHER', () => {
+  assert.equal(refused(seeTo(freshFlow('eater'), 20)).next, 'attacks')
+  assert.equal(refused(seeTo(freshFlow('attacks'), 20)).next, 'catcher')
+  const done = levelWon({ ...seeTo(freshFlow('attacks'), 20), playing: 'attacks', runs: { attacks: { level: 16, score: 12000 } } }, 'attacks', 12500)
+  assert.equal(done.next, 'catcher'); assert.equal(done.runs.attacks, undefined)
 })

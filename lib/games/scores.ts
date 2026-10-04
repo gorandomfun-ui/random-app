@@ -9,6 +9,9 @@
  */
 
 export type GameName = 'catcher' | 'eater' | 'attacks'
+export const GAME_NAMES: readonly GameName[] = ['catcher', 'eater', 'attacks']
+/** A game's name as a request may carry it: one of the games, or not. */
+export const isGameName = (value: unknown): value is GameName => typeof value === 'string' && (GAME_NAMES as readonly string[]).includes(value)
 /** `runId`: that game's line in the world's table, when it was sent there — so the panel can light it. */
 export type ScoreEntry = { name: string; score: number; level: number; at: number; runId?: string }
 

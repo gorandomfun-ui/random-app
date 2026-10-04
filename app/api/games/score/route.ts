@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { submitWorld, worldName } from '@/lib/games/leaderboard'
 import { plausible } from '@/lib/games/plausible'
+import { isGameName } from '@/lib/games/scores'
 import { checkTicket } from '@/lib/games/ticket'
 import { checkRateLimit } from '@/lib/utils/rate-limit'
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   if (!checkRateLimit(`games-score:${who}`, 40, 10 * 60 * 1000)) return NextResponse.json({ error: 'Too many scores' }, { status: 429 })
   const body = await request.json().catch(() => null) as Record<string, unknown> | null
   const game = body?.game
-  if (game !== 'catcher' && game !== 'eater') return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
+  if (!isGameName(game)) return NextResponse.json({ error: 'Unknown game' }, { status: 400 })
   const { runId, token, startedAt, score, level } = body as { runId: unknown; token: unknown; startedAt: unknown; score: unknown; level: unknown }
   const won = body?.won === true
   const now = Date.now()

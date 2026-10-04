@@ -23,12 +23,13 @@ export default function ArcadeBench({ flow, onGame, onLevel, onFinish, onReset }
         <div className="mb-2 opacity-80">
           vus {flow.count} · prochain à {flow.nextAt} · refus {flow.refusals}{flow.stopped ? ' · arrêté' : ''}<br />
           suivant {flow.next}{flow.playing ? ` · en partie : ${flow.playing}` : ''}<br />
-          catcher niv. {flow.runs.catcher?.level ?? 1} ({flow.runs.catcher?.score ?? 0}) · eater niv. {flow.runs.eater?.level ?? 1} ({flow.runs.eater?.score ?? 0})
+          catcher niv. {flow.runs.catcher?.level ?? 1} ({flow.runs.catcher?.score ?? 0}) · eater niv. {flow.runs.eater?.level ?? 1} ({flow.runs.eater?.score ?? 0}) · attacks niv. {flow.runs.attacks?.level ?? 1} ({flow.runs.attacks?.score ?? 0})
         </div>
       ) : <div className="mb-2 opacity-80">pas de stockage : pas de jeux</div>}
       <div className="flex flex-wrap gap-1">
         <button type="button" className="rounded bg-white/15 px-2 py-1" onClick={() => onGame('catcher')}>CATCHER maintenant</button>
         <button type="button" className="rounded bg-white/15 px-2 py-1" onClick={() => onGame('eater')}>EATER maintenant</button>
+        <button type="button" className="rounded bg-white/15 px-2 py-1" onClick={() => onGame('attacks')}>ATTACKS maintenant</button>
         <button type="button" className="rounded bg-white/15 px-2 py-1" onClick={() => onLevel(flow?.next ?? 'catcher', 1)}>niveau +1</button>
         <button type="button" className="rounded bg-white/15 px-2 py-1" onClick={() => onLevel(flow?.next ?? 'catcher', -1)}>niveau −1</button>
         <button type="button" className="rounded bg-white/15 px-2 py-1" onClick={() => onFinish(true)}>gagner la manche</button>

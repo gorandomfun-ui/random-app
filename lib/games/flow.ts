@@ -5,9 +5,10 @@
  * content that was due comes right after it.
  *
  * - The images and videos seen on this device are counted, visit after
- *   visit. A game — CATCHER or EATER, drawn by chance the first time — is
- *   offered at the 20th exactly, wherever the rhythm stands; refused, the
- *   other game comes at the 50th, then the 90th, the 150th, the 290th, the
+ *   visit. A game — CATCHER, EATER or ATTACKS, drawn by chance the first
+ *   time — is offered at the 20th exactly, wherever the rhythm stands;
+ *   refused, the next game in turn (CATCHER, EATER, ATTACKS, CATCHER…)
+ *   comes at the 50th, then the 90th, the 150th, the 290th, the
  *   590th — and after that, no more in that visit. A new visit after a day
  *   away starts the ladder over at the 20th (the owner, 2 October: "sinon on
  *   ne repropose jamais, et on peut toujours dire non"). Only a Wave holds
@@ -24,8 +25,8 @@
  * - A game left half-way — refused, or RANDOM in the middle of a level — is
  *   kept at its level. Coming back to it in another visit, the player
  *   chooses: take it up again, or a new game (which ends the old one).
- * - Every level is its own round in the flow: CATCHER starts each with three
- *   lives, EATER with his one.
+ * - Every level is its own round in the flow: CATCHER and ATTACKS start each
+ *   with three lives, EATER with his one.
  *
  * Storage refused (a private window on an iPhone): no state, no game, no
  * error.
@@ -33,8 +34,9 @@
 
 import type { GameName } from './scores'
 
-export const GAMES: readonly GameName[] = ['catcher', 'eater']
-const other = (game: GameName): GameName => (game === 'catcher' ? 'eater' : 'catcher')
+export const GAMES: readonly GameName[] = ['catcher', 'eater', 'attacks']
+/** The next game in turn after `game`. */
+const other = (game: GameName): GameName => GAMES[(GAMES.indexOf(game) + 1) % GAMES.length]
 
 const envNumber = (value: string | undefined, fallback: number) => {
   const n = Number(value)
@@ -91,7 +93,7 @@ export function freshFlow(first: GameName = firstGame()): FlowState {
   return { v: 1, count: 0, nextAt: FLOW.first, refusals: 0, stopped: false, next: first, playing: null, lastOfferAt: 0, runs: {} }
 }
 function firstGame(): GameName {
-  try { const a = new Uint8Array(1); crypto.getRandomValues(a); return GAMES[a[0] & 1] } catch { return GAMES[Date.now() & 1] }
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return GAMES[a[0] % GAMES.length] } catch { return GAMES[Date.now() % GAMES.length] }
 }
 
 function storage(): Storage | null {
@@ -142,7 +144,7 @@ export function dueGame(s: FlowState, m: FlowMoment): GameName | null {
 /** An offer shows: it counts as refused from now on, and PLAY takes it back (see `accepted`). */
 export const offered = (s: FlowState, now: number): FlowState => ({ ...refused(s), lastOfferAt: now })
 
-/** The offer refused, or a game left half-way: back on the ladder, the other game next, the game kept. */
+/** The offer refused, or a game left half-way: back on the ladder, the next game in turn, the game kept. */
 export function refused(s: FlowState): FlowState {
   const refusals = s.refusals + 1
   const gap = FLOW.ladder[refusals - 1]
@@ -176,7 +178,7 @@ export function newGame(s: FlowState, game: GameName): FlowState {
   return { ...s, runs }
 }
 
-/** A level won: the score kept; the next level ten visuals on; the sixteenth, the game is over and won, the other game next time. */
+/** A level won: the score kept; the next level ten visuals on; the sixteenth, the game is over and won, the next game in turn next time. */
 export function levelWon(s: FlowState, game: GameName, score: number, lastLevel = 16): FlowState {
   const run = s.runs[game] ?? { level: 1, score: 0 }
   if (run.level >= lastLevel) {
