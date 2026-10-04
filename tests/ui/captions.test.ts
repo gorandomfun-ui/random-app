@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { captionCommand, chooseCaptions, youtubeLanguage, type CaptionTrack } from '../../lib/random/captions'
-import { spokenLanguage } from '../../lib/discovery/spoken'
+import { scriptLanguage, spokenLanguage } from '../../lib/discovery/spoken'
 
 const track = (languageCode: string, kind = ''): CaptionTrack => ({ languageCode, languageName: languageCode, kind, vss_id: `.${languageCode}` })
 // Rick Astley's list as the player gave it on 4 October: German first, no French.
@@ -70,4 +70,12 @@ test('the spoken language of a served video: the platform, then the wheel, then 
   assert.equal(spokenLanguage({ lang: 'arb' }), 'ar')
   assert.equal(spokenLanguage({ title: 'short' }), undefined)
   assert.equal(spokenLanguage({ lang: 'xyz' }), undefined)
+})
+
+test('a title too short for the detector still tells its language by its alphabet', () => {
+  assert.equal(spokenLanguage({ title: '사람만 보면 하악질하던 고양이에게 간택당함' }), 'ko')
+  assert.equal(spokenLanguage({ title: 'என்னது இது? கடல் தாமரையா! 😱🌊🌸' }), 'ta')
+  assert.equal(spokenLanguage({ title: '【突然】こじはる踊ってみた' }), 'ja')
+  assert.equal(spokenLanguage({ title: 'Sayang - UNGU | Studio Session' }), undefined)
+  assert.equal(scriptLanguage('Video | लहंगा लहके लहके | #Pawan Singh'), 'hi')
 })
