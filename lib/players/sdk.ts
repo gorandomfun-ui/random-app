@@ -9,6 +9,9 @@ export interface YouTubePlayer {
   playVideo(): void;
   pauseVideo(): void;
   destroy(): void;
+  /** The player's modules, e.g. `getOption('captions', 'tracklist')`: the written subtitle tracks (lib/random/captions.ts). */
+  getOption(module: string, option: string): unknown;
+  setOption(module: string, option: string, value: unknown): void;
 }
 export type YouTubeSDK = {
   Player: new (
@@ -22,6 +25,8 @@ export type YouTubeSDK = {
         onStateChange: (event: { data: number }) => void;
         onError: (event: { data: number }) => void;
         onAutoplayBlocked: () => void;
+        /** A module loaded: the subtitles' tracks can be read. */
+        onApiChange?: (event: { target: YouTubePlayer }) => void;
       };
     },
   ) => YouTubePlayer;

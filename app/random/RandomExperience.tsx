@@ -1737,7 +1737,7 @@ function VideoEmbedAllowed({
   const supported = providerVideo(url)
   if (process.env.NEXT_PUBLIC_RANDOM_PLAYER_V2 === '1' && supported?.provider === 'youtube') {
     return <ControlledVideoEmbed key={`${supported.provider}:${supported.id}`} provider={supported.provider} videoId={supported.id}
-      title={item.text} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} soundMuted={soundMuted}
+      title={item.text} frameHeight={frameHeight} fullscreenLabel={fullscreenLabel} soundMuted={soundMuted} spokenLang={item.spokenLang}
       onVideoSoundUnlocked={onVideoSoundUnlocked}
       onError={(playerCode) => onPlaybackIssue?.(item, { reason: 'youtube-player-error', playerCode })} />
   }

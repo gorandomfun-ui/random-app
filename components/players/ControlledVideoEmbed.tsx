@@ -5,6 +5,7 @@ import { Volume2, VolumeX } from 'lucide-react'
 import { useI18n } from '@/providers/I18nProvider'
 import { loadYouTube, type YouTubePlayer } from '@/lib/players/sdk'
 import { youtubeMuted } from '@/lib/players/state'
+import { chooseCaptions, youtubeLanguage, type CaptionTrack } from '@/lib/random/captions'
 import RandomPlayerFrame from '@/components/players/RandomPlayerFrame'
 
 type Props = {
@@ -14,6 +15,8 @@ type Props = {
   frameHeight: string
   fullscreenLabel: string
   soundMuted: boolean
+  /** The language the video speaks, when the draw knows it: the subtitles are picked with it (lib/random/captions.ts). */
+  spokenLang?: string
   onVideoSoundUnlocked?: () => void
   onError?: (code: number) => void
 }
@@ -63,6 +66,9 @@ export default function ControlledVideoEmbed(props: Props) {
       }
     }
     readRef.current = read
+    // Subtitles by the owner's rule (lib/random/captions.ts): the app's language, else English, none for a video in English or in the app's own.
+    const app = youtubeLanguage(document.documentElement.lang)
+    let captionsSet = 0
     const init = async () => {
       const sdk = await loadYouTube()
       if (!active) return
@@ -77,8 +83,25 @@ export default function ControlledVideoEmbed(props: Props) {
           rel: 0,
           loop: 0,
           origin: window.location.origin,
+          cc_load_policy: 1,
+          cc_lang_pref: app,
+          hl: app,
         },
         events: {
+          // The captions module came: its written tracks are known, the player's own pick corrected; once or twice as it starts, never more.
+          onApiChange: ({ target: player }) => {
+            if (!active || captionsSet >= 2) return
+            try {
+              const tracks = player.getOption('captions', 'tracklist')
+              if (!Array.isArray(tracks)) return
+              captionsSet += 1
+              const shown = player.getOption('captions', 'track')
+              const choice = chooseCaptions({ app, spoken: callbacks.current.spokenLang, tracks: tracks as CaptionTrack[], shown: shown && typeof shown === 'object' ? shown as CaptionTrack : null })
+              player.setOption('captions', 'track', 'show' in choice ? choice.show : {})
+            } catch {
+              /* No captions module on this player. */
+            }
+          },
           onReady: ({ target: player }) => {
             if (!active) {
               player.destroy()
