@@ -21,13 +21,12 @@
 import { attacksArt } from './attacks-art'
 import { drawCook } from './attacks-cook'
 import { ATTACKS_MOTION } from './attacks-art-data'
-import { ATTACKS_BOARD, burgerAt, createAttacks, GOLD_Y, stepAttacks, type AttacksState } from './attacks-rules'
-import { BONUS_PALETTE, BURGER_BIG, BURGER_BIG_TILT, BURGER_FAR, BURGER_FINE_TILT, BURGER_PALETTE, BURGER_SMALL_TILT, BURGER_SPECK, burgerCentre, BURGERS, COOK, COOK_HEAD, COOK_PALETTE, drawPlates, GOLD_PALETTE, KETCHUP_PALETTE, MUSTARD, MUSTARD_PALETTE, SQUIRT, THROW_PALETTE, THROWS, TORCH } from './attacks-sprites'
+import { BURGER_BIG_TILT, BURGER_FAR, BURGER_FINE_TILT, BURGER_PALETTE, BURGER_SMALL_TILT, BURGER_SPECK } from './attacks-sprites'
 import { ATTACKS_LETTERING, type AttacksLettering } from './attacks-lettering-data'
 import { drawLogo, LOGO_WIDTH } from './logo'
-import { dim, dither, drawText, drawText7, mix, PixelBuffer, type Sprite, text7Width, textWidth } from './pixels'
-import { dpadGeometry, gameOverHits, playCard, playSize, winnerRow, type Pad } from './screens'
-import { arcadeText, button, dpad, GREY as GREY_TEXT, HUD_HEIGHT, infoLine, pressStart } from './ui'
+import { dim, dither, drawText7, mix, PixelBuffer, type Sprite } from './pixels'
+import { gameOverHits, winnerRow } from './screens'
+import { arcadeText, button, infoLine, pressStart } from './ui'
 
 export type { AttacksLettering }
 type Layout = 'landscape' | 'portrait'
@@ -269,142 +268,7 @@ export function renderAttacksTitle(layout: Layout, accent: string, lettering: At
 
 // ---------------------------------------------------------------- the play
 
-/** The bar on top: LEVEL, SCORE, the bonus under way with what is left of it, and the lives as the cook's head. */
-function attacksHud(buffer: PixelBuffer, accent: string, level: number, score: number, lives: number, power: AttacksState['power'] = null): void {
-  const W = buffer.width
-  buffer.rect(0, 0, W, HUD_HEIGHT, '#07070e')
-  buffer.rect(0, HUD_HEIGHT - 1, W, 1, dim(accent, 0.55))
-  drawText(buffer, 'LEVEL', 8, 3, GREY_TEXT)
-  drawText7(buffer, String(level).padStart(2, '0'), 8, 11, CREAM, 1, true)
-  const scoreText = String(score).padStart(5, '0')
-  drawText(buffer, 'SCORE', Math.round(W / 2 - textWidth('SCORE') / 2), 3, GREY_TEXT)
-  drawText7(buffer, scoreText, Math.round(W / 2 - text7Width(scoreText, 1, true) / 2), 11, CREAM, 1, true)
-  drawText(buffer, 'LIVES', W - 8 - textWidth('LIVES'), 3, GREY_TEXT)
-  for (let i = 0; i < lives; i += 1) buffer.blit(COOK_HEAD, W - 17 - i * 11, 12, COOK_PALETTE)
-  if (power) {
-    // the bonus's bottle and the time it has left, between the score and the lives
-    const x = Math.round(W * 0.66)
-    buffer.blit(power.kind === 'mustard' ? MUSTARD : TORCH, x, power.kind === 'mustard' ? 6 : 5, BONUS_PALETTE)
-    const full = power.kind === 'mustard' ? 9 * 60 : 5 * 60, w = 30
-    buffer.rect(x + 13, 15, w, 3, '#2a2a3a')
-    buffer.rect(x + 13, 15, Math.max(1, Math.round((w * power.left) / full)), 3, power.kind === 'mustard' ? '#ffd02a' : '#8cc4ff')
-  }
-}
-
-/** The night under the bar, the cross in its band: drawn once for a board, a pad and a colour. */
-const backs = new Map<string, PixelBuffer>()
-function back(layout: Layout, pad: Pad, accent: string): PixelBuffer {
-  const key = `${layout}|${pad}|${accent}`
-  const art = attacksArt(layout === 'landscape' ? 'playWide' : 'playTall')
-  let out = backs.get(key)
-  if (out && art) return out
-  const { width, height } = playSize(layout, pad)
-  out = new PixelBuffer(width, height, INK)
-  const board = ATTACKS_BOARD[layout]
-  if (art) for (let y = 0; y < art.height; y += 1) out.data.set(art.data.subarray(y * art.width * 4, (y + 1) * art.width * 4), ((HUD_HEIGHT + y) * width) * 4)
-  else for (let y = HUD_HEIGHT; y < HUD_HEIGHT + board.height; y += 1) out.rect(0, y, board.width, 1, mix('#0a0718', '#45224f', (y - HUD_HEIGHT) / board.height))
-  const cross = dpadGeometry(layout, pad)
-  if (cross) dpad(out, cross.cx, cross.cy, cross.arm, accent)
-  // kept once the picture is in
-  if (art) { if (backs.size > 12) backs.clear(); backs.set(key, out) }
-  return out
-}
-const surfaces = new Map<string, PixelBuffer>()
-
-/** What the play screen shows over the game: the pause card (RESUME 0, QUIT 1), or RESUME alone; where the cross goes. */
-export type AttacksView = { pause?: 0 | 1 | null; pad?: Pad; resumeOnly?: boolean }
-
-/** The blowtorch's flame, going up: white at the heart, yellow, orange at the tips, flickering. */
-function flame(buffer: PixelBuffer, x: number, y: number, steps: number): void {
-  for (let k = 0; k < 14; k += 1) {
-    const w = k < 3 ? 1 : k < 9 ? 2 : 1, jitter = ((steps + k) % 3) - 1
-    const c = k < 4 ? '#ffffff' : k < 8 ? '#fff0a0' : k < 11 ? '#ffb040' : '#ff6a2a'
-    buffer.rect(x - w + (k > 8 ? jitter : 0), y + k, w * 2 + 1, 1, c)
-  }
-}
-
-/**
- * RANDOM ATTACKS in play, wide (448 × 344) or tall (320 × 472), with the
- * cross where it goes: the traced night; the burgers in their formation,
- * their jets flickering at each step it takes; the golden one across the
- * top; the plates, bitten where they were hit; what the burgers throw; the
- * squirts going up — ketchup, mustard, or the blowtorch's flame; a bonus
- * falling; the cook, blinking while he gets over a hit; what was just hit
- * splashing; the bar; LEVEL UP, LEVEL CLEAR, the pause card.
- */
-export function renderAttacksGame(s: AttacksState, accent: string, view: AttacksView = {}): PixelBuffer {
-  const layout = s.layout
-  const pad = view.pad ?? (layout === 'portrait' ? 'band' : 'none')
-  const { width } = playSize(layout, pad)
-  const key = `${layout}|${pad}`
-  let buffer = surfaces.get(key)
-  if (!buffer) { const size = playSize(layout, pad); buffer = new PixelBuffer(size.width, size.height, INK); surfaces.set(key, buffer) }
-  buffer.data.set(back(layout, pad, accent).data)
-  const top = HUD_HEIGHT, board = ATTACKS_BOARD[layout]
-  ATTACKS_MOTION[layout === 'landscape' ? 'playWide' : 'playTall'].stars.forEach(([x, y], i) => { if ((i + (s.steps >> 4)) % 5 === 0) buffer!.set(x, y + top, mix(buffer!.hex(x, y + top), '#1c1036', 0.7)) })
-  // the formation
-  for (const b of s.burgers) {
-    if (!b.alive) continue
-    const sprite = BURGERS[b.row][s.formation.frame]
-    const c = burgerAt(s, b)
-    buffer.blit(sprite, Math.round(c.x - burgerCentre(sprite)), top + s.formation.y + b.row * board.gapY, BURGER_PALETTE)
-  }
-  // the golden one
-  if (s.gold) { const gold = BURGER_BIG[(s.steps >> 3) % 2]; buffer.blit(gold, Math.round(s.gold.x - burgerCentre(gold)), top + GOLD_Y - 13, GOLD_PALETTE) }
-  // the plates
-  s.plates.forEach((p, i) => drawPlates(buffer!, p.x, top + s.height - 42, board.plate, 5, p.bites, i))
-  // what they throw
-  for (const t of s.throws) { const sprite = THROWS[t.kind]; buffer.blit(sprite, Math.round(t.x - sprite[0].length / 2), Math.round(top + t.y - sprite.length / 2), THROW_PALETTE) }
-  // the squirts
-  const mustard = s.power?.kind === 'mustard'
-  for (const shot of s.shots) {
-    if (shot.torch) flame(buffer, Math.round(shot.x), Math.round(top + shot.y), s.steps)
-    else buffer.blit(SQUIRT, Math.round(shot.x) - 1, Math.round(top + shot.y), mustard ? MUSTARD_PALETTE : KETCHUP_PALETTE)
-  }
-  // a bonus falling, sparkling
-  if (s.drop) {
-    const sprite = s.drop.kind === 'mustard' ? MUSTARD : TORCH
-    const bx = Math.round(s.drop.x), by = Math.round(top + s.drop.y)
-    buffer.blit(sprite, bx - Math.floor(sprite[0].length / 2), by - Math.floor(sprite.length / 2), BONUS_PALETTE)
-    for (const [dx, dy] of [[-8, -6], [8, -2], [-6, 8]] as const) if (((s.steps >> 3) + dx) % 2 === 0) { buffer.set(bx + dx, by + dy, '#ffffff'); for (const [ex, ey] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) buffer.set(bx + dx + ex, by + dy + ey, '#fff4b0') }
-  }
-  // the cook, blinking while he gets over a hit
-  if (s.cook.hurt === 0 || (s.cook.hurt >> 2) % 2 === 0) buffer.blit(COOK, Math.round(s.cook.x - COOK[0].length / 2), top + s.height - 3 - COOK.length, COOK_PALETTE)
-  // what was just hit
-  for (const p of s.splats) {
-    const x = Math.round(p.x), y = Math.round(top + p.y)
-    if (p.kind === 'burger') {
-      const r = p.t / 16
-      for (const [dx, dy, size, c] of [[0, 0, 5, '#e0301e'], [-7, -3, 2, '#e28c42'], [8, 2, 2, '#e28c42'], [4, -5, 1.5, '#ffd030'], [-5, 4, 1.5, '#e0301e'], [9, -4, 1, '#54c448']] as const) buffer.disc(x + dx * (1.6 - r * 0.6), y + dy * (1.6 - r * 0.6), size * (0.4 + r * 0.6), c)
-    } else if (p.kind === 'gold') {
-      for (let k = 0; k < 8; k += 1) { const a = (k / 8) * Math.PI * 2, d = 6 + (30 - p.t) * 0.8; buffer.set(Math.round(x + Math.cos(a) * d), Math.round(y + Math.sin(a) * d * 0.6), k % 2 ? '#fff6c0' : '#ffd23f') }
-    } else for (const [dx, dy] of [[-2, 0], [2, 1], [0, 3]] as const) buffer.set(x + dx, y + dy + (18 - p.t) / 3, '#ffffff')
-  }
-  attacksHud(buffer, accent, s.level, s.score, s.lives, s.power)
-  if (s.phase === 'won' && s.single) playCard(buffer, layout, accent, 'LEVEL CLEAR', [])
-  else if (view.pause != null) playCard(buffer, layout, accent, 'PAUSED', view.resumeOnly ? ['RESUME'] : ['RESUME', 'QUIT'], view.resumeOnly ? 0 : view.pause)
-  else if (s.levelUp > 0 && Math.floor(s.levelUp / 10) % 2 === 0) arcadeText(buffer, 'LEVEL UP', width / 2, HUD_HEIGHT + 30, 3, accent)
-  return buffer
-}
-
-export type AttacksPlayOptions = { frame?: number }
-
-/** A moment of play for the mock page: a game at level 3 played on its own, a little further at each picture. */
-const demos = new Map<Layout, { state: AttacksState; frame: number }>()
-export function renderAttacksPlay(layout: Layout, accent: string, options: AttacksPlayOptions = {}): PixelBuffer {
-  const frame = options.frame ?? 0
-  let demo = demos.get(layout)
-  if (!demo || frame < demo.frame || demo.state.phase !== 'play') { demo = { state: createAttacks(layout, 3, 11 + frame), frame: 0 }; demos.set(layout, demo) }
-  // the cook sways toward the burgers; a picture is about half a second of play
-  while (demo.frame < frame) {
-    for (let k = 0; k < 27 && demo.state.phase === 'play'; k += 1) {
-      const s = demo.state, near = s.burgers.filter((b) => b.alive).map((b) => burgerAt(s, b).x - 11).sort((a, b) => Math.abs(a - s.cook.x) - Math.abs(b - s.cook.x))[0] ?? s.cook.x
-      stepAttacks(s, Math.abs(near - s.cook.x) < 2 ? 0 : near > s.cook.x ? 1 : -1)
-    }
-    demo.frame += 1
-  }
-  return renderAttacksGame(demo.state, accent, { pad: layout === 'portrait' ? 'band' : 'none' })
-}
+export { attacksPadGeometry, attacksPadPart, attacksTier, renderAttacksGame, renderAttacksPlay, type AttacksPad, type AttacksPlayOptions, type AttacksView } from './attacks-play'
 
 // ---------------------------------------------------------------- GAME OVER and WINNER
 

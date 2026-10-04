@@ -530,17 +530,37 @@ export const COOK_HEAD: Sprite = [
 
 // ---------------------------------------------------------------- what flies
 
-/** What the burgers throw down: a fried onion ring, a slice of tomato, a strip of bacon, a slice of pickle. */
+/**
+ * What falls on the cook: a fried onion ring, a slice of tomato, a strip of
+ * bacon, a slice of pickle (what the burgers throw); a red chili, stalk up,
+ * falling fast; a drop of melted cheese (CHEESE QUAKE's rain).
+ */
 export const THROWS: Sprite[] = [
   ['..kkkk..', '.kOOOok.', 'kOokkook', 'kOk..kdk', 'kok..kdk', 'kodkkddk', '.kdddDk.', '..kkkk..'],
   ['..kkkk..', '.kRrrRk.', 'kRpyrpRk', 'krryyrrk', 'krpyrypk', 'kRrypyRk', '.kRrrRk.', '..kkkk..'],
   ['.kkk..', 'kMwMk.', 'kMwMMk', '.kMwMk', '.kMwMk', 'kMwMMk', 'kMwMk.', 'kMwMMk', '.kMwMk', '..kkk.'],
   ['..kkkk..', '.kGGGGk.', 'kGgyygGk', 'kGyggyGk', 'kGyggyGk', 'kGgyygGk', '.kGGGGk.', '..kkkk..'],
+  ['...s...', '..ksk..', '.kSSsk.', 'kCHCCck', 'kCHCCck', 'kCHCcck', 'kCCCcck', '.kCCck.', '.kCcck.', '..kcck.', '..kck..', '...kk..'],
+  ['..kk..', '.kJJk.', '.kLJk.', 'kJLJjk', 'kJLJjk', 'kJJjjk', '.kjjk.', '..kk..'],
 ]
 export const THROW_PALETTE: Palette = {
   k: INK, O: '#ffe08a', o: '#f0b048', d: '#c07a22', D: '#8a4a12',
   R: '#b81e14', r: '#e8341e', p: '#ff8a6a', y: '#ffd8a8',
   M: '#c8323a', w: '#f6c8b0', G: '#3c8a32', g: '#8ccc5a',
+  S: '#5cba3c', s: '#2a6a22', C: '#ec2a1c', c: '#981410', H: '#ffa08a',
+  J: '#ffc81e', j: '#d48a0c', L: '#fff2a0',
+}
+
+/**
+ * A burger wrapped in foil, for the levels where they take two hits: the
+ * same burger, its bun, its filling and its patty in creased silver; its
+ * ring and its jet as they are.
+ */
+export const FOIL_PALETTE: Palette = {
+  ...BURGER_PALETTE,
+  B: '#f6f8fc', b: '#c4cad6', d: '#8a92a6', s: '#ffffff',
+  g: '#d8dde6', G: '#9aa2b4', c: '#eef1f6', C: '#b0b8c8', r: '#c0c7d4',
+  p: '#9ea6b8', P: '#6c7488', q: '#dfe3ea', n: '#d4d9e2', N: '#8e96aa',
 }
 
 /** The cook's shot: a squirt of ketchup going up — of mustard with the bonus. */

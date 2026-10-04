@@ -18,6 +18,7 @@ const LABELS: Record<SoundName, string> = {
   bite: 'Burger avalé', fries: 'Frites', shake: 'Milkshake', donut: 'Donut', gold: 'Burger doré', crash: 'Choc (perdu)',
   item: 'Article avalé', sauce: 'Bouteille de sauce', slip: 'Client qui glisse', coin: 'Pièce', note: 'Billet', bundle: 'Liasse', card: 'Carte', caught: 'Attrapé',
   squirt: 'Giclée de ketchup', pop: 'Burger touché', clink: 'Assiette ébréchée', power: 'Bonus attrapé', hurt: 'Cuisinier touché',
+  rip: 'Papier alu arraché', whoosh: 'Plongeurs qui partent', thud: 'Boss touché', boom: 'Boss qui explose',
   level: 'Niveau gagné', over: 'Game over', winner: 'Winner',
 }
 const GAMES: GameName[] = ['eater', 'catcher', 'attacks']
@@ -27,7 +28,7 @@ const TUNES: Record<GameName, string> = { eater: 'Musique du diner', catcher: 'M
 const PLAY: Record<GameName, SoundName[]> = {
   eater: ['bite', 'bite', 'fries', 'bite', 'bite', 'shake', 'bite', 'donut', 'bite', 'bite', 'gold', 'bite', 'level'],
   catcher: ['item', 'item', 'coin', 'item', 'sauce', 'item', 'slip', 'note', 'item', 'card', 'item', 'bundle', 'caught', 'item', 'level'],
-  attacks: ['squirt', 'pop', 'squirt', 'clink', 'squirt', 'pop', 'squirt', 'gold', 'power', 'squirt', 'pop', 'hurt', 'squirt', 'pop', 'level'],
+  attacks: ['squirt', 'pop', 'squirt', 'rip', 'squirt', 'pop', 'whoosh', 'squirt', 'pop', 'clink', 'squirt', 'thud', 'squirt', 'thud', 'gold', 'power', 'squirt', 'hurt', 'boom', 'level'],
 }
 
 export default function SoundBench({ accent }: { accent: string }) {

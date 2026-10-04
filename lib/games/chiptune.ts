@@ -22,9 +22,9 @@ export const SOUND_RATE = 22_050
 export type SoundName =
   | 'bite' | 'fries' | 'shake' | 'donut' | 'gold' | 'crash'
   | 'item' | 'sauce' | 'slip' | 'coin' | 'note' | 'bundle' | 'card' | 'caught'
-  | 'squirt' | 'pop' | 'clink' | 'power' | 'hurt'
+  | 'squirt' | 'pop' | 'clink' | 'power' | 'hurt' | 'rip' | 'whoosh' | 'thud' | 'boom'
   | 'level' | 'over' | 'winner'
-export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'level', 'over', 'winner']
+export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'level', 'over', 'winner']
 
 /** A diner's shuffle for EATER, a convenience store's bossa for CATCHER, a fifties film from space for ATTACKS. */
 export type TuneName = 'diner' | 'store' | 'mars'
@@ -294,6 +294,28 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
   hurt: { seconds: 0.4, peak: SOUND_PEAK, build: (m) => {
     m.tone({ at: 0, dur: 0.3, freq: 440, to: 110, wave: 'pulse', duty: 0.5, gain: 0.4, vibrato: { rate: 28, depth: 0.8 }, decay: 0.2 })
     m.tone({ at: 0, dur: 0.08, freq: 4000, wave: 'noise', gain: 0.3, decay: 0.04, lowpass: 2500, seed: 151 })
+  } },
+  // foil torn off a burger: a crinkle
+  rip: { seconds: 0.16, peak: SOUND_PEAK * 0.8, build: (m) => {
+    m.tone({ at: 0, dur: 0.1, freq: 9000, wave: 'noise', gain: 0.5, decay: 0.04, highpass: 3500, seed: 161 })
+    m.tone({ at: 0.03, dur: 0.06, freq: 7000, wave: 'noise', gain: 0.35, decay: 0.025, highpass: 4500, seed: 162 })
+    m.tone({ at: 0, dur: 0.05, freq: 1800, to: 2400, wave: 'pulse', duty: 0.125, gain: 0.15, decay: 0.03 })
+  } },
+  // divers leaving the formation: a swoop down
+  whoosh: { seconds: 0.5, peak: SOUND_PEAK * 0.8, build: (m) => {
+    m.tone({ at: 0, dur: 0.42, freq: 1400, to: 380, wave: 'triangle', gain: 0.35, attack: 0.03, release: 0.06 })
+    m.tone({ at: 0, dur: 0.4, freq: 3000, wave: 'noise', gain: 0.2, attack: 0.08, decay: 0.2, lowpass: 2200, seed: 171 })
+  } },
+  // a squirt on a boss: a soft thud
+  thud: { seconds: 0.14, peak: SOUND_PEAK * 0.75, build: (m) => {
+    m.tone({ at: 0, dur: 0.09, freq: 180, to: 70, wave: 'sine', gain: 0.6, decay: 0.05 })
+    m.tone({ at: 0, dur: 0.03, freq: 2500, wave: 'noise', gain: 0.3, decay: 0.015, lowpass: 1600, seed: 181 })
+  } },
+  // a boss blown up: a long rumbling blast
+  boom: { seconds: 1.2, peak: JINGLE_PEAK, build: (m) => {
+    m.tone({ at: 0, dur: 1, freq: 3000, wave: 'noise', gain: 0.6, decay: 0.35, lowpass: 900, seed: 191 })
+    m.tone({ at: 0, dur: 0.7, freq: 110, to: 32, wave: 'pulse', duty: 0.5, gain: 0.5, decay: 0.3 })
+    m.tone({ at: 0.18, dur: 0.5, freq: 2000, wave: 'noise', gain: 0.35, decay: 0.2, lowpass: 600, seed: 192 })
   } },
   // a level won: up the chord
   level: { seconds: 0.75, peak: JINGLE_PEAK, build: (m) => {
