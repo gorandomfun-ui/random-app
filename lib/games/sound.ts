@@ -23,9 +23,10 @@ import type { GameName } from './scores'
 export const GAME_SOUNDS: Record<GameName, { tune: TuneName; sounds: readonly SoundName[] }> = {
   eater: { tune: 'diner', sounds: ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'level', 'over', 'winner'] },
   catcher: { tune: 'store', sounds: ['item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'level', 'over', 'winner'] },
+  attacks: { tune: 'mars', sounds: ['squirt', 'pop', 'clink', 'gold', 'power', 'hurt', 'crash', 'level', 'over', 'winner'] },
 }
 /** Sounds that can follow one another closely get two players. */
-const TWICE: ReadonlySet<SoundName> = new Set(['bite', 'item', 'coin'])
+const TWICE: ReadonlySet<SoundName> = new Set(['bite', 'item', 'coin', 'squirt', 'pop', 'clink'])
 
 export type GameSounds = {
   play: (name: SoundName) => void

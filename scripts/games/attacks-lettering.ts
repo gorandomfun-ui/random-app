@@ -1,19 +1,12 @@
 /**
- * ATTACKS — RANDOM ATTACKS' title — in two free fonts, to choose from:
- * Zen Dots (The Dots Project Authors) with its strokes made one and a half
- * times as thick — grown square, so its corners stay sharp —
- * and Climate Crisis (The Climate Crisis Project Authors) as drawn, both
- * under the SIL Open Font License 1.1, files and licences in
- * `scripts/games/fonts/`. Each is written flat and large into a pixel mask
- * in `lib/games/attacks-lettering-data.ts`; the perspective, the depth, the
+ * RANDOM ATTACKS' words — ATTACKS on the title, GAME OVER and WINNER at the
+ * end — in Zen Dots (The Dots Project Authors, SIL Open Font License 1.1,
+ * file and licence in `scripts/games/fonts/`), the font the owner chose, its
+ * strokes made one and a half times as thick — grown square, so its corners
+ * stay sharp. Each is written flat and large into a pixel mask in
+ * `lib/games/attacks-lettering-data.ts`; the perspective, the depth, the
  * bands and the outline are drawn by the game (`lib/games/attacks.ts`), in
  * the theme's colour. Only the masks reach the site.
- *
- * Climate Crisis is a 3.6 MB variable font, kept out of the repository
- * while the owner chooses: to draw again, put
- * https://raw.githubusercontent.com/google/fonts/main/ofl/climatecrisis/ClimateCrisis%5BYEAR%5D.ttf
- * in `scripts/games/fonts/` as `ClimateCrisis-Variable.ttf` (its default,
- * 1979, is the solid one).
  *
  *   node --import tsx scripts/games/attacks-lettering.ts
  */
@@ -28,12 +21,15 @@ const FONTS = join(__dirname, 'fonts')
 /** The mask's width: about twice the widest title, so the perspective has fine pixels to read from. */
 const WIDTH = 1200
 
-type Variant = { name: string; file: string; bold: number }
+type Variant = { name: string; file: string; bold: number; text: string }
+const ZEN = 'ZenDots-Regular.ttf'
 const VARIANTS: Variant[] = [
-  { name: 'zen', file: 'ZenDots-Regular.ttf', bold: 1.5 },
-  { name: 'crisis', file: 'ClimateCrisis-Variable.ttf', bold: 1 },
+  { name: 'zen', file: ZEN, bold: 1.5, text: 'ATTACKS' },
+  { name: 'gameOver', file: ZEN, bold: 1.5, text: 'GAME OVER' },
+  { name: 'game', file: ZEN, bold: 1.5, text: 'GAME' },
+  { name: 'over', file: ZEN, bold: 1.5, text: 'OVER' },
+  { name: 'winner', file: ZEN, bold: 1.5, text: 'WINNER' },
 ]
-const TEXT = 'ATTACKS'
 
 type Mask = { w: number; h: number; data: Uint8Array }
 
@@ -78,7 +74,8 @@ function strokeWidth(mask: Mask): number {
 
 function build(v: Variant): { width: number; height: number; rows: string[] } {
   const font = new Font(join(FONTS, v.file))
-  const glyphs = TEXT.split('').map((c) => font.glyph(c))
+  // a space is a glyph with no outline: its advance alone
+  const glyphs = v.text.split('').map((c) => font.glyph(c))
   const units = glyphs.reduce((sum, g) => sum + g.advance, 0)
   // first plain, to measure the stroke; then spaced by what the thickening adds, so letters never run into each other
   const layout = (scale: number, track: number) => {
@@ -128,11 +125,12 @@ const parts = VARIANTS.map((v) => {
 })
 
 writeFileSync(join(__dirname, '../../lib/games/attacks-lettering-data.ts'), `/**
- * ATTACKS as flat pixel masks, written by \`scripts/games/attacks-lettering.ts\`
- * from Zen Dots (The Dots Project Authors; strokes one and a half times as thick, grown square) and
- * Climate Crisis (The Climate Crisis Project Authors), both SIL Open Font
- * License 1.1. Each row is the lengths of its alternating runs of pixels,
- * off first, in base 36. Generated — do not edit by hand.
+ * RANDOM ATTACKS' words as flat pixel masks — ATTACKS (\`zen\`), GAME OVER,
+ * GAME, OVER, WINNER — written by \`scripts/games/attacks-lettering.ts\` from
+ * Zen Dots (The Dots Project Authors, SIL Open Font License 1.1; strokes one
+ * and a half times as thick, grown square). Each row is the lengths of its
+ * alternating runs of pixels, off first, in base 36. Generated — do not edit
+ * by hand.
  */
 
 export const ATTACKS_LETTERING = {

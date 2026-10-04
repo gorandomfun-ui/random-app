@@ -1,20 +1,20 @@
 /**
- * A proposal for RANDOM EATER's and RANDOM CATCHER's titles, in the manner
- * RANDOM ATTACKS' title found: the same street, the same building, the same
- * characters, with more depth and more life. The sky glows over the city at
- * the horizon, a third row of buildings stands far off in the haze, a
- * shooting star now and then; the building's light falls on the sidewalk;
- * the road is wet and shimmers with the windows, the neon and the lamps;
- * the cars light the road ahead; the characters have a lit edge and a
- * shaded one, and EATER's eater walks along his diner eating a burger; CATCHER's
- * tree has leaves, its drinks machine, bin and hydrant their details. Shown on the test page only, next to the titles in play.
+ * RANDOM EATER's and RANDOM CATCHER's titles at night, in the manner RANDOM
+ * ATTACKS' title found: the same street, the same building, more depth and
+ * more life. The sky glows over the city at the horizon, a third row of
+ * buildings stands far off in the haze, a shooting star now and then; the
+ * building's light falls on the sidewalk; the road is wet and shimmers with
+ * the windows, the neon and the lamps; the cars light the road ahead.
+ * EATER's eater walks along his diner eating a burger; CATCHER's burger has
+ * a lit edge and a shaded one, its tree leaves, its drinks machine, bin and
+ * hydrant their details. By day the street of `screens.ts` stays.
  */
 
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { drawEaterLogo, eaterLogoSize } from './logos'
 import { dither, mix, PixelBuffer, rgbOf, type Palette, type Sprite } from './pixels'
 import { car, cloud, drawDiner, drawStore, moon, NIGHTS, railing, rng, signFrame, skyline, sky, stars, street, wisp, type Night } from './scenes'
-import { CAR_SCALE, drawMarks, drawProp, smooth, stage, type Game, type Layout, type Prop, type Stage, type TitleOptions } from './screens'
+import { CAR_SCALE, drawMarks, drawProp, renderTitle, smooth, stage, type Game, type Layout, type Prop, type Stage, type TitleOptions } from './screens'
 import { drawWalkingEater, WALKER_SIZE } from './eater-walk'
 import { BURGER, BURGER_PALETTE } from './sprites'
 import { CREAM, infoLine, INK, pressStart } from './ui'
@@ -355,8 +355,8 @@ function scene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, 
   return s
 }
 
-/** The proposed title of a game: the street with depth and light, the same marks, LEVEL, BEST and PRESS START where they are. */
-export function renderTitleV2(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
+/** A game's title at night: the street with depth and light, the same marks, LEVEL, BEST and PRESS START where they are. */
+export function renderNightTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
   const { width, height } = SIZE[layout]
   const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
@@ -371,4 +371,9 @@ export function renderTitleV2(game: Game, layout: Layout, accent: string, option
     infoLine(buffer, width / 2 + 14, s.press + 24, 'BEST', best, 'left', 2)
   }
   return buffer
+}
+
+/** A game's title, as the player shows it: by day the street of `screens.ts`, at night this one. */
+export function renderGameTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
+  return options.day ? renderTitle(game, layout, accent, options) : renderNightTitle(game, layout, accent, options)
 }

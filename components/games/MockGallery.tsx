@@ -10,8 +10,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { renderAttacksPlay, renderAttacksTitle } from '@/lib/games/attacks'
-import { renderTitleV2 } from '@/lib/games/titles-v2'
+import { renderAttacksOver, renderAttacksPlay, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
+import { renderGameTitle } from '@/lib/games/titles'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -29,8 +29,8 @@ const LABELS: Record<string, string> = {
   'winner-jour': 'Winner — jour',
   'attacks-titre': 'Titre',
   'attacks-jeu': 'En jeu',
-  'v2-eater': 'Eater — proposition',
-  'v2-catcher': 'Catcher — proposition',
+  'attacks-game-over': 'Game over',
+  'attacks-winner': 'Winner',
 }
 
 /** A picture to show: its size and how to draw it at a moment. */
@@ -79,20 +79,18 @@ export default function MockGallery() {
     window.addEventListener('resize', fit)
     return () => window.removeEventListener('resize', fit)
   }, [])
-  const specs = useMemo(() => shotSpecs(accent), [accent])
+  // the night titles as the player shows them (the street of titles.ts); the day ones from screens.ts
+  const specs = useMemo(() => shotSpecs(accent).map((spec) => (spec.name === 'titre' ? { ...spec, draw: (frame: number) => renderGameTitle(spec.game, spec.layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }) } : spec)), [accent])
   const group = (game: Game, layout: Layout): ShotSpec[] => specs.filter((spec) => spec.game === game && spec.layout === layout)
-  // RANDOM ATTACKS, the third game: its title sketched in two letterings, to choose from
+  // RANDOM ATTACKS, the third game: its title, a moment of play, its two ends
   const attacks = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
     layout,
     shots: [
       { name: 'attacks-titre', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksTitle(layout, accent, 'zen', { frame }) },
       { name: 'attacks-jeu', width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 472, draw: (frame: number) => renderAttacksPlay(layout, accent, { frame }) },
+      { name: 'attacks-game-over', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksOver(layout, accent, { score: 3420, best: 5100, frame, blink: frame % 2 === 0 }) },
+      { name: 'attacks-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
-  })), [accent])
-  // the proposal for EATER's and CATCHER's titles in ATTACKS' manner, next to the titles in play further down
-  const proposal = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
-    layout,
-    shots: (['eater', 'catcher'] as Game[]).map((game) => ({ name: `v2-${game}`, width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderTitleV2(game, layout, accent, { frame }) })) as Shot[],
   })), [accent])
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
@@ -106,25 +104,11 @@ export default function MockGallery() {
         ))}
       </div>
       <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks — maquette du titre</h2>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Le fast-food RANDOM BURGER sur Mars, le cuisinier, les burgers qui arrivent sur leurs réacteurs ; ATTACKS en Zen Dots. Puis un moment de jeu. Dans la couleur choisie ci-dessus.
+          Le fast-food RANDOM BURGER sur Mars : le titre, un moment de jeu, le game over et le winner. Le jeu se joue sur sa page de test, /admin/attacks. Dans la couleur choisie ci-dessus.
         </p>
         {attacks.map(({ layout, shots }) => (
-          <div key={layout} style={{ marginBottom: 24 }}>
-            <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6, marginBottom: 8 }}>{layout === 'landscape' ? 'Paysage' : 'Portrait'}</h3>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
-              {shots.map((shot) => <Screen key={`${shot.name}-${layout}-${accent}`} spec={shot} room={layout === 'landscape' ? room : Math.min(room, 700)} />)}
-            </div>
-          </div>
-        ))}
-      </section>
-      <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Eater et Catcher — proposition d&apos;accueil</h2>
-        <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Les mêmes rues, plus profondes et plus vivantes : la lueur de la ville à l&apos;horizon, une rangée d&apos;immeubles au loin dans la brume, une étoile filante, la lumière de la boutique sur le trottoir, la rue mouillée qui reflète vitrines et néons, les phares. Les accueils actuels sont plus bas pour comparer.
-        </p>
-        {proposal.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
             <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6, marginBottom: 8 }}>{layout === 'landscape' ? 'Paysage' : 'Portrait'}</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>

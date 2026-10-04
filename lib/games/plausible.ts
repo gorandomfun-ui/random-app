@@ -2,20 +2,24 @@
  * The most a game can score by a level, worked out from the rules, so the
  * world's table turns away numbers no one could have played. Generous on
  * purpose: every ingredient or burger, every level bonus, and a wide
- * allowance a level for what comes and goes (sauce, money, bonuses).
+ * allowance a level for what comes and goes (sauce, money, bonuses, the
+ * golden burgers).
  */
 
+import { ATTACKS_BOARD, ATTACKS_KINDS } from './attacks-rules'
 import { levelParams } from './catcher'
 import { eaterParams } from './eater'
 import type { GameName } from './scores'
 
-/** For what comes and goes in a level — sauce, stuns and money in CATCHER, bonuses in EATER — at most this much. */
-const EXTRAS: Record<GameName, number> = { catcher: 900, eater: 600 }
+/** For what comes and goes in a level — sauce, stuns and money in CATCHER, bonuses in EATER, golden burgers in ATTACKS — at most this much. */
+const EXTRAS: Record<GameName, number> = { catcher: 900, eater: 600, attacks: 1800 }
 export const LAST_LEVEL = 16
 
 /** The fixed points of level `l`: everything on the list or every burger, and the level's own bonus. */
 function levelPoints(game: GameName, l: number): number {
   if (game === 'catcher') return levelParams(l).need.reduce((a, b) => a + b, 0) * 10 + 50 * l
+  // every burger of the wider formation down
+  if (game === 'attacks') return ATTACKS_BOARD.landscape.cols * ATTACKS_KINDS.reduce((sum, k) => sum + k.points, 0) + 50 * l
   return eaterParams(l).target * 5 + 50 * l
 }
 

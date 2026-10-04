@@ -8,7 +8,7 @@
  * two hundred best are in the database.
  */
 
-export type GameName = 'catcher' | 'eater'
+export type GameName = 'catcher' | 'eater' | 'attacks'
 /** `runId`: that game's line in the world's table, when it was sent there — so the panel can light it. */
 export type ScoreEntry = { name: string; score: number; level: number; at: number; runId?: string }
 

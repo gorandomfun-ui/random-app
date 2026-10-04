@@ -18,7 +18,9 @@ test('les sons : chacun se fabrique propre, à son niveau, court, et toujours pa
     const a = renderSound(name), b = renderSound(name)
     assert.ok(a.every(Number.isFinite), `${name} : des valeurs finies`)
     const peak = peakOf(a)
-    assert.ok(peak > 0.29 && peak <= 0.3601, `${name} : crête ${peak}`)
+    // ATTACKS' squirt comes several times a second, a chipped plate often: lower on purpose
+    const share = name === 'squirt' ? 0.6 : name === 'clink' ? 0.7 : 1
+    assert.ok(peak > 0.29 * share && peak <= 0.3601 * share, `${name} : crête ${peak}`)
     assert.ok(a.length / SOUND_RATE <= 2, `${name} : court`)
     assert.ok(a.every((v, i) => v === b[i]), `${name} : identique d'une fois à l'autre`)
   }
