@@ -17,13 +17,17 @@ import { wakeSound } from '@/utils/sound'
 const LABELS: Record<SoundName, string> = {
   bite: 'Burger avalé', fries: 'Frites', shake: 'Milkshake', donut: 'Donut', gold: 'Burger doré', crash: 'Choc (perdu)',
   item: 'Article avalé', sauce: 'Bouteille de sauce', slip: 'Client qui glisse', coin: 'Pièce', note: 'Billet', bundle: 'Liasse', card: 'Carte', caught: 'Attrapé',
+  squirt: 'Giclée de ketchup', pop: 'Burger touché', clink: 'Assiette ébréchée', power: 'Bonus attrapé', hurt: 'Cuisinier touché',
   level: 'Niveau gagné', over: 'Game over', winner: 'Winner',
 }
-const TUNES: Record<GameName, string> = { eater: 'Musique du diner', catcher: 'Musique de la supérette' }
+const GAMES: GameName[] = ['eater', 'catcher', 'attacks']
+const NAMES: Record<GameName, string> = { eater: 'Random Eater', catcher: 'Random Catcher', attacks: 'Random Attacks' }
+const TUNES: Record<GameName, string> = { eater: 'Musique du diner', catcher: 'Musique de la supérette', attacks: 'Musique de Mars' }
 /** What a game sounds like for half a minute: mostly the plain catch, now and then something more. */
 const PLAY: Record<GameName, SoundName[]> = {
   eater: ['bite', 'bite', 'fries', 'bite', 'bite', 'shake', 'bite', 'donut', 'bite', 'bite', 'gold', 'bite', 'level'],
   catcher: ['item', 'item', 'coin', 'item', 'sauce', 'item', 'slip', 'note', 'item', 'card', 'item', 'bundle', 'caught', 'item', 'level'],
+  attacks: ['squirt', 'pop', 'squirt', 'clink', 'squirt', 'pop', 'squirt', 'gold', 'power', 'squirt', 'pop', 'hurt', 'squirt', 'pop', 'level'],
 }
 
 export default function SoundBench({ accent }: { accent: string }) {
@@ -32,20 +36,20 @@ export default function SoundBench({ accent }: { accent: string }) {
   const [demo, setDemo] = useState<GameName | null>(null)
 
   useEffect(() => {
-    const made = { eater: gameSounds('eater'), catcher: gameSounds('catcher') }
+    const made = { eater: gameSounds('eater'), catcher: gameSounds('catcher'), attacks: gameSounds('attacks') }
     sounds.current = made
-    return () => { made.eater.dispose(); made.catcher.dispose() }
+    return () => { made.eater.dispose(); made.catcher.dispose(); made.attacks.dispose() }
   }, [])
 
   // the tune asked for again and again, as a game does at every frame
   useEffect(() => {
     const on = demo ?? tune
     const timer = window.setInterval(() => {
-      for (const game of ['eater', 'catcher'] as GameName[]) sounds.current[game]?.tune(on === game)
+      for (const game of GAMES) sounds.current[game]?.tune(on === game)
     }, 100)
     return () => {
       window.clearInterval(timer)
-      for (const game of ['eater', 'catcher'] as GameName[]) sounds.current[game]?.tune(false)
+      for (const game of GAMES) sounds.current[game]?.tune(false)
     }
   }, [tune, demo])
 
@@ -63,8 +67,7 @@ export default function SoundBench({ accent }: { accent: string }) {
 
   const touch = () => {
     wakeSound()
-    sounds.current.eater?.touch()
-    sounds.current.catcher?.touch()
+    for (const game of GAMES) sounds.current[game]?.touch()
   }
   const button = (active: boolean) => ({
     padding: '8px 14px', borderRadius: 999, border: `2px solid ${accent}`, background: active ? accent : 'transparent',
@@ -77,9 +80,9 @@ export default function SoundBench({ accent }: { accent: string }) {
       <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 16, maxWidth: 720 }}>
         Chaque musique, chaque son, et « comme en jeu » : la musique basse avec des sons par-dessus au rythme d&apos;une partie. Sur iPhone et iPad, ce sont les fichiers que les jeux jouent vraiment.
       </p>
-      {(['eater', 'catcher'] as GameName[]).map((game) => (
+      {GAMES.map((game) => (
         <div key={game} style={{ marginBottom: 24 }} onPointerDown={touch}>
-          <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7, marginBottom: 10 }}>{game === 'eater' ? 'Random Eater' : 'Random Catcher'}</h3>
+          <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7, marginBottom: 10 }}>{NAMES[game]}</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
             <button type="button" style={button(tune === game && !demo)} onClick={() => { setDemo(null); setTune(tune === game && !demo ? null : game) }}>
               {tune === game && !demo ? '■ ' : '▶ '}{TUNES[game]}

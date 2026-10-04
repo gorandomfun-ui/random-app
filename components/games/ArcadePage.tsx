@@ -35,7 +35,7 @@ const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
   loading: () => <div className="flex h-full w-full items-center justify-center font-tomorrow text-sm uppercase tracking-[0.2em] opacity-70">Loading…</div>,
 })
 
-const NAMES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
+const NAMES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
 const pad = (n: number) => String(n).padStart(5, '0')
 
 export default function ArcadePage({ game, themeIndex }: { game: GameName; themeIndex: number }) {

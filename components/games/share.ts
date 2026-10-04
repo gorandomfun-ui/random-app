@@ -7,12 +7,13 @@
 import { isDaytime } from '@/lib/games/engine'
 import type { GameName } from '@/lib/games/scores'
 
-export const GAME_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER' }
+export const GAME_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
 
 /** The game's title card as a PNG file, drawn twice as large. */
 export async function titleCard(game: GameName, accent: string, best: number): Promise<File | null> {
-  const { renderTitle } = await import('@/lib/games/screens')
-  const b = renderTitle(game, 'landscape', accent, { level: 1, best, frame: 0, blink: true, day: isDaytime() })
+  const b = game === 'attacks'
+    ? (await import('@/lib/games/attacks')).renderAttacksTitle('landscape', accent, 'zen', { level: 1, best, frame: 0, blink: true })
+    : (await import('@/lib/games/titles')).renderGameTitle(game, 'landscape', accent, { level: 1, best, frame: 0, blink: true, day: isDaytime() })
   const small = document.createElement('canvas')
   small.width = b.width
   small.height = b.height

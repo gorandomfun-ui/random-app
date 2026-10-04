@@ -1,5 +1,5 @@
 /**
- * The games' sounds and their two tunes, made from numbers the way the old
+ * The games' sounds and their tunes, made from numbers the way the old
  * consoles made theirs: pulse and triangle waves, a little noise, short
  * envelopes. Nothing is recorded and nothing is borrowed — the tunes are
  * written here, note by note.
@@ -18,16 +18,17 @@
 
 export const SOUND_RATE = 22_050
 
-/** EATER's sounds, CATCHER's, and those both games share. */
+/** EATER's sounds, CATCHER's, ATTACKS', and those the games share. */
 export type SoundName =
   | 'bite' | 'fries' | 'shake' | 'donut' | 'gold' | 'crash'
   | 'item' | 'sauce' | 'slip' | 'coin' | 'note' | 'bundle' | 'card' | 'caught'
+  | 'squirt' | 'pop' | 'clink' | 'power' | 'hurt'
   | 'level' | 'over' | 'winner'
-export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'level', 'over', 'winner']
+export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'level', 'over', 'winner']
 
-/** A diner's shuffle for EATER, a convenience store's bossa for CATCHER. */
-export type TuneName = 'diner' | 'store'
-export const TUNE_NAMES: readonly TuneName[] = ['diner', 'store']
+/** A diner's shuffle for EATER, a convenience store's bossa for CATCHER, a fifties film from space for ATTACKS. */
+export type TuneName = 'diner' | 'store' | 'mars'
+export const TUNE_NAMES: readonly TuneName[] = ['diner', 'store', 'mars']
 
 /** How loud, at the top: the tunes low, the sounds light, the jingles a little more. */
 const TUNE_PEAK = 0.2
@@ -269,6 +270,31 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
     m.tone({ at: 0, dur: 0.05, freq: 3000, wave: 'noise', gain: 0.4, decay: 0.03, lowpass: 1500, seed: 91 })
     m.tone({ at: 0, dur: 0.3, freq: 330, to: 110, wave: 'pulse', duty: 0.5, gain: 0.45, decay: 0.16 })
   } },
+  // ATTACKS: the cook's squirt of ketchup, short and wet, light since it comes often
+  squirt: { seconds: 0.1, peak: SOUND_PEAK * 0.6, build: (m) => {
+    m.tone({ at: 0, dur: 0.05, freq: 3000, wave: 'noise', gain: 0.5, decay: 0.025, lowpass: 1400, seed: 111 })
+    m.tone({ at: 0, dur: 0.05, freq: 640, to: 300, wave: 'sine', gain: 0.35, decay: 0.03 })
+  } },
+  // a burger shot down: a juicy pop
+  pop: { seconds: 0.24, peak: SOUND_PEAK, build: (m) => {
+    m.tone({ at: 0, dur: 0.06, freq: 5000, wave: 'noise', gain: 0.45, decay: 0.03, lowpass: 2600, seed: 121 })
+    m.tone({ at: 0, dur: 0.16, freq: 420, to: 90, wave: 'pulse', duty: 0.25, gain: 0.45, decay: 0.08 })
+  } },
+  // a plate chipped: china
+  clink: { seconds: 0.22, peak: SOUND_PEAK * 0.7, build: (m) => {
+    m.tone({ at: 0, dur: 0.006, freq: 9000, wave: 'noise', gain: 0.3, seed: 131 })
+    m.tone({ at: 0, dur: 0.16, freq: hz('D7'), wave: 'sine', gain: 0.4, decay: 0.05, partial: { ratio: 2.4, gain: 0.3, decay: 0.03 } })
+  } },
+  // a bonus caught: up the arpeggio, quickly
+  power: { seconds: 0.42, peak: JINGLE_PEAK, build: (m) => {
+    ;['C5', 'E5', 'G5', 'C6', 'E6'].forEach((n, i) => m.tone({ at: i * 0.045, dur: i === 4 ? 0.16 : 0.04, freq: hz(n), wave: 'pulse', duty: 0.125, gain: 0.3 }))
+    m.tone({ at: 0.18, dur: 0.16, freq: 6000, wave: 'noise', gain: 0.08, decay: 0.08, highpass: 3000, seed: 141 })
+  } },
+  // the cook hit: a buzz going down
+  hurt: { seconds: 0.4, peak: SOUND_PEAK, build: (m) => {
+    m.tone({ at: 0, dur: 0.3, freq: 440, to: 110, wave: 'pulse', duty: 0.5, gain: 0.4, vibrato: { rate: 28, depth: 0.8 }, decay: 0.2 })
+    m.tone({ at: 0, dur: 0.08, freq: 4000, wave: 'noise', gain: 0.3, decay: 0.04, lowpass: 2500, seed: 151 })
+  } },
   // a level won: up the chord
   level: { seconds: 0.75, peak: JINGLE_PEAK, build: (m) => {
     const up = ['C5', 'E5', 'G5', 'C6']
@@ -383,6 +409,24 @@ const TUNES: Record<TuneName, Tune> = {
     t.each(8, (bar) => (bar % 2 ? [2, 4] : [0, 3, 6]), (at) => t.mix.tone({ at, dur: 0.012, freq: 1700, wave: 'pulse', duty: 0.5, gain: 0.08, decay: 0.01 }))
     t.each(8, () => [0, 1, 2, 3, 4, 5, 6, 7], (at, _bar, e) => t.mix.tone({ at, dur: 0.03, freq: 11000, wave: 'noise', gain: e % 2 ? 0.035 : 0.02, attack: 0.012, decay: 0.02, highpass: 5000, seed: 5 }))
     t.each(8, () => [0, 4], (at) => t.mix.tone({ at, dur: 0.1, freq: 120, to: 50, wave: 'sine', gain: 0.25, decay: 0.06 }))
+  } },
+  // ATTACKS: a fifties film from space — a theremin over A minor, F, C and E, a walking bass, brushes
+  mars: { bpm: 132, swing: 0.6, bars: 8, build: (t) => {
+    const lead = ['A4 - - C5 E5 - D5 -', 'C5 - A4 - - - . .', 'F4 - A4 - C5 - B4 A4', 'G#4 - - - E4 - . .', 'A4 - C5 - E5 - A5 -', 'G5 - E5 - C5 - D5 -', 'B4 - G#4 - E4 - F4 G#4', 'A4 - - - - - . .']
+    // the theremin: a sine that wavers wide and slides into its notes
+    t.part(lead, (freq, at, dur) => t.mix.tone({ at, dur, freq: freq * 0.985, to: freq, wave: 'sine', gain: 0.24, attack: 0.04, vibrato: { rate: 6, depth: 0.35, after: 0.06 }, release: 0.08 }), 0.98)
+    const bass = ['A2 - E3 - A2 - C3 -', 'A2 - E3 - A2 - G2 -', 'F2 - C3 - F2 - A2 -', 'E2 - B2 - E2 - G#2 -', 'A2 - E3 - A2 - C3 -', 'C3 - G3 - C3 - E3 -', 'E2 - B2 - D3 - G#2 -', 'A2 - E3 - A2 - E2 -']
+    t.part(bass, (freq, at, dur) => {
+      t.mix.tone({ at, dur, freq, wave: 'triangle', gain: 0.3, decay: 0.45 })
+      t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.5, gain: 0.045, decay: 0.2, lowpass: 900 })
+    }, 0.8)
+    // sparks from the stars on the off-beats: a thin pulse up the chord
+    const sparks = [['A5', 'C6', 'E6'], ['A5', 'C6', 'E6'], ['F5', 'A5', 'C6'], ['E5', 'G#5', 'B5'], ['A5', 'C6', 'E6'], ['C6', 'E6', 'G6'], ['E5', 'G#5', 'D6'], ['A5', 'C6', 'E6']]
+    t.each(8, () => [1, 3, 5, 7], (at, bar, e) => t.mix.tone({ at, dur: 0.05, freq: hz(sparks[bar][((e - 1) / 2) % 3]), wave: 'pulse', duty: 0.125, gain: 0.035, decay: 0.06 }))
+    // brushes and a soft kick
+    t.each(8, () => [0, 4], (at) => t.mix.tone({ at, dur: 0.12, freq: 130, to: 45, wave: 'sine', gain: 0.3, decay: 0.07 }))
+    t.each(8, () => [2, 6], (at) => t.mix.tone({ at, dur: 0.14, freq: 9000, wave: 'noise', gain: 0.1, attack: 0.02, decay: 0.07, lowpass: 4500, seed: 9 }))
+    t.each(8, () => [0, 1, 2, 3, 4, 5, 6, 7], (at, _bar, e) => t.mix.tone({ at, dur: 0.02, freq: 11000, wave: 'noise', gain: e % 2 ? 0.03 : 0.02, decay: 0.015, highpass: 6000, seed: 4 }))
   } },
 }
 

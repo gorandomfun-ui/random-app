@@ -350,7 +350,7 @@ export function renderGameOver(game: Game, layout: Layout, accent: string, optio
 }
 
 /** WINNER's row at the foot of the scene: PLAY AGAIN? and the two answers side by side, where the title says PRESS START. */
-function winnerRow(layout: Layout): { text: number; textY: number; yes: number; no: number; y: number } {
+export function winnerRow(layout: Layout): { text: number; textY: number; yes: number; no: number; y: number } {
   const { width, height } = SCENE_SIZE[layout]
   const textW = text7Width('PLAY AGAIN?', 2), yesW = text7Width('YES', 2, true) + 28, noW = text7Width('NO', 2, true) + 28
   const total = textW + 30 + yesW + 12 + noW
@@ -740,7 +740,7 @@ export function dpadGeometry(layout: Layout, pad?: Pad | boolean): Cross | null 
 }
 
 /** A card across the board: the board a shade darker, the words in arcade letters, the choices, `choice` the one lit. */
-function playCard(buffer: PixelBuffer, layout: Layout, accent: string, title: string, buttons: string[], choice = 0): void {
+export function playCard(buffer: PixelBuffer, layout: Layout, accent: string, title: string, buttons: string[], choice = 0): void {
   const boardH = boardSize(layout).rows * CELL
   const mid = boardMiddle(layout)
   buffer.shade(0, HUD_HEIGHT, buffer.width, boardH, 0.45)
