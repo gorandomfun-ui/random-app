@@ -8,8 +8,8 @@
  * ZQSD steer, a swipe too, or on a tall screen the cross of arrows — the
  * whole band under the board answers, and a thumb can roll from one arm to
  * the next without lifting. In ATTACKS the cook walks while left or right
- * is held — a key, an arm of the cross, or a finger on the board he walks
- * toward — and squirts by himself. P or Escape pause, and so does the page's own
+ * is held — a key or an arrow under the board — and squirts when fire is:
+ * the space bar or up, the FIRE button, or a finger on the sky. P or Escape pause, and so does the page's own
  * pause button through `control`; the game pauses by itself when the page
  * is left. Wide or tall is chosen at the start of a game, from the frame's
  * shape, and kept until it ends. Each game has its tune, on the title and
@@ -19,8 +19,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
-import { attacksOverHits, renderAttacksGame, renderAttacksOver, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
-import { ATTACKS_LAST_LEVEL, createAttacks, stepAttacks, type AttacksState } from '@/lib/games/attacks-rules'
+import { attacksOverHits, attacksPadGeometry, attacksPadPart, renderAttacksGame, renderAttacksOver, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
+import { ATTACKS_BOARD, ATTACKS_LAST_LEVEL, createAttacks, stepAttacks, type AttacksState } from '@/lib/games/attacks-rules'
 import { createCatcher, nextLevel, stepCatcher, type CatcherState } from '@/lib/games/catcher'
 import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
@@ -30,6 +30,7 @@ import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, ren
 import { renderGameTitle } from '@/lib/games/titles'
 import { gameSounds } from '@/lib/games/sound'
 import type { Direction } from '@/lib/games/sprites'
+import { HUD_HEIGHT } from '@/lib/games/ui'
 import { wakeSound } from '@/utils/sound'
 
 export type GameResult = { score: number; level: number; won: boolean; needsName?: boolean }
@@ -141,6 +142,7 @@ export default function GamePlayer({
   onLevelCleared,
   onNamed,
   big = false,
+  startLevel = 1,
 }: {
   game: GameName
   accent: string
@@ -158,6 +160,8 @@ export default function GamePlayer({
   onNamed?: (name: string) => void
   /** A phone playing full screen: a taller band with a bigger cross, or a band beside the board on its side. Read when a game starts. */
   big?: boolean
+  /** The level a whole game starts at: 1, or another on a test page. */
+  startLevel?: number
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -202,7 +206,7 @@ export default function GamePlayer({
     const inRound = () => roundRef.current != null
     const draw = (): PixelBuffer => {
       // in a round a real PLAY button takes PRESS START's place
-      const title = { level: roundRef.current?.level ?? 1, best: bestRef.current, frame: s.frame, blink: s.blink, press: !inRound() }
+      const title = { level: roundRef.current?.level ?? startLevel, best: bestRef.current, frame: s.frame, blink: s.blink, press: !inRound() }
       if (s.mode === 'title') return game === 'attacks' ? renderAttacksTitle(s.layout, accent, 'zen', title) : renderGameTitle(game, s.layout, accent, { ...title, day: isDaytime() })
       // in a round, the end speaks through the page: no PLAY AGAIN? unless a retry is on offer
       const ask = !inRound() || s.mode === 'retry'
@@ -210,7 +214,7 @@ export default function GamePlayer({
       if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return game === 'attacks' ? renderAttacksWinner(s.layout, accent, ended) : renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
       if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return game === 'attacks' ? renderAttacksOver(s.layout, accent, ended) : renderGameOver(game, s.layout, accent, ended)
       // in a round the pause card only offers RESUME: leaving is the page's business
-      if (s.attacks) return renderAttacksGame(s.attacks, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
+      if (s.attacks) return renderAttacksGame(s.attacks, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound(), pressed: pressed() })
       if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
       return renderEaterGame(s.eater!, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
     }
@@ -245,7 +249,7 @@ export default function GamePlayer({
       // a round starts at its level with the score so far, CATCHER with three lives, EATER for that one level, ATTACKS both
       s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
       s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
-      s.attacks = game === 'attacks' ? createAttacks(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score, lives: 3 } : {}) : null
+      s.attacks = game === 'attacks' ? createAttacks(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, lives: 3 } : {}) : null
       release()
       s.mode = 'play'
       s.pause = null
@@ -320,7 +324,8 @@ export default function GamePlayer({
       } else if (s.attacks) {
         const a = s.attacks
         const passed = a.passed
-        stepAttacks(a, walk(a))
+        stepAttacks(a, walk(), firing())
+        if (held.latch > 0) held.latch -= 1
         for (const heard of a.heard) sounds.play(heard)
         if (a.passed > passed && a.phase === 'play') callbacks.current.onLevelCleared?.(a.level - 1)
         if (a.phase === 'over') end(a.score, a.level, 60, false)
@@ -333,14 +338,26 @@ export default function GamePlayer({
       if (s.catcher) s.catcher.burger.want = dir
       else if (s.eater) turnEater(s.eater, dir)
     }
-    // ATTACKS' cook walks while a way is held: the last arrow key pressed and still down, else the cross's arm under the thumb, else toward a finger on the board
-    const held: { keys: Array<-1 | 1>; thumb: -1 | 0 | 1; aim: number | null } = { keys: [], thumb: 0, aim: null }
-    const release = () => { held.keys = []; held.thumb = 0; held.aim = null }
-    const walk = (a: AttacksState): -1 | 0 | 1 => {
+    // ATTACKS: the cook walks while a way is held — the last arrow key pressed and still down, else the arrow under a finger — and squirts while
+    // fire is held: a fire key, the FIRE button, a finger on the sky; a quick press counts for a tenth of a second, so no tap is lost between two steps
+    const held: { keys: Array<-1 | 1>; fire: Set<string>; latch: number; fingers: Map<number, 'left' | 'right' | 'fire' | 'sky'> } = { keys: [], fire: new Set(), latch: 0, fingers: new Map() }
+    const release = () => { held.keys = []; held.fire.clear(); held.latch = 0; held.fingers.clear() }
+    const fingers = () => [...held.fingers.values()]
+    const walk = (): -1 | 0 | 1 => {
       if (held.keys.length) return held.keys[held.keys.length - 1]
-      if (held.thumb) return held.thumb
-      if (held.aim == null || Math.abs(held.aim - a.cook.x) < 3) return 0
-      return held.aim > a.cook.x ? 1 : -1
+      const way = fingers().filter((f) => f === 'left' || f === 'right').pop()
+      return way === 'left' ? -1 : way === 'right' ? 1 : 0
+    }
+    const firing = () => held.fire.size > 0 || held.latch > 0 || fingers().some((f) => f === 'fire' || f === 'sky')
+    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire') } }
+    /** Where a finger falls in play: an arrow, FIRE, the sky over the board, or none of them. */
+    const partAt = (e: PointerEvent): 'left' | 'right' | 'fire' | 'sky' | null => {
+      const p = toBuffer(e)
+      const pad = attacksPadGeometry(s.layout, s.pad)
+      const part = pad ? attacksPadPart(p.x, p.y, pad) : null
+      if (part) return part
+      const board = ATTACKS_BOARD[s.layout]
+      return p.x >= 0 && p.x < board.width && p.y >= HUD_HEIGHT && p.y < HUD_HEIGHT + board.height ? 'sky' : null
     }
     const way = (dir: Direction | null): -1 | 0 | 1 => (dir === 'left' ? -1 : dir === 'right' ? 1 : 0)
     const pause = () => { release(); if (s.mode === 'play' && s.pause == null) { s.pause = 0; s.dirty = true } }
@@ -416,6 +433,8 @@ export default function GamePlayer({
         else used = false
       } else if (s.mode === 'play') {
         if (game === 'attacks' && way(dir)) { const w = way(dir) as -1 | 1; if (!e.repeat) held.keys = [...held.keys.filter((k) => k !== w), w] }
+        // the space bar or up: fire, even with a button in focus (it must not press it)
+        else if (game === 'attacks' && (e.key === ' ' || dir === 'up')) { if (!e.repeat) { held.fire.add(e.key); held.latch = 6 } }
         else if (dir) steer(dir)
         else if (pauseKey) pause()
         // the space bar does nothing in play, but must not scroll the page
@@ -431,6 +450,7 @@ export default function GamePlayer({
     const onKeyUp = (e: KeyboardEvent) => {
       const w = way(keyDirection(e.key))
       if (w) held.keys = held.keys.filter((k) => k !== w)
+      if (held.fire.delete(e.key) && e.key === ' ' && s.mode === 'play') e.preventDefault()
     }
 
     // the finger: the cross of arrows answers at once and follows a rolling thumb; a swipe steers; a tap chooses
@@ -450,21 +470,28 @@ export default function GamePlayer({
     const onDown = (e: PointerEvent) => {
       if (e.button > 0) return
       touched()
+      if (game === 'attacks' && s.mode === 'play' && s.pause == null) {
+        const part = partAt(e)
+        if (part) { held.fingers.set(e.pointerId, part); if (part === 'fire' || part === 'sky') held.latch = 6; s.dirty = true; return }
+      }
       if (s.mode === 'play' && s.pause == null && inBand(e)) {
         const dir = onCross(e)
         thumb = { id: e.pointerId, dir }
-        if (game === 'attacks') held.thumb = way(dir)
-        else if (dir) steer(dir)
+        if (dir) steer(dir)
         return
       }
       touch = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false }
-      if (game === 'attacks' && s.mode === 'play' && s.pause == null) held.aim = toBuffer(e).x
     }
     const onMove = (e: PointerEvent) => {
+      const finger = held.fingers.get(e.pointerId)
+      if (finger) {
+        // a thumb rolls from one arrow to the other, or onto FIRE; a finger on the sky keeps firing wherever it goes
+        if (finger !== 'sky') { const part = partAt(e); if (part && part !== 'sky' && part !== finger) { held.fingers.set(e.pointerId, part); s.dirty = true } }
+        return
+      }
       if (thumb && thumb.id === e.pointerId) {
         const dir = onCross(e)
-        if (game === 'attacks') held.thumb = way(dir)
-        else if (dir && dir !== thumb.dir) steer(dir)
+        if (dir && dir !== thumb.dir) steer(dir)
         thumb.dir = dir
         return
       }
@@ -472,17 +499,16 @@ export default function GamePlayer({
       const dx = e.clientX - touch.x, dy = e.clientY - touch.y
       if (Math.hypot(dx, dy) > 10) touch.moved = true
       if (s.mode !== 'play' || s.pause != null) return
-      if (game === 'attacks') { held.aim = toBuffer(e).x; return }
       const dir = swipeDirection(dx, dy, 24)
       // one swipe after another without lifting the finger
       if (dir) { steer(dir); touch.x = e.clientX; touch.y = e.clientY }
     }
     const onUp = (e: PointerEvent) => {
-      if (thumb && thumb.id === e.pointerId) { thumb = null; held.thumb = 0; return }
+      if (held.fingers.delete(e.pointerId)) { s.dirty = true; return }
+      if (thumb && thumb.id === e.pointerId) { thumb = null; return }
       if (!touch || touch.id !== e.pointerId) return
       const tap = !touch.moved
       touch = null
-      held.aim = null
       if (!tap) return
       const p = toBuffer(e)
       if (s.mode === 'title') { if (!inRound()) start() }
@@ -500,7 +526,7 @@ export default function GamePlayer({
         else if (within(hits.quit, p.x, p.y) && !inRound()) toTitle()
       }
     }
-    const onCancel = () => { touch = null; thumb = null; held.thumb = 0; held.aim = null }
+    const onCancel = (e: PointerEvent) => { touch = null; thumb = null; held.fingers.delete(e.pointerId) }
     const onHidden = () => { if (document.hidden) pause() }
     const watch = new ResizeObserver(() => {
       box.width = frameBox.clientWidth
@@ -532,7 +558,7 @@ export default function GamePlayer({
       frameBox.removeEventListener('pointerup', onUp)
       frameBox.removeEventListener('pointercancel', onCancel)
     }
-  }, [game, accent, control])
+  }, [game, accent, control, startLevel])
 
   const submitName = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

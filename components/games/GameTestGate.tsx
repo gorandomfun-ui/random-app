@@ -7,10 +7,10 @@ import { GAMES_TEST_COOKIE } from '@/lib/games/access'
 import type { GameName } from '@/lib/games/scores'
 import { getRandomTheme } from '@/lib/theme'
 
-/** A game's test page: behind the effects test password, then the game in its Random page, in one of the site's colours. */
-export default function GameTestGate({ game }: { game: GameName }) {
+/** A game's test page: behind the effects test password, then the game in its Random page, in one of the site's colours; `startLevel` to begin further on. */
+export default function GameTestGate({ game, startLevel }: { game: GameName; startLevel?: number }) {
   if (!hasEffectsTestAccess(cookies().get(GAMES_TEST_COOKIE)?.value)) {
     return <EffectsTestLogin configured={isEffectsTestConfigured()} title="Games test" endpoint="/api/games-test/access" />
   }
-  return <ArcadePage game={game} themeIndex={getRandomTheme().index} />
+  return <ArcadePage game={game} themeIndex={getRandomTheme().index} startLevel={startLevel} />
 }

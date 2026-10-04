@@ -38,7 +38,8 @@ const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
 const NAMES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
 const pad = (n: number) => String(n).padStart(5, '0')
 
-export default function ArcadePage({ game, themeIndex }: { game: GameName; themeIndex: number }) {
+/** A game's page; `startLevel` lets a test page begin a whole game further on. */
+export default function ArcadePage({ game, themeIndex, startLevel }: { game: GameName; themeIndex: number; startLevel?: number }) {
   const theme = THEMES[themeIndex] ?? THEMES[0]
   const [best, setBest] = useState(0)
   const [last, setLast] = useState<GameResult | null>(null)
@@ -154,7 +155,7 @@ export default function ArcadePage({ game, themeIndex }: { game: GameName; theme
 
       <section className="relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
         <div className="min-h-0 flex-1" style={{ background: '#000' }}>
-          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onStart={onStart} onNamed={onNamed} onLevelCleared={onLevelCleared} onPlayState={setPlayState} control={control} />
+          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onStart={onStart} onNamed={onNamed} onLevelCleared={onLevelCleared} onPlayState={setPlayState} control={control} startLevel={startLevel} />
         </div>
       </section>
 

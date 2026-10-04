@@ -28,7 +28,11 @@ const LABELS: Record<string, string> = {
   winner: 'Winner — nuit',
   'winner-jour': 'Winner — jour',
   'attacks-titre': 'Titre',
-  'attacks-jeu': 'En jeu',
+  'attacks-jeu-1': 'Niveau 1 — la nuit calme',
+  'attacks-jeu-4': 'Niveau 4 — boss BIG BUN, les escadrilles au loin',
+  'attacks-jeu-9': 'Niveau 9 — burgers en alu, plongeurs, Mars qui brûle',
+  'attacks-jeu-13': 'Niveau 13 — la tempête, la lune rouge',
+  'attacks-jeu-16': 'Niveau 16 — MEGA BURGER, ciel de sang et éclairs',
   'attacks-game-over': 'Game over',
   'attacks-winner': 'Winner',
 }
@@ -87,7 +91,7 @@ export default function MockGallery() {
     layout,
     shots: [
       { name: 'attacks-titre', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksTitle(layout, accent, 'zen', { frame }) },
-      { name: 'attacks-jeu', width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 472, draw: (frame: number) => renderAttacksPlay(layout, accent, { frame }) },
+      ...[1, 4, 9, 13, 16].map((level) => ({ name: `attacks-jeu-${level}`, width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 472, draw: (frame: number) => renderAttacksPlay(layout, accent, { frame, level }) })),
       { name: 'attacks-game-over', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksOver(layout, accent, { score: 3420, best: 5100, frame, blink: frame % 2 === 0 }) },
       { name: 'attacks-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
@@ -106,7 +110,7 @@ export default function MockGallery() {
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Le fast-food RANDOM BURGER sur Mars : le titre, un moment de jeu, le game over et le winner. Le jeu se joue sur sa page de test, /admin/attacks. Dans la couleur choisie ci-dessus.
+          Le fast-food RANDOM BURGER sur Mars : le titre, des moments de jeu du niveau 1 au 16 (la nuit chauffe au fil des niveaux, un boss tous les quatre), le game over et le winner. Le jeu se joue sur sa page de test, /admin/attacks (et /admin/attacks?niveau=8 pour commencer au niveau 8). Dans la couleur choisie ci-dessus.
         </p>
         {attacks.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
