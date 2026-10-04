@@ -86,6 +86,7 @@ import type { Decision } from '@/components/games/ArcadeStage'
 import type { GameControl, PlayState, Round } from '@/components/games/GamePlayer'
 import type { Ticket } from '@/components/games/world'
 import { invalidateWeLikesCache } from '@/lib/likes/weCache'
+import { captionCommand, chooseCaptions, youtubeLanguage, type CaptionTrack } from '@/lib/random/captions'
 
 const Encourage3DOverlay = dynamic(() => import('@/components/encourage3d/Encourage3DOverlay'), {
   ssr: false,
@@ -1828,11 +1829,13 @@ function YouTubeEmbed({
   const [isMuted, setIsMuted] = useState(soundMuted || muteOnIOSPlaybackStart)
   const [embedMuted, setEmbedMuted] = useState(soundMuted || muteOnIOSPlaybackStart)
   const [playerReady, setPlayerReady] = useState(false)
+  // How many times the page set this video's subtitles: the player says its tracks once or twice as it starts, never more is needed.
+  const captionsSetRef = useRef(0)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setOriginParam(window.location.origin)
-      setUiLang(document.documentElement.lang.slice(0, 2) || 'en')
+      setUiLang(youtubeLanguage(document.documentElement.lang))
     }
   }, [])
 
@@ -1869,7 +1872,7 @@ function YouTubeEmbed({
       playsinline: '1',
       modestbranding: '1',
       enablejsapi: '1',
-      // Subtitles in the site's language, on by default (the owner, 1 October: videos opened with German subtitles, the browser's choice).
+      // Subtitles on, in the app's language when the video has it; the page then corrects the player's own pick (lib/random/captions.ts).
       cc_load_policy: '1',
       cc_lang_pref: uiLang,
       hl: uiLang,
@@ -1896,6 +1899,16 @@ function YouTubeEmbed({
         markLoaded()
         setPlayerReady(true)
       }
+      // The player lists its subtitle tracks: the owner's rule picks one, or none (lib/random/captions.ts).
+      if (payload.event === 'apiInfoDelivery') {
+        const captions = (payload.info as { captions?: { tracklist?: unknown; track?: unknown } } | undefined)?.captions
+        if (captions && Array.isArray(captions.tracklist) && captionsSetRef.current < 2) {
+          captionsSetRef.current += 1
+          const shown = captions.track && typeof captions.track === 'object' ? captions.track as CaptionTrack : null
+          postEmbedMessage(iframeRef.current, captionCommand(chooseCaptions({ app: uiLang, spoken: item.spokenLang, tracks: captions.tracklist as CaptionTrack[], shown })))
+        }
+        return
+      }
       if (payload.event !== 'onError') return
 
       const rawCode = payload.info ?? payload.data
@@ -1914,7 +1927,10 @@ function YouTubeEmbed({
       window.removeEventListener('message', handleMessage)
       timers.forEach((timer) => window.clearTimeout(timer))
     }
-  }, [item, markLoaded, onPlaybackIssue, playerId, src])
+  }, [item, markLoaded, onPlaybackIssue, playerId, src, uiLang])
+
+  // A new video, a new choice of subtitles.
+  useEffect(() => { captionsSetRef.current = 0 }, [src])
 
   useEffect(() => {
     if (!iframeLoaded || playerReady) return undefined

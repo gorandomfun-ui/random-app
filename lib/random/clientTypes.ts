@@ -45,6 +45,8 @@ export type VideoItem = Identifiable & {
   thumbUrl?: string | null
   text?: string | null
   lang?: 'en' | 'fr' | 'de' | 'jp' | 'es'
+  /** The language the video speaks, two letters, when the draw knows it: the page picks its subtitles with it (lib/random/captions.ts). */
+  spokenLang?: string
   provider?: string | null
   source?: SourceInfo
 } & ToneAttributes & DiscoveryMetadata

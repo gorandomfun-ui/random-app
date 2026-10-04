@@ -19,6 +19,7 @@ import { digDrawSwitchedOn, selectDig } from './digDraw'
 import { selectWheel, wheelSwitchedOn } from './wheel'
 import { countServed, servedCountOn } from './served'
 import { parseKept, recordKept } from './kept'
+import { spokenLanguage } from './spoken'
 import { exposureOf } from './diversity'
 import { withAbortDeadline } from './exploration'
 import { requestSubjectWork } from './subjectWork'
@@ -105,6 +106,9 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       delete publicCandidate.editorialFamilies; delete publicCandidate.directEditorialReference
       // The card rides on the item, so the device can say how long each card's video was kept (lib/discovery/kept.ts).
       if (wheel) publicCandidate.payload = { ...(publicCandidate.payload as object), card: wheel.wheel.fallback ? 'joker' : wheel.wheel.slot === 'bonus' && wheel.wheel.universe ? `bonus:${wheel.wheel.universe}` : wheel.wheel.slot } as T
+      // The language the video speaks rides on it too, for the subtitles the page picks (lib/random/captions.ts).
+      const spoken = publicCandidate.type === 'video' ? spokenLanguage(publicCandidate) : undefined
+      if (spoken) publicCandidate.payload = { ...(publicCandidate.payload as object), spokenLang: spoken } as T
       return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}), ...(wheel ? { wheel: wheel.wheel } : {}), ...(dig ? { dig: dig.dig } : {}),
         ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }

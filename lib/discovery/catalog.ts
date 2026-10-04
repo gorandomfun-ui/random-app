@@ -11,6 +11,13 @@ export type CatalogueRow = Record<string, unknown> & { _id?: unknown; type?: str
 /** The platforms declare two-letter codes; the detector speaks three-letter ones (lib/discovery/language.ts). The same word for the same language. */
 const ISO_THREE: Record<string, string> = { fr: 'fra', en: 'eng', es: 'spa', pt: 'por', de: 'deu', it: 'ita', ja: 'jpn', ko: 'kor', ar: 'ara', hi: 'hin', id: 'ind', tr: 'tur', ru: 'rus', nl: 'nld', pl: 'pol', sv: 'swe', zh: 'cmn', vi: 'vie', th: 'tha', uk: 'ukr', el: 'ell', cs: 'ces', ro: 'ron', hu: 'hun', da: 'dan', fi: 'fin', no: 'nor', he: 'heb', fa: 'pes', bn: 'ben', ta: 'tam', te: 'tel', ms: 'msa', tl: 'tgl' }
 export const isoThree = (code: string): string => ISO_THREE[code.toLowerCase()] ?? code.toLowerCase()
+/** Back to two letters, for the players (YouTube's subtitles): the detector's own codes for the same languages too; an unknown code gives nothing. */
+const ISO_TWO: Record<string, string> = { ...Object.fromEntries(Object.entries(ISO_THREE).map(([two, three]) => [three, two])), arb: 'ar', zlm: 'ms', nob: 'no', swh: 'sw', uzn: 'uz', azj: 'az', hau: 'ha', yor: 'yo', ibo: 'ig' }
+export const isoTwo = (code: string): string | undefined => {
+  const lower = code.toLowerCase()
+  if (/^[a-z]{2}$/.test(lower)) return lower
+  return ISO_TWO[lower]
+}
 const text = (x: unknown): string | undefined => typeof x === 'string' && x.trim() ? x : undefined
 function date(x: unknown): number | undefined {
   const n = x instanceof Date ? x.getTime() : typeof x === 'string' || typeof x === 'number' ? new Date(x).getTime() : NaN

@@ -24,6 +24,7 @@ const QUIZ_POINTS = 1
 import { useI18n } from '@/providers/I18nProvider'
 import MiniGameCard from './minigames/MiniGameCard'
 import { reportImageLoadIssue } from '@/utils/imageSuspects'
+import { youtubeLanguage } from '@/lib/random/captions'
 
 type Theme = { bg: string; deep: string; cream: string; text: string }
 
@@ -349,10 +350,10 @@ function Video({ block, theme }: { block: VideoItem; theme: Theme }) {
       modestbranding: '1',
       enablejsapi: '1',
       controls: '1',
-      // Subtitles in the page's language, on by default.
+      // Subtitles in the page's language, on by default (YouTube's code: `ja`, not the app's `jp`).
       cc_load_policy: '1',
-      cc_lang_pref: typeof document !== 'undefined' && document.documentElement.lang ? document.documentElement.lang.slice(0, 2) : 'en',
-      hl: typeof document !== 'undefined' && document.documentElement.lang ? document.documentElement.lang.slice(0, 2) : 'en',
+      cc_lang_pref: youtubeLanguage(typeof document !== 'undefined' ? document.documentElement.lang : 'en'),
+      hl: youtubeLanguage(typeof document !== 'undefined' ? document.documentElement.lang : 'en'),
     })
     if (originParam) params.set('origin', originParam)
     return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
