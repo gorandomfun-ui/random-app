@@ -62,27 +62,41 @@ const dailymotionId = (videoId: unknown): string | null => {
 }
 
 /**
- * What a run starts from: the owner's likes on Dailymotion, the dig's weird
- * themes and likes there, and a few random old searches. Shuffled; the
- * count is the setting's.
+ * What a run starts from. Half the seeds on the owner's taste: his likes on
+ * Dailymotion and the look-alikes the AI found for them (lib/v3/ingest/lines/
+ * lookalike.ts) — measured on 5 October, the related videos of his likes are
+ * close to a like four times as often as those of random seeds (18 % against
+ * 4 %). The other half as before, the dig's weird themes and likes there, so
+ * the drift keeps its own wandering; plus a few random old searches. Shuffled;
+ * the count is the setting's.
  */
 export async function seeds(ctx: LineContext, random: () => number = Math.random): Promise<Array<{ id: string; from: string }>> {
   const items = ctx.db.collection('items')
-  const out: Array<{ id: string; from: string }> = []
+  const taste: Array<{ id: string; from: string }> = []
+  const wander: Array<{ id: string; from: string }> = []
   const pool = await loadLikePool(ctx.db).catch(() => ({ zones: [], likeIds: [] as string[] }))
   const likeIds = pool.likeIds.filter((id) => ObjectId.isValid(id)).slice(0, 200).map((id) => new ObjectId(id))
   if (likeIds.length) {
     const liked = await items.find({ _id: { $in: likeIds }, type: 'video', provider: 'dailymotion' } as Document, { projection: { videoId: 1 }, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
-    for (const row of liked) { const id = dailymotionId(row.videoId); if (id) out.push({ id, from: 'like' }) }
+    for (const row of liked) { const id = dailymotionId(row.videoId); if (id) taste.push({ id, from: 'like' }) }
   }
+  const alike = await items.find({ 'v3.line': 'lookalike', type: 'video', provider: 'dailymotion', rand: { $gte: random() } } as Document, { projection: { videoId: 1 }, sort: { rand: 1 }, limit: 60, hint: 'v3_line_type_rand', maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
+  for (const row of alike) { const id = dailymotionId(row.videoId); if (id) taste.push({ id, from: 'sosie' }) }
   const point = random()
   const dug = await items.find({ 'v3.line': 'dig', type: 'video', provider: 'dailymotion', rand: { $gte: point } } as Document, { projection: { videoId: 1, 'v3.dig.base': 1 }, sort: { rand: 1 }, limit: 120, hint: 'v3_line_type_rand', maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
   for (const row of dug) {
     const base = (row.v3 as { dig?: { base?: string } } | undefined)?.dig?.base
     const id = dailymotionId(row.videoId)
-    if (id && (base === 'keywords' || base === 'likes')) out.push({ id, from: `dig:${base}` })
+    if (id && (base === 'keywords' || base === 'likes')) wander.push({ id, from: `dig:${base}` })
   }
-  return shuffle(out, random).slice(0, SEEDS_PER_RUN)
+  return mixSeeds(taste, wander, random)
+}
+
+/** Half the seeds from the taste, half from the wandering; one side short, the other fills in. */
+export function mixSeeds<T>(taste: T[], wander: T[], random: () => number = Math.random, count = SEEDS_PER_RUN): T[] {
+  const fromTaste = shuffle(taste, random).slice(0, Math.max(Math.ceil(count / 2), count - wander.length))
+  const fromWander = shuffle(wander, random).slice(0, count - fromTaste.length)
+  return shuffle([...fromTaste, ...fromWander], random)
 }
 
 function shuffle<T>(list: T[], random: () => number): T[] {
