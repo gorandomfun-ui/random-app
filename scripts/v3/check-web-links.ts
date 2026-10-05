@@ -174,6 +174,10 @@ async function main(): Promise<void> {
   const max = numericFlag('max', 0)
 
   setTimeout(() => { console.error(`Arrêt : ${MAX_MINUTES} minutes écoulées.`); process.exit(1) }, MAX_MINUTES * 60_000).unref()
+  // A site's malformed answer can trip Node's own HTTP parser outside any request's promise (5 October, after
+  // 1,680 sites: "AssertionError at Parser.finish", the whole run down). The run notes it and goes on; the
+  // visit it belonged to ends at its thirty seconds like any other.
+  process.on('uncaughtException', (error) => { console.error(`  erreur réseau rattrapée : ${error instanceof Error ? error.message.slice(0, 120) : 'erreur'}`) })
   // A reply that never comes ends in an error, not in a wait without end.
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 20000, socketTimeoutMS: QUERY_MS * 3 })
   await client.connect()
