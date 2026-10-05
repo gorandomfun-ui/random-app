@@ -15,7 +15,7 @@ export async function titleCard(game: GameName, accent: string, best: number): P
   if (game === 'attacks') await (await import('@/lib/games/attacks-art')).attacksArtReady(['titleWide', 'rover'])
   const b = game === 'attacks'
     ? (await import('@/lib/games/attacks')).renderAttacksTitle('landscape', accent, 'zen', { level: 1, best, frame: 0, blink: true })
-    : (await import('@/lib/games/titles')).renderGameTitle(game, 'landscape', accent, { level: 1, best, frame: 0, blink: true, day: isDaytime() })
+    : (await import('@/lib/games/screens')).renderTitle(game, 'landscape', accent, { level: 1, best, frame: 0, blink: true, day: isDaytime() })
   const small = document.createElement('canvas')
   small.width = b.width
   small.height = b.height

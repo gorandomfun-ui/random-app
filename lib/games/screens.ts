@@ -14,6 +14,7 @@ import type { EaterState } from './eater'
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { catcherLogoSize, drawCatcherLogo, drawEaterLogo, eaterLogoSize } from './logos'
 import { mazeFor, MAZE_HEIGHT, MAZE_WIDTH } from './maze'
+import { CHEER_SIZE, drawCheeringEater, drawWalkingEater, WALKER_SIZE } from './eater-walk'
 import { dim, drawText7, mix, PixelBuffer, scale2x, text7Width, type Palette, type Sprite } from './pixels'
 import {
   bench, bin, car, cloud, DAYS, drawDiner, drawStore, hedge, hydrant, lamp, moon, NIGHTS, palm, railing, signFrame, skyline, sky, stars, street, sun, tree, vending, wisp,
@@ -22,9 +23,10 @@ import {
 import {
   BANKNOTE, BANKNOTE_PALETTE, BURGER, BURGER_PALETTE, CELL, CHEESE, COIN, COIN_PALETTE, CRAWL_ARMS, CRAWL_HEAD, CRAWL_LEGS, DONUT, DONUT_PALETTE, eaterPalette, facing,
   FRIES, FRIES_PALETTE, GOLD_BURGER_PALETTE, GOLD_CARD, GOLD_CARD_PALETTE, HUMAN, humanPalette, ITEM_PALETTE, MILKSHAKE, MILKSHAKE_PALETTE, MINI_BURGER,
-  MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, WINNER_STAND, winnerPalette, type Direction,
+  MINI_BURGER_PALETTE, ONION, PICKLE, SAUCE, SAUCE_PALETTE, TOMATO, torsoLook, tubePiece, type Direction,
 } from './sprites'
 import type { Cross } from './engine'
+import { birds, blitShaded, cityGlow, drinksMachine, farCity, fireHydrant, footShade, headlights, leafyTree, lightSpill, shootingStar, streetBin, wetRoad } from './street'
 import { arcadeText, button, CREAM, dpad, hud, HUD_HEIGHT, infoLine, INK, pressStart } from './ui'
 
 export type Game = 'catcher' | 'eater'
@@ -65,10 +67,6 @@ export function playSize(layout: Layout, pad?: Pad | boolean): { width: number; 
 }
 
 // ---------------------------------------------------------------- the street, composed
-
-/** The winner standing, smoothed twice over. */
-let stood: Sprite | null = null
-const standing = (): Sprite => (stood ??= scale2x(scale2x(WINNER_STAND)))
 
 /** The title screens' sprites: the play sprites, smoothed to the finer grid. */
 const fine = new Map<Sprite, Sprite>()
@@ -151,21 +149,43 @@ export function drawProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night
   else hedge(buffer, prop.x, s.ground, prop.w, night)
 }
 
-/** The night street of a game, its building and the game's own mark, its traffic, and its hero on the sidewalk. */
+/** The street's things, the finer ones (`street.ts`) where there are: the tree, the drinks machine, the bin, the hydrant. */
+function drawFineProp(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, index: number): void {
+  if (prop.kind === 'tree') leafyTree(buffer, prop.x, s.ground, prop.size, night, 3 + index)
+  else if (prop.kind === 'vending') drinksMachine(buffer, prop.x, s.ground, accent, !night.day)
+  else if (prop.kind === 'bin') streetBin(buffer, prop.x, s.ground, mix(accent, '#000000', 0.45))
+  else if (prop.kind === 'hydrant') fireHydrant(buffer, prop.x, s.ground + 4)
+  else drawProp(buffer, prop, s, night, accent, true, index)
+}
+
+/**
+ * A game's street, by night or by day, in its finer manner (`street.ts`):
+ * the sky, the city near and far, the building with the game's own mark
+ * (or WINNER), the street's things, the road — wet at night, the building's
+ * light on the sidewalk; dry by day, its shadow at its foot —, the hero on
+ * the sidewalk and the traffic, each car lighting the road ahead at night.
+ */
 function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, options: SceneOptions): Stage {
   const s = stage(game, layout)
   const day = options.day === true
   const night: Night = (day ? DAYS : NIGHTS)[game === 'catcher' ? 'blue' : 'violet']
+  // the city's glow over the horizon at night, amber or pink; by day a pale haze
+  const glow = day ? '#ffffff' : game === 'catcher' ? '#ffb85a' : '#ff7aa2'
   const { width: W, height: H } = buffer
   const { frame, lit } = options
   sky(buffer, night, s.horizon)
-  if (day) sun(buffer, s.moon[0], s.moon[1], s.moon[2] * 1.15)
-  else {
-    stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 120 : 150, s.horizon - 120, frame)
+  cityGlow(buffer, s.horizon, glow)
+  if (day) {
+    sun(buffer, s.moon[0], s.moon[1], s.moon[2] * 1.15)
+    birds(buffer, frame, s.horizon - 150)
+  } else {
+    stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 170 : 210, s.horizon - 150, frame)
     moon(buffer, ...s.moon)
+    shootingStar(buffer, frame)
   }
   s.wisps.forEach(([x, y, w]) => wisp(buffer, x, y, w, night))
   s.clouds.forEach(([x, y, design, flip]) => cloud(buffer, x, y, design, night, flip, s.moon[0] < W / 2))
+  farCity(buffer, night, s.ground - 16, game === 'catcher' ? 17 : 19, glow)
   skyline(buffer, night, s.ground - 16, s.far, s.near, frame)
   const [bx, bw] = s.building
   // palms stand behind the railing; everything else in front
@@ -190,40 +210,33 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
       drawDiner(buffer, bx, bw, s.ground, accent, frame, lit, day)
     }
   }
-  s.props.forEach((prop, i) => { if (prop.kind !== 'palm' && (options.building || prop.kind !== 'vending')) drawProp(buffer, prop, s, night, accent, lit, i) })
+  s.props.forEach((prop, i) => { if (prop.kind !== 'palm' && (options.building || prop.kind !== 'vending')) drawFineProp(buffer, prop, s, night, accent, i) })
   street(buffer, night, s.ground, 22, s.road.bottom, s.road.line)
+  if (options.building) { if (day) footShade(buffer, bx, bx + bw, s.ground, 20); else lightSpill(buffer, bx, bx + bw, s.ground, 22, '#ffd27a') }
+  if (!day) wetRoad(buffer, s.ground, s.ground + 28, s.road.bottom, frame)
   if (s.road.bottom < H) {
     // the near sidewalk under the road on a tall screen
-    buffer.rect(0, s.road.bottom, W, H - s.road.bottom, day ? night.sidewalkDark : dim(night.sidewalk, 0.55))
+    buffer.rect(0, s.road.bottom, W, H - s.road.bottom, day ? night.sidewalkDark : mix(night.sidewalk, '#000000', 0.45))
     buffer.rect(0, s.road.bottom, W, 3, night.sidewalkLight)
-    for (let x = 24; x < W; x += 48) buffer.rect(x, s.road.bottom + 3, 1, H - s.road.bottom - 3, dim(night.sidewalk, 0.42))
+    for (let x = 24; x < W; x += 48) buffer.rect(x, s.road.bottom + 3, 1, H - s.road.bottom - 3, day ? dim(night.sidewalk, 0.42) : mix(night.sidewalk, '#000000', 0.58))
   }
-  // the hero on the sidewalk first: the cars pass in front of it
+  // the hero on the sidewalk first, with volume: the cars pass in front of it
+  const door = bx + Math.round(bw / 2)
   if (options.hero === 'winner') {
-    const door = bx + Math.round(bw / 2)
     if (game === 'catcher') {
       // the burger hops on the spot, mouth open at the top of the jump
       const up = frame % 2 === 1
-      buffer.blit(smooth(BURGER[up ? 1 : 0]), door - 16, s.ground - 26 - (up ? 16 : 0), BURGER_PALETTE)
-    } else {
-      // the eater on his feet, the cup over his head, a glint on it every other moment; smoothed twice,
-      // since his head is half the crawler's in the sprite: the same man, the same size
-      const x0 = door - 32, y0 = s.ground + 18 - 128
-      buffer.blit(standing(), x0, y0, winnerPalette(accent))
-      const glints: Array<[number, number]> = frame % 2 ? [[x0 + 8, y0 + 12], [x0 + 55, y0 + 24]] : [[x0 + 50, y0 + 4], [x0 + 12, y0 + 30]]
-      for (const [gx, gy] of glints) { buffer.rect(gx - 3, gy, 7, 1, '#fff6c0'); buffer.rect(gx, gy - 3, 1, 7, '#fff6c0'); buffer.set(gx, gy, '#ffffff') }
-    }
+      blitShaded(buffer, smooth(BURGER[up ? 1 : 0]), door - 16, s.ground - 26 - (up ? 16 : 0), BURGER_PALETTE)
+    } else drawCheeringEater(buffer, door - Math.round(CHEER_SIZE.width / 2), s.ground + 20 - CHEER_SIZE.height, accent, frame)
   } else if (options.hero) {
-    const door = bx + Math.round(bw / 2)
-    if (game === 'catcher') buffer.blit(smooth(BURGER[frame % 2]), door - 16, s.ground - 26, BURGER_PALETTE)
+    if (game === 'catcher') blitShaded(buffer, smooth(BURGER[frame % 2]), door - 16, s.ground - 26 - (frame % 4 === 1 ? 4 : 0), BURGER_PALETTE)
     else {
-      // the eater crawling to the door, a burger on his way
-      const head = door - 60 + (frame % 4) * 3
-      drawCrawler(buffer, head, s.ground - 6, accent, frame, 1)
-      buffer.blit(smooth(MINI_BURGER), head + 40, s.ground + 3, MINI_BURGER_PALETTE)
+      // the eater walking along the diner's front and back, eating his burger
+      const from = bx + 6, span = Math.max(40, bw - WALKER_SIZE.width - 12), t = (frame * 3) % (span * 2), ahead = t < span
+      drawWalkingEater(buffer, from + (ahead ? t : span * 2 - t), s.ground + 20 - WALKER_SIZE.height, accent, frame, ahead ? 1 : -1)
     }
   }
-  // traffic: a car in each lane, each at its own speed and way, the nearer lane drawn last
+  // traffic: a car in each lane, each at its own speed and way, the nearer lane drawn last; at night their lights on the road
   const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
   const carLength = Math.round(104 * CAR_SCALE)
   s.road.lanes.forEach(([y, scale], i) => {
@@ -231,21 +244,11 @@ function drawStreetScene(buffer: PixelBuffer, game: Game, layout: Layout, accent
     const length = Math.round(104 * scale)
     const span = W + carLength * 2
     const pos = ((frame * (i === 0 ? 14 : 11) + (i === 0 ? carLength - 10 : carLength + 30)) % span) - carLength
-    car(buffer, dir === 1 ? pos : W - pos - length, y, colors[i % colors.length], dir, scale)
+    const x = dir === 1 ? pos : W - pos - length
+    if (!day) headlights(buffer, x, y, dir, scale)
+    car(buffer, x, y, colors[i % colors.length], dir, scale)
   })
   return s
-}
-
-/** The eater on a street, crawling right, in fine pixels: legs, `torso` pieces, shoulders with their arms, the head at `x`. */
-function drawCrawler(buffer: PixelBuffer, x: number, y: number, accent: string, frame: number, torso: number): void {
-  const palette = eaterPalette(accent)
-  const step = CELL * 2
-  const shirt = tubePiece('right', 'left', { pattern: 'plain', cloth: accent, print: accent })
-  let cx = x - (torso + 2) * step
-  buffer.blit(smooth(CRAWL_LEGS[frame % 2]), cx, y, palette); cx += step
-  for (let i = 0; i < torso; i += 1) { const t = tubePiece('right', 'left', torsoLook(i)); buffer.blit(scale2x(t.sprite), cx, y, t.palette); cx += step }
-  buffer.blit(scale2x(shirt.sprite), cx, y, shirt.palette); buffer.blit(smooth(CRAWL_ARMS[frame % 2]), cx, y, palette); cx += step
-  buffer.blit(smooth(CRAWL_HEAD), cx, y, palette)
 }
 
 /** CATCHER's letters in volume over the store — or WINNER in the same letters (RANDOM is drawn with the street, EATER's neon hangs on its diner). */
@@ -283,9 +286,8 @@ export function renderTitle(game: Game, layout: Layout, accent: string, options:
   return buffer
 }
 
-/** `choice`: the answer lit, YES (0) or NO (1). */
-/** `choice`: the answer lit, YES (0) or NO (1); `ask` false leaves PLAY AGAIN? and its answers out. */
-export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean; choice?: 0 | 1; ask?: boolean }
+/** `choice`: the answer lit, YES (0) or NO (1); `ask` false leaves PLAY AGAIN? and its answers out; `day` the street by day. */
+export type OverOptions = { score?: number; best?: number; frame?: number; blink?: boolean; choice?: 0 | 1; ask?: boolean; day?: boolean }
 
 /** Where the lines of GAME OVER stand, for a game and a layout: the words in the title's lettering take more room in EATER's script. */
 function overPlaces(game: Game, layout: Layout): { score: number; best: number; question: number; buttons: number } {
@@ -318,16 +320,16 @@ function drawOverWords(buffer: PixelBuffer, game: Game, layout: Layout, accent: 
 }
 
 /**
- * GAME OVER: the game's night street with nothing in front — no building,
- * no hero — a shade darker, and in the sky the verdict in the title's own
- * lettering, the score, PLAY AGAIN? and the two framed answers.
+ * GAME OVER: the game's street, by night or by day, with nothing in front —
+ * no building, no hero — a shade darker, and in the sky the verdict in the
+ * title's own lettering, the score, PLAY AGAIN? and the two framed answers.
  */
 export function renderGameOver(game: Game, layout: Layout, accent: string, options: OverOptions = {}): PixelBuffer {
   const { width, height } = SCENE_SIZE[layout]
   const buffer = new PixelBuffer(width, height, INK)
   const frame = options.frame ?? 0
-  drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: false, building: false })
-  buffer.shade(0, 0, width, height, 0.6)
+  drawStreetScene(buffer, game, layout, accent, { frame, lit: true, hero: false, building: false, day: options.day })
+  buffer.shade(0, 0, width, height, options.day ? 0.5 : 0.6)
   drawOverWords(buffer, game, layout, accent)
   const c = width / 2
   const score = String(options.score ?? 0).padStart(5, '0'), best = String(options.best ?? 0).padStart(5, '0')
@@ -690,6 +692,7 @@ export function shotSpecs(accent: string): ShotSpec[] {
         add('jeu-niveau-8', play, (frame) => renderPlay(game, layout, accent, { level: 8, score: 6480, frame, bonus: true }))
       }
       add('game-over', scene, (frame) => renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0 }))
+      add('game-over-jour', scene, (frame) => renderGameOver(game, layout, accent, { score: 640, best: 4210, frame, blink: frame % 2 === 0, day: true }))
       add('winner', scene, (frame) => renderWinner(game, layout, accent, { score: 18450, best: 18450, frame, blink: frame % 2 === 0 }))
       add('winner-jour', scene, (frame) => renderWinner(game, layout, accent, { score: 18450, best: 18450, frame, blink: frame % 2 === 0, day: true }))
     }

@@ -26,8 +26,7 @@ import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
-import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderWinner, winnerHits, type Hit, type Layout, type Pad } from '@/lib/games/screens'
-import { renderGameTitle } from '@/lib/games/titles'
+import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout, type Pad } from '@/lib/games/screens'
 import { gameSounds } from '@/lib/games/sound'
 import type { Direction } from '@/lib/games/sprites'
 import { HUD_HEIGHT } from '@/lib/games/ui'
@@ -207,12 +206,12 @@ export default function GamePlayer({
     const draw = (): PixelBuffer => {
       // in a round a real PLAY button takes PRESS START's place
       const title = { level: roundRef.current?.level ?? startLevel, best: bestRef.current, frame: s.frame, blink: s.blink, press: !inRound() }
-      if (s.mode === 'title') return game === 'attacks' ? renderAttacksTitle(s.layout, accent, 'zen', title) : renderGameTitle(game, s.layout, accent, { ...title, day: isDaytime() })
+      if (s.mode === 'title') return game === 'attacks' ? renderAttacksTitle(s.layout, accent, 'zen', title) : renderTitle(game, s.layout, accent, { ...title, day: isDaytime() })
       // in a round, the end speaks through the page: no PLAY AGAIN? unless a retry is on offer
       const ask = !inRound() || s.mode === 'retry'
       const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice, ask }
       if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return game === 'attacks' ? renderAttacksWinner(s.layout, accent, ended) : renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
-      if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return game === 'attacks' ? renderAttacksOver(s.layout, accent, ended) : renderGameOver(game, s.layout, accent, ended)
+      if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return game === 'attacks' ? renderAttacksOver(s.layout, accent, ended) : renderGameOver(game, s.layout, accent, { ...ended, day: isDaytime() })
       // in a round the pause card only offers RESUME: leaving is the page's business
       if (s.attacks) return renderAttacksGame(s.attacks, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound(), pressed: pressed() })
       if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })

@@ -1,25 +1,21 @@
 /**
- * RANDOM EATER's and RANDOM CATCHER's titles at night, in the manner RANDOM
- * ATTACKS' title found: the same street, the same building, more depth and
- * more life. The sky glows over the city at the horizon, a third row of
- * buildings stands far off in the haze, a shooting star now and then; the
- * building's light falls on the sidewalk; the road is wet and shimmers with
- * the windows, the neon and the lamps; the cars light the road ahead.
- * EATER's eater walks along his diner eating a burger; CATCHER's burger has
- * a lit edge and a shaded one, its tree leaves, its drinks machine, bin and
- * hydrant their details. By day the street of `screens.ts` stays.
+ * The finer street of EATER's and CATCHER's screens — title, GAME OVER,
+ * WINNER — in the manner RANDOM ATTACKS' title found: more depth and more
+ * life. At night the sky glows over the city at the horizon, a third row of
+ * buildings stands far off in the haze, a shooting star now and then, the
+ * building's light falls on the sidewalk, the road is wet and shimmers with
+ * the windows, the neon and the lamps, the cars light the road ahead. By
+ * day the haze is pale, birds cross the sky, the building's shadow lies at
+ * its foot, the road is dry. Its furniture is finer: a tree with real
+ * leaves, a drinks machine, a bin and a hydrant with their details; its
+ * characters have a lit edge and a shaded one.
  */
 
-import { drawLogo, LOGO_WIDTH } from './logo'
-import { drawEaterLogo, eaterLogoSize } from './logos'
+import type { Night } from './scenes'
+import { rng } from './scenes'
 import { dither, mix, PixelBuffer, rgbOf, type Palette, type Sprite } from './pixels'
-import { car, cloud, drawDiner, drawStore, moon, NIGHTS, railing, rng, signFrame, skyline, sky, stars, street, wisp, type Night } from './scenes'
-import { CAR_SCALE, drawMarks, drawProp, renderTitle, smooth, stage, type Game, type Layout, type Prop, type Stage, type TitleOptions } from './screens'
-import { drawWalkingEater, WALKER_SIZE } from './eater-walk'
-import { BURGER, BURGER_PALETTE } from './sprites'
-import { CREAM, infoLine, INK, pressStart } from './ui'
+import { CREAM, INK } from './ui'
 
-const SIZE: Record<Layout, { width: number; height: number }> = { landscape: { width: 768, height: 432 }, portrait: { width: 432, height: 768 } }
 const lumOf = (r: number, g: number, b: number) => 0.3 * r + 0.59 * g + 0.11 * b
 
 // ---------------------------------------------------------------- characters with volume
@@ -30,7 +26,7 @@ const shaded = new WeakMap<Sprite, Map<string, Array<[number, number, string]>>>
  * from it, on each of its parts (a part: neighbouring pixels of close
  * colours), the ink lines kept as they are.
  */
-function blitShaded(buffer: PixelBuffer, sprite: Sprite, x: number, y: number, palette: Palette): void {
+export function blitShaded(buffer: PixelBuffer, sprite: Sprite, x: number, y: number, palette: Palette): void {
   const key = Object.entries(palette).map(([k, v]) => k + v).join('')
   let byPalette = shaded.get(sprite)
   if (!byPalette) { byPalette = new Map(); shaded.set(sprite, byPalette) }
@@ -56,7 +52,7 @@ function blitShaded(buffer: PixelBuffer, sprite: Sprite, x: number, y: number, p
 // ---------------------------------------------------------------- depth and light
 
 /** The city's glow low in the sky, dithered into it: amber over CATCHER's blue night, pink over EATER's violet one. */
-function cityGlow(buffer: PixelBuffer, horizon: number, glow: string): void {
+export function cityGlow(buffer: PixelBuffer, horizon: number, glow: string): void {
   const top = horizon - 150
   for (let y = Math.max(0, top); y < horizon; y += 1) {
     const t = ((y - top) / (horizon - top)) ** 2
@@ -65,7 +61,7 @@ function cityGlow(buffer: PixelBuffer, horizon: number, glow: string): void {
 }
 
 /** A row of buildings far off, behind the others and above them, pale in the haze, with a few pin-point lights and masts. */
-function farCity(buffer: PixelBuffer, night: Night, base: number, seed: number, glow: string): void {
+export function farCity(buffer: PixelBuffer, night: Night, base: number, seed: number, glow: string): void {
   const next = rng(seed)
   const color = mix(night.cities[0], mix(night.sky[night.sky.length - 1], glow, 0.25), 0.6)
   const light = mix(color, glow, 0.6)
@@ -80,7 +76,7 @@ function farCity(buffer: PixelBuffer, night: Night, base: number, seed: number, 
 }
 
 /** A shooting star now and then, across the upper sky toward the lower left. */
-function shootingStar(buffer: PixelBuffer, frame: number): void {
+export function shootingStar(buffer: PixelBuffer, frame: number): void {
   const p = frame % 24
   if (p > 3) return
   const x0 = Math.round(buffer.width * 0.8 - p * 40), y0 = 26 + p * 13
@@ -92,7 +88,7 @@ function shootingStar(buffer: PixelBuffer, frame: number): void {
 }
 
 /** The building's light on the sidewalk in front of it, strongest at its foot, fading at its ends. */
-function lightSpill(buffer: PixelBuffer, from: number, to: number, ground: number, depth: number, warm: string): void {
+export function lightSpill(buffer: PixelBuffer, from: number, to: number, ground: number, depth: number, warm: string): void {
   for (let y = ground + 2; y < ground + depth; y += 1) {
     const t = 1 - (y - ground - 2) / depth
     for (let x = from; x < to; x += 1) {
@@ -108,7 +104,7 @@ function lightSpill(buffer: PixelBuffer, from: number, to: number, ground: numbe
  * seen again in it, upside down, in vertical streaks that break into dashes
  * toward us and sway from one moment to the next.
  */
-function wetRoad(buffer: PixelBuffer, mirror: number, from: number, to: number, frame: number): void {
+export function wetRoad(buffer: PixelBuffer, mirror: number, from: number, to: number, frame: number): void {
   const W = buffer.width
   const above = new Uint8ClampedArray(buffer.data)
   for (let y = from; y < to; y += 1) {
@@ -132,7 +128,7 @@ function wetRoad(buffer: PixelBuffer, mirror: number, from: number, to: number, 
 }
 
 /** A car's headlights on the road ahead of it: a cone of pale light, dithered, fading away; its tail lights' red glow behind. */
-function headlights(buffer: PixelBuffer, x: number, y: number, dir: 1 | -1, s: number): void {
+export function headlights(buffer: PixelBuffer, x: number, y: number, dir: 1 | -1, s: number): void {
   const hx = dir === 1 ? x + 103 * s : x + 1 * s, hy = y + 18 * s
   for (let i = 0; i < 110; i += 1) {
     const half = 2 + i * 0.26
@@ -156,7 +152,7 @@ const noise = (x: number, y: number, seed: number) => { let h = (Math.imul(x, 37
  * clusters, each lit from above and shaded under, the leaves' grain and
  * ragged edges, the branches seen in the gaps.
  */
-function leafyTree(buffer: PixelBuffer, x: number, ground: number, size: number, night: Night, seed: number): void {
+export function leafyTree(buffer: PixelBuffer, x: number, ground: number, size: number, night: Night, seed: number): void {
   const next = rng(seed)
   const [deep, dark, mid, light] = night.leaf
   for (let dx = -16; dx <= 16; dx += 1) for (let dy = 0; dy < 3; dy += 1) if ((dx / 16) ** 2 + ((dy - 1) / 2) ** 2 <= 1) buffer.tint(x + dx, ground - 1 + dy, '#000000', 0.35)
@@ -193,11 +189,11 @@ function leafyTree(buffer: PixelBuffer, x: number, ground: number, size: number,
 /**
  * A drinks machine: a lit panel on top with its name, the glass with three
  * shelves of cans and bottles, the buttons with their lights, the coin slot,
- * the tray, the cold glow it throws on the sidewalk.
+ * the tray, the cold glow it throws on the sidewalk at night (`lit`).
  */
-function drinksMachine(buffer: PixelBuffer, x: number, ground: number, accent: string): void {
+export function drinksMachine(buffer: PixelBuffer, x: number, ground: number, accent: string, lit = true): void {
   const h = 78, w = 40, top = ground - h
-  for (let dy = 0; dy < 8; dy += 1) for (let dx = -6; dx < w + 6; dx += 1) if (dither(x + dx, ground + dy, 0.5 * (1 - dy / 8))) buffer.tint(x + dx, ground + dy, '#bfe6ff', 0.25)
+  if (lit) for (let dy = 0; dy < 8; dy += 1) for (let dx = -6; dx < w + 6; dx += 1) if (dither(x + dx, ground + dy, 0.5 * (1 - dy / 8))) buffer.tint(x + dx, ground + dy, '#bfe6ff', 0.25)
   buffer.rect(x - 1, top - 1, w + 2, h + 1, INK)
   for (let y = top; y < ground; y += 1) for (let X = x; X < x + w; X += 1) {
     const u = (X - x) / w
@@ -229,7 +225,7 @@ function drinksMachine(buffer: PixelBuffer, x: number, ground: number, accent: s
 }
 
 /** A street bin: a barrel of slats rounded by the light, its domed lid with the mouth, a bag's edge showing. */
-function streetBin(buffer: PixelBuffer, x: number, ground: number, color: string): void {
+export function streetBin(buffer: PixelBuffer, x: number, ground: number, color: string): void {
   const w = 24, h = 30, top = ground - h
   for (let dx = -2; dx < w + 4; dx += 1) buffer.tint(x + dx, ground, '#000000', 0.35)
   buffer.rect(x - 1, top, w + 2, h, INK)
@@ -250,7 +246,7 @@ function streetBin(buffer: PixelBuffer, x: number, ground: number, color: string
 }
 
 /** A fire hydrant: its foot, the barrel rounded by the light, the two side caps on their chains, the dome and its nut, bolts. */
-function fireHydrant(buffer: PixelBuffer, x: number, ground: number): void {
+export function fireHydrant(buffer: PixelBuffer, x: number, ground: number): void {
   const red = '#d0302a', light = '#ff7a5a', dark = '#8a1a14', deep = '#5a0e0a'
   const shade = (X: number, x0: number, w: number) => { const u = (X - x0 + 0.5) / w; return u < 0.22 ? light : u > 0.75 ? dark : red }
   for (let dx = -10; dx <= 12; dx += 1) buffer.tint(x + dx, ground, '#000000', 0.35)
@@ -277,103 +273,26 @@ function fireHydrant(buffer: PixelBuffer, x: number, ground: number): void {
   for (const bx of [x - 5, x - 1, x + 3]) buffer.set(bx, ground - 31, '#f0c8a0')
 }
 
-/** The street's things, finer ones where the proposal has them. */
-function drawPropV2(buffer: PixelBuffer, prop: Prop, s: Stage, night: Night, accent: string, index: number): void {
-  if (prop.kind === 'tree') leafyTree(buffer, prop.x, s.ground, prop.size, night, 3 + index)
-  else if (prop.kind === 'vending') drinksMachine(buffer, prop.x, s.ground, accent)
-  else if (prop.kind === 'bin') streetBin(buffer, prop.x, s.ground, mix(accent, '#000000', 0.45))
-  else if (prop.kind === 'hydrant') fireHydrant(buffer, prop.x, s.ground + 4)
-  else drawProp(buffer, prop, s, night, accent, true, index)
+/** By day, a few birds crossing high in the sky, wings up and down. */
+export function birds(buffer: PixelBuffer, frame: number, below: number): void {
+  const W = buffer.width
+  for (let k = 0; k < 3; k += 1) {
+    const x = Math.round(((frame * (5 + k) + k * 230) % (W + 60)) - 30), y = Math.round(below * (0.22 + k * 0.13) + Math.sin(frame * 0.7 + k) * 3)
+    const up = (frame + k) % 2 === 0
+    const ink = '#3a4058'
+    buffer.set(x, y, ink)
+    if (up) { buffer.set(x - 1, y - 1, ink); buffer.set(x - 2, y - 2, ink); buffer.set(x + 1, y - 1, ink); buffer.set(x + 2, y - 2, ink) }
+    else { buffer.set(x - 1, y, ink); buffer.set(x - 2, y + 1, ink); buffer.set(x + 1, y, ink); buffer.set(x + 2, y + 1, ink) }
+  }
 }
 
-// ---------------------------------------------------------------- the scene
-
-function scene(buffer: PixelBuffer, game: Game, layout: Layout, accent: string, frame: number): Stage {
-  const s = stage(game, layout)
-  const night: Night = NIGHTS[game === 'catcher' ? 'blue' : 'violet']
-  const glow = game === 'catcher' ? '#ffb85a' : '#ff7aa2'
-  const { width: W, height: H } = buffer
-  sky(buffer, night, s.horizon)
-  cityGlow(buffer, s.horizon, glow)
-  stars(buffer, game === 'catcher' ? 7 : 11, layout === 'landscape' ? 170 : 210, s.horizon - 150, frame)
-  moon(buffer, ...s.moon)
-  shootingStar(buffer, frame)
-  s.wisps.forEach(([x, y, w]) => wisp(buffer, x, y, w, night))
-  s.clouds.forEach(([x, y, design, flip]) => cloud(buffer, x, y, design, night, flip, s.moon[0] < W / 2))
-  farCity(buffer, night, s.ground - 16, game === 'catcher' ? 17 : 19, glow)
-  skyline(buffer, night, s.ground - 16, s.far, s.near, frame)
-  const [bx, bw] = s.building
-  s.props.forEach((prop, i) => { if (prop.kind === 'palm') drawProp(buffer, prop, s, night, accent, true, i) })
-  railing(buffer, s.ground - 26, game === 'catcher' ? '#343c6c' : '#3c3068')
-  const rx = Math.round(W / 2 - LOGO_WIDTH)
-  drawLogo(buffer, rx + 3, s.randomY + 4, INK, 2)
-  drawLogo(buffer, rx, s.randomY, mix(accent, CREAM, 0.25), 2)
-  if (game === 'catcher') drawStore(buffer, bx, bw, s.ground, accent, frame, true)
-  else {
-    const lettering = layout === 'landscape' ? 'wide' : 'tall'
-    const logo = eaterLogoSize(lettering)
-    const roof = s.ground - 128
-    const frameTop = s.markY + Math.round(logo.height * 0.24)
-    const frameBottom = Math.min(roof - 6, s.markY + logo.height - 10)
-    signFrame(buffer, Math.round(W / 2 - logo.width / 2) - 4, frameTop, logo.width + 8, Math.max(20, frameBottom - frameTop), roof)
-    drawEaterLogo(buffer, Math.round(W / 2 - logo.width / 2), s.markY, accent, lettering, { lit: frame % 13 !== 12, swashLit: frame % 7 !== 6, glow: true })
-    drawDiner(buffer, bx, bw, s.ground, accent, frame, true)
+/** By day, the building's shadow at its foot on the sidewalk, softest at its ends. */
+export function footShade(buffer: PixelBuffer, from: number, to: number, ground: number, depth: number): void {
+  for (let y = ground + 2; y < ground + depth; y += 1) {
+    const t = 1 - (y - ground - 2) / depth
+    for (let x = from; x < to; x += 1) {
+      const edge = Math.min(1, Math.min(x - from, to - x) / 18)
+      buffer.tint(x, y, '#1a1830', 0.16 * t * edge)
+    }
   }
-  s.props.forEach((prop, i) => { if (prop.kind !== 'palm') drawPropV2(buffer, prop, s, night, accent, i) })
-  street(buffer, night, s.ground, 22, s.road.bottom, s.road.line)
-  lightSpill(buffer, bx, bx + bw, s.ground, 22, '#ffd27a')
-  wetRoad(buffer, s.ground, s.ground + 28, s.road.bottom, frame)
-  if (s.road.bottom < H) {
-    buffer.rect(0, s.road.bottom, W, H - s.road.bottom, mix(night.sidewalk, '#000000', 0.45))
-    buffer.rect(0, s.road.bottom, W, 3, night.sidewalkLight)
-    for (let x = 24; x < W; x += 48) buffer.rect(x, s.road.bottom + 3, 1, H - s.road.bottom - 3, mix(night.sidewalk, '#000000', 0.58))
-  }
-  // the hero on the sidewalk, with volume
-  const door = bx + Math.round(bw / 2)
-  if (game === 'catcher') {
-    const up = frame % 4 === 1
-    blitShaded(buffer, smooth(BURGER[frame % 2]), door - 16, s.ground - 26 - (up ? 4 : 0), BURGER_PALETTE)
-  } else {
-    // the eater walking along the diner's front and back, eating his burger
-    const from = bx + 6, span = Math.max(40, bw - WALKER_SIZE.width - 12), t = (frame * 3) % (span * 2), ahead = t < span
-    drawWalkingEater(buffer, from + (ahead ? t : span * 2 - t), s.ground + 20 - WALKER_SIZE.height, accent, frame, ahead ? 1 : -1)
-  }
-  // traffic, each car lighting the road ahead
-  const colors = game === 'catcher' ? ['#eeeae0', '#e0304a'] : ['#eeeae0', '#e8563a']
-  const carLength = Math.round(104 * CAR_SCALE)
-  s.road.lanes.forEach(([y, scale], i) => {
-    const dir: 1 | -1 = i % 2 === 0 ? 1 : -1
-    const length = Math.round(104 * scale)
-    const span = W + carLength * 2
-    const pos = ((frame * (i === 0 ? 14 : 11) + (i === 0 ? carLength - 10 : carLength + 30)) % span) - carLength
-    const x = dir === 1 ? pos : W - pos - length
-    headlights(buffer, x, y, dir, scale)
-    car(buffer, x, y, colors[i % colors.length], dir, scale)
-  })
-  // CATCHER's letters in volume over it all (EATER's neon hangs on its diner)
-  drawMarks(buffer, game, s, accent, frame)
-  return s
-}
-
-/** A game's title at night: the street with depth and light, the same marks, LEVEL, BEST and PRESS START where they are. */
-export function renderNightTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
-  const { width, height } = SIZE[layout]
-  const buffer = new PixelBuffer(width, height, INK)
-  const frame = options.frame ?? 0
-  const s = scene(buffer, game, layout, accent, frame)
-  if (options.press !== false) pressStart(buffer, width / 2, s.press, accent, options.blink !== false, 2)
-  const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
-  if (s.info === 'top') {
-    infoLine(buffer, 16, 16, 'LEVEL', level, 'left', 2)
-    infoLine(buffer, width - 16, 16, 'BEST', best, 'right', 2)
-  } else {
-    infoLine(buffer, width / 2 - 14, s.press + 24, 'LEVEL', level, 'right', 2)
-    infoLine(buffer, width / 2 + 14, s.press + 24, 'BEST', best, 'left', 2)
-  }
-  return buffer
-}
-
-/** A game's title, as the player shows it: by day the street of `screens.ts`, at night this one. */
-export function renderGameTitle(game: Game, layout: Layout, accent: string, options: TitleOptions = {}): PixelBuffer {
-  return options.day ? renderTitle(game, layout, accent, options) : renderNightTitle(game, layout, accent, options)
 }
