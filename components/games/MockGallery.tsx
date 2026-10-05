@@ -11,7 +11,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { renderAttacksOver, renderAttacksPlay, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
-import { renderGameTitle } from '@/lib/games/titles'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -24,7 +23,8 @@ const LABELS: Record<string, string> = {
   'jeu-niveau-1': 'En jeu — niveau 1 : sol noir',
   'jeu-niveau-4': 'En jeu — niveau 4 : damier léger, chaises',
   'jeu-niveau-8': 'En jeu — niveau 8 : tout le diner, et le milkshake bonus',
-  'game-over': 'Game over',
+  'game-over': 'Game over — nuit',
+  'game-over-jour': 'Game over — jour',
   winner: 'Winner — nuit',
   'winner-jour': 'Winner — jour',
   'attacks-titre': 'Titre',
@@ -83,8 +83,7 @@ export default function MockGallery() {
     window.addEventListener('resize', fit)
     return () => window.removeEventListener('resize', fit)
   }, [])
-  // the night titles as the player shows them (the street of titles.ts); the day ones from screens.ts
-  const specs = useMemo(() => shotSpecs(accent).map((spec) => (spec.name === 'titre' ? { ...spec, draw: (frame: number) => renderGameTitle(spec.game, spec.layout, accent, { level: 3, best: 4210, frame, blink: frame % 2 === 0 }) } : spec)), [accent])
+  const specs = useMemo(() => shotSpecs(accent), [accent])
   const group = (game: Game, layout: Layout): ShotSpec[] => specs.filter((spec) => spec.game === game && spec.layout === layout)
   // RANDOM ATTACKS, the third game: its title, a moment of play, its two ends
   const attacks = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({

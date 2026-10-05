@@ -13,11 +13,11 @@ import { TEXT_COLORS } from '@/lib/theme'
 import { encodePng } from './png'
 
 const out = process.argv[2] ?? 'docs/reports/jeux-v1/v4'
-const accent = process.argv[3] ?? TEXT_COLORS[0]
+const accent = process.argv[3] || TEXT_COLORS[0]
 const frame = Number(process.argv[4] ?? 0)
 mkdirSync(out, { recursive: true })
 for (const { game, layout, name, buffer } of renderAll(accent, frame)) {
-  const scale = name.startsWith('titre') || name === 'game-over' || name.startsWith('winner') ? 2 : 3
+  const scale = name.startsWith('titre') || name.startsWith('game-over') || name.startsWith('winner') ? 2 : 3
   const file = join(out, `${game}-${name}-${layout === 'landscape' ? 'paysage' : 'portrait'}.png`)
   writeFileSync(file, encodePng(buffer.width, buffer.height, buffer.data, scale))
   console.log(`${file}  ${buffer.width}×${buffer.height} ×${scale}`)
