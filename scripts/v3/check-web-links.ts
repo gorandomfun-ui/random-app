@@ -61,16 +61,34 @@ const EMBED_RECHECK_DAYS = 30
 const MAX_MINUTES = Number(process.env.RANDOM_WEB_EMBED_MINUTES ?? 75)
 const QUERY_MS = 60_000
 
+/**
+ * A site's whole visit, at most: on 5 October one visit of the first batch never settled — no connection left
+ * open, no question to the base, a promise that never ended — and the batch, then the night, waited on it.
+ * Past this the site is "unknown", not framed, and asked again with the stale verdicts.
+ */
+const SITE_MS = 30_000
+
+function withinSiteLimit(row: WebRow, visit: Promise<Verdict>): Promise<Verdict> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<Verdict>((resolve) => {
+    timer = setTimeout(() => resolve({
+      row, link: { state: 'unknown', reason: 'visite trop longue' }, embed: { embeddable: false, reason: 'request-failed' },
+      tone: { tone: null, evidence: null }, image: null, merchant: looksMerchant(row.url),
+    }), SITE_MS)
+  })
+  return Promise.race([visit, late]).finally(() => clearTimeout(timer))
+}
+
 async function inspect(rows: WebRow[]): Promise<Verdict[]> {
   const results: Verdict[] = []
   for (let index = 0; index < rows.length; index += CONCURRENCY) {
     const slice = rows.slice(index, index + CONCURRENCY)
     const checked = await Promise.all(
-      slice.map(async (row): Promise<Verdict> => {
+      slice.map((row): Promise<Verdict> => withinSiteLimit(row, (async () => {
         const { link, embed, tone } = await inspectSite(row.url)
         const image = row.ogImage ? await checkImage(row.ogImage) : null
         return { row, link, embed, tone, image, merchant: looksMerchant(row.url) }
-      }),
+      })())),
     )
     results.push(...checked)
   }
