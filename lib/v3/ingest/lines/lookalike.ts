@@ -36,8 +36,8 @@ import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
 import { driftDoor } from './drift'
 
-/** Likes visited a run at most; the window's minutes usually stop it first. */
-export const LIKES_PER_RUN = Number(process.env.RANDOM_LOOKALIKE_LIKES ?? 40)
+/** Likes visited a run at most: every like once; the window's minutes stop it first (the server reads about four likes a minute, 5 October). */
+export const LIKES_PER_RUN = Number(process.env.RANDOM_LOOKALIKE_LIKES ?? 400)
 const SEARCH_RESULTS = 50
 const QUERIES_PER_LIKE = 2
 const RELATED = 20
