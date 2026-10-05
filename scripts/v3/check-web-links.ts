@@ -52,6 +52,14 @@ type Verdict = {
 }
 /** A framing verdict older than this is asked again by --fresh. */
 const EMBED_RECHECK_DAYS = 30
+/**
+ * The run's own end (`RANDOM_WEB_EMBED_MINUTES`), and how long one question to the
+ * database may take: on 4 October the nightly run asked for the sites to check,
+ * never got its answer back and waited thirty-nine hours holding its lock, so the
+ * next night never ran and every site entered since opened in a new tab.
+ */
+const MAX_MINUTES = Number(process.env.RANDOM_WEB_EMBED_MINUTES ?? 75)
+const QUERY_MS = 60_000
 
 async function inspect(rows: WebRow[]): Promise<Verdict[]> {
   const results: Verdict[] = []
@@ -147,7 +155,9 @@ async function main(): Promise<void> {
   const size = numericFlag('size', 300)
   const max = numericFlag('max', 0)
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 20000 })
+  setTimeout(() => { console.error(`Arrêt : ${MAX_MINUTES} minutes écoulées.`); process.exit(1) }, MAX_MINUTES * 60_000).unref()
+  // A reply that never comes ends in an error, not in a wait without end.
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 20000, socketTimeoutMS: QUERY_MS * 3 })
   await client.connect()
 
   try {
@@ -178,17 +188,28 @@ async function main(): Promise<void> {
       let embeddable = 0
       let toned = 0
       const started = Date.now()
-      while (done < limit) {
-        const rows = (await items
-          .find(filter, { projection: { url: 1, ogImage: 1, title: 1, embedCheckedAt: 1 }, sort: { embedCheckedAt: 1, _id: 1 }, limit: Math.min(120, limit - done) })
-          .toArray()) as unknown as WebRow[]
-        if (!rows.length) break
-        const verdicts = await inspect(rows.filter((row) => typeof row.url === 'string' && row.url))
-        await record(db, verdicts)
-        done += rows.length
-        embeddable += verdicts.filter((verdict) => verdict.embed.embeddable).length
-        toned += verdicts.filter((verdict) => verdict.tone.tone).length
-        console.log(`  ${count(done)} vérifiés · ${count(embeddable)} encadrables · ${count(toned)} au ton connu · ~${count(Math.round((done / (Date.now() - started)) * 60000))}/min`)
+      // Along the sites by id, never by the verdict's date (no index has it: a sort on it read every site of the base): the sites never
+      // asked first, newest first, so the day's entries are checked the same night; then the stale verdicts, oldest first. Each question bounded.
+      const never = { type: 'web', webLinkDead: { $ne: true }, embedCheckedAt: { $exists: false } }
+      const stale = { type: 'web', webLinkDead: { $ne: true }, embedCheckedAt: { $lt: staleBefore } }
+      const walks: Array<{ filter: Record<string, unknown>; newestFirst: boolean }> = tone ? [{ filter, newestFirst: true }] : [{ filter: never, newestFirst: true }, { filter: stale, newestFirst: false }]
+      for (const walk of walks) {
+        let bound: ObjectId | null = null
+        while (done < limit) {
+          const range = bound ? { _id: walk.newestFirst ? { $lt: bound } : { $gt: bound } } : {}
+          const rows = (await items
+            .find({ ...walk.filter, ...range }, { projection: { url: 1, ogImage: 1, title: 1, embedCheckedAt: 1 }, sort: { _id: walk.newestFirst ? -1 : 1 }, hint: 'idx_image_scan_by_type_id', limit: Math.min(120, limit - done), maxTimeMS: QUERY_MS })
+            .toArray()
+            .catch((error: unknown) => { console.error(`  question trop longue, on passe : ${error instanceof Error ? error.message.slice(0, 120) : 'erreur'}`); return [] })) as unknown as WebRow[]
+          if (!rows.length) break
+          bound = rows[rows.length - 1]._id
+          const verdicts = await inspect(rows.filter((row) => typeof row.url === 'string' && row.url))
+          await record(db, verdicts)
+          done += rows.length
+          embeddable += verdicts.filter((verdict) => verdict.embed.embeddable).length
+          toned += verdicts.filter((verdict) => verdict.tone.tone).length
+          console.log(`  ${count(done)} vérifiés · ${count(embeddable)} encadrables · ${count(toned)} au ton connu · ~${count(Math.round((done / (Date.now() - started)) * 60000))}/min`)
+        }
       }
       console.log(`\nTerminé : ${count(done)} sites vérifiés, ${count(embeddable)} encadrables, ${count(toned)} au ton connu.`)
       return

@@ -4,6 +4,7 @@
  *
  *   node --import tsx scripts/v3/vec-direct.ts                 up to RANDOM_VEC_MAX videos (10,000) within RANDOM_VEC_MINUTES (12)
  *   node --import tsx scripts/v3/vec-direct.ts --dry           reads and fingerprints, writes nothing
+ *   RANDOM_VEC_CURSOR=vec-mac-gap RANDOM_VEC_BEFORE=<id> RANDOM_VEC_AFTER=2026-09-25   a helper machine fills one stretch, then stops
  *
  * Runs on the ingestion server, alone, between the drift's and the dig's
  * runs (lib/v3/ai/fingerprint.ts: 700 MB of memory). Its shared core gives
@@ -28,6 +29,9 @@ const META = 'dig_meta_v4'
 const CURSOR = process.env.RANDOM_VEC_CURSOR ?? 'vec'
 /** Where a fresh backfill starts (`RANDOM_VEC_BEFORE`, an id or an ISO day): the server starts at today, a helper machine can start further back. */
 const BEFORE = process.env.RANDOM_VEC_BEFORE
+/** Where it stops (`RANDOM_VEC_AFTER`, an id or an ISO day): a helper machine sent to fill one stretch does not walk on through what is already done. */
+const AFTER = process.env.RANDOM_VEC_AFTER
+const idOf = (value: string): ObjectId => (ObjectId.isValid(value) && value.length === 24 ? new ObjectId(value) : ObjectId.createFromTime(Math.floor(new Date(value).getTime() / 1000)))
 /** A pause between batches (`RANDOM_VEC_PACE_MS`): a fast machine must not flood the small database with writes. */
 const PACE_MS = Number(process.env.RANDOM_VEC_PACE_MS ?? 0)
 /** The last batch may run past the soft deadline; the hard stop leaves it the time. */
@@ -63,10 +67,11 @@ async function main(): Promise<void> {
   for (let start = 0; start < likesWithout.length; start += BATCH) await write(likesWithout.slice(start, start + BATCH))
   const likesDone = read
 
-  // Today's entries first, by id, those without a fingerprint.
+  // Today's and yesterday's entries first, by id, those without a fingerprint: what came in after the evening's run (the late dig, the drift
+  // at 23:10) is caught by the night's, instead of falling behind the old stock's place for good (5 October: some thousands were).
   const dayStart = new Date(new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) + 'T00:00:00+02:00')
-  const todayFrom = ObjectId.createFromTime(Math.floor(dayStart.getTime() / 1000))
-  const today = items.find({ type: 'video', _id: { $gte: todayFrom }, [FIELD]: { $exists: false } } as Document, { projection: { title: 1, description: 1 }, hint: 'idx_image_scan_by_type_id', batchSize: BATCH })
+  const yesterdayFrom = ObjectId.createFromTime(Math.floor(dayStart.getTime() / 1000) - 86_400)
+  const today = items.find({ type: 'video', _id: { $gte: yesterdayFrom }, [FIELD]: { $exists: false } } as Document, { projection: { title: 1, description: 1 }, hint: 'idx_image_scan_by_type_id', batchSize: BATCH })
   let batch: Document[] = []
   for await (const row of today) {
     batch.push(row)
@@ -78,10 +83,11 @@ async function main(): Promise<void> {
 
   // Then the old stock, from where the last run stopped, back towards the oldest id.
   const place = await meta.findOne({ _id: CURSOR } as Document)
-  const start = BEFORE ? (ObjectId.isValid(BEFORE) && BEFORE.length === 24 ? new ObjectId(BEFORE) : ObjectId.createFromTime(Math.floor(new Date(BEFORE).getTime() / 1000))) : todayFrom
+  const start = BEFORE ? idOf(BEFORE) : yesterdayFrom
+  const stop = AFTER ? idOf(AFTER) : null
   let before: ObjectId = place?.before instanceof ObjectId ? place.before : start
   while (Date.now() < deadline && read < MAX_VIDEOS) {
-    const rows = await items.find({ type: 'video', _id: { $lt: before } } as Document, { projection: { title: 1, description: 1, [FIELD]: 1 }, sort: { _id: -1 }, limit: BATCH, hint: 'idx_image_scan_by_type_id' }).toArray()
+    const rows = await items.find({ type: 'video', _id: stop ? { $lt: before, $gte: stop } : { $lt: before } } as Document, { projection: { title: 1, description: 1, [FIELD]: 1 }, sort: { _id: -1 }, limit: BATCH, hint: 'idx_image_scan_by_type_id' }).toArray()
     if (!rows.length) break
     before = rows[rows.length - 1]._id as ObjectId
     await write(rows.filter((row) => row[FIELD] === undefined))
