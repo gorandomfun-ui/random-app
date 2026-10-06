@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { renderAttacksOver, renderAttacksPlay, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
+import { renderRacingTitle } from '@/lib/games/racing'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -34,6 +35,8 @@ const LABELS: Record<string, string> = {
   'attacks-jeu-13': 'Niveau 13 — la tempête, la lune rouge',
   'attacks-jeu-16': 'Niveau 16 — MEGA BURGER, ciel de sang et éclairs',
   'attacks-game-over': 'Game over',
+  'racing-sans': 'Lettrage 1 — Racing Sans',
+  'racing-faster': 'Lettrage 2 — Faster',
   'attacks-winner': 'Winner',
 }
 
@@ -95,6 +98,11 @@ export default function MockGallery() {
       { name: 'attacks-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
   })), [accent])
+  // RANDOM RACING, the fourth game: its title proposed in two letterings, to choose from
+  const racing = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
+    layout,
+    shots: (['sans', 'faster'] as const).map((lettering) => ({ name: `racing-${lettering}`, width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingTitle(layout, accent, lettering, { frame, blink: frame % 2 === 0 }) })) as Shot[],
+  })), [accent])
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
       <h1 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 22, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Jeux — visuels de base</h1>
@@ -106,6 +114,20 @@ export default function MockGallery() {
           <button key={color} onClick={() => setAccent(color)} aria-label={color} style={{ width: 32, height: 32, borderRadius: 999, background: color, border: color === accent ? '3px solid #F8F5E6' : '3px solid transparent' }} />
         ))}
       </div>
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing — proposition d&apos;écran d&apos;accueil</h2>
+        <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
+          Le départ d&apos;un road trip au coucher du soleil : la route vers le soleil, les palmiers, le portique et ses feux, les trois voitures à choisir sur la ligne, vues de derrière. Deux lettrages pour RACING. Dans la couleur choisie ci-dessus.
+        </p>
+        {racing.map(({ layout, shots }) => (
+          <div key={layout} style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6, marginBottom: 8 }}>{layout === 'landscape' ? 'Paysage' : 'Portrait'}</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+              {shots.map((shot) => <Screen key={`${shot.name}-${layout}-${accent}`} spec={shot} room={layout === 'landscape' ? room : Math.min(room, 700)} />)}
+            </div>
+          </div>
+        ))}
+      </section>
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Attacks</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
