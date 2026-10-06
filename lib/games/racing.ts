@@ -1,25 +1,26 @@
 /**
- * RANDOM RACING's screens, after the owner's picture made simple, in the
- * manner of the old arcade racers: flat bands of colour, few details.
+ * RANDOM RACING's screens, after the owner's picture: traced from it
+ * (`scripts/games/racing-trace.ts`, files in `public/games/racing/`).
  *
- * The title: a coast road at sunset. The sun goes down into the sea on the
- * left, behind low mountains; the road comes from the front, three lanes
- * wide, and bends right along the shore toward the city; a guardrail and
- * red chevrons on the sea side, the grass, palms and a neon diner on the
- * other; big palms frame it all. On the road, seen from behind, the three
- * cars the player chooses from — the red one, the burger on its wheels,
- * the yellow one. RACING in chrome over the sky, leaning forward, with
- * speed lines and a chequered strip, in the theme's colour; RANDOM, LEVEL,
- * BEST and PRESS START where the other games have them.
+ * The title is the picture itself — the coast road at sunset, the sun going
+ * down into the sea, the city, the neon diner, the people at the rail, the
+ * palms, the three cars from behind — wide, or tall for a phone with the sky
+ * carried up for the title. The sea glitters, the diner's neon flickers, the
+ * cars' exhausts puff. Over it, RANDOM, and RACING in chrome in the theme's
+ * colour, leaning forward with its speed lines and its chequered strip;
+ * LEVEL, BEST and PRESS START where the other games have them.
  *
- * A moment of play (a proposal, not playable yet): the same coast under
- * the bar — TIME, SPEED, the stage's progress, the place among the rivals —
- * the player's car at the foot of the road, rivals and traffic ahead; on a
- * touch screen, the arrows on the left and A (gas) and B (brake) on the
- * right.
+ * A moment of play (a proposal, not playable yet): the picture's far view —
+ * the sky, the sun on the sea, the mountains, the city — over the road drawn
+ * in the picture's own colours, bending right along the coast: its kerbs,
+ * its rails, the picture's palms and red chevrons by it, getting nearer;
+ * rivals ahead, the player's car at the foot of it, all three cars the
+ * picture's own; the bar on top — TIME, SPEED, the stage, the place — and on
+ * a touch screen the arrows on the left, A (gas) and B (brake) on the right.
  */
 
-import { CARS, CAR_BOX, drawCarRear, type CarKind } from './racing-cars'
+import { RACING_MOTION } from './racing-art-data'
+import { racingArt, type RacingCarKind } from './racing-art'
 import { RACING_LETTERING, type RacingLettering } from './racing-lettering-data'
 import { drawLogo, LOGO_WIDTH } from './logo'
 import { dim, dither, drawText, drawText7, mix, PixelBuffer, text7Width, textWidth } from './pixels'
@@ -152,181 +153,33 @@ function drawRacingLogo(buffer: PixelBuffer, cx: number, y: number, width: numbe
   for (const [x, yy, c] of px) if (c !== INK && c !== CREAM && Math.abs(x - yy * 0.5 - g) < 3) buffer.set(x0 + x, y + yy, mix(c, '#ffffff', 0.65))
 }
 
-// ---------------------------------------------------------------- the coast at sunset
+// ---------------------------------------------------------------- the traced pictures
 
-/** The road on a board: its middle bending right toward the horizon, its half width, its stretch (even or odd) at a row, `scroll` moving the stretches toward the viewer. */
-type Road = { horizon: number; depth: number; p: (y: number) => number; centre: (y: number) => number; half: (y: number) => number; band: (y: number) => number }
-function roadOf(W: number, H: number, horizon: number, bend: number, near: number, scroll = 0): Road {
-  const depth = H - horizon
-  const p = (y: number) => Math.max(0, (y - horizon) / depth)
-  return {
-    horizon, depth, p,
-    centre: (y) => W / 2 + bend * (1 - p(y)) ** 2.3,
-    half: (y) => 3 + p(y) * near,
-    band: (y) => Math.floor(10 / (p(y) + 0.05) + scroll) % 2,
-  }
-}
-
-const SKY = ['#2a0e4a', '#3e1258', '#5a1a6a', '#8a2470', '#c0346c', '#ec4a62', '#ff6a52', '#ff9048', '#ffb44a']
-/** The sky: purple high up to orange at the horizon, in bands dithered into one another, thin stripes over the horizon as on the old racers; a few stars. */
-function sky(buffer: PixelBuffer, horizon: number): void {
-  const W = buffer.width
-  for (let y = 0; y < horizon; y += 1) {
-    const t = (y / horizon) ** 1.1 * (SKY.length - 1), i = Math.floor(t), f = t - i
-    const a = SKY[i], b = SKY[Math.min(SKY.length - 1, i + 1)]
-    const stripe = y > horizon * 0.78 && (horizon - y) % 5 === 0 ? '#ffd27a' : null
-    for (let x = 0; x < W; x += 1) buffer.set(x, y, stripe ?? (dither(x, y, f) ? b : a))
-  }
-  for (let k = 0; k < 30; k += 1) buffer.set((k * 197 + 31) % W, (k * 53) % Math.round(horizon * 0.35), k % 4 === 0 ? '#ffffff' : '#c8a0e0')
-}
-
-/** Clouds in long flat bands, stepped at their ends, dark red with a lit pink underside, drifting. */
-function clouds(buffer: PixelBuffer, horizon: number, frame: number): void {
-  const W = buffer.width
-  const bands: Array<[number, number, number, number]> = [[0.05, 0.3, 0.34, 7], [0.62, 0.22, 0.4, 6], [0.3, 0.46, 0.3, 5], [0.78, 0.54, 0.26, 5], [0.14, 0.62, 0.22, 4]]
-  bands.forEach(([fx, fy, fw, th], i) => {
-    const len = Math.round(W * fw), y0 = Math.round(horizon * fy), x0 = Math.round(((fx * W + frame * (1 + (i % 2))) % (W + len)) - len / 2)
-    for (let r = 0; r < th; r += 1) {
-      // each row a little shorter than the one under it, by a step at each end
-      const inset = (th - 1 - r) * Math.round(len * 0.05)
-      for (let x = x0 + inset; x < x0 + len - inset; x += 1) buffer.set(x, y0 + r, r === th - 1 ? '#ff8a8a' : r === th - 2 ? '#d0406a' : '#7a1e5a')
-    }
-  })
-}
-
-/** The sun going down into the sea: yellow at the top, orange at its foot, cut by bands that widen toward the horizon; its glow round it. */
-function sun(buffer: PixelBuffer, cx: number, horizon: number, r: number): void {
-  for (let y = Math.round(horizon - r * 1.6); y < horizon; y += 1) for (let x = Math.round(cx - r * 1.7); x < cx + r * 1.7; x += 1) {
-    const d = Math.hypot(x - cx, (y - horizon) * 1.15) / r
-    if (d > 1 && d < 1.7 && dither(x, y, (1.7 - d) * 0.4)) buffer.tint(x, y, '#ffd27a', 0.35)
-  }
-  for (let y = horizon - r; y < horizon; y += 1) {
-    const t = (y - (horizon - r)) / r, u = t * 7
-    if (t > 0.45 && u - Math.floor(u) < 0.16 + (t - 0.45) * 0.8) continue
-    const half = Math.sqrt(Math.max(0, r * r - (horizon - y) ** 2))
-    const c = mix('#fff6a0', '#ff8a3a', t ** 1.1)
-    for (let x = Math.round(cx - half); x <= cx + half; x += 1) buffer.set(x, y, c)
-  }
-}
-
-/** Low mountains behind the sea, purple, lit pink on the slopes facing the sun. */
-function mountains(buffer: PixelBuffer, horizon: number, from: number, to: number, high: number, sunX: number): void {
-  const peak = (x: number) => Math.max(0, Math.sin((x - from) / (to - from) * Math.PI)) * (high * 0.6 + Math.abs(Math.sin(x * 0.031)) * high * 0.4 + Math.sin(x * 0.11) * 2)
-  for (let x = Math.round(from); x < to; x += 1) {
-    const h = Math.round(peak(x))
-    for (let y = horizon - h; y < horizon; y += 1) buffer.set(x, y, y < horizon - h + 2 && (peak(x + 1) > peak(x)) === (x > sunX) ? '#ff7a8a' : y > horizon - 3 ? '#4a1858' : '#6a2270')
-  }
-}
-
-/** The city on the horizon, right of the road's end: towers in flat blues and purples, rows of lit windows, a mast with its light. */
-function city(buffer: PixelBuffer, horizon: number, from: number, to: number, high: number): void {
-  let x = Math.round(from), k = 0
-  while (x < to) {
-    const w = Math.round(high * (0.16 + ((k * 7) % 5) * 0.03)), h = Math.round(high * (0.35 + ((k * 13) % 7) * 0.1))
-    const tone = k % 3 === 0 ? '#3a2a7a' : k % 3 === 1 ? '#2a2268' : '#4a3488'
-    buffer.rect(x, horizon - h, w, h, tone)
-    buffer.rect(x, horizon - h, 1, h, mix(tone, '#ff9aa0', 0.35))
-    for (let wy = horizon - h + 3; wy < horizon - 2; wy += 4) for (let wx = x + 2; wx < x + w - 1; wx += 3) if ((wx * 13 + wy * 7 + k) % 4 !== 0) buffer.set(wx, wy, (wx + wy) % 5 === 0 ? '#ff9ad0' : '#ffd27a')
-    if (k === 3) { buffer.rect(x + Math.floor(w / 2), horizon - h - Math.round(high * 0.25), 1, Math.round(high * 0.25), tone); buffer.set(x + Math.floor(w / 2), horizon - h - Math.round(high * 0.25) - 1, '#ff4a4a') }
-    x += w + 1 + (k % 2); k += 1
-  }
-}
-
-/**
- * The ground row by row: the sea from the horizon to the shore on the left
- * of the road, sparkling, the sun's path on it; the beach under the shore;
- * on the right the grass; the road in its two greys, its white edges, its
- * two dashed lanes as far as `lineTo`.
- */
-function ground(buffer: PixelBuffer, road: Road, shore: number, sunX: number, lineTo: number, frame: number): void {
-  const W = buffer.width, H = buffer.height
-  for (let y = road.horizon; y < H; y += 1) {
-    const p = road.p(y), band = road.band(y), haze = Math.max(0, 1 - p * 5) * 0.5
-    const c = road.centre(y), half = road.half(y), edge = Math.max(1, half * 0.03), lane = Math.max(1, half * 0.022)
-    const sand = mix(band ? '#f0b880' : '#e0a470', '#ffb090', haze), grass = mix(band ? '#4a9a4a' : '#3c8a42', '#c87a6a', haze)
-    const tar = mix(band ? '#46424e' : '#3e3a46', '#8a6a7a', haze)
-    for (let x = 0; x < W; x += 1) {
-      const d = x - c
-      let col: string
-      if (Math.abs(d) < half) {
-        const ad = Math.abs(d)
-        col = ad > half - edge * 2 && ad < half - edge * 0.5 ? '#f0eadc' : band && y < lineTo && Math.abs(ad - half / 3) < lane ? '#f0eadc' : tar
-      } else if (d < 0) {
-        if (y < shore) {
-          // the sea, in bands, glittering; the sun's path in broken lines under it
-          const t = (y - road.horizon) / Math.max(1, shore - road.horizon)
-          col = mix('#2ab8d0', '#1a7aa0', t)
-          if ((x * 7 + y * 13 + frame * 3) % 37 === 0) col = '#e8ffff'
-          const path = Math.abs(x - sunX) < 6 + t * 26 && (y + frame) % 3 !== 0 && (x * 5 + y) % 4 !== 0
-          if (path) col = t < 0.4 ? '#fff0a0' : '#ffb060'
-        } else col = sand
-      } else col = y < shore ? mix('#2a6a4a', '#c87a6a', 0.35) : grass
-      buffer.set(x, y, col)
+/** A traced picture's pixels onto the buffer at `x`, `y`, leaving out its clear ones; drawn `w` × `h` (each pixel taken from the nearest), its own size if not given. */
+function art(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: number, w = pic.width, h = pic.height): void {
+  const sx = pic.width / w, sy = pic.height / h, d = buffer.data, s = pic.data
+  for (let yy = 0; yy < h; yy += 1) {
+    const ty = Math.round(y + yy)
+    if (ty < 0 || ty >= buffer.height) continue
+    const py = Math.min(pic.height - 1, Math.floor((yy + 0.5) * sy))
+    for (let xx = 0; xx < w; xx += 1) {
+      const tx = Math.round(x + xx)
+      if (tx < 0 || tx >= buffer.width) continue
+      const o = (py * pic.width + Math.min(pic.width - 1, Math.floor((xx + 0.5) * sx))) * 4
+      if (s[o + 3] < 128) continue
+      const t = (ty * buffer.width + tx) * 4
+      d[t] = s[o]; d[t + 1] = s[o + 1]; d[t + 2] = s[o + 2]; d[t + 3] = 255
     }
   }
 }
 
-/** The guardrail along the sea side of the road, its posts at each stretch, from the shore to the foot of the board. */
-function guardrail(buffer: PixelBuffer, road: Road, from: number): void {
-  let last = road.band(from)
-  for (let y = from; y < buffer.height; y += 1) {
-    const p = road.p(y), x = Math.round(road.centre(y) - road.half(y) - 3 - p * 14), h = Math.round(2 + p * 22), t = Math.max(1, Math.round(p * 4))
-    for (let k = 0; k < t; k += 1) { buffer.set(x, y - h + k, k === 0 ? '#ffffff' : '#c8c8d8'); buffer.set(x - 1, y - h + k, '#8a8aa0') }
-    if (road.band(y) !== last) { last = road.band(y); buffer.rect(x - Math.max(1, Math.round(p * 2)), y - h, Math.max(1, Math.round(p * 3)), h, '#7a7a8e') }
-  }
-}
-
-/** A chevron sign on the sea side, pointing the way the road bends: red, a white arrow, on its post. */
-function chevron(buffer: PixelBuffer, road: Road, p: number): void {
-  const y = Math.round(road.horizon + p * road.depth), s = 5 + p * 34, x = Math.round(road.centre(y) - road.half(y) - 6 - p * 40)
-  buffer.rect(x - 1, Math.round(y - s * 1.6), Math.max(1, Math.round(s * 0.12)), Math.round(s * 1.6), '#5a5a6a')
-  const top = Math.round(y - s * 1.6 - s * 0.9), w = Math.round(s * 1.1), h = Math.round(s * 0.9)
-  buffer.rect(x - Math.round(w / 2) - 1, top - 1, w + 2, h + 2, INK)
-  buffer.rect(x - Math.round(w / 2), top, w, h, '#e0302a')
-  for (let r = 0; r < h; r += 1) {
-    const off = Math.round(Math.abs(r - h / 2) * 0.7), cx = x - Math.round(w * 0.15) - off + Math.round(w * 0.3)
-    for (let k = 0; k < Math.max(1, Math.round(w * 0.18)); k += 1) buffer.set(cx - k, top + r, '#ffffff')
-  }
-}
-
-/** A palm, flat and simple: a trunk leaning and ringed, a crown of fronds in two greens, lit on top, the leaflets hanging; swaying a little. `spread`: the fronds' length, 1 as usual. */
-function palm(buffer: PixelBuffer, x: number, base: number, size: number, lean: number, frame: number, spread = 1): void {
-  const top: [number, number] = [x + lean * size * 0.4, base - size]
-  const w0 = Math.max(1, size * 0.032)
-  for (let t = 0; t <= 1; t += 0.5 / size) {
-    const px = x + lean * size * 0.4 * t * t, py = base - size * t, w = w0 * (1.15 - t * 0.35)
-    const ring = Math.floor(t * size / Math.max(2, size * 0.05)) % 2 === 0
-    for (let k = -w; k <= w; k += 1) buffer.set(Math.round(px + k), Math.round(py), k < -w * 0.4 ? '#a0683a' : ring ? '#5a3018' : '#7a4a2a')
-  }
-  const sway = frame % 2 ? 1 : 0
-  for (let i = 0; i < 10; i += 1) {
-    const a = -Math.PI * 0.98 + (i / 9) * Math.PI * 0.96
-    const len = size * (0.5 + ((i * 5) % 3) * 0.07) * spread
-    for (let t = 0; t <= 1; t += 0.6 / len) {
-      const droop = t * t * len * 0.7
-      const fx = top[0] + Math.cos(a) * len * t + (t > 0.6 ? sway * (Math.cos(a) > 0 ? 1 : -1) : 0), fy = top[1] + Math.sin(a) * len * t * 0.7 + droop
-      const w = Math.max(0.6, size * 0.034 * (1 - t * 0.7))
-      for (let k = -w; k <= w; k += 1) buffer.set(Math.round(fx), Math.round(fy + k), k <= -w + 0.6 ? '#7ad04a' : '#2f8f48')
-      // leaflets hanging from it, darker
-      if (Math.round(t * len) % 2 === 0 && t > 0.12) for (let d = 1; d < size * 0.075 * (1 - t * 0.6); d += 1) buffer.set(Math.round(fx + (Math.cos(a) > 0 ? 1 : -1) * d * 0.25), Math.round(fy + d), d > size * 0.04 ? '#1f6a3a' : '#2f8f48')
-    }
-  }
-}
-
-/** A diner by the road: a chrome box with its windows lit, a teal band, DINER in pink neon on its roof, its glow round it. */
-function diner(buffer: PixelBuffer, x: number, base: number, s: number, frame: number): void {
-  const w = Math.round(120 * s), h = Math.round(34 * s)
-  buffer.rect(x - 1, base - h - 1, w + 2, h + 2, INK)
-  buffer.rect(x, base - h, w, h, '#c8cce0')
-  buffer.rect(x, base - h, w, Math.max(1, Math.round(2 * s)), '#ffffff')
-  buffer.rect(x, base - Math.round(h * 0.35), w, Math.max(2, Math.round(4 * s)), '#2ab8b0')
-  for (let k = 0; k < 5; k += 1) buffer.rect(x + Math.round((6 + k * 23) * s), base - Math.round(h * 0.82), Math.round(16 * s), Math.round(h * 0.38), '#ffd27a')
-  // the neon on the roof
-  const word = 'DINER', scale = s >= 0.9 ? 2 : 1, tw = text7Width(word, scale, true), tx = x + Math.round(w / 2 - tw / 2), ty = base - h - Math.round(12 * scale) - 2
-  const on = frame % 7 !== 6
-  for (let dy = -4; dy < 7 * scale + 4; dy += 1) for (let dx = -5; dx < tw + 5; dx += 1) if (dither(tx + dx, ty + dy, 0.5)) buffer.tint(tx + dx, ty + dy, '#ff4aa0', on ? 0.3 : 0.1)
-  buffer.rect(tx - 3, ty - 3, tw + 6, 7 * scale + 6, INK)
-  drawText7(buffer, word, tx, ty, on ? '#ff8ad0' : '#8a3a6a', scale, true)
+/** A car seen from behind, its picture nearest the width asked for, drawn that wide, its foot at `y` and its middle at `cx`. */
+function car(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number): void {
+  const size = width > 112 ? 130 : width > 70 ? 104 : 60
+  const pic = racingArt(`car-${kind}-${size}`)
+  if (!pic) return
+  const w = Math.round(width * (kind === 'burger' ? 0.78 : 1)), h = Math.round((pic.height * w) / pic.width)
+  art(buffer, pic, Math.round(cx - w / 2), Math.round(foot - h), w, h)
 }
 
 /** A puff from an exhaust, low by the road, swelling and thinning as it drifts out, one moment after another. */
@@ -338,43 +191,12 @@ function puff(buffer: PixelBuffer, x: number, y: number, dir: number, frame: num
   }
 }
 
-/** Where the coast stands on a board of `W` × `H`. */
-type Coast = { horizon: number; shore: number; bend: number; near: number; sunX: number; sunR: number; hills: Array<[number, number, number]>; city: [number, number, number]; diner: number | null; palms: number[] }
-/** The coast at sunset on a board: the sky, the sun, the sea, the city, the road and what stands by it; the road returned for what goes on it. */
-function coast(buffer: PixelBuffer, c: Coast, lineTo: number, frame: number, scroll = 0): Road {
-  const W = buffer.width, H = buffer.height
-  const road = roadOf(W, H, c.horizon, c.bend, c.near, scroll)
-  sky(buffer, c.horizon)
-  clouds(buffer, c.horizon, frame)
-  sun(buffer, c.sunX, c.horizon, c.sunR)
-  for (const [from, to, high] of c.hills) mountains(buffer, c.horizon, from, to, high, c.sunX)
-  city(buffer, c.horizon, c.city[0], c.city[1], c.city[2])
-  ground(buffer, road, c.shore, c.sunX, lineTo, frame)
-  guardrail(buffer, road, c.shore)
-  for (const p of [0.07, 0.17, 0.34]) chevron(buffer, road, p)
-  // the far side: palms on the grass, the diner among them, far ones first
-  const side = (p: number) => { const y = Math.round(c.horizon + p * road.depth); return { y, x: road.centre(y) + road.half(y) } }
-  for (const p of c.palms) { const s = side(p); palm(buffer, s.x + 16 + p * 160, s.y, 18 + p * 220, -0.3, frame) }
-  if (c.diner != null) { const d = side(c.diner); diner(buffer, Math.round(d.x + 8 + c.diner * 40), d.y, 0.45 + c.diner * 2.4, frame) }
-  for (const p of [0.03, 0.08]) { const y = Math.round(c.horizon + p * road.depth); palm(buffer, road.centre(y) - road.half(y) - 30 - p * 260, y, 14 + p * 160, 0.3, frame) }
-  return road
-}
-
 // ---------------------------------------------------------------- the title
 
-/** Where things stand on each title. */
-const TITLE: Record<Layout, { coast: Coast; logoY: number; logoW: number; randomY: number; carScale: number; carY: number; gap: number; press: number; info: 'top' | 'bottom'; frame: Array<[number, number, number, number, number]> }> = {
-  landscape: {
-    coast: { horizon: 236, shore: 262, bend: 230, near: 520, sunX: 220, sunR: 44, hills: [[290, 480, 36], [0, 130, 20]], city: [470, 680, 120], diner: 0.12, palms: [0.04, 0.3, 0.46] },
-    logoY: 58, logoW: 450, randomY: 14, carScale: 1.15, carY: 286, gap: 36, press: 402, info: 'top',
-    // the big palms framing the scene: base x, base y, size, lean, the fronds' length
-    frame: [[18, 430, 330, 0.55, 1], [752, 430, 340, -0.55, 1]],
-  },
-  portrait: {
-    coast: { horizon: 430, shore: 456, bend: 130, near: 300, sunX: 120, sunR: 40, hills: [[180, 300, 30], [0, 66, 16]], city: [240, 432, 110], diner: 0.05, palms: [0.04, 0.3] },
-    logoY: 150, logoW: 384, randomY: 92, carScale: 0.8, carY: 610, gap: 8, press: 712, info: 'bottom',
-    frame: [[4, 600, 300, 0.3, 0.55], [428, 600, 310, -0.3, 0.55]],
-  },
+/** Where the words stand on each title, over the picture's sky; where the picture had them. */
+const TITLE: Record<Layout, { randomY: number; logoY: number; logoW: number; cx: number; press: number; info: 'top' | 'bottom' }> = {
+  landscape: { randomY: 24, logoY: 74, logoW: 446, cx: 388, press: 386, info: 'top' },
+  portrait: { randomY: 112, logoY: 168, logoW: 384, cx: 216, press: 704, info: 'bottom' },
 }
 
 export type RacingTitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; press?: boolean }
@@ -384,25 +206,25 @@ export function renderRacingTitle(layout: Layout, accent: string, lettering: Rac
   const wide = layout === 'landscape'
   const W = wide ? 768 : 432, H = wide ? 432 : 768
   const st = TITLE[layout], frame = options.frame ?? 0
-  const buffer = new PixelBuffer(W, H, INK)
-  // the lanes' dashes as far as the cars
-  coast(buffer, st.coast, st.carY + 20, frame)
-  // the three cars side by side, the burger in the middle, each puffing
-  const s = st.carScale, cw = CAR_BOX.w * s, ch = CAR_BOX.h * s
-  CARS.forEach((kind, i) => {
-    const x = Math.round(W / 2 + (i - 1) * (cw + st.gap) - cw / 2), bob = (frame + i) % 3 === 0 ? 1 : 0
-    drawCarRear(buffer, kind, x, st.carY + bob, s, frame + i)
-    puff(buffer, x + cw * 0.3, st.carY + ch * 0.9, -1, frame, i * 2)
-    puff(buffer, x + cw * 0.7, st.carY + ch * 0.9, 1, frame, i * 2 + 1)
-  })
-  // the big palms in front, framing it
-  for (const [x, y, size, lean, spread] of st.frame) palm(buffer, x, y, size, lean, frame, spread)
+  const buffer = new PixelBuffer(W, H, '#1a0c34')
+  const pic = racingArt(wide ? 'titleWide' : 'titleTall')
+  if (pic) buffer.data.set(pic.data)
+  else for (let y = 0; y < H; y += 1) buffer.rect(0, y, W, 1, mix('#1a0c34', '#ff7a5a', (y / H) ** 1.5))
+  if (pic) {
+    const m = RACING_MOTION[wide ? 'wide' : 'tall']
+    // the sea glitters: a few of its bright points at a time, white, the others dimmed
+    m.sea.forEach(([x, y], i) => { const k = (i * 7 + frame) % 5; if (k === 0) buffer.set(x, y, '#ffffff'); else if (k === 3) buffer.tint(x, y, '#1a6a9a', 0.45) })
+    // the diner's neon flickers now and then
+    if (frame % 9 === 8) buffer.shade(m.neon[0], m.neon[1], m.neon[2] - m.neon[0], m.neon[3] - m.neon[1], 0.62)
+    // the exhausts puff, outward from each car
+    m.exhausts.forEach(([x, y], i) => puff(buffer, x, y, i % 2 ? 1 : -1, frame, i * 2))
+  }
   // RANDOM, then RACING over the sky
-  const rx = Math.round(W / 2 - LOGO_WIDTH)
+  const rx = Math.round(st.cx - LOGO_WIDTH)
   drawLogo(buffer, rx + 3, st.randomY + 4, INK, 2)
   drawLogo(buffer, rx, st.randomY, mix(accent, CREAM, 0.25), 2)
-  drawRacingLogo(buffer, W / 2, st.logoY, st.logoW, accent, lettering, frame)
-  if (options.press !== false) pressStart(buffer, W / 2, st.press, accent, options.blink !== false, 2)
+  drawRacingLogo(buffer, st.cx, st.logoY, st.logoW, accent, lettering, frame)
+  if (options.press !== false) pressStart(buffer, st.cx, st.press, accent, options.blink !== false, 2)
   const level = String(options.level ?? 1), best = String(options.best ?? 0).padStart(5, '0')
   if (st.info === 'top') {
     infoLine(buffer, 16, 16, 'LEVEL', level, 'left', 2)
@@ -416,10 +238,130 @@ export function renderRacingTitle(layout: Layout, accent: string, lettering: Rac
 
 // ---------------------------------------------------------------- a moment of play
 
+/** The road's colours, taken from the picture. */
+const ROAD = {
+  tar: ['#252645', '#2b2b4a'], line: '#d5bca5',
+  kerb: ['#f99259', '#d8744a'], rail: '#8c7b8b', railTop: '#d5bca5', post: '#1c2474',
+  bush: ['#1f4a3a', '#26573f', '#16382c'], sea: ['#0998b1', '#047ba5', '#13b0c4'], glint: '#d8faff', sand: ['#f0a07a', '#e08c6a'],
+}
+/** A number from 0 to 1 for a pixel, always the same. */
+const grain = (x: number, y: number) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
+
+/** The road on a board: its middle bending right toward the horizon, its half width, its stretch (even or odd) at a row, `scroll` bringing the stretches nearer. */
+type Road = { horizon: number; depth: number; p: (y: number) => number; centre: (y: number) => number; half: (y: number) => number; band: (y: number) => number; y: (p: number) => number }
+function roadOf(W: number, H: number, horizon: number, bend: number, near: number, scroll: number): Road {
+  const depth = H - horizon
+  const p = (y: number) => Math.max(0, (y - horizon) / depth)
+  return {
+    horizon, depth, p,
+    centre: (y) => W / 2 + bend * (1 - p(y)) ** 2.3,
+    half: (y) => 3 + p(y) * near,
+    band: (y) => Math.floor(10 / (p(y) + 0.05) + scroll) % 2,
+    y: (q) => Math.round(horizon + q * depth),
+  }
+}
+
+/** The ground row by row: on the left the sea to its shore, then the beach; on the right the bushes; the kerbs in two salmons; the road in two greys with its edges and its two dashed lanes. */
+function ground(buffer: PixelBuffer, road: Road, sea: number, frame: number): void {
+  const W = buffer.width, H = buffer.height
+  for (let y = road.horizon; y < H; y += 1) {
+    const band = road.band(y), c = road.centre(y), half = road.half(y)
+    const kerb = half * 0.13, edge = Math.max(1, half * 0.022), lane = Math.max(1, half * 0.02)
+    for (let x = 0; x < W; x += 1) {
+      const d = x - c, ad = Math.abs(d)
+      let col: string
+      if (ad < half) col = Math.abs(ad - (half - edge * 2.5)) < edge ? ROAD.line : band && Math.abs(ad - half / 3) < lane ? ROAD.line : ROAD.tar[band]
+      else if (ad < half + kerb) col = ROAD.kerb[band]
+      else if (d < 0 && y < sea) {
+        // the sea in its bands, glittering here and there, a little more each moment somewhere else
+        const g = grain(x, y + frame * 7)
+        col = g > 0.985 ? ROAD.glint : ROAD.sea[(y - road.horizon) % 4 === 0 ? 1 : g > 0.7 ? 2 : 0]
+      } else if (d < 0) col = ROAD.sand[grain(x >> 1, y) > 0.6 ? 1 : 0]
+      else { const g = grain(x >> 1, y >> 1); col = ROAD.bush[g > 0.82 ? 2 : g > 0.45 ? 1 : 0] }
+      buffer.set(x, y, col)
+    }
+  }
+}
+
+/** The rails along both sides of the road, past the kerbs, their posts at each stretch. */
+function rails(buffer: PixelBuffer, road: Road): void {
+  let last = -1
+  for (let y = road.horizon + 2; y < buffer.height; y += 1) {
+    const p = road.p(y), h = Math.round(2 + p * 20), t = Math.max(1, Math.round(p * 5))
+    const post = road.band(y) !== last
+    last = road.band(y)
+    for (const side of [-1, 1]) {
+      const x = Math.round(road.centre(y) + side * road.half(y) * 1.16)
+      for (let k = 0; k < t; k += 1) buffer.rect(x - Math.round(p * 4), y - h + k, Math.max(2, Math.round(p * 9)), 1, k === 0 ? ROAD.railTop : ROAD.rail)
+      if (post) buffer.rect(x - Math.max(1, Math.round(p * 2)), y - h + t, Math.max(1, Math.round(p * 4)), h - t, ROAD.post)
+    }
+  }
+}
+
 /** The play boards, under the bar: wide 448 × 320, tall 320 × 448, as the other games'. */
-const PLAY: Record<Layout, { coast: Coast; carScale: number; carY: number }> = {
-  landscape: { coast: { horizon: 118, shore: 130, bend: 150, near: 250, sunX: 120, sunR: 28, hills: [[180, 330, 22], [0, 72, 14]], city: [280, 420, 70], diner: null, palms: [0.05, 0.14, 0.3, 0.55] }, carScale: 0.62, carY: 250 },
-  portrait: { coast: { horizon: 170, shore: 184, bend: 110, near: 190, sunX: 90, sunR: 26, hills: [[140, 230, 18], [0, 44, 10]], city: [190, 320, 66], diner: null, palms: [0.05, 0.14, 0.3, 0.55] }, carScale: 0.5, carY: 388 },
+const PLAY: Record<Layout, { horizon: number; bend: number; near: number; sea: number; carFoot: number }> = {
+  landscape: { horizon: 134, bend: 150, near: 240, sea: 176, carFoot: 312 },
+  portrait: { horizon: 196, bend: 100, near: 190, sea: 246, carFoot: 438 },
+}
+/** A car's width on the road at a row: about a quarter of the road's width there. */
+const carWidthAt = (road: Road, y: number) => road.half(y) * 2 * 0.27
+
+export type RacingPlayOptions = { frame?: number; car?: RacingCarKind; pad?: boolean }
+
+/**
+ * A moment of play, as a proposal: the picture's far view over the road,
+ * the road rolling toward the viewer with its rails, the picture's palms
+ * and chevrons by it; two rivals ahead, small with the distance; the
+ * player's car at the foot of the road, swaying in the bend; TIME, SPEED,
+ * the stage, the place; the controls under it on a tall board.
+ */
+export function renderRacingPlay(layout: Layout, accent: string, options: RacingPlayOptions = {}): PixelBuffer {
+  const wide = layout === 'landscape'
+  const bw = wide ? 448 : 320, bh = wide ? 320 : 448
+  const pad = options.pad ?? !wide
+  const frame = options.frame ?? 0, st = PLAY[layout]
+  const out = new PixelBuffer(bw, HUD_HEIGHT + bh + (pad ? 96 : 0), INK)
+  const board = new PixelBuffer(bw, bh, '#2a0e4a')
+  // the far view, its foot on the horizon, a little to the side as the road bends; the sky carried up over a tall board
+  const back = racingArt('playBack')
+  if (back) {
+    const shift = Math.round((bw - back.width) / 2 + Math.sin(frame * 0.05) * 6)
+    const top = st.horizon - back.height
+    for (let y = 0; y < top; y += 1) for (let x = 0; x < bw; x += 1) { const o = Math.min(back.width - 1, Math.max(0, x - shift)) * 4; board.set(x, y, mix(`#${[back.data[o], back.data[o + 1], back.data[o + 2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`, '#1a0a34', ((top - y) / Math.max(1, top)) ** 1.2)) }
+    art(board, back, shift, top)
+  }
+  const road = roadOf(bw, bh, st.horizon, st.bend, st.near, frame * 0.9)
+  ground(board, road, st.sea, frame)
+  rails(board, road)
+  // what stands by the road, far ones first: the chevrons on the sea side, the palms on both, coming nearer
+  const palm = racingArt('palm'), chevron = racingArt('chevron')
+  const things: Array<[number, 'palm' | 'chevron', number]> = []
+  for (let k = 0; k < 6; k += 1) {
+    const q = ((k / 6 + frame * 0.012) % 1) ** 2
+    things.push([q, 'palm', k % 2 ? 1 : -1])
+    if (k % 2 === 0) things.push([((k / 6 + 0.08 + frame * 0.012) % 1) ** 2, 'chevron', -1])
+  }
+  things.sort((a, b) => a[0] - b[0])
+  for (const [q, kind, side] of things) {
+    const y = road.y(q), x = road.centre(y) + side * road.half(y) * (kind === 'palm' ? 1.45 : 1.25)
+    const pic = kind === 'palm' ? palm : chevron
+    if (!pic || q < 0.01) continue
+    const h = Math.round(pic.height * q * (kind === 'palm' ? 2.2 : 1.6)), w = Math.max(1, Math.round((pic.width * h) / pic.height))
+    if (h < 3) continue
+    art(board, pic, Math.round(x - w / 2), y - h, w, h)
+  }
+  // the rivals ahead, small with the distance, each in its lane; then the player's own car, swaying a little in the bend
+  const me = options.car ?? 'burger'
+  const rivals: Array<[RacingCarKind, number, number]> = [[me === 'rosso' ? 'burger' : 'rosso', 0.16, -0.36], [me === 'giallo' ? 'burger' : 'giallo', 0.34, 0.34]]
+  for (const [kind, q, lane] of rivals) { const y = road.y(q); car(board, kind, road.centre(y) + lane * road.half(y) * 0.66, y + 2, carWidthAt(road, y)) }
+  const sway = Math.round(Math.sin(frame * 0.7) * 3), mine = carWidthAt(road, st.carFoot)
+  car(board, me, bw / 2 + sway, st.carFoot, mine)
+  puff(board, bw / 2 + sway - mine * 0.28, st.carFoot - 6, -1, frame, 0)
+  puff(board, bw / 2 + sway + mine * 0.28, st.carFoot - 6, 1, frame, 2)
+  out.data.set(board.data, HUD_HEIGHT * bw * 4)
+  racingHud(out, accent, 47 - (frame % 47), 212 + (frame % 5) * 3, ((frame % 40) + 10) / 60, 2, 4)
+  if (pad) racingPad(out, HUD_HEIGHT + bh)
+  return out
 }
 
 /** The bar on top: TIME counting down, SPEED, the stage's progress as a little road, the place among the rivals. */
@@ -466,37 +408,3 @@ function racingPad(buffer: PixelBuffer, top: number): void {
   }
 }
 
-export type RacingPlayOptions = { frame?: number; car?: CarKind; pad?: boolean }
-
-/**
- * A moment of play, as a proposal: the coast under the bar, the road
- * rolling toward the viewer; the player's car at its foot, leaning into the
- * bend; two rivals ahead, small with the distance, and a van of traffic;
- * TIME, SPEED, the stage, the place; the controls under it on a tall board.
- */
-export function renderRacingPlay(layout: Layout, accent: string, options: RacingPlayOptions = {}): PixelBuffer {
-  const wide = layout === 'landscape'
-  const bw = wide ? 448 : 320, bh = wide ? 320 : 448
-  const pad = options.pad ?? !wide
-  const frame = options.frame ?? 0, st = PLAY[layout]
-  const out = new PixelBuffer(bw, HUD_HEIGHT + bh + (pad ? 96 : 0), INK)
-  const board = new PixelBuffer(bw, bh, INK)
-  const road = coast(board, st.coast, bh, frame, frame * 0.9)
-  // the rivals ahead, small with the distance, each in its lane; then the player's car
-  const others: Array<[CarKind, number, number]> = [['rosso', 0.16, -0.33], ['giallo', 0.3, 0.33]]
-  if (options.car === 'rosso') others[0][0] = 'burger'
-  if (options.car === 'giallo') others[1][0] = 'burger'
-  for (const [kind, p, lane] of others) {
-    const y = Math.round(road.horizon + p * road.depth), s = 0.08 + p * 0.85, x = road.centre(y) + lane * road.half(y) * 0.66
-    drawCarRear(board, kind, Math.round(x - (CAR_BOX.w * s) / 2), Math.round(y - CAR_BOX.h * s), s, frame)
-  }
-  const me = options.car ?? 'burger', s = st.carScale, cw = CAR_BOX.w * s
-  const x = Math.round(bw / 2 - cw / 2 + Math.sin(frame * 0.7) * 3)
-  drawCarRear(board, me, x, st.carY, s, frame)
-  puff(board, x + cw * 0.3, st.carY + CAR_BOX.h * s * 0.92, -1, frame, 0)
-  puff(board, x + cw * 0.7, st.carY + CAR_BOX.h * s * 0.92, 1, frame, 2)
-  out.data.set(board.data, HUD_HEIGHT * bw * 4)
-  racingHud(out, accent, 47 - (frame % 47), 212 + (frame % 5) * 3, ((frame % 40) + 10) / 60, 2, 4)
-  if (pad) racingPad(out, HUD_HEIGHT + bh)
-  return out
-}
