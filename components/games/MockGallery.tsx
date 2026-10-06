@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { renderAttacksOver, renderAttacksPlay, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
-import { renderRacingTitle } from '@/lib/games/racing'
+import { renderRacingPlay, renderRacingTitle } from '@/lib/games/racing'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -35,8 +35,8 @@ const LABELS: Record<string, string> = {
   'attacks-jeu-13': 'Niveau 13 — la tempête, la lune rouge',
   'attacks-jeu-16': 'Niveau 16 — MEGA BURGER, ciel de sang et éclairs',
   'attacks-game-over': 'Game over',
-  'racing-sans': 'Lettrage 1 — Racing Sans',
-  'racing-faster': 'Lettrage 2 — Faster',
+  'racing-titre': 'Écran d’accueil',
+  'racing-jeu': 'En jeu (maquette)',
   'attacks-winner': 'Winner',
 }
 
@@ -98,10 +98,13 @@ export default function MockGallery() {
       { name: 'attacks-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
   })), [accent])
-  // RANDOM RACING, the fourth game: its title proposed in two letterings, to choose from
+  // RANDOM RACING, the fourth game: its title, and a moment of play as a mock
   const racing = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
     layout,
-    shots: (['sans', 'faster'] as const).map((lettering) => ({ name: `racing-${lettering}`, width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingTitle(layout, accent, lettering, { frame, blink: frame % 2 === 0 }) })) as Shot[],
+    shots: [
+      { name: 'racing-titre', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingTitle(layout, accent, 'sans', { frame, blink: frame % 2 === 0 }) },
+      { name: 'racing-jeu', width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 568, draw: (frame: number) => renderRacingPlay(layout, accent, { frame }) },
+    ] as Shot[],
   })), [accent])
   return (
     <main style={{ background: '#191916', color: '#F8F5E6', minHeight: '100vh', padding: 16, fontFamily: 'var(--font-inter-tight), sans-serif' }}>
@@ -115,9 +118,9 @@ export default function MockGallery() {
         ))}
       </div>
       <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing — proposition d&apos;écran d&apos;accueil</h2>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing — proposition</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Le départ d&apos;un road trip au coucher du soleil : la route vers le soleil, les palmiers, le portique et ses feux, les trois voitures à choisir sur la ligne, vues de derrière. Deux lettrages pour RACING. Dans la couleur choisie ci-dessus.
+          La route de la côte au coucher du soleil, d&apos;après ton image simplifiée : le soleil sur la mer, la ville, le diner, les trois voitures à choisir vues de derrière (la rouge, le burger sur roues, la jaune). Puis un moment de jeu (maquette, pas encore jouable) : TIME, SPEED, l&apos;étape, la place, les rivaux devant ; sur téléphone, les flèches à gauche, A (accélérer) et B (freiner) à droite. Dans la couleur choisie ci-dessus.
         </p>
         {racing.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
