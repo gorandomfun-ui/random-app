@@ -6,12 +6,10 @@
  *
  * - The red one: an Italian-style sports car, low and wide, its tail lamps
  *   behind a grille of black slats across its whole back, four exhausts.
- * - The yellow one: an American muscle car, two black stripes over roof and
- *   boot, a ducktail, split tail lamps, a chrome bumper, two exhausts.
- * - The burger: its bun the cabin with sesame on it and its rear window cut
- *   in, a pickle for a spoiler, lettuce for a skirt, cheese running, the
- *   patty for a bumper with tomato slices for tail lamps, the bottom bun for
- *   its floor; ketchup and mustard for exhausts.
+ * - The yellow one: an American sports car, rounded all over, a bubble of
+ *   glass, four round tail lamps, its exhausts in two pairs.
+ * - The burger: a big burger on four wheels — bun, lettuce, tomato, cheese
+ *   running, the patty, the bottom bun — simple, as the owner wanted it.
  *
  * Drawn at any size: every part is in a box of 160 × 92 and scaled.
  */
@@ -31,7 +29,6 @@ const GLASS: Ramp = ['#6a84c0', '#2c3c6c', '#1c2648', '#0e1428']
 const PLATE: Ramp = ['#fffbea', '#f0e8cc', '#c8bc9c', '#8a7e64']
 const RED: Ramp = ['#ff6a5a', '#e0241c', '#a81410', '#6a0808']
 const YELLOW: Ramp = ['#fff27a', '#ffcc1a', '#d89a08', '#8a5a04']
-const STRIPE: Ramp = ['#4a4a56', '#22222a', '#16161c', '#0a0a0e']
 const LAMP: Ramp = ['#ffb4a4', '#ff3a2a', '#c01a12', '#7a0a08']
 const BUN: Ramp = ['#ffd890', '#eaa040', '#bb6a1e', '#7a3e10']
 const BUN_LOW: Ramp = ['#f0b860', '#d68a34', '#a85a1a', '#6a3410']
@@ -39,8 +36,6 @@ const PATTY: Ramp = ['#a8663a', '#7a4320', '#512a12', '#331a0a']
 const LETTUCE: Ramp = ['#b4f078', '#7ad04a', '#3f9a2c', '#246018']
 const CHEESE: Ramp = ['#fff28a', '#ffd23f', '#e0a020', '#a86a08']
 const TOMATO: Ramp = ['#ff9a7a', '#e8341e', '#a81c14', '#6a0e0a']
-const PICKLE: Ramp = ['#c8e87a', '#7aa83a', '#4a7a24', '#2a4a14']
-const MUSTARD: Ramp = ['#fff3a0', '#ffd02a', '#c89a10', '#7a5a04']
 
 type Pt = readonly [number, number]
 
@@ -80,68 +75,56 @@ function carParts(kind: CarKind, frame: number): { parts: Part[]; marks: Mark[] 
     }
   }
   if (kind === 'giallo') {
-    const striped = (ramp: Ramp) => (x: number, _y: number, tone: number) => ((x >= 66 && x <= 75) || (x >= 85 && x <= 94) ? STRIPE[tone] : ramp[tone])
+    // rounded all over: the hips, the deck sloping to them, a bubble of glass, four round lamps, the exhausts in two pairs
     return {
       parts: [
-        ...tyres(26, 134, 58),
-        poly([[18, 72], [142, 72], [138, 84], [22, 84]], BLACK),
-        poly([[10, 36], [150, 36], [152, 70], [8, 70]], YELLOW, { round: { cx: 80, half: 72 }, paint: striped(YELLOW) }),
-        poly([[22, 27], [138, 27], [150, 36], [10, 36]], YELLOW, { paint: striped(YELLOW) }),
-        // the ducktail's lip, the pillars, the window between them, the roof
-        poly([[9, 26], [151, 26], [153, 29], [7, 29]], YELLOW, { paint: striped(YELLOW) }),
-        poly([[52, 8], [108, 8], [113, 26], [47, 26]], GLASS),
-        poly([[33, 27], [47, 6], [55, 6], [47, 27]], YELLOW), poly([[127, 27], [113, 6], [105, 6], [113, 27]], YELLOW),
-        cap([48, 5], [112, 5], 2.6, YELLOW, { paint: striped(YELLOW) }),
-        oval([27, 30], 4.5, 2.8, YELLOW), oval([133, 30], 4.5, 2.8, YELLOW),
-        // split lamps, a chrome rim round each
-        poly([[15, 42], [39, 42], [39, 54], [15, 54]], CHROME), poly([[17, 44], [37, 44], [37, 52], [17, 52]], LAMP),
-        poly([[41, 42], [61, 42], [61, 54], [41, 54]], CHROME), poly([[43, 44], [59, 44], [59, 52], [43, 52]], LAMP),
-        poly([[99, 42], [119, 42], [119, 54], [99, 54]], CHROME), poly([[101, 44], [117, 44], [117, 52], [101, 52]], LAMP),
-        poly([[121, 42], [145, 42], [145, 54], [121, 54]], CHROME), poly([[123, 44], [143, 44], [143, 52], [123, 52]], LAMP),
-        poly([[68, 56], [92, 56], [92, 63], [68, 63]], PLATE),
-        cap([12, 67], [148, 67], 3.6, CHROME),
-        ...pipe(36, 79, 3.6), ...pipe(124, 79, 3.6),
+        ...tyres(24, 136, 58),
+        poly([[16, 70], [144, 70], [138, 84], [22, 84]], BLACK),
+        poly([[6, 62], [8, 49], [16, 42], [30, 38], [130, 38], [144, 42], [152, 49], [154, 62], [150, 72], [10, 72]], YELLOW, { round: { cx: 80, half: 76 } }),
+        poly([[28, 29], [132, 29], [146, 38], [14, 38]], YELLOW),
+        poly([[46, 12], [114, 12], [126, 29], [34, 29]], GLASS),
+        cap([48, 10], [112, 10], 3, YELLOW),
+        oval([22, 35], 4.5, 2.8, YELLOW), oval([138, 35], 4.5, 2.8, YELLOW),
+        oval([28, 52], 7.5, 6, LAMP), oval([47, 52], 7.5, 6, LAMP), oval([113, 52], 7.5, 6, LAMP), oval([132, 52], 7.5, 6, LAMP),
+        poly([[68, 57], [92, 57], [92, 65], [68, 65]], PLATE),
+        ...pipe(42, 79, 3.2), ...pipe(51, 79, 3.2), ...pipe(109, 79, 3.2), ...pipe(118, 79, 3.2),
       ],
       marks: [
-        { color: '#9ab0e0', points: [[58, 10], [59, 10], [57, 11], [58, 11], [56, 12], [57, 12], [55, 13], [56, 13], [54, 14], [55, 14], [66, 10], [65, 11], [64, 12]] },
-        { color: '#4a4030', points: [[72, 59], [73, 59], [75, 59], [76, 59], [79, 59], [80, 59], [83, 59], [84, 59], [87, 59], [88, 59]] },
+        { color: '#9ab0e0', points: [[54, 15], [55, 15], [53, 16], [54, 16], [52, 17], [53, 17], [51, 18], [52, 18], [50, 19], [51, 19], [63, 15], [62, 16], [61, 17]] },
+        { color: '#ffd8c8', points: [[25, 49], [26, 49], [44, 49], [45, 49], [110, 49], [111, 49], [129, 49], [130, 49]] },
+        { color: '#4a4030', points: [[72, 61], [73, 61], [75, 61], [76, 61], [79, 61], [80, 61], [83, 61], [84, 61], [87, 61], [88, 61]] },
       ],
     }
   }
-  // the burger
-  const grill: Mark = { color: '#2a1408', points: Array.from({ length: 16 }, (_, i) => [[20 + i * 8, 58], [21 + i * 8, 59], [22 + i * 8, 60]] as Pt[]).flat() }
+  // the burger: a big one on four wheels, simple
+  const wheel = (x: number, top: number, r: number, ramp: Ramp): Part[] => [cap([x, top], [x, 86], r, ramp), cap([x, top + 2], [x, 84], r * 0.35, ramp === TYRE ? BLACK : BLACK, { line: false })]
+  const far = (r: Ramp): Ramp => [r[1], r[2], r[3], r[3]]
+  // the lettuce in frills all round, wider than the bun
   const lettuce = (): Part => {
-    const pts: Pt[] = [[8, 49], [152, 49]]
-    for (let x = 152; x >= 8; x -= 3) pts.push([x, 52.5 + (Math.round(x / 3) % 3 === 0 ? 2.2 : Math.round(x / 3) % 3 === 1 ? 0 : 1)])
+    const pts: Pt[] = [[10, 45], [150, 45]]
+    for (let x = 153; x >= 7; x -= 3.5) { const k = Math.round(x / 3.5) % 3; pts.push([x, 50 + (k === 0 ? 4 : k === 1 ? 1 : 2.6)]) }
     return poly(pts, LETTUCE)
   }
-  const drips = [26, 44, 63, 97, 118, 134].map((x, i): Part => cap([x, 54], [x + (i % 2 ? 0.4 : -0.4), 57 + (i % 3) * 1.5], 1.9, CHEESE))
+  const drips = [34, 58, 80, 102, 124].map((x, i): Part => cap([x, 57], [x + (i % 2 ? 0.4 : -0.4), 60 + (i % 3) * 2], 2.4, CHEESE))
   return {
     parts: [
-      ...tyres(26, 134, 62),
-      oval([80, 72], 66, 12, BUN_LOW),
-      // the pickle spoiler on two posts, behind the bun's top
-      cap([46, 18], [46, 10], 1.6, BLACK), cap([114, 18], [114, 10], 1.6, BLACK),
-      oval([80, 8], 46, 4.2, PICKLE),
-      oval([80, 36], 62, 28, BUN),
-      poly([[52, 16], [108, 16], [120, 36], [40, 36]], GLASS),
-      lettuce(),
-      cap([12, 52], [148, 52], 2.2, CHEESE),
+      // the far wheels, a little higher and further in, then the near ones
+      ...wheel(34, 66, 7.5, far(TYRE)), ...wheel(126, 66, 7.5, far(TYRE)),
+      ...wheel(18, 64, 10, TYRE), ...wheel(142, 64, 10, TYRE),
+      oval([80, 34], 64, 30, BUN),
+      oval([80, 74], 60, 10, BUN_LOW),
+      cap([20, 62], [140, 62], 8.5, PATTY),
+      // the cheese, its square corners hanging over each side
+      poly([[12, 52], [148, 52], [150, 63], [143, 57], [17, 57], [10, 63]], CHEESE),
       ...drips,
-      cap([14, 61], [146, 61], 6.5, PATTY),
-      oval([28, 61], 8.5, 5.5, TOMATO), oval([132, 61], 8.5, 5.5, TOMATO),
-      poly([[70, 64], [90, 64], [90, 70], [70, 70]], PLATE),
-      cap([58, 80], [58, 86], 2.6, RED), cap([102, 80], [102, 86], 2.6, MUSTARD),
+      cap([20, 50], [140, 50], 2.6, TOMATO),
+      lettuce(),
     ],
     marks: [
-      { color: '#fff6dc', points: [[30, 22], [31, 22], [40, 14], [41, 14], [120, 14], [121, 14], [130, 22], [131, 22], [25, 32], [26, 32], [135, 32], [136, 32]] },
-      { color: '#b8742c', points: [[31, 23], [41, 15], [121, 15], [131, 23], [26, 33], [136, 33]] },
-      { color: '#9ab0e0', points: [[60, 19], [61, 19], [59, 20], [60, 20], [58, 21], [59, 21], [57, 22], [58, 22], [68, 19], [67, 20], [66, 21]] },
-      // the pickle's seeds, the tomatoes' seeds lit when the lamps are on
-      { color: '#e8f4b0', points: [[66, 7], [74, 9], [86, 7], [94, 9]] },
-      { color: frame % 2 ? '#ffd8a8' : '#ffb488', points: [[25, 60], [28, 63], [31, 60], [129, 60], [132, 63], [135, 60]] },
-      grill,
-      { color: '#4a4030', points: [[74, 67], [75, 67], [77, 67], [78, 67], [81, 67], [82, 67], [85, 67], [86, 67]] },
+      { color: '#fff6dc', points: [[44, 14], [45, 14], [58, 9], [59, 9], [72, 7], [73, 7], [88, 7], [89, 7], [102, 9], [103, 9], [116, 14], [117, 14], [36, 24], [37, 24], [52, 19], [53, 19], [66, 16], [67, 16], [80, 15], [81, 15], [94, 16], [95, 16], [108, 19], [109, 19], [124, 24], [125, 24], [30, 33], [31, 33], [130, 33], [131, 33]] },
+      { color: '#b8742c', points: [[45, 15], [59, 10], [73, 8], [89, 8], [103, 10], [117, 15], [37, 25], [53, 20], [67, 17], [81, 16], [95, 17], [109, 20], [125, 25], [31, 34], [131, 34]] },
+      { color: '#2a1408', points: Array.from({ length: 15 }, (_, i) => [[24 + i * 8, 60], [25 + i * 8, 61], [26 + i * 8, 62]] as Pt[]).flat() },
+      { color: '#ffd8a8', points: frame % 2 ? [[40, 50], [70, 50], [100, 50], [128, 50]] : [[34, 50], [62, 50], [92, 50], [122, 50]] },
     ],
   }
 }
