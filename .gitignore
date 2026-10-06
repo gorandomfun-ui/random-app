@@ -51,6 +51,7 @@ next-env.d.ts
 /docs/reports/
 /docs/RANDOM-INGESTION-V3.md
 /docs/RANDOM-JEUX-V1.md
+/docs/RANDOM-COMM-V1.md
 
 # a 3.6 MB font only the ATTACKS lettering script reads (scripts/games/attacks-lettering.ts says where to get it)
 /scripts/games/fonts/ClimateCrisis-Variable.ttf
