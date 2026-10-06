@@ -1,0 +1,17 @@
+[Unit]
+Description=RANDOM look-alikes of the likes (eight windows of thirty minutes a day, Paris, each clear of the dig's, the fingerprints' and the night site check's runs: the small model judges what the searches around each like bring, alone on the machine)
+
+[Timer]
+OnCalendar=*-*-* 01:45:00 Europe/Paris
+OnCalendar=*-*-* 02:30:00 Europe/Paris
+OnCalendar=*-*-* 06:30:00 Europe/Paris
+OnCalendar=*-*-* 07:15:00 Europe/Paris
+OnCalendar=*-*-* 08:05:00 Europe/Paris
+OnCalendar=*-*-* 12:20:00 Europe/Paris
+OnCalendar=*-*-* 16:50:00 Europe/Paris
+OnCalendar=*-*-* 22:15:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

@@ -49,7 +49,8 @@ import { isCoolCandidate, type LabelableRow } from '../v3/cool/registers'
 import { SERVABLE } from '../v3/cool/servable'
 import { loadLikePool } from '../v3/cool/likePool'
 import { FIELD as VEC, fromRow } from '../v3/ai/bits'
-import { LIKE_COPY, nearestLike } from '../v3/ai/likeness'
+import { LIKE_COPY, nearestLikeInScript, saysEnough } from '../v3/ai/likeness'
+import { POOL_FILTER, POOL_INDEX, poolSize } from '../v3/ai/pool'
 import { drawStart } from '../v3/cool/start'
 import { isNewsTitle, isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isLetsPlay, isStillAlbum } from '../v3/dig/door'
@@ -213,6 +214,8 @@ const seekUniverse = (db: Db, universe: Universe, random: Rng, limit: number) =>
 const seekAny = (db: Db, random: Rng, limit: number) => seek(db, { type: 'video', ...SERVABLE }, ANY_INDEX, random, limit)
 /** A shuffled window of the videos that carry a fingerprint, wherever they are in the stock. */
 const seekPrinted = (db: Db, random: Rng, limit: number) => seek(db, { [VEC]: { $exists: true }, type: 'video', ...SERVABLE }, VEC_INDEX, random, limit)
+/** A shuffled window of the pool of the likes' look-alikes: the videos marked with the like they resemble (lib/v3/ai/pool.ts). */
+const seekPool = (db: Db, random: Rng, limit: number) => seek(db, { ...POOL_FILTER, ...SERVABLE }, POOL_INDEX, random, limit)
 const seekDig = (db: Db, base: DigBase, random: Rng) =>
   seek(db, { 'v3.line': 'dig', type: 'video', ...SERVABLE }, LINE_INDEX, random, SIFTED_ROWS).then((rows) => rows.filter((row) => digBase(row) === base))
 
@@ -299,15 +302,29 @@ const TASTE_CACHE_MS = 10 * 60_000
  * four centres of 113 likes as varied as banda, metal and LEGO ads judged even the likes' own neighbours no closer
  * than chance. None until the likes carry fingerprints.
  */
-let tasteLikes: { at: number; prints: Uint8Array[] } | null = null
-async function likedPrints(db: Db, now: number): Promise<Uint8Array[]> {
+let tasteLikes: { at: number; prints: Array<{ bits: Uint8Array; title: string }> } | null = null
+async function likedPrints(db: Db, now: number): Promise<Array<{ bits: Uint8Array; title: string }>> {
   if (tasteLikes && now - tasteLikes.at < TASTE_CACHE_MS) return tasteLikes.prints
   const pool = await loadLikePool(db, now).catch(() => ({ zones: [], likeIds: [] as string[] }))
   const ids = pool.likeIds.filter((id) => ObjectId.isValid(id)).slice(0, 400).map((id) => new ObjectId(id))
-  const rows = ids.length ? await db.collection('items').find({ _id: { $in: ids }, type: 'video', [VEC]: { $exists: true } } as Document, { projection: { [VEC]: 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[]) : []
-  const prints = rows.flatMap((row) => { const bits = fromRow(row[VEC]); return bits ? [bits] : [] })
+  const rows = ids.length ? await db.collection('items').find({ _id: { $in: ids }, type: 'video', [VEC]: { $exists: true } } as Document, { projection: { [VEC]: 1, title: 1 }, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[]) : []
+  // A like whose title says nothing ("#tgiks", "Basket") resembles any hashtag soup or short title: not a model (the owner, 6 October).
+  const prints = rows.flatMap((row) => { const bits = fromRow(row[VEC]); const title = String(row.title ?? ''); return bits && saysEnough(title) ? [{ bits, title }] : [] })
   tasteLikes = { at: now, prints: prints.length >= 5 ? prints : [] }
   return tasteLikes.prints
+}
+/**
+ * The pool of the likes' look-alikes (lib/v3/ai/pool.ts) serves the taste card only once it holds this many videos: the owner set
+ * the bar on 6 October, so the card never offers less choice than the stock did. Its size is read once an hour per server.
+ */
+export const TASTE_POOL_MIN = Number(process.env.RANDOM_TASTE_POOL_MIN ?? 30_000)
+const POOL_SIZE_CACHE_MS = 60 * 60_000
+let tastePool: { at: number; size: number } | null = null
+async function tastePoolSize(db: Db, now: number): Promise<number> {
+  if (tastePool && now - tastePool.at < POOL_SIZE_CACHE_MS) return tastePool.size
+  const size = await poolSize(db, QUERY_BUDGET_MS).catch(() => 0)
+  tastePool = { at: now, size }
+  return size
 }
 /** How many of the rows read must carry a fingerprint for the taste to be measured on them. */
 const TASTE_MEASURED_MIN = 8
@@ -374,14 +391,20 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
         const liked = start && start.source.startsWith('like') ? choose(start.rows as CatalogueRow[], slot, context) : null
         if (liked) return { item: liked, from: start!.source }
       }
-      // The likes have fingerprints: among the videos the little AI has read — wherever they are in the stock, six hundred at a time through their own
-      // index (the owner, 3 October: the list is a coverage that grows, not a limit; the shape of the likes over the whole stock answers while it is thin) —
-      // those nearest to one of the curator's likes, never a like itself nor a copy of one, then the session's rules among them.
-      const taste = await likedPrints(db, now).catch(() => [] as Uint8Array[])
+      // The pool of the likes' look-alikes, once it is large enough (TASTE_POOL_MIN): every video in it was judged near one of the likes by the
+      // little AI — found around a like, or marked over the stock — never a like itself nor a copy; the session's rules choose among a window of it.
+      if (await tastePoolSize(db, now) >= TASTE_POOL_MIN) {
+        const picked = choose(await seekPool(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[]), slot, context)
+        if (picked) return { item: picked, from: 'taste:pool' }
+      }
+      // Until then: among the videos the little AI has read — wherever they are in the stock, a window at a time through their own index (the owner,
+      // 3 October: the list is a coverage that grows, not a limit) — those nearest to one of the curator's likes, never a like itself nor a copy of
+      // one, then the session's rules among them. The nearest of a window of the stock is seldom near (6 October): hence the pool above.
+      const taste = await likedPrints(db, now).catch(() => [] as Array<{ bits: Uint8Array; title: string }>)
       if (taste.length) {
         const rows = (await seekPrinted(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[])).filter((row) => fromRow(row[VEC]))
         if (rows.length >= TASTE_MEASURED_MIN) {
-          const scored = rows.map((row) => ({ row, score: nearestLike(fromRow(row[VEC])!, taste).score })).filter((entry) => entry.score < LIKE_COPY).sort((left, right) => right.score - left.score)
+          const scored = rows.map((row) => ({ row, score: nearestLikeInScript(fromRow(row[VEC])!, String(row.title ?? ''), taste).score })).filter((entry) => entry.score < LIKE_COPY).sort((left, right) => right.score - left.score)
           const picked = choose(scored.slice(0, TASTE_NEAREST).map((entry) => entry.row), slot, context)
           if (picked) return { item: picked, from: 'taste:ai' }
         }

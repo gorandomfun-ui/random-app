@@ -12,6 +12,7 @@
 #   bash /opt/random-app/server/run-line.sh like-pool
 #   bash /opt/random-app/server/run-line.sh pools
 #   bash /opt/random-app/server/run-line.sh dig
+#   bash /opt/random-app/server/run-line.sh lookalike
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -90,6 +91,12 @@ case "${LINE}" in
     esac
     echo "[$(date -u +%FT%TZ)] ${LINE}: budget ${RANDOM_VEC_MINUTES:-${vec_minutes}} min"
     RANDOM_VEC_MINUTES="${RANDOM_VEC_MINUTES:-${vec_minutes}}" RANDOM_VEC_MAX="${RANDOM_VEC_MAX:-20000}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock bash server/vec-window.sh
+    ;;
+  lookalike)
+    # The look-alikes of the likes in windows of their own, eight of thirty minutes a day (the owner, 6 October: 44 a day was the minutes
+    # they had after the fingerprints, not the idea). The same 700 MB model, alone on the machine under the same locks as the fingerprints;
+    # the dig's lock also keeps the two model lines apart. The fingerprints' window still lends its leftover minutes (server/vec-window.sh).
+    RANDOM_LOOKALIKE_MINUTES="${RANDOM_LOOKALIKE_MINUTES:-30}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock node --import tsx scripts/v3/lookalike-direct.ts
     ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.

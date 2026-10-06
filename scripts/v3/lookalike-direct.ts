@@ -1,8 +1,9 @@
 /**
- * The look-alikes of the likes, run on the ingestion server in the window the
- * fingerprints leave (server/vec-window.sh).
+ * The look-alikes of the likes, run on the ingestion server in windows of its
+ * own (server/run-line.sh, lookalike: eight of thirty minutes a day) and in
+ * the minutes the fingerprints leave (server/vec-window.sh).
  *
- *   node --import tsx scripts/v3/lookalike-direct.ts
+ *   RANDOM_LOOKALIKE_MINUTES=30 node --import tsx scripts/v3/lookalike-direct.ts
  *   node --import tsx scripts/v3/lookalike-direct.ts --dry
  *
  * An envelope only: the line is `lib/v3/ingest/lines/lookalike.ts`. It loads
