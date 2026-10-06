@@ -5,8 +5,9 @@
  * The title is the picture itself — the coast road at sunset, the sun going
  * down into the sea, the city, the neon diner, the people at the rail, the
  * palms, the three cars from behind — wide, or tall for a phone with the sky
- * carried up for the title. The sea glitters, the diner's neon flickers, the
- * cars' exhausts puff. Over it, RANDOM, and RACING in chrome in the theme's
+ * carried up for the title — made simpler than the picture, nearer the
+ * other games' level of detail. The sea glitters, the diner's neon (drawn
+ * here, sharp) flickers, the cars' exhausts puff. Over it, RANDOM, and RACING in chrome in the theme's
  * colour, leaning forward with its speed lines and its chequered strip;
  * LEVEL, BEST and PRESS START where the other games have them.
  *
@@ -191,6 +192,38 @@ function puff(buffer: PixelBuffer, x: number, y: number, dir: number, frame: num
   }
 }
 
+/** The sun's path on the sea under it (`cx`), from the horizon (`top`) to the shore (`bottom`), `half` wide at the horizon and narrowing to the shore, as light on water does: short lines of gold and orange, broken, shifting from one moment to the next. */
+function sunPath(buffer: PixelBuffer, cx: number, top: number, bottom: number, half: number, frame: number): void {
+  for (let y = top + 1; y < bottom; y += 1) {
+    if ((y - top) % 3 === 2) continue
+    const t = (y - top) / Math.max(1, bottom - top), w = half * (1 - t * 0.6)
+    let x = Math.round(cx - w)
+    while (x < cx + w) {
+      const h = ((x * 73856093) ^ (y * 19349663) ^ (frame * 83492791)) >>> 0
+      const len = 2 + (h % 7), gap = 1 + ((h >>> 3) % 4)
+      const near = Math.abs(x + len / 2 - cx) / w
+      const c = near < 0.35 ? '#fff4b8' : near < 0.7 ? '#ffd06a' : '#ff9a4a'
+      // thinner toward its sides: some of the outer lines left out
+      if (near < 0.6 || (h >>> 9) % 3 !== 0) for (let k = 0; k < len && x + k < cx + w; k += 1) buffer.set(x + k, y, c)
+      x += len + gap
+    }
+  }
+}
+
+/** The diner's sign in its box (`x0`, `y0` to `x1`, `y1`): a dark panel framed in pink, DINER in pink neon, its glow round it; dim when off. */
+function neon(buffer: PixelBuffer, x0: number, y0: number, x1: number, y1: number, on: boolean): void {
+  const w = x1 - x0, h = y1 - y0, scale = h >= 30 ? 2 : 1
+  const pink = on ? '#ff6ac8' : '#7a2a5a', light = on ? '#ffd0f0' : '#a05a88'
+  if (on) for (let y = y0 - 4; y < y1 + 4; y += 1) for (let x = x0 - 4; x < x1 + 4; x += 1) if (dither(x, y, 0.45)) buffer.tint(x, y, '#ff4ab0', 0.3)
+  buffer.rect(x0, y0, w, h, '#1a0a2a')
+  buffer.rect(x0, y0, w, 1, pink); buffer.rect(x0, y1 - 1, w, 1, pink); buffer.rect(x0, y0, 1, h, pink); buffer.rect(x1 - 1, y0, 1, h, pink)
+  const word = 'DINER', tw = text7Width(word, scale, true), tx = Math.round(x0 + (w - tw) / 2), ty = Math.round(y0 + (h - 7 * scale) / 2)
+  drawText7(buffer, word, tx, ty + 1, dim(pink, 0.45), scale, true)
+  drawText7(buffer, word, tx, ty, pink, scale, true)
+  // the tubes' bright heart
+  if (on) for (let y = ty; y < ty + 7 * scale; y += 1) for (let x = tx; x < tx + tw; x += 1) if (buffer.hex(x, y) === pink && (x + y) % 3 === 0) buffer.set(x, y, light)
+}
+
 // ---------------------------------------------------------------- the title
 
 /** Where the words stand on each title, over the picture's sky; where the picture had them. */
@@ -212,10 +245,11 @@ export function renderRacingTitle(layout: Layout, accent: string, lettering: Rac
   else for (let y = 0; y < H; y += 1) buffer.rect(0, y, W, 1, mix('#1a0c34', '#ff7a5a', (y / H) ** 1.5))
   if (pic) {
     const m = RACING_MOTION[wide ? 'wide' : 'tall']
-    // the sea glitters: a few of its bright points at a time, white, the others dimmed
+    // the sun's path on the sea, in broken lines that shimmer; the sea glitters here and there
+    sunPath(buffer, m.sun[0], m.sun[1], m.sun[2], m.sun[3], frame)
     m.sea.forEach(([x, y], i) => { const k = (i * 7 + frame) % 5; if (k === 0) buffer.set(x, y, '#ffffff'); else if (k === 3) buffer.tint(x, y, '#1a6a9a', 0.45) })
-    // the diner's neon flickers now and then
-    if (frame % 9 === 8) buffer.shade(m.neon[0], m.neon[1], m.neon[2] - m.neon[0], m.neon[3] - m.neon[1], 0.62)
+    // the diner's neon, sharp, flickering now and then
+    neon(buffer, m.neon[0], m.neon[1], m.neon[2], m.neon[3], frame % 9 !== 8)
     // the exhausts puff, outward from each car
     m.exhausts.forEach(([x, y], i) => puff(buffer, x, y, i % 2 ? 1 : -1, frame, i * 2))
   }
@@ -352,8 +386,13 @@ export function renderRacingPlay(layout: Layout, accent: string, options: Racing
   }
   // the rivals ahead, small with the distance, each in its lane; then the player's own car, swaying a little in the bend
   const me = options.car ?? 'burger'
-  const rivals: Array<[RacingCarKind, number, number]> = [[me === 'rosso' ? 'burger' : 'rosso', 0.16, -0.36], [me === 'giallo' ? 'burger' : 'giallo', 0.34, 0.34]]
-  for (const [kind, q, lane] of rivals) { const y = road.y(q); car(board, kind, road.centre(y) + lane * road.half(y) * 0.66, y + 2, carWidthAt(road, y)) }
+  // each rival a little ahead or behind from one moment to the next, swerving a little in its lane, bobbing on the road
+  const rivals: Array<[RacingCarKind, number, number, number]> = [[me === 'rosso' ? 'burger' : 'rosso', 0.16, -0.36, 0], [me === 'giallo' ? 'burger' : 'giallo', 0.34, 0.34, 1.7]]
+  for (const [kind, q0, lane0, phase] of rivals) {
+    const q = q0 + Math.sin(frame * 0.35 + phase) * 0.035, lane = lane0 + Math.sin(frame * 0.22 + phase) * 0.06
+    const y = road.y(q)
+    car(board, kind, road.centre(y) + lane * road.half(y) * 0.66, y + 2 - ((frame + phase * 3) % 2 ? 0 : 1), carWidthAt(road, y))
+  }
   const sway = Math.round(Math.sin(frame * 0.7) * 3), mine = carWidthAt(road, st.carFoot)
   car(board, me, bw / 2 + sway, st.carFoot, mine)
   puff(board, bw / 2 + sway - mine * 0.28, st.carFoot - 6, -1, frame, 0)
