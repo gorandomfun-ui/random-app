@@ -70,8 +70,8 @@ export type QueueItem = {
   licenseHint: LicenseHint
 }
 
-/** montage: a clip cut, framed and dressed by the browser, ready to post; still: one frame of a video, as a picture. */
-export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb' | 'montage' | 'still'
+/** montage: a clip cut, framed and dressed by the browser, ready to post; still: one frame of a video, as a picture; render: a slide as a JPEG, only for the time of a publication. */
+export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb' | 'montage' | 'still' | 'render'
 
 export type MediaDoc = {
   _id: string

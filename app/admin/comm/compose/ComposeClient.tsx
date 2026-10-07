@@ -19,6 +19,7 @@ import { buildExportZip, downloadBlob, type ExportSlide } from '@/lib/comm/expor
 import { FAMILY_SIZES } from '@/lib/comm/templates'
 import { clipMaxSeconds } from '@/lib/comm/model'
 import dynamic from 'next/dynamic'
+import { prepareInstagramAssets, publishInstagram } from '@/lib/comm/publishClient'
 
 /** The montage panel: loaded when a video slide asks for it. */
 const MontagePanel = dynamic(() => import('@/components/comm/MontagePanel'), { ssr: false })
@@ -49,6 +50,9 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [playing, setPlaying] = useState<number | null>(null)
   const [customTag, setCustomTag] = useState('')
   const [montageOpen, setMontageOpen] = useState(false)
+  const [published, setPublished] = useState<{ remoteUrl: string | null; commented: boolean } | null>(null)
+  const [publishError, setPublishError] = useState('')
+  const [config, setConfig] = useState<{ instagram: boolean } | null>(null)
   const saveTimer = useRef<number | null>(null)
   const dirty = useRef<Partial<PostDoc>>({})
 
@@ -63,6 +67,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     }).catch(() => setError('Le brouillon est indisponible.'))
     void fetch('/api/admin/comm/templates', { cache: 'no-store' }).then((r) => r.json()).then((body) => setTemplates(body.templates ?? [])).catch(() => {})
     void fetch('/api/admin/comm/phrases', { cache: 'no-store' }).then((r) => r.json()).then((body) => setPhrases(body.phrases ?? [])).catch(() => {})
+    void fetch('/api/admin/comm/config', { cache: 'no-store' }).then((r) => r.json()).then((body) => setConfig({ instagram: body.instagram?.configured === true })).catch(() => setConfig({ instagram: false }))
   }, [postId])
 
   const spec: FormatSpec | null = useMemo(() => (destination && format ? formatSpec(destination, format) : null), [destination, format])
@@ -173,6 +178,19 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
       setExported({ number: post.number }); setStep(5)
     } catch (cause) { setError(cause instanceof Error && cause.message !== 'export' ? `Export impossible : ${cause.message}` : 'Les fichiers sont téléchargés mais la file n’a pas été mise à jour.') }
     setBusy(''); setProgress('')
+  }, [canExport, caption, items, keep, post, renderUrl])
+
+  const doPublish = useCallback(async () => {
+    if (!post || !canExport || !caption || post.destination !== 'instagram') return
+    setBusy('Préparation de la publication'); setError(''); setPublishError('')
+    const mediaById = new Map(items.flatMap((i) => i.media).map((m) => [m._id, m]))
+    const prepared = await prepareInstagramAssets(post, mediaById, (index) => `${window.location.origin}${renderUrl(post.slides[index], index, 'full')}`, setProgress)
+    if (!prepared.ok) { setBusy(''); setProgress(''); setPublishError(prepared.reason); return }
+    setBusy('Publication sur Instagram')
+    const outcome = await publishInstagram(post._id, prepared.assets, [...keep], setProgress)
+    setBusy(''); setProgress('')
+    if (outcome.state === 'published') { setPublished({ remoteUrl: outcome.remoteUrl, commented: outcome.commented }); setPost((current) => (current ? { ...current, status: 'published', remoteUrl: outcome.remoteUrl } : current)); setStep(5) }
+    else setPublishError(outcome.reason)
   }, [canExport, caption, items, keep, post, renderUrl])
 
   useEffect(() => {
@@ -316,7 +334,13 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
         {step === 5 && post && spec ? (
           <section className="space-y-4">
             <h1 className="text-2xl font-bold">Publier ou exporter — n° {post.number}</h1>
-            {exported ? (
+            {published ? (
+              <div className="space-y-2">
+                <p className="text-green-300">Publié sur Instagram. {published.remoteUrl ? <a href={published.remoteUrl} target="_blank" rel="noreferrer" className="underline">Voir le post</a> : 'Le lien du post arrivera dans les stats.'} {published.commented ? 'Le lien de la source est en premier commentaire.' : 'Le premier commentaire n’a pas pu être posté : ajoute le lien à la main.'}</p>
+                <p className="text-sm text-gray-300">La publication porte le n° {post.number} et figure sur <Link href="/liens" className="underline" target="_blank">/liens</Link> dès sa prochaine construction.</p>
+                <Link href="/admin/comm" className={button}>Retour à la file</Link>
+              </div>
+            ) : exported ? (
               <div className="space-y-2">
                 <p className="text-green-300">Exporté. La publication porte le n° {exported.number} ; elle figure sur <Link href="/liens" className="underline" target="_blank">/liens</Link> dès sa prochaine construction.</p>
                 <Link href="/admin/comm" className={button}>Retour à la file</Link>
@@ -332,8 +356,11 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                 <div className="flex flex-wrap gap-3">
                   <button className={button} onClick={() => setStep(4)}>Retour</button>
                   <button className={button} disabled={!canExport || Boolean(busy)} onClick={doExport}>Exporter</button>
-                  <button className={button} disabled title={destSpec?.direct ? 'La publication directe arrive avec la phase 10.' : destSpec?.directNote}>Publier sur {destSpec?.name}</button>
+                  <button className={button} disabled={!destSpec?.direct || !config?.instagram || !canExport || Boolean(busy)} title={!destSpec?.direct ? destSpec?.directNote : !config?.instagram ? 'Instagram n’est pas configuré : voir la page Configuration.' : 'Publication directe'} onClick={doPublish}>Publier sur {destSpec?.name}</button>
                 </div>
+                {publishError ? <p role="alert" className="text-red-300">{publishError} <button className="underline" onClick={doPublish}>Réessayer</button></p> : null}
+                {destSpec?.direct && config && !config.instagram ? <p className="text-xs text-amber-200">Instagram n’est pas configuré. <Link href="/admin/comm/config" className="underline">Configuration</Link></p> : null}
+                {destSpec?.key === 'instagram' && spec.key === 'story' && post.slides.length > 1 ? <p className="text-xs text-amber-200">L’API publie une story à la fois : une story de plusieurs slides se publie slide par slide, ou s’exporte.</p> : null}
                 <p className="text-xs text-gray-400">L’export : un PNG par slide image, l’extrait et son habillage pour une slide vidéo, et la légende dans caption.txt.</p>
               </>
             )}

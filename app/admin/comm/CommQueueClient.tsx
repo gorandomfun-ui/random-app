@@ -13,7 +13,7 @@ import { canCaptureTab, commImportSource, commList, commRemove, commRemoveMedia,
 import type { MediaDoc } from '@/lib/comm/model'
 
 const TYPE_WORDS: Record<string, string> = { video: 'Vidéo', image: 'Image', web: 'Site', quote: 'Citation', fact: 'Fait', joke: 'Blague' }
-const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe' }
+const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe', render: 'Rendu' }
 
 export default function CommQueueClient() {
   const [items, setItems] = useState<QueueItemWithMedia[]>([])
@@ -88,7 +88,7 @@ export default function CommQueueClient() {
   return (
     <main className="min-h-screen bg-black px-5 py-8 text-white">
       <div className="mx-auto max-w-4xl space-y-5">
-        <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link></nav>
+        <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link><Link href="/admin/comm/config" className="underline">Configuration</Link></nav>
         <header className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-2xl font-bold">Comm — la file</h1>
           {status ? <p className="text-sm">{status.count} / {status.max}{!status.blob ? <span className="ml-3 text-amber-300">Blob non configuré : aucun média ne peut être pris.</span> : null}</p> : null}
@@ -129,9 +129,9 @@ export default function CommQueueClient() {
                   </div>
                 </div>
 
-                {item.media.length ? (
+                {item.media.filter((m) => m.kind !== 'render').length ? (
                   <ul className="mt-3 flex flex-wrap gap-3">
-                    {item.media.map((media) => (
+                    {item.media.filter((m) => m.kind !== 'render').map((media) => (
                       <li key={media._id} className="flex items-center gap-2 text-xs">
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
                         {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
