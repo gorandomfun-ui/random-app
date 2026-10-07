@@ -13,7 +13,8 @@ import { drawText7, mix, PixelBuffer, rgbOf, text7Width } from './pixels'
 import { CREAM, INK } from './ui'
 
 export type RGB = readonly [number, number, number]
-export type Tier = 0 | 1 | 2 | 3
+/** The hour on the coast: 0 the sun above the sea, 1 the dusk, 2 the night, 3 the storm; in between, on its way from one to the next. */
+export type Tier = number
 
 // ---------------------------------------------------------------- the colours
 
@@ -36,27 +37,35 @@ const BASE = {
 export type Colour = keyof typeof BASE
 const NAMES = Object.keys(BASE) as Colour[]
 
-/** How each hour turns a colour: the dusk deeper and violet, the night dark blue, the storm dark grey-blue. */
-function hour(c: RGB, tier: Tier): RGB {
-  if (tier === 0) return c
-  if (tier === 1) return lerp(times(c, 0.8), hex('#4a2a6a'), 0.18)
-  if (tier === 2) return lerp(times(c, 0.56), hex('#141436'), 0.26)
+/** How each of the four hours turns a colour: the dusk deeper and violet, the night dark blue, the storm dark grey-blue. */
+function stage(c: RGB, k: number): RGB {
+  if (k === 0) return c
+  if (k === 1) return lerp(times(c, 0.8), hex('#4a2a6a'), 0.18)
+  if (k === 2) return lerp(times(c, 0.56), hex('#141436'), 0.26)
   const grey = (c[0] + c[1] + c[2]) / 3
   return lerp(times(lerp(c, [grey, grey, grey], 0.35), 0.5), hex('#1c2030'), 0.3)
 }
-/** The haze far off, for each hour: the sunset's pink, the dusk's violet, the night's blue, the storm's grey. */
-export const HAZE: Record<Tier, RGB> = { 0: hex('#e8768a'), 1: hex('#5e3a7c'), 2: hex('#1a1a42'), 3: hex('#2a2e3e') }
-/** How much haze at the far end of the road, for each hour. */
-const HAZE_MAX: Record<Tier, number> = { 0: 0.62, 1: 0.7, 2: 0.82, 3: 0.88 }
+/** Between two hours, a colour on its way from one to the next. */
+const between = <T>(h: number, at: (k: number) => T, blend: (a: T, b: T, t: number) => T): T => { const k = Math.max(0, Math.min(3, Math.floor(h))), t = Math.max(0, Math.min(1, h - k)); return t < 1e-6 || k >= 3 ? at(k) : blend(at(k), at(k + 1), t) }
+const hour = (c: RGB, h: Tier): RGB => between(h, (k) => stage(c, k), lerp)
+/** The haze far off, for each hour: the sunset's pink, the dusk's violet, the night's blue, the storm's grey; and how much of it at the far end of the road. */
+const HAZES: RGB[] = [hex('#e8768a'), hex('#5e3a7c'), hex('#1a1a42'), hex('#2a2e3e')]
+const HAZE_MAXES = [0.62, 0.7, 0.82, 0.88]
+export const hazeAt = (h: Tier): RGB => between(h, (k) => HAZES[k], lerp)
+const hazeMaxAt = (h: Tier): number => between(h, (k) => HAZE_MAXES[k], (a, b, t) => a + (b - a) * t)
+/** The hour in eighths: what the colours are worked out for. */
+const eighth = (h: Tier) => Math.round(h * 8) / 8
 
 /** Sixteen steps of haze, for each hour, each colour: worked out once. */
 export const FOG_STEPS = 16
-const palettes = new Map<Tier, RGB[][]>()
-export function palette(tier: Tier): RGB[][] {
-  let p = palettes.get(tier)
+const palettes = new Map<number, RGB[][]>()
+export function palette(h: Tier): RGB[][] {
+  const q = eighth(h)
+  let p = palettes.get(q)
   if (!p) {
-    p = Array.from({ length: FOG_STEPS }, (_, f) => NAMES.map((n) => lerp(hour(hex(BASE[n]), tier), HAZE[tier], (f / (FOG_STEPS - 1)) * HAZE_MAX[tier]).map(Math.round) as unknown as RGB))
-    palettes.set(tier, p)
+    const haze = hazeAt(q), far = hazeMaxAt(q)
+    p = Array.from({ length: FOG_STEPS }, (_, f) => NAMES.map((n) => lerp(hour(hex(BASE[n]), q), haze, (f / (FOG_STEPS - 1)) * far).map(Math.round) as unknown as RGB))
+    palettes.set(q, p)
   }
   return p
 }
@@ -72,52 +81,58 @@ export const grain = (x: number, y: number) => { let h = (Math.imul(x, 374761393
 
 // ---------------------------------------------------------------- the far view
 
-const views = new Map<string, PixelBuffer | null>()
+/** The far view's sun, lifted off the picture: its pixels and the row it sinks behind. */
+type Sun = { px: Array<[number, number, number, number, number]>; bottom: number; height: number }
+let sunOf: Sun | null = null
+const sunny = (d: Uint8ClampedArray, o: number) => d[o] > 215 && d[o + 1] > 140 && d[o + 2] < 150
+
+const bases = new Map<number, PixelBuffer>()
 /**
- * The picture's far view at an hour: as it is at sunset; at dusk deeper and
- * violet; at night the sun gone under, a moon, stars, the city's lights still
- * on; in the storm darker still and grey, no stars.
+ * The picture's far view without its sun, at one of the four hours: as it
+ * is at sunset; at dusk deeper and violet; at night a moon, stars, the
+ * city's lights still on; in the storm darker still and grey, no stars.
  */
-export function farViewAt(tier: Tier): PixelBuffer | null {
-  const key = String(tier)
-  if (views.has(key) && views.get(key)) return views.get(key)!
+function baseView(k: number): PixelBuffer | null {
+  const known = bases.get(k)
+  if (known) return known
   const back = racingArt('playBack')
   if (!back) return null
   const out = new PixelBuffer(back.width, back.height)
   out.data.set(back.data)
   const W = out.width, H = out.height, d = out.data
   const lit = (o: number) => 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2]
-  if (tier >= 2) {
-    // the sun gone: each of its rows filled from the sky beside it
-    const sunny = (o: number) => d[o] > 215 && d[o + 1] > 140 && d[o + 2] < 150
-    for (let y = 0; y < H - 8; y += 1) {
-      const row = y * W * 4
-      let x = 0
-      while (x < Math.min(W, 230)) {
-        if (!sunny(row + x * 4)) { x += 1; continue }
-        let e = x
-        while (e < W && sunny(row + e * 4)) e += 1
-        const a = Math.max(0, x - 3), b = Math.min(W - 1, e + 2)
-        for (let k = x; k < e; k += 1) { const t = (k - a) / Math.max(1, b - a); for (let c = 0; c < 3; c += 1) d[row + k * 4 + c] = d[row + a * 4 + c] + (d[row + b * 4 + c] - d[row + a * 4 + c]) * t }
-        x = e
-      }
+  // the sun lifted off, each of its rows filled from the sky beside it
+  const sun: Sun = { px: [], bottom: 0, height: 0 }
+  let top = H
+  for (let y = 0; y < H - 8; y += 1) {
+    const row = y * W * 4
+    let x = 0
+    while (x < Math.min(W, 230)) {
+      if (!sunny(d, row + x * 4)) { x += 1; continue }
+      let e = x
+      while (e < W && sunny(d, row + e * 4)) e += 1
+      for (let k2 = x; k2 < e; k2 += 1) { const o = row + k2 * 4; sun.px.push([k2, y, d[o], d[o + 1], d[o + 2]]); top = Math.min(top, y); sun.bottom = Math.max(sun.bottom, y) }
+      const a = Math.max(0, x - 3), b = Math.min(W - 1, e + 2)
+      for (let k2 = x; k2 < e; k2 += 1) { const t = (k2 - a) / Math.max(1, b - a); for (let c = 0; c < 3; c += 1) d[row + k2 * 4 + c] = d[row + a * 4 + c] + (d[row + b * 4 + c] - d[row + a * 4 + c]) * t }
+      x = e
     }
   }
-  if (tier > 0) {
-    const sky = tier === 1 ? hex('#3a1a5a') : tier === 2 ? hex('#0a0a2a') : hex('#1a1e2c')
-    const keep = tier === 1 ? 0.78 : tier === 2 ? 0.5 : 0.42
+  sun.height = sun.bottom - top + 1
+  if (!sunOf) sunOf = sun
+  if (k > 0) {
+    const sky = k === 1 ? hex('#3a1a5a') : k === 2 ? hex('#0a0a2a') : hex('#1a1e2c')
+    const keep = k === 1 ? 0.78 : k === 2 ? 0.5 : 0.42
     for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
       const o = (y * W + x) * 4
       // the city's lights low down stay lit after dark
-      const light = tier >= 2 && y > H * 0.62 && lit(o) > 175
-      if (light) continue
-      const c = lerp(times([d[o], d[o + 1], d[o + 2]], keep), sky, tier === 1 ? 0.3 : 0.45)
+      if (k >= 2 && y > H * 0.62 && lit(o) > 175) continue
+      const c = lerp(times([d[o], d[o + 1], d[o + 2]], keep), sky, k === 1 ? 0.3 : 0.45)
       d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]
     }
   }
-  if (tier === 2) {
+  if (k === 2) {
     // stars, and the moon over the sea
-    for (let k = 0; k < 70; k += 1) { const x = Math.floor(grain(k, 3) * W), y = 4 + Math.floor(grain(k, 7) * H * 0.5); const o = (y * W + x) * 4; const b = 150 + grain(k, 11) * 100; d[o] = b; d[o + 1] = b; d[o + 2] = b + 10 }
+    for (let n = 0; n < 70; n += 1) { const x = Math.floor(grain(n, 3) * W), y = 4 + Math.floor(grain(n, 7) * H * 0.5); const o = (y * W + x) * 4; const b = 150 + grain(n, 11) * 100; d[o] = b; d[o + 1] = b; d[o + 2] = b + 10 }
     const mx = 92, my = 34, r = 13
     for (let y = -r - 6; y <= r + 6; y += 1) for (let x = -r - 6; x <= r + 6; x += 1) {
       const q = Math.hypot(x, y), o = ((my + y) * W + mx + x) * 4
@@ -125,7 +140,41 @@ export function farViewAt(tier: Tier): PixelBuffer | null {
       else if (q <= r + 6) { const c = lerp([d[o], d[o + 1], d[o + 2]], hex('#8a8ab0'), 0.35 * (1 - (q - r) / 6)); d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2] }
     }
   }
-  views.set(key, out)
+  bases.set(k, out)
+  return out
+}
+
+const skies = new Map<string, PixelBuffer>()
+/**
+ * The far view at an hour, on its way from one of the four to the next, and
+ * its sun as low as the hour has it: in the picture's place at first,
+ * sinking and reddening as the race goes on, gone under the sea's line once
+ * dusk has come (`sinking` from 0 to 1).
+ */
+export function skyAt(h: Tier, sinking: number): PixelBuffer | null {
+  const q = eighth(h), k = Math.min(3, Math.floor(q)), t = q - k
+  const low = baseView(k)
+  if (!low || !sunOf) return low
+  const drop = Math.round(Math.max(0, Math.min(1, sinking)) * (sunOf.height + 2))
+  const key = `${q}|${drop}`
+  const known = skies.get(key)
+  if (known) return known
+  const out = new PixelBuffer(low.width, low.height)
+  out.data.set(low.data)
+  const high = t > 0 && k < 3 ? baseView(k + 1) : null
+  if (high) for (let i = 0; i < out.data.length; i += 4) for (let c = 0; c < 3; c += 1) out.data[i + c] = low.data[i + c] + (high.data[i + c] - low.data[i + c]) * t
+  if (drop <= sunOf.height + 1) {
+    // the sun, lower and redder as it sets, cut by the sea's line
+    const red = Math.max(0, Math.min(1, sinking)), dim = 1 - Math.min(0.5, q * 0.4)
+    for (const [x, y, r, g, b] of sunOf.px) {
+      const Y = y + drop
+      if (Y > sunOf.bottom) continue
+      const o = (Y * out.width + x) * 4
+      out.data[o] = r * dim; out.data[o + 1] = (g - (g - 70) * red * 0.55) * dim; out.data[o + 2] = (b - b * red * 0.4) * dim
+    }
+  }
+  if (skies.size > 40) skies.clear()
+  skies.set(key, out)
   return out
 }
 
@@ -278,8 +327,8 @@ export function tunnelMouth(buffer: PixelBuffer, a: End, clip: number, tier: Tie
 
 // ---------------------------------------------------------------- what stands by the road and lies on it
 
-/** A traced picture's pixels onto the buffer at `x`, `y`, leaving out its clear ones; drawn `w` × `h` (each pixel taken from the nearest), its own size if not given; no row at or under `clip`; mirrored if asked; through the haze and the hour (`tint`, `by`) if asked. */
-export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: number, w = pic.width, h = pic.height, clip = buffer.height, flip = false, tint?: RGB, by = 0): void {
+/** A traced picture's pixels onto the buffer at `x`, `y`, leaving out its clear ones; drawn `w` × `h` (each pixel taken from the nearest), its own size if not given; no row at or under `clip`; mirrored if asked; through the haze and the hour (`tint`, `by`) if asked; its top pushed aside by `sway` pixels, as a palm in the wind, its foot not. */
+export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: number, w = pic.width, h = pic.height, clip = buffer.height, flip = false, tint?: RGB, by = 0, sway = 0): void {
   const sx = pic.width / w, sy = pic.height / h, d = buffer.data, s = pic.data
   const x0 = Math.round(x), y0 = Math.round(y), W = Math.round(w), H = Math.round(h)
   const bottom = Math.min(buffer.height, clip)
@@ -289,8 +338,9 @@ export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: num
     if (ty < 0) continue
     if (ty >= bottom) break
     const py = Math.min(pic.height - 1, Math.floor((yy + 0.5) * sy))
+    const lean = sway ? Math.round(sway * (1 - yy / H) ** 2) : 0
     for (let xx = 0; xx < W; xx += 1) {
-      const tx = x0 + xx
+      const tx = x0 + xx + lean
       if (tx < 0 || tx >= buffer.width) continue
       const px = Math.min(pic.width - 1, Math.floor(((flip ? W - 1 - xx : xx) + 0.5) * sx))
       const o = (py * pic.width + px) * 4
@@ -304,14 +354,15 @@ export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: num
 }
 
 /** How a traced picture is darkened for an hour, before the haze: none at sunset. */
-export const HOUR_TINT: Record<Tier, { rgb: RGB; by: number }> = { 0: { rgb: hex('#000000'), by: 0 }, 1: { rgb: hex('#2a1640'), by: 0.3 }, 2: { rgb: hex('#0a0a24'), by: 0.55 }, 3: { rgb: hex('#141824'), by: 0.6 } }
+const HOUR_TINTS: Array<{ rgb: RGB; by: number }> = [{ rgb: hex('#2a1640'), by: 0 }, { rgb: hex('#2a1640'), by: 0.3 }, { rgb: hex('#0a0a24'), by: 0.55 }, { rgb: hex('#141824'), by: 0.6 }]
 /** The tint for a picture at an hour and a haze step: the hour's darkness and the haze together. */
-export function tintFor(tier: Tier, fog: number): { rgb: RGB; by: number } {
-  const hourT = HOUR_TINT[tier], f = (fog / (FOG_STEPS - 1)) * HAZE_MAX[tier]
+export function tintFor(h: Tier, fog: number): { rgb: RGB; by: number } {
+  const hourT = between(h, (k) => HOUR_TINTS[k], (a, b, t) => ({ rgb: lerp(a.rgb, b.rgb, t), by: a.by + (b.by - a.by) * t }))
+  const f = (fog / (FOG_STEPS - 1)) * hazeMaxAt(h)
   const by = 1 - (1 - hourT.by) * (1 - f)
   if (by < 0.01) return { rgb: hourT.rgb, by: 0 }
   // the mix of the two, weighted by how much each darkens
-  const rgb = lerp(hourT.rgb, HAZE[tier], f / Math.max(0.0001, hourT.by + f))
+  const rgb = lerp(hourT.rgb, hazeAt(h), f / Math.max(0.0001, hourT.by + f))
   return { rgb, by }
 }
 
@@ -402,7 +453,7 @@ export function cone(buffer: PixelBuffer, cx: number, y: number, u: number, clip
 export function puddle(buffer: PixelBuffer, cx: number, y: number, u: number, clip: number, tier: Tier, fog: number): void {
   const w = 0.42 * u, h = Math.max(1, 0.07 * u)
   if (w < 2) return
-  const dark = mix('#7a0c10', hexOf(HAZE[tier]), (fog / FOG_STEPS) * 0.6), red = mix('#c81a1a', hexOf(HAZE[tier]), (fog / FOG_STEPS) * 0.6)
+  const dark = mix('#7a0c10', hexOf(hazeAt(tier)), (fog / FOG_STEPS) * 0.6), red = mix('#c81a1a', hexOf(hazeAt(tier)), (fog / FOG_STEPS) * 0.6)
   for (let yy = Math.floor(y - h); yy <= Math.ceil(y + h); yy += 1) {
     if (yy < 0 || yy >= clip || yy >= buffer.height) continue
     for (let xx = Math.floor(cx - w); xx <= Math.ceil(cx + w); xx += 1) {

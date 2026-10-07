@@ -92,13 +92,35 @@ const STOPWATCH = 3 * SECOND
 /** How the coast looks as the levels go: sunset (1–4), dusk (5–8), night (9–12), the storm (13–16). */
 export const racingTier = (level: number): 0 | 1 | 2 | 3 => (level >= 13 ? 3 : level >= 9 ? 2 : level >= 5 ? 1 : 0)
 export const racingStorm = (level: number): boolean => racingTier(level) === 3
+/**
+ * The hour on the coast as the race goes on (`progress` from the start to
+ * the finish line, 0 to 1): the sun sets through the first two levels — low
+ * over the sea by the end of the first, under it during the second — the
+ * dusk deepens to the fourth and darkens into night by the eighth, night to
+ * the twelfth (0 the sunset, 1 the dusk, 2 the night); the storm (3) from
+ * the thirteenth.
+ */
+export function racingHour(level: number, progress: number): number {
+  if (racingStorm(level)) return 3
+  const x = Math.max(0, Math.min(12, level - 1 + Math.max(0, Math.min(1, progress))))
+  return x < 2 ? x * 0.4 : x < 4 ? 0.8 + (x - 2) * 0.1 : x < 8 ? 1 + (x - 4) * 0.2 : 1.8 + (x - 8) * 0.05
+}
+/** How far the sun has sunk at an hour, 0 to 1 (gone). */
+export const racingSunset = (hour: number): number => Math.max(0, Math.min(1, hour / 0.75))
 
 // ---------------------------------------------------------------- the road
 
 /** The kinds of road along the coast. */
 export type RacingZone = 'beach' | 'promenade' | 'cliff' | 'causeway' | 'tunnel'
-/** What stands by the road on a stretch: a palm, a chevron pointing into a bend (`flip`: pointing left), a lamp, a bush; `x` in half widths from the middle. */
-export type RacingThing = { kind: 'palm' | 'chevron' | 'lamp' | 'bush'; x: number; flip: boolean }
+/** What lives at sea and on the beach. */
+export type RacingProp = 'parasol' | 'tower' | 'sailboat' | 'yacht' | 'jetski' | 'windsurf' | 'buoy' | 'dolphin' | 'lighthouse'
+/**
+ * What stands by the road on a stretch: a palm, a chevron pointing into a
+ * bend (`flip`: pointing left), a lamp, a bush, the public, a building, and
+ * the beach's and the sea's things; `x` in half widths from the middle,
+ * `look` which one of its kind (which faces, which front, which colours).
+ */
+export type RacingThing = { kind: 'palm' | 'chevron' | 'lamp' | 'bush' | 'crowd' | 'building' | RacingProp; x: number; flip: boolean; look: number }
 /** A stretch: how much the road bends there (to the right when positive), its height at its near and far ends, its kind, what stands by it. */
 export type RacingSegment = { curve: number; y1: number; y2: number; zone: RacingZone; things: RacingThing[] }
 
@@ -221,20 +243,45 @@ export function racingCourse(level: number): RacingCourse {
   add(0, RUNOFF, 0, 0, 0)
   // what stands by it, a little irregular: palms on the beach and among the bushes, lamps along the promenade and the causeway, chevrons on the outside of bends
   const place = seeded(77 + lv * 131)
-  let palmL = 20, palmR = 30, lamp = 10, bush = 12
+  let palmL = 20, palmR = 30, lamp = 10, bush = 12, house = 6, parasol = 30, tower = 90, boat = 40, fans = 30
   track.forEach((seg, i) => {
     if (i < 24 || i > finish + 200) return
     const z = seg.zone
     if (z === 'tunnel') return
-    if (z === 'beach' && i >= palmL) { seg.things.push({ kind: 'palm', x: -2.25 - place() * 0.9, flip: place() < 0.5 }); palmL = i + 9 + Math.floor(place() * 14) }
-    if ((z === 'beach' || z === 'promenade') && i >= palmR) { seg.things.push({ kind: 'palm', x: 2.15 + place() * 1.2, flip: place() < 0.5 }); palmR = i + 14 + Math.floor(place() * 18) }
+    if (z === 'beach' && i >= palmL) { seg.things.push({ kind: 'palm', x: -2.25 - place() * 0.9, flip: place() < 0.5, look: 0 }); palmL = i + 9 + Math.floor(place() * 14) }
+    if ((z === 'beach' || z === 'promenade') && i >= palmR) { seg.things.push({ kind: 'palm', x: 2.15 + place() * 1.2, flip: place() < 0.5, look: 0 }); palmR = i + 14 + Math.floor(place() * 18) }
     // bushes scattered over the land past the beach, near and far
-    if (z === 'beach' && i >= bush) { seg.things.push({ kind: 'bush', x: 2.0 + place() * 4.5, flip: place() < 0.5 }); bush = i + 4 + Math.floor(place() * 6) }
-    if ((z === 'promenade' || z === 'causeway') && i >= lamp) { seg.things.push({ kind: 'lamp', x: -1.95, flip: false }, { kind: 'lamp', x: 1.95, flip: true }); lamp = i + 16 }
-    if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0 })
+    if (z === 'beach' && i >= bush) { seg.things.push({ kind: 'bush', x: 2.0 + place() * 4.5, flip: place() < 0.5, look: 0 }); bush = i + 4 + Math.floor(place() * 6) }
+    if ((z === 'promenade' || z === 'causeway') && i >= lamp) { seg.things.push({ kind: 'lamp', x: -1.95, flip: false, look: 0 }, { kind: 'lamp', x: 1.95, flip: true, look: 0 }); lamp = i + 16 }
+    if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0, look: 0 })
+    // the promenade's buildings, one after another along the land's side
+    if (z === 'promenade' && i >= house) { seg.things.push({ kind: 'building', x: 2.75 + place() * 0.5, flip: false, look: Math.floor(place() * 12) }); house = i + 20 + Math.floor(place() * 9) }
+    // the beach's parasols on the sand, a lifeguard tower now and then
+    if (z === 'beach' && i >= parasol) { seg.things.push({ kind: 'parasol', x: -1.95 - place() * 0.12, flip: false, look: Math.floor(place() * 3) }); parasol = i + 8 + Math.floor(place() * 14) }
+    if (z === 'beach' && i >= tower) { seg.things.push({ kind: 'tower', x: -2.02, flip: false, look: 0 }); tower = i + 180 + Math.floor(place() * 120) }
+    // out at sea: boats, windsurfers, jet skis, buoys, now and then dolphins; on the causeway on both sides
+    if (i >= boat) {
+      const r = place()
+      const kind: RacingProp = r < 0.3 ? 'sailboat' : r < 0.52 ? 'buoy' : r < 0.67 ? 'windsurf' : r < 0.79 ? 'yacht' : r < 0.92 ? 'jetski' : 'dolphin'
+      const side = z === 'causeway' && place() < 0.5 ? 1 : -1
+      const near = kind === 'buoy' ? 3.0 + place() * 1.5 : 3.6 + place() * 7
+      seg.things.push({ kind, x: side * (z === 'cliff' ? near + 1.5 : near), flip: place() < 0.5, look: Math.floor(place() * 3) })
+      boat = i + 22 + Math.floor(place() * 34)
+    }
+    // the public: along the promenade, now and then on the beach
+    if ((z === 'promenade' && i >= fans) || (z === 'beach' && i >= fans + 80)) { seg.things.push({ kind: 'crowd', x: z === 'promenade' ? 2.12 : -2.0, flip: false, look: i }); fans = i + 40 + Math.floor(place() * 40) }
   })
+  // the public at the start, at each checkpoint and all along the end, on both sides
+  const cheer = (from: number, to: number, every: number) => { for (let i = Math.max(4, from); i < Math.min(track.length, to); i += every) if (track[i].zone !== 'tunnel') for (const side of [-1, 1]) track[i].things.push({ kind: 'crowd', x: side * 2.08, flip: side < 0, look: i * 2 + (side < 0 ? 1 : 0) }) }
+  const checksAt = [Math.round(finish / 3), Math.round((finish * 2) / 3)]
+  cheer(10, 70, 9)
+  for (const c of checksAt) cheer(c - 30, c + 8, 8)
+  cheer(finish - 70, finish + 14, 7)
+  // a lighthouse once, out on the sea's side, halfway
+  const mid = track.findIndex((g, i) => i > finish * 0.45 && (g.zone === 'beach' || g.zone === 'cliff'))
+  if (mid > 0) track[mid].things.push({ kind: 'lighthouse', x: -9.5, flip: false, look: 0 })
   // the checkpoints at a third and two thirds, each part's par
-  const checks = [Math.round(finish / 3), Math.round((finish * 2) / 3)]
+  const checks = checksAt
   const marks = [0, ...checks, finish]
   const pars = marks.slice(1).map((to, k) => { let steps = 0; for (let i = marks[k]; i < to; i += 1) steps += 1 / (RACING_TOP * bendLimit(track[i].curve, lv)); return steps / SECOND })
   const course: RacingCourse = { track, finish, checks, pars, items: placeItems(track, finish, lv), traffic: placeTraffic(finish, lv) }
@@ -245,9 +292,9 @@ export function racingCourse(level: number): RacingCourse {
 /**
  * What lies on the road, never in the first stretches nor on the last
  * straight, and never all three lanes shut: rows of five coins; stopwatches
- * now and then; the turbo where a straight begins; from the second level
- * ketchup puddles, from the third roadworks closing a lane with cones (none
- * in the tunnel), more as the levels go.
+ * now and then; the turbo where a straight begins; ketchup puddles and
+ * roadworks closing a lane with cones (none in the tunnel), a few from the
+ * first level, more as the levels go.
  */
 function placeItems(track: RacingSegment[], finish: number, lv: number): Array<Omit<RacingItem, 'taken'>> {
   const rnd = seeded(31 + lv * 977)
@@ -256,7 +303,7 @@ function placeItems(track: RacingSegment[], finish: number, lv: number): Array<O
   const from = 220, to = finish - 140
   const busy = (z0: number, z1: number) => items.some((it) => it.z >= z0 && it.z <= z1 && (it.kind === 'cone' || it.kind === 'puddle'))
   // roadworks: a lane shut for sixty stretches, a cone every six
-  const works = lv >= 3 ? 1 + Math.floor(lv / 4) : 0
+  const works = 1 + Math.floor(lv / 4)
   for (let k = 0; k < works; k += 1) {
     const z0 = Math.round(from + ((k + 0.5) / works) * (to - from) + (rnd() - 0.5) * 200)
     if (track[z0]?.zone === 'tunnel' || busy(z0 - 40, z0 + 100)) continue
@@ -264,7 +311,7 @@ function placeItems(track: RacingSegment[], finish: number, lv: number): Array<O
     for (let z = z0; z < z0 + 60; z += 6) items.push({ kind: 'cone', z, x })
   }
   // ketchup puddles
-  const puddles = lv >= 2 ? 2 + Math.floor(lv * 0.7) : 0
+  const puddles = 2 + Math.floor(lv * 0.7)
   for (let k = 0; k < puddles; k += 1) {
     const z = Math.round(from + rnd() * (to - from))
     if (busy(z - 30, z + 30)) continue
@@ -285,11 +332,10 @@ function placeItems(track: RacingSegment[], finish: number, lv: number): Array<O
   return items.sort((a, b) => a.z - b.z)
 }
 
-/** The traffic, from the second level: slow cars spread along the road, in other colours than the rivals', more of them as the levels go; from the seventh, some swerve when the player comes. */
+/** The traffic: slow cars spread along the road, in other colours than the rivals', two at the first level and more as the levels go; from the seventh, some swerve when the player comes. */
 function placeTraffic(finish: number, lv: number): Array<Omit<RacingTraffic, 'swerved'>> {
-  if (lv < 2) return []
   const rnd = seeded(53 + lv * 613)
-  const n = Math.round(1 + lv * 0.75)
+  const n = Math.round(1.5 + lv * 0.75)
   return Array.from({ length: n }, (_, k) => {
     const lane = Math.floor(rnd() * 3)
     return {

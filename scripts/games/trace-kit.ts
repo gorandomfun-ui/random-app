@@ -175,6 +175,30 @@ export function evened(pic: Pic, alpha: Uint8Array, axis: number, keep: 'left' |
   return { pic: out, alpha: a }
 }
 
+/** A cut-out made even row by row, about an axis that may move from row to row (`axisAt`): on each row the half on the `keep` side and its mirror, the rows centred on one another. */
+export function evenedRows(pic: Pic, alpha: Uint8Array, axisAt: (y: number) => number, keep: 'left' | 'right'): { pic: Pic; alpha: Uint8Array } {
+  const halves = Array.from({ length: pic.h }, (_, y) => Math.max(0, Math.round(keep === 'left' ? axisAt(y) : pic.w - axisAt(y))))
+  const half = Math.max(...halves), w = half * 2
+  const out = blank(w, pic.h), a = new Uint8Array(w * pic.h)
+  for (let y = 0; y < pic.h; y += 1) {
+    const axis = Math.round(axisAt(y))
+    for (let d = 0; d < half; d += 1) {
+      const sx = keep === 'left' ? axis - 1 - d : axis + d
+      if (sx < 0 || sx >= pic.w || !alpha[y * pic.w + sx]) continue
+      const c = get(pic, sx, y)
+      put(out, half - 1 - d, y, c); a[y * w + half - 1 - d] = 1
+      put(out, half + d, y, c); a[y * w + half + d] = 1
+    }
+  }
+  // the clear columns at its sides cut away, as many on each side
+  let edge = 0
+  while (edge < half && ![...Array(pic.h).keys()].some((y) => a[y * w + edge])) edge += 1
+  if (!edge) return { pic: out, alpha: a }
+  const cw = w - edge * 2, cut = blank(cw, pic.h), ca = new Uint8Array(cw * pic.h)
+  for (let y = 0; y < pic.h; y += 1) for (let x = 0; x < cw; x += 1) if (a[y * w + x + edge]) { put(cut, x, y, get(out, x + edge, y)); ca[y * cw + x] = 1 }
+  return { pic: cut, alpha: ca }
+}
+
 /** A cut-out leaning: each row pushed right by up to `by` pixels at the top, none at `foot` and below. */
 export function leaning(pic: Pic, alpha: Uint8Array, by: number, foot: number): { pic: Pic; alpha: Uint8Array } {
   const w = pic.w + Math.ceil(by)

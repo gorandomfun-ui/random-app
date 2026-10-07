@@ -19,7 +19,7 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_START_STEPS, racingCourse, racingLevelMax, racingTime, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_START_STEPS, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { decodePng } from '../../scripts/games/png'
 import { CASUAL, GOOD, race } from './racing-robot'
 
@@ -139,8 +139,8 @@ test('racing: a casual driver wins the first levels, with time to spare at the f
     assert.ok(out.won, `level ${level} won`)
     if (level === 1) assert.ok(out.timeLeft >= 6, `${out.timeLeft.toFixed(1)} s left`)
   }
-  const last = race(createRacing('portrait', RACING_LAST_LEVEL, 9, { single: true }), CASUAL, 9)
-  assert.ok(!last.won, 'the last level asks for a good driver')
+  const lost = [7, 8, 9].filter((seed) => !race(createRacing('portrait', RACING_LAST_LEVEL, seed, { single: true }), CASUAL, seed).won).length
+  assert.ok(lost >= 2, 'the last level asks for a good driver')
 })
 
 test('racing: the road grows with the levels — its kinds, its bends, its traffic, its surprises', () => {
@@ -149,12 +149,11 @@ test('racing: the road grows with the levels — its kinds, its bends, its traff
   for (const z of ['beach', 'promenade', 'causeway', 'cliff', 'tunnel']) assert.ok([7, 8, 10, 12, 14, 15].some((level) => zones(level).has(z as never)), `${z} somewhere`)
   const sharpest = (level: number) => Math.max(...racingCourse(level).track.map((g) => Math.abs(g.curve)))
   assert.ok(sharpest(1) <= 4.3 && sharpest(9) >= 6, 'hairpins later on')
-  assert.equal(racingCourse(1).traffic.length, 0)
+  assert.ok(racingCourse(1).traffic.length >= 2, 'a little traffic from the first level')
   assert.ok(racingCourse(16).traffic.length > racingCourse(4).traffic.length)
   const count = (level: number, kind: string) => racingCourse(level).items.filter((it) => it.kind === kind).length
-  assert.equal(count(1, 'puddle') + count(1, 'cone'), 0, 'nothing unexpected at the first level')
-  assert.ok(count(2, 'puddle') > 0 && count(3, 'cone') > 0)
-  assert.ok(count(16, 'puddle') > count(2, 'puddle'))
+  assert.ok(count(1, 'puddle') > 0 && count(1, 'cone') > 0, 'something unexpected from the first level')
+  assert.ok(count(16, 'puddle') > count(1, 'puddle') && count(16, 'cone') > count(1, 'cone'), 'more of it later')
   for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) {
     const c = racingCourse(level)
     assert.equal(c.checks.length, 2, `level ${level}: two checkpoints`)
@@ -162,6 +161,29 @@ test('racing: the road grows with the levels — its kinds, its bends, its traff
     // never all three lanes shut at once by the cones
     for (const it of c.items) if (it.kind === 'cone') assert.ok(new Set(c.items.filter((o) => o.kind === 'cone' && Math.abs(o.z - it.z) < 10).map((o) => o.x)).size < 3)
   }
+})
+
+test('racing: the coast is alive — the public at the start, the checkpoints and the line, buildings on the promenade, life at sea, a lighthouse', () => {
+  for (const level of [1, 6, 12]) {
+    const c = racingCourse(level)
+    const at = (kind: string, from: number, to: number) => c.track.slice(Math.max(0, from), to).some((g) => g.things.some((t) => t.kind === kind))
+    assert.ok(at('crowd', 0, 80), `level ${level}: the public at the start`)
+    for (const k of c.checks) assert.ok(at('crowd', k - 35, k + 10) || c.track[k].zone === 'tunnel', `level ${level}: the public at a checkpoint`)
+    assert.ok(at('crowd', c.finish - 80, c.finish + 15), `level ${level}: the public at the line`)
+    const things = c.track.flatMap((g) => g.things.map((t) => t.kind))
+    for (const kind of ['building', 'parasol', 'sailboat', 'buoy', 'lighthouse']) assert.ok(things.includes(kind as never), `level ${level}: ${kind}`)
+    // nobody in the tunnel
+    assert.ok(!c.track.some((g) => g.zone === 'tunnel' && g.things.some((t) => t.kind === 'crowd')))
+  }
+})
+
+test('racing: the sun sets as the race goes on, night falls by the levels, the storm at the end', () => {
+  let last = -1
+  for (let level = 1; level <= 12; level += 1) for (const p of [0, 0.5, 1]) { const h = racingHour(level, p); assert.ok(h >= last, `level ${level} at ${p}: later`); last = h }
+  assert.ok(racingSunset(racingHour(1, 0)) === 0, 'the sun up at the start')
+  assert.ok(racingSunset(racingHour(1, 1)) > 0.4, 'low by the end of the first level')
+  assert.equal(racingSunset(racingHour(2, 1)), 1, 'gone by the end of the second')
+  assert.equal(racingHour(13, 0), 3)
 })
 
 /** A race put just short of something on the road, at speed, in its lane. */

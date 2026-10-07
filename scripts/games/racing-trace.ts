@@ -43,7 +43,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { encodeIndexedPng, encodePng } from './png'
-import { biggest, blank, copy, cutByFlood, evened, flatten, get, grow, inpaint, inPolygon, leaning, lum, mirrored, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
+import { biggest, blank, copy, cutByFlood, evenedRows, flatten, get, grow, inpaint, inPolygon, leaning, lum, mirrored, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
 
 const ROOT = process.cwd()
 const REF = path.join(ROOT, 'docs/reports/jeux-v1/refs/racing-reference.png')
@@ -176,12 +176,16 @@ const CAR_WIDTHS = [130, 104, 60]
  * — where they stand on the road — so the plate is off the cut-out's middle.
  */
 function plateMiddle(pic: Pic, alpha: Uint8Array): number {
-  let sx = 0, n = 0
+  return plateAt(pic, alpha).x
+}
+/** The plate's middle: across, and its row. */
+function plateAt(pic: Pic, alpha: Uint8Array): { x: number; y: number } {
+  let sx = 0, sy = 0, n = 0
   for (let y = Math.round(pic.h * 0.45); y < Math.round(pic.h * 0.9); y += 1) for (let x = Math.round(pic.w * 0.15); x < Math.round(pic.w * 0.85); x += 1) {
     const c = get(pic, x, y)
-    if (alpha[y * pic.w + x] && lum(c[0], c[1], c[2]) > 165 && sat(c) < 75) { sx += x + 0.5; n += 1 }
+    if (alpha[y * pic.w + x] && lum(c[0], c[1], c[2]) > 165 && sat(c) < 75) { sx += x + 0.5; sy += y + 0.5; n += 1 }
   }
-  return n ? sx / n : pic.w / 2
+  return n ? { x: sx / n, y: sy / n } : { x: pic.w / 2, y: pic.h * 0.7 }
 }
 /**
  * Each car three ways, so it drives straight and turns: straight from behind
@@ -192,14 +196,39 @@ function plateMiddle(pic: Pic, alpha: Uint8Array): number {
  * mirrored, by the game. Each turning picture has the straight one's back on
  * its left, the flank or the lean past it.
  */
+/**
+ * The middle of the back row by row, as shares of the width. Seen a little
+ * from the side, the higher a part of the back, the further it stands off
+ * the plate toward the flank (`flank`): so the middle slides evenly from the
+ * rear window's own middle at the top to the plate's at the plate's row, and
+ * stays there below. The window is looked for in the top of the back, away
+ * from the flank, where nothing else is that blue.
+ */
+function backMiddles(pic: Pic, alpha: Uint8Array, flank: 'left' | 'right'): number[] {
+  const plate = plateMiddle(pic, alpha)
+  const x0 = flank === 'left' ? Math.round(pic.w * 0.3) : 0, x1 = flank === 'left' ? pic.w : Math.round(pic.w * 0.7)
+  const middles: number[] = []
+  for (let y = 0; y < Math.round(pic.h * 0.4); y += 1) {
+    let sx = 0, n = 0
+    for (let x = x0; x < x1; x += 1) { const c = get(pic, x, y); if (alpha[y * pic.w + x] && c[2] > c[0] + 15 && c[2] >= c[1] && lum(c[0], c[1], c[2]) < 120) { sx += x + 0.5; n += 1 } }
+    if (n >= 3) middles.push(sx / n)
+  }
+  if (!middles.length) return Array.from({ length: pic.h }, () => plate / pic.w)
+  const window = middles.sort((a, b) => a - b)[Math.floor(middles.length / 2)], plateRow = plateAt(pic, alpha).y
+  return Array.from({ length: pic.h }, (_, y) => (window + (plate - window) * Math.min(1, y / plateRow)) / pic.w)
+}
+
 for (const kind of Object.keys(CARS) as Array<keyof typeof CARS>) {
-  // the plate found once, on the largest picture, and the same share of the width on the smaller ones
-  let share = 0.5
+  // the middles found once, on the largest picture, and the same shares of the width (row for row) on the smaller ones
+  let shares: number[] = []
   for (const width of CAR_WIDTHS) {
     const cut = cutOut(clean, carMasks[kind], boxOf(CARS[kind]), Math.round(width * (kind === 'burger' ? 0.78 : 1)))
-    if (width === CAR_WIDTHS[0]) share = plateMiddle(cut.pic, cut.alpha) / cut.pic.w
-    const axis = share * cut.pic.w
-    const straight = kind === 'burger' ? cut : evened(cut.pic, cut.alpha, axis, kind === 'rosso' ? 'left' : 'right')
+    // the yellow car's cut caught a bit of the kerb's salmon by its roof: left out
+    if (kind === 'giallo') for (let y = 0; y < cut.pic.h * 0.4; y += 1) for (let x = 0; x < cut.pic.w; x += 1) { const [r, g, b] = get(cut.pic, x, y); if (r > 190 && r - g > 60 && b > 55 && g > 85) cut.alpha[y * cut.pic.w + x] = 0 }
+    if (width === CAR_WIDTHS[0]) { shares = backMiddles(cut.pic, cut.alpha, kind === 'rosso' ? 'right' : 'left'); if (process.env.SHOW_MIDDLES) console.log(kind, shares.map((v) => v.toFixed(2)).join(' ')) }
+    const axisAt = (y: number) => shares[Math.min(shares.length - 1, Math.floor((y / cut.pic.h) * shares.length))] * cut.pic.w
+    const share = shares[shares.length - 1]
+    const straight = kind === 'burger' ? cut : evenedRows(cut.pic, cut.alpha, axisAt, kind === 'rosso' ? 'left' : 'right')
     const turn = kind === 'burger' ? leaning(cut.pic, cut.alpha, cut.pic.w * 0.13, Math.round(cut.pic.h * 0.74)) : kind === 'rosso' ? cut : mirrored(cut.pic, cut.alpha)
     console.log(`${kind} ${width}: back's middle at ${share.toFixed(3)} of its width; straight ${straight.pic.w}, turning ${turn.pic.w}`)
     write(`car-${kind}-${width}`, width >= 100 ? flatten(straight.pic, 1) : straight.pic, 24, undefined, straight.alpha)
