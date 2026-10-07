@@ -106,6 +106,8 @@ const ScoresPanel = dynamic(() => import('@/components/games/ScoresPanel'), { ss
 const ticketOf = (run: Run | undefined): Ticket | null => (run?.token && run.runId && run.startedAt ? { runId: run.runId, token: run.token, startedAt: run.startedAt } : null)
 const PixelWords = dynamic(() => import('@/components/games/PixelWords'), { ssr: false })
 const ArcadeBench = dynamic(() => import('@/components/games/ArcadeBench'), { ssr: false })
+/** The curator's Comm panel: loaded on the first press of its button, never on the public Random. */
+const CommPanel = dynamic(() => import('@/components/comm/CommPanel'), { ssr: false })
 const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
 
 const TYPE_ICONS: Record<ItemType, string> = {
@@ -2837,6 +2839,10 @@ export function RandomExperience({
   const pendingWaveRef = useRef<Candidate<RandomContentItem> | null>(null)
   const [curationError, setCurationError] = useState('')
   const curatorPendingRef = useRef(false)
+  // Comm (curation only): the panel over the content, whether this content is set aside, how full the queue is.
+  const [commOpen, setCommOpen] = useState(false)
+  const [commInQueue, setCommInQueue] = useState(false)
+  const [commCount, setCommCount] = useState<{ count: number; max: number } | null>(null)
   const { dict, locale, locales, setLocale, t } = useI18n()
   const { addPoints, points } = useScore()
   const encourageMessages = useMemo(() => {
@@ -5185,6 +5191,34 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     return () => controller.abort()
   }, [curationMode, currentItem])
 
+  // Comm: is this content already set aside? Asked once per content, in curation only.
+  useEffect(() => {
+    if (!curationMode) return
+    setCommOpen(false); setCommInQueue(false)
+    if (!currentItem || !('_id' in currentItem) || currentItem.type === 'minigame') return
+    const controller = new AbortController()
+    void fetch(`/api/admin/comm/queue?itemId=${encodeURIComponent(String(currentItem._id))}`, { signal: controller.signal, cache: 'no-store' })
+      .then(response => { if (!response.ok) throw new Error(); return response.json() })
+      .then(body => { if (!controller.signal.aborted) { setCommInQueue(body.inQueue === true); if (typeof body.count === 'number') setCommCount({ count: body.count, max: body.max }) } })
+      .catch(() => { /* the button still works; the panel will tell */ })
+    return () => controller.abort()
+  }, [curationMode, currentItem])
+
+  const commEligible = curationMode && Boolean(currentItem) && currentItem !== null && 'type' in (currentItem as object) && !['encourage', 'minigame'].includes((currentItem as { type: string }).type)
+
+  // Comm: the `c` key opens the panel, outside any field.
+  useEffect(() => {
+    if (!curationMode) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'c' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (commEligible) { event.preventDefault(); setCommOpen(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [curationMode, commEligible])
+
   const handleRandomAgain = useCallback(() => {
     if (savedMode) {
       onSavedRandom?.()
@@ -5321,6 +5355,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       {curationMode && curationError ? <aside role="status" className="fixed bottom-2 left-2 z-50 rounded bg-black px-3 py-2 text-xs text-white">
         {curationError}
       </aside> : null}
+      {curationMode && commOpen && currentItem && '_id' in currentItem ? (
+        <CommPanel
+          itemId={String(currentItem._id)}
+          accent={theme.text}
+          onClose={() => setCommOpen(false)}
+          onQueueChange={(inQueue, status) => { setCommInQueue(inQueue); setCommCount({ count: status.count, max: status.max }) }}
+          captureTarget={() => document.querySelector<HTMLElement>('.random-content-frame')}
+        />
+      ) : null}
       {effectsTestMode ? (
         <div className="effects-test-meter" aria-label={`Effects intensity ${effectsTestStep} of ${EFFECTS_TEST_MAX_STEPS}`}>
           <span>{String(effectsTestStep).padStart(2, '0')}</span>
@@ -5621,6 +5664,19 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               />
             </button>
           )}
+          {!arcade && curationMode ? (
+            <button
+              type="button"
+              aria-label={commInQueue ? 'Comm : dans la file' : 'Comm'}
+              aria-pressed={commInQueue}
+              title={commCount ? `Comm (c) — file ${commCount.count} / ${commCount.max}` : 'Comm (c)'}
+              onClick={() => { if (commEligible) setCommOpen(true) }}
+              className="p-3"
+              disabled={controlsDisabled || !commEligible}
+            >
+              <MonoIcon src="/icons/social.svg" color={commInQueue ? theme.text : theme.cream} size={30} />
+            </button>
+          ) : null}
 
           <div className="flex-1 flex justify-center" style={{ minWidth: '160px', maxWidth: '260px' }}>
             <button
