@@ -25,10 +25,10 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     past.push({ x: s.x, z: s.z, speed: s.speed })
     if (past.length > d.see + 1) past.shift()
     const seen = past[0]
-    // each lane weighed: a slower car, a cone or a puddle in it ahead counts against it, a stopwatch or the turbo for it
+    // each lane weighed: a car slower than the driver means to go (even once stuck behind it), a cone or a puddle in it ahead counts against it, a stopwatch or the turbo for it
     const worth = (l: number) => {
       let w = l === lane ? 0.5 : 0
-      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && Math.abs(c.x - l) < 0.62 && c.speed < seen.speed + 0.05) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
+      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && Math.abs(c.x - l) < 0.62 && c.speed < Math.max(seen.speed, RACING_TOP * 0.8) + 0.05) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
       for (const it of s.items) {
         if (it.taken || it.z < seen.z || it.z - seen.z > d.ahead || Math.abs(it.x - l) > 0.4) continue
         if (it.kind === 'cone') w -= 6
@@ -42,6 +42,12 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     for (const it of s.items) if (it.kind === 'puddle' && it.z - seen.z < d.ahead && it.z > seen.z && !missed.has(-it.z) && !missed.has(it.z)) { if (rnd() < d.misses) missed.add(it.z); else missed.add(-it.z) }
     lane = RACING_LANES.reduce((best, l) => (worth(l) > worth(best) ? l : best), lane)
     if (s.steps % 40 === 0) wobble = (rnd() * 2 - 1) * d.aim
+    // a rough aim, but away from a car alongside (none between two)
+    const alongside = [...s.rivals, ...s.traffic].filter((c) => c.z - seen.z > -3 && c.z - seen.z < 24 && Math.abs(c.x - lane) < 0.9 && Math.abs(c.x - lane) > 0.3)
+    const left = alongside.filter((c) => c.x < lane), right = alongside.filter((c) => c.x > lane)
+    const both = left.length > 0 && right.length > 0, beside = both ? null : alongside[0]
+    if (both) wobble = 0
+    else if (beside && Math.sign(wobble) === Math.sign(beside.x - lane)) wobble = -wobble
     // the sharpest bend coming, and how fast it can be taken
     let worst = 0
     for (let k = 0; k < d.look; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, seen.z + k).curve))
@@ -50,7 +56,11 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     const brake = seen.speed > limit + 0.06
     const curve = segmentOf(s.track, seen.z).curve, share = seen.speed / RACING_TOP
     const drift = -(1 / 30) * share * share * curve * 0.3 * (s.level >= 13 ? 1.12 : 1)
-    const e = lane + wobble - (seen.x + drift)
+    // and well off a car alongside, out toward the kerb, as anyone overtaking keeps; between two, right between them
+    let aimAt = lane + wobble
+    if (both) aimAt = (Math.max(...left.map((c) => c.x)) + Math.min(...right.map((c) => c.x))) / 2
+    else if (beside && Math.abs(aimAt - beside.x) < 0.85) aimAt = beside.x + Math.sign(lane - beside.x) * 0.85
+    const e = aimAt - (seen.x + drift)
     const steer: -1 | 0 | 1 = e > 0.03 ? 1 : e < -0.03 ? -1 : 0
     return { steer, gas, brake }
   }

@@ -27,7 +27,7 @@ import { ATTACKS_BOARD, ATTACKS_LAST_LEVEL, createAttacks, stepAttacks, type Att
 import { createCatcher, nextLevel, stepCatcher, type CatcherState } from '@/lib/games/catcher'
 import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
 import { nextCar, racingCarAt, racingOverHits, racingPadGeometry, racingPadPart, racingWinnerHits, renderRacingGame, renderRacingOver, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, stepRacing, type RacingCarKind, type RacingState } from '@/lib/games/racing-rules'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, stepRacing, type RacingCarKind, type RacingState, type RacingWorld } from '@/lib/games/racing-rules'
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
@@ -159,6 +159,7 @@ export default function GamePlayer({
   onNamed,
   big = false,
   startLevel = 1,
+  startWorld,
 }: {
   game: GameName
   accent: string
@@ -178,6 +179,8 @@ export default function GamePlayer({
   big?: boolean
   /** The level a whole game starts at: 1, or another on a test page. */
   startLevel?: number
+  /** RACING's one world for every level, on its test page; drawn at random otherwise. */
+  startWorld?: RacingWorld
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -268,7 +271,7 @@ export default function GamePlayer({
       s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
       s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
       s.attacks = game === 'attacks' ? createAttacks(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, lives: 3 } : {}) : null
-      s.racing = game === 'racing' ? createRacing(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, car: s.car } : { car: s.car }) : null
+      s.racing = game === 'racing' ? createRacing(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, car: s.car } : { car: s.car, world: startWorld }) : null
       release()
       s.mode = 'play'
       s.pause = null
@@ -601,7 +604,7 @@ export default function GamePlayer({
       frameBox.removeEventListener('pointerup', onUp)
       frameBox.removeEventListener('pointercancel', onCancel)
     }
-  }, [game, accent, control, startLevel])
+  }, [game, accent, control, startLevel, startWorld])
 
   const submitName = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

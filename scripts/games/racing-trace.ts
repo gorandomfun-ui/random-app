@@ -43,7 +43,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { encodeIndexedPng, encodePng } from './png'
-import { biggest, blank, copy, cutByFlood, evenedRows, flatten, get, grow, inpaint, inPolygon, leaning, lum, mirrored, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
+import { biggest, blank, copy, cutByFlood, cutOut, evenedRows, flatten, get, grow, inpaint, inPolygon, leaning, lum, mirrored, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
 
 const ROOT = process.cwd()
 const REF = path.join(ROOT, 'docs/reports/jeux-v1/refs/racing-reference.png')
@@ -99,20 +99,6 @@ const CARS: Record<'rosso' | 'burger' | 'giallo', ReadonlyArray<readonly [number
 const carish = (c: RGB) => (sat(c) > 52 && !(c[1] > c[0] + 50 && c[2] > c[0] + 50)) || lum(c[0], c[1], c[2]) < 44
 const carMasks = Object.fromEntries(Object.entries(CARS).map(([kind, poly]) => [kind, cutByFlood(src, bigPoly(poly), carish)])) as Record<keyof typeof CARS, Uint8Array>
 const boxOf = (poly: ReadonlyArray<readonly [number, number]>): Rect => { const xs = poly.map(([x]) => x * S), ys = poly.map(([, y]) => y * S); return [Math.floor(Math.min(...xs)), Math.floor(Math.min(...ys)), Math.ceil(Math.max(...xs)), Math.ceil(Math.max(...ys))] }
-
-/** A cut-out traced at `width` pixels wide: each cell the average of the figure's pixels in it, clear where less than `share` of it is the figure (less for thin things, a palm's fronds). */
-function cutOut(pic: Pic, mask: Uint8Array, box: Rect, width: number, share = 0.5): { pic: Pic; alpha: Uint8Array } {
-  const [x0, y0, x1, y1] = box
-  const f = (x1 - x0) / width, height = Math.round((y1 - y0) / f)
-  const out = blank(width, height), alpha = new Uint8Array(width * height)
-  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    const sx0 = Math.floor(x0 + x * f), sx1 = Math.max(sx0 + 1, Math.floor(x0 + (x + 1) * f)), sy0 = Math.floor(y0 + y * f), sy1 = Math.max(sy0 + 1, Math.floor(y0 + (y + 1) * f))
-    let r = 0, g = 0, b = 0, n = 0, all = 0
-    for (let yy = sy0; yy < sy1; yy += 1) for (let xx = sx0; xx < sx1; xx += 1) { all += 1; if (!mask[yy * pic.w + xx]) continue; const c = get(pic, xx, yy); r += c[0]; g += c[1]; b += c[2]; n += 1 }
-    if (n >= all * share && n > 0) { put(out, x, y, [r / n, g / n, b / n]); alpha[y * width + x] = 1 }
-  }
-  return { pic: out, alpha }
-}
 
 // ---------------------------------------------------------------- out
 
