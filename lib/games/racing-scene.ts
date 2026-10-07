@@ -143,40 +143,58 @@ const BEACH = 1.0, WET = 0.16, FOAM = 0.07, VERGE = 0.55, PAVE = 0.85, LEDGE = 0
  * the promenade's paving and its sea wall, the cliff's edge, the causeway's
  * stone, then the sea with its waves coming in; on the land's side the grass
  * and the bushes, the paving and the gardens, the rock; in the tunnel its
- * walkways.
+ * walkways. Laid down in spans of one colour, outward in; only the sea and
+ * the foam pixel by pixel.
  */
 export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: GroundRow, tier: Tier, frame: number): void {
   const pal = palette(tier)[row.fog]
   const { c, h, band, zone } = row
   const at = (name: Colour) => pal[colourIndex[name]]
-  const kerb = h * 1.12
-  const edge = Math.max(1, h * 0.028), lane = Math.max(1, h * 0.022)
-  const tar = at(band ? 'tar0' : 'tar1'), line = at('line'), kerbC = at(band ? 'kerb0' : 'kerb1')
-  const seaRow = (x: number) => { const g = grain(x, y + ((frame >> 3) & 63) * 7); return g > 0.988 ? at('glint') : at(row.wave ? (g > 0.7 ? 'sea2' : 'sea0') : (g > 0.75 ? 'sea0' : 'sea1')) }
-  for (let x = 0; x < W; x += 1) {
-    const dx = x + 0.5 - c, ad = Math.abs(dx), side = dx < 0 ? -1 : 1
-    let rgb: RGB
-    if (ad < h) rgb = Math.abs(ad - (h - edge * 2.2)) < edge / 2 ? line : band && Math.abs(ad - h / 3) < lane / 2 ? line : tar
-    else if (ad < kerb) rgb = zone === 'tunnel' ? at('walk') : kerbC
-    else {
-      const out = (ad - kerb) / h
-      if (zone === 'tunnel') rgb = at('walk')
-      else if (side < 0 || zone === 'causeway') {
-        // the sea's side
-        if (zone === 'beach') rgb = out < BEACH ? at(band ? 'sand0' : 'sand1') : out < BEACH + WET ? at('wet') : out < BEACH + WET + FOAM ? ((x + (frame >> 2)) % 7 < 5 ? at('foam') : at('wet')) : seaRow(x)
-        else if (zone === 'promenade') rgb = out < PAVE ? at(band ? 'pave0' : 'pave1') : out < PAVE + 0.12 ? at('wall') : seaRow(x)
-        else if (zone === 'cliff') rgb = out < LEDGE ? at(band ? 'rock0' : 'rock1') : out < LEDGE + 0.08 ? at('rockDark') : grain(x, y) > 0.993 ? at('glint') : at('deep')
-        else rgb = out < LEDGE ? at(band ? 'stone0' : 'stone1') : seaRow(x)
-      } else {
-        // the land's side
-        if (zone === 'beach') rgb = out < VERGE ? at(band ? 'grass0' : 'grass1') : at(band ? 'bush0' : 'bush1')
-        else if (zone === 'promenade') rgb = out < PAVE ? at(band ? 'pave0' : 'pave1') : out < PAVE + 0.1 ? at('wall') : at(band ? 'grass1' : 'bush1')
-        else rgb = at(band ? 'rock0' : 'rock1')
-      }
-    }
-    const t = (y * W + x) * 4
-    d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255
+  const base = y * W * 4
+  const span = (x0: number, x1: number, rgb: RGB) => {
+    const a = Math.max(0, Math.round(x0)), b = Math.min(W, Math.round(x1))
+    for (let x = a, t = base + a * 4; x < b; x += 1, t += 4) { d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
   }
+  const glint = at('glint'), s0 = at(row.wave ? 'sea0' : 'sea1'), s1 = at(row.wave ? 'sea2' : 'sea0'), cut = row.wave ? 0.7 : 0.75, shift = ((frame >> 3) & 63) * 7
+  const sea = (x0: number, x1: number) => {
+    const a = Math.max(0, Math.round(x0)), b = Math.min(W, Math.round(x1))
+    for (let x = a, t = base + a * 4; x < b; x += 1, t += 4) { const g = grain(x, y + shift), rgb = g > 0.988 ? glint : g > cut ? s1 : s0; d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
+  }
+  const kerb = h * 1.12, L = c - kerb, R = c + kerb
+  if (zone === 'tunnel') span(0, W, at('walk'))
+  else {
+    // the sea's side, from the screen's edge in to the kerb
+    if (zone === 'beach') {
+      const sand = L - BEACH * h, wet = sand - WET * h, foam = wet - FOAM * h
+      sea(0, foam)
+      const fa = Math.max(0, Math.round(foam)), fb = Math.min(W, Math.round(wet)), f = at('foam'), wt = at('wet')
+      for (let x = fa, t = base + fa * 4; x < fb; x += 1, t += 4) { const rgb = (x + (frame >> 2)) % 7 < 5 ? f : wt; d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
+      span(wet, sand, wt)
+      span(sand, L, at(band ? 'sand0' : 'sand1'))
+    } else if (zone === 'promenade') {
+      const pave = L - PAVE * h, wall = pave - 0.12 * h
+      sea(0, wall); span(wall, pave, at('wall')); span(pave, L, at(band ? 'pave0' : 'pave1'))
+    } else if (zone === 'cliff') {
+      const ledge = L - LEDGE * h, drop = ledge - 0.08 * h
+      span(0, drop, at('deep')); span(drop, ledge, at('rockDark')); span(ledge, L, at(band ? 'rock0' : 'rock1'))
+    } else {
+      const ledge = L - LEDGE * h
+      sea(0, ledge); span(ledge, L, at(band ? 'stone0' : 'stone1'))
+    }
+    // the land's side, from the kerb out to the screen's edge
+    if (zone === 'beach') { const verge = R + VERGE * h; span(R, verge, at(band ? 'grass0' : 'grass1')); span(verge, W, at(band ? 'bush0' : 'bush1')) }
+    else if (zone === 'promenade') { const pave = R + PAVE * h, wall = pave + 0.1 * h; span(R, pave, at(band ? 'pave0' : 'pave1')); span(pave, wall, at('wall')); span(wall, W, at(band ? 'grass1' : 'bush1')) }
+    else if (zone === 'cliff') span(R, W, at(band ? 'rock0' : 'rock1'))
+    else { const ledge = R + LEDGE * h; span(R, ledge, at(band ? 'stone0' : 'stone1')); sea(ledge, W) }
+    // the kerbs
+    const k = at(band ? 'kerb0' : 'kerb1')
+    span(L, c - h, k); span(c + h, R, k)
+  }
+  // the road, its edge lines, its lanes' dashes
+  span(c - h, c + h, at(band ? 'tar0' : 'tar1'))
+  const edge = Math.max(1, h * 0.028), line = at('line')
+  span(c - h + edge * 1.7, c - h + edge * 2.7, line); span(c + h - edge * 2.7, c + h - edge * 1.7, line)
+  if (band) { const lane = Math.max(1, h * 0.022); span(c - h / 3 - lane / 2, c - h / 3 + lane / 2, line); span(c + h / 3 - lane / 2, c + h / 3 + lane / 2, line) }
 }
 
 /** Under the horizon where no road is drawn: the sea, and the land on the land's side of the road's far end (`split`); in the tunnel, its dark. */
@@ -197,27 +215,29 @@ export function farGround(d: Uint8ClampedArray, W: number, from: number, to: num
 export type End = { x: number; y: number; u: number }
 
 /** A wall standing along the road, `off` half widths out, `high` tall, between a stretch's two ends: filled column by column, its colour by height. */
-export function wallPiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, colour: (t: number, x: number, y: number) => string): void {
+export function wallPiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, colour: (t: number, x: number, y: number) => RGB): void {
   const xa = a.x + off * a.u, xb = b.x + off * b.u
-  const from = Math.round(Math.min(xa, xb)), to = Math.round(Math.max(xa, xb))
+  const from = Math.max(0, Math.round(Math.min(xa, xb))), to = Math.min(buffer.width - 1, Math.round(Math.max(xa, xb)))
+  const d = buffer.data, W = buffer.width, bottom = Math.min(clip, buffer.height)
   for (let x = from; x <= to; x += 1) {
-    if (x < 0 || x >= buffer.width) continue
-    const t = to === from ? 0 : (x - xa) / (xb - xa)
-    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - high * u
-    for (let y = Math.max(0, Math.round(top)); y < Math.min(clip, Math.round(foot)); y += 1) buffer.set(x, y, colour((foot - y) / Math.max(1, foot - top), x, y))
+    const t = xb === xa ? 0 : (x - xa) / (xb - xa)
+    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - high * u, span = Math.max(1, foot - top)
+    for (let y = Math.max(0, Math.round(top)); y < Math.min(bottom, Math.round(foot)); y += 1) { const rgb = colour((foot - y) / span, x, y), o = (y * W + x) * 4; d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2] }
   }
 }
+/** A colour by name at an hour and a haze step, as numbers. */
+const tone = (name: Colour, tier: Tier, fog: number): RGB => palette(tier)[fog][colourIndex[name]]
 
 /** Along the promenade and the causeway, low concrete blocks as in the picture, with gaps between them: a face lit from above, a shadow at its foot. */
 export function blocks(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: number, clip: number, tier: Tier, fog: number): void {
   if (i % 3 === 2) return
-  const face = shade('stone0', tier, fog), top = shade('foam', tier, fog), dark = shade('stone1', tier, fog)
+  const face = tone('stone0', tier, fog), top = tone('foam', tier, fog), dark = tone('stone1', tier, fog)
   wallPiece(buffer, a, b, side * 1.62, 0.2, clip, (t) => (t > 0.8 ? top : t < 0.18 ? dark : face))
 }
 
 /** Along the beach and the cliff, the metal rail on its posts, a post every fourth stretch: the sea and the sand seen under it. */
 export function rail(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: number, clip: number, tier: Tier, fog: number): void {
-  const bar = shade('stone0', tier, fog), top = shade('foam', tier, fog), post = mix(shade('rockDark', tier, fog), '#1c2474', 0.5 * (1 - fog / FOG_STEPS))
+  const bar = tone('stone0', tier, fog), top = tone('foam', tier, fog), post = mix(shade('rockDark', tier, fog), '#1c2474', 0.5 * (1 - fog / FOG_STEPS))
   const ta = { ...a, y: a.y - 0.24 * a.u }, tb = { ...b, y: b.y - 0.24 * b.u }
   wallPiece(buffer, ta, tb, side * 1.62, 0.09, clip, (t) => (t > 0.6 ? top : bar))
   if (i % 4 === 0) { const x = a.x + side * 1.62 * a.u, w = Math.max(1, 0.05 * a.u); for (let y = Math.round(a.y - 0.24 * a.u); y < Math.min(clip, Math.round(a.y)); y += 1) for (let k = 0; k < w; k += 1) buffer.set(Math.round(x) + k, y, post) }
@@ -225,7 +245,7 @@ export function rail(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: numbe
 
 /** The cliff's rock along the land's side: in layers, lit at their tops, darker low down. */
 export function cliffPiece(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, band: number, clip: number, tier: Tier, fog: number): void {
-  const lit = shade('rockLit', tier, fog), r0 = shade('rock0', tier, fog), r1 = shade('rock1', tier, fog), dark = shade('rockDark', tier, fog)
+  const lit = tone('rockLit', tier, fog), r0 = tone('rock0', tier, fog), r1 = tone('rock1', tier, fog), dark = tone('rockDark', tier, fog)
   wallPiece(buffer, a, b, side * 1.92, 4.2, clip, (t, x, y) => {
     const layer = Math.floor(t * 9 + band * 0.5) % 3
     const g = grain(x >> 1, y >> 1)
@@ -235,7 +255,7 @@ export function cliffPiece(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, ba
 
 /** The tunnel at a stretch: its two walls and its vault, a light in the vault every eighth stretch. */
 export function tunnelPiece(buffer: PixelBuffer, a: End, b: End, i: number, clip: number, tier: Tier, fog: number): void {
-  const w0 = shade('tunnel0', tier, fog), w1 = shade('tunnel1', tier, fog), roof = shade('ceiling', tier, fog), light = shade('light', 0, Math.min(fog, 6))
+  const w0 = tone('tunnel0', tier, fog), w1 = tone('tunnel1', tier, fog), roof = shade('ceiling', tier, fog), light = shade('light', 0, Math.min(fog, 6))
   for (const side of [-1, 1] as const) wallPiece(buffer, a, b, side * 1.75, 2.3, clip, (t) => (t < 0.08 || (i % 6 === 0 && t > 0.3) ? w1 : w0))
   // the vault: from one wall's top to the other's, between the stretch's two ends
   const topA = a.y - 2.3 * a.u, topB = b.y - 2.3 * b.u
@@ -312,7 +332,7 @@ export function glow(buffer: PixelBuffer, cx: number, cy: number, r: number, col
       if (x < 0 || x >= buffer.width) continue
       const q = ((x - cx) / r) ** 2 + ((y - cy) / (r * flat)) ** 2
       if (q >= 1) continue
-      const k = strength * (1 - q) ** 1.5, o = (y * buffer.width + x) * 4
+      const f = 1 - q, k = strength * f * f, o = (y * buffer.width + x) * 4
       d[o] += (cr - d[o]) * k; d[o + 1] += (cg - d[o + 1]) * k; d[o + 2] += (cb - d[o + 2]) * k
     }
   }

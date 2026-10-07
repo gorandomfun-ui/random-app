@@ -138,7 +138,8 @@ const ordinal = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 
 /** The bar on top: TIME counting down (red in its last ten seconds), SCORE, the level and how far along it (its checkpoints marked), the place. */
 function racingHud(buffer: PixelBuffer, accent: string, s: RacingState): void {
   const W = buffer.width
-  buffer.rect(0, 0, W, HUD_HEIGHT, '#07070e')
+  const [r, g, b] = rgbOf('#07070e'), d = buffer.data
+  for (let t = 0; t < W * HUD_HEIGHT * 4; t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
   buffer.rect(0, HUD_HEIGHT - 1, W, 1, dim(accent, 0.55))
   const secs = Math.ceil(s.time / 60), late = s.phase === 'play' && secs <= 10
   drawText(buffer, 'TIME', 8, 3, GREY)
@@ -184,9 +185,10 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   const { width: W, height: H } = RACING_BOARD[layout]
   const board = boardSurface(layout)
   drawRace(board, s, VIEW[layout], W / 2, accent)
-  // the board under the bar, the controls beside or under it
-  out.clear(INK)
-  for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width) * 4)
+  // the board under the bar, the controls beside or under it (their band cleared first)
+  const controlsArea = out.width > W ? { x: W, y: HUD_HEIGHT, w: out.width - W, h: out.height - HUD_HEIGHT } : { x: 0, y: HUD_HEIGHT + H, w: out.width, h: out.height - HUD_HEIGHT - H }
+  if (controlsArea.w > 0 && controlsArea.h > 0) inkOver(out, controlsArea.x, controlsArea.y, controlsArea.w, controlsArea.h)
+  for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width + 0) * 4)
   const controls = racingPadGeometry(layout, pad)
   if (controls) drawPad(out, controls, accent, view.pressed)
   racingHud(out, accent, s)
@@ -196,6 +198,12 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   return out
 }
 
+/** A rectangle of the screen filled with ink, a row at a time. */
+function inkOver(out: PixelBuffer, x: number, y: number, w: number, h: number): void {
+  const [r, g, b] = rgbOf(INK), d = out.data
+  for (let yy = y; yy < y + h; yy += 1) for (let xx = x, t = (yy * out.width + x) * 4; xx < x + w; xx += 1, t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
+}
+
 const boards = new Map<Layout, PixelBuffer>()
 function boardSurface(layout: Layout): PixelBuffer {
   let b = boards.get(layout)
@@ -203,21 +211,29 @@ function boardSurface(layout: Layout): PixelBuffer {
   return b
 }
 
+/** The far view as last drawn on each board, kept while it has neither slid nor moved up or down. */
+const skies = new Map<number, { key: string; data: Uint8ClampedArray }>()
 /** The far view at the hour, its foot on the horizon, slid as the road has turned; over a tall board the sky carried up, darkening; mirrored past its edges. */
 function farView(board: PixelBuffer, tier: Tier, horizon: number, slide: number): void {
   const back = farViewAt(tier), W = board.width, d = board.data
-  if (!back) { for (let y = 0; y < Math.min(horizon, board.height); y += 1) board.rect(0, y, W, 1, mix('#1a0a34', '#ff7a5a', (y / horizon) ** 1.5)); return }
-  const s = back.data, bw = back.width, top = horizon - back.height
+  const rows = Math.max(0, Math.min(horizon, board.height))
+  if (!back) { for (let y = 0; y < rows; y += 1) board.rect(0, y, W, 1, mix('#1a0a34', '#ff7a5a', (y / horizon) ** 1.5)); return }
+  const bw = back.width, top = horizon - back.height
   const shift = Math.round((W - bw) / 2 + slide)
-  const column = (x: number) => { let u = (x - shift) % (bw * 2); if (u < 0) u += bw * 2; return u < bw ? u : bw * 2 - 1 - u }
+  const key = `${tier}|${shift}|${horizon}`, kept = skies.get(W)
+  if (kept && kept.key === key) { d.set(kept.data.subarray(0, rows * W * 4)); return }
+  const s = back.data
+  const column = new Int32Array(W)
+  for (let x = 0; x < W; x += 1) { let u = (x - shift) % (bw * 2); if (u < 0) u += bw * 2; column[x] = u < bw ? u : bw * 2 - 1 - u }
   const [fr, fg, fb] = rgbOf(tier >= 2 ? '#05050f' : '#1a0a34')
-  for (let y = 0; y < Math.min(horizon, board.height); y += 1) {
+  for (let y = 0; y < rows; y += 1) {
     const py = Math.max(0, y - top), fade = y < top ? ((top - y) / Math.max(1, top)) ** 1.2 : 0
     for (let x = 0; x < W; x += 1) {
-      const o = (py * bw + column(x)) * 4, t = (y * W + x) * 4
+      const o = (py * bw + column[x]) * 4, t = (y * W + x) * 4
       d[t] = s[o] + (fr - s[o]) * fade; d[t + 1] = s[o + 1] + (fg - s[o + 1]) * fade; d[t + 2] = s[o + 2] + (fb - s[o + 2]) * fade; d[t + 3] = 255
     }
   }
+  skies.set(W, { key, data: d.slice(0, rows * W * 4) })
 }
 
 /** The things to draw on each stretch ahead: what lies on the road, the rivals and the traffic ahead of the player. */
