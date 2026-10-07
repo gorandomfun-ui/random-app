@@ -27,11 +27,11 @@ import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from
 import { shop, SHOPS, TOWN_UNIT } from './racing-town'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
-  racingHour, racingKmh, racingSunset, segmentOf, stepRacing, type RacingItem, type RacingLayout, type RacingProp, type RacingSegment, type RacingState, type RacingTrafficModel, type RacingZone,
+  racingHour, racingKmh, racingSunset, segmentOf, stepRacing, type RacingItem, type RacingLayout, type RacingProp, type RacingSegment, type RacingShop, type RacingState, type RacingTrafficModel, type RacingZone,
 } from './racing-rules'
 import {
   blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, glow, groundRow, lamp, lampPool, skyAt,
-  puddle, puff, rail, shrub, stopwatch, tintFor, tunnelMouth, tunnelPiece, type End, type Tier,
+  facadePiece, puddle, puff, rail, shopSide, shrub, stopwatch, tintFor, tunnelMouth, tunnelPiece, type End, type Tier,
 } from './racing-scene'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
@@ -188,16 +188,29 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   const board = boardSurface(layout)
   drawRace(board, s, VIEW[layout], W / 2, accent)
   // the board under the bar, the controls beside or under it (their band cleared first)
-  const controlsArea = out.width > W ? { x: W, y: HUD_HEIGHT, w: out.width - W, h: out.height - HUD_HEIGHT } : { x: 0, y: HUD_HEIGHT + H, w: out.width, h: out.height - HUD_HEIGHT - H }
-  if (controlsArea.w > 0 && controlsArea.h > 0) inkOver(out, controlsArea.x, controlsArea.y, controlsArea.w, controlsArea.h)
   for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width + 0) * 4)
   const controls = racingPadGeometry(layout, pad)
-  if (controls) drawPad(out, controls, accent, view.pressed)
+  if (controls) controlsOn(out, layout, pad, controls, accent, view.pressed ?? {}, W, H)
   racingHud(out, accent, s)
   words(out, s, accent, W, H)
   if (s.phase === 'won' && s.single) playCard(out, layout, accent, 'LEVEL CLEAR', [])
   else if (view.pause != null) playCard(out, layout, accent, 'PAUSED', view.resumeOnly ? ['RESUME'] : ['RESUME', 'QUIT'], view.resumeOnly ? 0 : view.pause)
   return out
+}
+
+/** The controls' band as last drawn, kept while no button changes. */
+const bands = new Map<string, { key: string; rows: Array<[number, Uint8ClampedArray]> }>()
+/** The controls' band: cleared to ink and the buttons drawn, or as kept from before. */
+function controlsOn(out: PixelBuffer, layout: Layout, pad: Pad, controls: RacingPad, accent: string, pressed: NonNullable<RacingView['pressed']>, W: number, H: number): void {
+  const area = out.width > W ? { x: W, y: HUD_HEIGHT, w: out.width - W, h: out.height - HUD_HEIGHT } : { x: 0, y: HUD_HEIGHT + H, w: out.width, h: out.height - HUD_HEIGHT - H }
+  const key = `${accent}|${pressed.left ? 1 : 0}${pressed.right ? 1 : 0}${pressed.gas ? 1 : 0}${pressed.brake ? 1 : 0}`, where = `${layout}|${pad}`
+  const kept = bands.get(where)
+  if (kept && kept.key === key) { for (const [o, row] of kept.rows) out.data.set(row, o); return }
+  inkOver(out, area.x, area.y, area.w, area.h)
+  drawPad(out, controls, accent, pressed)
+  const rows: Array<[number, Uint8ClampedArray]> = []
+  for (let y = area.y; y < area.y + area.h; y += 1) { const o = (y * out.width + area.x) * 4; rows.push([o, out.data.slice(o, o + area.w * 4)]) }
+  bands.set(where, { key, rows })
 }
 
 /** A rectangle of the screen filled with ink, a row at a time. */
@@ -309,6 +322,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       if (g.zone !== 'cliff') fence(board, a, b, 1, i, clip, tier, fog)
       if (seg(i + 1).zone === 'tunnel' && i >= 0) tunnelMouth(board, b, clip, tier, fog)
     }
+    // a shop along the promenade: its front going by, its side at its near end, what stands on its roof, its lights after dark
+    if (g.shop && g.zone === 'promenade') shopPiece(board, p, g.shop, i, lit, tier)
     for (const it of cargo[n].items) {
       const at = place(p, it.z, it.x)
       if (it.kind === 'puddle') puddle(board, at.x, at.y, at.u, clip, tier, fog)
@@ -377,22 +392,12 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
  * towers; out at sea the boats bobbing, the jet skis coming and going, a
  * dolphin leaping now and then, the lighthouse and its beam after dark.
  */
-function lively(board: PixelBuffer, kind: 'crowd' | 'building' | 'lamp' | 'chevron' | 'bush' | RacingProp, look: number, i: number, cx: number, y: number, u: number, flip: boolean, clip: number, tier: Tier, fog: number, frame: number, lit: boolean): void {
+function lively(board: PixelBuffer, kind: 'crowd' | 'lamp' | 'chevron' | 'bush' | RacingProp, look: number, i: number, cx: number, y: number, u: number, flip: boolean, clip: number, tier: Tier, fog: number, frame: number, lit: boolean): void {
   const { rgb, by } = tintFor(tier, fog)
   if (kind === 'crowd') {
     const pic = crowdPicture(look, ((frame >> 4) + look) & 1 ? 1 : 0)
-    const h = 0.55 * u, w = (pic.width * h) / pic.height
+    const h = 0.72 * u, w = (pic.width * h) / pic.height
     if (h >= 3) drawArt(board, pic, cx - w / 2, y - h, w, h, clip, flip, rgb, by * 0.85)
-    return
-  }
-  if (kind === 'building') {
-    // a shop that tells what it is; lit after dark, its signs glowing
-    const { pic, glows } = shop(SHOPS[look % SHOPS.length], lit)
-    const h = pic.height * TOWN_UNIT * u, w = pic.width * TOWN_UNIT * u
-    if (h < 3) return
-    const x0 = cx - w / 2, y0 = y - h
-    drawArt(board, pic, x0, y0, w, h, clip, false, rgb, lit ? by * 0.55 : by)
-    if (lit && fog < 13) for (const g of glows) glow(board, x0 + (g.x / pic.width) * w, y0 + (g.y / pic.height) * h, Math.max(2, g.r * TOWN_UNIT * u), g.colour, 0.35, clip)
     return
   }
   if (kind === 'lamp' || kind === 'chevron' || kind === 'bush') return
@@ -412,6 +417,38 @@ function lively(board: PixelBuffer, kind: 'crowd' | 'building' | 'lamp' | 'chevr
   drawArt(board, pic, x - w / 2, foot - h, w, h, clip, kind === 'jetski' ? Math.cos(frame * 0.012 + i) < 0 : flip, rgb, by)
   if (kind === 'jetski') glow(board, x + (Math.cos(frame * 0.012 + i) < 0 ? 1 : -1) * w * 0.7, foot - 1, w * 0.5, '#f2fbff', 0.45, clip, 0.25)
   if (kind === 'lighthouse' && lit) { glow(board, x, foot - h * 0.93, h * 0.25, '#fff2b0', 0.7, clip); const beam = Math.sin(frame * 0.05); glow(board, x + beam * h * 0.9, foot - h * 0.93, h * 0.5, '#fff2b0', 0.25, clip, 0.18) }
+}
+
+/** Where a shop's front stands, out from the road's middle, and how far back it goes. */
+const SHOP_FRONT = 2.25, SHOP_DEPTH = 1.9
+
+/**
+ * The part of a shop on stretch `i`: its front from this stretch's near end
+ * to its far end — the picture's left at the shop's far end, as it reads
+ * from the road — the shop's side if this is its near end, what stands on
+ * its roof and its lights where they are along it.
+ */
+function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, lit: boolean, tier: Tier): void {
+  const s = shop(SHOPS[at.kind % SHOPS.length], lit), { front } = s
+  const high = front.height * TOWN_UNIT, fog = p.fog, tint = tintFor(tier, fog), soft = lit ? { rgb: tint.rgb, by: tint.by * 0.55 } : tint
+  const along = (col: number) => at.start + (1 - col / front.width) * at.len
+  facadePiece(board, p.a, p.b, SHOP_FRONT, high, p.clip, front, (1 - (i - at.start) / at.len) * front.width, (1 - (i + 1 - at.start) / at.len) * front.width, soft)
+  if (i === at.start) shopSide(board, p.a, SHOP_FRONT, SHOP_DEPTH, high, p.clip, s.wall, s.floors, lit, tint)
+  if (s.top) {
+    const z = along(s.top.x0 + s.top.pic.width / 2)
+    if (Math.floor(z) === i) {
+      const foot = place(p, z, SHOP_FRONT + SHOP_DEPTH * 0.3), roof = foot.y - high * foot.u
+      const h = s.top.pic.height * TOWN_UNIT * foot.u, w = s.top.pic.width * TOWN_UNIT * foot.u
+      if (h >= 2) drawArt(board, s.top.pic, foot.x - w / 2, roof - h, w, h, p.clip, false, soft.rgb, soft.by)
+      if (lit && fog < 13) for (const g of s.top.glows) glow(board, foot.x - w / 2 + g.x * TOWN_UNIT * foot.u, roof - h + g.y * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.35, p.clip)
+    }
+  }
+  if (lit && fog < 13) for (const g of s.frontGlows) {
+    const z = along(g.x)
+    if (Math.floor(z) !== i) continue
+    const foot = place(p, z, SHOP_FRONT)
+    glow(board, foot.x, foot.y - (front.height - g.y) * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.3, p.clip)
+  }
 }
 
 /** The sky's own life over the far view: gulls crossing, flapping; now and then the little plane pulling its banner, RANDOM on it. */
