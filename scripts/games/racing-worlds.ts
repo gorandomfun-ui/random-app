@@ -7,7 +7,9 @@
  * - `far-<world>`: the far view, 448 wide — the band of landscape under the
  *   picture's title (the snowy range and its lake, the mesas and the plain,
  *   the towers lit up), its own sky made clear, set over a sky drawn in the
- *   picture's colours (the title hid it), with the picture's clouds.
+ *   picture's colours (the title hid it), with the picture's clouds; the
+ *   city's sky taken from the top of its band, the band reaching almost to
+ *   the top of the view (no dark line where the sky goes on above it).
  * - `pine`, `rock` (the mountains), `saguaro` (the desert): what stands by
  *   the road, cut out along hand outlines.
  *
@@ -53,7 +55,7 @@ const lerp = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1]
 const WORLDS: Record<'mountain' | 'desert' | 'city', { file: string; band: Rect; top: Rect; clouds: Rect[]; skyish: (c: RGB) => boolean }> = {
   mountain: { file: 'racing-mountain.png', band: [226, 189, 606, 261], top: [250, 2, 520, 12], clouds: [[20, 18, 215, 78], [600, 8, 760, 72]], skyish: ([r, g, b]) => b > r + 25 && b > g - 8 && lum(r, g, b) > 105 },
   desert: { file: 'racing-desert.png', band: [236, 189, 640, 258], top: [250, 2, 520, 12], clouds: [[40, 32, 270, 92], [520, 52, 720, 108]], skyish: ([r, g, b]) => b > r + 30 && g > r + 10 },
-  city: { file: 'racing-city.png', band: [378, 186, 542, 240], top: [250, 2, 520, 12], clouds: [], skyish: ([r, g, b]) => b > r + 8 && b > g + 20 && lum(r, g, b) < 95 },
+  city: { file: 'racing-city.png', band: [378, 186, 542, 240], top: [380, 187, 540, 190], clouds: [], skyish: ([r, g, b]) => b > r + 8 && b > g + 20 && lum(r, g, b) < 95 },
 }
 const W = 448, FH = 150
 
