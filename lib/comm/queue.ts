@@ -123,10 +123,14 @@ export type MediaInput = {
   height: number | null
   durationSec: number | null
   animated: boolean
+  trim?: { startSec: number; endSec: number } | null
+  crop?: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number } | null
+  sourceMediaId?: string | null
+  templateKey?: string | null
 }
 
 export async function registerMedia(db: Db, input: MediaInput): Promise<MediaDoc> {
-  const doc = { ...input, createdAt: new Date(), trim: null, crop: null }
+  const doc = { ...input, createdAt: new Date(), trim: input.trim ?? null, crop: input.crop ?? null, sourceMediaId: input.sourceMediaId ?? null, templateKey: input.templateKey ?? null }
   const inserted = await db.collection(COMM_MEDIA).insertOne(doc)
   return { ...doc, _id: String(inserted.insertedId) }
 }

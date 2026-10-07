@@ -13,7 +13,7 @@ import { canCaptureTab, commImportSource, commList, commRemove, commRemoveMedia,
 import type { MediaDoc } from '@/lib/comm/model'
 
 const TYPE_WORDS: Record<string, string> = { video: 'Vidéo', image: 'Image', web: 'Site', quote: 'Citation', fact: 'Fait', joke: 'Blague' }
-const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature' }
+const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe' }
 
 export default function CommQueueClient() {
   const [items, setItems] = useState<QueueItemWithMedia[]>([])

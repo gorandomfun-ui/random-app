@@ -16,6 +16,12 @@ import type { MediaDoc, PostDoc, PostSlide } from '@/lib/comm/model'
 import type { Template } from '@/lib/comm/templates'
 import type { QueueItemWithMedia } from '@/lib/comm/client'
 import { buildExportZip, downloadBlob, type ExportSlide } from '@/lib/comm/exportZip'
+import { FAMILY_SIZES } from '@/lib/comm/templates'
+import { clipMaxSeconds } from '@/lib/comm/model'
+import dynamic from 'next/dynamic'
+
+/** The montage panel: loaded when a video slide asks for it. */
+const MontagePanel = dynamic(() => import('@/components/comm/MontagePanel'), { ssr: false })
 
 const headers = { 'Content-Type': 'application/json' }
 const STEPS = ['La file', 'Où', 'Format', 'Composer', 'Publier']
@@ -42,6 +48,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [progress, setProgress] = useState('')
   const [playing, setPlaying] = useState<number | null>(null)
   const [customTag, setCustomTag] = useState('')
+  const [montageOpen, setMontageOpen] = useState(false)
   const saveTimer = useRef<number | null>(null)
   const dirty = useRef<Partial<PostDoc>>({})
 
@@ -94,6 +101,16 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const slide: PostSlide | null = post?.slides[current] ?? null
   const slideMedia = useMemo(() => (slide?.mediaId ? items.flatMap((i) => i.media).find((m) => m._id === slide.mediaId) ?? null : null), [items, slide])
   const isVideoSlide = Boolean(slideMedia?.contentType.startsWith('video/'))
+  // A montage carries its dressing already: the preview shows the clip alone.
+  const isBaked = slideMedia?.kind === 'montage'
+  const slideTemplate = useMemo(() => familyTemplates.find((t) => t.key === slide?.templateKey) ?? familyTemplates[0] ?? null, [familyTemplates, slide])
+
+  /** A montage or a still just made: into the item's media, and onto the slide. */
+  const onMontageDone = useCallback((made: MediaDoc) => {
+    setItems((current) => current.map((item) => (item._id === made.queueItemId ? { ...item, media: [...item.media, made] } : item)))
+    setMontageOpen(false)
+    if (post) save({ slides: post.slides.map((s, i) => (i === current ? { ...s, mediaId: made._id } : s)) })
+  }, [current, post, save])
   const anyVideo = useMemo(() => post?.slides.some((s) => items.flatMap((i) => i.media).find((m) => m._id === s.mediaId)?.contentType.startsWith('video/')) ?? false, [post, items])
 
   const renderUrl = useCallback((s: PostSlide, index: number, mode: 'full' | 'overlay') => {
@@ -146,7 +163,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
       const slides: ExportSlide[] = post.slides.map((s, index) => {
         const media = items.flatMap((i) => i.media).find((m) => m._id === s.mediaId) ?? null
         const video = Boolean(media?.contentType.startsWith('video/'))
-        return { index, kind: video ? 'video' : 'image', renderUrl: `${window.location.origin}${renderUrl(s, index, 'full')}`, overlayUrl: video ? `${window.location.origin}${renderUrl(s, index, 'overlay')}` : undefined, videoUrl: video ? media!.blobUrl : undefined, videoType: media?.contentType }
+        const baked = media?.kind === 'montage'
+        return { index, kind: video ? 'video' : 'image', renderUrl: `${window.location.origin}${renderUrl(s, index, 'full')}`, overlayUrl: video && !baked ? `${window.location.origin}${renderUrl(s, index, 'overlay')}` : undefined, videoUrl: video ? media!.blobUrl : undefined, videoType: media?.contentType }
       })
       const zip = await buildExportZip(slides, caption.text, (done, total) => setProgress(`${done} / ${total}`))
       downloadBlob(zip, `random-comm-${String(post.number).padStart(3, '0')}-${post.destination}.zip`)
@@ -233,7 +251,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                     <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.mediaId ?? (slide.itemId ? `thumb:${slide.itemId}` : '')} onChange={(e) => { const choice = mediaChoices.find((c) => c.key === e.target.value); updateSlide({ itemId: choice?.itemId ?? slide.itemId, mediaId: choice?.mediaId ?? null }) }}>
                       {mediaChoices.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
                     </select></label>
-                  {isVideoSlide ? <p className="text-xs text-amber-200">Slide animée : l’extrait tel quel, l’habillage par-dessus ; la découpe et le recadrage viennent avec le montage.</p> : null}
+                  {isVideoSlide && !isBaked ? <div className="flex flex-wrap items-center gap-2"><button className={small} disabled={!slideTemplate} onClick={() => setMontageOpen(true)}>Monter l’extrait</button><span className="text-xs text-amber-200">Découpe, cadrage, habillage incrusté, ou une image fixe.</span></div> : null}
+                  {isBaked ? <p className="text-xs text-gray-300">Montage figé avec son habillage ({slideMedia?.templateKey ?? 'gabarit'}{slideMedia?.trim ? `, ${Math.round(slideMedia.trim.endSec - slideMedia.trim.startSec)} s` : ''}). Pour changer l’habillage, remonte depuis l’extrait d’origine.</p> : null}
                   <label className="block">Gabarit<br />
                     <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.templateKey} onChange={(e) => updateSlide({ templateKey: e.target.value })}>
                       {familyTemplates.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
@@ -254,8 +273,10 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                 </div>
                 <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded border border-white/30 bg-black" style={{ aspectRatio: spec.family.replace(':', '/') }}>
                   {isVideoSlide && slideMedia ? <video src={slideMedia.blobUrl} muted loop autoPlay playsInline className="absolute inset-0 h-full w-full object-contain" /> : null}
-                  {/* eslint-disable-next-line @next/next/no-img-element -- what you see is what gets exported */}
-                  <img src={renderUrl(slide, current, isVideoSlide ? 'overlay' : 'full')} alt="Aperçu" className="absolute inset-0 h-full w-full" />
+                  {!isBaked ? (
+                    /* eslint-disable-next-line @next/next/no-img-element -- what you see is what gets exported */
+                    <img src={renderUrl(slide, current, isVideoSlide ? 'overlay' : 'full')} alt="Aperçu" className="absolute inset-0 h-full w-full" />
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -317,6 +338,20 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
               </>
             )}
           </section>
+        ) : null}
+
+        {montageOpen && post && spec && slide && slideMedia && slideTemplate ? (
+          <MontagePanel
+            queueItemId={slideMedia.queueItemId}
+            media={slideMedia}
+            template={slideTemplate}
+            canvas={FAMILY_SIZES[spec.family]}
+            overlayUrl={renderUrl(slide, current, 'overlay')}
+            background="#191916"
+            maxSeconds={Math.min(spec.maxSeconds ?? clipMaxSeconds(), clipMaxSeconds())}
+            onClose={() => setMontageOpen(false)}
+            onDone={onMontageDone}
+          />
         ) : null}
 
         {playing != null && post ? (

@@ -133,7 +133,7 @@ export function seedTemplates(): Template[] {
     layers: [
       { type: 'band', position: 'top', height: bandTop, color: 'palette.bg' },
       { type: 'band', position: 'bottom', height: bandBottom, color: 'palette.bg' },
-      { type: 'media', fit: 'contain', top: bandTop, height: 1 - bandTop - bandBottom },
+      { type: 'media', fit: 'contain', top: bandTop, height: Math.round((1 - bandTop - bandBottom) * 1000) / 1000 },
       { type: 'logo', variant: 'horizontal', color: 'auto', x: 0.06, y: 0.035, width: 0.3 },
       { type: 'text', font: 'Tomorrow', size: 56, weight: 700, color: 'palette.cream', x: 0.06, y: bandTop * 0.62, maxWidth: 0.88, lines: 2, align: 'left', uppercase: true },
       ...bottomLines(family, 'framed'),

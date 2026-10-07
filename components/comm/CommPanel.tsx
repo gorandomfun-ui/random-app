@@ -22,7 +22,7 @@ export type CommPanelProps = {
   captureTarget?: () => HTMLElement | null
 }
 
-const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait capturé', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature' }
+const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait capturé', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe' }
 
 export default function CommPanel({ itemId, accent, onClose, onQueueChange, captureTarget }: CommPanelProps) {
   const [item, setItem] = useState<QueueItemWithMedia | null>(null)

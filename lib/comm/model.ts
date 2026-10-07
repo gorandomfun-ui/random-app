@@ -70,7 +70,8 @@ export type QueueItem = {
   licenseHint: LicenseHint
 }
 
-export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb'
+/** montage: a clip cut, framed and dressed by the browser, ready to post; still: one frame of a video, as a picture. */
+export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb' | 'montage' | 'still'
 
 export type MediaDoc = {
   _id: string
@@ -87,6 +88,9 @@ export type MediaDoc = {
   blobKey: string
   trim: { startSec: number; endSec: number } | null
   crop: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number } | null
+  /** For a montage or a still: the media it was made from, and the template it was dressed with. */
+  sourceMediaId?: string | null
+  templateKey?: string | null
 }
 
 export type Destination = 'instagram' | 'tiktok' | 'x'

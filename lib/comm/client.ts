@@ -51,6 +51,28 @@ export function commImportSource(queueItemId: string, what: 'image' | 'gif' | 't
 export type MediaProbe = { width: number | null; height: number | null; durationSec: number | null; animated: boolean }
 
 /** Width, height and length of a file, read by the browser itself; nulls when it cannot. */
+/**
+ * A video's real length. A WebM the browser just recorded says "infinite"
+ * until it is asked to seek past its end: then it knows.
+ */
+export function videoDuration(video: HTMLVideoElement): Promise<number | null> {
+  return new Promise((resolve) => {
+    if (Number.isFinite(video.duration) && video.duration > 0) { resolve(Math.round(video.duration * 100) / 100); return }
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      video.removeEventListener('durationchange', finish); video.removeEventListener('seeked', finish)
+      const d = Number.isFinite(video.duration) && video.duration > 0 ? Math.round(video.duration * 100) / 100 : null
+      try { video.currentTime = 0 } catch { /* ignore */ }
+      resolve(d)
+    }
+    video.addEventListener('durationchange', finish); video.addEventListener('seeked', finish)
+    setTimeout(finish, 4000)
+    try { video.currentTime = 1e7 } catch { finish() }
+  })
+}
+
 export function probeMedia(file: Blob): Promise<MediaProbe> {
   const type = file.type.toLowerCase()
   const url = URL.createObjectURL(file)
@@ -59,7 +81,7 @@ export function probeMedia(file: Blob): Promise<MediaProbe> {
     return new Promise((resolve) => {
       const video = document.createElement('video')
       video.preload = 'metadata'
-      video.onloadedmetadata = () => resolve(done({ width: video.videoWidth || null, height: video.videoHeight || null, durationSec: Number.isFinite(video.duration) ? Math.round(video.duration * 100) / 100 : null, animated: true }))
+      video.onloadedmetadata = () => { void videoDuration(video).then((durationSec) => resolve(done({ width: video.videoWidth || null, height: video.videoHeight || null, durationSec, animated: true }))) }
       video.onerror = () => resolve(done({ width: null, height: null, durationSec: null, animated: true }))
       video.src = url
     })
@@ -87,7 +109,9 @@ function randomName(contentType: string): string {
 export type UploadResult = { media?: MediaDoc; error?: string; message?: string }
 
 /** Sends a file straight to the item's Blob folder, then records it with what the browser measured. */
-export async function uploadMedia(queueItemId: string, file: Blob, kind: MediaKind, onProgress?: (fraction: number) => void): Promise<UploadResult> {
+export type UploadExtra = { trim?: { startSec: number; endSec: number }; crop?: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number }; sourceMediaId?: string; templateKey?: string; durationSec?: number }
+
+export async function uploadMedia(queueItemId: string, file: Blob, kind: MediaKind, onProgress?: (fraction: number) => void, extra: UploadExtra = {}): Promise<UploadResult> {
   const contentType = (file.type || 'application/octet-stream').split(';')[0].trim().toLowerCase()
   if (!EXT[contentType]) return { error: 'type', message: `Format non pris en charge : ${contentType || 'inconnu'}.` }
   const probe = await probeMedia(file)
@@ -104,7 +128,9 @@ export async function uploadMedia(queueItemId: string, file: Blob, kind: MediaKi
     const message = error instanceof Error ? error.message : String(error)
     return { error: 'upload', message: /no-blob|Blob n’est pas configuré|BLOB_READ_WRITE_TOKEN/i.test(message) ? 'Le stockage Blob n’est pas configuré sur le projet.' : `Envoi impossible : ${message}` }
   }
-  const registered = await fetch('/api/admin/comm/media', { method: 'POST', headers, body: JSON.stringify({ queueItemId, kind, blobUrl, contentType, bytes: file.size, ...probe }) })
+  // A file the browser just recorded may not tell its length yet: the montage knows it.
+  const measured = { ...probe, ...(probe.durationSec == null && extra.durationSec ? { durationSec: extra.durationSec } : {}) }
+  const registered = await fetch('/api/admin/comm/media', { method: 'POST', headers, body: JSON.stringify({ queueItemId, kind, blobUrl, contentType, bytes: file.size, ...measured, trim: extra.trim, crop: extra.crop, sourceMediaId: extra.sourceMediaId, templateKey: extra.templateKey }) })
     .then((r) => read<{ media?: MediaDoc; error?: string }>(r))
   if (!registered.media) return { error: registered.error ?? 'register', message: 'Le fichier est envoyé mais n’a pas pu être enregistré.' }
   return { media: registered.media }
