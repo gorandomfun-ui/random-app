@@ -23,13 +23,14 @@
 
 import { BONUS_PALETTE, MUSTARD } from './attacks-sprites'
 import { racingArt, type RacingCarKind } from './racing-art'
-import { buildingPicture, crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
+import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
+import { shop, SHOPS, TOWN_UNIT } from './racing-town'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
-  racingHour, racingKmh, racingSunset, segmentOf, stepRacing, type RacingItem, type RacingLayout, type RacingProp, type RacingSegment, type RacingState, type RacingZone,
+  racingHour, racingKmh, racingSunset, segmentOf, stepRacing, type RacingItem, type RacingLayout, type RacingProp, type RacingSegment, type RacingState, type RacingTrafficModel, type RacingZone,
 } from './racing-rules'
 import {
-  blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, farGround, flames, fogStep, gantry, glow, groundRow, lamp, lampPool, skyAt,
+  blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, glow, groundRow, lamp, lampPool, skyAt,
   puddle, puff, rail, shrub, stopwatch, tintFor, tunnelMouth, tunnelPiece, type End, type Tier,
 } from './racing-scene'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
@@ -238,7 +239,7 @@ function farView(board: PixelBuffer, tier: Tier, sinking: number, horizon: numbe
 }
 
 /** The things to draw on each stretch ahead: what lies on the road, the rivals and the traffic ahead of the player. */
-type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind; z: number; x: number; turn: -1 | 0 | 1; look?: number; speed: number }> }
+type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind | RacingTrafficModel; traffic: boolean; z: number; x: number; turn: -1 | 0 | 1; look: number; speed: number }> }
 
 /** Which way a car turns on the screen: toward the lane it is heading for, else with a sharp bend. */
 const turnOf = (lane: number, x: number, curve: number): -1 | 0 | 1 => (Math.abs(lane - x) > 0.04 ? (lane > x ? 1 : -1) : Math.abs(curve) > 2.5 ? (curve > 0 ? 1 : -1) : 0)
@@ -289,8 +290,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   // what lies on each stretch and the cars on it, ahead of the player
   const cargo: Cargo[] = rows.map(() => ({ items: [], cars: [] }))
   for (const it of s.items) { if (it.taken) continue; const n = Math.floor(it.z) - b0; if (n >= 0 && n < rows.length) cargo[n].items.push(it) }
-  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, z: r.z, x: r.x, speed: r.speed, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve) }) }
-  for (const t of s.traffic) { const n = Math.floor(t.z) - b0; if (n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, z: t.z, x: t.x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve) }) }
+  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, traffic: false, look: 0, z: r.z, x: r.x, speed: r.speed, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve) }) }
+  for (const t of s.traffic) { const n = Math.floor(t.z) - b0; if (n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, traffic: true, z: t.z, x: t.x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve) }) }
   const lit = tier >= 0.55
   const night = tier >= 1.4
   // furthest first: the rock and the tunnel, the barriers, what lies on the road, what stands by it, the gantries, the cars
@@ -338,7 +339,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     for (const c of cargo[n].cars.sort((m, k) => k.z - m.z)) {
       const at = place(p, c.z, c.x)
       const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
-      drawCar(board, c.kind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, look: c.look, tier, fog, lights: night })
+      if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+      else drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
     }
   }
   // the player's car: turning as it steers, bouncing at speed, shaken by a knock; its lights on the road after dark
@@ -384,9 +386,13 @@ function lively(board: PixelBuffer, kind: 'crowd' | 'building' | 'lamp' | 'chevr
     return
   }
   if (kind === 'building') {
-    const pic = buildingPicture(look, lit)
-    const h = 2.1 * u, w = (pic.width * h) / pic.height
-    if (h >= 3) drawArt(board, pic, cx - w / 2, y - h, w, h, clip, false, rgb, lit ? by * 0.55 : by)
+    // a shop that tells what it is; lit after dark, its signs glowing
+    const { pic, glows } = shop(SHOPS[look % SHOPS.length], lit)
+    const h = pic.height * TOWN_UNIT * u, w = pic.width * TOWN_UNIT * u
+    if (h < 3) return
+    const x0 = cx - w / 2, y0 = y - h
+    drawArt(board, pic, x0, y0, w, h, clip, false, rgb, lit ? by * 0.55 : by)
+    if (lit && fog < 13) for (const g of glows) glow(board, x0 + (g.x / pic.width) * w, y0 + (g.y / pic.height) * h, Math.max(2, g.r * TOWN_UNIT * u), g.colour, 0.35, clip)
     return
   }
   if (kind === 'lamp' || kind === 'chevron' || kind === 'bush') return

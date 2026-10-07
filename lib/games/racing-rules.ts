@@ -127,8 +127,10 @@ export type RacingSegment = { curve: number; y1: number; y2: number; zone: Racin
 /** What lies on the road: a stopwatch, the turbo, a coin; a ketchup puddle, a cone of the roadworks. */
 export type RacingItemKind = 'time' | 'turbo' | 'coin' | 'puddle' | 'cone'
 export type RacingItem = { kind: RacingItemKind; z: number; x: number; taken: boolean }
+/** The everyday cars of the traffic. */
+export type RacingTrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream'
 /** A slow car of the traffic: the model and its colour (`look`), its lane, its speed; whether it swerves into another lane when the player comes. */
-export type RacingTraffic = { kind: 'rosso' | 'giallo'; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean }
+export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean }
 
 /** A level's road and what is on it, always the same for the level. */
 export type RacingCourse = {
@@ -243,7 +245,7 @@ export function racingCourse(level: number): RacingCourse {
   add(0, RUNOFF, 0, 0, 0)
   // what stands by it, a little irregular: palms on the beach and among the bushes, lamps along the promenade and the causeway, chevrons on the outside of bends
   const place = seeded(77 + lv * 131)
-  let palmL = 20, palmR = 30, lamp = 10, bush = 12, house = 6, parasol = 30, tower = 90, boat = 40, fans = 30
+  let palmL = 20, palmR = 30, lamp = 10, bush = 12, house = 6, parasol = 30, tower = 90, boat = 40, fans = 30, shopTurn = lv % 11
   track.forEach((seg, i) => {
     if (i < 24 || i > finish + 200) return
     const z = seg.zone
@@ -255,7 +257,7 @@ export function racingCourse(level: number): RacingCourse {
     if ((z === 'promenade' || z === 'causeway') && i >= lamp) { seg.things.push({ kind: 'lamp', x: -1.95, flip: false, look: 0 }, { kind: 'lamp', x: 1.95, flip: true, look: 0 }); lamp = i + 16 }
     if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0, look: 0 })
     // the promenade's buildings, one after another along the land's side
-    if (z === 'promenade' && i >= house) { seg.things.push({ kind: 'building', x: 2.75 + place() * 0.5, flip: false, look: Math.floor(place() * 12) }); house = i + 20 + Math.floor(place() * 9) }
+    if (z === 'promenade' && i >= house) { shopTurn = (shopTurn + 1 + Math.floor(place() * 3)) % 11; seg.things.push({ kind: 'building', x: 2.8 + place() * 0.45, flip: false, look: shopTurn }); house = i + 22 + Math.floor(place() * 10) }
     // the beach's parasols on the sand, a lifeguard tower now and then
     if (z === 'beach' && i >= parasol) { seg.things.push({ kind: 'parasol', x: -1.95 - place() * 0.12, flip: false, look: Math.floor(place() * 3) }); parasol = i + 8 + Math.floor(place() * 14) }
     if (z === 'beach' && i >= tower) { seg.things.push({ kind: 'tower', x: -2.02, flip: false, look: 0 }); tower = i + 180 + Math.floor(place() * 120) }
@@ -332,14 +334,16 @@ function placeItems(track: RacingSegment[], finish: number, lv: number): Array<O
   return items.sort((a, b) => a.z - b.z)
 }
 
-/** The traffic: slow cars spread along the road, in other colours than the rivals', two at the first level and more as the levels go; from the seventh, some swerve when the player comes. */
+/** Which everyday cars the traffic is made of, the common ones more often. */
+const MODELS: readonly RacingTrafficModel[] = ['hatch', 'hatch', 'saloon', 'saloon', 'camper', 'pickup', 'estate', 'estate', 'beetle', 'icecream']
+/** The traffic: everyday cars spread along the road, two at the first level and more as the levels go; from the seventh, some swerve when the player comes. */
 function placeTraffic(finish: number, lv: number): Array<Omit<RacingTraffic, 'swerved'>> {
   const rnd = seeded(53 + lv * 613)
   const n = Math.round(1.5 + lv * 0.75)
   return Array.from({ length: n }, (_, k) => {
     const lane = Math.floor(rnd() * 3)
     return {
-      kind: rnd() < 0.5 ? 'rosso' as const : 'giallo' as const, look: Math.floor(rnd() * 4),
+      kind: MODELS[Math.floor(rnd() * MODELS.length)], look: Math.floor(rnd() * 9),
       z: Math.round(260 + ((k + rnd() * 0.8) / n) * (finish * 0.55)), x: RACING_LANES[lane], lane: RACING_LANES[lane],
       speed: RACING_TOP * (0.46 + rnd() * 0.16), swerve: lv >= 7 && rnd() < 0.35,
     }

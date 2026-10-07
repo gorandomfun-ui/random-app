@@ -8,6 +8,7 @@
  */
 
 import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
+import { TRAFFIC_LIGHTS, TRAFFIC_WIDTH, trafficPicture, type TrafficModel } from './racing-traffic'
 import type { RacingZone } from './racing-rules'
 import { drawText7, mix, PixelBuffer, rgbOf, text7Width } from './pixels'
 import { CREAM, INK } from './ui'
@@ -535,47 +536,22 @@ export function gantry(buffer: PixelBuffer, p: { x: number; y: number; u: number
 
 // ---------------------------------------------------------------- the cars
 
-/** The traffic's colours: the red car's and the yellow car's shapes in others. */
-const LOOKS: readonly RGB[] = [hex('#2a6aff'), hex('#f2efe6'), hex('#2ab070'), hex('#9a4ad8')]
-const recoloured = new Map<string, PixelBuffer>()
-/** A car's picture in another colour: its body's red or yellow turned to the colour, its lights and glass left as they are. */
-function inColour(pic: PixelBuffer, key: string, kind: RacingCarKind, look: number): PixelBuffer {
-  const k = `${key}|${look}`
-  let out = recoloured.get(k)
-  if (out) return out
-  out = new PixelBuffer(pic.width, pic.height)
-  out.data.set(pic.data)
-  const to = LOOKS[look % LOOKS.length], d = out.data
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] < 128) continue
-    const r = d[i], g = d[i + 1], b = d[i + 2], max = Math.max(r, g, b), min = Math.min(r, g, b)
-    // the body: saturated red (the red car) or yellow (the yellow car); the lamps (bright red on the yellow car) kept
-    const body = kind === 'rosso' ? r > g + 50 && r > b + 50 && max - min > 70 && !(r > 240 && g > 150) : r > 150 && g > 110 && b < 110 && max - min > 60
-    if (!body) continue
-    const light = (0.3 * r + 0.59 * g + 0.11 * b) / (kind === 'rosso' ? 120 : 200)
-    d[i] = Math.min(255, to[0] * light); d[i + 1] = Math.min(255, to[1] * light); d[i + 2] = Math.min(255, to[2] * light)
-  }
-  recoloured.set(k, out)
-  return out
-}
-
 /** The size of each car's picture to use for a width on the screen. */
 const sizeFor = (width: number) => (width > 112 ? 130 : width > 70 ? 104 : 60)
 
 /**
  * A car seen from behind, `width` wide on the screen (its back), its foot at
  * `foot`, its middle at `cx`: straight, or turning (`turn` −1 left, 1
- * right) with its flank showing; its shadow on the road under it; in
- * another colour for the traffic (`look`); through the hour and the haze.
+ * right) with its flank showing; its shadow on the road under it; through
+ * the hour and the haze.
  */
-export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; look?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
   const turn = options.turn ?? 0, clip = options.clip ?? buffer.height, size = sizeFor(width)
   const straightName = `car-${kind}-${size}` as RacingArtName, turnName = `car-${kind}-${size}-turn` as RacingArtName
   const straight = racingArt(straightName)
   if (!straight || width < 2) return
   const turnPic = turn ? racingArt(turnName) : null
-  let pic = turnPic ?? straight
-  if (options.look != null) pic = inColour(pic, turnPic ? turnName : straightName, kind, options.look)
+  const pic = turnPic ?? straight
   // the back is the straight picture's width; a turning picture's flank (or lean) reaches past it
   const scale = width / straight.width, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale))
   const x0 = turnPic && turn < 0 ? Math.round(cx + width / 2 - w) : Math.round(cx - width / 2)
@@ -584,6 +560,20 @@ export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, fo
   drawArt(buffer, pic, x0, Math.round(foot - h), w, h, clip, !!turnPic && turn < 0, rgb, by)
   // after dark, its rear lights
   if (options.lights && kind !== 'burger' && width > 8) for (const side of [-1, 1]) glow(buffer, cx + side * width * 0.32, foot - h * 0.52, Math.max(2, width * 0.14), '#ff2a2a', 0.5, clip)
+}
+
+/** An everyday car of the traffic, `width` wide on the screen (with its share of a racing car's width), as `drawCar` draws the racing ones. */
+export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+  const turn = options.turn ?? 0, clip = options.clip ?? buffer.height
+  const back = width * TRAFFIC_WIDTH[model]
+  if (back < 2) return
+  const { pic, back: steps } = trafficPicture(model, colour, turn !== 0, back)
+  const scale = back / steps, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale))
+  const x0 = turn < 0 ? Math.round(cx + back / 2 - w) : Math.round(cx - back / 2)
+  glow(buffer, cx, foot - 1, back * 0.58, '#0a0814', 0.55, clip, 0.13)
+  const { rgb, by } = tintFor(options.tier ?? 0, options.fog ?? 0)
+  drawArt(buffer, pic, x0, Math.round(foot - h), w, h, clip, turn < 0, rgb, by)
+  if (options.lights && back > 8) for (const [fx, fy] of TRAFFIC_LIGHTS[model]) glow(buffer, cx + (fx - 0.5) * back, foot - h + fy * h, Math.max(2, back * 0.12), '#ff2a2a', 0.5, clip)
 }
 
 /** A puff from an exhaust, low by the road, swelling and thinning as it drifts out, one moment after another. */

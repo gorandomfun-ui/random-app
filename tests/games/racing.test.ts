@@ -20,6 +20,8 @@ import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
 import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_START_STEPS, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { shop, SHOPS } from '@/lib/games/racing-town'
+import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
 import { decodePng } from '../../scripts/games/png'
 import { CASUAL, GOOD, race } from './racing-robot'
 
@@ -184,6 +186,15 @@ test('racing: the sun sets as the race goes on, night falls by the levels, the s
   assert.ok(racingSunset(racingHour(1, 1)) > 0.4, 'low by the end of the first level')
   assert.equal(racingSunset(racingHour(2, 1)), 1, 'gone by the end of the second')
   assert.equal(racingHour(13, 0), 3)
+})
+
+test('racing: the traffic is everyday cars, and the shops each look like their trade, one after another different', () => {
+  for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) for (const t of racingCourse(level).traffic) assert.ok(TRAFFIC_MODELS.includes(t.kind), `level ${level}: ${t.kind} is an everyday car`)
+  const shops = racingCourse(6).track.flatMap((g) => g.things.filter((t) => t.kind === 'building').map((t) => t.look))
+  assert.ok(new Set(shops).size >= 4, `several kinds of shop (${new Set(shops).size})`)
+  for (let k = 1; k < shops.length; k += 1) assert.notEqual(shops[k], shops[k - 1], 'never the same shop twice running')
+  for (const kind of SHOPS) for (const lit of [false, true]) { const { pic } = shop(kind, lit); assert.ok(pic.width > 40 && pic.height > 40, kind) }
+  for (const model of TRAFFIC_MODELS) { const straight = trafficPicture(model, 0, false, 64), turning = trafficPicture(model, 0, true, 64); assert.ok(turning.pic.width > straight.pic.width, `${model}: its flank when it turns`) }
 })
 
 /** A race put just short of something on the road, at speed, in its lane. */

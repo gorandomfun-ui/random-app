@@ -1,15 +1,14 @@
 /**
  * What brings RANDOM RACING's coast to life, drawn here in pixels, in the
  * colours of the owner's picture: the public along the road (each one
- * different, waving, cheering), the buildings of the promenade (pastel
- * fronts, windows lit after dark, a neon word), the beach's parasols and
- * lifeguard towers; out at sea the sailboats, the yachts, the jet skis, the
+ * different, waving, cheering), the beach's parasols and lifeguard towers; out at sea the sailboats, the yachts, the jet skis, the
  * windsurfers, the buoys, the dolphins, the lighthouse; in the sky the
- * gulls and the little plane pulling its banner. Each is made once, into a
+ * gulls and the little plane pulling its banner (the promenade's shops are
+ * in `racing-town.ts`, the traffic's cars in `racing-traffic.ts`). Each is made once, into a
  * picture with clear pixels round it, and drawn by the road like the palms.
  */
 
-import { drawText7, PixelBuffer, rgbOf, text7Width, type Palette, type Sprite } from './pixels'
+import { PixelBuffer, rgbOf, type Palette, type Sprite } from './pixels'
 import { seeded } from './engine'
 
 // ---------------------------------------------------------------- pictures from sprites
@@ -93,58 +92,6 @@ export function crowdPicture(seed: number, frame: 0 | 1, n = 7): PixelBuffer {
     }
   }
   crowds.set(key, out)
-  return out
-}
-
-// ---------------------------------------------------------------- the promenade's buildings
-
-const WALLS = ['#f4a6b8', '#9fe0c8', '#f4e2b8', '#c8b0e8', '#9cc8f0', '#f8b890']
-const AWNINGS = [['#e2302a', '#faf6ec'], ['#1aa0a8', '#faf6ec'], ['#ff6ab0', '#faf6ec'], ['#3a7ae0', '#ffd23f']]
-const WORDS = ['SURF', 'MOTEL', 'HOTEL', 'BAR', 'TACOS', 'PIZZA', 'GELATO', 'ARCADE', 'DINER', 'RADIO', 'BURGER', 'VIDEO']
-const NEONS = ['#ff4ab0', '#3af0ff', '#ffd23f', '#7aff6a', '#ff7a3a']
-const buildings = new Map<string, PixelBuffer>()
-const mixRgb = (a: string, k: number): string => { const [r, g, b] = rgbOf(a); return `#${[r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v * k))).toString(16).padStart(2, '0')).join('')}` }
-
-/**
- * A building of the promenade, one of a dozen: a pastel front two or three
- * floors high, its pilasters and its ledge, rows of windows (warm and lit
- * after dark, some of them), an awning in stripes over the shop, the door, a
- * word in neon over the awning — glowing after dark.
- */
-export function buildingPicture(variant: number, lit: boolean): PixelBuffer {
-  const key = `${variant}|${lit}`
-  let out = buildings.get(key)
-  if (out) return out
-  const rnd = seeded(variant * 104729 + 3)
-  const floors = 2 + (variant % 2), w = 52 + (variant % 3) * 6, h = 18 + floors * 13
-  out = new PixelBuffer(w, h, '#000000')
-  const wall = WALLS[variant % WALLS.length], shade = mixRgb(wall, 0.82), lightWall = mixRgb(wall, 1.08), dark = mixRgb(wall, 0.5)
-  out.rect(0, 0, w, h, wall)
-  // the ledge on top, the pilasters at the corners and between bays
-  out.rect(0, 0, w, 3, lightWall); out.rect(0, 3, w, 1, dark)
-  const bays = Math.floor((w - 4) / 12)
-  for (let k = 0; k <= bays; k += 1) out.rect(2 + k * Math.floor((w - 4) / bays) - 1, 4, 2, h - 4, shade)
-  // the upper floors' windows
-  for (let f = 0; f < floors - 1; f += 1) for (let k = 0; k < bays; k += 1) {
-    const bx = 2 + k * Math.floor((w - 4) / bays) + 3, by = 7 + f * 13, bw = Math.floor((w - 4) / bays) - 6
-    const on = lit && rnd() < 0.6
-    out.rect(bx - 1, by - 1, bw + 2, 9, dark)
-    out.rect(bx, by, bw, 7, on ? '#ffd890' : '#2a3a6a')
-    if (!on) out.rect(bx, by, Math.max(1, Math.round(bw / 3)), 2, '#5a74b0')
-    else out.rect(bx, by + 5, bw, 2, '#e8a050')
-  }
-  // the shop: the word over it, the awning, the window and the door
-  const shopTop = h - 18
-  const word = WORDS[variant % WORDS.length], neon = NEONS[(variant * 3) % NEONS.length]
-  out.rect(2, shopTop - 1, w - 4, 9, '#2a1a34')
-  const tw = text7Width(word, 1, false)
-  drawText7(out, word, Math.round((w - tw) / 2), shopTop, lit ? '#ffffff' : neon, 1, false)
-  if (lit) for (let y = shopTop - 1; y < shopTop + 8; y += 1) for (let x = 2; x < w - 2; x += 1) { const o = (y * w + x) * 4; if (out.data[o] > 240 && out.data[o + 1] > 240) continue; const [r, g, b] = rgbOf(neon); out.data[o] += (r - out.data[o]) * 0.25; out.data[o + 1] += (g - out.data[o + 1]) * 0.25; out.data[o + 2] += (b - out.data[o + 2]) * 0.25 }
-  const [a0, a1] = AWNINGS[variant % AWNINGS.length]
-  for (let x = 1; x < w - 1; x += 1) { out.rect(x, shopTop + 9, 1, 4, Math.floor(x / 4) % 2 ? a0 : a1); if (x % 4 === 1) out.set(x, shopTop + 13, Math.floor(x / 4) % 2 ? a0 : a1) }
-  out.rect(3, shopTop + 14, w - 6, 4, lit ? '#ffcf80' : '#1e2a50')
-  out.rect(Math.round(w / 2) - 3, shopTop + 13, 6, 5, dark)
-  buildings.set(key, out)
   return out
 }
 
