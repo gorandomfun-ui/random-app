@@ -232,15 +232,15 @@ const tone = (name: Colour, tier: Tier, fog: number): RGB => palette(tier)[fog][
 export function blocks(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: number, clip: number, tier: Tier, fog: number): void {
   if (i % 3 === 2) return
   const face = tone('stone0', tier, fog), top = tone('foam', tier, fog), dark = tone('stone1', tier, fog)
-  wallPiece(buffer, a, b, side * 1.62, 0.2, clip, (t) => (t > 0.8 ? top : t < 0.18 ? dark : face))
+  wallPiece(buffer, a, b, side * 1.72, 0.2, clip, (t) => (t > 0.8 ? top : t < 0.18 ? dark : face))
 }
 
 /** Along the beach and the cliff, the metal rail on its posts, a post every fourth stretch: the sea and the sand seen under it. */
 export function rail(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: number, clip: number, tier: Tier, fog: number): void {
   const bar = tone('stone0', tier, fog), top = tone('foam', tier, fog), post = mix(shade('rockDark', tier, fog), '#1c2474', 0.5 * (1 - fog / FOG_STEPS))
   const ta = { ...a, y: a.y - 0.24 * a.u }, tb = { ...b, y: b.y - 0.24 * b.u }
-  wallPiece(buffer, ta, tb, side * 1.62, 0.09, clip, (t) => (t > 0.6 ? top : bar))
-  if (i % 4 === 0) { const x = a.x + side * 1.62 * a.u, w = Math.max(1, 0.05 * a.u); for (let y = Math.round(a.y - 0.24 * a.u); y < Math.min(clip, Math.round(a.y)); y += 1) for (let k = 0; k < w; k += 1) buffer.set(Math.round(x) + k, y, post) }
+  wallPiece(buffer, ta, tb, side * 1.72, 0.09, clip, (t) => (t > 0.6 ? top : bar))
+  if (i % 4 === 0) { const x = a.x + side * 1.72 * a.u, w = Math.max(1, 0.05 * a.u); for (let y = Math.round(a.y - 0.24 * a.u); y < Math.min(clip, Math.round(a.y)); y += 1) for (let k = 0; k < w; k += 1) buffer.set(Math.round(x) + k, y, post) }
 }
 
 /** The cliff's rock along the land's side: in layers, lit at their tops, darker low down. */
