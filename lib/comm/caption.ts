@@ -100,7 +100,7 @@ export function buildCaption(input: CaptionInput): Caption {
   const format = formatSpec(input.destination, input.format)
   const credit = creditLineOf(input.snapshot, input.credit)
   const mandatory: string[] = []
-  mandatory.push(credit ? `${credit} · ${input.snapshot.providerLabel}` : input.snapshot.providerLabel)
+  mandatory.push(credit && credit !== input.snapshot.providerLabel ? `${credit} · ${input.snapshot.providerLabel}` : input.snapshot.providerLabel)
   mandatory.push(input.snapshot.sourceUrl || input.snapshot.url)
   if (spec?.linkInBio) mandatory.push(input.number ? `Lien dans la bio · n° ${input.number}` : 'Lien dans la bio')
   const head = [cleanTitle(input.title), input.phrase.trim()].filter(Boolean).join('\n')

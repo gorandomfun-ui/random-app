@@ -135,7 +135,7 @@ export function seedTemplates(): Template[] {
       { type: 'band', position: 'bottom', height: bandBottom, color: 'palette.bg' },
       { type: 'media', fit: 'contain', top: bandTop, height: 1 - bandTop - bandBottom },
       { type: 'logo', variant: 'horizontal', color: 'auto', x: 0.06, y: 0.035, width: 0.3 },
-      { type: 'text', font: 'Tomorrow', size: 56, weight: 700, color: 'palette.cream', x: 0.06, y: bandTop * 0.52, maxWidth: 0.88, lines: 2, align: 'left', uppercase: true },
+      { type: 'text', font: 'Tomorrow', size: 56, weight: 700, color: 'palette.cream', x: 0.06, y: bandTop * 0.62, maxWidth: 0.88, lines: 2, align: 'left', uppercase: true },
       ...bottomLines(family, 'framed'),
       { type: 'glitch', intensity: 0 },
     ],

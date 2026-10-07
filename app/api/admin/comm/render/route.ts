@@ -44,7 +44,8 @@ export async function GET(req: Request) {
     const out = await renderSlidePng({
       template, palette: paletteOf(Number(params.get('palette') ?? '0')), logo,
       text: (params.get('text') ?? '').slice(0, 600),
-      credit: item ? creditLineOf(item.snapshot, creditTyped) : creditTyped,
+      // A credit that only repeats the provider says nothing the source line does not: left out on the slide.
+      credit: item ? (creditLineOf(item.snapshot, creditTyped) === item.snapshot.providerLabel ? '' : creditLineOf(item.snapshot, creditTyped)) : creditTyped,
       source: item ? sourceLineOf(item.snapshot) : '',
       media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key,
     })

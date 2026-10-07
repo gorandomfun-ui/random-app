@@ -67,7 +67,9 @@ export async function createDraft(db: Db, input: { destination: string; format: 
   if (!items.length) return { ok: false, reason: 'items' }
   const slides: PostSlide[] = items.slice(0, spec.slides.max).map((item) => {
     const media = item.media.find((m) => (spec.media === 'video' ? m.contentType.startsWith('video/') : spec.media === 'image' ? m.contentType.startsWith('image/') : true)) ?? item.media[0] ?? null
-    return { itemId: item._id, mediaId: media?._id ?? null, templateKey: defaultTemplate(spec.family, spec.media === 'video'), text: '', palette: Math.floor(Math.random() * 6), logoVariant: 'white' as const }
+    // A quote, a fact, a joke or a site has its words: they are the slide's text from the start.
+    const text = !media && item.snapshot.text ? item.snapshot.text.slice(0, 600) : ''
+    return { itemId: item._id, mediaId: media?._id ?? null, templateKey: defaultTemplate(spec.family, spec.media === 'video'), text, palette: Math.floor(Math.random() * 6), logoVariant: 'white' as const }
   })
   const first = items[0]
   const hashtags = suggestHashtags(first.subjects).slice(0, Math.min(5, spec.hashtags))

@@ -58,7 +58,12 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
     const key = `${layer.type}-${index}`
     switch (layer.type) {
       case 'media': {
-        if (input.mode !== 'full' || !input.media) break
+        if (input.mode !== 'full') break
+        if (!input.media) {
+          // No picture: the frame shows the deep tone, so the slide still reads as one piece.
+          children.push(<div key={key} style={{ ...abs(0, mediaTop, width, mediaHeight), background: palette.deep }} />)
+          break
+        }
         children.push(
           <div key={key} style={{ ...abs(0, mediaTop, width, mediaHeight), overflow: 'hidden', alignItems: 'center', justifyContent: 'center', opacity: layer.opacity ?? 1 }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- Satori draws plain pictures */}
@@ -105,7 +110,9 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
       case 'text': {
         if (!input.text.trim()) break
         const maxWidthPx = Math.round(layer.maxWidth * width)
-        const fitted = fitText(input.text, { font: layer.font, size: Math.round(layer.size * scale), maxWidthPx, lines: layer.lines, uppercase: layer.uppercase })
+        // Without a picture the words are the slide: they may take the frame's lines too.
+        const lines = !input.media && input.mode === 'full' ? Math.max(layer.lines, Math.min(12, layer.lines + Math.floor(mediaHeight / (layer.size * scale * 1.1)))) : layer.lines
+        const fitted = fitText(input.text, { font: layer.font, size: Math.round(layer.size * scale), maxWidthPx, lines, uppercase: layer.uppercase })
         truncated = truncated || fitted.truncated; textSize = fitted.size
         children.push(
           <div key={key} style={{ ...abs(Math.round(layer.x * width), Math.round(layer.y * height), maxWidthPx), flexDirection: 'column', alignItems: layer.align === 'center' ? 'center' : layer.align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.weight, fontSize: fitted.size, lineHeight: 1.1, color: color(layer.color) }}>

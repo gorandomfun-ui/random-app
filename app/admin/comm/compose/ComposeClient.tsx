@@ -45,9 +45,10 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const saveTimer = useRef<number | null>(null)
   const dirty = useRef<Partial<PostDoc>>({})
 
-  // The draft and its items, the templates, the phrases.
+  // The draft and its items, the templates, the phrases. A draft just born moves the journey to step 4.
   useEffect(() => {
     if (!postId) return
+    setStep((current) => (current < 4 ? 4 : current))
     void fetch(`/api/admin/comm/posts/${postId}`, { cache: 'no-store' }).then((r) => r.json()).then((body) => {
       if (!body.post) { setError('Ce brouillon est introuvable.'); return }
       setPost(body.post); setItems(body.items ?? []); setDestination(body.post.destination); setFormat(body.post.format)

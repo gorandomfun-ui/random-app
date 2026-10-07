@@ -43,6 +43,8 @@ test('la légende : titre et phrase, puis crédit, lien source, lien dans la bio
   assert.ok(!caption.text.includes('gorandom.fun')); assert.equal(caption.limit, 2200); assert.equal(caption.overLimit, false)
   const home = buildCaption({ destination: 'instagram', format: 'post', title: '', phrase: '', snapshot: youtube, number: null, hashtags: [], homeUrl: 'https://gorandom.fun/' })
   assert.ok(home.text.includes('Découvert sur Random · gorandom.fun')); assert.ok(home.text.includes('Lien dans la bio\n'))
+  const stock = buildCaption({ destination: 'instagram', format: 'post', title: '', phrase: '', snapshot: pexels, number: 2, hashtags: [] })
+  assert.equal(stock.mandatory[0], 'Pexels', 'pas « Pexels · Pexels »')
 })
 
 test('sur X, le lien est cliquable, pas de bio ; la longueur compte un lien pour 23', () => {
