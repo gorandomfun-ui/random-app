@@ -92,7 +92,8 @@ export type MediaDoc = {
 export type Destination = 'instagram' | 'tiktok' | 'x'
 export const DESTINATIONS: readonly Destination[] = ['instagram', 'tiktok', 'x']
 
-export type PostSlide = { mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white' }
+/** One slide: the item it shows (its credit, its source, its thumbnail when no media is picked), the media, the dressing. */
+export type PostSlide = { itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number }
 
 export type PostDoc = {
   _id: string
@@ -101,6 +102,12 @@ export type PostDoc = {
   format: string
   slides: PostSlide[]
   caption: string
+  /** The editor's own part of the caption (title and phrase as typed), kept apart from the lines that stay. */
+  captionHead: string
+  phrase: string
+  /** The author typed by hand when the base has none. */
+  credit: string
+  homeLink: boolean
   hashtags: string[]
   linkKey: string
   status: 'draft' | 'exported' | 'published' | 'failed'

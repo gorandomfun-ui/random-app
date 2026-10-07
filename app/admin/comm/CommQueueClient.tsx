@@ -100,6 +100,7 @@ export default function CommQueueClient() {
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)}><option value="">Tous les providers</option>{providers.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}><option value="">Tous les sujets</option>{subjects.map((s) => <option key={s} value={s}>{s}</option>)}</select>
           <button className={small} disabled={loading} onClick={() => reload()}>Actualiser</button>
+          {selected.size ? <Link href={`/admin/comm/compose?items=${[...selected].join(',')}`} className={`${small} border-white bg-white text-black`}>Composer avec la sélection ({selected.size})</Link> : null}
           {selected.size ? <button className={`${small} border-red-400 text-red-300`} disabled={Boolean(busy)} onClick={() => removeItems([...selected])}>Supprimer la sélection ({selected.size})</button> : null}
         </div>
 
@@ -148,6 +149,7 @@ export default function CommQueueClient() {
                   {item.contentType === 'video' && !desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Mode capture (téléphone)</Link> : null}
                   <button className={small} disabled={busy === item._id} onClick={() => { fileTarget.current = item._id; fileInput.current?.click() }}>Importer</button>
                   {item.snapshot.thumb ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'thumb')}>Utiliser la miniature</button> : null}
+                  <Link href={`/admin/comm/compose?items=${item._id}`} className={small}>Composer</Link>
                   <button className={`${small} border-red-400 text-red-300`} disabled={Boolean(busy)} onClick={() => removeItems([item._id])}>Supprimer</button>
                   {busy === item._id ? <span role="status" className="text-xs">En cours…</span> : null}
                 </div>

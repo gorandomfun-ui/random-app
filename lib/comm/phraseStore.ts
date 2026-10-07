@@ -12,7 +12,7 @@ export async function ensureSeedPhrases(db: Db): Promise<void> {
   if (!seeded) {
     seeded = (async () => {
       const count = await db.collection(COMM_PHRASES).countDocuments({ seed: true }, { maxTimeMS: QUERY_MS })
-      if (count === 0) await db.collection(COMM_PHRASES).insertMany(seedPhrases().map(({ _id: _ignored, ...phrase }) => ({ ...phrase, createdAt: new Date() })))
+      if (count === 0) await db.collection(COMM_PHRASES).insertMany(seedPhrases().map((phrase) => ({ family: phrase.family, lang: phrase.lang, text: phrase.text, seed: true, createdAt: new Date() })))
     })().catch(() => { seeded = null })
   }
   await seeded
@@ -42,7 +42,7 @@ export async function savePhrase(db: Db, input: unknown, id?: string): Promise<P
     const result = await db.collection(COMM_PHRASES).findOneAndUpdate({ _id: new ObjectId(id) }, { $set: { ...phrase, updatedAt: new Date() } }, { returnDocument: 'after' })
     return result ? { ...phrase, _id: id, seed: result.seed === true } : null
   }
-  const { _id: _ignored, ...doc } = phrase
+  const doc = { family: phrase.family, lang: phrase.lang, text: phrase.text }
   const inserted = await db.collection(COMM_PHRASES).insertOne({ ...doc, createdAt: new Date() })
   return { ...doc, _id: String(inserted.insertedId) }
 }
