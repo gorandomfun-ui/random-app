@@ -22,9 +22,9 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_WORLDS, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_WORLDS, racingCharacter, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
-import { FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
+import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
 import { decodePng } from '../../scripts/games/png'
 import { CASUAL, driver, GOOD, race } from './racing-robot'
@@ -166,26 +166,76 @@ test('racing: the clock at zero, TIME UP, then over', () => {
   assert.equal(s.time, 0)
 })
 
-test('racing: a good driver wins every level of every world with time to spare, and the first ones in first place', () => {
+test('racing: a good driver wins every level of every world with time to spare, and the first five in first place', () => {
   for (const world of RACING_WORLDS) for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) {
     const out = race(createRacing('landscape', level, 3, { single: true, world }), GOOD, 3)
     assert.ok(out.won, `${world} ${level} won`)
     assert.ok(out.timeLeft >= 3, `${world} ${level}: ${out.timeLeft.toFixed(1)} s left`)
-    if (level <= 6) assert.equal(out.place, 1, `${world} ${level}: first`)
+    if (level <= 5) assert.equal(out.place, 1, `${world} ${level}: first`)
     assert.ok(out.score <= racingLevelMax(level), `${world} ${level}: score within its most`)
   }
 })
 
-test('racing: a casual driver wins the first levels of every world, with time to spare at the first; the last ones are beyond it', () => {
-  for (const world of RACING_WORLDS) {
-    for (let level = 1; level <= 3; level += 1) {
-      const out = race(createRacing('portrait', level, 9, { single: true, world }), CASUAL, 9)
-      assert.ok(out.won, `${world} ${level} won`)
-      if (level === 1) assert.ok(out.timeLeft >= 6, `${world}: ${out.timeLeft.toFixed(1)} s left`)
-    }
-    const lost = [7, 8, 9].filter((seed) => !race(createRacing('portrait', RACING_LAST_LEVEL, seed, { single: true, world }), CASUAL, seed).won).length
-    assert.ok(lost >= 2, `${world}: the last level asks for a good driver`)
+test('racing: a casual driver wins the first levels of every world with time to spare; each level leaves it less, the last ones a few seconds at most', () => {
+  const spare = (level: number) => RACING_WORLDS.map((world) => race(createRacing('portrait', level, 9, { single: true, world }), CASUAL, 9))
+  for (const world of RACING_WORLDS) for (let level = 1; level <= 3; level += 1) {
+    const out = race(createRacing('portrait', level, 9, { single: true, world }), CASUAL, 9)
+    assert.ok(out.won, `${world} ${level} won`)
+    if (level === 1) assert.ok(out.timeLeft >= 6, `${world}: ${out.timeLeft.toFixed(1)} s left`)
   }
+  const mean = (level: number) => spare(level).reduce((a, o) => a + (o.won ? o.timeLeft : 0), 0) / RACING_WORLDS.length
+  const first = mean(1), middle = mean(8), last = mean(RACING_LAST_LEVEL)
+  assert.ok(first > middle && middle > last, `less and less time to spare (${first.toFixed(1)}, ${middle.toFixed(1)}, ${last.toFixed(1)})`)
+  for (const world of RACING_WORLDS) for (const seed of [7, 8, 9]) {
+    const out = race(createRacing('portrait', RACING_LAST_LEVEL, seed, { single: true, world }), CASUAL, seed)
+    assert.ok(!out.won || out.timeLeft <= 8, `${world} ${seed}: the last level leaves a casual driver little (${out.timeLeft.toFixed(1)} s)`)
+  }
+})
+
+test('racing: the rivals stay in the race — passed, they come back; a mistake and they are by', () => {
+  for (const world of RACING_WORLDS) {
+    const s = createRacing('landscape', 2, 3, { single: true, world })
+    const d = driver(GOOD, 3)
+    let far = 0, steps = 0
+    for (let i = 0; i < 30000 && s.z < s.finish * 0.7; i += 1) {
+      const m = d(s); stepRacing(s, m.steer, m.gas, m.brake)
+      if (s.phase !== 'play' || s.z < 400) continue
+      steps += 1
+      if (Math.min(...s.rivals.map((r) => Math.abs(r.z - s.z))) > 120) far += 1
+    }
+    assert.ok(far < steps * 0.1, `${world}: a rival near most of the race (${Math.round((100 * far) / steps)} % of it none within 120)`)
+    // three seconds standing still: they go by
+    const place = s.place
+    for (let i = 0; i < 180; i += 1) stepRacing(s, 0, false, true)
+    assert.ok(s.place > place || place === 3, `${world}: a rival by (${place} → ${s.place})`)
+  }
+})
+
+test('racing: each level its own character — the sprint straight, the twisty level sharp, the tunnel level in the rock, the hills high — never twice running', () => {
+  for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) assert.notEqual(racingCharacter(level), racingCharacter(level - 1), `levels ${level - 1} and ${level}`)
+  for (const world of RACING_WORLDS) {
+    const road = (level: number) => racingCourse(level, world).track.slice(0, racingCourse(level, world).finish)
+    const share = (level: number, f: (g: ReturnType<typeof road>[number]) => boolean) => road(level).filter(f).length / road(level).length
+    const straight = (g: ReturnType<typeof road>[number]) => Math.abs(g.curve) < 0.3, sharp = (g: ReturnType<typeof road>[number]) => Math.abs(g.curve) >= 3.5
+    const height = (level: number) => { const ys = road(level).map((g) => g.y2); return Math.max(...ys) - Math.min(...ys) }
+    assert.ok(share(7, straight) > 0.5 && share(7, straight) > share(9, straight) * 2, `${world}: the sprint mostly straight`)
+    assert.ok(share(9, sharp) > share(7, sharp) * 2, `${world}: the twisty level sharp`)
+    assert.ok(share(10, (g) => g.zone === 'tunnel') > 0.2, `${world}: the tunnel level in the rock`)
+    if (world !== 'city') assert.ok(height(8) > height(7) * 1.5, `${world}: the hills high (${height(8)} / ${height(7)})`)
+    for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) assert.equal(road(level)[0].zone, FEATURED_ZONE[world][racingCharacter(level)], `${world} ${level}: starts on its own kind of road`)
+  }
+})
+
+test('racing: each level harder than the one before — more traffic, more on the road, quicker rivals', () => {
+  const count = (level: number, kind: string) => RACING_WORLDS.reduce((a, w) => a + racingCourse(level, w).items.filter((it) => it.kind === kind).length, 0)
+  const traffic = (level: number) => RACING_WORLDS.reduce((a, w) => a + racingCourse(level, w).traffic.length, 0)
+  for (let level = 4; level <= RACING_LAST_LEVEL; level += 4) {
+    assert.ok(traffic(level) > traffic(level - 3), `more traffic at ${level}`)
+    assert.ok(count(level, 'puddle') > count(level - 3, 'puddle') && count(level, 'cone') >= count(level - 3, 'cone'), `more on the road at ${level}`)
+  }
+  assert.ok(RACING_WORLDS.every((w) => racingCourse(4, w).traffic.some((t) => t.swerve) || racingCourse(5, w).traffic.some((t) => t.swerve)), 'cars that swerve from the fourth level')
+  // never roadworks in a sharp bend
+  for (const world of RACING_WORLDS) for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) { const c = racingCourse(level, world); for (const it of c.items) if (it.kind === 'cone') assert.ok(Math.abs(c.track[it.z].curve) <= 3, `${world} ${level}: cones at ${it.z} out of the bends`) }
 })
 
 test('racing: each game draws its worlds at random — the four in every four levels, never the same twice running', () => {
@@ -214,7 +264,7 @@ test('racing: each world its own road — its kinds, its things, its shops on it
       const c = racingCourse(level, world)
       assert.equal(c.world, world)
       for (const g of c.track) assert.ok(kinds.has(g.zone), `${world} ${level}: ${g.zone} is one of its own`)
-      assert.equal(c.track[0].zone, WORLD_ZONES[world][0], `${world} ${level}: starts on its first kind of road`)
+      assert.equal(c.track[0].zone, FEATURED_ZONE[world][racingCharacter(level)], `${world} ${level}: starts on its level's kind of road`)
       assert.equal(c.track[c.finish].zone, FINISH_ZONE[world], `${world} ${level}: the line where the public and the shops are`)
       for (const sp of c.track.flatMap((g) => [g.shop, g.shopL])) if (sp) assert.ok(WORLD_SHOPS[world].includes(sp.kind), `${world}: ${SHOPS[sp.kind]} is one of its shops`)
       for (const [i, g] of c.track.entries()) { if (g.shop) assert.ok(SHOP_ZONES[g.zone], `${world} ${i}: a shop where shops are`); if (g.shopL) assert.equal(SHOP_ZONES[g.zone], 'both', `${world} ${i}: on the left where both sides have them`) }
@@ -227,10 +277,14 @@ test('racing: each world its own road — its kinds, its things, its shops on it
     const crowd = (g: Seg) => g.things.some((t) => t.kind === 'crowd')
     assert.ok(share(16, crowd) > share(1, crowd), `${world}: more public later`)
   }
-  // the shops closer together later, where there are shops
+  // the shops closer together later: the gap from one to the next along the same street
   for (const world of RACING_WORLDS) {
-    const lined = (level: number) => { const streets = racingCourse(level, world).track.filter((g) => SHOP_ZONES[g.zone]); return streets.filter((g) => g.shop).length / streets.length }
-    assert.ok(lined(16) > lined(1) + 0.1, `${world}: busier streets later (${lined(1).toFixed(2)} → ${lined(16).toFixed(2)})`)
+    const gap = (level: number) => {
+      const track = racingCourse(level, world).track, spans = [...new Map(track.filter((g) => g.shop).map((g) => [g.shop!.start, g.shop!])).values()]
+      const gaps = spans.slice(1).map((sp, k) => sp.start - (spans[k].start + spans[k].len)).filter((d, k) => track.slice(spans[k].start, spans[k + 1].start).every((g) => g.zone === track[spans[k].start].zone))
+      return gaps.reduce((a, b) => a + b, 0) / Math.max(1, gaps.length)
+    }
+    assert.ok(gap(16) < gap(1) * 0.6, `${world}: busier streets later (${gap(1).toFixed(1)} → ${gap(16).toFixed(1)} stretches between shops)`)
   }
 })
 

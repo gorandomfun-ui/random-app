@@ -52,6 +52,32 @@ export const WORLD_ROADS: Record<RacingWorld, { hills: number; straights: number
 }
 
 /**
+ * Each level's character, so that no two levels running drive or look the
+ * same: flowing sweepers to begin with; a sprint of long straights broken
+ * by sharp bends; hills and blind crests; twisty S bends and chicanes; a
+ * long run through the rock; hairpins; at the last level, all of it.
+ */
+export type RacingCharacter = 'flowing' | 'sprint' | 'hills' | 'twisty' | 'tunnel' | 'hairpins' | 'all'
+export const RACING_CHARACTERS: readonly RacingCharacter[] = ['flowing', 'sprint', 'hills', 'twisty', 'tunnel', 'hairpins', 'sprint', 'hills', 'twisty', 'tunnel', 'hairpins', 'hills', 'sprint', 'twisty', 'hairpins', 'all']
+/** How much more (or less) often each shape of road comes in a level of each character; a shape weighed 3 or more comes from that level on, whatever the level. */
+export const CHARACTER_SHAPES: Record<RacingCharacter, Partial<Record<'straight' | 'sweeper' | 's' | 'chicane' | 'hairpin' | 'crest' | 'bend', number>>> = {
+  flowing: { sweeper: 2.5, s: 0.5, chicane: 0, hairpin: 0, crest: 0 },
+  sprint: { straight: 3.5, sweeper: 1.3, bend: 0.5, s: 0.3, chicane: 1.2, hairpin: 0.4, crest: 0.5 },
+  hills: { crest: 4, straight: 1.4, sweeper: 1.2, bend: 0.7, s: 0.6, chicane: 0.4, hairpin: 0.4 },
+  twisty: { s: 3.5, chicane: 3, bend: 1.4, straight: 0.3, sweeper: 0.5, crest: 0.6 },
+  tunnel: {},
+  hairpins: { hairpin: 4, bend: 1.6, s: 1.2, straight: 0.4, sweeper: 0.5 },
+  all: {},
+}
+/** The kind of road each character of level shows most of, in each world: where it starts, where the road comes back to most. */
+export const FEATURED_ZONE: Record<RacingWorld, Record<RacingCharacter, RacingZone>> = {
+  coast: { flowing: 'beach', sprint: 'causeway', hills: 'beach', twisty: 'promenade', tunnel: 'cliff', hairpins: 'cliff', all: 'beach' },
+  mountain: { flowing: 'forest', sprint: 'lake', hills: 'forest', twisty: 'village', tunnel: 'gorge', hairpins: 'gorge', all: 'forest' },
+  desert: { flowing: 'dunes', sprint: 'dunes', hills: 'mesa', twisty: 'canyon', tunnel: 'mesa', hairpins: 'canyon', all: 'dunes' },
+  city: { flowing: 'avenue', sprint: 'bridge', hills: 'park', twisty: 'downtown', tunnel: 'downtown', hairpins: 'downtown', all: 'avenue' },
+}
+
+/**
  * The shops of each world, by their place in `SHOPS` (`racing-town.ts`):
  * the coast's eleven; the mountains' chalets, hotel, ski shop, cable car
  * station, cheese shop, chapel; the desert's adobe, saloon, trading post and

@@ -3,21 +3,24 @@
  * player and how much time it leaves: a good one, who looks ahead, lifts
  * before a sharp bend, goes round the cars, the cones and the puddles and
  * picks up the stopwatches and the turbo on the way; a casual one, who sees
- * things a fifth of a second late and not as far, aims roughly, lifts late
- * and misses a puddle now and then.
+ * things a fifth of a second late and not as far, aims roughly, brakes late
+ * for a bend and then takes it slower than it could, and misses a puddle now
+ * and then.
  */
 
 import { bendLimit, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
 
 export type Driver = { see: number; aim: number; look: number; margin: number; ahead: number; misses: number }
 export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70, misses: 0 }
-export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 1.04, ahead: 40, misses: 0.35 }
+export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 0.95, ahead: 40, misses: 0.35 }
 
 type Seen = { x: number; z: number; speed: number }
 
 /** One driver's moves for a race: give it the state each step, it answers steer, gas, brake. */
 export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0 | 1; gas: boolean; brake: boolean } {
   const past: Seen[] = []
+  // what it has steered since what it sees: a driver knows what it has been pressing
+  const moves: number[] = []
   let lane = 0, wobble = 0, n = seed
   const rnd = () => { n = (n * 1103515245 + 12345) % 2147483648; return n / 2147483648 }
   const missed = new Set<number>()
@@ -52,7 +55,9 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     let worst = 0
     for (let k = 0; k < d.look; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, seen.z + k).curve))
     const limit = bendLimit(worst, s.level) * RACING_TOP * d.margin
-    const gas = seen.speed < limit
+    // and no gas into a slower car right ahead, overlapping: anyone lifts and goes round it
+    const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 0 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.58 && c.speed < seen.speed)
+    const gas = seen.speed < limit && !stuck
     const brake = seen.speed > limit + 0.06
     const curve = segmentOf(s.track, seen.z).curve, share = seen.speed / RACING_TOP
     const drift = -(1 / 30) * share * share * curve * 0.3 * (s.level >= 13 ? 1.12 : 1)
@@ -60,8 +65,10 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     let aimAt = lane + wobble
     if (both) aimAt = (Math.max(...left.map((c) => c.x)) + Math.min(...right.map((c) => c.x))) / 2
     else if (beside && Math.abs(aimAt - beside.x) < 0.85) aimAt = beside.x + Math.sign(lane - beside.x) * 0.85
-    const e = aimAt - (seen.x + drift)
+    const e = aimAt - (seen.x + moves.reduce((a, b) => a + b, 0) + drift)
     const steer: -1 | 0 | 1 = e > 0.03 ? 1 : e < -0.03 ? -1 : 0
+    moves.push(steer * (1 / 30) * Math.min(1, share * 1.25))
+    if (moves.length > d.see) moves.shift()
     return { steer, gas, brake }
   }
 }

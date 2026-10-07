@@ -415,12 +415,12 @@ export function farGround(d: Uint8ClampedArray, W: number, from: number, to: num
   const pal = palette(tier)[FOG_STEPS - 1]
   const sea = pal[colourIndex.sea0], sea1 = pal[colourIndex.sea1], land = pal[colourIndex.land], dark = pal[colourIndex.tunnel1], glint = pal[colourIndex.glint]
   const wet = world === 'coast' ? (x: number) => zone === 'causeway' || x < split : zone === 'lake' ? (x: number) => x < split : zone === 'bridge' ? () => true : () => false
-  // the other worlds' land, less lost in the haze, in two colours: the forest's dark, the desert's sand, the city's dark streets
-  const near = palette(tier)[Math.round(FOG_STEPS * 0.62)]
-  const [l0, l1] = world === 'coast' ? [land, land] : world === 'mountain' ? [near[colourIndex.bush0], near[colourIndex.bush1]] : world === 'desert' ? [near[colourIndex.sand0], near[colourIndex.grass1]] : [near[colourIndex.land], near[colourIndex.wall]]
+  // the other worlds' land beyond a crest, less lost in the haze, in two colours: the mountains' meadows, the desert's sand, the city's dark streets
+  const near = palette(tier)[Math.round(FOG_STEPS * 0.5)]
+  const [l0, l1] = world === 'coast' ? [land, land] : world === 'mountain' ? [near[colourIndex.grass0], near[colourIndex.grass1]] : world === 'desert' ? [near[colourIndex.sand0], near[colourIndex.sand1]] : [near[colourIndex.land], near[colourIndex.wall]]
   for (let y = from; y < to; y += 1) for (let x = 0; x < W; x += 1) {
     const g = grain(x, y + ((frame >> 3) & 63) * 7)
-    const rgb = zone === 'tunnel' ? dark : !wet(x) ? (grain(x >> 1, y >> 1) > 0.5 ? l0 : l1) : g > 0.992 ? glint : y % 3 === 0 ? sea1 : sea
+    const rgb = zone === 'tunnel' ? dark : !wet(x) ? (grain(x >> 3, y >> 1) > 0.5 ? l0 : l1) : g > 0.992 ? glint : y % 3 === 0 ? sea1 : sea
     const t = (y * W + x) * 4
     d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255
   }
