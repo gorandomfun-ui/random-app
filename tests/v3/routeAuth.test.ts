@@ -34,7 +34,7 @@ before(async () => {
   void mongoModule.default.catch(() => undefined)
 })
 
-type Method = 'GET' | 'POST' | 'DELETE'
+type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE'
 
 type ProtectedRoute = {
   path: string
@@ -76,6 +76,19 @@ const PROTECTED_ROUTES: ProtectedRoute[] = [
   { path: '/api/admin/run/quotes', module: '@/app/api/admin/run/quotes/route', methods: ['POST'] },
   { path: '/api/admin/run/videos', module: '@/app/api/admin/run/videos/route', methods: ['POST'] },
   { path: '/api/admin/run/web', module: '@/app/api/admin/run/web/route', methods: ['POST'] },
+  // Comm v1: the curator's cookie, not the admin key; every attempt below is still refused.
+  { path: '/api/admin/comm/queue', module: '@/app/api/admin/comm/queue/route', methods: ['GET', 'POST'] },
+  { path: '/api/admin/comm/queue/x', module: '@/app/api/admin/comm/queue/[id]/route', methods: ['GET', 'DELETE'] },
+  { path: '/api/admin/comm/media', module: '@/app/api/admin/comm/media/route', methods: ['POST'] },
+  { path: '/api/admin/comm/media/x', module: '@/app/api/admin/comm/media/[id]/route', methods: ['DELETE'] },
+  { path: '/api/admin/comm/media/import', module: '@/app/api/admin/comm/media/import/route', methods: ['POST'] },
+  { path: '/api/admin/comm/upload', module: '@/app/api/admin/comm/upload/route', methods: ['POST'] },
+  { path: '/api/admin/comm/render', module: '@/app/api/admin/comm/render/route', methods: ['GET'] },
+  { path: '/api/admin/comm/templates', module: '@/app/api/admin/comm/templates/route', methods: ['GET', 'POST', 'DELETE'] },
+  { path: '/api/admin/comm/phrases', module: '@/app/api/admin/comm/phrases/route', methods: ['GET', 'POST', 'DELETE'] },
+  { path: '/api/admin/comm/posts', module: '@/app/api/admin/comm/posts/route', methods: ['GET', 'POST'] },
+  { path: '/api/admin/comm/posts/x', module: '@/app/api/admin/comm/posts/[id]/route', methods: ['GET', 'PATCH', 'DELETE'] },
+  { path: '/api/admin/comm/posts/x/exported', module: '@/app/api/admin/comm/posts/[id]/exported/route', methods: ['POST'] },
 ]
 
 /** Each of these must be refused; the label names the bypass being tried. */
@@ -95,7 +108,7 @@ function readFileSyncUtf8(file: string): string {
 function buildRequest(route: ProtectedRoute, method: Method, attempt: { query?: string; headers?: Record<string, string> }) {
   const url = `https://example.test${route.path}${attempt.query ? `?${attempt.query}` : ''}`
   const init: RequestInit = { method, headers: attempt.headers ?? {} }
-  if (method === 'POST' || method === 'DELETE') {
+  if (method === 'POST' || method === 'PATCH' || method === 'DELETE') {
     init.body = JSON.stringify({})
     init.headers = { ...(attempt.headers ?? {}), 'content-type': 'application/json' }
   }

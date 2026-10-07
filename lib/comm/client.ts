@@ -1,0 +1,136 @@
+/**
+ * The browser side of the queue: the calls to the tool's routes, the direct
+ * upload to Blob (a short token from the server, the file never crossing a
+ * function), and what the browser can measure of a file before sending it.
+ */
+
+import type { MediaDoc, MediaKind, QueueItem } from './model'
+
+export type QueueItemWithMedia = QueueItem & { media: MediaDoc[] }
+export type QueueStatus = { count: number; max: number; blob: boolean }
+
+const headers = { 'Content-Type': 'application/json' }
+
+async function read<T>(response: Response): Promise<T & { status: number }> {
+  const body = (await response.json().catch(() => ({}))) as T
+  return { ...body, status: response.status }
+}
+
+export function commStatusOf(itemId: string) {
+  return fetch(`/api/admin/comm/queue?itemId=${encodeURIComponent(itemId)}`, { cache: 'no-store' })
+    .then((r) => read<QueueStatus & { inQueue: boolean; item: QueueItemWithMedia | null; error?: string }>(r))
+}
+
+export function commAdd(itemId: string) {
+  return fetch('/api/admin/comm/queue', { method: 'POST', headers, body: JSON.stringify({ itemId }) })
+    .then((r) => read<QueueStatus & { item?: QueueItemWithMedia; error?: string }>(r))
+}
+
+export function commRemove(queueItemId: string) {
+  return fetch(`/api/admin/comm/queue/${encodeURIComponent(queueItemId)}`, { method: 'DELETE', headers })
+    .then((r) => read<QueueStatus & { removed: boolean }>(r))
+}
+
+export function commList() {
+  return fetch('/api/admin/comm/queue', { cache: 'no-store' }).then((r) => read<QueueStatus & { items: QueueItemWithMedia[]; error?: string }>(r))
+}
+
+export function commItem(queueItemId: string) {
+  return fetch(`/api/admin/comm/queue/${encodeURIComponent(queueItemId)}`, { cache: 'no-store' }).then((r) => read<{ item?: QueueItemWithMedia }>(r))
+}
+
+export function commRemoveMedia(mediaId: string) {
+  return fetch(`/api/admin/comm/media/${encodeURIComponent(mediaId)}`, { method: 'DELETE', headers }).then((r) => read<{ removed: boolean }>(r))
+}
+
+export function commImportSource(queueItemId: string, what: 'image' | 'gif' | 'thumb') {
+  return fetch('/api/admin/comm/media/import', { method: 'POST', headers, body: JSON.stringify({ queueItemId, what }) })
+    .then((r) => read<{ media?: MediaDoc; error?: string; message?: string }>(r))
+}
+
+export type MediaProbe = { width: number | null; height: number | null; durationSec: number | null; animated: boolean }
+
+/** Width, height and length of a file, read by the browser itself; nulls when it cannot. */
+export function probeMedia(file: Blob): Promise<MediaProbe> {
+  const type = file.type.toLowerCase()
+  const url = URL.createObjectURL(file)
+  const done = (probe: MediaProbe) => { URL.revokeObjectURL(url); return probe }
+  if (type.startsWith('video/')) {
+    return new Promise((resolve) => {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.onloadedmetadata = () => resolve(done({ width: video.videoWidth || null, height: video.videoHeight || null, durationSec: Number.isFinite(video.duration) ? Math.round(video.duration * 100) / 100 : null, animated: true }))
+      video.onerror = () => resolve(done({ width: null, height: null, durationSec: null, animated: true }))
+      video.src = url
+    })
+  }
+  if (type.startsWith('image/')) {
+    return new Promise((resolve) => {
+      const image = new Image()
+      image.onload = () => resolve(done({ width: image.naturalWidth || null, height: image.naturalHeight || null, durationSec: null, animated: type === 'image/gif' }))
+      image.onerror = () => resolve(done({ width: null, height: null, durationSec: null, animated: type === 'image/gif' }))
+      image.src = url
+    })
+  }
+  return Promise.resolve(done({ width: null, height: null, durationSec: null, animated: false }))
+}
+
+const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' }
+
+function randomName(contentType: string): string {
+  const bytes = new Uint8Array(12); crypto.getRandomValues(bytes)
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  const ext = EXT[contentType] ?? ''
+  return ext ? `${hex}.${ext}` : hex
+}
+
+export type UploadResult = { media?: MediaDoc; error?: string; message?: string }
+
+/** Sends a file straight to the item's Blob folder, then records it with what the browser measured. */
+export async function uploadMedia(queueItemId: string, file: Blob, kind: MediaKind, onProgress?: (fraction: number) => void): Promise<UploadResult> {
+  const contentType = (file.type || 'application/octet-stream').split(';')[0].trim().toLowerCase()
+  if (!EXT[contentType]) return { error: 'type', message: `Format non pris en charge : ${contentType || 'inconnu'}.` }
+  const probe = await probeMedia(file)
+  let blobUrl = ''
+  try {
+    const { upload } = await import('@vercel/blob/client')
+    const result = await upload(`comm/${queueItemId}/${randomName(contentType)}`, file, {
+      access: 'public', handleUploadUrl: '/api/admin/comm/upload', clientPayload: queueItemId, contentType,
+      multipart: file.size > 50 * 1024 * 1024,
+      onUploadProgress: onProgress ? ({ percentage }) => onProgress(percentage / 100) : undefined,
+    })
+    blobUrl = result.url
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { error: 'upload', message: /no-blob|Blob n’est pas configuré|BLOB_READ_WRITE_TOKEN/i.test(message) ? 'Le stockage Blob n’est pas configuré sur le projet.' : `Envoi impossible : ${message}` }
+  }
+  const registered = await fetch('/api/admin/comm/media', { method: 'POST', headers, body: JSON.stringify({ queueItemId, kind, blobUrl, contentType, bytes: file.size, ...probe }) })
+    .then((r) => read<{ media?: MediaDoc; error?: string }>(r))
+  if (!registered.media) return { error: registered.error ?? 'register', message: 'Le fichier est envoyé mais n’a pas pu être enregistré.' }
+  return { media: registered.media }
+}
+
+/** A picture of an element as it shows, for a site, a quiz or a text. */
+export async function screenshotOf(element: HTMLElement): Promise<Blob | null> {
+  const { toBlob } = await import('html-to-image')
+  const ratio = Math.min(2, window.devicePixelRatio || 1)
+  try { return await toBlob(element, { pixelRatio: ratio, cacheBust: true, backgroundColor: '#191916' }) } catch { return null }
+}
+
+/** True when the browser can film its own tab (Chrome and Edge on a computer). */
+export function canCaptureTab(): boolean {
+  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices) && !/iPhone|iPad|Android/i.test(navigator.userAgent)
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace('.0', '')} Mo`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} Ko`
+  return `${bytes} o`
+}
+
+export const LICENSE_COLORS: Record<string, string> = { permissif: '#0FC55D', partage: '#E5972B', prudence: '#D90845' }
+export const LICENSE_WORDS: Record<string, string> = {
+  permissif: 'Licence permissive : usage libre, crédit apprécié.',
+  partage: 'Partage avec attribution : la source doit rester visible.',
+  prudence: 'Prudence : œuvre d’un créateur, tous droits réservés par défaut. Extrait court, crédit et lien en évidence.',
+}
