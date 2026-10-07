@@ -332,3 +332,17 @@ export function quantizeAreas(p: Pic, areas: ReadonlyArray<{ mask: Uint8Array | 
   })
   return { palette, index: tidy(index, p.w, p.h, 6, 2) }
 }
+
+/** A cut-out traced at `width` pixels wide: each cell the average of the figure's pixels in it, clear where less than `share` of it is the figure (less for thin things, a palm's fronds). */
+export function cutOut(pic: Pic, mask: Uint8Array, box: readonly [number, number, number, number], width: number, share = 0.5): { pic: Pic; alpha: Uint8Array } {
+  const [x0, y0, x1, y1] = box
+  const f = (x1 - x0) / width, height = Math.round((y1 - y0) / f)
+  const out = blank(width, height), alpha = new Uint8Array(width * height)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const sx0 = Math.floor(x0 + x * f), sx1 = Math.max(sx0 + 1, Math.floor(x0 + (x + 1) * f)), sy0 = Math.floor(y0 + y * f), sy1 = Math.max(sy0 + 1, Math.floor(y0 + (y + 1) * f))
+    let r = 0, g = 0, b = 0, n = 0, all = 0
+    for (let yy = sy0; yy < sy1; yy += 1) for (let xx = sx0; xx < sx1; xx += 1) { all += 1; if (!mask[yy * pic.w + xx]) continue; const c = get(pic, xx, yy); r += c[0]; g += c[1]; b += c[2]; n += 1 }
+    if (n >= all * share && n > 0) { put(out, x, y, [r / n, g / n, b / n]); alpha[y * width + x] = 1 }
+  }
+  return { pic: out, alpha }
+}

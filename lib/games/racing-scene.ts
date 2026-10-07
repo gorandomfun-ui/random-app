@@ -1,21 +1,28 @@
 /**
  * What RANDOM RACING's road is drawn with: the colours taken from the
- * owner's picture, as the evening goes (sunset, dusk, night, the storm) and
- * fading into the haze with the distance; the far view for each hour; the
- * ground along each kind of road; the rails, the cliff's rock and the
- * tunnel's; what stands by the road and lies on it; the cars, three ways
- * each, with their shadows. `racing-play.ts` puts them in place.
+ * owner's pictures — the coast's, the mountains', the desert's, the city's —
+ * as the evening goes (sunset, dusk, night, the storm) and fading into the
+ * haze with the distance; the far view for each world and hour; the ground
+ * along each kind of road; the rails, the rock and the tunnel's walls; what
+ * stands by the road and lies on it; the cars, three ways each, with their
+ * shadows. `racing-play.ts` puts them in place, after saying which world it
+ * draws (`sceneWorld`).
  */
 
 import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { TRAFFIC_LIGHTS, TRAFFIC_SQUASH, TRAFFIC_WIDTH, trafficPicture, type TrafficModel } from './racing-traffic'
-import type { RacingZone } from './racing-rules'
+import type { RacingWorld, RacingZone } from './racing-worlds'
 import { drawText7, mix, PixelBuffer, rgbOf, text7Width } from './pixels'
 import { CREAM, INK } from './ui'
 
 export type RGB = readonly [number, number, number]
-/** The hour on the coast: 0 the sun above the sea, 1 the dusk, 2 the night, 3 the storm; in between, on its way from one to the next. */
+/** The hour: 0 the picture's light (the sun above the sea, the mountains' and the desert's day, the city's evening), 1 the dusk, 2 the night, 3 the storm; in between, on its way from one to the next. */
 export type Tier = number
+
+/** The world being drawn: its colours, its far view, its hours. Said by the screen before it draws. */
+let world: RacingWorld = 'coast'
+export function sceneWorld(w: RacingWorld): void { world = w }
+export const currentWorld = (): RacingWorld => world
 
 // ---------------------------------------------------------------- the colours
 
@@ -33,40 +40,101 @@ const BASE = {
   rock0: '#5a2e5e', rock1: '#4a2652', rockLit: '#7a3e6e', rockDark: '#32193c',
   stone0: '#a08a96', stone1: '#8e7886',
   walk: '#3a3448', tunnel0: '#2c2638', tunnel1: '#241f30', ceiling: '#1c1828', light: '#fff0c0',
-  land: '#3a4a52',
+  land: '#3a4a52', dash: '#d5bca5',
 } as const
 export type Colour = keyof typeof BASE
 const NAMES = Object.keys(BASE) as Colour[]
+/**
+ * The other worlds' colours, by the same names: what the sand, the sea, the
+ * rock and the rest are there. The mountains: a grey road, white and red
+ * kerbs, meadows and the dark of the forest, the lake's turquoise, pebbles,
+ * cobbles, grey granite, a metal rail. The desert: a dusty road with its
+ * yellow dashes, sand, dry scrub, packed earth, adobe, red sandstone, a
+ * wooden fence. The city at night: dark asphalt, concrete kerbs, the
+ * pavements, the park's lawns, the bay, concrete.
+ */
+const WORLD_BASE: Record<Exclude<RacingWorld, 'coast'>, Partial<Record<Colour, string>>> = {
+  mountain: {
+    tar0: '#4a4c5e', tar1: '#525468', line: '#f2eee2', dash: '#f2eee2', kerb0: '#eeeae2', kerb1: '#d23a32',
+    sand0: '#b8b0a2', sand1: '#a8a092', wet: '#7a8a92', foam: '#f4f8fa',
+    sea0: '#38b4c8', sea1: '#2a98b8', sea2: '#5ad0da', deep: '#1a6a8a', glint: '#eaffff',
+    grass0: '#62a84c', grass1: '#56984a', bush0: '#1f5a3a', bush1: '#28683f',
+    pave0: '#bcb0a2', pave1: '#aca092', wall: '#7a6a5c',
+    rock0: '#7e7e8c', rock1: '#6c6c7c', rockLit: '#a2a2b0', rockDark: '#3c3c4c',
+    stone0: '#c4c8d0', stone1: '#9a9eaa', land: '#3e6e48',
+  },
+  desert: {
+    tar0: '#463c46', tar1: '#4e434e', line: '#f2e6c8', dash: '#f4c430', kerb0: '#e6c898', kerb1: '#d8b886',
+    sand0: '#f0b474', sand1: '#e6a666', wet: '#d8985e', foam: '#fff0d0',
+    grass0: '#d4a462', grass1: '#c89858', bush0: '#9a8a4a', bush1: '#a89654',
+    pave0: '#d8b090', pave1: '#cca282', wall: '#b07650',
+    rock0: '#c45a3a', rock1: '#ac4c34', rockLit: '#e27e4c', rockDark: '#6e2c2c',
+    stone0: '#8e6c4c', stone1: '#6c4c34', land: '#dc9c62',
+  },
+  city: {
+    tar0: '#26263c', tar1: '#2c2c44', line: '#e6dec8', dash: '#e6dec8', kerb0: '#8c8ca4', kerb1: '#7a7a94',
+    sand0: '#4c4664', sand1: '#46405e', wet: '#3a3456', foam: '#c8c8e0',
+    sea0: '#1c3c6e', sea1: '#16325e', sea2: '#26528c', deep: '#0e2244', glint: '#ffd890',
+    grass0: '#2c5e4c', grass1: '#265442', bush0: '#163c32', bush1: '#1e4636',
+    pave0: '#5e5874', pave1: '#56506c', wall: '#3c3654',
+    rock0: '#4c4c64', rock1: '#42425c', rockLit: '#6c6c88', rockDark: '#26263c',
+    stone0: '#9c9cb4', stone1: '#7c7c98', land: '#1c1c34',
+  },
+}
+const baseOf = (w: RacingWorld, n: Colour): RGB => hex((w === 'coast' ? undefined : WORLD_BASE[w][n]) ?? BASE[n])
 
-/** How each of the four hours turns a colour: the dusk deeper and violet, the night dark blue, the storm dark grey-blue. */
-function stage(c: RGB, k: number): RGB {
+/**
+ * How each of the four hours turns a colour. The coast: the dusk deeper and
+ * violet, the night dark blue, the storm dark grey-blue. The mountains and
+ * the desert: the evening golden, the night dark blue, the snow's storm pale
+ * and grey, the sand's dark and brown. The city, already lit up in the
+ * evening: the night a little deeper at each hour, the rain grey-blue.
+ */
+function stage(c: RGB, k: number, w: RacingWorld): RGB {
   if (k === 0) return c
+  const grey = (c[0] + c[1] + c[2]) / 3
+  if (w === 'city') return k === 1 ? lerp(times(c, 0.9), hex('#1a1040'), 0.08) : k === 2 ? lerp(times(c, 0.78), hex('#0c0c2a'), 0.14) : lerp(times(lerp(c, [grey, grey, grey], 0.3), 0.66), hex('#1c2030'), 0.25)
+  if (w === 'mountain' || w === 'desert') {
+    if (k === 1) return lerp(times(c, 0.84), hex(w === 'desert' ? '#c24a3a' : '#c8603a'), 0.16)
+    if (k === 2) return lerp(times(c, 0.52), hex('#141436'), 0.28)
+    return w === 'mountain' ? lerp(times(lerp(c, [grey, grey, grey], 0.5), 0.62), hex('#8a92a8'), 0.3) : lerp(times(c, 0.55), hex('#5a3424'), 0.32)
+  }
   if (k === 1) return lerp(times(c, 0.8), hex('#4a2a6a'), 0.18)
   if (k === 2) return lerp(times(c, 0.56), hex('#141436'), 0.26)
-  const grey = (c[0] + c[1] + c[2]) / 3
   return lerp(times(lerp(c, [grey, grey, grey], 0.35), 0.5), hex('#1c2030'), 0.3)
 }
 /** Between two hours, a colour on its way from one to the next. */
 const between = <T>(h: number, at: (k: number) => T, blend: (a: T, b: T, t: number) => T): T => { const k = Math.max(0, Math.min(3, Math.floor(h))), t = Math.max(0, Math.min(1, h - k)); return t < 1e-6 || k >= 3 ? at(k) : blend(at(k), at(k + 1), t) }
-const hour = (c: RGB, h: Tier): RGB => between(h, (k) => stage(c, k), lerp)
-/** The haze far off, for each hour: the sunset's pink, the dusk's violet, the night's blue, the storm's grey; and how much of it at the far end of the road. */
-const HAZES: RGB[] = [hex('#e8768a'), hex('#5e3a7c'), hex('#1a1a42'), hex('#2a2e3e')]
-const HAZE_MAXES = [0.62, 0.7, 0.82, 0.88]
-export const hazeAt = (h: Tier): RGB => between(h, (k) => HAZES[k], lerp)
-const hazeMaxAt = (h: Tier): number => between(h, (k) => HAZE_MAXES[k], (a, b, t) => a + (b - a) * t)
+const hour = (c: RGB, h: Tier, w: RacingWorld): RGB => between(h, (k) => stage(c, k, w), lerp)
+/**
+ * The haze far off, for each world and hour, and how much of it at the far
+ * end of the road: the coast's sunset pink, dusk violet, night blue, storm
+ * grey; the mountains' pale blue air, golden evening, night, the snow's
+ * white; the desert's dust, red evening, night, the sand blowing; the
+ * city's violet glow, its deeper nights, the rain.
+ */
+const HAZES: Record<RacingWorld, RGB[]> = {
+  coast: [hex('#e8768a'), hex('#5e3a7c'), hex('#1a1a42'), hex('#2a2e3e')],
+  mountain: [hex('#b4d4ee'), hex('#e0946a'), hex('#1a2244'), hex('#c4c8d4')],
+  desert: [hex('#f2d4a4'), hex('#e0705a'), hex('#1a1a3c'), hex('#b8804e')],
+  city: [hex('#3a2a6a'), hex('#2a1e58'), hex('#16163c'), hex('#2a2e3e')],
+}
+const HAZE_MAXES: Record<RacingWorld, number[]> = { coast: [0.62, 0.7, 0.82, 0.88], mountain: [0.5, 0.62, 0.8, 0.9], desert: [0.55, 0.66, 0.8, 0.9], city: [0.68, 0.74, 0.82, 0.88] }
+export const hazeAt = (h: Tier): RGB => between(h, (k) => HAZES[world][k], lerp)
+const hazeMaxAt = (h: Tier): number => between(h, (k) => HAZE_MAXES[world][k], (a, b, t) => a + (b - a) * t)
 /** The hour in eighths: what the colours are worked out for. */
 const eighth = (h: Tier) => Math.round(h * 8) / 8
 
 /** Sixteen steps of haze, for each hour, each colour: worked out once. */
 export const FOG_STEPS = 16
-const palettes = new Map<number, RGB[][]>()
+const palettes = new Map<string, RGB[][]>()
 export function palette(h: Tier): RGB[][] {
-  const q = eighth(h)
-  let p = palettes.get(q)
+  const q = eighth(h), key = `${world}|${q}`
+  let p = palettes.get(key)
   if (!p) {
-    const haze = hazeAt(q), far = hazeMaxAt(q)
-    p = Array.from({ length: FOG_STEPS }, (_, f) => NAMES.map((n) => lerp(hour(hex(BASE[n]), q), haze, (f / (FOG_STEPS - 1)) * far).map(Math.round) as unknown as RGB))
-    palettes.set(q, p)
+    const haze = hazeAt(q), far = hazeMaxAt(q), w = world
+    p = Array.from({ length: FOG_STEPS }, (_, f) => NAMES.map((n) => lerp(hour(baseOf(w, n), q, w), haze, (f / (FOG_STEPS - 1)) * far).map(Math.round) as unknown as RGB))
+    palettes.set(key, p)
   }
   return p
 }
@@ -145,6 +213,52 @@ function baseView(k: number): PixelBuffer | null {
   return out
 }
 
+/**
+ * Another world's far view (its picture's) at one of the four hours: as it
+ * is; in the evening golden (the mountains, the desert) or a little deeper
+ * (the city); at night dark blue with stars and a moon, the city's windows
+ * and signs still lit; in the storm pale with snow, brown with sand, grey
+ * with rain.
+ */
+const worldBases = new Map<string, PixelBuffer>()
+function worldView(w: Exclude<RacingWorld, 'coast'>, k: number): PixelBuffer | null {
+  const key = `${w}|${k}`, known = worldBases.get(key)
+  if (known) return known
+  const back = racingArt(`far-${w}`)
+  if (!back) return null
+  const out = new PixelBuffer(back.width, back.height)
+  out.data.set(back.data)
+  const W = out.width, H = out.height, d = out.data
+  const lit = (o: number) => 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2]
+  const turn: Record<string, [number, string, number]> = {
+    'mountain|1': [0.86, '#e07a4a', 0.22], 'mountain|2': [0.46, '#0a0c2c', 0.45], 'mountain|3': [0.62, '#a4aabc', 0.5],
+    'desert|1': [0.86, '#d8583a', 0.24], 'desert|2': [0.46, '#0a0a2a', 0.45], 'desert|3': [0.56, '#8c5a38', 0.52],
+    'city|1': [0.9, '#0c0a2a', 0.12], 'city|2': [0.78, '#0a0a24', 0.2], 'city|3': [0.6, '#1a1e2c', 0.4],
+  }
+  const how = turn[key]
+  if (how) {
+    const [keep, toward, by] = how, sky = hex(toward)
+    for (let i = 0; i < d.length; i += 4) {
+      // the city's lights stay lit
+      if (w === 'city' && lit(i) > 170) continue
+      const c = lerp(times([d[i], d[i + 1], d[i + 2]], keep), sky, by)
+      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]
+    }
+  }
+  if (k === 2 && w !== 'city') {
+    // stars over the peaks and the mesas, a moon
+    for (let n = 0; n < 60; n += 1) { const x = Math.floor(grain(n, 5) * W), y = 3 + Math.floor(grain(n, 9) * H * 0.38); const o = (y * W + x) * 4; const b = 150 + grain(n, 13) * 100; d[o] = b; d[o + 1] = b; d[o + 2] = b + 10 }
+    const mx = W - 84, my = 26, r = 11
+    for (let y = -r - 5; y <= r + 5; y += 1) for (let x = -r - 5; x <= r + 5; x += 1) {
+      const q = Math.hypot(x, y), o = ((my + y) * W + mx + x) * 4
+      if (q <= r) { const c = lerp(hex('#f4f0d8'), hex('#c8c4b0'), Math.max(0, (x + y) / (2 * r))); d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2] }
+      else if (q <= r + 5) { const c = lerp([d[o], d[o + 1], d[o + 2]], hex('#8a8ab0'), 0.35 * (1 - (q - r) / 5)); d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2] }
+    }
+  }
+  worldBases.set(key, out)
+  return out
+}
+
 const skies = new Map<string, PixelBuffer>()
 /**
  * The far view at an hour, on its way from one of the four to the next, and
@@ -154,6 +268,19 @@ const skies = new Map<string, PixelBuffer>()
  */
 export function skyAt(h: Tier, sinking: number): PixelBuffer | null {
   const q = eighth(h), k = Math.min(3, Math.floor(q)), t = q - k
+  if (world !== 'coast') {
+    const w = world, low = worldView(w, k)
+    if (!low || t <= 0 || k >= 3) return low
+    const key = `${w}|${q}`, known = skies.get(key)
+    if (known) return known
+    const high = worldView(w, k + 1)
+    if (!high) return low
+    const out = new PixelBuffer(low.width, low.height)
+    for (let i = 0; i < out.data.length; i += 4) { for (let c = 0; c < 3; c += 1) out.data[i + c] = low.data[i + c] + (high.data[i + c] - low.data[i + c]) * t; out.data[i + 3] = 255 }
+    if (skies.size > 40) skies.clear()
+    skies.set(key, out)
+    return out
+  }
   const low = baseView(k)
   if (!low || !sunOf) return low
   const drop = Math.round(Math.max(0, Math.min(1, sinking)) * (sunOf.height + 2))
@@ -189,11 +316,16 @@ const BEACH = 1.0, WET = 0.16, FOAM = 0.07, VERGE = 0.55, PAVE = 0.85, LEDGE = 0
 
 /**
  * The ground on one row: the road with its lines and its two lanes' dashes,
- * the kerbs; on the sea's side the beach (sand, the wet sand, the foam) or
- * the promenade's paving and its sea wall, the cliff's edge, the causeway's
- * stone, then the sea with its waves coming in; on the land's side the grass
- * and the bushes, the paving and the gardens, the rock; in the tunnel its
- * walkways. Laid down in spans of one colour, outward in; only the sea and
+ * the kerbs; on the coast, on the sea's side the beach (sand, the wet sand,
+ * the foam) or the promenade's paving and its sea wall, the cliff's edge,
+ * the causeway's stone, then the sea with its waves coming in; on the land's
+ * side the grass and the bushes, the paving and the gardens, the rock. In
+ * the mountains the verges and the forest's floor, the village's cobbles,
+ * the lake's shore and water, the gorge's edge over the river and its rock;
+ * in the desert the sand, the town's packed earth and its low adobe walls,
+ * the canyon's and the mesa's rock; in the city the pavements, the park's
+ * paths and lawns, the bridge's edge over the bay. In the tunnel its
+ * walkways. Laid down in spans of one colour, outward in; only the water and
  * the foam pixel by pixel.
  */
 export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: GroundRow, tier: Tier, frame: number): void {
@@ -212,7 +344,38 @@ export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: Groun
   }
   const kerb = h * 1.12, L = c - kerb, R = c + kerb
   if (zone === 'tunnel') span(0, W, at('walk'))
-  else {
+  else if (zone !== 'beach' && zone !== 'promenade' && zone !== 'cliff' && zone !== 'causeway') {
+    // the other worlds: each side from the kerb outward, by bands (half widths) — the last one reaching the screen's edge
+    const lay = (side: -1 | 1, bands: Array<[number, RGB | 'water']>) => {
+      let from = side < 0 ? L : R
+      bands.forEach(([w, rgb], k) => {
+        const to = k === bands.length - 1 ? (side < 0 ? 0 : W) : from + side * w * h
+        const a = Math.min(from, to), b = Math.max(from, to)
+        if (rgb === 'water') sea(a, b); else span(a, b, rgb)
+        from = to
+      })
+    }
+    const g = at(band ? 'grass0' : 'grass1'), floor = at(band ? 'bush0' : 'bush1'), pave = at(band ? 'pave0' : 'pave1'), sand = at(band ? 'sand0' : 'sand1'), rock = at(band ? 'rock0' : 'rock1'), stone = at(band ? 'stone0' : 'stone1')
+    const sideOf = (side: -1 | 1): Array<[number, RGB | 'water']> => {
+      switch (zone) {
+        case 'forest': return [[0.45, g], [0, floor]]
+        case 'village': return [[0.85, pave], [0.1, at('wall')], [0, at(band ? 'grass1' : 'bush1')]]
+        case 'lake': return side < 0 ? [[0.3, sand], [0.06, at('wet')], [0, 'water']] : [[0.45, g], [0, floor]]
+        case 'gorge': return side < 0 ? [[LEDGE, rock], [0.08, at('rockDark')], [0, at('deep')]] : [[0, rock]]
+        case 'dunes': return [[0.5, at(band ? 'grass0' : 'grass1')], [0, sand]]
+        case 'town': return [[0.85, pave], [0.1, at('wall')], [0, sand]]
+        case 'canyon': return [[0.3, sand], [0, rock]]
+        case 'mesa': return side < 0 ? [[0.5, at(band ? 'grass0' : 'grass1')], [0, sand]] : [[0.3, sand], [0, rock]]
+        case 'avenue': return [[0.85, pave], [0.1, at('wall')], [0, at(band ? 'grass1' : 'bush1')]]
+        case 'downtown': return [[0, pave]]
+        case 'park': return [[0.3, pave], [0, g]]
+        default: return [[LEDGE, stone], [0, 'water']]
+      }
+    }
+    lay(-1, sideOf(-1)); lay(1, sideOf(1))
+    const k = at(band ? 'kerb0' : 'kerb1')
+    span(L, c - h, k); span(c + h, R, k)
+  } else {
     // the sea's side, from the screen's edge in to the kerb
     if (zone === 'beach') {
       const sand = L - BEACH * h, wet = sand - WET * h, foam = wet - FOAM * h
@@ -244,16 +407,20 @@ export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: Groun
   span(c - h, c + h, at(band ? 'tar0' : 'tar1'))
   const edge = Math.max(1, h * 0.028), line = at('line')
   span(c - h + edge * 1.7, c - h + edge * 2.7, line); span(c + h - edge * 2.7, c + h - edge * 1.7, line)
-  if (band) { const lane = Math.max(1, h * 0.022); span(c - h / 3 - lane / 2, c - h / 3 + lane / 2, line); span(c + h / 3 - lane / 2, c + h / 3 + lane / 2, line) }
+  if (band) { const lane = Math.max(1, h * 0.022), dash = at('dash'); span(c - h / 3 - lane / 2, c - h / 3 + lane / 2, dash); span(c + h / 3 - lane / 2, c + h / 3 + lane / 2, dash) }
 }
 
-/** Under the horizon where no road is drawn: the sea, and the land on the land's side of the road's far end (`split`); in the tunnel, its dark. */
+/** Under the horizon where no road is drawn: the water (the coast's sea on its side of the road's far end, `split`; the lake on its side; the bay all round the bridge), the land elsewhere; in the tunnel, its dark. */
 export function farGround(d: Uint8ClampedArray, W: number, from: number, to: number, split: number, zone: RacingZone, tier: Tier, frame: number): void {
   const pal = palette(tier)[FOG_STEPS - 1]
   const sea = pal[colourIndex.sea0], sea1 = pal[colourIndex.sea1], land = pal[colourIndex.land], dark = pal[colourIndex.tunnel1], glint = pal[colourIndex.glint]
+  const wet = world === 'coast' ? (x: number) => zone === 'causeway' || x < split : zone === 'lake' ? (x: number) => x < split : zone === 'bridge' ? () => true : () => false
+  // the other worlds' land, less lost in the haze, in two colours: the forest's dark, the desert's sand, the city's dark streets
+  const near = palette(tier)[Math.round(FOG_STEPS * 0.62)]
+  const [l0, l1] = world === 'coast' ? [land, land] : world === 'mountain' ? [near[colourIndex.bush0], near[colourIndex.bush1]] : world === 'desert' ? [near[colourIndex.sand0], near[colourIndex.grass1]] : [near[colourIndex.land], near[colourIndex.wall]]
   for (let y = from; y < to; y += 1) for (let x = 0; x < W; x += 1) {
     const g = grain(x, y + ((frame >> 3) & 63) * 7)
-    const rgb = zone === 'tunnel' ? dark : zone !== 'causeway' && x >= split ? land : g > 0.992 ? glint : y % 3 === 0 ? sea1 : sea
+    const rgb = zone === 'tunnel' ? dark : !wet(x) ? (grain(x >> 1, y >> 1) > 0.5 ? l0 : l1) : g > 0.992 ? glint : y % 3 === 0 ? sea1 : sea
     const t = (y * W + x) * 4
     d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255
   }
@@ -317,9 +484,9 @@ export function facadePiece(buffer: PixelBuffer, a: End, b: End, off: number, hi
   }
 }
 
-/** A shop's side facing the road ahead, at its near end `a`: from its front (`off`) back `depth` half widths, `high` tall; its walls in shade, a window or two a floor (lit after dark), the roof's edge on top. */
+/** A shop's side facing the road ahead, at its near end `a`: from its front (`off`, negative on the left) back `depth` half widths away from the road, `high` tall; its walls in shade, a window or two a floor (lit after dark), the roof's edge on top. */
 export function shopSide(buffer: PixelBuffer, a: End, off: number, depth: number, high: number, clip: number, wall: string, floors: number, lit: boolean, tint: { rgb: RGB; by: number }): void {
-  const x0 = a.x + off * a.u, x1 = a.x + (off + depth) * a.u, top = a.y - high * a.u
+  const xa = a.x + off * a.u, xb = a.x + (off + Math.sign(off) * depth) * a.u, x0 = Math.min(xa, xb), x1 = Math.max(xa, xb), top = a.y - high * a.u
   const paint = (c: string) => { const [r, g, b] = rgbOf(c); return `#${[r, g, b].map((v, i) => Math.round(v + (tint.rgb[i] - v) * tint.by).toString(16).padStart(2, '0')).join('')}` }
   const side = paint(mix(wall, '#2a1a3a', 0.32)), edge = paint(mix(wall, '#ffffff', 0.2)), glass = paint(lit ? '#ffd690' : '#2a3a62'), foot = paint(mix(wall, '#2a1a3a', 0.5))
   const W = x1 - x0, H = a.y - top
@@ -368,37 +535,49 @@ export function tunnelMouth(buffer: PixelBuffer, a: End, clip: number, tier: Tie
 
 // ---------------------------------------------------------------- what stands by the road and lies on it
 
+/** A row of column numbers, kept for the next picture drawn. */
+let columnRow = new Int32Array(512)
+const columns = (n: number) => { if (columnRow.length < n) columnRow = new Int32Array(n * 2); return columnRow }
+
 /** A traced picture's pixels onto the buffer at `x`, `y`, leaving out its clear ones; drawn `w` × `h` (each pixel taken from the nearest), its own size if not given; no row at or under `clip`; mirrored if asked; through the haze and the hour (`tint`, `by`) if asked; its top pushed aside by `sway` pixels, as a palm in the wind, its foot not. */
 export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: number, w = pic.width, h = pic.height, clip = buffer.height, flip = false, tint?: RGB, by = 0, sway = 0): void {
   const sx = pic.width / w, sy = pic.height / h, d = buffer.data, s = pic.data
   const x0 = Math.round(x), y0 = Math.round(y), W = Math.round(w), H = Math.round(h)
   const bottom = Math.min(buffer.height, clip)
   const k = tint && by > 0.01 ? by : 0
+  if (W <= 0 || H <= 0) return
+  // each column's pixel in the picture, worked out once
+  const cols = columns(W)
+  for (let xx = 0; xx < W; xx += 1) cols[xx] = Math.min(pic.width - 1, Math.floor(((flip ? W - 1 - xx : xx) + 0.5) * sx)) * 4
+  const tr = k ? tint![0] : 0, tg = k ? tint![1] : 0, tb = k ? tint![2] : 0, BW = buffer.width
   for (let yy = 0; yy < H; yy += 1) {
     const ty = y0 + yy
     if (ty < 0) continue
     if (ty >= bottom) break
-    const py = Math.min(pic.height - 1, Math.floor((yy + 0.5) * sy))
+    const row = Math.min(pic.height - 1, Math.floor((yy + 0.5) * sy)) * pic.width * 4
     const lean = sway ? Math.round(sway * (1 - yy / H) ** 2) : 0
-    for (let xx = 0; xx < W; xx += 1) {
-      const tx = x0 + xx + lean
-      if (tx < 0 || tx >= buffer.width) continue
-      const px = Math.min(pic.width - 1, Math.floor(((flip ? W - 1 - xx : xx) + 0.5) * sx))
-      const o = (py * pic.width + px) * 4
+    const from = Math.max(0, -(x0 + lean)), to = Math.min(W, BW - x0 - lean)
+    for (let xx = from, t = (ty * BW + x0 + lean + from) * 4; xx < to; xx += 1, t += 4) {
+      const o = row + cols[xx]
       if (s[o + 3] < 128) continue
-      const t = (ty * buffer.width + tx) * 4
-      if (k) { d[t] = s[o] + (tint![0] - s[o]) * k; d[t + 1] = s[o + 1] + (tint![1] - s[o + 1]) * k; d[t + 2] = s[o + 2] + (tint![2] - s[o + 2]) * k }
+      if (k) { d[t] = s[o] + (tr - s[o]) * k; d[t + 1] = s[o + 1] + (tg - s[o + 1]) * k; d[t + 2] = s[o + 2] + (tb - s[o + 2]) * k }
       else { d[t] = s[o]; d[t + 1] = s[o + 1]; d[t + 2] = s[o + 2] }
       d[t + 3] = 255
     }
   }
 }
 
-/** How a traced picture is darkened for an hour, before the haze: none at sunset. */
-const HOUR_TINTS: Array<{ rgb: RGB; by: number }> = [{ rgb: hex('#2a1640'), by: 0 }, { rgb: hex('#2a1640'), by: 0.3 }, { rgb: hex('#0a0a24'), by: 0.55 }, { rgb: hex('#141824'), by: 0.6 }]
+/** How a traced picture is darkened for an hour in each world, before the haze: none in the picture's light, the city's a little as its night is. */
+const HOUR_TINTS: Record<RacingWorld, Array<{ rgb: RGB; by: number }>> = {
+  coast: [{ rgb: hex('#2a1640'), by: 0 }, { rgb: hex('#2a1640'), by: 0.3 }, { rgb: hex('#0a0a24'), by: 0.55 }, { rgb: hex('#141824'), by: 0.6 }],
+  mountain: [{ rgb: hex('#6a3020'), by: 0 }, { rgb: hex('#6a3020'), by: 0.2 }, { rgb: hex('#0a0a24'), by: 0.55 }, { rgb: hex('#5a6278'), by: 0.45 }],
+  desert: [{ rgb: hex('#6a2420'), by: 0 }, { rgb: hex('#6a2420'), by: 0.22 }, { rgb: hex('#0a0a24'), by: 0.55 }, { rgb: hex('#4a2a1c'), by: 0.5 }],
+  city: [{ rgb: hex('#140e34'), by: 0.22 }, { rgb: hex('#120c30'), by: 0.3 }, { rgb: hex('#0a0a24'), by: 0.4 }, { rgb: hex('#141824'), by: 0.55 }],
+}
 /** The tint for a picture at an hour and a haze step: the hour's darkness and the haze together. */
 export function tintFor(h: Tier, fog: number): { rgb: RGB; by: number } {
-  const hourT = between(h, (k) => HOUR_TINTS[k], (a, b, t) => ({ rgb: lerp(a.rgb, b.rgb, t), by: a.by + (b.by - a.by) * t }))
+  const tints = HOUR_TINTS[world]
+  const hourT = between(h, (k) => tints[k], (a, b, t) => ({ rgb: lerp(a.rgb, b.rgb, t), by: a.by + (b.by - a.by) * t }))
   const f = (fog / (FOG_STEPS - 1)) * hazeMaxAt(h)
   const by = 1 - (1 - hourT.by) * (1 - f)
   if (by < 0.01) return { rgb: hourT.rgb, by: 0 }
@@ -460,6 +639,37 @@ export function lamp(buffer: PixelBuffer, x: number, y: number, u: number, towar
   const r = Math.max(1, 0.1 * u)
   disc(buffer, hx, y - high + r * 0.6, r, lit ? '#ffe2a0' : mix('#ff6a3a', '#3a2040', fog / FOG_STEPS), clip)
   if (lit) glow(buffer, hx, y - high + r, r * 4.5, '#ffb070', 0.55, clip)
+}
+
+/** The city's lamp: a dark post, a crossbar, its white globe; lit after dark, a warm glow round it. */
+export function globeLamp(buffer: PixelBuffer, x: number, y: number, u: number, clip: number, tier: Tier, fog: number, lit: boolean): void {
+  const high = 1.9 * u, post = Math.max(1, 0.05 * u)
+  if (high < 4) return
+  const pole = shade('rockDark', tier, fog), r = Math.max(1, 0.12 * u)
+  fill(buffer, x - post / 2, y - high, post, high, pole, clip)
+  fill(buffer, x - post * 1.5, y - Math.max(2, 0.12 * u), post * 3, Math.max(1, 0.12 * u), pole, clip)
+  disc(buffer, x, y - high - r * 0.6, r, lit ? '#fff2c8' : mix('#e8e4dc', hexOf(hazeAt(tier)), fog / FOG_STEPS), clip)
+  if (lit) glow(buffer, x, y - high - r * 0.6, r * 5, '#ffc070', 0.5, clip)
+}
+
+/** Traffic lights over the road at a stretch (`a` its near end): a post on the right, its arm over the lanes, two lights hanging from it, red, amber and green in turn. */
+export function trafficLights(buffer: PixelBuffer, a: End, clip: number, tier: Tier, fog: number, frame: number, look: number): void {
+  const u = a.u, high = 2.5 * u, post = Math.max(1, 0.06 * u)
+  if (high < 6) return
+  const pole = shade('rockDark', tier, fog), x = a.x + 1.95 * u, top = a.y - high
+  fill(buffer, x - post / 2, top, post, high, pole, clip)
+  fill(buffer, a.x - 0.4 * u, top, x - (a.x - 0.4 * u), Math.max(1, post * 0.8), pole, clip)
+  const on = ((frame >> 7) + look) % 3, colours = ['#ff3a2a', '#ffb020', '#3aff6a']
+  for (const at of [0.05, 1.05]) {
+    const bx = a.x + at * u, bw = Math.max(2, 0.18 * u), bh = bw * 2.6, by = top + post
+    fill(buffer, bx - bw / 2 - 1, by - 1, bw + 2, bh + 2, '#0c0c14', clip)
+    fill(buffer, bx - bw / 2, by, bw, bh, '#1c1c28', clip)
+    for (let k = 0; k < 3; k += 1) {
+      const cy = by + bh * (0.2 + k * 0.3), r = Math.max(0.6, bw * 0.3)
+      disc(buffer, bx, cy, r, k === on ? colours[k] : '#3a3040', clip)
+      if (k === on && bw > 3) glow(buffer, bx, cy, r * 4, colours[k], 0.45, clip)
+    }
+  }
 }
 
 /** A light's pool on the road under a lamp, after dark. */

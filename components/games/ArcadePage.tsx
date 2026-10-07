@@ -26,6 +26,7 @@ import type { GameControl, GameResult, PlayState } from '@/components/games/Game
 import ScoresPanel from '@/components/games/ScoresPanel'
 import { shareGame, titleCard } from '@/components/games/share'
 import { fetchTicket, sendScore, type Ticket } from '@/components/games/world'
+import type { RacingWorld } from '@/lib/games/racing-worlds'
 import { lastName, type GameName } from '@/lib/games/scores'
 import { THEMES } from '@/lib/theme'
 import { useScore } from '@/providers/ScoreProvider'
@@ -38,8 +39,8 @@ const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
 const NAMES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS', racing: 'RANDOM RACING' }
 const pad = (n: number) => String(n).padStart(5, '0')
 
-/** A game's page; `startLevel` lets a test page begin a whole game further on. */
-export default function ArcadePage({ game, themeIndex, startLevel }: { game: GameName; themeIndex: number; startLevel?: number }) {
+/** A game's page; `startLevel` lets a test page begin a whole game further on, `startWorld` keep RACING in one world. */
+export default function ArcadePage({ game, themeIndex, startLevel, startWorld }: { game: GameName; themeIndex: number; startLevel?: number; startWorld?: RacingWorld }) {
   const theme = THEMES[themeIndex] ?? THEMES[0]
   const [best, setBest] = useState(0)
   const [last, setLast] = useState<GameResult | null>(null)
@@ -155,7 +156,7 @@ export default function ArcadePage({ game, themeIndex, startLevel }: { game: Gam
 
       <section className="relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
         <div className="min-h-0 flex-1" style={{ background: '#000' }}>
-          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onStart={onStart} onNamed={onNamed} onLevelCleared={onLevelCleared} onPlayState={setPlayState} control={control} startLevel={startLevel} />
+          <GamePlayer game={game} accent={theme.text} onBest={setBest} onResult={onResult} onStart={onStart} onNamed={onNamed} onLevelCleared={onLevelCleared} onPlayState={setPlayState} control={control} startLevel={startLevel} startWorld={startWorld} />
         </div>
       </section>
 

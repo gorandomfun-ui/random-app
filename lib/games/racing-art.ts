@@ -10,8 +10,8 @@ import { PixelBuffer } from './pixels'
 
 export type RacingCarKind = 'rosso' | 'burger' | 'giallo'
 export const CAR_SIZES = [130, 104, 60] as const
-/** The titles, the far view, the palm, and each car straight and turning (right; left is the same mirrored) at three sizes. */
-export type RacingArtName = 'titleWide' | 'titleTall' | 'playBack' | 'palm' | `car-${RacingCarKind}-${(typeof CAR_SIZES)[number]}` | `car-${RacingCarKind}-${(typeof CAR_SIZES)[number]}-turn`
+/** The titles, the far views (the coast's, the other worlds'), the palm, the pine, the rock, the saguaro, and each car straight and turning (right; left is the same mirrored) at three sizes. */
+export type RacingArtName = 'titleWide' | 'titleTall' | 'playBack' | 'palm' | 'far-mountain' | 'far-desert' | 'far-city' | 'pine' | 'rock' | 'saguaro' | `car-${RacingCarKind}-${(typeof CAR_SIZES)[number]}` | `car-${RacingCarKind}-${(typeof CAR_SIZES)[number]}-turn`
 
 const fileOf = (name: RacingArtName): string =>
   name === 'titleWide' ? 'title-wide' : name === 'titleTall' ? 'title-tall' : name === 'playBack' ? 'play-back' : name
