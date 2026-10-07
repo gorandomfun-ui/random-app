@@ -108,7 +108,7 @@ const PixelWords = dynamic(() => import('@/components/games/PixelWords'), { ssr:
 const ArcadeBench = dynamic(() => import('@/components/games/ArcadeBench'), { ssr: false })
 /** The curator's Comm panel: loaded on the first press of its button, never on the public Random. */
 const CommPanel = dynamic(() => import('@/components/comm/CommPanel'), { ssr: false })
-const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
+const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS', racing: 'RANDOM RACING' }
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',

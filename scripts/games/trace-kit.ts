@@ -132,6 +132,25 @@ export function grow(mask: Uint8Array, w: number, h: number, times: number): Uin
   return cur
 }
 
+/** A mask's biggest piece in one hold (corners touching count), the stray bits round it dropped. */
+export function biggest(mask: Uint8Array, w: number, h: number): Uint8Array {
+  const piece = new Int32Array(w * h).fill(-1)
+  let best = -1, bestSize = 0
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || piece[start] >= 0) continue
+    const stack = [start]
+    piece[start] = start
+    let size = 0
+    while (stack.length) {
+      const i = stack.pop()!, x = i % w, y = (i - x) / w
+      size += 1
+      for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) { const X = x + dx, Y = y + dy, j = Y * w + X; if (X >= 0 && Y >= 0 && X < w && Y < h && mask[j] && piece[j] < 0) { piece[j] = start; stack.push(j) } }
+    }
+    if (size > bestSize) { best = start; bestSize = size }
+  }
+  return mask.map((v, i) => (v && piece[i] === best ? 1 : 0))
+}
+
 export function inPolygon(x: number, y: number, poly: ReadonlyArray<readonly [number, number]>): boolean {
   let inside = false
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
@@ -179,4 +198,78 @@ export function pickIn(p: Pic, rects: ReadonlyArray<readonly [number, number, nu
   const out = new Uint8Array(p.w * p.h)
   for (const [x0, y0, x1, y1] of rects) for (let y = Math.max(0, y0); y < Math.min(p.h, y1); y += 1) for (let x = Math.max(0, x0); x < Math.min(p.w, x1); x += 1) if (pick(get(p, x, y))) out[y * p.w + x] = 1
   return out
+}
+
+/**
+ * Painted flat: each pixel takes the mean colour of the calmest of the four
+ * squares of side `r` + 1 around it (the Kuwahara filter) — the grain of a
+ * texture goes, the edges between things stay.
+ */
+export function flatten(p: Pic, r: number): Pic {
+  const out = blank(p.w, p.h)
+  const L = new Float32Array(p.w * p.h)
+  for (let i = 0; i < L.length; i += 1) L[i] = lum(p.rgb[i * 3], p.rgb[i * 3 + 1], p.rgb[i * 3 + 2])
+  for (let y = 0; y < p.h; y += 1) for (let x = 0; x < p.w; x += 1) {
+    let best: RGB = get(p, x, y), bv = Infinity
+    for (const [qx, qy] of [[-r, -r], [0, -r], [-r, 0], [0, 0]]) {
+      let s = 0, s2 = 0, n = 0, R = 0, G = 0, B = 0
+      for (let dy = 0; dy <= r; dy += 1) for (let dx = 0; dx <= r; dx += 1) {
+        const X = Math.max(0, Math.min(p.w - 1, x + qx + dx)), Y = Math.max(0, Math.min(p.h - 1, y + qy + dy)), i = Y * p.w + X
+        s += L[i]; s2 += L[i] * L[i]; n += 1; R += p.rgb[i * 3]; G += p.rgb[i * 3 + 1]; B += p.rgb[i * 3 + 2]
+      }
+      const v = s2 / n - (s / n) ** 2
+      if (v < bv) { bv = v; best = [R / n, G / n, B / n] }
+    }
+    put(out, x, y, best)
+  }
+  return out
+}
+
+/** Lone pixels taken in: one whose neighbours mostly (`most` of the eight) share another colour takes that colour; a few rounds. */
+export function tidy(index: Uint8Array, w: number, h: number, most = 6, rounds = 2): Uint8Array {
+  let cur = index
+  for (let k = 0; k < rounds; k += 1) {
+    const next = new Uint8Array(cur)
+    for (let y = 1; y < h - 1; y += 1) for (let x = 1; x < w - 1; x += 1) {
+      const counts = new Map<number, number>()
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { const c = cur[(y + dy) * w + x + dx]; counts.set(c, (counts.get(c) ?? 0) + 1) }
+      let top = -1, tn = 0
+      for (const [c, n] of counts) if (n > tn) { top = c; tn = n }
+      if (tn >= most && top !== cur[y * w + x]) next[y * w + x] = top
+    }
+    cur = next
+  }
+  return cur
+}
+
+/**
+ * A picture's colours reduced area by area: each area (a mask; the last,
+ * null, is all the rest) gets its own palette of `k` colours, so a car keeps
+ * its reds whatever the sky takes; lone pixels taken in after. One palette
+ * and one index for the whole, as an indexed picture wants.
+ */
+export function quantizeAreas(p: Pic, areas: ReadonlyArray<{ mask: Uint8Array | null; k: number }>): { palette: RGB[]; index: Uint8Array } {
+  const n = p.w * p.h
+  const owner = new Int16Array(n).fill(-1)
+  areas.forEach((a, j) => { if (a.mask) for (let i = 0; i < n; i += 1) if (a.mask[i] && owner[i] < 0) owner[i] = j })
+  const rest = areas.findIndex((a) => !a.mask)
+  for (let i = 0; i < n; i += 1) if (owner[i] < 0) owner[i] = rest
+  const palette: RGB[] = []
+  const index = new Uint8Array(n)
+  areas.forEach((a, j) => {
+    const mine = new Uint8Array(n)
+    let any = false
+    for (let i = 0; i < n; i += 1) if (owner[i] === j) { mine[i] = 1; any = true }
+    if (!any) return
+    const pal = paletteOf(p, a.k, mine), base = palette.length
+    palette.push(...pal)
+    for (let i = 0; i < n; i += 1) {
+      if (!mine[i]) continue
+      const c = [p.rgb[i * 3], p.rgb[i * 3 + 1], p.rgb[i * 3 + 2]]
+      let best = 0, bd = Infinity
+      pal.forEach((q, k) => { const d = (c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2 + (c[2] - q[2]) ** 2; if (d < bd) { bd = d; best = k } })
+      index[i] = base + best
+    }
+  })
+  return { palette, index: tidy(index, p.w, p.h, 6, 2) }
 }

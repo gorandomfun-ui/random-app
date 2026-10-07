@@ -14,12 +14,17 @@
  * RANDOM_VEC_PACE_MS). The backfill keeps its place in `dig_meta_v4`
  * ({_id: cursor}): the oldest id it has reached, so a run that stops picks
  * up where it left.
+ *
+ * Each video printed is measured against the likes as it goes: near enough
+ * to one, it gets the pool's mark with its fingerprint (lib/v3/ai/pool.ts),
+ * so the day's entries join the taste card's pool the night they come in.
  */
 
 import { MongoClient, ObjectId, type Document } from 'mongodb'
 
 import { disposeModel, FIELD, fingerprints, textOf, toBinary } from '@/lib/v3/ai/fingerprint'
 import { loadLikePool } from '@/lib/v3/cool/likePool'
+import { modelLikes, poolMark, type ModelLike } from '@/lib/v3/ai/pool'
 
 const MAX_MINUTES = Number(process.env.RANDOM_VEC_MINUTES ?? 12)
 const MAX_VIDEOS = Number(process.env.RANDOM_VEC_MAX ?? 10_000)
@@ -48,14 +53,17 @@ async function main(): Promise<void> {
   const items = db.collection('items')
   const meta = db.collection(META)
   const startedAt = Date.now()
-  let written = 0, read = 0
+  let written = 0, read = 0, marked = 0
+  let likes: ModelLike[] = []
 
   const write = async (rows: Document[]): Promise<void> => {
     if (!rows.length) return
     const prints = await fingerprints(rows.map((row) => textOf(row)))
     read += rows.length
+    const marks = prints.map((bits, index) => poolMark(bits, String(rows[index].title ?? ''), likes))
+    marked += marks.filter(Boolean).length
     if (dry) return
-    const result = await items.bulkWrite(rows.map((row, index) => ({ updateOne: { filter: { _id: row._id }, update: { $set: { [FIELD]: toBinary(prints[index]) } } } })), { ordered: false })
+    const result = await items.bulkWrite(rows.map((row, index) => ({ updateOne: { filter: { _id: row._id }, update: { $set: { [FIELD]: toBinary(prints[index]), ...(marks[index] ? { 'v3.lookalike': { ...marks[index], found: 'vec' } } : {}) } } } })), { ordered: false })
     written += result.modifiedCount
     if (PACE_MS > 0) await wait(PACE_MS)
   }
@@ -66,6 +74,8 @@ async function main(): Promise<void> {
   const likesWithout = likeIds.length ? await items.find({ _id: { $in: likeIds }, type: 'video', [FIELD]: { $exists: false } } as Document, { projection: { title: 1, description: 1 } }).toArray() : []
   for (let start = 0; start < likesWithout.length; start += BATCH) await write(likesWithout.slice(start, start + BATCH))
   const likesDone = read
+  // From here on, every print is measured against the likes that serve as models (the likes themselves were printed without, above).
+  likes = await modelLikes(db).catch(() => [] as ModelLike[])
 
   // Today's and yesterday's entries first, by id, those without a fingerprint: what came in after the evening's run (the late dig, the drift
   // at 23:10) is caught by the night's, instead of falling behind the old stock's place for good (5 October: some thousands were).
@@ -94,7 +104,7 @@ async function main(): Promise<void> {
     if (!dry) await meta.updateOne({ _id: CURSOR } as Document, { $set: { before, at: new Date() } }, { upsert: true })
   }
 
-  console.log(JSON.stringify({ vec: 'ok', dry, likes: likesDone, today: todayDone - likesDone, read, written, before: String(before), durationMs: Date.now() - startedAt, rss: Math.round(process.memoryUsage().rss / 1e6) }))
+  console.log(JSON.stringify({ vec: 'ok', dry, likes: likesDone, today: todayDone - likesDone, read, written, marked, before: String(before), durationMs: Date.now() - startedAt, rss: Math.round(process.memoryUsage().rss / 1e6) }))
   await client.close()
   await disposeModel()
   setTimeout(() => process.exit(0), 200).unref()

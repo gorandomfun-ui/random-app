@@ -37,9 +37,9 @@ async function list(url: string, request: typeof fetch, signal?: AbortSignal): P
   return (payload.list ?? []).flatMap((row) => { const video = toDigVideo(row); return video ? [video] : [] })
 }
 
-/** One search, a hundred results at most; the visited sort is refused for some queries, relevance then stands in. `before`: only uploads before that moment. */
-export async function searchDailymotion(query: string, sort: DailymotionSort, request: typeof fetch = fetch, signal?: AbortSignal, limit = 100, before?: Date): Promise<DigVideo[]> {
-  const params = new URLSearchParams({ search: query, sort, limit: String(Math.max(1, Math.min(100, limit))), fields: FIELDS, ...(before ? { created_before: String(Math.floor(before.getTime() / 1000)) } : {}) })
+/** One search, a hundred results at most; the visited sort is refused for some queries, relevance then stands in. `before`: only uploads before that moment. `page`: deeper in the same results, the first by default. */
+export async function searchDailymotion(query: string, sort: DailymotionSort, request: typeof fetch = fetch, signal?: AbortSignal, limit = 100, before?: Date, page = 1): Promise<DigVideo[]> {
+  const params = new URLSearchParams({ search: query, sort, limit: String(Math.max(1, Math.min(100, limit))), fields: FIELDS, ...(before ? { created_before: String(Math.floor(before.getTime() / 1000)) } : {}), ...(page > 1 ? { page: String(Math.floor(page)) } : {}) })
   let response = await request(`https://api.dailymotion.com/videos?${params}`, { signal })
   if (!response.ok && sort !== 'relevance') {
     params.set('sort', 'relevance')

@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { renderAttacksOver, renderAttacksPlay, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
-import { renderRacingPlay, renderRacingTitle } from '@/lib/games/racing'
+import { renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
 
@@ -35,8 +35,12 @@ const LABELS: Record<string, string> = {
   'attacks-jeu-13': 'Niveau 13 — la tempête, la lune rouge',
   'attacks-jeu-16': 'Niveau 16 — MEGA BURGER, ciel de sang et éclairs',
   'attacks-game-over': 'Game over',
-  'racing-titre': 'Écran d’accueil',
-  'racing-jeu': 'En jeu (maquette)',
+  'racing-titre': 'Écran d’accueil — la voiture choisie marquée',
+  'racing-jeu-1': 'Niveau 1 — virages doux',
+  'racing-jeu-9': 'Niveau 9 — virages serrés, bosses',
+  'racing-jeu-16': 'Niveau 16 — le plus dur',
+  'racing-game-over': 'Game over',
+  'racing-winner': 'Winner',
   'attacks-winner': 'Winner',
 }
 
@@ -98,12 +102,14 @@ export default function MockGallery() {
       { name: 'attacks-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
   })), [accent])
-  // RANDOM RACING, the fourth game: its title, and a moment of play as a mock
+  // RANDOM RACING, the fourth game: its title with the car chosen, moments of play, its two ends
   const racing = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
     layout,
     shots: [
       { name: 'racing-titre', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingTitle(layout, accent, 'sans', { frame, blink: frame % 2 === 0 }) },
-      { name: 'racing-jeu', width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 568, draw: (frame: number) => renderRacingPlay(layout, accent, { frame }) },
+      ...[1, 9, 16].map((level) => ({ name: `racing-jeu-${level}`, width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 568, draw: (frame: number) => renderRacingPlay(layout, accent, { frame, level }) })),
+      { name: 'racing-game-over', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingOver(layout, accent, { score: 7420, best: 9100, frame, blink: frame % 2 === 0 }) },
+      { name: 'racing-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingWinner(layout, accent, { score: 41250, best: 41250, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
   })), [accent])
   return (
@@ -118,9 +124,9 @@ export default function MockGallery() {
         ))}
       </div>
       <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing — proposition</h2>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          La route de la côte au coucher du soleil, d&apos;après ton image simplifiée : le soleil sur la mer, la ville, le diner, les trois voitures à choisir vues de derrière (la rouge, le burger sur roues, la jaune). Puis un moment de jeu (maquette, pas encore jouable) : TIME, SPEED, l&apos;étape, la place, les rivaux devant ; sur téléphone, les flèches à gauche, A (accélérer) et B (freiner) à droite. Dans la couleur choisie ci-dessus.
+          La route de la côte au coucher du soleil, d&apos;après ton image simplifiée : le titre avec la voiture choisie (la rouge, le burger sur roues, la jaune), des moments de course aux niveaux 1, 9 et 16, le game over et le winner. Le jeu se joue sur sa page de test, /admin/racing (et /admin/racing?niveau=8 pour commencer au niveau 8). Dans la couleur choisie ci-dessus.
         </p>
         {racing.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
