@@ -5674,7 +5674,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               className="p-3"
               disabled={controlsDisabled || !commEligible}
             >
-              <MonoIcon src="/icons/social.svg" color={commInQueue ? theme.text : theme.cream} size={30} />
+              <span
+                className="font-tomorrow font-black uppercase leading-none"
+                style={{ fontSize: 15, letterSpacing: '0.04em', color: commInQueue ? theme.text : theme.cream, display: 'inline-block', minWidth: 30, textAlign: 'center' }}
+              >
+                Comm
+              </span>
             </button>
           ) : null}
 
