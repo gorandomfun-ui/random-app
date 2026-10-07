@@ -151,6 +151,41 @@ export function biggest(mask: Uint8Array, w: number, h: number): Uint8Array {
   return mask.map((v, i) => (v && piece[i] === best ? 1 : 0))
 }
 
+/** A cut-out (its picture and which pixels are in) turned left to right. */
+export function mirrored(pic: Pic, alpha: Uint8Array): { pic: Pic; alpha: Uint8Array } {
+  const out = blank(pic.w, pic.h), a = new Uint8Array(alpha.length)
+  for (let y = 0; y < pic.h; y += 1) for (let x = 0; x < pic.w; x += 1) {
+    const sx = pic.w - 1 - x
+    if (alpha[y * pic.w + sx]) { put(out, x, y, get(pic, sx, y)); a[y * pic.w + x] = 1 }
+  }
+  return { pic: out, alpha: a }
+}
+
+/** A cut-out made even about `axis` (a column, may fall between two): the half on the `keep` side, and its mirror on the other. */
+export function evened(pic: Pic, alpha: Uint8Array, axis: number, keep: 'left' | 'right'): { pic: Pic; alpha: Uint8Array } {
+  const half = Math.round(keep === 'left' ? axis : pic.w - axis), w = half * 2
+  const out = blank(w, pic.h), a = new Uint8Array(w * pic.h)
+  for (let y = 0; y < pic.h; y += 1) for (let x = 0; x < w; x += 1) {
+    // the kept half, read outward from the axis
+    const d = x < half ? half - 1 - x : x - half
+    const sx = keep === 'left' ? Math.round(axis) - 1 - d : Math.round(axis) + d
+    if (sx < 0 || sx >= pic.w || !alpha[y * pic.w + sx]) continue
+    put(out, x, y, get(pic, sx, y)); a[y * w + x] = 1
+  }
+  return { pic: out, alpha: a }
+}
+
+/** A cut-out leaning: each row pushed right by up to `by` pixels at the top, none at `foot` and below. */
+export function leaning(pic: Pic, alpha: Uint8Array, by: number, foot: number): { pic: Pic; alpha: Uint8Array } {
+  const w = pic.w + Math.ceil(by)
+  const out = blank(w, pic.h), a = new Uint8Array(w * pic.h)
+  for (let y = 0; y < pic.h; y += 1) {
+    const shift = y >= foot ? 0 : Math.round(by * (1 - y / foot))
+    for (let x = 0; x < pic.w; x += 1) if (alpha[y * pic.w + x]) { put(out, x + shift, y, get(pic, x, y)); a[y * w + x + shift] = 1 }
+  }
+  return { pic: out, alpha: a }
+}
+
 export function inPolygon(x: number, y: number, poly: ReadonlyArray<readonly [number, number]>): boolean {
   let inside = false
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {

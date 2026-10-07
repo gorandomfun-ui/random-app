@@ -24,7 +24,7 @@ export const GAME_SOUNDS: Record<GameName, { tune: TuneName; sounds: readonly So
   eater: { tune: 'diner', sounds: ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'level', 'over', 'winner'] },
   catcher: { tune: 'store', sounds: ['item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'level', 'over', 'winner'] },
   attacks: { tune: 'mars', sounds: ['squirt', 'pop', 'clink', 'gold', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'crash', 'level', 'over', 'winner'] },
-  racing: { tune: 'coast', sounds: ['beep', 'go', 'thud', 'whoosh', 'level', 'over', 'winner'] },
+  racing: { tune: 'coast', sounds: ['beep', 'go', 'thud', 'whoosh', 'gold', 'note', 'power', 'coin', 'slip', 'clink', 'level', 'over', 'winner'] },
 }
 /** Sounds that can follow one another closely get two players. */
 const TWICE: ReadonlySet<SoundName> = new Set(['bite', 'item', 'coin', 'squirt', 'pop', 'clink', 'thud'])
