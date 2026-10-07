@@ -38,7 +38,7 @@ export type Template = {
 
 export const LAYER_TYPES = ['media', 'band', 'gradient', 'logo', 'icon', 'text', 'credit', 'source', 'glitch'] as const
 export const COLOR_TOKENS: ColorToken[] = ['palette.bg', 'palette.deep', 'palette.cream', 'palette.accent', 'black', 'white', 'auto', 'transparent']
-export const ICON_NAMES = ['heart', 'shuffle', 'video', 'image', 'web', 'wave', 'quote', 'joke', 'fact', 'share', 'social', 'plus', 'info'] as const
+export const ICON_NAMES = ['comm', 'heart', 'shuffle', 'video', 'image', 'web', 'wave', 'quote', 'joke', 'fact', 'share', 'social', 'plus', 'info'] as const
 
 const unit = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
 const px = (value: unknown, max = 400) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= max

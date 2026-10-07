@@ -92,7 +92,7 @@ export async function logoDataUri(variant: 'horizontal' | 'vertical', color: str
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 }
 
-const ICON_FILES: Record<string, string> = { heart: 'Heart.svg', shuffle: 'Shuffle.svg', video: 'Video.svg', image: 'image.svg', web: 'web.svg', wave: 'wave.svg', quote: 'quote.svg', joke: 'joke.svg', fact: 'fact.svg', share: 'share.svg', social: 'social.svg', plus: 'plus.svg', info: 'info.svg' }
+const ICON_FILES: Record<string, string> = { comm: 'comm.svg', heart: 'Heart.svg', shuffle: 'Shuffle.svg', video: 'Video.svg', image: 'image.svg', web: 'web.svg', wave: 'wave.svg', quote: 'quote.svg', joke: 'joke.svg', fact: 'fact.svg', share: 'share.svg', social: 'social.svg', plus: 'plus.svg', info: 'info.svg' }
 
 /** One of public/icons, recoloured; its viewBox is 24 × 22. */
 export async function iconDataUri(name: string, color: string): Promise<string | null> {
