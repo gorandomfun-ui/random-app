@@ -19,8 +19,8 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_START_STEPS, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
-import { shop, SHOPS } from '@/lib/games/racing-town'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
 import { decodePng } from '../../scripts/games/png'
 import { CASUAL, GOOD, race } from './racing-robot'
@@ -173,7 +173,8 @@ test('racing: the coast is alive — the public at the start, the checkpoints an
     for (const k of c.checks) assert.ok(at('crowd', k - 35, k + 10) || c.track[k].zone === 'tunnel', `level ${level}: the public at a checkpoint`)
     assert.ok(at('crowd', c.finish - 80, c.finish + 15), `level ${level}: the public at the line`)
     const things = c.track.flatMap((g) => g.things.map((t) => t.kind))
-    for (const kind of ['building', 'parasol', 'sailboat', 'buoy', 'lighthouse']) assert.ok(things.includes(kind as never), `level ${level}: ${kind}`)
+    for (const kind of ['parasol', 'sailboat', 'buoy', 'lighthouse']) assert.ok(things.includes(kind as never), `level ${level}: ${kind}`)
+    assert.ok(c.track.some((g) => g.shop), `level ${level}: shops`)
     // nobody in the tunnel
     assert.ok(!c.track.some((g) => g.zone === 'tunnel' && g.things.some((t) => t.kind === 'crowd')))
   }
@@ -190,10 +191,14 @@ test('racing: the sun sets as the race goes on, night falls by the levels, the s
 
 test('racing: the traffic is everyday cars, and the shops each look like their trade, one after another different', () => {
   for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) for (const t of racingCourse(level).traffic) assert.ok(TRAFFIC_MODELS.includes(t.kind), `level ${level}: ${t.kind} is an everyday car`)
-  const shops = racingCourse(6).track.flatMap((g) => g.things.filter((t) => t.kind === 'building').map((t) => t.look))
+  const spans = [...new Map(racingCourse(6).track.filter((g) => g.shop).map((g) => [g.shop!.start, g.shop!])).values()]
+  const shops = spans.map((sp) => sp.kind)
   assert.ok(new Set(shops).size >= 4, `several kinds of shop (${new Set(shops).size})`)
   for (let k = 1; k < shops.length; k += 1) assert.notEqual(shops[k], shops[k - 1], 'never the same shop twice running')
-  for (const kind of SHOPS) for (const lit of [false, true]) { const { pic } = shop(kind, lit); assert.ok(pic.width > 40 && pic.height > 40, kind) }
+  // each runs along the road as long as its front is wide, at the shops' scale, on the promenade only
+  SHOPS.forEach((kind, k) => assert.equal(RACING_SHOP_LENGTHS[k], Math.round((SHOP_WIDTHS[k] * TOWN_UNIT) / RACING_SEGMENT), kind))
+  for (const sp of spans) for (let i = sp.start; i < sp.start + sp.len; i += 1) assert.equal(racingCourse(6).track[i].zone, 'promenade')
+  for (const kind of SHOPS) for (const lit of [false, true]) { const s = shop(kind, lit); assert.ok(s.front.width === s.pic.width && s.front.height > 20, kind); assert.equal(s.front.height + s.roof, s.pic.height) }
   for (const model of TRAFFIC_MODELS) { const straight = trafficPicture(model, 0, false, 64), turning = trafficPicture(model, 0, true, 64); assert.ok(turning.pic.width > straight.pic.width, `${model}: its flank when it turns`) }
 })
 

@@ -8,7 +8,7 @@
  */
 
 import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
-import { TRAFFIC_LIGHTS, TRAFFIC_WIDTH, trafficPicture, type TrafficModel } from './racing-traffic'
+import { TRAFFIC_LIGHTS, TRAFFIC_SQUASH, TRAFFIC_WIDTH, trafficPicture, type TrafficModel } from './racing-traffic'
 import type { RacingZone } from './racing-rules'
 import { drawText7, mix, PixelBuffer, rgbOf, text7Width } from './pixels'
 import { CREAM, INK } from './ui'
@@ -293,6 +293,46 @@ export function rail(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: numbe
   if (i % 4 === 0) { const x = a.x + side * 1.72 * a.u, w = Math.max(1, 0.05 * a.u); for (let y = Math.round(a.y - 0.24 * a.u); y < Math.min(clip, Math.round(a.y)); y += 1) for (let k = 0; k < w; k += 1) buffer.set(Math.round(x) + k, y, post) }
 }
 
+/**
+ * A shop's front along the road between a stretch's two ends, `off` half
+ * widths out, `high` tall: its picture's columns from `ua` (at the near
+ * end) to `ub` (at the far end) laid along it, its rows up it, so it goes by
+ * in perspective; its clear pixels left out; through the hour and the haze.
+ */
+export function facadePiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, tex: PixelBuffer, ua: number, ub: number, tint: { rgb: RGB; by: number }): void {
+  const xa = a.x + off * a.u, xb = b.x + off * b.u
+  const from = Math.max(0, Math.round(Math.min(xa, xb))), to = Math.min(buffer.width - 1, Math.round(Math.max(xa, xb)))
+  const d = buffer.data, s = tex.data, W = buffer.width, tw = tex.width, th = tex.height, bottom = Math.min(clip, buffer.height)
+  const [tr, tg, tb] = tint.rgb, k = tint.by
+  for (let x = from; x <= to; x += 1) {
+    const t = xb === xa ? 0 : (x - xa) / (xb - xa)
+    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - high * u, span = Math.max(1, foot - top)
+    const col = Math.max(0, Math.min(tw - 1, Math.floor(ua + (ub - ua) * t)))
+    for (let y = Math.max(0, Math.round(top)); y < Math.min(bottom, Math.round(foot)); y += 1) {
+      const row = Math.max(0, Math.min(th - 1, Math.floor(((y - top) / span) * th))), o = (row * tw + col) * 4
+      if (s[o + 3] < 128) continue
+      const q = (y * W + x) * 4
+      d[q] = s[o] + (tr - s[o]) * k; d[q + 1] = s[o + 1] + (tg - s[o + 1]) * k; d[q + 2] = s[o + 2] + (tb - s[o + 2]) * k
+    }
+  }
+}
+
+/** A shop's side facing the road ahead, at its near end `a`: from its front (`off`) back `depth` half widths, `high` tall; its walls in shade, a window or two a floor (lit after dark), the roof's edge on top. */
+export function shopSide(buffer: PixelBuffer, a: End, off: number, depth: number, high: number, clip: number, wall: string, floors: number, lit: boolean, tint: { rgb: RGB; by: number }): void {
+  const x0 = a.x + off * a.u, x1 = a.x + (off + depth) * a.u, top = a.y - high * a.u
+  const paint = (c: string) => { const [r, g, b] = rgbOf(c); return `#${[r, g, b].map((v, i) => Math.round(v + (tint.rgb[i] - v) * tint.by).toString(16).padStart(2, '0')).join('')}` }
+  const side = paint(mix(wall, '#2a1a3a', 0.32)), edge = paint(mix(wall, '#ffffff', 0.2)), glass = paint(lit ? '#ffd690' : '#2a3a62'), foot = paint(mix(wall, '#2a1a3a', 0.5))
+  const W = x1 - x0, H = a.y - top
+  if (W < 1 || H < 2) return
+  fill(buffer, x0, top, W, H, side, clip)
+  fill(buffer, x0, top, W, Math.max(1, H * 0.05), edge, clip)
+  fill(buffer, x0, a.y - Math.max(1, H * 0.06), W, Math.max(1, H * 0.06), foot, clip)
+  for (let f = 0; f < floors; f += 1) {
+    const fy = top + H * (0.12 + (f / Math.max(1, floors)) * 0.8), fh = (H * 0.8) / Math.max(1, floors)
+    for (const k of [0.22, 0.6]) fill(buffer, x0 + W * k, fy + fh * 0.15, W * 0.2, fh * 0.45, glass, clip)
+  }
+}
+
 /** The cliff's rock along the land's side: in layers, lit at their tops, darker low down. */
 export function cliffPiece(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, band: number, clip: number, tier: Tier, fog: number): void {
   const lit = tone('rockLit', tier, fog), r0 = tone('rock0', tier, fog), r1 = tone('rock1', tier, fog), dark = tone('rockDark', tier, fog)
@@ -369,11 +409,13 @@ export function tintFor(h: Tier, fog: number): { rgb: RGB; by: number } {
 
 /** Fills a rectangle (fractions allowed), no row at or under `clip`. */
 function fill(buffer: PixelBuffer, x: number, y: number, w: number, h: number, colour: string, clip: number): void {
-  const x0 = Math.round(x), x1 = Math.round(x + w), y0 = Math.max(0, Math.round(y)), y1 = Math.min(clip, buffer.height, Math.round(y + h))
-  for (let yy = y0; yy < y1; yy += 1) for (let xx = Math.max(0, x0); xx < Math.min(buffer.width, Math.max(x1, x0 + 1)); xx += 1) buffer.set(xx, yy, colour)
+  const x0 = Math.max(0, Math.round(x)), x1 = Math.min(buffer.width, Math.max(Math.round(x + w), Math.round(x) + 1)), y0 = Math.max(0, Math.round(y)), y1 = Math.min(clip, buffer.height, Math.round(y + h))
+  const [r, g, b] = rgbOf(colour), d = buffer.data, W = buffer.width
+  for (let yy = y0; yy < y1; yy += 1) for (let xx = x0, t = (yy * W + x0) * 4; xx < x1; xx += 1, t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
 }
 const disc = (buffer: PixelBuffer, cx: number, cy: number, r: number, colour: string, clip: number) => {
-  for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y += 1) { if (y < 0 || y >= clip || y >= buffer.height) continue; for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x += 1) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) buffer.set(x, y, colour) }
+  const [cr, cg, cb] = rgbOf(colour), d = buffer.data, W = buffer.width
+  for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(Math.ceil(cy + r), clip - 1, buffer.height - 1); y += 1) for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(Math.ceil(cx + r), W - 1); x += 1) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) { const t = (y * W + x) * 4; d[t] = cr; d[t + 1] = cg; d[t + 2] = cb; d[t + 3] = 255 }
 }
 /** A soft round light added over what is there, strongest in the middle. */
 export function glow(buffer: PixelBuffer, cx: number, cy: number, r: number, colour: string, strength: number, clip = buffer.height, flat = 1): void {
@@ -425,17 +467,28 @@ export function lampPool(buffer: PixelBuffer, x: number, y: number, u: number, c
   glow(buffer, x, y, 0.9 * u, '#ffc890', 0.32, clip, 0.22)
 }
 
-/** A bush on the land, `u` pixels to a half width: three round clumps, dark below, lit on top, a shadow at its foot. */
-export function shrub(buffer: PixelBuffer, cx: number, y: number, u: number, flip: boolean, clip: number, tier: Tier, fog: number): void {
-  const r = 0.26 * u
-  if (r < 1) return
-  const dark = shade('bush0', tier, fog), mid = shade('bush1', tier, fog), lit = shade('grass0', tier, fog)
-  const s = flip ? -1 : 1
+/** A bush's picture, made once: three round clumps, dark below, lit on top. */
+let bushPic: PixelBuffer | null = null
+function bushPicture(): PixelBuffer {
+  if (bushPic) return bushPic
+  const w = 28, h = 20, out = new PixelBuffer(w, h, '#000000')
+  out.data.fill(0)
+  const dark = hexOf(hex(BASE.bush0)), mid = hexOf(hex(BASE.bush1)), lit = hexOf(hex(BASE.grass0)), r = 7
   for (const [dx, dy, k] of [[-0.55, -0.85, 0.85], [0.55, -0.8, 0.8], [0, -1.25, 1]] as const) {
-    disc(buffer, cx + s * dx * r, y + dy * r, r * k, dark, clip)
-    disc(buffer, cx + s * dx * r - r * 0.12, y + dy * r - r * 0.18, r * k * 0.72, mid, clip)
-    if (r > 3) disc(buffer, cx + s * dx * r - r * 0.25, y + dy * r - r * 0.35, r * k * 0.32, lit, clip)
+    const cx = w / 2 + dx * r, cy = h + dy * r
+    disc(out, cx, cy, r * k, dark, h)
+    disc(out, cx - r * 0.12, cy - r * 0.18, r * k * 0.72, mid, h)
+    disc(out, cx - r * 0.25, cy - r * 0.35, r * k * 0.32, lit, h)
   }
+  bushPic = out
+  return out
+}
+/** A bush on the land, `u` pixels to a half width, its foot at `y`, through the hour and the haze. */
+export function shrub(buffer: PixelBuffer, cx: number, y: number, u: number, flip: boolean, clip: number, tier: Tier, fog: number): void {
+  const h = 0.52 * u
+  if (h < 2) return
+  const pic = bushPicture(), w = (pic.width * h) / pic.height, { rgb, by } = tintFor(tier, fog)
+  drawArt(buffer, pic, cx - w / 2, y - h, w, h, clip, flip, rgb, by)
 }
 
 /** A cone of the roadworks, `u` pixels to a half width: orange with a white band, on its base. */
@@ -568,7 +621,7 @@ export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: nu
   const back = width * TRAFFIC_WIDTH[model]
   if (back < 2) return
   const { pic, back: steps } = trafficPicture(model, colour, turn !== 0, back)
-  const scale = back / steps, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale))
+  const scale = back / steps, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale * (TRAFFIC_SQUASH[model] ?? 1)))
   const x0 = turn < 0 ? Math.round(cx + back / 2 - w) : Math.round(cx - back / 2)
   glow(buffer, cx, foot - 1, back * 0.58, '#0a0814', 0.55, clip, 0.13)
   const { rgb, by } = tintFor(options.tier ?? 0, options.fog ?? 0)

@@ -8,21 +8,42 @@
  * pizzeria and its slice, the arcade and its joystick, the record shop and
  * its disc. After dark their windows are lit and their signs glow.
  *
- * Each is drawn once into a picture, clear round it, at one scale for all
- * (`TOWN_UNIT` half widths of the road a pixel), and stands by the road
- * like the palms.
+ * Each is drawn once as its front, clear round it, at one scale for all
+ * (`TOWN_UNIT` half widths of the road a pixel, a floor about the height of
+ * three metres beside the cars), then cut in two: the front itself, laid
+ * along the road (it goes by in perspective), and what stands on its roof —
+ * the cone, the burger, the signs — standing up there facing the road.
  */
 
 import { INK_LINE, Painter, tone } from './racing-paint'
-import type { PixelBuffer } from './pixels'
+import { PixelBuffer } from './pixels'
 
 export type ShopKind = 'icecream' | 'surf' | 'burger' | 'diner' | 'motel' | 'hotel' | 'tiki' | 'station' | 'pizza' | 'arcade' | 'records'
 export const SHOPS: readonly ShopKind[] = ['icecream', 'surf', 'burger', 'diner', 'motel', 'hotel', 'tiki', 'station', 'pizza', 'arcade', 'records']
 /** How tall a pixel of a shop's picture stands, in half widths of the road. */
-export const TOWN_UNIT = 0.034
+export const TOWN_UNIT = 0.028
+/** Each shop's front's width in pixels, the same order as `SHOPS` (its length along the road follows). */
+export const SHOP_WIDTHS: readonly number[] = [84, 92, 72, 110, 124, 92, 104, 112, 80, 88, 84]
 
-/** A shop's picture and where its lights glow after dark (in its pixels). */
-export type Shop = { pic: PixelBuffer; glows: Array<{ x: number; y: number; r: number; colour: string }> }
+type Glow = { x: number; y: number; r: number; colour: string }
+/**
+ * A shop: its whole front as drawn (`pic`) and where its lights glow after
+ * dark; the row its walls end at (`roof`), the walls' colour and how many
+ * floors (for its side); then cut: the front below the roof, and what stands
+ * on the roof, cropped (`top`, its left at `x0` in the front's columns).
+ */
+export type Shop = {
+  pic: PixelBuffer; glows: Glow[]; roof: number; wall: string; floors: number
+  front: PixelBuffer; frontGlows: Glow[]
+  top: { pic: PixelBuffer; x0: number; glows: Glow[] } | null
+}
+/** Where each shop's walls end, from the top of its picture; their colour; how many floors. */
+const BUILT: Record<ShopKind, { roof: number; wall: string; floors: number }> = {
+  icecream: { roof: 53, wall: '#f6a8c0', floors: 1 }, surf: { roof: 35, wall: '#2ab0b0', floors: 1 }, burger: { roof: 49, wall: '#f6f2e8', floors: 1 },
+  diner: { roof: 49, wall: '#d8d8e4', floors: 1 }, motel: { roof: 43, wall: '#f4e2b8', floors: 2 }, hotel: { roof: 31, wall: '#f6f2e8', floors: 3 },
+  tiki: { roof: 11, wall: '#c8a050', floors: 0 }, station: { roof: 35, wall: '#c8d8e8', floors: 1 }, pizza: { roof: 43, wall: '#b85a3a', floors: 1 },
+  arcade: { roof: 41, wall: '#3a2a5a', floors: 1 }, records: { roof: 45, wall: '#c8b0e8', floors: 1 },
+}
 
 const GLASS = '#2a3a62', GLASS_LIT = '#ffd690', GLINT = '#6a84bc', WHITE = '#f6f2e8', DARK = '#3a2a40'
 
@@ -39,9 +60,11 @@ function awning(p: Painter, x: number, y: number, w: number, h: number, a: strin
   p.rect(x, y, w, 1, tone(a, 0.75))
 }
 
-const draw: Record<ShopKind, (lit: boolean) => Shop> = {
+/** A shop's front as drawn, and where its lights glow. */
+type Drawn = { pic: PixelBuffer; glows: Glow[] }
+const draw: Record<ShopKind, (lit: boolean) => Drawn> = {
   icecream: (lit) => {
-    const p = new Painter(84, 96), B = 95, glows: Shop['glows'] = []
+    const p = new Painter(84, 96), B = 95, glows: Glow[] = []
     p.rect(4, B - 38, 76, 38, '#f6a8c0'); p.rect(4, B - 4, 76, 4, '#d8849e'); p.rect(2, B - 42, 80, 4, '#9fe0c8')
     pane(p, 16, B - 27, 52, 15, lit); p.rect(14, B - 12, 56, 3, WHITE)
     awning(p, 12, B - 34, 60, 6, '#ff6aa0', WHITE)
@@ -55,7 +78,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   surf: (lit) => {
-    const p = new Painter(92, 86), B = 85, glows: Shop['glows'] = []
+    const p = new Painter(92, 86), B = 85, glows: Glow[] = []
     p.rect(4, B - 46, 84, 46, '#2ab0b0')
     for (let y = B - 44; y < B; y += 4) p.rect(4, y, 84, 1, '#1e8a8c')
     p.rect(0, B - 50, 92, 5, '#e8c890'); p.rect(0, B - 46, 92, 1, '#b89860')
@@ -70,7 +93,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   burger: (lit) => {
-    const p = new Painter(72, 84), B = 83, glows: Shop['glows'] = []
+    const p = new Painter(72, 84), B = 83, glows: Glow[] = []
     p.rect(6, B - 34, 60, 34, WHITE)
     for (let y = B - 14; y < B; y += 4) for (let x = 6; x < 66; x += 4) if (((x - 6) / 4 + (y - B + 14) / 4) % 2 === 0) p.rect(x, y, 4, 4, '#e2302a')
     pane(p, 14, B - 28, 44, 12, lit); p.rect(12, B - 16, 48, 2, '#c0c0c8')
@@ -86,7 +109,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   diner: (lit) => {
-    const p = new Painter(110, 92), B = 91, glows: Shop['glows'] = []
+    const p = new Painter(110, 92), B = 91, glows: Glow[] = []
     p.round(4, B - 42, 90, 42, 10, '#d8d8e4')
     for (let y = B - 36; y < B; y += 6) p.rect(6, y, 86, 1, '#a8a8bc')
     p.rect(8, B - 40, 82, 4, '#e2405a'); p.rect(8, B - 36, 82, 1, '#1ab0b8')
@@ -102,7 +125,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   motel: (lit) => {
-    const p = new Painter(124, 100), B = 99, glows: Shop['glows'] = []
+    const p = new Painter(124, 100), B = 99, glows: Glow[] = []
     p.rect(22, B - 52, 98, 52, '#f4e2b8'); p.rect(20, B - 56, 102, 4, '#f08a50'); p.rect(22, B - 27, 98, 2, '#e8c890')
     for (let f = 0; f < 2; f += 1) for (let k = 0; k < 5; k += 1) {
       const x = 28 + k * 19, y = B - 48 + f * 26
@@ -121,7 +144,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   hotel: (lit) => {
-    const p = new Painter(92, 112), B = 111, glows: Shop['glows'] = []
+    const p = new Painter(92, 112), B = 111, glows: Glow[] = []
     p.round(4, B - 80, 84, 80, 6, WHITE)
     p.rect(4, B - 80, 10, 80, '#9cc8f0'); p.rect(78, B - 80, 10, 80, '#9cc8f0')
     for (let f = 0; f < 3; f += 1) {
@@ -139,7 +162,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   tiki: (lit) => {
-    const p = new Painter(104, 86), B = 85, glows: Shop['glows'] = []
+    const p = new Painter(104, 86), B = 85, glows: Glow[] = []
     // the bamboo posts, the bar, its stools
     for (const x of [12, 88]) { p.rect(x, B - 40, 4, 40, '#c8a050'); for (let y = B - 36; y < B; y += 8) p.rect(x, y, 4, 1, '#8a6a30') }
     p.rect(14, B - 24, 76, 8, '#8a5a30'); p.rect(14, B - 24, 76, 2, '#b07840'); p.rect(18, B - 16, 68, 16, '#5a3a20')
@@ -159,7 +182,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   station: (lit) => {
-    const p = new Painter(112, 96), B = 95, glows: Shop['glows'] = []
+    const p = new Painter(112, 96), B = 95, glows: Glow[] = []
     // the shop at the back
     p.rect(66, B - 36, 42, 36, '#c8d8e8'); p.rect(64, B - 40, 46, 4, '#e2302a'); pane(p, 72, B - 30, 18, 14, lit); p.rect(94, B - 26, 9, 26, '#6a6a7a')
     // the canopy on its pillars, the pumps under it
@@ -174,7 +197,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   pizza: (lit) => {
-    const p = new Painter(80, 88), B = 87, glows: Shop['glows'] = []
+    const p = new Painter(80, 88), B = 87, glows: Glow[] = []
     p.rect(4, B - 44, 72, 44, '#b85a3a')
     for (let y = B - 42; y < B; y += 5) for (let x = 4 + ((y / 5) % 2) * 5; x < 76; x += 10) { p.rect(x, y, 1, 5, '#8a3a24'); p.rect(4, y, 72, 1, '#8a3a24') }
     pane(p, 10, B - 30, 34, 16, lit); p.rect(50, B - 28, 14, 28, '#5a3a20')
@@ -187,7 +210,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   arcade: (lit) => {
-    const p = new Painter(88, 92), B = 91, glows: Shop['glows'] = []
+    const p = new Painter(88, 92), B = 91, glows: Glow[] = []
     p.rect(4, B - 50, 80, 50, '#3a2a5a')
     const neon = lit ? ['#3af0ff', '#ff4ab0'] : ['#2a8a9a', '#9a3a7a']
     p.rect(4, B - 50, 80, 2, neon[0]); p.rect(4, B - 2, 80, 2, neon[1])
@@ -201,7 +224,7 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
     return { pic: p.pic, glows }
   },
   records: (lit) => {
-    const p = new Painter(84, 96), B = 95, glows: Shop['glows'] = []
+    const p = new Painter(84, 96), B = 95, glows: Glow[] = []
     p.rect(4, B - 46, 76, 46, '#c8b0e8'); p.rect(2, B - 50, 80, 4, '#8a5ae0')
     pane(p, 10, B - 34, 28, 20, lit); pane(p, 46, B - 34, 28, 20, lit)
     for (let k = 0; k < 3; k += 1) p.rect(14 + k * 7, B - 22, 5, 8, ['#ff6aa0', '#ffd23f', '#3ac070'][k])
@@ -217,11 +240,27 @@ const draw: Record<ShopKind, (lit: boolean) => Shop> = {
   },
 }
 
+/** Rows `from` to `to` of a picture, and of those its columns `x0` to `x1`, as a picture of their own. */
+function cut(pic: PixelBuffer, from: number, to: number, x0 = 0, x1 = pic.width): PixelBuffer {
+  const out = new PixelBuffer(x1 - x0, to - from, '#000000')
+  out.data.fill(0)
+  for (let y = from; y < to; y += 1) out.data.set(pic.data.subarray((y * pic.width + x0) * 4, (y * pic.width + x1) * 4), (y - from) * (x1 - x0) * 4)
+  return out
+}
+
 const made = new Map<string, Shop>()
-/** A shop, by day or lit after dark: made once, then kept. */
+/** A shop, by day or lit after dark: made once, cut into its front and its roof's things, then kept. */
 export function shop(kind: ShopKind, lit: boolean): Shop {
   const key = `${kind}|${lit}`
   let s = made.get(key)
-  if (!s) { s = draw[kind](lit); made.set(key, s) }
+  if (s) return s
+  const { pic, glows } = draw[kind](lit), built = BUILT[kind]
+  const front = cut(pic, built.roof, pic.height)
+  // what stands on the roof: the columns where anything is drawn above it
+  let x0 = pic.width, x1 = -1
+  for (let y = 0; y < built.roof; y += 1) for (let x = 0; x < pic.width; x += 1) if (pic.data[(y * pic.width + x) * 4 + 3] > 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x) }
+  const top = x1 >= x0 ? { pic: cut(pic, 0, built.roof, x0, x1 + 1), x0, glows: glows.filter((g) => g.y < built.roof).map((g) => ({ ...g, x: g.x - x0 })) } : null
+  s = { pic, glows, ...built, front, frontGlows: glows.filter((g) => g.y >= built.roof).map((g) => ({ ...g, y: g.y - built.roof })), top }
+  made.set(key, s)
   return s
 }

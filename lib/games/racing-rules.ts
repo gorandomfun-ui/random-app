@@ -120,9 +120,13 @@ export type RacingProp = 'parasol' | 'tower' | 'sailboat' | 'yacht' | 'jetski' |
  * the beach's and the sea's things; `x` in half widths from the middle,
  * `look` which one of its kind (which faces, which front, which colours).
  */
-export type RacingThing = { kind: 'palm' | 'chevron' | 'lamp' | 'bush' | 'crowd' | 'building' | RacingProp; x: number; flip: boolean; look: number }
-/** A stretch: how much the road bends there (to the right when positive), its height at its near and far ends, its kind, what stands by it. */
-export type RacingSegment = { curve: number; y1: number; y2: number; zone: RacingZone; things: RacingThing[] }
+export type RacingThing = { kind: 'palm' | 'chevron' | 'lamp' | 'bush' | 'crowd' | RacingProp; x: number; flip: boolean; look: number }
+/** A shop along the promenade's land side: which one, the stretch its front starts at (nearest), how many stretches it runs. */
+export type RacingShop = { kind: number; start: number; len: number }
+/** A stretch: how much the road bends there (to the right when positive), its height at its near and far ends, its kind, what stands by it, the shop it runs along. */
+export type RacingSegment = { curve: number; y1: number; y2: number; zone: RacingZone; things: RacingThing[]; shop?: RacingShop }
+/** Each shop's length along the road, in stretches: its front's width (`SHOP_WIDTHS`) at the shops' scale (`TOWN_UNIT`). */
+export const RACING_SHOP_LENGTHS: readonly number[] = [24, 26, 20, 31, 35, 26, 29, 31, 22, 25, 24]
 
 /** What lies on the road: a stopwatch, the turbo, a coin; a ketchup puddle, a cone of the roadworks. */
 export type RacingItemKind = 'time' | 'turbo' | 'coin' | 'puddle' | 'cone'
@@ -251,13 +255,17 @@ export function racingCourse(level: number): RacingCourse {
     const z = seg.zone
     if (z === 'tunnel') return
     if (z === 'beach' && i >= palmL) { seg.things.push({ kind: 'palm', x: -2.25 - place() * 0.9, flip: place() < 0.5, look: 0 }); palmL = i + 9 + Math.floor(place() * 14) }
-    if ((z === 'beach' || z === 'promenade') && i >= palmR) { seg.things.push({ kind: 'palm', x: 2.15 + place() * 1.2, flip: place() < 0.5, look: 0 }); palmR = i + 14 + Math.floor(place() * 18) }
+    if ((z === 'beach' || (z === 'promenade' && !seg.shop)) && i >= palmR) { seg.things.push({ kind: 'palm', x: 2.15 + place() * 1.2, flip: place() < 0.5, look: 0 }); palmR = i + 14 + Math.floor(place() * 18) }
     // bushes scattered over the land past the beach, near and far
     if (z === 'beach' && i >= bush) { seg.things.push({ kind: 'bush', x: 2.0 + place() * 4.5, flip: place() < 0.5, look: 0 }); bush = i + 4 + Math.floor(place() * 6) }
     if ((z === 'promenade' || z === 'causeway') && i >= lamp) { seg.things.push({ kind: 'lamp', x: -1.95, flip: false, look: 0 }, { kind: 'lamp', x: 1.95, flip: true, look: 0 }); lamp = i + 16 }
     if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0, look: 0 })
     // the promenade's buildings, one after another along the land's side
-    if (z === 'promenade' && i >= house) { shopTurn = (shopTurn + 1 + Math.floor(place() * 3)) % 11; seg.things.push({ kind: 'building', x: 2.8 + place() * 0.45, flip: false, look: shopTurn }); house = i + 22 + Math.floor(place() * 10) }
+    if (z === 'promenade' && i >= house) {
+      const next = (shopTurn + 1 + Math.floor(place() * 3)) % RACING_SHOP_LENGTHS.length, len = RACING_SHOP_LENGTHS[next]
+      if (track.slice(i, i + len).every((g) => g.zone === 'promenade')) { shopTurn = next; for (let k = 0; k < len; k += 1) track[i + k].shop = { kind: next, start: i, len }; house = i + len + 4 + Math.floor(place() * 10) }
+      else house = i + 1
+    }
     // the beach's parasols on the sand, a lifeguard tower now and then
     if (z === 'beach' && i >= parasol) { seg.things.push({ kind: 'parasol', x: -1.95 - place() * 0.12, flip: false, look: Math.floor(place() * 3) }); parasol = i + 8 + Math.floor(place() * 14) }
     if (z === 'beach' && i >= tower) { seg.things.push({ kind: 'tower', x: -2.02, flip: false, look: 0 }); tower = i + 180 + Math.floor(place() * 120) }

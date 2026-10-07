@@ -19,6 +19,8 @@ export const TRAFFIC_MODELS: readonly TrafficModel[] = ['hatch', 'saloon', 'camp
 export const TRAFFIC_COLOURS = ['#e8e4dc', '#b8bcc8', '#5a8ad8', '#d84a3a', '#e0c890', '#6ac0a0', '#2a3a6a', '#f0c040', '#e88ab0'] as const
 /** How wide each car is against a racing car (as the road sees it). */
 export const TRAFFIC_WIDTH: Record<TrafficModel, number> = { hatch: 0.9, saloon: 0.98, camper: 0.98, pickup: 1, estate: 0.98, beetle: 0.84, icecream: 1.02 }
+/** How much lower than drawn the tall ones stand on the road, beside the low racing cars. */
+export const TRAFFIC_SQUASH: Partial<Record<TrafficModel, number>> = { camper: 0.88, icecream: 0.86, pickup: 0.94 }
 /** Each car's height in steps of its hundred across. */
 const HEIGHT: Record<TrafficModel, number> = { hatch: 62, saloon: 56, camper: 98, pickup: 74, estate: 68, beetle: 60, icecream: 108 }
 /** Where its rear lights are, as shares of its width and height, to glow after dark. */
