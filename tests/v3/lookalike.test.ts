@@ -7,7 +7,7 @@ import { BYTES } from '../../lib/v3/ai/bits'
 import { LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, resemblesLike, scriptOf } from '../../lib/v3/ai/likeness'
 import type { LineContext } from '../../lib/v3/ingest/context'
 import { mixSeeds } from '../../lib/v3/ingest/lines/drift'
-import { likeQueries, likesOfRun, lookalikes, mostlyCjk, PAGES, QUERIES_PER_LIKE, run, saysEnough, SEEN, type LikeRow } from '../../lib/v3/ingest/lines/lookalike'
+import { likeQueries, likesOfRun, lookalikes, mostlyCjk, PAGES, QUERIES_PER_LIKE, run, saysEnough, SEEN, uploadsOf, type LikeRow } from '../../lib/v3/ingest/lines/lookalike'
 import type { DigVideo } from '../../lib/v3/dig/video'
 
 /** A fingerprint that shares `same` of its 384 bits with `base` (the rest flipped). */
@@ -181,4 +181,64 @@ test('a run: searches with the like\'s words, reads with the model, lets in only
   assert.ok(remembered.includes('dailymotion:xfar') && !remembered.includes('dailymotion:xclose'))
   assert.ok(result.counters.rejected['déjà jugée'] === 1)
   assert.ok(clock && (clock as { options: { expireAfterSeconds: number } }).options.expireAfterSeconds === 21 * 86_400)
+})
+
+test("a YouTube like gives its channel: two pages of uploads a visit, details only for what is new, the week's cap, the day's units", async () => {
+  process.env.YOUTUBE_API_KEY = 'test-key'
+  const likeId = new ObjectId()
+  const likeBits = seeded(31)
+  const calls: string[] = []
+  const reserved: number[] = []
+  const http = (async (input: string | URL) => {
+    const url = new URL(String(input))
+    calls.push(url.hostname + url.pathname)
+    if (url.pathname.endsWith('/playlistItems')) {
+      assert.equal(url.searchParams.get('playlistId'), 'UUabcdefghijklmnopqrstuv')
+      const page = url.searchParams.get('pageToken')
+      if (!page) return new Response(JSON.stringify({ items: [{ contentDetails: { videoId: 'ytclose' } }, { contentDetails: { videoId: 'ytknown' } }, { contentDetails: { videoId: 'ytjudged' } }], nextPageToken: 'p2' }), { status: 200 })
+      return new Response(JSON.stringify({ items: [{ contentDetails: { videoId: 'ytfar' } }] }), { status: 200 })
+    }
+    if (url.hostname === 'www.googleapis.com' && url.pathname.endsWith('/videos')) {
+      const ids = (url.searchParams.get('id') ?? '').split(',')
+      assert.ok(!ids.includes('ytknown') && !ids.includes('ytjudged'), 'no unit spent on what the base holds or the model judged')
+      return new Response(JSON.stringify({ items: ids.map((id) => ({ id, snippet: { title: id === 'ytclose' ? 'Repairing a broken bowl with gold' : 'Football highlights of the week', description: '', channelId: 'UCabcdefghijklmnopqrstuv', channelTitle: 'potter', publishedAt: '2024-01-01T00:00:00Z' }, status: { embeddable: true, privacyStatus: 'public' }, statistics: { viewCount: '100' }, contentDetails: { duration: 'PT2M' } })) }), { status: 200 })
+    }
+    if (url.pathname.endsWith('/channels')) return new Response(JSON.stringify({ items: [{ id: 'UCabcdefghijklmnopqrstuv', statistics: { videoCount: '40' } }] }), { status: 200 })
+    return new Response(JSON.stringify({ list: [] }), { status: 200 })
+  }) as typeof fetch
+  const printsByTitle = new Map<string, Uint8Array>([['Repairing a broken bowl with gold', near(likeBits, 300)], ['Football highlights of the week', near(likeBits, 190)]])
+  const admitted: Array<{ videoId: string; provider: string }> = []
+  let saved: Record<string, unknown> | null = null
+  const collection = (name: string) => ({
+    find: (filter: Record<string, unknown>) => ({ toArray: async () => {
+      if (name === 'items' && filter.videoId) return [{ videoId: 'ytknown' }]
+      if (name === SEEN) return [{ _id: 'ytjudged' }]
+      return []
+    } }),
+    findOne: async () => ({ next: 0, visits: {}, youtube: {} }),
+    countDocuments: async () => 0,
+    createIndex: async () => 'seen_ttl',
+    updateOne: async (_filter: unknown, update: { $set: Record<string, unknown> }) => { saved = update.$set; return {} },
+    updateMany: async () => ({}),
+    bulkWrite: async () => ({}),
+  })
+  const ctx = {
+    db: { collection } as unknown as LineContext['db'],
+    line: 'lookalike', deadline: Date.now() + 60_000, timeLeft: () => 60_000, dryRun: false, cursor: null,
+    quota: { reserve: async (units: number) => { reserved.push(units); return true } } as unknown as LineContext['quota'],
+    admit: async (batch: { videos?: Array<{ videoId: string; provider: string }> }) => { admitted.push(...(batch.videos ?? [])); return { scanned: batch.videos?.length ?? 0, inserted: batch.videos?.length ?? 0, duplicates: 0, rejected: {}, insertedIds: [] } },
+    search: async () => undefined, log: () => undefined, http,
+  } as unknown as LineContext
+  const likes = async () => [{ id: String(likeId), title: 'How to creatively repair broken pottery! ✨', provider: 'youtube', videoId: 'abc', channelId: 'UCabcdefghijklmnopqrstuv', bits: likeBits }]
+  const result = await run(ctx, { likes, prints: async (texts) => texts.map((text) => [...printsByTitle.entries()].find(([title]) => text.startsWith(title))?.[1] ?? seeded(99)) })
+  assert.deepEqual(admitted.map((video) => `${video.provider}:${video.videoId}`), ['youtube:ytclose'])
+  assert.equal(result.counters.byProvider?.youtube, 1)
+  assert.equal(calls.filter((path) => path.endsWith('/playlistItems')).length, 2, 'two pages')
+  assert.equal(calls.filter((path) => path === 'www.googleapis.com/youtube/v3/videos').length, 1, 'one details call')
+  // Two pages, one details call, one channel-size call for the media windows: four units, each reserved first.
+  assert.equal(reserved.length, 4)
+  assert.equal((saved as { youtube: Record<string, string | null> }).youtube[String(likeId)], null, 'past the last page: the next visit starts over')
+  assert.equal(uploadsOf('UCabcdefghijklmnopqrstuv'), 'UUabcdefghijklmnopqrstuv')
+  assert.equal(uploadsOf('x1abc'), null)
+  delete process.env.YOUTUBE_API_KEY
 })
