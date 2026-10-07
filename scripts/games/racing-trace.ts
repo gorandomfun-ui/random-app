@@ -16,11 +16,13 @@
  * - `title-tall`: 432 × 768 for a phone held upright — the picture a little
  *   smaller at the foot, the sky carried up above it for the title (the big
  *   palms' crowns grown on into it), the road carried down under it.
- * - `car-<kind>-<width>`: each car cut out along its outline, at the sizes
- *   the screens draw it, its pixels outside it clear.
+ * - `car-<kind>-<width>`, `car-<kind>-<width>-turn`: each car cut out along
+ *   its outline, at the sizes the screens draw it, its pixels outside it
+ *   clear; straight from behind, and turning right (the game mirrors it to
+ *   turn left).
  * - `play-back`: the far view for the play — the sea, the sun, the
  *   mountains, the city — without the near palms, 448 wide.
- * - `palm`, `chevron`: what stands by the road in the play, cut out.
+ * - `palm`: what stands by the road in the play, cut out, fine enough to come close.
  *
  * The owner found the picture as traced too far from the other games'
  * visuals: everything is then made simpler, nearer their level of detail —
@@ -41,7 +43,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { encodeIndexedPng, encodePng } from './png'
-import { biggest, blank, copy, cutByFlood, flatten, get, grow, inpaint, inPolygon, lum, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
+import { biggest, blank, copy, cutByFlood, evened, flatten, get, grow, inpaint, inPolygon, leaning, lum, mirrored, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
 
 const ROOT = process.cwd()
 const REF = path.join(ROOT, 'docs/reports/jeux-v1/refs/racing-reference.png')
@@ -167,10 +169,41 @@ writeTitle('title-wide', titleWide, (x, y) => areaAt((x + 0.5) * S, (y + 0.5) * 
 
 // the cars at the sizes the screens draw them: the tall title's, the play's own car, the rivals'
 const CAR_WIDTHS = [130, 104, 60]
+/**
+ * Where a car's back is centred in its cut-out: the middle of its number
+ * plate (light, hardly coloured, low in the middle). The picture shows the
+ * red car a little from its right and the yellow one a little from its left
+ * — where they stand on the road — so the plate is off the cut-out's middle.
+ */
+function plateMiddle(pic: Pic, alpha: Uint8Array): number {
+  let sx = 0, n = 0
+  for (let y = Math.round(pic.h * 0.45); y < Math.round(pic.h * 0.9); y += 1) for (let x = Math.round(pic.w * 0.15); x < Math.round(pic.w * 0.85); x += 1) {
+    const c = get(pic, x, y)
+    if (alpha[y * pic.w + x] && lum(c[0], c[1], c[2]) > 165 && sat(c) < 75) { sx += x + 0.5; n += 1 }
+  }
+  return n ? sx / n : pic.w / 2
+}
+/**
+ * Each car three ways, so it drives straight and turns: straight from behind
+ * — for the red and the yellow, the half of the back away from the flank the
+ * picture shows, and its mirror; the burger as it is — and turning right:
+ * the red one as the picture has it (its right flank showing), the yellow
+ * one mirrored, the burger leaning into the turn. Turning left is the same
+ * mirrored, by the game. Each turning picture has the straight one's back on
+ * its left, the flank or the lean past it.
+ */
 for (const kind of Object.keys(CARS) as Array<keyof typeof CARS>) {
+  // the plate found once, on the largest picture, and the same share of the width on the smaller ones
+  let share = 0.5
   for (const width of CAR_WIDTHS) {
-    const { pic, alpha } = cutOut(clean, carMasks[kind], boxOf(CARS[kind]), Math.round(width * (kind === 'burger' ? 0.78 : 1)))
-    write(`car-${kind}-${width}`, width >= 100 ? flatten(pic, 1) : pic, 24, undefined, alpha)
+    const cut = cutOut(clean, carMasks[kind], boxOf(CARS[kind]), Math.round(width * (kind === 'burger' ? 0.78 : 1)))
+    if (width === CAR_WIDTHS[0]) share = plateMiddle(cut.pic, cut.alpha) / cut.pic.w
+    const axis = share * cut.pic.w
+    const straight = kind === 'burger' ? cut : evened(cut.pic, cut.alpha, axis, kind === 'rosso' ? 'left' : 'right')
+    const turn = kind === 'burger' ? leaning(cut.pic, cut.alpha, cut.pic.w * 0.13, Math.round(cut.pic.h * 0.74)) : kind === 'rosso' ? cut : mirrored(cut.pic, cut.alpha)
+    console.log(`${kind} ${width}: back's middle at ${share.toFixed(3)} of its width; straight ${straight.pic.w}, turning ${turn.pic.w}`)
+    write(`car-${kind}-${width}`, width >= 100 ? flatten(straight.pic, 1) : straight.pic, 24, undefined, straight.alpha)
+    write(`car-${kind}-${width}-turn`, width >= 100 ? flatten(turn.pic, 1) : turn.pic, 24, undefined, turn.alpha)
   }
 }
 
@@ -247,19 +280,9 @@ const palmMask = new Uint8Array(src.w * src.h)
   const poly = bigPoly(PALM), [bx0, by0, bx1, by1] = boxOf(PALM)
   for (let y = by0; y < by1; y += 1) for (let x = bx0; x < bx1; x += 1) { const c = get(clean, x, y); if (inPolygon(x + 0.5, y + 0.5, poly) && (palmish(c) || lum(c[0], c[1], c[2]) < 60)) palmMask[y * src.w + x] = 1 }
 }
-const palm = cutOut(clean, palmMask, boxOf(PALM), 80, 0.3)
+const palm = cutOut(clean, palmMask, boxOf(PALM), 160, 0.3)
 // the palm alone, the bits of its neighbours caught in the cut dropped
 write('palm', flatten(palm.pic, 1), 16, undefined, biggest(palm.alpha, palm.pic.w, palm.pic.h))
-// a chevron sign, red and white on its post
-const CHEVRON: ReadonlyArray<readonly [number, number]> = [[76, 268], [104, 268], [104, 294], [93, 294], [93, 302], [86, 302], [86, 294], [76, 294]]
-const chevronMask = new Uint8Array(src.w * src.h)
-{
-  const poly = bigPoly(CHEVRON), [bx0, by0, bx1, by1] = boxOf(CHEVRON)
-  for (let y = by0; y < by1; y += 1) for (let x = bx0; x < bx1; x += 1) { const c = get(clean, x, y); if (inPolygon(x + 0.5, y + 0.5, poly) && ((c[0] > 150 && c[1] < 110) || (lum(c[0], c[1], c[2]) > 190 && sat(c) < 60) || lum(c[0], c[1], c[2]) < 60)) chevronMask[y * src.w + x] = 1 }
-}
-const chevron = cutOut(clean, chevronMask, boxOf(CHEVRON), 26)
-write('chevron', chevron.pic, 16, undefined, chevron.alpha)
-
 // ---------------------------------------------------------------- what the game needs to know
 
 /** Where the sea glitters on a picture (its brightest pixels in a rectangle). */

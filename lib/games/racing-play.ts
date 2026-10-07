@@ -1,78 +1,46 @@
 /**
  * RANDOM RACING in play: the road seen from behind the car, under the bar.
  *
- * The far view is the owner's picture's — the sky, the sun going down into
- * the sea, the mountains, the city — sliding a little as the road turns. In
- * front of it the road, drawn stretch by stretch as it comes: its bends and
- * its hills, its kerbs in the picture's salmon, its lanes, the beach and the
- * sea on the left, the bushes on the right, the rails along both sides, the
- * picture's palms and red chevrons by it; the start's gantry with its lights,
- * the finish line's chequered one. The rivals are the picture's cars, small
- * with the distance; the player's at the foot of the road, leaning as it
- * steers, bouncing, kicking up sand off the road. The bar on top — TIME,
- * SCORE, the level and how far along it, the place — the speed in a corner,
- * the lights and GO!, GOAL! and its points, TIME UP; on a touch screen the
- * arrows on the left, A (gas) and B (brake) on the right.
+ * The far view is the owner's picture's, at the level's hour — the sunset,
+ * the dusk, the night with its moon, the storm — sliding a little as the
+ * road turns, rising and sinking as the car climbs and dips. In front of it
+ * the road, drawn stretch by stretch as it comes, fading into the haze far
+ * off: its bends and its hills; the beach with its foam, the promenade and
+ * its lamps, the cliff's rock over the deep sea, the causeway, the tunnel;
+ * the concrete barriers, the picture's palms, the chevrons; the stopwatches,
+ * the mustard turbo and the coins over the road, the ketchup puddles and the
+ * roadworks' cones on it; the start's gantry with its lights, the
+ * checkpoints', the finish line's chequered one. The rivals and the traffic
+ * are the picture's cars, turning as they change lanes or take a bend, with
+ * their shadows; the player's at the foot of the road, turning as it
+ * steers, bouncing, kicking up sand off the road, flaming with the turbo.
+ * The bar on top — TIME, SCORE, the level and how far along it, the place —
+ * the speed in a corner, the lights and GO!, CHECKPOINT and the time it
+ * gives, GOAL! and its points, TIME UP; the rain and the lightning in the
+ * storm; on a touch screen the arrows on the left, A (gas) and B (brake) on
+ * the right.
  */
 
+import { BONUS_PALETTE, MUSTARD } from './attacks-sprites'
 import { racingArt, type RacingCarKind } from './racing-art'
 import {
-  createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_KERB, RACING_LAST_LEVEL, RACING_RAIL, RACING_SEGMENT, RACING_START_STEPS,
-  racingKmh, segmentOf, stepRacing, type RacingLayout, type RacingSegment, type RacingState,
+  createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
+  racingKmh, racingTier, segmentOf, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingState, type RacingZone,
 } from './racing-rules'
+import {
+  blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, farGround, farViewAt, flames, fogStep, gantry, glow, groundRow, lamp, lampPool,
+  puddle, puff, rail, shrub, stopwatch, tintFor, tunnelMouth, tunnelPiece, type End, type Tier,
+} from './racing-scene'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
 import { arcadeText, CREAM, GREY, HUD_HEIGHT, INK } from './ui'
 
+export { drawArt, drawCar, puff } from './racing-scene'
+
 /** The start's gantry, over the road ahead of the grid. */
-const RACING_START_LINE = 40
+const START_LINE = 40
 
 type Layout = RacingLayout
-type RGB = readonly [number, number, number]
-
-// ---------------------------------------------------------------- the traced pictures
-
-/** A traced picture's pixels onto the buffer at `x`, `y`, leaving out its clear ones; drawn `w` × `h` (each pixel taken from the nearest), its own size if not given; no row at or under `clip`; mirrored if asked. */
-export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: number, w = pic.width, h = pic.height, clip = buffer.height, flip = false): void {
-  const sx = pic.width / w, sy = pic.height / h, d = buffer.data, s = pic.data
-  const x0 = Math.round(x), y0 = Math.round(y), W = Math.round(w), H = Math.round(h)
-  const bottom = Math.min(buffer.height, clip)
-  for (let yy = 0; yy < H; yy += 1) {
-    const ty = y0 + yy
-    if (ty < 0) continue
-    if (ty >= bottom) break
-    const py = Math.min(pic.height - 1, Math.floor((yy + 0.5) * sy))
-    for (let xx = 0; xx < W; xx += 1) {
-      const tx = x0 + xx
-      if (tx < 0 || tx >= buffer.width) continue
-      const px = Math.min(pic.width - 1, Math.floor(((flip ? W - 1 - xx : xx) + 0.5) * sx))
-      const o = (py * pic.width + px) * 4
-      if (s[o + 3] < 128) continue
-      const t = (ty * buffer.width + tx) * 4
-      d[t] = s[o]; d[t + 1] = s[o + 1]; d[t + 2] = s[o + 2]; d[t + 3] = 255
-    }
-  }
-}
-
-/** A car seen from behind, its picture nearest the width asked for, drawn that wide, its foot at `foot` and its middle at `cx`; no row at or under `clip`. */
-export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, clip = buffer.height): void {
-  const size = width > 112 ? 130 : width > 70 ? 104 : 60
-  const pic = racingArt(`car-${kind}-${size}`)
-  if (!pic || width < 2) return
-  const w = Math.max(2, Math.round(width * (kind === 'burger' ? 0.78 : 1))), h = Math.max(1, Math.round((pic.height * w) / pic.width))
-  drawArt(buffer, pic, Math.round(cx - w / 2), Math.round(foot - h), w, h, clip)
-}
-
-/** A puff from an exhaust, low by the road, swelling and thinning as it drifts out, one moment after another. */
-export function puff(buffer: PixelBuffer, x: number, y: number, dir: number, frame: number, seed: number, color = '#e8dcf0', strength = 0.38): void {
-  const age = (frame + seed) % 5, r = 2 + age * 1.6
-  for (let dy = -r; dy <= r; dy += 1) for (let dx = -r; dx <= r; dx += 1) {
-    const q = (dx * dx + dy * dy) / (r * r)
-    if (q <= 1) buffer.tint(Math.round(x + dir * age * 3 + dx), Math.round(y + age * 0.6 + dy * 0.6), color, strength * (1 - age / 5) * (1 - q * 0.5))
-  }
-}
-
-// ---------------------------------------------------------------- the view
 
 /** The boards under the bar: wide 448 × 320, tall 320 × 448, as the other games'. */
 export const RACING_BOARD: Record<Layout, { width: number; height: number }> = { landscape: { width: 448, height: 320 }, portrait: { width: 320, height: 448 } }
@@ -85,122 +53,17 @@ const VIEW: Record<Layout, { horizon: number; foot: number; half: number }> = {
   landscape: { horizon: 148, foot: 308, half: 200 },
   portrait: { horizon: 214, foot: 432, half: 150 },
 }
-/** How many stretches ahead are drawn; nearer than this (world units) nothing is. */
+/** How many stretches ahead are drawn; nearer than this (half widths) nothing is. */
 const DRAW = 260
 const NEAR = 0.25
-/** The beach's width past the kerbs before the sea, the rails' height and their bar's, a palm's height and a chevron's: in half widths. */
-const BEACH = 2.4
-const RAIL_HIGH = 0.32, RAIL_BAR = 0.07
-const PALM_HIGH = 2.6, CHEVRON_HIGH = 0.62
-/** The gantries' posts, out past the rails, and their height. */
-const GANTRY_X = 1.95, GANTRY_HIGH = 2
+const FAR = DRAW * RACING_SEGMENT
+/** A palm's height, in half widths. */
+const PALM_HIGH = 2.7
 
-/** The road's colours, taken from the picture. */
-const hex = (c: string): RGB => rgbOf(c)
-const C = {
-  tar: [hex('#252645'), hex('#2b2b4a')], line: hex('#d5bca5'),
-  kerb: [hex('#f99259'), hex('#d8744a')],
-  bush: [hex('#1f4a3a'), hex('#26573f')], sea: [hex('#0998b1'), hex('#047ba5'), hex('#13b0c4')], glint: hex('#d8faff'), sand: [hex('#f0a07a'), hex('#e08c6a')],
-}
-const RAIL = '#8c7b8b', RAIL_TOP = '#d5bca5', POST = '#1c2474'
-/** A number from 0 to 1 for a pixel, always the same. */
-const grain = (x: number, y: number) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
+const FLAT: RacingSegment = { curve: 0, y1: 0, y2: 0, zone: 'beach', things: [] }
 
-/** A stretch on the screen: its near and far ends' middles, half widths and rows, the scale at each, and the row under which nearer ground hides it. */
-type Projected = { i: number; x1: number; y1: number; w1: number; s1: number; x2: number; y2: number; w2: number; s2: number; clip: number; seg: RacingSegment; behind: boolean }
-
-const FLAT: RacingSegment = { curve: 0, y1: 0, y2: 0, things: [] }
-
-/** The far view, mirrored past its edges so it can slide either way. */
-function farView(buffer: PixelBuffer, back: PixelBuffer | null, W: number, horizon: number, slide: number): void {
-  if (!back) {
-    for (let y = 0; y < horizon; y += 1) buffer.rect(0, y, W, 1, mix('#1a0a34', '#ff7a5a', (y / horizon) ** 1.5))
-    return
-  }
-  const d = buffer.data, s = back.data, bw = back.width, top = horizon - back.height
-  const shift = Math.round((W - bw) / 2 + slide)
-  const column = (x: number) => { let u = (x - shift) % (bw * 2); if (u < 0) u += bw * 2; return u < bw ? u : bw * 2 - 1 - u }
-  for (let y = 0; y < horizon; y += 1) {
-    // over a tall board, the sky carried up from the picture's top, darkening
-    const py = Math.max(0, y - top), fade = y < top ? ((top - y) / Math.max(1, top)) ** 1.2 : 0
-    const [fr, fg, fb] = rgbOf('#1a0a34')
-    for (let x = 0; x < W; x += 1) {
-      const o = (py * bw + column(x)) * 4, t = (y * W + x) * 4
-      d[t] = s[o] + (fr - s[o]) * fade; d[t + 1] = s[o + 1] + (fg - s[o + 1]) * fade; d[t + 2] = s[o + 2] + (fb - s[o + 2]) * fade; d[t + 3] = 255
-    }
-  }
-}
-
-/** The road's ground on one row: the sea and the beach on the left, the kerbs, the road with its lanes, the bushes on the right. */
-function groundRow(d: Uint8ClampedArray, W: number, y: number, c: number, h: number, band: number, frame: number): void {
-  const kerb = h * RACING_KERB, shore = h * (RACING_KERB + BEACH)
-  const edge = Math.max(1, h * 0.028), lane = Math.max(1, h * 0.022)
-  const put = (x: number, rgb: RGB) => { const t = (y * W + x) * 4; d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
-  for (let x = 0; x < W; x += 1) {
-    const dx = x + 0.5 - c, ad = Math.abs(dx)
-    if (ad < h) put(x, Math.abs(ad - (h - edge * 2.2)) < edge / 2 ? C.line : band && Math.abs(ad - h / 3) < lane / 2 ? C.line : C.tar[band])
-    else if (ad < kerb) put(x, C.kerb[band])
-    else if (dx < 0 && dx > -shore) put(x, C.sand[band])
-    else if (dx < 0) { const g = grain(x, y + ((frame >> 3) & 63) * 7); put(x, g > 0.986 ? C.glint : C.sea[y % 4 === 0 ? 1 : g > 0.72 ? 2 : 0]) }
-    else put(x, C.bush[band])
-  }
-}
-
-/** A piece of rail between two ends on the screen (its bar's top and bottom at each), no pixel at or under `clip`. */
-function railPiece(buffer: PixelBuffer, xa: number, ta: number, ba: number, xb: number, tb: number, bb: number, clip: number): void {
-  const from = Math.round(Math.min(xa, xb)), to = Math.round(Math.max(xa, xb))
-  for (let x = from; x <= to; x += 1) {
-    const t = to === from ? 0 : (x - xa) / (xb - xa)
-    const top = Math.round(ta + (tb - ta) * t), bot = Math.max(top + 1, Math.round(ba + (bb - ba) * t))
-    for (let y = top; y < Math.min(bot, clip); y += 1) buffer.set(x, y, y === top ? RAIL_TOP : RAIL)
-  }
-}
-
-/** A gantry across the road on the screen: two posts, a beam; the start's with its three lights, the finish's chequered. */
-function gantry(buffer: PixelBuffer, p: { x: number; y: number; s: number }, K: number, clip: number, finish: boolean, lit: number): void {
-  const u = p.s * K, xl = p.x - GANTRY_X * u, xr = p.x + GANTRY_X * u
-  const top = p.y - GANTRY_HIGH * u, beam = Math.max(2, Math.round(0.34 * u)), post = Math.max(1, Math.round(0.08 * u))
-  const bottom = Math.min(clip, buffer.height)
-  const fill = (x0: number, y0: number, w: number, h: number, color: string) => { for (let y = Math.max(0, Math.round(y0)); y < Math.min(bottom, Math.round(y0 + h)); y += 1) for (let x = Math.round(x0); x < Math.round(x0 + w); x += 1) buffer.set(x, y, color) }
-  fill(xl - post / 2, top, post, p.y - top, '#3a3450')
-  fill(xr - post / 2, top, post, p.y - top, '#3a3450')
-  if (finish) {
-    // the chequered banner
-    const sq = Math.max(1, Math.round(beam / 2))
-    for (let y = Math.round(top); y < Math.min(bottom, Math.round(top + beam)); y += 1) for (let x = Math.round(xl); x < Math.round(xr); x += 1) {
-      if (y < 0) continue
-      buffer.set(x, y, (Math.floor((x - xl) / sq) + Math.floor((y - top) / sq)) % 2 ? CREAM : '#1a1a22')
-    }
-  } else {
-    fill(xl, top, xr - xl, beam, '#1c1a2e')
-    // three lights: red one by one, then all green
-    const r = Math.max(1, beam * 0.32)
-    for (let k = 0; k < 3; k += 1) {
-      const cx = p.x + (k - 1) * beam * 1.2, cy = top + beam / 2
-      if (cy + r >= bottom) continue
-      buffer.disc(cx, cy, r, lit >= 3 ? '#3aff6a' : k <= lit ? '#ff3a2a' : '#4a2a2a')
-    }
-  }
-}
-
-/** A rival where it stands, small with the distance, bouncing a little. */
-function rival(board: PixelBuffer, rows: Projected[], b0: number, r: RacingState['rivals'][number], K: number, frame: number): void {
-  const at = placeOn(rows, b0, r.z, r.x, K)
-  if (!at) return
-  const bob = r.speed > 0.05 && (frame >> 2) % 2 ? 1 : 0
-  drawCar(board, r.kind, at.x, at.y - bob, RACING_CAR_WIDTH * at.s * K, at.clip)
-}
-
-/** Where a car or a thing at `z` (stretches) and `x` (half widths) stands on the screen, from the stretches drawn; null when out of sight. */
-function placeOn(rows: Projected[], b0: number, z: number, x: number, K: number): { x: number; y: number; s: number; clip: number } | null {
-  const n = Math.floor(z) - b0
-  const p = rows[n]
-  if (!p) return null
-  const t = z - Math.floor(z)
-  const s = p.s1 + (p.s2 - p.s1) * t
-  const cx = p.x1 + (p.x2 - p.x1) * t, cy = p.y1 + (p.y2 - p.y1) * t
-  return { x: cx + x * s * K, y: cy, s, clip: p.clip }
-}
+/** A stretch on the screen: its near and far ends (middle, row, pixels to a half width), the row under which nearer ground hides it, its haze. */
+type Projected = { i: number; seg: RacingSegment; a: End; b: End; clip: number; behind: boolean; fog: number; zNear: number }
 
 // ---------------------------------------------------------------- the controls
 
@@ -272,10 +135,11 @@ function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: R
 
 const ordinal = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`
 
-/** The bar on top: TIME counting down (red in its last ten seconds), SCORE, the level and how far along it, the place. */
+/** The bar on top: TIME counting down (red in its last ten seconds), SCORE, the level and how far along it (its checkpoints marked), the place. */
 function racingHud(buffer: PixelBuffer, accent: string, s: RacingState): void {
   const W = buffer.width
-  buffer.rect(0, 0, W, HUD_HEIGHT, '#07070e')
+  const [r, g, b] = rgbOf('#07070e'), d = buffer.data
+  for (let t = 0; t < W * HUD_HEIGHT * 4; t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
   buffer.rect(0, HUD_HEIGHT - 1, W, 1, dim(accent, 0.55))
   const secs = Math.ceil(s.time / 60), late = s.phase === 'play' && secs <= 10
   drawText(buffer, 'TIME', 8, 3, GREY)
@@ -284,11 +148,12 @@ function racingHud(buffer: PixelBuffer, accent: string, s: RacingState): void {
   const sx = Math.round(W * 0.2)
   drawText(buffer, 'SCORE', sx, 3, GREY)
   drawText7(buffer, score, sx, 11, CREAM, 1, true)
-  // the level: a line from the start to the finish, the car's dot on it
+  // the level: a line from the start to the finish, its checkpoints, the car's dot on it
   const bx = Math.round(W * 0.47), bw = Math.round(W * 0.28), progress = Math.max(0, Math.min(1, s.z / s.finish))
   drawText(buffer, `LEVEL ${String(s.level).padStart(2, '0')}`, bx, 3, GREY)
   buffer.rect(bx, 14, bw, 3, '#2a2a3a')
   buffer.rect(bx, 14, Math.round(bw * progress), 3, accent)
+  for (const c of s.checks) buffer.rect(bx + Math.round((bw * c) / s.finish), 12, 1, 7, GREY)
   buffer.rect(bx + bw - 2, 11, 3, 9, CREAM)
   buffer.disc(bx + bw * progress, 15.5, 2.5, CREAM)
   const pl = `${s.place}/${s.rivals.length + 1}`
@@ -318,12 +183,12 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   let out = surfaces.get(key)
   if (!out) { out = new PixelBuffer(size.width, size.height, INK); surfaces.set(key, out) }
   const { width: W, height: H } = RACING_BOARD[layout]
-  const v = VIEW[layout], K = W / 2
   const board = boardSurface(layout)
-  drawRace(board, s, v, K)
-  // the board under the bar, the controls beside or under it
-  out.clear(INK)
-  for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width) * 4)
+  drawRace(board, s, VIEW[layout], W / 2, accent)
+  // the board under the bar, the controls beside or under it (their band cleared first)
+  const controlsArea = out.width > W ? { x: W, y: HUD_HEIGHT, w: out.width - W, h: out.height - HUD_HEIGHT } : { x: 0, y: HUD_HEIGHT + H, w: out.width, h: out.height - HUD_HEIGHT - H }
+  if (controlsArea.w > 0 && controlsArea.h > 0) inkOver(out, controlsArea.x, controlsArea.y, controlsArea.w, controlsArea.h)
+  for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width + 0) * 4)
   const controls = racingPadGeometry(layout, pad)
   if (controls) drawPad(out, controls, accent, view.pressed)
   racingHud(out, accent, s)
@@ -333,6 +198,12 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   return out
 }
 
+/** A rectangle of the screen filled with ink, a row at a time. */
+function inkOver(out: PixelBuffer, x: number, y: number, w: number, h: number): void {
+  const [r, g, b] = rgbOf(INK), d = out.data
+  for (let yy = y; yy < y + h; yy += 1) for (let xx = x, t = (yy * out.width + x) * 4; xx < x + w; xx += 1, t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
+}
+
 const boards = new Map<Layout, PixelBuffer>()
 function boardSurface(layout: Layout): PixelBuffer {
   let b = boards.get(layout)
@@ -340,121 +211,203 @@ function boardSurface(layout: Layout): PixelBuffer {
   return b
 }
 
-/** The race on the board: the far view, the road and what stands by it, the rivals, the player's car. */
-function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot: number; half: number }, K: number): void {
+/** The far view as last drawn on each board, kept while it has neither slid nor moved up or down. */
+const skies = new Map<number, { key: string; data: Uint8ClampedArray }>()
+/** The far view at the hour, its foot on the horizon, slid as the road has turned; over a tall board the sky carried up, darkening; mirrored past its edges. */
+function farView(board: PixelBuffer, tier: Tier, horizon: number, slide: number): void {
+  const back = farViewAt(tier), W = board.width, d = board.data
+  const rows = Math.max(0, Math.min(horizon, board.height))
+  if (!back) { for (let y = 0; y < rows; y += 1) board.rect(0, y, W, 1, mix('#1a0a34', '#ff7a5a', (y / horizon) ** 1.5)); return }
+  const bw = back.width, top = horizon - back.height
+  const shift = Math.round((W - bw) / 2 + slide)
+  const key = `${tier}|${shift}|${horizon}`, kept = skies.get(W)
+  if (kept && kept.key === key) { d.set(kept.data.subarray(0, rows * W * 4)); return }
+  const s = back.data
+  const column = new Int32Array(W)
+  for (let x = 0; x < W; x += 1) { let u = (x - shift) % (bw * 2); if (u < 0) u += bw * 2; column[x] = u < bw ? u : bw * 2 - 1 - u }
+  const [fr, fg, fb] = rgbOf(tier >= 2 ? '#05050f' : '#1a0a34')
+  for (let y = 0; y < rows; y += 1) {
+    const py = Math.max(0, y - top), fade = y < top ? ((top - y) / Math.max(1, top)) ** 1.2 : 0
+    for (let x = 0; x < W; x += 1) {
+      const o = (py * bw + column[x]) * 4, t = (y * W + x) * 4
+      d[t] = s[o] + (fr - s[o]) * fade; d[t + 1] = s[o + 1] + (fg - s[o + 1]) * fade; d[t + 2] = s[o + 2] + (fb - s[o + 2]) * fade; d[t + 3] = 255
+    }
+  }
+  skies.set(W, { key, data: d.slice(0, rows * W * 4) })
+}
+
+/** The things to draw on each stretch ahead: what lies on the road, the rivals and the traffic ahead of the player. */
+type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind; z: number; x: number; turn: -1 | 0 | 1; look?: number; speed: number }> }
+
+/** Which way a car turns on the screen: toward the lane it is heading for, else with a sharp bend. */
+const turnOf = (lane: number, x: number, curve: number): -1 | 0 | 1 => (Math.abs(lane - x) > 0.04 ? (lane > x ? 1 : -1) : Math.abs(curve) > 2.5 ? (curve > 0 ? 1 : -1) : 0)
+
+/** The race on the board: the far view, the road and what stands by it and lies on it, the cars, the player's car, the weather. */
+function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot: number; half: number }, K: number, accent: string): void {
   const W = board.width, H = board.height, d = board.data, frame = s.steps
+  const tier = racingTier(s.level) as Tier
   const camH = (v.foot - v.horizon) / v.half
   const back = (K / v.half) / RACING_SEGMENT
   const camZ = s.z - back
   const camY = heightAt(s.track, Math.max(0, s.z)) + camH
-  farView(board, racingArt('playBack'), W, v.horizon, -s.view)
-  // under the horizon, the sea out to it, where no road is drawn
-  for (let y = v.horizon; y < H; y += 1) for (let x = 0; x < W; x += 1) {
-    const g = grain(x, y + ((frame >> 3) & 63) * 7), rgb = g > 0.99 ? C.glint : C.sea[y % 4 === 0 ? 1 : g > 0.72 ? 2 : 0]
-    const t = (y * W + x) * 4
-    d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255
-  }
-  // the road, nearest first, each stretch only where nearer ground has not been drawn
+  // the eye follows the road's slope a little: up a hill the horizon sinks, down one it rises
+  const slope = (heightAt(s.track, s.z + 8) - heightAt(s.track, Math.max(0, s.z - 2))) / (10 * RACING_SEGMENT)
+  const horizon = Math.round(v.horizon + Math.max(-34, Math.min(34, slope * K * 0.3)))
+  const here = segmentOf(s.track, Math.max(0, s.z)).zone
+  farView(board, tier, horizon, -s.view)
+  // the stretches ahead, nearest first: each drawn only where nearer ground has not been
   const b0 = Math.floor(camZ)
   const seg = (i: number) => (i < 0 ? FLAT : segmentOf(s.track, i))
-  const frac = camZ - b0
-  let x = 0, dx = -seg(b0).curve * RACING_BEND * frac
-  let maxY = H
+  let x = 0, dx = -seg(b0).curve * RACING_BEND * (camZ - b0)
+  let maxY = H, farX = W / 2, farZone: RacingZone = here
   const rows: Projected[] = []
+  const project = (zw: number, xw: number, yw: number): End => { const sc = 1 / zw; return { x: W / 2 + sc * (xw - s.x) * K, y: horizon + sc * (camY - yw) * K, u: sc * K } }
+  const pending: Array<() => void> = []
   for (let n = 0; n < DRAW; n += 1) {
     const i = b0 + n, g = seg(i)
     const z1 = Math.max(NEAR, (i - camZ) * RACING_SEGMENT), z2 = (i + 1 - camZ) * RACING_SEGMENT
-    const y1w = i < 0 ? 0 : g.y1, y2w = i < 0 ? 0 : g.y2
-    const s1 = 1 / z1, s2 = 1 / Math.max(NEAR, z2)
-    const p: Projected = {
-      i, seg: g, clip: maxY, behind: z2 <= NEAR,
-      x1: W / 2 + s1 * (x - s.x) * K, y1: v.horizon + s1 * (camY - y1w) * K, w1: s1 * K, s1,
-      x2: W / 2 + s2 * (x + dx - s.x) * K, y2: v.horizon + s2 * (camY - y2w) * K, w2: s2 * K, s2,
-    }
+    const a = project(z1, x, i < 0 ? 0 : g.y1), b = project(Math.max(NEAR, z2), x + dx, i < 0 ? 0 : g.y2)
+    const p: Projected = { i, seg: g, a, b, clip: maxY, behind: z2 <= NEAR, fog: fogStep(z1, FAR), zNear: z1 }
     rows.push(p)
     x += dx
     dx += g.curve * RACING_BEND
-    if (p.behind || p.y2 >= maxY || p.y2 >= p.y1) continue
-    const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1
-    const top = Math.max(0, Math.ceil(p.y2 - 0.5)), bottom = Math.min(maxY, Math.ceil(p.y1 - 0.5))
-    for (let y = top; y < bottom; y += 1) {
-      const t = (y + 0.5 - p.y2) / (p.y1 - p.y2)
-      groundRow(d, W, y, p.x2 + (p.x1 - p.x2) * t, p.w2 + (p.w1 - p.w2) * t, band, frame)
-    }
+    if (p.behind || b.y >= maxY || b.y >= a.y) continue
+    const top = Math.max(0, Math.ceil(b.y - 0.5)), bottom = Math.min(maxY, Math.ceil(a.y - 0.5))
+    const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1, wave = ((i >> 2) + (frame >> 4)) & 1
+    pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y); groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h: b.u + (a.u - b.u) * t, band, zone: g.zone, fog: p.fog, wave, land: true }, tier, frame) } })
     maxY = Math.min(maxY, top)
+    farX = b.x; farZone = g.zone
   }
-  // what stands by the road and the rivals ahead of the player, furthest first, each hidden by the ground in front of it
-  const rivals = s.rivals.filter((r) => r.z >= s.z).sort((a, b) => b.z - a.z)
-  const close = s.rivals.filter((r) => r.z < s.z).sort((a, b) => b.z - a.z)
-  let ri = 0
+  // under the horizon where no road reaches: the sea, the land on the land's side of the road's far end
+  farGround(d, W, Math.max(0, horizon), Math.max(0, Math.min(H, maxY)), Math.round(farX + 6), farZone, tier, frame)
+  for (const draw of pending) draw()
+  // in the tunnel, its dark
+  if (here === 'tunnel') for (let i = 0; i < d.length; i += 4) { d[i] *= 0.62; d[i + 1] *= 0.62; d[i + 2] *= 0.66 }
+  // what lies on each stretch and the cars on it, ahead of the player
+  const cargo: Cargo[] = rows.map(() => ({ items: [], cars: [] }))
+  for (const it of s.items) { if (it.taken) continue; const n = Math.floor(it.z) - b0; if (n >= 0 && n < rows.length) cargo[n].items.push(it) }
+  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, z: r.z, x: r.x, speed: r.speed, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve) }) }
+  for (const t of s.traffic) { const n = Math.floor(t.z) - b0; if (n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, z: t.z, x: t.x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve) }) }
+  const lit = tier >= 1
+  const night = tier >= 2
+  // furthest first: the rock and the tunnel, the barriers, what lies on the road, what stands by it, the gantries, the cars
   for (let n = rows.length - 1; n >= 0; n -= 1) {
     const p = rows[n]
     if (p.clip <= 0 || p.behind) continue
-    const i = p.i
-    // the rails along both sides, a post every fourth stretch
-    for (const side of [-1, 1]) {
-      const xa = p.x1 + side * RACING_RAIL * p.w1, xb = p.x2 + side * RACING_RAIL * p.w2
-      const ta = p.y1 - RAIL_HIGH * p.w1, tb = p.y2 - RAIL_HIGH * p.w2
-      railPiece(board, xa, ta, ta + Math.max(1, RAIL_BAR * p.w1), xb, tb, tb + Math.max(1, RAIL_BAR * p.w2), p.clip)
-      if (i % 4 === 0) { const pw = Math.max(1, Math.round(0.05 * p.w1)); for (let y = Math.round(ta); y < Math.min(p.clip, Math.round(p.y1)); y += 1) for (let k = 0; k < pw; k += 1) board.set(Math.round(xa) + k, y, POST) }
+    const { i, a, b, seg: g, clip, fog } = p
+    const band = Math.floor(i / 3) & 1
+    if (g.zone === 'tunnel') {
+      tunnelPiece(board, a, b, i, clip, tier, fog)
+    } else {
+      if (g.zone === 'cliff') cliffPiece(board, a, b, 1, band, clip, tier, fog)
+      const fence = g.zone === 'promenade' || g.zone === 'causeway' ? blocks : rail
+      fence(board, a, b, -1, i, clip, tier, fog)
+      if (g.zone !== 'cliff') fence(board, a, b, 1, i, clip, tier, fog)
+      if (seg(i + 1).zone === 'tunnel' && i >= 0) tunnelMouth(board, b, clip, tier, fog)
     }
-    for (const thing of p.seg.things) {
-      const u = p.w1, foot = p.y1, cx = p.x1 + thing.x * u
-      const pic = racingArt(thing.kind === 'palm' ? 'palm' : 'chevron')
-      if (!pic) continue
-      const h = (thing.kind === 'palm' ? PALM_HIGH : CHEVRON_HIGH) * u, w = (pic.width * h) / pic.height
-      if (h < 2) continue
-      drawArt(board, pic, cx - w / 2, foot - h, w, h, p.clip, thing.flip)
+    for (const it of cargo[n].items) {
+      const at = place(p, it.z, it.x)
+      if (it.kind === 'puddle') puddle(board, at.x, at.y, at.u, clip, tier, fog)
+      else if (it.kind === 'cone') cone(board, at.x, at.y, at.u, clip, tier, fog)
+      else if (it.kind === 'coin') coin(board, at.x, at.y, at.u, clip, frame, it.z)
+      else if (it.kind === 'time') stopwatch(board, at.x, at.y, at.u, clip, frame)
+      else bottle(board, at.x, at.y, at.u, clip, frame)
     }
-    // the start's gantry and the finish line's
-    if (i === RACING_START_LINE) gantry(board, { x: p.x1, y: p.y1, s: p.s1 }, K, p.clip, false, s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3)
-    if (i === s.finish) gantry(board, { x: p.x1, y: p.y1, s: p.s1 }, K, p.clip, true, 0)
-    // the rivals on this stretch
-    while (ri < rivals.length && Math.floor(rivals[ri].z) > i) ri += 1
-    while (ri < rivals.length && Math.floor(rivals[ri].z) === i) {
-      const r = rivals[ri]
-      ri += 1
-      rival(board, rows, b0, r, K, frame + ri * 5)
+    for (const thing of g.things) {
+      const cx = a.x + thing.x * a.u
+      if (thing.kind === 'chevron') chevron(board, cx, a.y, a.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'bush') shrub(board, cx, a.y, a.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'lamp') { if (lit && fog < 12) lampPool(board, a.x + thing.x * 0.8 * a.u, a.y, a.u, clip); lamp(board, cx, a.y, a.u, thing.flip ? -1 : 1, clip, tier, fog, lit) }
+      else {
+        const pic = racingArt('palm')
+        if (!pic) continue
+        const h = PALM_HIGH * a.u, w = (pic.width * h) / pic.height
+        if (h < 3) continue
+        const { rgb, by } = tintFor(tier, fog)
+        drawArt(board, pic, cx - w / 2, a.y - h, w, h, clip, thing.flip, rgb, by)
+      }
+    }
+    if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
+    if (s.checks.includes(i)) gantry(board, a, clip, 'check', 0, accent, tier, fog)
+    if (i === s.finish) gantry(board, a, clip, 'finish', 0, accent, tier, fog)
+    for (const c of cargo[n].cars.sort((m, k) => k.z - m.z)) {
+      const at = place(p, c.z, c.x)
+      const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
+      drawCar(board, c.kind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, look: c.look, tier, fog, lights: night })
     }
   }
-  // the player's car: leaning as it steers, bouncing at speed, shaken by a knock
+  // the player's car: turning as it steers, bouncing at speed, shaken by a knock; its lights on the road after dark
   const width = RACING_CAR_WIDTH * v.half
   const shake = s.knock > 0 ? ((s.knock >> 1) % 2 ? 2 : -2) : 0
   const bob = s.speed > 0.05 && (frame >> 2) % 2 ? 1 : 0
-  const cx = W / 2 + s.steer * 3 + shake
-  drawCar(board, s.car, cx, v.foot - bob, width)
-  // a rival just behind, nearer the eye than the player's car
-  close.forEach((r, k) => rival(board, rows, b0, r, K, frame + k * 7))
-  // off the road, sand or leaves flying from the wheels; slow, the exhausts' puffs
-  if (s.offroad && s.speed > 0.05) {
-    const color = s.x < 0 ? '#f0c09a' : '#3a7a4a'
+  const cx = W / 2 + shake
+  if (night) glow(board, cx, v.foot - width * 0.95, width * 1.3, '#fff6d8', 0.13, v.foot - width * 0.35, 0.22)
+  drawCar(board, s.car, cx, v.foot - bob, width, { turn: s.steer, tier: tier === 3 ? 2 : tier, fog: 0, lights: night })
+  if (s.turbo > 0) for (const side of [-1, 1]) flames(board, cx + side * width * 0.28, v.foot - 6, width * 0.14, frame + side)
+  else if (s.offroad && s.speed > 0.05) {
+    const color = here === 'beach' && s.x < 0 ? '#f0c09a' : '#3a7a4a'
     puff(board, cx - width * 0.42, v.foot - 4, -1, frame, 0, color, 0.7)
     puff(board, cx + width * 0.42, v.foot - 4, 1, frame, 2, color, 0.7)
   } else if (s.speed < 0.35 && s.phase !== 'over') {
     puff(board, cx - width * 0.28, v.foot - 6, -1, frame >> 1, 0)
     puff(board, cx + width * 0.28, v.foot - 6, 1, frame >> 1, 2)
   }
+  if (s.skid > 0) for (const side of [-1, 1]) glow(board, cx + side * width * 0.4, v.foot - 2, width * 0.18, '#c81a1a', 0.5)
+  // a car just behind, nearer the eye than the player's
+  for (const r of s.rivals) if (r.z < s.z && r.z > camZ + 2) { const n = Math.floor(r.z) - b0, p = rows[n]; if (p) { const at = place(p, r.z, r.x); drawCar(board, r.kind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: turnOf(r.lane, r.x, 0), tier, fog: 0, lights: night }) } }
+  if (tier === 3) storm(board, frame, horizon)
   // the speed, in a corner
   const kmh = String(racingKmh(s.speed)).padStart(3, ' ')
   const ky = H - 26
   drawText7(board, kmh, 11, ky + 1, INK, 2, true)
-  drawText7(board, kmh, 10, ky, CREAM, 2, true)
+  drawText7(board, kmh, 10, ky, s.turbo > 0 ? '#ffd02a' : CREAM, 2, true)
   drawText(board, 'KM/H', 10 + text7Width(kmh, 2, true) + 4, ky + 8, CREAM)
 }
 
-/** The words over the board: the level and the lights at the start, GO!, GOAL! and its points, TIME UP. */
+/** Where a point of the road at `z`, `x` stands on the screen, inside its stretch. */
+function place(p: Projected, z: number, x: number): { x: number; y: number; u: number } {
+  const t = Math.max(0, Math.min(1, z - Math.floor(z)))
+  const u = p.a.u + (p.b.u - p.a.u) * t
+  return { x: p.a.x + (p.b.x - p.a.x) * t + x * u, y: p.a.y + (p.b.y - p.a.y) * t, u }
+}
+
+/** The storm: rain slanting across, now and then lightning lighting everything up, its bolt over the sea. */
+function storm(board: PixelBuffer, frame: number, horizon: number): void {
+  const W = board.width, H = board.height, d = board.data
+  const flash = frame % 431 < 4 || frame % 677 < 3
+  if (flash) {
+    for (let i = 0; i < d.length; i += 4) { d[i] += (220 - d[i]) * 0.45; d[i + 1] += (226 - d[i + 1]) * 0.45; d[i + 2] += (255 - d[i + 2]) * 0.45 }
+    let bx = 60 + ((frame * 37) % (W - 120)), by = 0
+    while (by < horizon - 20) { const nx = bx + (((by * 13 + frame) % 7) - 3) * 3; board.line(bx, by, nx, by + 8, '#ffffff'); bx = nx; by += 8 }
+  }
+  for (let k = 0; k < 110; k += 1) {
+    const x = Math.floor((((k * 7919) % 997) / 997) * W + frame * 2.5) % W, y = Math.floor((((k * 104729) % 991) / 991) * H + frame * 11) % H
+    for (let j = 0; j < 7; j += 1) { const px = x - (j >> 1), py = y + j; if (px >= 0 && py < H) { const o = (py * W + px) * 4; d[o] += (190 - d[o]) * 0.4; d[o + 1] += (200 - d[o + 1]) * 0.4; d[o + 2] += (230 - d[o + 2]) * 0.4 } }
+  }
+}
+
+/** The words over the board: the level and the lights at the start, GO!, a checkpoint, the stopwatch or the turbo just taken, GOAL! and its points, TIME UP. */
 function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: number): void {
   const top = HUD_HEIGHT, mid = top + Math.round(H * 0.36)
-  // the level, then the count over the start's gantry
   if (s.phase === 'start') {
     arcadeText(out, `LEVEL ${String(s.level).padStart(2, '0')}`, W / 2, top + 12, 3, accent)
     if (s.phaseTimer >= 20) said(out, String(3 - Math.floor(s.phaseTimer / 60)), W / 2, top + 46, CREAM, 5)
-  } else if (s.phase === 'play' && s.phaseTimer < 50 && s.z < 60) said(out, 'GO!', W / 2, top + 46, '#3aff6a', 5)
+    return
+  }
+  if (s.phase === 'play' && s.phaseTimer < 50 && s.z < 60) said(out, 'GO!', W / 2, top + 46, '#3aff6a', 5)
   else if (s.phase === 'goal') {
     arcadeText(out, 'GOAL!', W / 2, mid - 6, 4, accent)
     if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE +${s.bonus.place}`, W / 2, mid + 36, s.bonus.rank === 1 ? '#ffd23f' : CREAM, 2)
     if (s.phaseTimer > 70 && s.bonus) said(out, `TIME +${s.bonus.time}`, W / 2, mid + 56, CREAM, 2)
-  } else if (s.phase === 'timeup' || s.phase === 'over') arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a')
+    return
+  } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
+  if (s.news && (s.news.steps > 20 || (s.news.steps >> 2) % 2 === 0)) said(out, s.news.text, W / 2, top + 40, s.news.text.startsWith('CHECK') ? '#3aff6a' : '#ffd23f', W >= 400 ? 3 : 2)
+  // the turbo: the bottle and what is left of it, under the bar
+  if (s.turbo > 0) {
+    out.blit(MUSTARD, 10, top + 6, BONUS_PALETTE, { scale: 2 })
+    out.rect(28, top + 14, 40, 4, '#2a2a3a')
+    out.rect(28, top + 14, Math.max(1, Math.round((40 * s.turbo) / 240)), 4, '#ffd02a')
+  }
 }
 
 // ---------------------------------------------------------------- a moment of play, for the gallery

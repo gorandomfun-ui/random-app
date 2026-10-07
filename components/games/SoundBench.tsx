@@ -30,7 +30,7 @@ const PLAY: Record<GameName, SoundName[]> = {
   eater: ['bite', 'bite', 'fries', 'bite', 'bite', 'shake', 'bite', 'donut', 'bite', 'bite', 'gold', 'bite', 'level'],
   catcher: ['item', 'item', 'coin', 'item', 'sauce', 'item', 'slip', 'note', 'item', 'card', 'item', 'bundle', 'caught', 'item', 'level'],
   attacks: ['squirt', 'pop', 'squirt', 'rip', 'squirt', 'pop', 'whoosh', 'squirt', 'pop', 'clink', 'squirt', 'thud', 'squirt', 'thud', 'gold', 'power', 'squirt', 'hurt', 'boom', 'level'],
-  racing: ['beep', 'beep', 'beep', 'go', 'whoosh', 'thud', 'whoosh', 'beep', 'beep', 'level'],
+  racing: ['beep', 'beep', 'beep', 'go', 'coin', 'coin', 'coin', 'whoosh', 'note', 'slip', 'thud', 'power', 'clink', 'gold', 'whoosh', 'beep', 'beep', 'level'],
 }
 
 export default function SoundBench({ accent }: { accent: string }) {

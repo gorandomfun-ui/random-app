@@ -36,9 +36,10 @@ const LABELS: Record<string, string> = {
   'attacks-jeu-16': 'Niveau 16 — MEGA BURGER, ciel de sang et éclairs',
   'attacks-game-over': 'Game over',
   'racing-titre': 'Écran d’accueil — la voiture choisie marquée',
-  'racing-jeu-1': 'Niveau 1 — virages doux',
-  'racing-jeu-9': 'Niveau 9 — virages serrés, bosses',
-  'racing-jeu-16': 'Niveau 16 — le plus dur',
+  'racing-jeu-1': 'Niveau 1 — coucher de soleil, la plage et la promenade',
+  'racing-jeu-7': 'Niveau 7 — crépuscule, falaise, tunnel, circulation',
+  'racing-jeu-11': 'Niveau 11 — la nuit, lampadaires allumés',
+  'racing-jeu-14': 'Niveau 14 — l’orage, route glissante',
   'racing-game-over': 'Game over',
   'racing-winner': 'Winner',
   'attacks-winner': 'Winner',
@@ -107,7 +108,7 @@ export default function MockGallery() {
     layout,
     shots: [
       { name: 'racing-titre', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingTitle(layout, accent, 'sans', { frame, blink: frame % 2 === 0 }) },
-      ...[1, 9, 16].map((level) => ({ name: `racing-jeu-${level}`, width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 568, draw: (frame: number) => renderRacingPlay(layout, accent, { frame, level }) })),
+      ...[1, 7, 11, 14].map((level) => ({ name: `racing-jeu-${level}`, width: layout === 'landscape' ? 448 : 320, height: layout === 'landscape' ? 344 : 568, draw: (frame: number) => renderRacingPlay(layout, accent, { frame, level }) })),
       { name: 'racing-game-over', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingOver(layout, accent, { score: 7420, best: 9100, frame, blink: frame % 2 === 0 }) },
       { name: 'racing-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderRacingWinner(layout, accent, { score: 41250, best: 41250, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
@@ -126,7 +127,7 @@ export default function MockGallery() {
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          La route de la côte au coucher du soleil, d&apos;après ton image simplifiée : le titre avec la voiture choisie (la rouge, le burger sur roues, la jaune), des moments de course aux niveaux 1, 9 et 16, le game over et le winner. Le jeu se joue sur sa page de test, /admin/racing (et /admin/racing?niveau=8 pour commencer au niveau 8). Dans la couleur choisie ci-dessus.
+          La route de la côte au coucher du soleil, d&apos;après ton image simplifiée : le titre avec la voiture choisie (la rouge, le burger sur roues, la jaune), des moments de course aux niveaux 1, 7, 11 et 14 (le soir tombe au fil des niveaux), le game over et le winner. Le jeu se joue sur sa page de test, /admin/racing (et /admin/racing?niveau=8 pour commencer au niveau 8). Dans la couleur choisie ci-dessus.
         </p>
         {racing.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
