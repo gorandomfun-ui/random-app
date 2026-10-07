@@ -21,6 +21,7 @@
     "test:games:flow": "node tests/games/flow.lifecycle.mjs",
     "test:v3:mongo": "node --env-file=.env.local --test-concurrency=1 --import tsx --test tests/v3/*.mongo.test.ts",
     "test:ui": "node --import tsx --test tests/ui/*.test.ts",
+    "test:comm": "node --import tsx --test tests/comm/*.test.ts",
     "sound:render": "node --import tsx scripts/sound/render.ts"
   },
   "dependencies": {
