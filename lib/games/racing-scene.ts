@@ -353,6 +353,19 @@ export function lampPool(buffer: PixelBuffer, x: number, y: number, u: number, c
   glow(buffer, x, y, 0.9 * u, '#ffc890', 0.32, clip, 0.22)
 }
 
+/** A bush on the land, `u` pixels to a half width: three round clumps, dark below, lit on top, a shadow at its foot. */
+export function shrub(buffer: PixelBuffer, cx: number, y: number, u: number, flip: boolean, clip: number, tier: Tier, fog: number): void {
+  const r = 0.26 * u
+  if (r < 1) return
+  const dark = shade('bush0', tier, fog), mid = shade('bush1', tier, fog), lit = shade('grass0', tier, fog)
+  const s = flip ? -1 : 1
+  for (const [dx, dy, k] of [[-0.55, -0.85, 0.85], [0.55, -0.8, 0.8], [0, -1.25, 1]] as const) {
+    disc(buffer, cx + s * dx * r, y + dy * r, r * k, dark, clip)
+    disc(buffer, cx + s * dx * r - r * 0.12, y + dy * r - r * 0.18, r * k * 0.72, mid, clip)
+    if (r > 3) disc(buffer, cx + s * dx * r - r * 0.25, y + dy * r - r * 0.35, r * k * 0.32, lit, clip)
+  }
+}
+
 /** A cone of the roadworks, `u` pixels to a half width: orange with a white band, on its base. */
 export function cone(buffer: PixelBuffer, cx: number, y: number, u: number, clip: number, tier: Tier, fog: number): void {
   const h = 0.3 * u, base = 0.22 * u

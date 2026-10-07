@@ -97,8 +97,8 @@ export const racingStorm = (level: number): boolean => racingTier(level) === 3
 
 /** The kinds of road along the coast. */
 export type RacingZone = 'beach' | 'promenade' | 'cliff' | 'causeway' | 'tunnel'
-/** What stands by the road on a stretch: a palm, a chevron pointing into a bend (`flip`: pointing left), a lamp; `x` in half widths from the middle. */
-export type RacingThing = { kind: 'palm' | 'chevron' | 'lamp'; x: number; flip: boolean }
+/** What stands by the road on a stretch: a palm, a chevron pointing into a bend (`flip`: pointing left), a lamp, a bush; `x` in half widths from the middle. */
+export type RacingThing = { kind: 'palm' | 'chevron' | 'lamp' | 'bush'; x: number; flip: boolean }
 /** A stretch: how much the road bends there (to the right when positive), its height at its near and far ends, its kind, what stands by it. */
 export type RacingSegment = { curve: number; y1: number; y2: number; zone: RacingZone; things: RacingThing[] }
 
@@ -221,13 +221,15 @@ export function racingCourse(level: number): RacingCourse {
   add(0, RUNOFF, 0, 0, 0)
   // what stands by it, a little irregular: palms on the beach and among the bushes, lamps along the promenade and the causeway, chevrons on the outside of bends
   const place = seeded(77 + lv * 131)
-  let palmL = 20, palmR = 30, lamp = 10
+  let palmL = 20, palmR = 30, lamp = 10, bush = 12
   track.forEach((seg, i) => {
     if (i < 24 || i > finish + 200) return
     const z = seg.zone
     if (z === 'tunnel') return
     if (z === 'beach' && i >= palmL) { seg.things.push({ kind: 'palm', x: -2.25 - place() * 0.9, flip: place() < 0.5 }); palmL = i + 9 + Math.floor(place() * 14) }
     if ((z === 'beach' || z === 'promenade') && i >= palmR) { seg.things.push({ kind: 'palm', x: 2.15 + place() * 1.2, flip: place() < 0.5 }); palmR = i + 14 + Math.floor(place() * 18) }
+    // bushes scattered over the land past the beach, near and far
+    if (z === 'beach' && i >= bush) { seg.things.push({ kind: 'bush', x: 2.0 + place() * 4.5, flip: place() < 0.5 }); bush = i + 4 + Math.floor(place() * 6) }
     if ((z === 'promenade' || z === 'causeway') && i >= lamp) { seg.things.push({ kind: 'lamp', x: -1.95, flip: false }, { kind: 'lamp', x: 1.95, flip: true }); lamp = i + 16 }
     if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0 })
   })

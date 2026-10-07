@@ -29,7 +29,7 @@ import {
 } from './racing-rules'
 import {
   blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, farGround, farViewAt, flames, fogStep, gantry, glow, groundRow, lamp, lampPool,
-  puddle, puff, rail, stopwatch, tintFor, tunnelMouth, tunnelPiece, type End, type Tier,
+  puddle, puff, rail, shrub, stopwatch, tintFor, tunnelMouth, tunnelPiece, type End, type Tier,
 } from './racing-scene'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
@@ -300,6 +300,7 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     for (const thing of g.things) {
       const cx = a.x + thing.x * a.u
       if (thing.kind === 'chevron') chevron(board, cx, a.y, a.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'bush') shrub(board, cx, a.y, a.u, thing.flip, clip, tier, fog)
       else if (thing.kind === 'lamp') { if (lit && fog < 12) lampPool(board, a.x + thing.x * 0.8 * a.u, a.y, a.u, clip); lamp(board, cx, a.y, a.u, thing.flip ? -1 : 1, clip, tier, fog, lit) }
       else {
         const pic = racingArt('palm')
