@@ -106,7 +106,7 @@ const ScoresPanel = dynamic(() => import('@/components/games/ScoresPanel'), { ss
 const ticketOf = (run: Run | undefined): Ticket | null => (run?.token && run.runId && run.startedAt ? { runId: run.runId, token: run.token, startedAt: run.startedAt } : null)
 const PixelWords = dynamic(() => import('@/components/games/PixelWords'), { ssr: false })
 const ArcadeBench = dynamic(() => import('@/components/games/ArcadeBench'), { ssr: false })
-const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
+const ARCADE_TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS', racing: 'RANDOM RACING' }
 
 const TYPE_ICONS: Record<ItemType, string> = {
   image: '/icons/image.svg',

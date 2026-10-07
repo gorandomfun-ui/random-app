@@ -18,17 +18,19 @@ const LABELS: Record<SoundName, string> = {
   bite: 'Burger avalé', fries: 'Frites', shake: 'Milkshake', donut: 'Donut', gold: 'Burger doré', crash: 'Choc (perdu)',
   item: 'Article avalé', sauce: 'Bouteille de sauce', slip: 'Client qui glisse', coin: 'Pièce', note: 'Billet', bundle: 'Liasse', card: 'Carte', caught: 'Attrapé',
   squirt: 'Giclée de ketchup', pop: 'Burger touché', clink: 'Assiette ébréchée', power: 'Bonus attrapé', hurt: 'Cuisinier touché',
-  rip: 'Papier alu arraché', whoosh: 'Plongeurs qui partent', thud: 'Boss touché', boom: 'Boss qui explose',
+  rip: 'Papier alu arraché', whoosh: 'Plongeurs qui partent / rival dépassé', thud: 'Boss touché / choc', boom: 'Boss qui explose',
+  beep: 'Feu rouge', go: 'Feu vert',
   level: 'Niveau gagné', over: 'Game over', winner: 'Winner',
 }
-const GAMES: GameName[] = ['eater', 'catcher', 'attacks']
-const NAMES: Record<GameName, string> = { eater: 'Random Eater', catcher: 'Random Catcher', attacks: 'Random Attacks' }
-const TUNES: Record<GameName, string> = { eater: 'Musique du diner', catcher: 'Musique de la supérette', attacks: 'Musique de Mars' }
+const GAMES: GameName[] = ['eater', 'catcher', 'attacks', 'racing']
+const NAMES: Record<GameName, string> = { eater: 'Random Eater', catcher: 'Random Catcher', attacks: 'Random Attacks', racing: 'Random Racing' }
+const TUNES: Record<GameName, string> = { eater: 'Musique du diner', catcher: 'Musique de la supérette', attacks: 'Musique de Mars', racing: 'Musique de la côte' }
 /** What a game sounds like for half a minute: mostly the plain catch, now and then something more. */
 const PLAY: Record<GameName, SoundName[]> = {
   eater: ['bite', 'bite', 'fries', 'bite', 'bite', 'shake', 'bite', 'donut', 'bite', 'bite', 'gold', 'bite', 'level'],
   catcher: ['item', 'item', 'coin', 'item', 'sauce', 'item', 'slip', 'note', 'item', 'card', 'item', 'bundle', 'caught', 'item', 'level'],
   attacks: ['squirt', 'pop', 'squirt', 'rip', 'squirt', 'pop', 'whoosh', 'squirt', 'pop', 'clink', 'squirt', 'thud', 'squirt', 'thud', 'gold', 'power', 'squirt', 'hurt', 'boom', 'level'],
+  racing: ['beep', 'beep', 'beep', 'go', 'whoosh', 'thud', 'whoosh', 'beep', 'beep', 'level'],
 }
 
 export default function SoundBench({ accent }: { accent: string }) {
@@ -37,9 +39,9 @@ export default function SoundBench({ accent }: { accent: string }) {
   const [demo, setDemo] = useState<GameName | null>(null)
 
   useEffect(() => {
-    const made = { eater: gameSounds('eater'), catcher: gameSounds('catcher'), attacks: gameSounds('attacks') }
+    const made = { eater: gameSounds('eater'), catcher: gameSounds('catcher'), attacks: gameSounds('attacks'), racing: gameSounds('racing') }
     sounds.current = made
-    return () => { made.eater.dispose(); made.catcher.dispose(); made.attacks.dispose() }
+    return () => { made.eater.dispose(); made.catcher.dispose(); made.attacks.dispose(); made.racing.dispose() }
   }, [])
 
   // the tune asked for again and again, as a game does at every frame

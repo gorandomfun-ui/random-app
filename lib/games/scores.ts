@@ -8,8 +8,8 @@
  * two hundred best are in the database.
  */
 
-export type GameName = 'catcher' | 'eater' | 'attacks'
-export const GAME_NAMES: readonly GameName[] = ['catcher', 'eater', 'attacks']
+export type GameName = 'catcher' | 'eater' | 'attacks' | 'racing'
+export const GAME_NAMES: readonly GameName[] = ['catcher', 'eater', 'attacks', 'racing']
 /** A game's name as a request may carry it: one of the games, or not. */
 export const isGameName = (value: unknown): value is GameName => typeof value === 'string' && (GAME_NAMES as readonly string[]).includes(value)
 /** `runId`: that game's line in the world's table, when it was sent there — so the panel can light it. */

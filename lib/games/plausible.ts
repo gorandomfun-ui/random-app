@@ -7,18 +7,20 @@
  */
 
 import { attacksLevelMax } from './attacks-rules'
+import { racingLevelMax } from './racing-rules'
 import { levelParams } from './catcher'
 import { eaterParams } from './eater'
 import type { GameName } from './scores'
 
-/** For what comes and goes in a level — sauce, stuns and money in CATCHER, bonuses in EATER — at most this much (ATTACKS counts its own). */
-const EXTRAS: Record<GameName, number> = { catcher: 900, eater: 600, attacks: 0 }
+/** For what comes and goes in a level — sauce, stuns and money in CATCHER, bonuses in EATER — at most this much (ATTACKS and RACING count their own). */
+const EXTRAS: Record<GameName, number> = { catcher: 900, eater: 600, attacks: 0, racing: 0 }
 export const LAST_LEVEL = 16
 
 /** The fixed points of level `l`: everything on the list or every burger, and the level's own bonus. */
 function levelPoints(game: GameName, l: number): number {
   if (game === 'catcher') return levelParams(l).need.reduce((a, b) => a + b, 0) * 10 + 50 * l
   if (game === 'attacks') return attacksLevelMax(l)
+  if (game === 'racing') return racingLevelMax(l)
   return eaterParams(l).target * 5 + 50 * l
 }
 

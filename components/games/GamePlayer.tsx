@@ -9,7 +9,10 @@
  * whole band under the board answers, and a thumb can roll from one arm to
  * the next without lifting. In ATTACKS the cook walks while left or right
  * is held — a key or an arrow under the board — and squirts when fire is:
- * the space bar or up, the FIRE button, or a finger on the sky. P or Escape pause, and so does the page's own
+ * the space bar or up, the FIRE button, or a finger on the sky. In RACING the
+ * car is chosen on the title (left and right, or a tap on it); in the race
+ * left and right steer while held, up or the space bar is the gas (A), down
+ * the brake (B). P or Escape pause, and so does the page's own
  * pause button through `control`; the game pauses by itself when the page
  * is left. Wide or tall is chosen at the start of a game, from the frame's
  * shape, and kept until it ends. Each game has its tune, on the title and
@@ -23,6 +26,8 @@ import { attacksOverHits, attacksPadGeometry, attacksPadPart, renderAttacksGame,
 import { ATTACKS_BOARD, ATTACKS_LAST_LEVEL, createAttacks, stepAttacks, type AttacksState } from '@/lib/games/attacks-rules'
 import { createCatcher, nextLevel, stepCatcher, type CatcherState } from '@/lib/games/catcher'
 import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
+import { nextCar, racingCarAt, racingOverHits, racingPadGeometry, racingPadPart, racingWinnerHits, renderRacingGame, renderRacingOver, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, stepRacing, type RacingCarKind, type RacingState } from '@/lib/games/racing-rules'
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
@@ -60,6 +65,9 @@ type Session = {
   catcher: CatcherState | null
   eater: EaterState | null
   attacks: AttacksState | null
+  racing: RacingState | null
+  /** RACING's car, chosen on the title. */
+  car: RacingCarKind
   /** The pause card, RESUME (0) or QUIT (1) lit; null while playing. */
   pause: 0 | 1 | null
   /** GAME OVER's answer: YES (0) or NO (1). */
@@ -88,10 +96,19 @@ function gameSeed(): number {
   try { const a = new Uint32Array(1); crypto.getRandomValues(a); return (a[0] % 0x7ffffffe) + 1 } catch { return (Date.now() % 0x7ffffffe) + 1 }
 }
 
+/** RACING's car, remembered on this device from one game to the next. */
+const CAR_KEY = 'random_racing_car_v1'
+function savedCar(): RacingCarKind {
+  try { const v = window.localStorage.getItem(CAR_KEY); return RACING_CARS.includes(v as RacingCarKind) ? (v as RacingCarKind) : 'burger' } catch { return 'burger' }
+}
+function saveCar(car: RacingCarKind): void {
+  try { window.localStorage.setItem(CAR_KEY, car) } catch { /* private window: the choice lasts the page */ }
+}
+
 /** The title, GAME OVER and WINNER move at the pace of the approved mock page: a picture every 450 ms. */
 const SLOW_MS = 450
 const within = (h: Hit, x: number, y: number) => x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h
-const TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS' }
+const TITLES: Record<GameName, string> = { catcher: 'RANDOM CATCHER', eater: 'RANDOM EATER', attacks: 'RANDOM ATTACKS', racing: 'RANDOM RACING' }
 
 /**
  * Where the cross goes for each shape of board: a desktop's wide board has
@@ -164,7 +181,7 @@ export default function GamePlayer({
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, attacks: null, pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, pad: 'none', dirty: true })
+  const session = useRef<Session>({ mode: 'title', layout: 'landscape', catcher: null, eater: null, attacks: null, racing: null, car: 'burger', pause: null, choice: 0, frame: 0, blink: true, slow: 0, endSteps: 0, seed: 1, score: 0, level: 1, won: false, retriesLeft: round?.retries ?? 0, pad: 'none', dirty: true })
   const roundRef = useRef(round)
   // a round changes only between two: NEW GAME puts the next one back at level 1 before it starts
   roundRef.current = round
@@ -199,6 +216,7 @@ export default function GamePlayer({
     const touched = () => { wakeSound(); sounds.touch() }
     bestRef.current = bestScore(game)
     callbacks.current.onBest?.(bestRef.current)
+    if (game === 'racing') s.car = savedCar()
     s.layout = layoutFor(box.width, box.height, touchScreen)
     s.dirty = true
 
@@ -206,14 +224,15 @@ export default function GamePlayer({
     const draw = (): PixelBuffer => {
       // in a round a real PLAY button takes PRESS START's place
       const title = { level: roundRef.current?.level ?? startLevel, best: bestRef.current, frame: s.frame, blink: s.blink, press: !inRound() }
-      if (s.mode === 'title') return game === 'attacks' ? renderAttacksTitle(s.layout, accent, 'zen', title) : renderTitle(game, s.layout, accent, { ...title, day: isDaytime() })
+      if (s.mode === 'title') return game === 'attacks' ? renderAttacksTitle(s.layout, accent, 'zen', title) : game === 'racing' ? renderRacingTitle(s.layout, accent, 'sans', { ...title, car: s.car }) : renderTitle(game, s.layout, accent, { ...title, day: isDaytime() })
       // in a round, the end speaks through the page: no PLAY AGAIN? unless a retry is on offer
       const ask = !inRound() || s.mode === 'retry'
       const ended = { score: s.score, best: Math.max(bestRef.current, s.score), frame: s.frame, blink: s.mode !== 'name' && s.blink, choice: s.choice, ask }
-      if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return game === 'attacks' ? renderAttacksWinner(s.layout, accent, ended) : renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
-      if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return game === 'attacks' ? renderAttacksOver(s.layout, accent, ended) : renderGameOver(game, s.layout, accent, { ...ended, day: isDaytime() })
+      if (s.mode === 'winner' || (s.mode === 'name' && s.won)) return game === 'attacks' ? renderAttacksWinner(s.layout, accent, ended) : game === 'racing' ? renderRacingWinner(s.layout, accent, { ...ended, car: s.car }) : renderWinner(game, s.layout, accent, { ...ended, day: isDaytime() })
+      if (s.mode === 'over' || s.mode === 'name' || s.mode === 'retry' || s.mode === 'lost') return game === 'attacks' ? renderAttacksOver(s.layout, accent, ended) : game === 'racing' ? renderRacingOver(s.layout, accent, ended) : renderGameOver(game, s.layout, accent, { ...ended, day: isDaytime() })
       // in a round the pause card only offers RESUME: leaving is the page's business
       if (s.attacks) return renderAttacksGame(s.attacks, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound(), pressed: pressed() })
+      if (s.racing) return renderRacingGame(s.racing, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound(), pressed: pressed() })
       if (s.catcher) return renderCatcherGame(s.catcher, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
       return renderEaterGame(s.eater!, accent, { pause: s.pause, pad: s.pad, resumeOnly: inRound() })
     }
@@ -245,10 +264,11 @@ export default function GamePlayer({
       s.layout = layoutFor(box.width, box.height, touchScreen, bigRef.current)
       s.seed = gameSeed()
       s.pad = padsFor(touchScreen, bigRef.current)[s.layout]
-      // a round starts at its level with the score so far, CATCHER with three lives, EATER for that one level, ATTACKS both
+      // a round starts at its level with the score so far, CATCHER with three lives, EATER and RACING for that one level, ATTACKS both
       s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
       s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
       s.attacks = game === 'attacks' ? createAttacks(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, lives: 3 } : {}) : null
+      s.racing = game === 'racing' ? createRacing(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, car: s.car } : { car: s.car }) : null
       release()
       s.mode = 'play'
       s.pause = null
@@ -265,6 +285,7 @@ export default function GamePlayer({
       s.catcher = null
       s.eater = null
       s.attacks = null
+      s.racing = null
       s.pause = null
       s.layout = layoutFor(box.width, box.height, touchScreen)
       s.dirty = true
@@ -330,6 +351,16 @@ export default function GamePlayer({
         if (a.phase === 'over') end(a.score, a.level, 60, false)
         else if (a.phase === 'won' && a.single && a.level < ATTACKS_LAST_LEVEL) cleared(a.score, a.level)
         else if (a.phase === 'won') end(a.score, a.level, 30, true)
+      } else if (s.racing) {
+        const g = s.racing
+        const passed = g.passed
+        stepRacing(g, walk(), gassing(), braking())
+        for (const heard of g.heard) sounds.play(heard)
+        if (g.passed > passed) callbacks.current.onLevelCleared?.(g.level - 1)
+        // TIME UP has had its two seconds; half a second on the line before WINNER
+        if (g.phase === 'over') end(g.score, g.level, 20, false)
+        else if (g.phase === 'won' && g.single && g.level < RACING_LAST_LEVEL) cleared(g.score, g.level)
+        else if (g.phase === 'won') end(g.score, g.level, 30, true)
       }
     }
     const steer = (dir: Direction) => {
@@ -339,8 +370,10 @@ export default function GamePlayer({
     }
     // ATTACKS: the cook walks while a way is held — the last arrow key pressed and still down, else the arrow under a finger — and squirts while
     // fire is held: a fire key, the FIRE button, a finger on the sky; a quick press counts for a tenth of a second, so no tap is lost between two steps
-    const held: { keys: Array<-1 | 1>; fire: Set<string>; latch: number; fingers: Map<number, 'left' | 'right' | 'fire' | 'sky'> } = { keys: [], fire: new Set(), latch: 0, fingers: new Map() }
-    const release = () => { held.keys = []; held.fire.clear(); held.latch = 0; held.fingers.clear() }
+    // RACING: the same for steering; the gas held as fire is (a key, the A button), the brake as its own (down, the B button)
+    type Finger = 'left' | 'right' | 'fire' | 'sky' | 'gas' | 'brake'
+    const held: { keys: Array<-1 | 1>; fire: Set<string>; brake: Set<string>; latch: number; fingers: Map<number, Finger> } = { keys: [], fire: new Set(), brake: new Set(), latch: 0, fingers: new Map() }
+    const release = () => { held.keys = []; held.fire.clear(); held.brake.clear(); held.latch = 0; held.fingers.clear() }
     const fingers = () => [...held.fingers.values()]
     const walk = (): -1 | 0 | 1 => {
       if (held.keys.length) return held.keys[held.keys.length - 1]
@@ -348,10 +381,13 @@ export default function GamePlayer({
       return way === 'left' ? -1 : way === 'right' ? 1 : 0
     }
     const firing = () => held.fire.size > 0 || held.latch > 0 || fingers().some((f) => f === 'fire' || f === 'sky')
-    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire') } }
-    /** Where a finger falls in play: an arrow, FIRE, the sky over the board, or none of them. */
-    const partAt = (e: PointerEvent): 'left' | 'right' | 'fire' | 'sky' | null => {
+    const gassing = () => held.fire.size > 0 || fingers().includes('gas')
+    const braking = () => held.brake.size > 0 || fingers().includes('brake')
+    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire'), gas: f.includes('gas'), brake: f.includes('brake') } }
+    /** Where a finger falls in play: an arrow, FIRE, the sky over the board (ATTACKS), A or B (RACING), or none of them. */
+    const partAt = (e: PointerEvent): Finger | null => {
       const p = toBuffer(e)
+      if (game === 'racing') { const pad = racingPadGeometry(s.layout, s.pad); return pad ? racingPadPart(p.x, p.y, pad) : null }
       const pad = attacksPadGeometry(s.layout, s.pad)
       const part = pad ? attacksPadPart(p.x, p.y, pad) : null
       if (part) return part
@@ -374,7 +410,7 @@ export default function GamePlayer({
         const r = roundRef.current
         if (!r || s.mode !== 'play') return
         const level = r.level
-        const now = s.catcher?.score ?? s.eater?.score ?? s.attacks?.score ?? r.score
+        const now = s.catcher?.score ?? s.eater?.score ?? s.attacks?.score ?? s.racing?.score ?? r.score
         if (!won) { end(now, level, 1, false); return }
         const score = now + 50 * level
         if (level >= 16) end(score, level, 1, true)
@@ -417,6 +453,7 @@ export default function GamePlayer({
       let used = true
       if (s.mode === 'title') {
         if (confirm) start()
+        else if (game === 'racing' && (dir === 'left' || dir === 'right')) { s.car = nextCar(s.car, dir === 'left' ? -1 : 1); saveCar(s.car); s.dirty = true }
         else if (e.key === 'Escape' && inRound()) tell({ kind: 'declined' })
         else used = false
       } else if (s.mode === 'retry') {
@@ -431,9 +468,11 @@ export default function GamePlayer({
         else if (pauseKey) resume()
         else used = false
       } else if (s.mode === 'play') {
-        if (game === 'attacks' && way(dir)) { const w = way(dir) as -1 | 1; if (!e.repeat) held.keys = [...held.keys.filter((k) => k !== w), w] }
-        // the space bar or up: fire, even with a button in focus (it must not press it)
+        if ((game === 'attacks' || game === 'racing') && way(dir)) { const w = way(dir) as -1 | 1; if (!e.repeat) held.keys = [...held.keys.filter((k) => k !== w), w] }
+        // the space bar or up: fire, or the gas, even with a button in focus (it must not press it)
         else if (game === 'attacks' && (e.key === ' ' || dir === 'up')) { if (!e.repeat) { held.fire.add(e.key); held.latch = 6 } }
+        else if (game === 'racing' && (e.key === ' ' || dir === 'up')) held.fire.add(e.key)
+        else if (game === 'racing' && dir === 'down') held.brake.add(e.key)
         else if (dir) steer(dir)
         else if (pauseKey) pause()
         // the space bar does nothing in play, but must not scroll the page
@@ -449,6 +488,7 @@ export default function GamePlayer({
     const onKeyUp = (e: KeyboardEvent) => {
       const w = way(keyDirection(e.key))
       if (w) held.keys = held.keys.filter((k) => k !== w)
+      held.brake.delete(e.key)
       if (held.fire.delete(e.key) && e.key === ' ' && s.mode === 'play') e.preventDefault()
     }
 
@@ -469,7 +509,7 @@ export default function GamePlayer({
     const onDown = (e: PointerEvent) => {
       if (e.button > 0) return
       touched()
-      if (game === 'attacks' && s.mode === 'play' && s.pause == null) {
+      if ((game === 'attacks' || game === 'racing') && s.mode === 'play' && s.pause == null) {
         const part = partAt(e)
         if (part) { held.fingers.set(e.pointerId, part); if (part === 'fire' || part === 'sky') held.latch = 6; s.dirty = true; return }
       }
@@ -510,13 +550,17 @@ export default function GamePlayer({
       touch = null
       if (!tap) return
       const p = toBuffer(e)
-      if (s.mode === 'title') { if (!inRound()) start() }
-      else if (s.mode === 'retry') {
-        const hits = game === 'attacks' ? attacksOverHits(s.layout) : gameOverHits(game, s.layout)
+      if (s.mode === 'title') {
+        // RACING: a tap on another car chooses it; on the one chosen, or anywhere else, it starts
+        const car = game === 'racing' ? racingCarAt(s.layout, p.x, p.y) : null
+        if (car && (car !== s.car || inRound())) { s.car = car; saveCar(car); s.dirty = true }
+        else if (!inRound()) start()
+      } else if (s.mode === 'retry') {
+        const hits = game === 'attacks' ? attacksOverHits(s.layout) : game === 'racing' ? racingOverHits(s.layout) : gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) retry()
         else if (within(hits.no, p.x, p.y)) giveUp()
       } else if ((s.mode === 'over' || s.mode === 'winner') && !inRound()) {
-        const hits = s.mode === 'winner' ? winnerHits(s.layout) : game === 'attacks' ? attacksOverHits(s.layout) : gameOverHits(game, s.layout)
+        const hits = s.mode === 'winner' ? (game === 'racing' ? racingWinnerHits(s.layout) : winnerHits(s.layout)) : game === 'attacks' ? attacksOverHits(s.layout) : game === 'racing' ? racingOverHits(s.layout) : gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) start()
         else if (within(hits.no, p.x, p.y)) toTitle()
       } else if (s.mode === 'play' && s.pause != null) {
