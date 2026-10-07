@@ -6,6 +6,7 @@ import path from 'node:path'
 import { CATCHER_CASH, createCatcher, stepCatcher } from '@/lib/games/catcher'
 import { renderSound, renderTune, SOUND_NAMES, SOUND_RATE, TUNE_NAMES, tuneSeconds } from '@/lib/games/chiptune'
 import { createEater, EATER_BONUSES, stepEater } from '@/lib/games/eater'
+import { createRacing, stepRacing } from '@/lib/games/racing-rules'
 import { GAME_SOUNDS } from '@/lib/games/sound'
 
 import { soundFiles, SOUNDS_DIR } from '../../scripts/games/sounds'
@@ -58,6 +59,12 @@ test('chaque jeu a un son pour tout ce que ses règles font entendre', () => {
   const eater = new Set(GAME_SOUNDS.eater.sounds), catcher = new Set(GAME_SOUNDS.catcher.sounds)
   for (const name of ['bite', 'crash', 'level', 'over', 'winner', ...Object.keys(EATER_BONUSES)]) assert.ok(eater.has(name as never), `EATER : ${name}`)
   for (const name of ['item', 'sauce', 'slip', 'caught', 'level', 'over', 'winner', ...Object.keys(CATCHER_CASH)]) assert.ok(catcher.has(name as never), `CATCHER : ${name}`)
+  // RACING: what its rules make heard, and its two ends
+  const racing = new Set(GAME_SOUNDS.racing.sounds)
+  const s = createRacing('landscape', 1, 1)
+  const heard = new Set<string>()
+  for (let i = 0; i < 200 * 60 && s.phase !== 'over'; i += 1) { stepRacing(s, i % 400 < 200 ? 1 : -1, true, false); s.heard.forEach((h) => heard.add(h)) }
+  for (const name of [...heard, 'over', 'winner']) assert.ok(racing.has(name as never), `RACING : ${name}`)
 })
 
 test('les règles font entendre ce qui arrive : le burger avalé, le choc', () => {

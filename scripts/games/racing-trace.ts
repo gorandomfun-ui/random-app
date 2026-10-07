@@ -41,7 +41,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { encodeIndexedPng, encodePng } from './png'
-import { biggest, blank, cutByFlood, flatten, get, grow, inpaint, inPolygon, lum, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
+import { biggest, blank, copy, cutByFlood, flatten, get, grow, inpaint, inPolygon, lum, paletteOf, pickIn, put, quantize, quantizeAreas, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
 
 const ROOT = process.cwd()
 const REF = path.join(ROOT, 'docs/reports/jeux-v1/refs/racing-reference.png')
@@ -234,7 +234,10 @@ writeTitle('title-tall', tall, (x, y) => (y >= bandTop && y < bandTop + bandH ? 
 /** The far view: the sky low down, the sun on the sea, the mountains, the city — between the big palms — to the sea's horizon. */
 const FAR: Rect = [300, 250, 1220, 548]
 const PW = 448, PH = Math.round(((FAR[3] - FAR[1]) * PW) / (FAR[2] - FAR[0]))
-const farPic = tracePic(clean, PW, PH, [FAR[0], FAR[1], FAR[2] - FAR[0], FAR[3] - FAR[1]])
+// the bit of a near palm's crown at its left edge left out, on a copy (the titles keep it): the game slides the view as the road bends, its edges mirrored
+const far = copy(clean)
+inpaint(far, grow(pickIn(far, [[FAR[0] - 90, FAR[1], FAR[0] + 46, FAR[1] + 290]], (c) => palmish(c) || lum(c[0], c[1], c[2]) < 70), src.w, src.h, 3), 200)
+const farPic = tracePic(far, PW, PH, [FAR[0], FAR[1], FAR[2] - FAR[0], FAR[3] - FAR[1]])
 write('play-back', flatten(farPic, 3), 28)
 
 // a palm for the roadside: the one on the left in the picture, its crown and trunk, without the sky and the sea behind
@@ -271,16 +274,21 @@ const toTall = (x: number, y: number): [number, number] => [Math.round((x * S - 
 const inside = ([x0, y0, x1, y1]: number[], w: number): number[] => { const by = Math.max(0, x1 - (w - 2)); return [x0 - by, y0, x1 - by, y1] }
 /** The sun's path on the sea, as the game draws it: under the sun's middle, from the sea's horizon to the shore, wide at the horizon, narrowing to the shore, clear of the signs by it. */
 const SUN = { x: 240, top: 252, bottom: 276, half: 26 }
+/** Each car's box on a title (`at` from the wide grid to the title's): where a finger chooses it, where the choice is marked. */
+const carBoxes = (at: (x: number, y: number) => [number, number]) => Object.fromEntries((Object.keys(CARS) as Array<keyof typeof CARS>).map((kind) => {
+  const xs = CARS[kind].map(([x]) => x), ys = CARS[kind].map(([, y]) => y)
+  return [kind, [...at(Math.min(...xs), Math.min(...ys)), ...at(Math.max(...xs), Math.max(...ys))]]
+})) as Record<keyof typeof CARS, number[]>
 const data = {
-  wide: { sea: glitter(titleWide, 0, 246, 480, 290), neon: [654, 176, 742, 206], exhausts: [[110, 354], [200, 354], [574, 358], [664, 358]], sun: [SUN.x, SUN.top, SUN.bottom, SUN.half] },
-  tall: { sea: glitter(tall, 0, toTall(0, 246)[1], TW, toTall(0, 290)[1]), neon: inside([...toTall(654, 176), ...toTall(742, 206)], TW), exhausts: [toTall(110, 354), toTall(200, 354), toTall(574, 358), toTall(664, 358)], sun: [toTall(SUN.x, 0)[0], toTall(0, SUN.top)[1], toTall(0, SUN.bottom)[1], Math.round((SUN.half * S) / F)] },
+  wide: { sea: glitter(titleWide, 0, 246, 480, 290), neon: [654, 176, 742, 206], exhausts: [[110, 354], [200, 354], [574, 358], [664, 358]], sun: [SUN.x, SUN.top, SUN.bottom, SUN.half], cars: carBoxes((x, y) => [x, y]) },
+  tall: { sea: glitter(tall, 0, toTall(0, 246)[1], TW, toTall(0, 290)[1]), neon: inside([...toTall(654, 176), ...toTall(742, 206)], TW), exhausts: [toTall(110, 354), toTall(200, 354), toTall(574, 358), toTall(664, 358)], sun: [toTall(SUN.x, 0)[0], toTall(0, SUN.top)[1], toTall(0, SUN.bottom)[1], Math.round((SUN.half * S) / F)], cars: carBoxes(toTall) },
   play: { horizon: PH },
 }
 writeFileSync(DATA, `/**
  * What moves on RANDOM RACING's traced pictures, found by
  * \`scripts/games/racing-trace.ts\`: where the sea glitters, where the diner's
- * neon is, where the cars' exhausts are, on each title; the play's far view's
- * height. Generated — do not edit by hand.
+ * neon is, where the cars' exhausts are and their boxes, on each title; the
+ * play's far view's height. Generated — do not edit by hand.
  */
 
 export const RACING_MOTION = ${JSON.stringify(data)} as const
