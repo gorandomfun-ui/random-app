@@ -309,7 +309,7 @@ export function skyAt(h: Tier, sinking: number): PixelBuffer | null {
 // ---------------------------------------------------------------- the ground
 
 /** A row of ground across the board: the road's middle and half width there, its stretch (even or odd), its kind, the haze step. */
-export type GroundRow = { c: number; h: number; band: number; zone: RacingZone; fog: number; wave: number; land: boolean }
+export type GroundRow = { c: number; h: number; band: number; zone: RacingZone; fog: number; wave: number; land: boolean; ghost?: number }
 
 /** How far each side's bands reach, past the kerb, in half widths. */
 const BEACH = 1.0, WET = 0.16, FOAM = 0.07, VERGE = 0.55, PAVE = 0.85, LEDGE = 0.22
@@ -402,6 +402,14 @@ export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: Groun
     // the kerbs
     const k = at(band ? 'kerb0' : 'kerb1')
     span(L, c - h, k); span(c + h, R, k)
+  }
+  // the fork's other road going away beside this one, `ghost` half widths off: its kerbs, its tarmac, its edge lines
+  if (row.ghost) {
+    const g = c + row.ghost * h, k = at(band ? 'kerb0' : 'kerb1')
+    span(g - kerb, g + kerb, k)
+    span(g - h, g + h, at(band ? 'tar0' : 'tar1'))
+    const edge = Math.max(1, h * 0.028), line = at('line')
+    span(g - h + edge * 1.7, g - h + edge * 2.7, line); span(g + h - edge * 2.7, g + h - edge * 1.7, line)
   }
   // the road, its edge lines, its lanes' dashes
   span(c - h, c + h, at(band ? 'tar0' : 'tar1'))
@@ -500,61 +508,20 @@ export function shopSide(buffer: PixelBuffer, a: End, off: number, depth: number
   }
 }
 
-/**
- * How tall the rock stands at a stretch, in half widths: swelling and
- * sinking slowly along the road, never the same twice, so its crest reads as
- * a ridge of rock and not a ruled line.
- */
-export function rockHeight(i: number, side: -1 | 1, base: number): number {
-  const k = i + (side < 0 ? 977 : 0)
-  const swell = 0.55 * Math.sin(k * 0.031) + 0.3 * Math.sin(k * 0.083 + 1.7) + 0.15 * Math.sin(k * 0.21 + 0.4)
-  return base * (0.8 + 0.2 * swell)
-}
-
-/** The coast's rock: the mountains' face in the cliff's own violets, its light and shade kept; made once. */
-let coastFace: PixelBuffer | null = null
-function coastRock(face: PixelBuffer): PixelBuffer {
-  if (coastFace) return coastFace
+/** A picture of rock in the coast's own violets, its light and shade kept, its clear pixels clear: made once a picture. */
+const coastFaces = new WeakMap<PixelBuffer, PixelBuffer>()
+export function coastRock(face: PixelBuffer): PixelBuffer {
+  const known = coastFaces.get(face)
+  if (known) return known
   const out = new PixelBuffer(face.width, face.height, '#000000')
   const ramp = [BASE.rockDark, BASE.rock1, BASE.rock0, BASE.rockLit, '#9a5a8a', '#b8789e'].map(hex)
   for (let i = 0; i < face.data.length; i += 4) {
     const l = (0.3 * face.data[i] + 0.59 * face.data[i + 1] + 0.11 * face.data[i + 2]) / 255
     const c = ramp[Math.max(0, Math.min(ramp.length - 1, Math.floor(l * ramp.length * 1.1)))]
-    out.data[i] = c[0]; out.data[i + 1] = c[1]; out.data[i + 2] = c[2]; out.data[i + 3] = 255
+    out.data[i] = c[0]; out.data[i + 1] = c[1]; out.data[i + 2] = c[2]; out.data[i + 3] = face.data[i + 3]
   }
-  coastFace = out
+  coastFaces.set(face, out)
   return out
-}
-
-/** Stretches of road one rock face's picture covers, along it. */
-const FACE_STRETCHES = 12
-
-/**
- * The rock along the road — the coast's cliff, the mountains' gorge, the
- * desert's mesas and canyon, on one side or both — as the owner's pictures
- * have it: a piece of their rock face (`face-desert`, `face-mountain`, the
- * coast's the mountains' in violet) laid along the road like the shops'
- * fronts, going by in perspective, as tall as `rockHeight` says; its crest
- * picked out, its foot in shadow. Before the picture has come, its colours in
- * plain strata.
- */
-export function cliffPiece(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, band: number, clip: number, tier: Tier, fog: number, i = 0, base = 3.6): void {
-  const ha = rockHeight(i, side, base), hb = rockHeight(i + 1, side, base)
-  const art = racingArt(world === 'desert' ? 'face-desert' : 'face-mountain')
-  if (art) {
-    const tex = world === 'coast' ? coastRock(art) : art
-    // the face's columns along the road, the right way round on either side
-    const k = ((i % FACE_STRETCHES) + FACE_STRETCHES) % FACE_STRETCHES, ua = (k / FACE_STRETCHES) * tex.width, ub = ((k + 1) / FACE_STRETCHES) * tex.width
-    facadePiece(buffer, a, b, side * 1.92, ha, clip, tex, side > 0 ? tex.width - ua : ua, side > 0 ? tex.width - ub : ub, tintFor(tier, fog), hb)
-  } else {
-    const r0 = tone('rock0', tier, fog), r1 = tone('rock1', tier, fog)
-    wallPiece(buffer, a, b, side * 1.92, ha, clip, (t) => (Math.floor(t * 7) % 2 ? r0 : r1), hb)
-  }
-  // the crest picked out, the foot in shadow
-  const lit = tone('rockLit', tier, fog), dark = tone('rockDark', tier, fog)
-  wallPiece(buffer, { ...a, y: a.y - (ha - 0.08) * a.u }, { ...b, y: b.y - (hb - 0.08) * b.u }, side * 1.92, 0.08, clip, () => lit)
-  wallPiece(buffer, a, b, side * 1.92, 0.12, clip, () => dark)
-  void band
 }
 
 /** The tunnel at a stretch: its two walls and its vault, a light in the vault every eighth stretch. */
@@ -573,10 +540,20 @@ export function tunnelPiece(buffer: PixelBuffer, a: End, b: End, i: number, clip
 export function tunnelMouth(buffer: PixelBuffer, a: End, clip: number, tier: Tier, fog: number): void {
   const r0 = shade('rock0', tier, fog), r1 = shade('rock1', tier, fog), lit = shade('rockLit', tier, fog)
   const left = a.x - 1.75 * a.u, right = a.x + 1.75 * a.u, top = a.y - 2.3 * a.u
-  for (let y = Math.max(0, Math.round(a.y - 7 * a.u)); y < Math.min(clip, Math.round(a.y)); y += 1) for (let x = Math.max(0, Math.round(a.x - 9 * a.u)); x < Math.min(buffer.width, Math.round(a.x + 9 * a.u)); x += 1) {
-    if (x >= left && x < right && y >= top) continue
-    const g = grain(x >> 1, y >> 1)
-    buffer.set(x, y, Math.abs(y - top) < Math.max(1, 0.08 * a.u) && x >= left - 0.1 * a.u && x < right + 0.1 * a.u ? lit : g > 0.5 ? r0 : r1)
+  // the mountain the tunnel goes into: the picture's rock (the city's concrete), its top a ridge, not a box
+  const art = world === 'city' ? null : racingArt(world === 'desert' ? 'face-desert' : 'face-mountain')
+  const tex = art && world === 'coast' ? coastRock(art) : art, tint = tintFor(tier, fog), d = buffer.data, W = buffer.width
+  const texel = Math.max(0.5, 0.05 * a.u)
+  for (let x = Math.max(0, Math.round(a.x - 9 * a.u)); x < Math.min(W, Math.round(a.x + 9 * a.u)); x += 1) {
+    const off = (x - a.x) / a.u, ridge = a.y - (5.6 + 1.2 * Math.sin(off * 0.7 + 1) + 0.6 * Math.sin(off * 1.9)) * a.u * (1 - Math.min(0.5, Math.abs(off) / 18))
+    for (let y = Math.max(0, Math.round(ridge)); y < Math.min(clip, Math.round(a.y)); y += 1) {
+      if (x >= left && x < right && y >= top) continue
+      if (Math.abs(y - top) < Math.max(1, 0.08 * a.u) && x >= left - 0.1 * a.u && x < right + 0.1 * a.u) { buffer.set(x, y, lit); continue }
+      if (!tex) { buffer.set(x, y, grain(x >> 1, y >> 1) > 0.5 ? r0 : r1); continue }
+      const tx = ((Math.floor((x - a.x) / texel) % tex.width) + tex.width) % tex.width, ty = ((Math.floor((y - ridge) / texel) % tex.height) + tex.height) % tex.height
+      const o = (ty * tex.width + tx) * 4, t = (y * W + x) * 4, k = tint.by
+      d[t] = tex.data[o] + (tint.rgb[0] - tex.data[o]) * k; d[t + 1] = tex.data[o + 1] + (tint.rgb[1] - tex.data[o + 1]) * k; d[t + 2] = tex.data[o + 2] + (tint.rgb[2] - tex.data[o + 2]) * k
+    }
   }
 }
 

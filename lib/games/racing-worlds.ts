@@ -41,8 +41,6 @@ export const FINISH_ZONE: Record<RacingWorld, RacingZone> = { coast: 'promenade'
 export const SHOP_ZONES: Partial<Record<RacingZone, 'right' | 'both'>> = { promenade: 'right', village: 'both', town: 'right', avenue: 'both', downtown: 'both' }
 /** The kind of road a tunnel goes out of and back into, for each world. */
 export const TUNNEL_FROM: Record<RacingWorld, RacingZone> = { coast: 'cliff', mountain: 'gorge', desert: 'mesa', city: 'downtown' }
-/** Kinds of road with a wall of rock on the land's side (and both sides in the canyon). */
-export const ROCK_ZONES: ReadonlySet<RacingZone> = new Set(['cliff', 'gorge', 'mesa', 'canyon'])
 /** How each world's roads go: more hills and hairpins in the mountains, long straights and sweepers in the desert, flat streets in the city. */
 export const WORLD_ROADS: Record<RacingWorld, { hills: number; straights: number; hairpins: number; sweepers: number }> = {
   coast: { hills: 1, straights: 1, hairpins: 1, sweepers: 1 },

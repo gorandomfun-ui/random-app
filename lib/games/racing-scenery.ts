@@ -12,7 +12,7 @@ import { INK_LINE, Painter } from './racing-paint'
 import { PixelBuffer, rgbOf } from './pixels'
 
 /** How tall each stands, in half widths of the road. */
-export const SCENERY_HIGH = { pine: 3.1, rock: 1.5, saguaro: 2.5, butte: 4.6, shrub: 0.42, redrock: 1.7, tumbleweed: 0.42, tree: 2.3, fountain: 1.25 } as const
+export const SCENERY_HIGH = { pine: 3.1, rock: 1.5, saguaro: 2.5, butte: 4.6, shrub: 0.42, redrock: 1.7, crag: 1.7, tumbleweed: 0.42, tree: 2.3, fountain: 1.25 } as const
 
 const made = new Map<string, PixelBuffer>()
 const once = (key: string, make: () => PixelBuffer): PixelBuffer => { let p = made.get(key); if (!p) { p = make(); made.set(key, p) } return p }
