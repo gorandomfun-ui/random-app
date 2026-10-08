@@ -11,8 +11,10 @@ let seeded: Promise<void> | null = null
 export async function ensureSeedPhrases(db: Db): Promise<void> {
   if (!seeded) {
     seeded = (async () => {
-      const count = await db.collection(COMM_PHRASES).countDocuments({ seed: true }, { maxTimeMS: QUERY_MS })
-      if (count === 0) await db.collection(COMM_PHRASES).insertMany(seedPhrases().map((phrase) => ({ family: phrase.family, lang: phrase.lang, text: phrase.text, seed: true, createdAt: new Date() })))
+      // Each seed phrase is written once; a base seeded earlier receives the ones added since.
+      for (const phrase of seedPhrases()) {
+        await db.collection(COMM_PHRASES).updateOne({ seed: true, family: phrase.family, lang: phrase.lang, text: phrase.text }, { $setOnInsert: { family: phrase.family, lang: phrase.lang, text: phrase.text, seed: true, createdAt: new Date() } }, { upsert: true })
+      }
     })().catch(() => { seeded = null })
   }
   await seeded

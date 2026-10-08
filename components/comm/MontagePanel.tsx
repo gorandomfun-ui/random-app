@@ -26,6 +26,8 @@ export type MontagePanelProps = {
   /** The palette's base colour, behind a framed picture. */
   background: string
   maxSeconds: number
+  /** The slide's framing, the montage's starting choice. */
+  defaultMode?: CropMode | null
   onClose: () => void
   /** The montage or the still is in the queue: the slide switches to it. */
   onDone: (media: MediaDoc) => void
@@ -33,7 +35,7 @@ export type MontagePanelProps = {
 
 type Phase = 'loading' | 'ready' | 'rendering' | 'uploading' | 'error'
 
-export default function MontagePanel({ queueItemId, media, template, canvas, overlayUrl, background, maxSeconds, onClose, onDone }: MontagePanelProps) {
+export default function MontagePanel({ queueItemId, media, template, canvas, overlayUrl, background, maxSeconds, defaultMode, onClose, onDone }: MontagePanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const previewRef = useRef<HTMLCanvasElement | null>(null)
   const overlayRef = useRef<HTMLImageElement | null>(null)
@@ -42,7 +44,7 @@ export default function MontagePanel({ queueItemId, media, template, canvas, ove
   const [duration, setDuration] = useState(0)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [trim, setTrim] = useState(media.trim ?? { startSec: 0, endSec: 0 })
-  const [mode, setMode] = useState<CropMode>(media.crop?.mode ?? (template.mode === 'framed' ? 'framed' : 'centered'))
+  const [mode, setMode] = useState<CropMode>(media.crop?.mode ?? defaultMode ?? (template.mode === 'framed' ? 'framed' : 'centered'))
   const [offset, setOffset] = useState({ x: media.crop?.x ?? 0, y: media.crop?.y ?? 0 })
   const [strip, setStrip] = useState<string[]>([])
   const [progress, setProgress] = useState('')
@@ -225,7 +227,7 @@ export default function MontagePanel({ queueItemId, media, template, canvas, ove
               ))}</div>
               <label className="block">Début {formatSeconds(trim.startSec)}<input type="range" min={0} max={duration} step={0.1} value={trim.startSec} disabled={busy} onChange={(e) => setTrim((t) => clampTrim(Number(e.target.value), Math.max(Number(e.target.value) + 0.5, t.endSec), duration, maxSeconds))} className="w-full" /></label>
               <label className="block">Fin {formatSeconds(trim.endSec)} · {formatSeconds(length)} au total, {maxSeconds} s au plus<input type="range" min={0} max={duration} step={0.1} value={trim.endSec} disabled={busy} onChange={(e) => setTrim((t) => clampTrim(t.startSec, Number(e.target.value), duration, maxSeconds))} className="w-full" /></label>
-              <div>Cadrage <button className={`${small} ml-2 ${mode === 'framed' ? 'bg-white text-black' : ''}`} disabled={busy} onClick={() => setMode('framed')}>encadré</button> <button className={`${small} ${mode === 'centered' ? 'bg-white text-black' : ''}`} disabled={busy} onClick={() => setMode('centered')}>recentré</button>{mode === 'centered' ? <span className="ml-2 text-xs text-gray-300">glisse l’aperçu pour choisir la zone visible</span> : null}</div>
+              <div>Cadrage <button className={`${small} ml-2 ${mode === 'centered' ? 'bg-white text-black' : ''}`} disabled={busy} onClick={() => setMode('centered')}>plein écran</button> <button className={`${small} ${mode === 'framed' ? 'bg-white text-black' : ''}`} disabled={busy} onClick={() => setMode('framed')}>encadré</button>{mode === 'centered' ? <span className="ml-2 text-xs text-gray-300">glisse l’aperçu pour choisir la zone visible</span> : null}</div>
               <p className="text-xs text-gray-300">Le montage joue l’extrait une fois, en temps réel : environ {expectedSeconds(trim.startSec, trim.endSec)} s. Ne change pas d’onglet pendant ce temps.</p>
               <div className="flex flex-wrap gap-2">
                 <button className="rounded-full border border-white px-4 py-2 text-sm font-bold uppercase disabled:opacity-40" disabled={busy || !length} onClick={render}>Monter l’extrait</button>

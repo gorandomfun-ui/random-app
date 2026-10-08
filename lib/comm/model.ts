@@ -97,7 +97,14 @@ export type Destination = 'instagram' | 'tiktok' | 'x'
 export const DESTINATIONS: readonly Destination[] = ['instagram', 'tiktok', 'x']
 
 /** One slide: the item it shows (its credit, its source, its thumbnail when no media is picked), the media, the dressing. */
-export type PostSlide = { itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number }
+export type TextPosition = 'top' | 'middle' | 'bottom'
+export type PostSlide = {
+  itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number
+  /** Full screen (cover) or framed whole (contain); empty keeps the template's own. */
+  fit?: 'cover' | 'contain' | null
+  /** Where the words sit; empty keeps the template's own. */
+  textPosition?: TextPosition | null
+}
 
 export type PostDoc = {
   _id: string

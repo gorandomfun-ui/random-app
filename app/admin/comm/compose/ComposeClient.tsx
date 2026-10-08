@@ -11,12 +11,13 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DESTINATION_SPECS, formatSpec, type FormatSpec } from '@/lib/comm/destinations'
-import { authorMissing, buildCaption, MUSIC_NOTE, suggestHashtags, type Phrase } from '@/lib/comm/caption'
+import { buildCaption, MUSIC_NOTE, suggestHashtags, type Phrase } from '@/lib/comm/caption'
 import type { MediaDoc, PostDoc, PostSlide } from '@/lib/comm/model'
 import type { Template } from '@/lib/comm/templates'
 import type { QueueItemWithMedia } from '@/lib/comm/client'
 import { buildExportZip, downloadBlob, type ExportSlide } from '@/lib/comm/exportZip'
 import { FAMILY_SIZES } from '@/lib/comm/templates'
+import { bandOf } from '@/lib/comm/montage'
 import { clipMaxSeconds } from '@/lib/comm/model'
 import dynamic from 'next/dynamic'
 import { prepareInstagramAssets, publishInstagram } from '@/lib/comm/publishClient'
@@ -47,7 +48,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [keep, setKeep] = useState<Set<string>>(new Set())
   const [exported, setExported] = useState<{ number: number } | null>(null)
   const [progress, setProgress] = useState('')
-  const [playing, setPlaying] = useState<number | null>(null)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [customTag, setCustomTag] = useState('')
   const [montageOpen, setMontageOpen] = useState(false)
   const [published, setPublished] = useState<{ remoteUrl: string | null; commented: boolean } | null>(null)
@@ -121,6 +123,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const renderUrl = useCallback((s: PostSlide, index: number, mode: 'full' | 'overlay') => {
     const item = items.find((i) => i._id === s.itemId) ?? items[0]
     const params = new URLSearchParams({ template: s.templateKey, palette: String(s.palette), logo: s.logoVariant, text: s.text, mode, seed: `${post?._id ?? 'x'}-${index}`, glitch: String(s.glitch ?? 0) })
+    if (s.fit) params.set('fit', s.fit)
+    if (s.textPosition) params.set('textpos', s.textPosition)
     if (item) params.set('item', item._id)
     if (s.mediaId) params.set('media', s.mediaId); else params.set('thumb', '1')
     if (post?.credit) params.set('credit', post.credit)
@@ -158,8 +162,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   useEffect(() => { if (caption && post && caption.text !== post.caption) save({ caption: caption.text }) }, [caption, post, save])
 
   const suggested = useMemo(() => suggestHashtags(items.flatMap((i) => i.subjects)), [items])
-  const missingAuthor = useMemo(() => items.filter((i) => authorMissing(i.snapshot, post?.credit ?? '')), [items, post])
-  const canExport = Boolean(post && post.slides.length >= (spec?.slides.min ?? 1) && !missingAuthor.length && caption && !caption.overLimit)
+  const unknownAuthor = useMemo(() => items.filter((i) => !i.snapshot.author.trim() && !(post?.credit ?? '').trim()), [items, post])
+  const canExport = Boolean(post && post.slides.length >= (spec?.slides.min ?? 1) && caption && !caption.overLimit)
 
   const doExport = useCallback(async () => {
     if (!post || !canExport || !caption) return
@@ -193,11 +197,15 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     else setPublishError(outcome.reason)
   }, [canExport, caption, items, keep, post, renderUrl])
 
+  // The framing of a video in the preview: the slide's own, else the template's mode; inside the template's band.
+  const previewBand = useMemo(() => (slideTemplate ? bandOf(slideTemplate.layers) : { top: 0, height: 1 }), [slideTemplate])
+  const previewFit = slide?.fit ?? (slideTemplate?.mode === 'full' ? 'cover' : 'contain')
+
   useEffect(() => {
-    if (playing == null || !post) return
-    const timer = window.setTimeout(() => setPlaying((p) => (p == null ? null : p + 1 < post.slides.length ? p + 1 : null)), 2200)
-    return () => window.clearTimeout(timer)
-  }, [playing, post])
+    if (previewIndex == null) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setPreviewIndex(null); if (event.key === 'ArrowRight' && post) setPreviewIndex((i) => (i == null ? i : Math.min(post.slides.length - 1, i + 1))); if (event.key === 'ArrowLeft') setPreviewIndex((i) => (i == null ? i : Math.max(0, i - 1))) }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  }, [previewIndex, post])
 
   const bar = (
     <ol className="flex flex-wrap gap-2 text-xs">
@@ -250,67 +258,97 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
           <section className="space-y-5">
             <header className="flex flex-wrap items-baseline justify-between gap-3">
               <h1 className="text-2xl font-bold">Composer — n° {post.number} · {destSpec?.name} · {spec.name}</h1>
-              <div className="flex gap-2"><button className={small} onClick={() => setPlaying(0)}>Lire la séquence</button><button className={small} onClick={() => setStep(5)}>Publier ou exporter →</button></div>
+              <div className="flex gap-2"><button className={small} onClick={() => setPreviewIndex(current)}>Aperçu</button><button className={`${small} border-white bg-white text-black`} onClick={() => setStep(5)}>Publier ou exporter →</button></div>
             </header>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {post.slides.map((s, i) => (
                 /* eslint-disable-next-line @next/next/no-img-element -- the slide as the engine draws it */
-                <button key={i} className={`relative h-28 overflow-hidden rounded border ${i === current ? 'border-white' : 'border-white/30'}`} style={{ aspectRatio: spec.family.replace(':', '/') }} onClick={() => setCurrent(i)}><img src={renderUrl(s, i, 'full')} alt={`Slide ${i + 1}`} className="h-full w-full object-cover" /><span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-xs">{i + 1}</span></button>
+                <button key={i} className={`relative h-24 overflow-hidden rounded border ${i === current ? 'border-white' : 'border-white/30'}`} style={{ aspectRatio: spec.family.replace(':', '/') }} onClick={() => setCurrent(i)}><img src={renderUrl(s, i, 'full')} alt={`Slide ${i + 1}`} className="h-full w-full object-cover" /><span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-xs">{i + 1}</span></button>
               ))}
-              {post.slides.length < spec.slides.max ? <button className="h-28 rounded border border-dashed border-white/40 px-4 text-sm" onClick={addSlide}>+ slide</button> : null}
+              {post.slides.length < spec.slides.max ? <button className="h-24 rounded border border-dashed border-white/40 px-4 text-sm" onClick={addSlide}>+ slide</button> : null}
+              {post.slides.length > 1 ? <span className="ml-2 flex gap-1"><button className={small} onClick={() => moveSlide(-1)} disabled={current === 0}>←</button><button className={small} onClick={() => moveSlide(1)} disabled={current === post.slides.length - 1}>→</button><button className={small} onClick={removeSlide}>Retirer</button></span> : null}
             </div>
 
             {slide ? (
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-3 text-sm">
-                  <div className="flex gap-2"><button className={small} onClick={() => moveSlide(-1)} disabled={current === 0}>←</button><button className={small} onClick={() => moveSlide(1)} disabled={current === post.slides.length - 1}>→</button><button className={small} onClick={removeSlide} disabled={post.slides.length <= 1}>Retirer la slide</button></div>
-                  <label className="block">Média<br />
-                    <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.mediaId ?? (slide.itemId ? `thumb:${slide.itemId}` : '')} onChange={(e) => { const choice = mediaChoices.find((c) => c.key === e.target.value); updateSlide({ itemId: choice?.itemId ?? slide.itemId, mediaId: choice?.mediaId ?? null }) }}>
-                      {mediaChoices.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-                    </select></label>
-                  {isVideoSlide && !isBaked ? <div className="flex flex-wrap items-center gap-2"><button className={small} disabled={!slideTemplate} onClick={() => setMontageOpen(true)}>Monter l’extrait</button><span className="text-xs text-amber-200">Découpe, cadrage, habillage incrusté, ou une image fixe.</span></div> : null}
-                  {isBaked ? <p className="text-xs text-gray-300">Montage figé avec son habillage ({slideMedia?.templateKey ?? 'gabarit'}{slideMedia?.trim ? `, ${Math.round(slideMedia.trim.endSec - slideMedia.trim.startSec)} s` : ''}). Pour changer l’habillage, remonte depuis l’extrait d’origine.</p> : null}
-                  <label className="block">Gabarit<br />
-                    <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.templateKey} onChange={(e) => updateSlide({ templateKey: e.target.value })}>
-                      {familyTemplates.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-                    </select></label>
-                  <div>Palette<br />
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      {PALETTE_COLORS.map((c, i) => <button key={c} aria-label={`Palette ${i + 1}`} className={`h-7 w-7 rounded-full border-2 ${slide.palette === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => updateSlide({ palette: i })} />)}
-                      <button className={small} onClick={() => updateSlide({ palette: Math.floor(Math.random() * 6) })}>Au hasard</button>
-                    </div></div>
-                  <div>Logo <button className={`${small} ml-2 ${slide.logoVariant === 'white' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'white' })}>blanc</button> <button className={`${small} ${slide.logoVariant === 'black' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'black' })}>noir</button></div>
-                  <label className="block">Phrase<br />
-                    <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value="" onChange={(e) => { if (e.target.value !== '') updateSlide({ text: e.target.value }) }}>
-                      <option value="">Choisir une phrase…</option>
-                      {phrases.filter((p) => p.text).map((p) => <option key={p._id ?? p.text} value={p.text}>{p.lang} · {p.text}</option>)}
-                    </select></label>
-                  <label className="block">Texte de la slide<br /><textarea className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" rows={2} value={slide.text} onChange={(e) => updateSlide({ text: e.target.value })} /></label>
-                  <label className="block">Glitch {Math.round((slide.glitch ?? 0) * 100)} %<br /><input type="range" min={0} max={1} step={0.05} value={slide.glitch ?? 0} onChange={(e) => updateSlide({ glitch: Number(e.target.value) })} className="w-full" /></label>
-                </div>
-                <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded border border-white/30 bg-black" style={{ aspectRatio: spec.family.replace(':', '/') }}>
-                  {isVideoSlide && slideMedia ? <video src={slideMedia.blobUrl} muted loop autoPlay playsInline className="absolute inset-0 h-full w-full object-contain" /> : null}
+              <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="relative mx-auto w-full max-w-md overflow-hidden rounded border border-white/30 bg-[#191916]" style={{ aspectRatio: spec.family.replace(':', '/') }}>
+                  {isVideoSlide && slideMedia ? (
+                    <div className="absolute left-0 w-full overflow-hidden" style={{ top: `${previewBand.top * 100}%`, height: `${previewBand.height * 100}%` }}>
+                      <video src={slideMedia.blobUrl} muted loop autoPlay playsInline className="h-full w-full" style={{ objectFit: isBaked ? 'contain' : previewFit }} />
+                    </div>
+                  ) : null}
                   {!isBaked ? (
                     /* eslint-disable-next-line @next/next/no-img-element -- what you see is what gets exported */
                     <img src={renderUrl(slide, current, isVideoSlide ? 'overlay' : 'full')} alt="Aperçu" className="absolute inset-0 h-full w-full" />
                   ) : null}
                 </div>
+
+                <div className="space-y-4 text-sm">
+                  <label className="block"><span className="font-bold">Média</span><br />
+                    <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.mediaId ?? (slide.itemId ? `thumb:${slide.itemId}` : '')} onChange={(e) => { const choice = mediaChoices.find((c) => c.key === e.target.value); updateSlide({ itemId: choice?.itemId ?? slide.itemId, mediaId: choice?.mediaId ?? null }) }}>
+                      {mediaChoices.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                    </select></label>
+
+                  {!isBaked ? (
+                    <div><span className="font-bold">Cadrage</span><br />
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        <button className={`${small} ${previewFit === 'cover' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ fit: 'cover' })}>Plein écran</button>
+                        <button className={`${small} ${previewFit === 'contain' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ fit: 'contain' })}>Encadré</button>
+                        {isVideoSlide ? <button className={small} disabled={!slideTemplate} onClick={() => setMontageOpen(true)}>Couper l’extrait</button> : null}
+                      </div>
+                      {isVideoSlide ? <p className="mt-1 text-xs text-gray-400">Le cadrage et le texte s’appliquent au montage ; « Couper » choisit le début et la fin.</p> : null}
+                    </div>
+                  ) : <p className="text-xs text-gray-300">Montage figé{slideMedia?.trim ? `, ${Math.round(slideMedia.trim.endSec - slideMedia.trim.startSec)} s` : ''}. Pour changer le cadrage ou le texte, repars de l’extrait d’origine dans Média.</p>}
+
+                  <div><span className="font-bold">Texte sur l’image</span><br />
+                    <textarea className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" rows={2} value={slide.text} placeholder="Une phrase, ou rien" onChange={(e) => updateSlide({ text: e.target.value })} />
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <select className="rounded border border-white/40 bg-black px-2 py-1 text-xs" value="" onChange={(e) => { if (e.target.value !== '') updateSlide({ text: e.target.value }) }}>
+                        <option value="">Phrase prête…</option>
+                        {phrases.filter((p) => p.text).map((p) => <option key={p._id ?? p.text} value={p.text}>{p.lang} · {p.text}</option>)}
+                      </select>
+                      <span className="text-xs text-gray-400">Place :</span>
+                      {(['top', 'middle', 'bottom'] as const).map((pos) => <button key={pos} className={`${small} ${(slide.textPosition ?? 'top') === pos ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ textPosition: pos })}>{pos === 'top' ? 'Haut' : pos === 'middle' ? 'Milieu' : 'Bas'}</button>)}
+                    </div>
+                  </div>
+
+                  <div><span className="font-bold">Couleur</span><br />
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {PALETTE_COLORS.map((c, i) => <button key={c} aria-label={`Palette ${i + 1}`} className={`h-7 w-7 rounded-full border-2 ${slide.palette === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => updateSlide({ palette: i })} />)}
+                      <button className={small} onClick={() => updateSlide({ palette: Math.floor(Math.random() * 6) })}>Au hasard</button>
+                    </div></div>
+
+                  <label className="block"><span className="font-bold">Gabarit</span><br />
+                    <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.templateKey} onChange={(e) => updateSlide({ templateKey: e.target.value })}>
+                      {familyTemplates.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
+                    </select></label>
+
+                  <div>
+                    <button className="text-xs underline" onClick={() => setMoreOpen((o) => !o)}>{moreOpen ? 'Moins d’options' : 'Plus d’options'}</button>
+                    {moreOpen ? (
+                      <div className="mt-2 space-y-2">
+                        <div>Logo <button className={`${small} ml-2 ${slide.logoVariant === 'white' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'white' })}>blanc</button> <button className={`${small} ${slide.logoVariant === 'black' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'black' })}>noir</button></div>
+                        <label className="block">Glitch {Math.round((slide.glitch ?? 0) * 100)} %<br /><input type="range" min={0} max={1} step={0.05} value={slide.glitch ?? 0} onChange={(e) => updateSlide({ glitch: Number(e.target.value) })} className="w-full" /></label>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             ) : null}
 
-            <div className="grid gap-5 md:grid-cols-2">
+            <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-3 text-sm">
-                <h2 className="font-bold">Légende</h2>
+                <h2 className="font-bold">Légende du post</h2>
+                <label className="block">Ton texte<br /><textarea className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" rows={3} value={post.captionHead} placeholder="Sinon : le titre, et la phrase choisie ci-dessous" onChange={(e) => save({ captionHead: e.target.value })} /></label>
                 <label className="block">Phrase<br />
                   <select className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" value={post.phrase} onChange={(e) => save({ phrase: e.target.value })}>
                     <option value="">Aucune</option>
                     {phrases.filter((p) => p.text).map((p) => <option key={p._id ?? p.text} value={p.text}>{p.lang} · {p.text}</option>)}
                   </select></label>
-                <label className="block">Texte libre (remplace le titre nettoyé et la phrase)<br /><textarea className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1" rows={3} value={post.captionHead} onChange={(e) => save({ captionHead: e.target.value })} /></label>
-                {caption ? <div className="rounded border border-white/20 p-2 text-xs"><p className="mb-1 text-gray-400">Toujours présent, dans cet ordre :</p>{caption.mandatory.map((line) => <p key={line}>{line}</p>)}</div> : null}
-                <label className="flex items-center gap-2"><input type="checkbox" checked={post.homeLink} onChange={(e) => save({ homeLink: e.target.checked })} /> Ajouter la ligne « Découvert sur Random » avec l’accueil</label>
-                {missingAuthor.length ? <label className="block text-amber-200">Auteur manquant pour {missingAuthor.map((i) => i.snapshot.title.slice(0, 30)).join(', ')} — saisis-le, sinon rien ne part<br /><input className="mt-1 w-full rounded border border-amber-300 bg-black px-2 py-1 text-white" value={post.credit} onChange={(e) => save({ credit: e.target.value })} /></label> : null}
+                {caption ? <div className="rounded border border-white/20 p-2 text-xs"><p className="mb-1 text-gray-400">Ajouté automatiquement, toujours :</p>{caption.mandatory.map((line) => <p key={line}>{line}</p>)}</div> : null}
+                <label className="flex items-center gap-2"><input type="checkbox" checked={post.homeLink} onChange={(e) => save({ homeLink: e.target.checked })} /> Ajouter « Découvert sur Random » avec l’adresse du site</label>
+                {unknownAuthor.length ? <label className="block text-xs text-gray-300">L’auteur de « {unknownAuthor[0].snapshot.title.slice(0, 40)} » est inconnu : le crédit dira {unknownAuthor[0].snapshot.providerLabel}. Si tu le connais, écris-le ici (facultatif)<br /><input className="mt-1 w-full rounded border border-white/40 bg-black px-2 py-1 text-sm text-white" value={post.credit} onChange={(e) => save({ credit: e.target.value })} /></label> : null}
                 {anyVideo ? <p className="text-xs text-amber-200">{MUSIC_NOTE}</p> : null}
               </div>
               <div className="space-y-3 text-sm">
@@ -322,7 +360,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   <input className="rounded border border-white/40 bg-black px-2 py-1" placeholder="#AutreTag" value={customTag} onChange={(e) => setCustomTag(e.target.value)} /><button className={small} type="submit">Ajouter</button>
                 </form>
                 {caption ? <>
-                  <h2 className="font-bold">Aperçu de la légende <span className={`font-normal ${caption.overLimit ? 'text-red-300' : 'text-gray-400'}`}>{caption.length} / {caption.limit}</span></h2>
+                  <h2 className="font-bold">La légende telle qu’elle partira <span className={`font-normal ${caption.overLimit ? 'text-red-300' : 'text-gray-400'}`}>{caption.length} / {caption.limit}</span></h2>
                   <pre className="whitespace-pre-wrap rounded border border-white/20 p-2 text-xs">{caption.text}</pre>
                   <button className={small} onClick={() => navigator.clipboard?.writeText(caption.text)}>Copier la légende</button>
                 </> : null}
@@ -347,7 +385,6 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
               </div>
             ) : (
               <>
-                {missingAuthor.length ? <p className="text-amber-300">Un auteur manque : reviens à l’étape 4.</p> : null}
                 {caption?.overLimit ? <p className="text-amber-300">La légende dépasse la limite de {destSpec?.name}.</p> : null}
                 <div className="text-sm">
                   <p className="mb-1 text-gray-300">Après l’export, les éléments utilisés quittent la file. Garder dans la file :</p>
@@ -376,16 +413,29 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
             overlayUrl={renderUrl(slide, current, 'overlay')}
             background="#191916"
             maxSeconds={Math.min(spec.maxSeconds ?? clipMaxSeconds(), clipMaxSeconds())}
+            defaultMode={previewFit === 'cover' ? 'centered' : 'framed'}
             onClose={() => setMontageOpen(false)}
             onDone={onMontageDone}
           />
         ) : null}
 
-        {playing != null && post ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90" onClick={() => setPlaying(null)}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- the sequence, one slide after the other */}
-            <img src={renderUrl(post.slides[playing], playing, 'full')} alt={`Slide ${playing + 1}`} className="max-h-full max-w-full" />
-            <span className="absolute bottom-4 text-sm">{playing + 1} / {post.slides.length} — toucher pour fermer</span>
+        {previewIndex != null && post ? (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/95 p-4" onClick={() => setPreviewIndex(null)}>
+            <div className="relative max-h-[85vh] max-w-full" style={{ aspectRatio: spec?.family.replace(':', '/') }} onClick={(e) => e.stopPropagation()}>
+              {(() => { const s = post.slides[previewIndex]; const m = s.mediaId ? items.flatMap((i) => i.media).find((x) => x._id === s.mediaId) ?? null : null; const video = Boolean(m?.contentType.startsWith('video/')); const baked = m?.kind === 'montage'; const t = familyTemplates.find((x) => x.key === s.templateKey); const band = t ? bandOf(t.layers) : { top: 0, height: 1 }
+                return <>
+                  {video && m ? <div className="absolute left-0 w-full overflow-hidden" style={{ top: `${band.top * 100}%`, height: `${band.height * 100}%` }}><video src={m.blobUrl} muted loop autoPlay playsInline controls={baked} className="h-full w-full" style={{ objectFit: baked ? 'contain' : s.fit ?? (t?.mode === 'full' ? 'cover' : 'contain') }} /></div> : null}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the slide, large */}
+                  {!baked ? <img src={renderUrl(s, previewIndex, video ? 'overlay' : 'full')} alt={`Slide ${previewIndex + 1}`} className="relative max-h-[85vh] max-w-full" /> : <div className="h-[85vh]" style={{ aspectRatio: spec?.family.replace(':', '/') }} />}
+                </>
+              })()}
+            </div>
+            <div className="flex items-center gap-3 text-sm" onClick={(e) => e.stopPropagation()}>
+              <button className={small} disabled={previewIndex === 0} onClick={() => setPreviewIndex(previewIndex - 1)}>←</button>
+              <span>{previewIndex + 1} / {post.slides.length}</span>
+              <button className={small} disabled={previewIndex >= post.slides.length - 1} onClick={() => setPreviewIndex(previewIndex + 1)}>→</button>
+              <button className={small} onClick={() => setPreviewIndex(null)}>Fermer (Échap)</button>
+            </div>
           </div>
         ) : null}
       </div>

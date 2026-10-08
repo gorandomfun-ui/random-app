@@ -38,7 +38,7 @@ test('le snapshot d_une vidéo YouTube : titre, lien, chaîne, durée, auteur ex
   assert.equal(built.snapshot.durationSec, 20)
   assert.equal(built.snapshot.sourceUrl, 'https://youtu.be/abc')
   assert.equal(built.snapshot.providerLabel, 'YouTube')
-  assert.equal(built.snapshot.authorRequired, true)
+  assert.equal(built.snapshot.authorRequired, false, 'un auteur absent ne bloque jamais')
   assert.equal(built.snapshot.text, null)
 })
 

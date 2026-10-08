@@ -122,7 +122,12 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
       const mediaId = typeof slide.mediaId === 'string' && ObjectId.isValid(slide.mediaId) ? slide.mediaId : null
       const templateKey = typeof slide.templateKey === 'string' && /^[a-z0-9-]{2,40}$/.test(slide.templateKey) ? slide.templateKey : defaultTemplate(spec.family, spec.media === 'video')
       const palette = Number.isInteger(slide.palette) && slide.palette >= 0 && slide.palette < 6 ? slide.palette : 0
-      clean.push({ itemId, mediaId, templateKey, text: typeof slide.text === 'string' ? slide.text.slice(0, 600) : '', palette, logoVariant: slide.logoVariant === 'black' ? 'black' : 'white', ...(typeof (slide as { glitch?: unknown }).glitch === 'number' ? { glitch: Math.min(1, Math.max(0, (slide as { glitch: number }).glitch)) } : {}) })
+      clean.push({
+        itemId, mediaId, templateKey, text: typeof slide.text === 'string' ? slide.text.slice(0, 600) : '', palette, logoVariant: slide.logoVariant === 'black' ? 'black' : 'white',
+        ...(typeof (slide as { glitch?: unknown }).glitch === 'number' ? { glitch: Math.min(1, Math.max(0, (slide as { glitch: number }).glitch)) } : {}),
+        fit: slide.fit === 'cover' || slide.fit === 'contain' ? slide.fit : null,
+        textPosition: slide.textPosition === 'top' || slide.textPosition === 'middle' || slide.textPosition === 'bottom' ? slide.textPosition : null,
+      })
     }
     set.slides = clean
   }

@@ -24,6 +24,8 @@ export async function GET(req: Request) {
   if (!/^[a-z0-9-]{2,40}$/.test(key)) return json({ error: 'Invalid request' }, 400)
   const mode = params.get('mode') === 'overlay' ? 'overlay' : 'full'
   const logo = params.get('logo') === 'black' ? 'black' : 'white'
+  const fit = params.get('fit') === 'cover' ? 'cover' : params.get('fit') === 'contain' ? 'contain' : null
+  const textPosition = ['top', 'middle', 'bottom'].includes(params.get('textpos') ?? '') ? (params.get('textpos') as 'top' | 'middle' | 'bottom') : null
   const glitchRaw = Number(params.get('glitch'))
   const glitch = params.has('glitch') && Number.isFinite(glitchRaw) ? Math.min(1, Math.max(0, glitchRaw)) : null
   try {
@@ -47,7 +49,7 @@ export async function GET(req: Request) {
       // A credit that only repeats the provider says nothing the source line does not: left out on the slide.
       credit: item ? (creditLineOf(item.snapshot, creditTyped) === item.snapshot.providerLabel ? '' : creditLineOf(item.snapshot, creditTyped)) : creditTyped,
       source: item ? sourceLineOf(item.snapshot) : '',
-      media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key,
+      media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key, fit, textPosition,
     })
     return new Response(out.png, { status: 200, headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store', 'X-Comm-Truncated': out.truncated ? '1' : '0', 'X-Comm-Text-Size': String(out.textSize), 'X-Comm-Picture': picture ? '1' : '0' } })
   } catch { return json({ error: 'unavailable' }, 503) }

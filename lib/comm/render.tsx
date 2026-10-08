@@ -27,7 +27,14 @@ export type RenderInput = {
   /** 0 keeps the template's own intensity; otherwise overrides it. */
   glitch: number | null
   seed: string
+  /** The slide's own framing of the picture, over the template's. */
+  fit?: 'cover' | 'contain' | null
+  /** The slide's own place for the words, over the template's. */
+  textPosition?: 'top' | 'middle' | 'bottom' | null
 }
+
+/** Where the words start for each position, as a share of the height; the bottom stays above the credit's zone. */
+export const TEXT_POSITIONS: Record<'top' | 'middle' | 'bottom', number> = { top: 0.1, middle: 0.42, bottom: 0.68 }
 
 export type RenderOutput = { element: ReactElement; width: number; height: number; truncated: boolean; textSize: number }
 
@@ -67,7 +74,7 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
         children.push(
           <div key={key} style={{ ...abs(0, mediaTop, width, mediaHeight), overflow: 'hidden', alignItems: 'center', justifyContent: 'center', opacity: layer.opacity ?? 1 }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- Satori draws plain pictures */}
-            <img src={input.media} alt="" width={width} height={mediaHeight} style={{ width, height: mediaHeight, objectFit: layer.fit }} />
+            <img src={input.media} alt="" width={width} height={mediaHeight} style={{ width, height: mediaHeight, objectFit: input.fit ?? layer.fit }} />
           </div>,
         )
         break
@@ -114,8 +121,9 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
         const lines = !input.media && input.mode === 'full' ? Math.max(layer.lines, Math.min(12, layer.lines + Math.floor(mediaHeight / (layer.size * scale * 1.1)))) : layer.lines
         const fitted = fitText(input.text, { font: layer.font, size: Math.round(layer.size * scale), maxWidthPx, lines, uppercase: layer.uppercase })
         truncated = truncated || fitted.truncated; textSize = fitted.size
+        const textTop = input.textPosition ? Math.round(TEXT_POSITIONS[input.textPosition] * height) : Math.round(layer.y * height)
         children.push(
-          <div key={key} style={{ ...abs(Math.round(layer.x * width), Math.round(layer.y * height), maxWidthPx), flexDirection: 'column', alignItems: layer.align === 'center' ? 'center' : layer.align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.weight, fontSize: fitted.size, lineHeight: 1.1, color: color(layer.color) }}>
+          <div key={key} style={{ ...abs(Math.round(layer.x * width), textTop, maxWidthPx), flexDirection: 'column', alignItems: layer.align === 'center' ? 'center' : layer.align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.weight, fontSize: fitted.size, lineHeight: 1.1, color: color(layer.color) }}>
             {fitted.lines.map((line, i) => <div key={i} style={{ display: 'flex', whiteSpace: 'nowrap' }}>{line}</div>)}
           </div>,
         )
