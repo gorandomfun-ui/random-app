@@ -37,6 +37,20 @@ export function bandOf(layers: Array<{ type: string; top?: number; height?: numb
   return { top: media?.top ?? 0, height: media?.height ?? 1 }
 }
 
+export type Area = { left: number; top: number; width: number; height: number }
+
+/** The media's whole rectangle, sides included, as shares of the canvas. */
+export function areaOf(layers: Array<{ type: string; top?: number; height?: number; left?: number; width?: number }>): Area {
+  const media = layers.find((layer) => layer.type === 'media')
+  return { left: media?.left ?? 0, top: media?.top ?? 0, width: media?.width ?? 1, height: media?.height ?? 1 }
+}
+
+/** Where the video goes inside an area with sides (the glitch frame's), framed or recentred. */
+export function cropRectIn(video: { width: number; height: number }, canvas: { width: number; height: number }, area: Area, mode: CropMode, offset: { x: number; y: number } = { x: 0, y: 0 }): Rect {
+  const inner = cropRect(video, { width: Math.round(area.width * canvas.width), height: canvas.height }, { top: area.top, height: area.height }, mode, offset)
+  return { ...inner, x: inner.x + Math.round(area.left * canvas.width) }
+}
+
 /** The instants of the filmstrip: `count` frames spread over the clip. */
 export function filmstripTimes(duration: number, count = 12): number[] {
   if (!(duration > 0)) return []

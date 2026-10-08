@@ -57,24 +57,38 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
   let truncated = false, textSize = 0
   const random = rng(input.seed)
 
-  // The media's frame: the whole canvas, or the band a framed template leaves it.
+  // The media's frame: the whole canvas, the band a framed template leaves it, or a rectangle with sides.
   const mediaLayer = template.layers.find((layer): layer is Extract<Layer, { type: 'media' }> => layer.type === 'media')
   const mediaTop = Math.round((mediaLayer?.top ?? 0) * height), mediaHeight = Math.round((mediaLayer?.height ?? 1) * height)
+  const mediaLeft = Math.round((mediaLayer?.left ?? 0) * width), mediaWidth = Math.round((mediaLayer?.width ?? 1) * width)
+  const mediaRect = { x: mediaLeft, y: mediaTop, w: mediaWidth, h: mediaHeight }
 
   for (const [index, layer] of template.layers.entries()) {
     const key = `${layer.type}-${index}`
     switch (layer.type) {
+      case 'backdrop': {
+        if (input.mode !== 'full' || !input.media) break
+        // The picture itself as the ground: enlarged to cover everything, then darkened in the base's tone.
+        children.push(
+          <div key={key} style={{ ...abs(0, 0, width, height), overflow: 'hidden', opacity: layer.opacity }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- the content as its own ground */}
+            <img src={input.media} alt="" width={width} height={height} style={{ width, height, objectFit: 'cover' }} />
+          </div>,
+          <div key={`${key}-veil`} style={{ ...abs(0, 0, width, height), background: palette.bg, opacity: layer.darken }} />,
+        )
+        break
+      }
       case 'media': {
         if (input.mode !== 'full') break
         if (!input.media) {
           // No picture: the frame shows the deep tone, so the slide still reads as one piece.
-          children.push(<div key={key} style={{ ...abs(0, mediaTop, width, mediaHeight), background: palette.deep }} />)
+          children.push(<div key={key} style={{ ...abs(mediaLeft, mediaTop, mediaWidth, mediaHeight), background: palette.deep }} />)
           break
         }
         children.push(
-          <div key={key} style={{ ...abs(0, mediaTop, width, mediaHeight), overflow: 'hidden', alignItems: 'center', justifyContent: 'center', opacity: layer.opacity ?? 1 }}>
+          <div key={key} style={{ ...abs(mediaLeft, mediaTop, mediaWidth, mediaHeight), overflow: 'hidden', alignItems: 'center', justifyContent: 'center', opacity: layer.opacity ?? 1 }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- Satori draws plain pictures */}
-            <img src={input.media} alt="" width={width} height={mediaHeight} style={{ width, height: mediaHeight, objectFit: input.fit ?? layer.fit }} />
+            <img src={input.media} alt="" width={mediaWidth} height={mediaHeight} style={{ width: mediaWidth, height: mediaHeight, objectFit: input.fit ?? layer.fit }} />
           </div>,
         )
         break
@@ -121,7 +135,10 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
         const lines = !input.media && input.mode === 'full' ? Math.max(layer.lines, Math.min(12, layer.lines + Math.floor(mediaHeight / (layer.size * scale * 1.1)))) : layer.lines
         const fitted = fitText(input.text, { font: layer.font, size: Math.round(layer.size * scale), maxWidthPx, lines, uppercase: layer.uppercase })
         truncated = truncated || fitted.truncated; textSize = fitted.size
-        const textTop = input.textPosition ? Math.round(TEXT_POSITIONS[input.textPosition] * height) : Math.round(layer.y * height)
+        // 'bottom' sits under the picture when the picture ends lower than the usual place.
+        const mediaBottom = (mediaTop + mediaHeight) / height
+        const share = input.textPosition === 'bottom' && mediaBottom < 0.9 ? Math.max(TEXT_POSITIONS.bottom, Math.min(0.8, mediaBottom + 0.02)) : input.textPosition ? TEXT_POSITIONS[input.textPosition] : layer.y
+        const textTop = Math.round(share * height)
         children.push(
           <div key={key} style={{ ...abs(Math.round(layer.x * width), textTop, maxWidthPx), flexDirection: 'column', alignItems: layer.align === 'center' ? 'center' : layer.align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.weight, fontSize: fitted.size, lineHeight: 1.1, color: color(layer.color) }}>
             {fitted.lines.map((line, i) => <div key={i} style={{ display: 'flex', whiteSpace: 'nowrap' }}>{line}</div>)}
@@ -145,7 +162,7 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
       case 'glitch': {
         const intensity = input.glitch ?? layer.intensity
         if (intensity <= 0) break
-        children.push(...glitchPieces(input, intensity, random, width, height, mediaTop, mediaHeight))
+        children.push(...glitchPieces(input, intensity, random, width, height, mediaTop, mediaHeight, layer.zone === 'frame' ? mediaRect : null))
         break
       }
     }
@@ -164,35 +181,59 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
  * whole pieces of the picture shifted sideways with a thin cream edge; calm,
  * normal or rich with the intensity; never on the credit's line.
  */
-function glitchPieces(input: RenderInput, intensity: number, random: () => number, width: number, height: number, mediaTop: number, mediaHeight: number): ReactElement[] {
+function glitchPieces(input: RenderInput, intensity: number, random: () => number, width: number, height: number, mediaTop: number, mediaHeight: number, avoid: { x: number; y: number; w: number; h: number } | null): ReactElement[] {
   const { palette } = input
   const inks = [palette.accent, palette.cream, palette.deep, palette.accent]
   const out: ReactElement[] = []
   // The lines and pieces stay clear of the credit's zone, the bottom sixth, and of the logo's, the top tenth.
   const zoneTop = Math.round(height * 0.1), zoneBottom = Math.round(height * 0.84)
-  const lines = Math.round(3 + intensity * 9)
+  const frame = Boolean(avoid)
+  const crosses = (top: number, h: number, left: number, w: number) => Boolean(avoid) && top < avoid!.y + avoid!.h && top + h > avoid!.y && left < avoid!.x + avoid!.w && left + w > avoid!.x
+  // A frame holds many more lines, thicker: most above and below the picture, the rest in its gutters.
+  const lines = Math.round((frame ? 8 : 3) + intensity * (frame ? 22 : 9))
   for (let i = 0; i < lines; i += 1) {
-    const top = Math.round(zoneTop + random() * (zoneBottom - zoneTop))
-    const h = Math.max(2, Math.round((1 + random() * 5) * intensity * (width / 1080)))
+    let top = Math.round(zoneTop + random() * (zoneBottom - zoneTop))
+    const h = Math.max(2, Math.round((1 + random() * 5) * intensity * (frame ? 1.8 : 1) * (width / 1080)))
     const ink = inks[Math.floor(random() * inks.length)]
-    const left = Math.round(random() * width * 0.4), w = Math.round(width * (0.3 + random() * 0.7))
+    let left = Math.round(random() * width * 0.4), w = Math.round(width * (0.3 + random() * 0.7))
+    if (avoid) {
+      if (random() < 0.65) {
+        // Above or below the picture, full or part width.
+        const above = random() < 0.5
+        const low = above ? zoneTop : avoid.y + avoid.h, high = above ? avoid.y : zoneBottom
+        if (high - low < 8) continue
+        top = Math.round(low + random() * (high - low - h))
+      } else {
+        // Beside the picture: in the left or the right gutter, full gutter width.
+        top = Math.round(avoid.y + random() * Math.max(1, avoid.h - h))
+        const leftGutter = random() < 0.5
+        left = leftGutter ? 0 : avoid.x + avoid.w; w = leftGutter ? avoid.x : width - (avoid.x + avoid.w)
+        if (w < 4) continue
+      }
+    }
     out.push(<div key={`gl-${i}`} style={{ ...abs(left, top, w, h), backgroundImage: `linear-gradient(90deg, transparent, ${ink} 16%, ${palette.cream}80 46%, ${ink} 70%, transparent)`, opacity: 0.55 + random() * 0.35 }} />)
   }
   if (input.mode === 'full' && input.media) {
-    const pieces = Math.round(1 + intensity * 4)
+    const pieces = Math.round((frame ? 3 : 1) + intensity * (frame ? 8 : 4))
     for (let i = 0; i < pieces; i += 1) {
       const big = random() < 0.2 * intensity + 0.05
       const pw = Math.round(width * (big ? 0.18 + random() * 0.14 : 0.06 + random() * 0.14))
       const ph = Math.round(height * (big ? 0.03 + random() * 0.02 : 0.008 + random() * 0.02))
-      const low = Math.max(mediaTop, zoneTop), high = Math.min(mediaTop + mediaHeight, zoneBottom) - ph
+      // Pieces come from the ground when there is a frame (the picture enlarged), from the band otherwise.
+      const srcTop = frame ? 0 : mediaTop, srcHeight = frame ? height : mediaHeight
+      const low = Math.max(srcTop, zoneTop), high = Math.min(srcTop + srcHeight, zoneBottom) - ph
       if (high <= low) continue
-      const top = Math.round(low + random() * (high - low))
-      const left = Math.round(random() * (width - pw))
+      let top = 0, left = 0, placed = false
+      for (let attempt = 0; attempt < 6 && !placed; attempt += 1) {
+        top = Math.round(low + random() * (high - low)); left = Math.round(random() * (width - pw))
+        placed = !crosses(top, ph, left, pw)
+      }
+      if (!placed) continue
       const shift = Math.round((random() - 0.5) * width * 0.08)
       out.push(
         <div key={`gp-${i}`} style={{ ...abs(left, top, pw, ph), overflow: 'hidden', opacity: 0.6 + random() * 0.3, borderTop: `1px solid ${palette.cream}`, borderBottom: `1px solid ${palette.cream}` }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- a piece of the picture */}
-          <img src={input.media} alt="" width={width} height={mediaHeight} style={{ position: 'absolute', left: -left + shift, top: -(top - mediaTop), width, height: mediaHeight, objectFit: 'cover' }} />
+          <img src={input.media} alt="" width={width} height={srcHeight} style={{ position: 'absolute', left: -left + shift, top: -(top - srcTop), width, height: srcHeight, objectFit: 'cover' }} />
         </div>,
       )
     }

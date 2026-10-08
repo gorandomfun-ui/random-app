@@ -17,12 +17,15 @@ const base = (overrides: Partial<Parameters<typeof buildSlide>[0]> = {}) => ({
   media: PNG_1x1, mediaSize: { width: 1, height: 1 }, mode: 'full' as const, glitch: null, seed: 'test', ...overrides,
 })
 
-test('les six gabarits de départ sont valides, un par famille de dimensions, chacun avec crédit et source', () => {
+test('les dix gabarits de départ sont valides, chaque famille a son cadre glitch, chacun avec crédit et source', () => {
   const seeds = seedTemplates()
-  assert.equal(seeds.length, 6)
+  assert.equal(seeds.length, 10)
   for (const template of seeds) assert.deepEqual(validateTemplate(template), [], template.key)
-  assert.deepEqual(seeds.map((t) => t.family), ['9:16', '9:16', '4:5', '4:5', '1:1', '16:9'])
-  assert.equal(new Set(seeds.map((t) => t.key)).size, 6)
+  assert.deepEqual(seeds.map((t) => t.family), ['9:16', '9:16', '9:16', '4:5', '4:5', '4:5', '1:1', '1:1', '16:9', '16:9'])
+  assert.equal(new Set(seeds.map((t) => t.key)).size, 10)
+  const glitch = seeds.filter((t) => t.key.endsWith('-glitch'))
+  assert.equal(glitch.length, 4)
+  for (const t of glitch) { assert.ok(t.layers.some((l) => l.type === 'backdrop'), 'un fond fait de l’image'); assert.ok(t.layers.some((l) => l.type === 'glitch' && l.zone === 'frame' && l.intensity > 0)) }
 })
 
 test('un gabarit sans crédit ou sans source est refusé, comme une couleur hors palette', () => {
@@ -82,6 +85,7 @@ test('l_arbre d_une slide porte le texte, le crédit, la source ; l_overlay lais
 test('chaque gabarit de départ rend un PNG aux dimensions de sa famille, logo noir comme blanc', async () => {
   for (const template of seedTemplates()) {
     for (const logo of ['black', 'white'] as const) {
+      if (logo === 'black' && template.key.endsWith('-glitch')) continue
       const out = await renderSlidePng(base({ template, logo, glitch: template.key === 'carre' ? 0.6 : null }))
       const size = imageSizeOf(new Uint8Array(out.png))
       assert.deepEqual(size, FAMILY_SIZES[template.family], `${template.key} ${logo}`)

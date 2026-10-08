@@ -10,7 +10,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { bandOf, clampTrim, cropRect, expectedSeconds, filmstripTimes, recorderChoice, type CropMode } from '@/lib/comm/montage'
+import { areaOf, clampTrim, cropRectIn, expectedSeconds, filmstripTimes, recorderChoice, type CropMode } from '@/lib/comm/montage'
+import { glitchOf, hasBackdrop } from '@/lib/comm/templates'
 import { uploadMedia, formatBytes, videoDuration } from '@/lib/comm/client'
 import { formatSeconds } from '@/lib/comm/capture'
 import type { MediaDoc } from '@/lib/comm/model'
@@ -28,6 +29,8 @@ export type MontagePanelProps = {
   maxSeconds: number
   /** The slide's framing, the montage's starting choice. */
   defaultMode?: CropMode | null
+  /** The slide's glitch, 0 to 1: how much the frame and the ground move during the clip. */
+  glitch?: number | null
   onClose: () => void
   /** The montage or the still is in the queue: the slide switches to it. */
   onDone: (media: MediaDoc) => void
@@ -35,7 +38,7 @@ export type MontagePanelProps = {
 
 type Phase = 'loading' | 'ready' | 'rendering' | 'uploading' | 'error'
 
-export default function MontagePanel({ queueItemId, media, template, canvas, overlayUrl, background, maxSeconds, defaultMode, onClose, onDone }: MontagePanelProps) {
+export default function MontagePanel({ queueItemId, media, template, canvas, overlayUrl, background, maxSeconds, defaultMode, glitch, onClose, onDone }: MontagePanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const previewRef = useRef<HTMLCanvasElement | null>(null)
   const overlayRef = useRef<HTMLImageElement | null>(null)
@@ -49,7 +52,13 @@ export default function MontagePanel({ queueItemId, media, template, canvas, ove
   const [strip, setStrip] = useState<string[]>([])
   const [progress, setProgress] = useState('')
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
-  const band = useMemo(() => bandOf(template.layers), [template])
+  const area = useMemo(() => areaOf(template.layers), [template])
+  const backdrop = useMemo(() => hasBackdrop(template.layers), [template])
+  const glitchSpec = useMemo(() => glitchOf(template.layers), [template])
+  const intensity = glitch ?? glitchSpec?.intensity ?? 0
+  /** The dressing in several draws, so the glitch moves during the clip; the first is calm. */
+  const overlaysRef = useRef<HTMLImageElement[]>([])
+  const scheduleRef = useRef<Array<{ until: number; variant: number }>>([])
 
   // The video, from the queue's store; its length and size once known.
   useEffect(() => {
@@ -96,24 +105,63 @@ export default function MontagePanel({ queueItemId, media, template, canvas, ove
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once the metadata is known
   }, [phase, duration])
 
-  const rect = useMemo(() => cropRect(size, canvas, band, mode, offset), [size, canvas, band, mode, offset])
+  const rect = useMemo(() => cropRectIn(size, canvas, area, mode, offset), [size, canvas, area, mode, offset])
+  const areaPx = useMemo(() => ({ x: Math.round(area.left * canvas.width), y: Math.round(area.top * canvas.height), w: Math.round(area.width * canvas.width), h: Math.round(area.height * canvas.height) }), [area, canvas])
 
-  /** Draws one frame: the base, the video where the crop puts it, the dressing over it. */
-  const draw = useCallback((ctx: CanvasRenderingContext2D, video: HTMLVideoElement) => {
+  // The other draws of the dressing, with the glitch elsewhere each time, loaded once.
+  useEffect(() => {
+    if (intensity <= 0) { overlaysRef.current = []; return }
+    const variants = [0, 1, 2, 3, 4].map((k) => {
+      const url = new URL(overlayUrl, window.location.origin)
+      url.searchParams.set('seed', `${media._id}-g${k}`)
+      if (k === 0) url.searchParams.set('glitch', '0')
+      const img = new Image(); img.crossOrigin = 'anonymous'; img.src = url.toString(); return img
+    })
+    overlaysRef.current = variants
+  }, [intensity, media._id, overlayUrl])
+
+  /** Draws one frame: the ground, the video where the crop puts it, moving pieces, the dressing over it. */
+  const draw = useCallback((ctx: CanvasRenderingContext2D, video: HTMLVideoElement, atMs = 0) => {
     ctx.fillStyle = background; ctx.fillRect(0, 0, canvas.width, canvas.height)
-    if (mode === 'centered') { ctx.save(); ctx.beginPath(); ctx.rect(0, Math.round(band.top * canvas.height), canvas.width, Math.round(band.height * canvas.height)); ctx.clip() }
+    if (backdrop && size.width && size.height) {
+      // The clip itself as the ground, enlarged to cover, under a veil of the base.
+      const scale = Math.max(canvas.width / size.width, canvas.height / size.height)
+      const gw = Math.round(size.width * scale), gh = Math.round(size.height * scale)
+      ctx.drawImage(video, Math.round((canvas.width - gw) / 2), Math.round((canvas.height - gh) / 2), gw, gh)
+      ctx.fillStyle = background; ctx.globalAlpha = 0.8; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(areaPx.x, areaPx.y, areaPx.w, areaPx.h); ctx.clip()
     ctx.drawImage(video, rect.x, rect.y, rect.w, rect.h)
-    if (mode === 'centered') ctx.restore()
-    const overlay = overlayRef.current
+    ctx.restore()
+    // The moving part: a few bands of the frame copied sideways, when this instant is not a calm one.
+    const schedule = scheduleRef.current
+    const slot = schedule.find((s) => atMs < s.until)
+    const variant = slot?.variant ?? 0
+    if (intensity > 0 && variant > 0) {
+      const pieces = Math.round(2 + intensity * 6)
+      for (let i = 0; i < pieces; i += 1) {
+        const seedy = (variant * 131 + i * 17) % 97 / 97, seedx = (variant * 53 + i * 29) % 89 / 89
+        const ph = Math.max(4, Math.round(canvas.height * (0.006 + seedy * 0.02 * intensity)))
+        const above = i % 2 === 0
+        const zoneTop = above ? Math.round(canvas.height * 0.1) : areaPx.y + areaPx.h
+        const zoneBottom = above ? areaPx.y : Math.round(canvas.height * 0.84)
+        if (zoneBottom - zoneTop < ph + 2) continue
+        const y = Math.round(zoneTop + seedy * (zoneBottom - zoneTop - ph))
+        const shift = Math.round((seedx - 0.5) * canvas.width * 0.1 * (0.5 + intensity))
+        ctx.drawImage(ctx.canvas, 0, y, canvas.width, ph, shift, y, canvas.width, ph)
+      }
+    }
+    const overlays = overlaysRef.current
+    const overlay = (intensity > 0 && overlays[variant]?.complete && overlays[variant].naturalWidth ? overlays[variant] : null) ?? overlayRef.current
     if (overlay && overlay.complete && overlay.naturalWidth) ctx.drawImage(overlay, 0, 0, canvas.width, canvas.height)
-  }, [background, band, canvas, mode, rect])
+  }, [areaPx, backdrop, background, canvas, intensity, rect, size])
 
   // The preview follows the cursors and the crop.
   useEffect(() => {
     const video = videoRef.current, preview = previewRef.current
     if (phase !== 'ready' || !video || !preview) return
     let cancelled = false
-    void (async () => { await seek(video, trim.startSec); if (!cancelled) draw(preview.getContext('2d')!, video) })()
+    void (async () => { await seek(video, trim.startSec); if (!cancelled) draw(preview.getContext('2d')!, video, 0) })()
     return () => { cancelled = true }
   }, [phase, trim.startSec, draw, seek])
 
@@ -151,12 +199,22 @@ export default function MontagePanel({ queueItemId, media, template, canvas, ove
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
     const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve() })
     await seek(video, trim.startSec)
-    draw(ctx, video)
+    // The glitch's rhythm, as on the Random page: calm most of the time, then a burst of a few tenths of a second.
+    const schedule: Array<{ until: number; variant: number }> = []
+    let at = 0, k = 0
+    while (at < (trim.endSec - trim.startSec) * 1000 + 2000) {
+      const calm = ((k * 7919) % 100) / 100 > intensity * 0.7
+      const length = calm ? 400 + ((k * 104729) % 900) : 120 + ((k * 15485863) % 320)
+      at += length; k += 1
+      schedule.push({ until: at, variant: calm ? 0 : 1 + (k % 4) })
+    }
+    scheduleRef.current = schedule
+    draw(ctx, video, 0)
     recorder.start(1000)
     const started = performance.now()
     let frameHandle = 0
     const tick = () => {
-      draw(ctx, video)
+      draw(ctx, video, performance.now() - started)
       setProgress(`${formatSeconds(video.currentTime - trim.startSec)} / ${formatSeconds(trim.endSec - trim.startSec)}`)
       if (video.currentTime >= trim.endSec - 0.04 || video.ended) { finish(); return }
       frameHandle = (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }).requestVideoFrameCallback?.(tick) ?? requestAnimationFrame(tick)

@@ -17,7 +17,9 @@ export const FAMILY_SIZES: Record<Family, { width: number; height: number }> = {
 }
 
 export type Layer =
-  | { type: 'media'; fit: 'cover' | 'contain'; opacity?: number; top?: number; height?: number }
+  | { type: 'media'; fit: 'cover' | 'contain'; opacity?: number; top?: number; height?: number; left?: number; width?: number }
+  /** The picture itself, enlarged to cover the whole canvas and darkened: a ground made of the content. */
+  | { type: 'backdrop'; opacity: number; darken: number }
   | { type: 'band'; position: 'top' | 'bottom'; height: number; color: ColorToken }
   | { type: 'gradient'; from: ColorToken; to: ColorToken; direction: 'to bottom' | 'to top'; top?: number; height?: number }
   | { type: 'logo'; variant: 'horizontal' | 'vertical'; color: ColorToken; x: number; y: number; width: number }
@@ -25,7 +27,8 @@ export type Layer =
   | { type: 'text'; font: FontName; size: number; weight: 400 | 700 | 900; color: ColorToken; x: number; y: number; maxWidth: number; lines: number; align?: 'left' | 'center' | 'right'; uppercase?: boolean }
   | { type: 'credit'; font: FontName; size: number; color: ColorToken; x: number; y: number; maxWidth: number; align?: 'left' | 'center' | 'right' }
   | { type: 'source'; font: FontName; size: number; color: ColorToken; x: number; y: number; maxWidth: number; align?: 'left' | 'center' | 'right' }
-  | { type: 'glitch'; intensity: number }
+  /** 'all' lets the glitch cross the picture; 'frame' keeps it outside the media's rectangle. */
+  | { type: 'glitch'; intensity: number; zone?: 'all' | 'frame' }
 
 export type Template = {
   key: string
@@ -36,7 +39,7 @@ export type Template = {
   layers: Layer[]
 }
 
-export const LAYER_TYPES = ['media', 'band', 'gradient', 'logo', 'icon', 'text', 'credit', 'source', 'glitch'] as const
+export const LAYER_TYPES = ['media', 'backdrop', 'band', 'gradient', 'logo', 'icon', 'text', 'credit', 'source', 'glitch'] as const
 export const COLOR_TOKENS: ColorToken[] = ['palette.bg', 'palette.deep', 'palette.cream', 'palette.accent', 'black', 'white', 'auto', 'transparent']
 export const ICON_NAMES = ['comm', 'heart', 'shuffle', 'video', 'image', 'web', 'wave', 'quote', 'joke', 'fact', 'share', 'social', 'plus', 'info'] as const
 
@@ -66,7 +69,10 @@ export function validateTemplate(input: unknown): string[] {
       case 'media':
         if (l.fit !== 'cover' && l.fit !== 'contain') errors.push(`${at} (media) : fit cover ou contain`)
         if (l.opacity !== undefined && !unit(l.opacity)) errors.push(`${at} (media) : opacité entre 0 et 1`)
-        if ((l.top !== undefined && !unit(l.top)) || (l.height !== undefined && !unit(l.height))) errors.push(`${at} (media) : top et height entre 0 et 1`)
+        if ((l.top !== undefined && !unit(l.top)) || (l.height !== undefined && !unit(l.height)) || (l.left !== undefined && !unit(l.left)) || (l.width !== undefined && !unit(l.width))) errors.push(`${at} (media) : top, height, left, width entre 0 et 1`)
+        break
+      case 'backdrop':
+        if (!unit(l.opacity) || !unit(l.darken)) errors.push(`${at} (backdrop) : opacité et assombrissement entre 0 et 1`)
         break
       case 'band':
         if (l.position !== 'top' && l.position !== 'bottom') errors.push(`${at} (band) : position top ou bottom`)
@@ -108,6 +114,7 @@ export function validateTemplate(input: unknown): string[] {
         break
       case 'glitch':
         if (!unit(l.intensity)) errors.push(`${at} (glitch) : intensité entre 0 et 1`)
+        if (l.zone !== undefined && l.zone !== 'all' && l.zone !== 'frame') errors.push(`${at} (glitch) : zone all ou frame`)
         break
     }
   })
@@ -152,14 +159,50 @@ export function seedTemplates(): Template[] {
       { type: 'glitch', intensity: 0 },
     ],
   })
+  /**
+   * The glitch frame: the picture a little smaller, in a frame where the
+   * glitch runs dense, over a ground made of the picture itself, enlarged
+   * and darkened. Chosen, never the default; the slide's slider sets how much.
+   */
+  const glitchFrame = (key: string, name: string, family: Family, rect: { left: number; top: number; width: number; height: number }, textY: number): Template => ({
+    key, name, family, mode: 'framed',
+    layers: [
+      { type: 'backdrop', opacity: 1, darken: 0.8 },
+      { type: 'media', fit: 'contain', left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      { type: 'logo', variant: 'horizontal', color: 'auto', x: 0.06, y: 0.035, width: 0.26 },
+      { type: 'text', font: 'Tomorrow', size: 54, weight: 900, color: 'palette.cream', x: 0.06, y: textY, maxWidth: 0.88, lines: 2, align: 'left', uppercase: true },
+      ...bottomLines(family, 'full'),
+      { type: 'glitch', intensity: 0.7, zone: 'frame' },
+    ],
+  })
   return [
     framed('story-encadre', 'Story 9:16 encadré', '9:16', 0.2, 0.2),
     full('story-plein', 'Story 9:16 plein', '9:16'),
+    glitchFrame('story-glitch', 'Story 9:16 cadre glitch', '9:16', { left: 0.07, top: 0.17, width: 0.86, height: 0.58 }, 0.77),
     framed('post-encadre', 'Post 4:5 encadré', '4:5', 0.18, 0.2),
     full('post-plein', 'Post 4:5 plein', '4:5'),
+    glitchFrame('post-glitch', 'Post 4:5 cadre glitch', '4:5', { left: 0.07, top: 0.15, width: 0.86, height: 0.6 }, 0.77),
     full('carre', 'Carré 1:1', '1:1'),
+    glitchFrame('carre-glitch', 'Carré 1:1 cadre glitch', '1:1', { left: 0.08, top: 0.16, width: 0.84, height: 0.6 }, 0.78),
     full('paysage', 'Paysage 16:9', '16:9'),
+    glitchFrame('paysage-glitch', 'Paysage 16:9 cadre glitch', '16:9', { left: 0.12, top: 0.14, width: 0.76, height: 0.64 }, 0.8),
   ]
+}
+
+/** The rectangle a template leaves to its media, as shares of the canvas. */
+export function mediaRectOf(layers: Layer[]): { left: number; top: number; width: number; height: number } {
+  const media = layers.find((layer): layer is Extract<Layer, { type: 'media' }> => layer.type === 'media')
+  return { left: media?.left ?? 0, top: media?.top ?? 0, width: media?.width ?? 1, height: media?.height ?? 1 }
+}
+
+/** The glitch layer's own intensity and zone, when the template has one. */
+export function glitchOf(layers: Layer[]): { intensity: number; zone: 'all' | 'frame' } | null {
+  const glitch = layers.find((layer): layer is Extract<Layer, { type: 'glitch' }> => layer.type === 'glitch')
+  return glitch ? { intensity: glitch.intensity, zone: glitch.zone ?? 'all' } : null
+}
+
+export function hasBackdrop(layers: Layer[]): boolean {
+  return layers.some((layer) => layer.type === 'backdrop')
 }
 
 export function templatesForFamily(templates: Template[], family: Family): Template[] {
