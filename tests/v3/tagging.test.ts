@@ -75,7 +75,10 @@ test('époque: tendance, récent, rétro, inconnu', () => {
     'recent',
     'une tendance de plus de 14 jours n_est plus une tendance',
   )
-  assert.equal(classifyEra({ publishedAt: new Date('2019-01-01T00:00:00Z') }, now), 'retro')
+  assert.equal(classifyEra({ publishedAt: new Date('2019-01-01T00:00:00Z') }, now), 'recent', 'uploaded five years ago is not an archive (the owner, 8 October)')
+  assert.equal(classifyEra({ publishedAt: new Date('2011-06-01T00:00:00Z') }, now), 'retro', 'uploaded before 2012 is')
+  assert.equal(classifyEra({ title: 'Concert 1987 VHS', publishedAt: new Date('2025-01-01T00:00:00Z') }, now), 'retro', 'a concert of 1987 uploaded last year is an archive')
+  assert.equal(classifyEra({ title: 'Laos 2010', publishedAt: new Date('2015-01-01T00:00:00Z') }, now), 'recent')
   assert.equal(classifyEra({ publishedAt: new Date('2025-01-01T00:00:00Z') }, now), 'recent')
   assert.equal(classifyEra({ title: 'Concert 1987 VHS' }, now), 'retro', 'une année ancienne dans le titre suffit')
   assert.equal(classifyEra({ title: 'Une vidéo' }, now), 'unknown')
@@ -279,7 +282,7 @@ test('étiquetage: sujet principal, secondaires, univers, angle', async () => {
       provider: 'youtube',
       channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw',
       viewCount: 8_000_000,
-      publishedAt: new Date('2012-05-01T00:00:00Z'),
+      publishedAt: new Date('2011-05-01T00:00:00Z'),
     },
     index,
     new Date('2026-09-17T00:00:00Z'),

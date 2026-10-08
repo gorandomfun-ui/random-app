@@ -17,8 +17,14 @@ const KNOWN_CEILING = 2_000_000
 /** A trend observation older than this no longer makes an item "trending". */
 const TREND_WINDOW_DAYS = 14
 
-/** Published this many years ago, or older, counts as retro. */
-const RETRO_YEARS = 5
+/**
+ * What "retro" means (the owner, 8 October): the video speaks of a time before this year — a year in its title — or
+ * it was uploaded before the platforms grew up. Not "uploaded five years ago", which made a third of the stock retro
+ * (329,000 videos: a 2019 soda ad, a Delhi timelapse) and seven retro draws in ten no archive at all; the same
+ * boundary lets an archive past the week's cap per channel (lib/v3/dig/outlet.ts, ofAnotherTime).
+ */
+export const ARCHIVE_TITLE_YEAR = 2005
+export const ARCHIVE_UPLOAD_BEFORE = 2012
 
 export function classifyPopularity(viewCount: number | null | undefined): Popularity {
   if (typeof viewCount !== 'number' || !Number.isFinite(viewCount) || viewCount < 0) return 'unknown'
@@ -52,16 +58,15 @@ export function classifyEra(input: EraInput, now = new Date()): Era {
     if (ageDays >= 0 && ageDays < TREND_WINDOW_DAYS) return 'trend'
   }
 
-  const retroThreshold = now.getUTCFullYear() - RETRO_YEARS
+  // The title first: a concert of 1987 uploaded last year is an archive.
+  const titleYear = yearFromTitle(input.title, now)
+  if (titleYear !== undefined && titleYear <= ARCHIVE_TITLE_YEAR) return 'retro'
 
   if (input.publishedAt) {
     const publishedYear = input.publishedAt.getUTCFullYear()
-    if (publishedYear <= retroThreshold) return 'retro'
+    if (publishedYear < ARCHIVE_UPLOAD_BEFORE) return 'retro'
     return 'recent'
   }
-
-  const titleYear = yearFromTitle(input.title, now)
-  if (titleYear !== undefined && titleYear <= retroThreshold) return 'retro'
 
   return 'unknown'
 }

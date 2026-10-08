@@ -14,7 +14,7 @@
  * "tv", "shortfilms", "videogames", "fun"…, YouTube's numbers — never on a
  * list of ours:
  *   - news, sport, people, tv: of the moment (`MOMENT_DAYS`) or of another
- *     time (`OLD_UPLOAD_YEARS`, or an old year in the text), nothing between;
+ *     time (`OLD_UPLOAD_BEFORE`, or an old year in the text), nothing between;
  *   - film and gaming sites, and any trailer by its title: a year, or of
  *     another time;
  *   - the rest — fun, animals, music, science, travel, creation: no window.
@@ -24,14 +24,18 @@
  */
 
 import { isTrailerTitle } from '../cool/themes'
+import { ARCHIVE_TITLE_YEAR, ARCHIVE_UPLOAD_BEFORE } from '../tagging/classify'
 import type { DigVideo } from './video'
 
 /** Past this many published videos, a channel is a house, not a person. */
 export const OUTLET_VIDEOS = Number(process.env.RANDOM_DIG_OUTLET_VIDEOS ?? 10_000)
-/** A year this old in the title or the description makes a video "of another time". */
-export const OLD_YEAR = 2005
-/** An upload this old is of another time whatever its title says. */
-export const OLD_UPLOAD_YEARS = 7
+/** A year this old in the title or the description makes a video "of another time" (lib/v3/tagging/classify.ts: the same boundary labels the era). */
+export const OLD_YEAR = ARCHIVE_TITLE_YEAR
+/**
+ * An upload from before this year is of another time whatever its title says. Seven years, before 8 October, let five bulk
+ * uploaders of old clips past the week's cap per channel at a hundred and ten a day each (the drift, 7 October).
+ */
+export const OLD_UPLOAD_BEFORE = ARCHIVE_UPLOAD_BEFORE
 /** A news, sport, people or TV clip is of the moment this long. */
 export const MOMENT_DAYS = Number(process.env.RANDOM_MEDIA_MOMENT_DAYS ?? 15)
 /** A trailer, a film or a game clip keeps this long. */
@@ -62,11 +66,11 @@ const publishedDate = (value: unknown): Date | null => {
 }
 
 /** Whether a video is of another time: an old year in its title or the first lines of its description, or an upload of years ago. */
-export function ofAnotherTime(video: Pick<DigVideo, 'title' | 'description' | 'publishedAt'>, now = new Date()): boolean {
+export function ofAnotherTime(video: Pick<DigVideo, 'title' | 'description' | 'publishedAt'>, _now = new Date()): boolean {
   const text = `${video.title} ${(video.description ?? '').slice(0, 300)}`
   for (const match of text.matchAll(YEAR)) if (Number(match[1]) <= OLD_YEAR) return true
   const published = publishedDate(video.publishedAt)
-  return Boolean(published && published.getTime() <= now.getTime() - OLD_UPLOAD_YEARS * 365.25 * DAY_MS)
+  return Boolean(published && published.getUTCFullYear() < OLD_UPLOAD_BEFORE)
 }
 
 /** How many days ago the video was uploaded; unknown when the platform did not say. */

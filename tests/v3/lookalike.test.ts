@@ -237,7 +237,7 @@ test("a YouTube like gives its channel: two pages of uploads a visit, details on
   assert.equal(calls.filter((path) => path === 'www.googleapis.com/youtube/v3/videos').length, 1, 'one details call')
   // Two pages, one details call, one channel-size call for the media windows: four units, each reserved first.
   assert.equal(reserved.length, 4)
-  assert.equal((saved as { youtube: Record<string, string | null> }).youtube[String(likeId)], null, 'past the last page: the next visit starts over')
+  assert.equal((saved as unknown as { youtube: Record<string, string | null> }).youtube[String(likeId)], null, 'past the last page: the next visit starts over')
   assert.equal(uploadsOf('UCabcdefghijklmnopqrstuv'), 'UUabcdefghijklmnopqrstuv')
   assert.equal(uploadsOf('x1abc'), null)
   delete process.env.YOUTUBE_API_KEY
