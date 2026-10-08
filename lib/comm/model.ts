@@ -70,8 +70,8 @@ export type QueueItem = {
   licenseHint: LicenseHint
 }
 
-/** montage: a clip cut, framed and dressed by the browser, ready to post; still: one frame of a video, as a picture; render: a slide as a JPEG, only for the time of a publication. */
-export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb' | 'montage' | 'still' | 'render'
+/** montage: a clip cut, framed and dressed by the browser, ready to post; still: one frame of a video, as a picture; render: a slide as a JPEG, only for the time of a publication; poster: one frame of a clip, so the engine can show the clip's slide. */
+export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb' | 'montage' | 'still' | 'render' | 'poster'
 
 export type MediaDoc = {
   _id: string
@@ -98,12 +98,20 @@ export const DESTINATIONS: readonly Destination[] = ['instagram', 'tiktok', 'x']
 
 /** One slide: the item it shows (its credit, its source, its thumbnail when no media is picked), the media, the dressing. */
 export type TextPosition = 'top' | 'middle' | 'bottom'
+/** A block the curator places by hand: its top-left corner as shares of the canvas, its size in px on a 1080-wide canvas. */
+export type Placement = { x: number; y: number; size: number; align?: 'left' | 'center' | 'right'; width?: number }
 export type PostSlide = {
   itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number
   /** Full screen (cover) or framed whole (contain); empty keeps the template's own. */
   fit?: 'cover' | 'contain' | null
   /** Where the words sit; empty keeps the template's own. */
   textPosition?: TextPosition | null
+  /** The words placed by hand, over the template and the position presets. */
+  textPlace?: Placement | null
+  /** The credit and the source placed by hand. */
+  sourcePlace?: Placement | null
+  /** The margin around the picture: none (full screen) or the Random glitch. */
+  margin?: 'none' | 'glitch' | null
 }
 
 export type PostDoc = {

@@ -12,7 +12,6 @@ import { COMM_MEDIA, COMM_POSTS, type PostDoc } from './model'
 import { formatSpec } from './destinations'
 import { blobPathnameOf, deleteBlobs, keyBelongsTo } from './blob'
 import { postById } from './posts'
-import { removeFromQueue } from './queue'
 import { igComment, igConfig, igContainerStatus, igCreateCarousel, igCreateContainer, igPermalink, igPublish, IgError, type IgFetch, type IgFormat } from './instagram'
 
 const QUERY_MS = 2500
@@ -114,9 +113,8 @@ export async function statusInstagram(db: Db, fetchImpl: IgFetch, postId: string
     const renders = await db.collection(COMM_MEDIA).find({ kind: 'render', queueItemId: { $in: post.queueItemIds } }, { projection: { blobUrl: 1 }, maxTimeMS: QUERY_MS }).toArray()
     await deleteBlobs([...assets.map((a) => a.url), ...renders.map((r) => String(r.blobUrl))])
     await db.collection(COMM_MEDIA).deleteMany({ kind: 'render', queueItemId: { $in: post.queueItemIds } })
-    let removed = 0
-    for (const itemId of post.queueItemIds) if (!(post.publishing.keep ?? []).includes(itemId)) { const r = await removeFromQueue(db, itemId); if (r.removed) removed += 1 }
-    return { state: 'published', remoteId, remoteUrl, commented, removed }
+    // The items stay in the queue, marked as used; the curator removes them when he is done with them.
+    return { state: 'published', remoteId, remoteUrl, commented, removed: 0 }
   } catch (error) {
     return fail(error instanceof IgError ? error.message : 'Instagram n’a pas répondu.')
   }

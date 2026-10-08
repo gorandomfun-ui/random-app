@@ -64,8 +64,10 @@ test('un brouillon prend un numéro, une clé, une slide par élément, et une l
 test('le brouillon survit et se borne : pas plus de slides que le format n_en permet, hashtags normalisés', { skip }, async () => {
   const row = await db.collection('comm_posts').findOne({ number: 1 })
   const id = String(row!._id)
-  const ok = await posts.updateDraft(db, id, { captionHead: 'Mon texte', hashtags: ['#Moto', 'pas un tag', '#Ok_2'], slides: [{ itemId: ids0(), mediaId: null, templateKey: 'story-plein', text: 'Salut', palette: 3, logoVariant: 'black', glitch: 0.4 }] })
+  const ok = await posts.updateDraft(db, id, { captionHead: 'Mon texte', hashtags: ['#Moto', 'pas un tag', '#Ok_2'], slides: [{ itemId: ids0(), mediaId: null, templateKey: 'story-plein', text: 'Salut', palette: 3, logoVariant: 'black', glitch: 0.4, textPlace: { x: 0.1, y: 0.7, size: 90, align: 'center', width: 0.8 }, sourcePlace: { x: 0.5, y: 0.5, size: 999 } }] })
   assert.ok(ok.ok); assert.deepEqual(ok.post.hashtags, ['#Moto', '#Ok_2']); assert.equal(ok.post.slides[0].glitch, 0.4); assert.equal(ok.post.captionHead, 'Mon texte'); assert.equal(ok.post.slides[0].itemId, ids0())
+  assert.deepEqual(ok.post.slides[0].textPlace, { x: 0.1, y: 0.7, size: 90, align: 'center', width: 0.8 }); assert.equal(ok.post.slides[0].sourcePlace?.size, 120, 'la source a une taille plafond')
+  assert.deepEqual(ok.post.queueItemIds, [ids0()], 'les éléments du brouillon sont ceux que ses slides montrent')
   const reloaded = await posts.postById(db, id)
   assert.equal(reloaded?.slides[0].templateKey, 'story-plein')
   const tooMany = await posts.updateDraft(db, id, { slides: Array.from({ length: 11 }, () => ({ itemId: null, mediaId: null, templateKey: 'story-plein', text: '', palette: 0, logoVariant: 'white' as const })) })
@@ -75,15 +77,16 @@ test('le brouillon survit et se borne : pas plus de slides que le format n_en pe
   assert.equal(tooManyForVideo.ok, false, 'une vidéo TikTok : une seule slide')
 })
 
-test('après export, la publication reste seule, ses éléments partent sauf ceux gardés, et le lien compte', { skip }, async () => {
+test('après export, la publication reste, les éléments restent dans la file marqués utilisés, et le lien compte', { skip }, async () => {
   const row = await db.collection('comm_posts').findOne({ number: 1 })
   const id = String(row!._id)
-  const kept = row!.queueItemIds[1] as string
   assert.deepEqual(await posts.publishedPosts(db), [], 'un brouillon ne se montre pas')
   assert.equal(await posts.followLink(db, row!.linkKey), null, 'un brouillon ne redirige pas')
-  const exported = await posts.markExported(db, id, [kept])
-  assert.deepEqual(exported, { ok: true, removed: 1 })
-  assert.equal(await db.collection('comm_queue').countDocuments({}), 1)
+  const exported = await posts.markExported(db, id)
+  assert.deepEqual(exported, { ok: true, removed: 0 })
+  assert.equal(await db.collection('comm_queue').countDocuments({}), 2, 'rien ne quitte la file tout seul')
+  const used = await posts.usedBy(db, row!.queueItemIds as string[])
+  assert.deepEqual(used[row!.queueItemIds[0] as string], [1])
   const shown = await posts.publishedPosts(db)
   assert.equal(shown.length, 1); assert.equal(shown[0].number, 1); assert.equal(shown[0].title, 'Brouillon vidéo #tag'); assert.equal(shown[0].author, 'Chaîne brouillon')
   const response = await link.GET(new Request(`https://comm.test/l/${row!.linkKey}`), { params: { key: row!.linkKey } })

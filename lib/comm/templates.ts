@@ -167,8 +167,8 @@ export function seedTemplates(): Template[] {
   const glitchFrame = (key: string, name: string, family: Family, rect: { left: number; top: number; width: number; height: number }, textY: number): Template => ({
     key, name, family, mode: 'framed',
     layers: [
-      { type: 'backdrop', opacity: 1, darken: 0.8 },
-      { type: 'media', fit: 'contain', left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      { type: 'backdrop', opacity: 1, darken: 0.66 },
+      { type: 'media', fit: 'cover', left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       { type: 'logo', variant: 'horizontal', color: 'auto', x: 0.06, y: 0.035, width: 0.26 },
       { type: 'text', font: 'Tomorrow', size: 54, weight: 900, color: 'palette.cream', x: 0.06, y: textY, maxWidth: 0.88, lines: 2, align: 'left', uppercase: true },
       ...bottomLines(family, 'full'),
@@ -178,14 +178,14 @@ export function seedTemplates(): Template[] {
   return [
     framed('story-encadre', 'Story 9:16 encadré', '9:16', 0.2, 0.2),
     full('story-plein', 'Story 9:16 plein', '9:16'),
-    glitchFrame('story-glitch', 'Story 9:16 cadre glitch', '9:16', { left: 0.07, top: 0.17, width: 0.86, height: 0.58 }, 0.77),
+    glitchFrame('story-glitch', 'Story 9:16 cadre glitch', '9:16', { left: 0.1, top: 0.19, width: 0.8, height: 0.52 }, 0.74),
     framed('post-encadre', 'Post 4:5 encadré', '4:5', 0.18, 0.2),
     full('post-plein', 'Post 4:5 plein', '4:5'),
-    glitchFrame('post-glitch', 'Post 4:5 cadre glitch', '4:5', { left: 0.07, top: 0.15, width: 0.86, height: 0.6 }, 0.77),
+    glitchFrame('post-glitch', 'Post 4:5 cadre glitch', '4:5', { left: 0.1, top: 0.17, width: 0.8, height: 0.55 }, 0.75),
     full('carre', 'Carré 1:1', '1:1'),
-    glitchFrame('carre-glitch', 'Carré 1:1 cadre glitch', '1:1', { left: 0.08, top: 0.16, width: 0.84, height: 0.6 }, 0.78),
+    glitchFrame('carre-glitch', 'Carré 1:1 cadre glitch', '1:1', { left: 0.1, top: 0.18, width: 0.8, height: 0.56 }, 0.77),
     full('paysage', 'Paysage 16:9', '16:9'),
-    glitchFrame('paysage-glitch', 'Paysage 16:9 cadre glitch', '16:9', { left: 0.12, top: 0.14, width: 0.76, height: 0.64 }, 0.8),
+    glitchFrame('paysage-glitch', 'Paysage 16:9 cadre glitch', '16:9', { left: 0.14, top: 0.16, width: 0.72, height: 0.6 }, 0.8),
   ]
 }
 

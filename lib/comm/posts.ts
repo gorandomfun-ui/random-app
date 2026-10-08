@@ -8,9 +8,9 @@
 import { randomBytes } from 'node:crypto'
 import { ObjectId, type Db } from 'mongodb'
 
-import { COMM_POSTS, DESTINATIONS, type Destination, type PostDoc, type PostSlide } from './model'
+import { COMM_POSTS, DESTINATIONS, type Destination, type Placement, type PostDoc, type PostSlide } from './model'
 import { formatSpec } from './destinations'
-import { queueItemById, removeFromQueue, type QueueItemWithMedia } from './queue'
+import { queueItemById, type QueueItemWithMedia } from './queue'
 import { buildCaption, suggestHashtags } from './caption'
 
 const QUERY_MS = 2500
@@ -104,6 +104,17 @@ function defaultTemplate(family: string, video: boolean): string {
 
 export type DraftPatch = Partial<Pick<PostDoc, 'slides' | 'caption' | 'hashtags' | 'format' | 'author'>> & { captionHead?: string; phrase?: string; credit?: string; homeLink?: boolean }
 
+const unit = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= -0.5 && n <= 1.5
+function placementOf(value: unknown, maxSize: number): Placement | null {
+  const p = value as Partial<Placement> | null
+  if (!p || typeof p !== 'object' || !unit(p.x) || !unit(p.y) || typeof p.size !== 'number' || !Number.isFinite(p.size)) return null
+  return {
+    x: Math.round(p.x! * 1000) / 1000, y: Math.round(p.y! * 1000) / 1000, size: Math.round(Math.min(maxSize, Math.max(12, p.size))),
+    ...(p.align === 'left' || p.align === 'center' || p.align === 'right' ? { align: p.align } : {}),
+    ...(typeof p.width === 'number' && p.width > 0.05 && p.width <= 1 ? { width: Math.round(p.width * 1000) / 1000 } : {}),
+  }
+}
+
 /** Every change of the editor lands here; the format's bounds are checked on the way. */
 export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promise<{ ok: true; post: PostDoc } | { ok: false; reason: string }> {
   const post = await postById(db, id)
@@ -118,7 +129,8 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
     const clean: PostSlide[] = []
     for (const slide of patch.slides) {
       if (!slide || typeof slide !== 'object') return { ok: false, reason: 'slide' }
-      const itemId = typeof slide.itemId === 'string' && post.queueItemIds.includes(slide.itemId) ? slide.itemId : null
+      // Any item of the queue may serve a slide: the composer is global, the sources come after.
+      const itemId = typeof slide.itemId === 'string' && ObjectId.isValid(slide.itemId) ? slide.itemId : null
       const mediaId = typeof slide.mediaId === 'string' && ObjectId.isValid(slide.mediaId) ? slide.mediaId : null
       const templateKey = typeof slide.templateKey === 'string' && /^[a-z0-9-]{2,40}$/.test(slide.templateKey) ? slide.templateKey : defaultTemplate(spec.family, spec.media === 'video')
       const palette = Number.isInteger(slide.palette) && slide.palette >= 0 && slide.palette < 6 ? slide.palette : 0
@@ -127,9 +139,16 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         ...(typeof (slide as { glitch?: unknown }).glitch === 'number' ? { glitch: Math.min(1, Math.max(0, (slide as { glitch: number }).glitch)) } : {}),
         fit: slide.fit === 'cover' || slide.fit === 'contain' ? slide.fit : null,
         textPosition: slide.textPosition === 'top' || slide.textPosition === 'middle' || slide.textPosition === 'bottom' ? slide.textPosition : null,
+        textPlace: placementOf(slide.textPlace, 400), sourcePlace: placementOf(slide.sourcePlace, 120),
+        margin: slide.margin === 'glitch' ? 'glitch' : slide.margin === 'none' ? 'none' : null,
       })
     }
     set.slides = clean
+    // The items the post draws from: those its slides show, checked to exist, the original ones kept as a floor.
+    const used = Array.from(new Set(clean.map((s) => s.itemId).filter((id): id is string => Boolean(id))))
+    const existing: string[] = []
+    for (const id of used) if (await queueItemById(db, id)) existing.push(id)
+    set.queueItemIds = existing.length ? existing : post.queueItemIds
   }
   if (typeof patch.caption === 'string') set.caption = patch.caption.slice(0, 4000)
   if (typeof patch.captionHead === 'string') set.captionHead = patch.captionHead.slice(0, 2000)
@@ -142,14 +161,25 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
   return updated ? { ok: true, post: updated } : { ok: false, reason: 'not-found' }
 }
 
-/** After an export: the post is a trace, and the items it used leave the queue unless kept. */
-export async function markExported(db: Db, id: string, keep: string[]): Promise<{ ok: boolean; removed: number }> {
+/**
+ * After an export: the post is a trace. The items stay in the queue, marked
+ * as used, until the curator removes them himself (decided on 8 October
+ * 2026: he may want the same content on several networks).
+ */
+export async function markExported(db: Db, id: string, _keep: string[] = []): Promise<{ ok: boolean; removed: number }> {
   const post = await postById(db, id)
   if (!post) return { ok: false, removed: 0 }
   await db.collection(COMM_POSTS).updateOne({ _id: new ObjectId(id) }, { $set: { status: 'exported', publishedAt: new Date(), updatedAt: new Date() } })
-  let removed = 0
-  for (const itemId of post.queueItemIds) if (!keep.includes(itemId)) { const result = await removeFromQueue(db, itemId); if (result.removed) removed += 1 }
-  return { ok: true, removed }
+  return { ok: true, removed: 0 }
+}
+
+/** For each queue item, the numbers of the posts that used it, exported or published. */
+export async function usedBy(db: Db, queueItemIds: string[]): Promise<Record<string, number[]>> {
+  if (!queueItemIds.length) return {}
+  const rows = await db.collection(COMM_POSTS).find({ status: { $in: ['exported', 'published'] }, queueItemIds: { $in: queueItemIds } }, { projection: { number: 1, queueItemIds: 1 }, maxTimeMS: QUERY_MS }).toArray()
+  const out: Record<string, number[]> = {}
+  for (const row of rows) for (const id of (row.queueItemIds as string[]) ?? []) if (queueItemIds.includes(id)) (out[id] ??= []).push(Number(row.number))
+  return out
 }
 
 export async function deleteDraft(db: Db, id: string): Promise<boolean> {

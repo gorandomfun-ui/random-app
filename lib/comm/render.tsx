@@ -9,6 +9,7 @@
 import React, { type ReactElement, type CSSProperties } from 'react'
 
 import { fitText, type ColorToken, type Layer, type Template, FAMILY_SIZES } from './templates'
+import type { Placement } from './model'
 import { iconDataUri, logoDataUri, LOGO_SIZES, ICON_RATIO, resolveColor, type Palette } from './brand'
 
 export type RenderInput = {
@@ -31,6 +32,12 @@ export type RenderInput = {
   fit?: 'cover' | 'contain' | null
   /** The slide's own place for the words, over the template's. */
   textPosition?: 'top' | 'middle' | 'bottom' | null
+  /** The words placed and sized by hand: over everything else. */
+  textPlace?: Placement | null
+  /** The credit and the source placed and sized by hand. */
+  sourcePlace?: Placement | null
+  /** A smaller draw of the same slide, for previews: 1 is the real size. */
+  scale?: number | null
 }
 
 /** Where the words start for each position, as a share of the height; the bottom stays above the credit's zone. */
@@ -49,7 +56,8 @@ const abs = (left: number, top: number, width: number, height?: number): CSSProp
 
 export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
   const { template, palette } = input
-  const { width, height } = FAMILY_SIZES[template.family]
+  const draw = input.scale && input.scale > 0 && input.scale < 1 ? input.scale : 1
+  const width = Math.round(FAMILY_SIZES[template.family].width * draw), height = Math.round(FAMILY_SIZES[template.family].height * draw)
   const scale = width / 1080
   const color = (token: ColorToken) => resolveColor(token, palette)
   const logoColor = input.logo === 'black' ? palette.deep : palette.cream
@@ -130,17 +138,20 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
       }
       case 'text': {
         if (!input.text.trim()) break
-        const maxWidthPx = Math.round(layer.maxWidth * width)
+        const place = input.textPlace
+        const maxWidthPx = Math.round((place?.width ?? layer.maxWidth) * width)
         // Without a picture the words are the slide: they may take the frame's lines too.
-        const lines = !input.media && input.mode === 'full' ? Math.max(layer.lines, Math.min(12, layer.lines + Math.floor(mediaHeight / (layer.size * scale * 1.1)))) : layer.lines
-        const fitted = fitText(input.text, { font: layer.font, size: Math.round(layer.size * scale), maxWidthPx, lines, uppercase: layer.uppercase })
+        const lines = place ? 8 : !input.media && input.mode === 'full' ? Math.max(layer.lines, Math.min(12, layer.lines + Math.floor(mediaHeight / (layer.size * scale * 1.1)))) : layer.lines
+        const fitted = fitText(input.text, { font: layer.font, size: Math.round((place?.size ?? layer.size) * scale), maxWidthPx, lines, uppercase: layer.uppercase })
         truncated = truncated || fitted.truncated; textSize = fitted.size
         // 'bottom' sits under the picture when the picture ends lower than the usual place.
         const mediaBottom = (mediaTop + mediaHeight) / height
-        const share = input.textPosition === 'bottom' && mediaBottom < 0.9 ? Math.max(TEXT_POSITIONS.bottom, Math.min(0.8, mediaBottom + 0.02)) : input.textPosition ? TEXT_POSITIONS[input.textPosition] : layer.y
+        const share = place ? place.y : input.textPosition === 'bottom' && mediaBottom < 0.9 ? Math.max(TEXT_POSITIONS.bottom, Math.min(0.8, mediaBottom + 0.02)) : input.textPosition ? TEXT_POSITIONS[input.textPosition] : layer.y
         const textTop = Math.round(share * height)
+        const textLeft = Math.round((place?.x ?? layer.x) * width)
+        const align = place?.align ?? layer.align
         children.push(
-          <div key={key} style={{ ...abs(Math.round(layer.x * width), textTop, maxWidthPx), flexDirection: 'column', alignItems: layer.align === 'center' ? 'center' : layer.align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.weight, fontSize: fitted.size, lineHeight: 1.1, color: color(layer.color) }}>
+          <div key={key} style={{ ...abs(textLeft, textTop, maxWidthPx), flexDirection: 'column', alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.weight, fontSize: fitted.size, lineHeight: 1.1, color: color(layer.color) }}>
             {fitted.lines.map((line, i) => <div key={i} style={{ display: 'flex', whiteSpace: 'nowrap' }}>{line}</div>)}
           </div>,
         )
@@ -150,10 +161,16 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
       case 'source': {
         const value = layer.type === 'credit' ? input.credit : input.source
         if (!value.trim()) break
-        const maxWidthPx = Math.round(layer.maxWidth * width)
-        const fitted = fitText(value, { font: layer.font, size: Math.round(layer.size * scale), maxWidthPx, lines: 1 })
+        const place = input.sourcePlace
+        const maxWidthPx = Math.round((place?.width ?? layer.maxWidth) * width)
+        const size = Math.round((place ? place.size * (layer.type === 'credit' ? 1 : 0.87) : layer.size) * scale)
+        const fitted = fitText(value, { font: layer.font, size, maxWidthPx, lines: 1 })
+        // Placed by hand: the credit at the place, the source one line under it.
+        const top = place ? Math.round(place.y * height + (layer.type === 'source' ? place.size * scale * 1.25 : 0)) : Math.round(layer.y * height)
+        const left = place ? Math.round(place.x * width) : Math.round(layer.x * width)
+        const align = place?.align ?? layer.align
         children.push(
-          <div key={key} style={{ ...abs(Math.round(layer.x * width), Math.round(layer.y * height), maxWidthPx), justifyContent: layer.align === 'center' ? 'center' : layer.align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.type === 'credit' ? 700 : 400, fontSize: fitted.size, color: color(layer.color), whiteSpace: 'nowrap' }}>
+          <div key={key} style={{ ...abs(left, top, maxWidthPx), justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.type === 'credit' ? 700 : 400, fontSize: fitted.size, color: color(layer.color), whiteSpace: 'nowrap' }}>
             {fitted.lines[0] ?? ''}
           </div>,
         )
@@ -214,11 +231,11 @@ function glitchPieces(input: RenderInput, intensity: number, random: () => numbe
     out.push(<div key={`gl-${i}`} style={{ ...abs(left, top, w, h), backgroundImage: `linear-gradient(90deg, transparent, ${ink} 16%, ${palette.cream}80 46%, ${ink} 70%, transparent)`, opacity: 0.55 + random() * 0.35 }} />)
   }
   if (input.mode === 'full' && input.media) {
-    const pieces = Math.round((frame ? 3 : 1) + intensity * (frame ? 8 : 4))
+    const pieces = Math.round((frame ? 5 : 1) + intensity * (frame ? 12 : 4))
     for (let i = 0; i < pieces; i += 1) {
-      const big = random() < 0.2 * intensity + 0.05
-      const pw = Math.round(width * (big ? 0.18 + random() * 0.14 : 0.06 + random() * 0.14))
-      const ph = Math.round(height * (big ? 0.03 + random() * 0.02 : 0.008 + random() * 0.02))
+      const big = random() < 0.25 * intensity + 0.08
+      const pw = Math.round(width * (big ? 0.22 + random() * 0.2 : 0.06 + random() * 0.16))
+      const ph = Math.round(height * (big ? 0.035 + random() * 0.03 : 0.008 + random() * 0.024))
       // Pieces come from the ground when there is a frame (the picture enlarged), from the band otherwise.
       const srcTop = frame ? 0 : mediaTop, srcHeight = frame ? height : mediaHeight
       const low = Math.max(srcTop, zoneTop), high = Math.min(srcTop + srcHeight, zoneBottom) - ph

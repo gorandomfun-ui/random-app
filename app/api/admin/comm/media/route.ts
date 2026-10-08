@@ -7,7 +7,7 @@ import type { MediaKind } from '@/lib/comm/model'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const KINDS: MediaKind[] = ['capture', 'import', 'gif', 'image', 'screenshot', 'thumb', 'montage', 'still', 'render']
+const KINDS: MediaKind[] = ['capture', 'import', 'gif', 'image', 'screenshot', 'thumb', 'montage', 'still', 'render', 'poster']
 const trimOf = (value: unknown) => { const t = value as { startSec?: unknown; endSec?: unknown } | null; return t && typeof t === 'object' && typeof t.startSec === 'number' && typeof t.endSec === 'number' && t.startSec >= 0 && t.endSec > t.startSec ? { startSec: Math.round(t.startSec * 100) / 100, endSec: Math.round(t.endSec * 100) / 100 } : null }
 const cropOf = (value: unknown) => { const c = value as { mode?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown } | null; return c && typeof c === 'object' && (c.mode === 'framed' || c.mode === 'centered') && [c.x, c.y, c.w, c.h].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { mode: c.mode as 'framed' | 'centered', x: c.x as number, y: c.y as number, w: c.w as number, h: c.h as number } : null }
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : null)

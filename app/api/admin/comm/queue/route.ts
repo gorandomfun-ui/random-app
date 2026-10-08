@@ -1,6 +1,7 @@
 import { bodyOf } from '@/lib/discovery/handlers'
 import { commAllowed, commDb, json } from '@/lib/comm/auth'
 import { addToQueue, listQueue, queueItemByContent, queueState } from '@/lib/comm/queue'
+import { usedBy } from '@/lib/comm/posts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,9 @@ export async function GET(req: Request) {
       const item = /^[a-f\d]{24}$/i.test(itemId) ? await queueItemByContent(db, itemId) : null
       return json({ ...state, inQueue: Boolean(item), item })
     }
-    return json({ ...state, items: await listQueue(db) })
+    const items = await listQueue(db)
+    const used = await usedBy(db, items.map((item) => item._id))
+    return json({ ...state, items: items.map((item) => ({ ...item, usedBy: used[item._id] ?? [] })) })
   } catch { return json({ error: 'unavailable' }, 503) }
 }
 

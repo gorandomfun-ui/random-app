@@ -108,6 +108,47 @@ function randomName(contentType: string): string {
 
 export type UploadResult = { media?: MediaDoc; error?: string; message?: string }
 
+/** One frame of a clip, a little after its start, as a JPEG; null when the browser cannot draw it. */
+export function posterOf(file: Blob): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.muted = true; video.playsInline = true; video.preload = 'auto'
+    const done = (blob: Blob | null) => { URL.revokeObjectURL(url); resolve(blob) }
+    const timer = setTimeout(() => done(null), 8000)
+    video.onerror = () => { clearTimeout(timer); done(null) }
+    video.onloadeddata = () => {
+      void videoDuration(video).then((d) => {
+        const at = Math.min(1, (d ?? 1) * 0.1)
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked)
+          try {
+            const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight
+            canvas.getContext('2d')!.drawImage(video, 0, 0)
+            canvas.toBlob((blob) => { clearTimeout(timer); done(blob) }, 'image/jpeg', 0.9)
+          } catch { clearTimeout(timer); done(null) }
+        }
+        video.addEventListener('seeked', onSeeked)
+        video.currentTime = at
+      })
+    }
+    video.src = url
+  })
+}
+
+/** A clip without its poster gets one, so the engine can draw its slide; fetched from the store when needed. */
+export async function ensurePoster(media: MediaDoc, all: MediaDoc[]): Promise<MediaDoc | null> {
+  if (!media.contentType.startsWith('video/') || media.kind === 'montage') return null
+  if (all.some((m) => m.kind === 'poster' && m.sourceMediaId === media._id)) return null
+  try {
+    const file = await (await fetch(media.blobUrl, { cache: 'no-store' })).blob()
+    const poster = await posterOf(file)
+    if (!poster) return null
+    const uploaded = await uploadMedia(media.queueItemId, poster, 'poster', undefined, { sourceMediaId: media._id })
+    return uploaded.media ?? null
+  } catch { return null }
+}
+
 /** Sends a file straight to the item's Blob folder, then records it with what the browser measured. */
 export type UploadExtra = { trim?: { startSec: number; endSec: number }; crop?: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number }; sourceMediaId?: string; templateKey?: string; durationSec?: number }
 
@@ -133,6 +174,13 @@ export async function uploadMedia(queueItemId: string, file: Blob, kind: MediaKi
   const registered = await fetch('/api/admin/comm/media', { method: 'POST', headers, body: JSON.stringify({ queueItemId, kind, blobUrl, contentType, bytes: file.size, ...measured, trim: extra.trim, crop: extra.crop, sourceMediaId: extra.sourceMediaId, templateKey: extra.templateKey }) })
     .then((r) => read<{ media?: MediaDoc; error?: string }>(r))
   if (!registered.media) return { error: registered.error ?? 'register', message: 'Le fichier est envoyé mais n’a pas pu être enregistré.' }
+  // A clip brought in gets its poster right away: the slide can then be drawn with it.
+  if ((kind === 'capture' || kind === 'import') && contentType.startsWith('video/')) {
+    try {
+      const poster = await posterOf(file)
+      if (poster) await uploadMedia(queueItemId, poster, 'poster', undefined, { sourceMediaId: registered.media._id })
+    } catch { /* the thumbnail will do */ }
+  }
   return { media: registered.media }
 }
 

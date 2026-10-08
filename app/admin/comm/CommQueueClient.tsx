@@ -13,7 +13,7 @@ import { canCaptureTab, CHROME_NOTE, commImportSource, commList, commRemove, com
 import type { MediaDoc } from '@/lib/comm/model'
 
 const TYPE_WORDS: Record<string, string> = { video: 'Vidéo', image: 'Image', web: 'Site', quote: 'Citation', fact: 'Fait', joke: 'Blague' }
-const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe', render: 'Rendu' }
+const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe', render: 'Rendu', poster: 'Image du clip' }
 
 export default function CommQueueClient() {
   const [items, setItems] = useState<QueueItemWithMedia[]>([])
@@ -129,9 +129,10 @@ export default function CommQueueClient() {
                   </div>
                 </div>
 
-                {item.media.filter((m) => m.kind !== 'render').length ? (
+                {(item as QueueItemWithMedia & { usedBy?: number[] }).usedBy?.length ? <p className="mt-2 text-xs text-green-300">Déjà utilisé dans {((item as QueueItemWithMedia & { usedBy?: number[] }).usedBy ?? []).map((n) => `n° ${n}`).join(', ')} — supprime-le quand tu as fini avec.</p> : null}
+                {item.media.filter((m) => m.kind !== 'render' && m.kind !== 'poster').length ? (
                   <ul className="mt-3 flex flex-wrap gap-3">
-                    {item.media.filter((m) => m.kind !== 'render').map((media) => (
+                    {item.media.filter((m) => m.kind !== 'render' && m.kind !== 'poster').map((media) => (
                       <li key={media._id} className="flex items-center gap-2 text-xs">
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
                         {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}

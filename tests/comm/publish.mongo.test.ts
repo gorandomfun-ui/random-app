@@ -77,18 +77,18 @@ test('le démarrage refuse un fichier hors de la file, un format incohérent, et
   assert.equal(again.ok, false); assert.equal((again as { status: number }).status, 409, 'jamais deux publications à la fois')
 })
 
-test('le statut attend, puis publie, commente, enregistre, nettoie ; l_élément gardé reste', { skip }, async () => {
+test('le statut attend, puis publie, commente, enregistre, nettoie ; les éléments restent dans la file', { skip }, async () => {
   await db.collection('comm_media').insertOne({ queueItemId: queueIds[0], kind: 'render', blobUrl: `${STORE}/comm/${queueIds[0]}/a.jpg`, blobKey: `comm/${queueIds[0]}/a.jpg`, contentType: 'image/jpeg', bytes: 10, width: 1, height: 1, durationSec: null, animated: false, createdAt: new Date(), trim: null, crop: null })
   const waiting = await publish.statusInstagram(db, fakeApi([{ body: { status_code: 'FINISHED' } }, { body: { status_code: 'IN_PROGRESS' } }, { body: { status_code: 'IN_PROGRESS' } }]).fetchImpl, postId)
   assert.deepEqual(waiting, { state: 'waiting', statuses: ['FINISHED', 'IN_PROGRESS', 'IN_PROGRESS'] })
   const api = fakeApi([{ body: { status_code: 'FINISHED' } }, { body: { status_code: 'FINISHED' } }, { body: { status_code: 'FINISHED' } }, { body: { id: 'media77' } }, { body: { id: 'media77', permalink: 'https://www.instagram.com/p/abc/' } }, { body: { id: 'comment1' } }])
   const done = await publish.statusInstagram(db, api.fetchImpl, postId)
-  assert.deepEqual(done, { state: 'published', remoteId: 'media77', remoteUrl: 'https://www.instagram.com/p/abc/', commented: true, removed: 1 })
+  assert.deepEqual(done, { state: 'published', remoteId: 'media77', remoteUrl: 'https://www.instagram.com/p/abc/', commented: true, removed: 0 })
   assert.equal(api.calls[3].fields.creation_id, 'carousel1', 'c’est le carrousel qui se publie'); assert.ok(api.calls[5].fields.message.startsWith('Source : https://www.pexels.com/photo/pub1/'))
   const post = await posts.postById(db, postId)
   assert.equal(post?.status, 'published'); assert.equal(post?.remoteUrl, 'https://www.instagram.com/p/abc/'); assert.ok(post?.publishedAt)
   assert.equal(await db.collection('comm_media').countDocuments({ kind: 'render' }), 0, 'les rendus ont disparu')
-  assert.equal(await db.collection('comm_queue').countDocuments({}), 1, 'un élément gardé, un parti')
+  assert.equal(await db.collection('comm_queue').countDocuments({}), 2, 'les éléments restent dans la file')
   const again = await publish.statusInstagram(db, fakeApi([]).fetchImpl, postId)
   assert.equal(again.state, 'published', 'relire ne republie pas')
   assert.equal((await posts.publishedPosts(db))[0]?.number, 1)
