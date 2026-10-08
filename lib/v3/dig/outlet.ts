@@ -66,6 +66,7 @@ const publishedDate = (value: unknown): Date | null => {
 }
 
 /** Whether a video is of another time: an old year in its title or the first lines of its description, or an upload of years ago. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- the moment no longer matters to the rule; the callers still pass it
 export function ofAnotherTime(video: Pick<DigVideo, 'title' | 'description' | 'publishedAt'>, _now = new Date()): boolean {
   const text = `${video.title} ${(video.description ?? '').slice(0, 300)}`
   for (const match of text.matchAll(YEAR)) if (Number(match[1]) <= OLD_YEAR) return true
