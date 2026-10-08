@@ -26,8 +26,8 @@ import { attacksOverHits, attacksPadGeometry, attacksPadPart, renderAttacksGame,
 import { ATTACKS_BOARD, ATTACKS_LAST_LEVEL, createAttacks, stepAttacks, type AttacksState } from '@/lib/games/attacks-rules'
 import { createCatcher, nextLevel, stepCatcher, type CatcherState } from '@/lib/games/catcher'
 import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
-import { nextCar, racingCarAt, racingOverHits, racingPadGeometry, racingPadPart, racingWinnerHits, renderRacingGame, renderRacingOver, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, stepRacing, type RacingCarKind, type RacingState, type RacingWorld } from '@/lib/games/racing-rules'
+import { nextCar, racingCarAt, racingGarageAt, racingOverHits, racingPadGeometry, racingPadPart, racingWinnerHits, renderRacingGame, renderRacingOver, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, racingEngine, racingGaragePick, stepRacing, type RacingCarKind, type RacingState, type RacingWorld } from '@/lib/games/racing-rules'
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
@@ -357,7 +357,7 @@ export default function GamePlayer({
       } else if (s.racing) {
         const g = s.racing
         const passed = g.passed
-        stepRacing(g, walk(), gassing(), braking())
+        stepRacing(g, walk(), gassing(), braking(), nitroing())
         for (const heard of g.heard) sounds.play(heard)
         if (g.passed > passed) callbacks.current.onLevelCleared?.(g.level - 1)
         // TIME UP has had its two seconds; half a second on the line before WINNER
@@ -374,9 +374,9 @@ export default function GamePlayer({
     // ATTACKS: the cook walks while a way is held — the last arrow key pressed and still down, else the arrow under a finger — and squirts while
     // fire is held: a fire key, the FIRE button, a finger on the sky; a quick press counts for a tenth of a second, so no tap is lost between two steps
     // RACING: the same for steering; the gas held as fire is (a key, the A button), the brake as its own (down, the B button)
-    type Finger = 'left' | 'right' | 'fire' | 'sky' | 'gas' | 'brake'
-    const held: { keys: Array<-1 | 1>; fire: Set<string>; brake: Set<string>; latch: number; fingers: Map<number, Finger> } = { keys: [], fire: new Set(), brake: new Set(), latch: 0, fingers: new Map() }
-    const release = () => { held.keys = []; held.fire.clear(); held.brake.clear(); held.latch = 0; held.fingers.clear() }
+    type Finger = 'left' | 'right' | 'fire' | 'sky' | 'gas' | 'brake' | 'nitro'
+    const held: { keys: Array<-1 | 1>; fire: Set<string>; brake: Set<string>; nitro: Set<string>; latch: number; fingers: Map<number, Finger> } = { keys: [], fire: new Set(), brake: new Set(), nitro: new Set(), latch: 0, fingers: new Map() }
+    const release = () => { held.keys = []; held.fire.clear(); held.brake.clear(); held.nitro.clear(); held.latch = 0; held.fingers.clear() }
     const fingers = () => [...held.fingers.values()]
     const walk = (): -1 | 0 | 1 => {
       if (held.keys.length) return held.keys[held.keys.length - 1]
@@ -386,7 +386,8 @@ export default function GamePlayer({
     const firing = () => held.fire.size > 0 || held.latch > 0 || fingers().some((f) => f === 'fire' || f === 'sky')
     const gassing = () => held.fire.size > 0 || fingers().includes('gas')
     const braking = () => held.brake.size > 0 || fingers().includes('brake')
-    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire'), gas: f.includes('gas'), brake: f.includes('brake') } }
+    const nitroing = () => held.nitro.size > 0 || fingers().includes('nitro')
+    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire'), gas: f.includes('gas'), brake: f.includes('brake'), nitro: f.includes('nitro') } }
     /** Where a finger falls in play: an arrow, FIRE, the sky over the board (ATTACKS), A or B (RACING), or none of them. */
     const partAt = (e: PointerEvent): Finger | null => {
       const p = toBuffer(e)
@@ -440,6 +441,8 @@ export default function GamePlayer({
       report()
       // the tune on the title and under the play; paused, over, or between screens, quiet
       sounds.tune(s.mode === 'title' || (s.mode === 'play' && s.pause == null))
+      // RACING's engine, its pitch with the speed
+      sounds.engine(s.racing && s.mode === 'play' && s.pause == null ? racingEngine(s.racing) : null)
     }
     raf = requestAnimationFrame(loop)
 
@@ -476,6 +479,8 @@ export default function GamePlayer({
         else if (game === 'attacks' && (e.key === ' ' || dir === 'up')) { if (!e.repeat) { held.fire.add(e.key); held.latch = 6 } }
         else if (game === 'racing' && (e.key === ' ' || dir === 'up')) held.fire.add(e.key)
         else if (game === 'racing' && dir === 'down') held.brake.add(e.key)
+        // RACING's turbo: shift, X or N
+        else if (game === 'racing' && (e.key === 'Shift' || e.key === 'x' || e.key === 'X' || e.key === 'n' || e.key === 'N')) held.nitro.add(e.key)
         else if (dir) steer(dir)
         else if (pauseKey) pause()
         // the space bar does nothing in play, but must not scroll the page
@@ -492,6 +497,7 @@ export default function GamePlayer({
       const w = way(keyDirection(e.key))
       if (w) held.keys = held.keys.filter((k) => k !== w)
       held.brake.delete(e.key)
+      held.nitro.delete(e.key)
       if (held.fire.delete(e.key) && e.key === ' ' && s.mode === 'play') e.preventDefault()
     }
 
@@ -568,6 +574,10 @@ export default function GamePlayer({
         const hits = s.mode === 'winner' ? (game === 'racing' ? racingWinnerHits(s.layout) : winnerHits(s.layout)) : game === 'attacks' ? attacksOverHits(s.layout) : game === 'racing' ? racingOverHits(s.layout) : gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) start()
         else if (within(hits.no, p.x, p.y)) toTitle()
+      } else if (s.mode === 'play' && s.pause == null && s.racing?.phase === 'garage') {
+        // RACING's garage between levels: a tap on an improvement takes it
+        const pick = racingGarageAt(s.layout, p.x, p.y)
+        if (pick != null && racingGaragePick(s.racing, pick)) { sounds.play('gold'); s.dirty = true }
       } else if (s.mode === 'play' && s.pause != null) {
         const hits = pauseHits(s.layout)
         if (within(hits.resume, p.x, p.y)) resume()

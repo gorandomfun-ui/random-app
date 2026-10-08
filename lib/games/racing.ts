@@ -21,6 +21,8 @@ import { RACING_MOTION } from './racing-art-data'
 import { racingArt, type RacingCarKind } from './racing-art'
 import { RACING_LETTERING, type RacingLettering } from './racing-lettering-data'
 import { drawLogo, LOGO_WIDTH } from './logo'
+import { STAT_LOOK } from './racing-play'
+import { CAR_STATS, RACING_STATS } from './racing-rules'
 import { puff } from './racing-scene'
 import { dim, dither, drawText7, mix, PixelBuffer, text7Width } from './pixels'
 import { gameOverHits, winnerHits, winnerRow } from './screens'
@@ -272,6 +274,21 @@ function markCar(buffer: PixelBuffer, layout: Layout, car: RacingCarKind, accent
   if (i < CAR_ORDER.length - 1) pointer(buffer, x1 + 10, cy, side, 1, accent)
 }
 
+/** Over the car chosen, what it is made of: its four points as rows of pips, so the choice is a real one. */
+function carCard(buffer: PixelBuffer, layout: Layout, car: RacingCarKind): void {
+  const [x0, y0, x1] = carBox(layout, car)
+  const stats = CAR_STATS[car], pip = layout === 'landscape' ? 9 : 8, gap = 2, label = 40, row = pip + 4
+  const w = label + 5 * (pip + gap) + 10, h = 4 * row + 10
+  const x = Math.round(Math.max(4, Math.min(buffer.width - w - 4, (x0 + x1) / 2 - w / 2))), y = Math.round(y0 - 26 - h)
+  buffer.rect(x - 1, y - 1, w + 2, h + 2, INK)
+  buffer.rect(x, y, w, h, '#16142a')
+  RACING_STATS.forEach((stat, k) => {
+    const look = STAT_LOOK[stat], ry = y + 6 + k * row
+    drawText7(buffer, look.name, x + 5, ry + Math.round((pip - 7) / 2), look.colour, 1)
+    for (let n = 0; n < 5; n += 1) buffer.rect(x + 5 + label + n * (pip + gap), ry, pip, pip, n < stats[stat] ? look.colour : '#3a3a4a')
+  })
+}
+
 export type RacingTitleOptions = { level?: number; best?: number; frame?: number; blink?: boolean; press?: boolean; car?: RacingCarKind }
 
 /** RANDOM RACING's title, wide (768 × 432) or tall (432 × 768): the picture, the car chosen marked on it, RANDOM, RACING, PRESS START, LEVEL and BEST. */
@@ -279,7 +296,7 @@ export function renderRacingTitle(layout: Layout, accent: string, lettering: Rac
   const W = layout === 'landscape' ? 768 : 432
   const st = TITLE[layout], frame = options.frame ?? 0
   const buffer = scene(layout, frame)
-  if (racingArt(layout === 'landscape' ? 'titleWide' : 'titleTall')) markCar(buffer, layout, options.car ?? 'burger', accent, frame, options.blink !== false)
+  if (racingArt(layout === 'landscape' ? 'titleWide' : 'titleTall')) { markCar(buffer, layout, options.car ?? 'burger', accent, frame, options.blink !== false); carCard(buffer, layout, options.car ?? 'burger') }
   // RANDOM, then RACING over the sky
   const rx = Math.round(st.cx - LOGO_WIDTH)
   drawLogo(buffer, rx + 3, st.randomY + 4, INK, 2)
@@ -300,7 +317,7 @@ export function renderRacingTitle(layout: Layout, accent: string, lettering: Rac
 // ---------------------------------------------------------------- the play
 
 export {
-  drawArt, drawCar, racingPadGeometry, racingPadPart, RACING_BOARD, renderRacingGame, renderRacingPlay,
+  drawArt, drawCar, racingGarageAt, racingPadGeometry, racingPadPart, RACING_BOARD, renderRacingGame, renderRacingPlay, STAT_LOOK,
   type RacingPad, type RacingPlayOptions, type RacingView,
 } from './racing-play'
 

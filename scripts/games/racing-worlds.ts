@@ -10,8 +10,10 @@
  *   picture's colours (the title hid it), with the picture's clouds; the
  *   city's sky taken from the top of its band, the band reaching almost to
  *   the top of the view (no dark line where the sky goes on above it).
- * - `pine`, `rock` (the mountains), `saguaro` (the desert): what stands by
- *   the road, cut out along hand outlines.
+ * - `pine`, `rock` (the mountains), `saguaro`, `butte` (the desert): what
+ *   stands by the road, cut out along hand outlines.
+ * - `face-desert`, `face-mountain`: a piece of rock face, to be laid along
+ *   the road where its rock walls stand.
  *
  * Made simpler as the coast was: painted flat, few colours.
  *
@@ -22,7 +24,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { encodeIndexedPng, encodePng } from './png'
-import { blank, cutOut, evened, flatten, get, inPolygon, lum, paletteOf, put, quantize, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
+import { biggest, blank, cutOut, evened, flatten, get, inPolygon, lum, paletteOf, put, quantize, readRef, tidy, trace, tracePic, type Pic, type RGB } from './trace-kit'
 
 const ROOT = path.join(__dirname, '../..')
 const REFS = path.join(ROOT, 'docs/reports/jeux-v1/refs')
@@ -114,15 +116,26 @@ for (const [world, spec] of Object.entries(WORLDS)) {
     const mask = new Uint8Array(src.w * src.h)
     for (let y = box[1]; y < box[3]; y += 1) for (let x = box[0]; x < box[2]; x += 1) if (inPolygon(x + 0.5, y + 0.5, poly) && keep(get(src, x, y))) mask[y * src.w + x] = 1
     let piece = cutOut(src, mask, box, width, share)
+    // the butte in one piece: no specks of cloud or cactus left over round it (a cactus's arm is a piece of its own: kept)
+    if (name === 'butte') piece = { pic: piece.pic, alpha: biggest(piece.alpha, piece.pic.w, piece.pic.h) }
     // a tree cut against its neighbour: its left side, and the same mirrored about its tip
     if (even) { let tip = 0; for (let i = 0; i < piece.alpha.length; i += 1) if (piece.alpha[i]) { tip = (i % piece.pic.w) + 0.5; break } piece = evened(piece.pic, piece.alpha, tip, 'left') }
     write(name, flatten(piece.pic, 1), 20, piece.alpha)
   }
+  // a rock face, without sky, to lay along the road where the rock stands (the mesas and the canyon, the gorge; the coast's cliff in its own colours)
+  const face = (name: string, rect: Rect, w: number, h: number) => {
+    const [fx0, fy0, fx1, fy1] = big(rect)
+    write(name, flatten(tracePic(src, w, h, [fx0, fy0, fx1 - fx0, fy1 - fy0]), 1), 24)
+  }
+  if (world === 'desert') face('face-desert', [1, 72, 34, 140], 64, 132)
+  if (world === 'mountain') face('face-mountain', [672, 185, 730, 262], 72, 96)
   if (world === 'mountain') {
     cut('pine', [[716.5, 60], [721, 74], [725, 92], [726, 112], [726, 140], [726, 168], [722, 180], [710, 182], [698, 180], [688, 174], [691, 156], [695, 138], [699, 120], [703, 102], [708, 84], [712, 70]], ([r, g, b]) => g >= r - 6 && b < g + 26 && lum(r, g, b) < 128, 90, 0.35, true)
     cut('rock', [[675, 185], [690, 178], [712, 178], [728, 200], [732, 230], [730, 268], [700, 272], [670, 270], [665, 240], [668, 205]], ([r, g, b]) => !(g > r + 5 && lum(r, g, b) < 95) && !(b > r + 25 && lum(r, g, b) > 110), 110, 0.5)
   }
   if (world === 'desert') {
+    // a butte with its spire and its scree, left of the title: the rock only, not the sky, the clouds or the cactus before it
+    cut('butte', [[50, 104], [53, 96], [60, 92], [75, 90], [95, 90], [110, 93], [119, 98], [122, 104], [124, 118], [131, 119], [141, 121], [143, 130], [146, 150], [152, 165], [153, 180], [46, 180], [47, 150], [49, 125]], ([r, g, b]) => !(b > r + 15) && !(g > r + 10) && !(lum(r, g, b) > 215 && sat([r, g, b]) < 45), 160, 0.5)
     cut('saguaro', [[686, 163], [700, 158], [713, 186], [718, 88], [731, 84], [743, 92], [743, 152], [752, 148], [766, 154], [766, 212], [750, 224], [743, 236], [743, 286], [717, 286], [717, 252], [700, 242], [686, 216]], ([r, g, b]) => (g >= r - 8 && g > b + 8) || lum(r, g, b) < 55, 100)
   }
 }

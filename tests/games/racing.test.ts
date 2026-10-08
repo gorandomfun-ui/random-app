@@ -22,14 +22,14 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_WORLDS, racingCharacter, racingCourse, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { CAR_STATS, createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
 import { decodePng } from '../../scripts/games/png'
 import { CASUAL, driver, GOOD, race } from './racing-robot'
 
-const NAMES: RacingArtName[] = ['titleWide', 'titleTall', 'playBack', 'palm', 'far-mountain', 'far-desert', 'far-city', 'pine', 'rock', 'saguaro', ...(['rosso', 'burger', 'giallo'] as const).flatMap((k) => CAR_SIZES.flatMap((s) => [`car-${k}-${s}`, `car-${k}-${s}-turn`] as RacingArtName[]))]
+const NAMES: RacingArtName[] = ['titleWide', 'titleTall', 'playBack', 'palm', 'far-mountain', 'far-desert', 'far-city', 'pine', 'rock', 'saguaro', 'butte', 'face-desert', 'face-mountain', ...(['rosso', 'burger', 'giallo'] as const).flatMap((k) => CAR_SIZES.flatMap((s) => [`car-${k}-${s}`, `car-${k}-${s}-turn`] as RacingArtName[]))]
 const pictures = new Map<RacingArtName, PixelBuffer>()
 for (const name of NAMES) {
   const png = decodePng(readFileSync(join(process.cwd(), 'public/games/racing', racingArtFile(name))))
@@ -85,12 +85,116 @@ test('racing: the race drawn at every hour, the tall board with its controls und
 test('racing: three red lights a second apart, then green; nothing moves before', () => {
   const s = createRacing('landscape', 1, 1)
   const heard: string[] = []
-  for (let i = 0; i < RACING_START_STEPS; i += 1) { stepRacing(s, 1, true, false); heard.push(...s.heard) }
+  for (let i = 0; i < RACING_START_STEPS; i += 1) { stepRacing(s, 1, false, false); heard.push(...s.heard) }
   assert.deepEqual(heard, ['beep', 'beep', 'beep', 'go'])
   assert.equal(s.phase, 'play')
   assert.equal(s.z, 0)
   assert.equal(s.speed, 0)
   assert.ok(s.rivals.every((r) => r.z === 0), 'the rivals wait too')
+})
+
+test('racing: the start — A on the third light, a burst ahead of the rivals; held from before, the wheels spin; after the green, an ordinary start', () => {
+  const launch = (pressAt: number) => {
+    const s = createRacing('landscape', 1, 1)
+    for (let i = 0; i < RACING_START_STEPS + 120; i += 1) stepRacing(s, 0, i >= pressAt, false)
+    return { launch: s.launch, z: s.z, ahead: s.rivals.filter((r) => r.z > s.z).length }
+  }
+  const perfect = launch(2 * 60 + 5), early = launch(30), late = launch(RACING_START_STEPS + 2)
+  assert.equal(perfect.launch, 'perfect')
+  assert.equal(early.launch, 'early')
+  assert.equal(late.launch, 'none')
+  assert.ok(perfect.z > late.z && late.z > early.z, `a burst, a spin (${perfect.z.toFixed(0)} / ${late.z.toFixed(0)} / ${early.z.toFixed(0)})`)
+  assert.equal(perfect.ahead, 0, 'ahead of both rivals after a perfect start')
+})
+
+test('racing: three cars that drive their own way — the red one fastest, the yellow one quickest off the mark, the burger surest in the bends', () => {
+  const drive = (car: 'rosso' | 'giallo' | 'burger') => {
+    const s = createRacing('landscape', 1, 1, { car })
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+    s.traffic = []
+    s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
+    let to200 = 0
+    for (let i = 0; i < 1200; i += 1) { stepRacing(s, 0, true); if (!to200 && s.speed >= 0.69) to200 = i }
+    return { top: s.speed, to200, bend: racingBendSpeed(s, 5) }
+  }
+  const rosso = drive('rosso'), giallo = drive('giallo'), burger = drive('burger')
+  assert.ok(rosso.top > giallo.top && giallo.top > burger.top, 'top speeds')
+  assert.ok(giallo.to200 < burger.to200 && burger.to200 < rosso.to200, 'acceleration')
+  assert.ok(burger.bend > rosso.bend && rosso.bend > giallo.bend, 'grip')
+  for (const car of RACING_CARS) assert.equal(RACING_STATS.reduce((a, n) => a + CAR_STATS[car][n], 0), 8, `${car}: eight points, its own way`)
+})
+
+test('racing: between two levels the pit stop — three improvements, one taken, the car better — then the road divides and the side chosen is the next world', () => {
+  const s = createRacing('landscape', 1, 3, { car: 'giallo' })
+  const d = driver(GOOD, 3)
+  const routes = s.routes
+  assert.ok(routes && routes[0] !== routes[1] && !routes.includes(s.world), 'two other worlds offered at the fork')
+  for (let i = 0; i < 30000 && s.phase !== 'garage'; i += 1) { const m = d(s); stepRacing(s, s.phase === 'goal' ? 1 : m.steer, m.gas, m.brake, m.nitro) }
+  assert.equal(s.phase, 'garage')
+  assert.equal(s.worlds[1], routes![1], 'the right-hand road taken')
+  const g = s.garage!
+  assert.equal(g.options.length, 3)
+  const stat = g.options[2], before = s.stats[stat]
+  // A held from the race does not take one; the right arrow points further; A takes it
+  stepRacing(s, 1, true); stepRacing(s, 0, true)
+  assert.equal(s.phase, 'garage')
+  for (let i = 0; i < 30; i += 1) stepRacing(s)
+  stepRacing(s, 1); stepRacing(s, 0); stepRacing(s, 0, true)
+  assert.equal(s.stats[stat], before + 1, 'the car one point better')
+  assert.equal(s.level, 2)
+  assert.equal(s.world, routes![1])
+  assert.equal(s.phase, 'start')
+  // a round, the test page's single world, the last level: no fork, no pit stop
+  assert.equal(createRacing('landscape', 4, 3, { single: true }).routes, null)
+  assert.equal(createRacing('landscape', 4, 3, { world: 'city' }).routes, null)
+  assert.equal(createRacing('landscape', RACING_LAST_LEVEL, 3).routes, null)
+  const t = createRacing('landscape', 2, 5)
+  assert.equal(racingGaragePick(t, 0), false, 'no pit stop in the middle of a race')
+  // a round at a later level: the car as improved as it would be by then
+  assert.equal(RACING_STATS.reduce((a, n) => a + createRacing('landscape', 9, 3, { single: true, car: 'burger' }).stats[n], 0), 8 + 8)
+})
+
+test('racing: the turbo earned by risks — a car brushed past, a combo, the slipstream, the bottle — and let go with its button', () => {
+  const s = createRacing('landscape', 2, 1)
+  for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+  s.rivals.forEach((r) => { r.z = -500 })
+  s.items = []
+  s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
+  // a slow car ahead in the next lane: passed close, at speed
+  s.z = 300; s.speed = 0.95; s.x = 0
+  s.traffic = [{ kind: 'hatch', look: 0, z: 330, x: 0.7, lane: 0.7, speed: 0.4, swerve: false, swerved: false }, { kind: 'saloon', look: 1, z: 345, x: -0.7, lane: -0.7, speed: 0.4, swerve: false, swerved: false }]
+  const score = s.score
+  for (let i = 0; i < 120; i += 1) stepRacing(s, 0, true)
+  assert.equal(s.combo, 2, 'two brushes in a row')
+  assert.ok(s.score >= score + 50 + 100, 'their points, the second doubled')
+  assert.ok(s.boost > 0.3, `the gauge filling (${s.boost.toFixed(2)})`)
+  assert.ok(s.pops.some((p) => p.text.startsWith('NEAR MISS x2')))
+  // riding behind a car fills it too
+  const drafted = s.boost
+  s.traffic = [{ kind: 'hatch', look: 0, z: s.z + 8, x: 0, lane: 0, speed: 0.95, swerve: false, swerved: false }]
+  for (let i = 0; i < 30; i += 1) { s.traffic[0].z = s.z + 8; stepRacing(s, 0, true) }
+  assert.ok(s.drafting && s.boost > drafted, 'the slipstream')
+  // let go: faster than the car's own top speed for a while, the gauge emptied
+  s.traffic = []
+  s.boost = 1
+  stepRacing(s, 0, true, false, true)
+  let fastest = 0
+  for (let i = 0; i < 200; i += 1) { stepRacing(s, 0, true, false, true); fastest = Math.max(fastest, s.speed) }
+  assert.equal(s.boost, 0)
+  assert.ok(fastest > 1.1, `with the turbo: ${fastest.toFixed(2)}`)
+})
+
+test('racing: the engine climbs with the speed through its gears, dropping back at each change; quiet at the pit stop', () => {
+  const s = createRacing('landscape', 1, 1)
+  for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+  s.traffic = []
+  const rates: number[] = []
+  for (let i = 0; i < 500; i += 1) { stepRacing(s, 0, true); rates.push(racingEngine(s)!) }
+  const drops = rates.filter((r, k) => k > 0 && r < rates[k - 1] - 0.2).length
+  assert.ok(drops >= 3, `gear changes (${drops})`)
+  assert.ok(Math.max(...rates) > 1.4 && Math.min(...rates) < 0.8)
+  s.phase = 'garage'
+  assert.equal(racingEngine(s), null)
 })
 
 test('racing: the same seed and moves, the same race', () => {
@@ -355,17 +459,16 @@ function before(kind: string, level = 5): { s: ReturnType<typeof createRacing>; 
   return { s, it }
 }
 
-test('racing: a stopwatch gives three seconds, the turbo goes faster than the top speed', () => {
+test('racing: a stopwatch gives three seconds, the mustard fills the turbo\'s gauge', () => {
   const w = before('time')
   const t0 = w.s.time
   for (let i = 0; i < 20; i += 1) stepRacing(w.s, 0, true)
   assert.ok(w.it.taken)
   assert.ok(w.s.time > t0 - 20 + 170, 'three seconds more')
   const t = before('turbo', 3)
-  let fastest = 0
-  for (let i = 0; i < 200; i += 1) { stepRacing(t.s, 0, true); fastest = Math.max(fastest, t.s.speed) }
+  for (let i = 0; i < 20; i += 1) stepRacing(t.s, 0, true)
   assert.ok(t.it.taken)
-  assert.ok(fastest > 1.05, `with the turbo: ${fastest.toFixed(2)}`)
+  assert.ok(t.s.boost >= 0.6, 'the mustard fills the gauge')
 })
 
 test('racing: a puddle sends the car skidding, the wheels not answering; a cone knocks it', () => {
@@ -416,8 +519,9 @@ test('racing: the controls under a finger, on every kind of board', () => {
     assert.equal(racingPadPart(g.brake.cx, g.brake.cy, g), 'brake', `${layout} ${pad}`)
     assert.equal(racingPadPart(g.zone.x + 1, g.zone.y - 4, g), null, 'over the board, nothing')
     // no button over another, all inside their band
-    const discs = [g.gas, g.brake]
-    assert.ok(Math.hypot(g.gas.cx - g.brake.cx, g.gas.cy - g.brake.cy) > g.gas.r + g.brake.r, `${layout} ${pad}: A and B apart`)
+    const discs = [g.gas, g.brake, g.nitro]
+    assert.equal(racingPadPart(g.nitro.cx, g.nitro.cy, g), 'nitro', `${layout} ${pad}: T`)
+    for (const [p, q] of [[g.gas, g.brake], [g.gas, g.nitro], [g.brake, g.nitro]]) assert.ok(Math.hypot(p.cx - q.cx, p.cy - q.cy) > p.r + q.r, `${layout} ${pad}: the round buttons apart`)
     for (const d of discs) for (const box of [g.left, g.right]) {
       const nx = Math.max(box.x, Math.min(d.cx, box.x + box.w)), ny = Math.max(box.y, Math.min(d.cy, box.y + box.h))
       assert.ok(Math.hypot(d.cx - nx, d.cy - ny) > d.r, `${layout} ${pad}: a round button clear of the arrows`)

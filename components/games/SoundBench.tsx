@@ -19,7 +19,7 @@ const LABELS: Record<SoundName, string> = {
   item: 'Article avalé', sauce: 'Bouteille de sauce', slip: 'Client qui glisse', coin: 'Pièce', note: 'Billet', bundle: 'Liasse', card: 'Carte', caught: 'Attrapé',
   squirt: 'Giclée de ketchup', pop: 'Burger touché', clink: 'Assiette ébréchée', power: 'Bonus attrapé', hurt: 'Cuisinier touché',
   rip: 'Papier alu arraché', whoosh: 'Plongeurs qui partent / rival dépassé', thud: 'Boss touché / choc', boom: 'Boss qui explose',
-  beep: 'Feu rouge', go: 'Feu vert',
+  beep: 'Feu rouge', go: 'Feu vert', engine: 'Moteur (en boucle)',
   level: 'Niveau gagné', over: 'Game over', winner: 'Winner',
 }
 const GAMES: GameName[] = ['eater', 'catcher', 'attacks', 'racing']
