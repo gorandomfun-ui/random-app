@@ -440,6 +440,7 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   // a car just behind, nearer the eye than the player's
   for (const r of s.rivals) if (r.z < s.z && r.z > camZ + 2) { const n = Math.floor(r.z) - b0, p = rows[n]; if (p) { const at = place(p, r.z, r.x); drawCar(board, r.kind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: turnOf(r.lane, r.x, 0), tier, fog: 0, lights: night }) } }
   if (tier === 3) { if (world === 'mountain') snow(board, frame); else if (world === 'desert') sandstorm(board, frame); else storm(board, frame, horizon) }
+  if (s.phase !== 'garage') minimap(board, s, accent)
   if (s.goalAt >= 0) celebrate(board, s.steps - s.goalAt, s.level, horizon)
   // the speed, in a corner
   const kmh = String(racingKmh(s.speed)).padStart(3, ' ')
@@ -514,6 +515,77 @@ function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, 
     const foot = place(p, z, side * SHOP_FRONT)
     glow(board, foot.x, foot.y - (front.height - g.y) * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.3, p.clip)
   }
+}
+
+// ---------------------------------------------------------------- the map in the corner
+
+/** Each stretch's place on a flat map of the level (`x`, `y`) and the way the road heads there, the bends turned into turns: worked out once a road. */
+const maps = new WeakMap<RacingSegment[], { x: Float32Array; y: Float32Array; h: Float32Array }>()
+/** How much a bend of the road turns it on the map, a stretch: a hairpin a good half turn, a long sweeper a wide curve. */
+const MAP_TURN = 0.0045
+function mapOf(track: RacingSegment[]): { x: Float32Array; y: Float32Array; h: Float32Array } {
+  const known = maps.get(track)
+  if (known) return known
+  const n = track.length + 1, x = new Float32Array(n), y = new Float32Array(n), h = new Float32Array(n)
+  for (let i = 0; i < track.length; i += 1) {
+    h[i + 1] = h[i] + track[i].curve * MAP_TURN
+    x[i + 1] = x[i] + Math.sin(h[i])
+    y[i + 1] = y[i] + Math.cos(h[i])
+  }
+  const out = { x, y, h }
+  maps.set(track, out)
+  return out
+}
+/** The stretches the map shows, behind the car and ahead of it. */
+const MAP_BEHIND = 120
+const MAP_AHEAD = 380
+
+/**
+ * The map in the corner: the road around the car — a little behind, a good
+ * way ahead, its bends coming — turning as the car does, so ahead is always
+ * up; the rivals on it in their colours, the traffic in small grey dots, the
+ * checkpoints and the line; a rival out of the map at its edge, an arrow in
+ * its colour pointing where it is.
+ */
+function minimap(board: PixelBuffer, s: RacingState, accent: string): void {
+  const W = board.width, H = board.height, size = W >= 400 ? 78 : 66
+  const bx = W - size - 6, by = H - size - 6
+  board.shade(bx, by, size, size, 0.55)
+  board.rect(bx - 1, by - 1, size + 2, 1, dim(accent, 0.6)); board.rect(bx - 1, by + size, size + 2, 1, dim(accent, 0.6))
+  board.rect(bx - 1, by, 1, size, dim(accent, 0.6)); board.rect(bx + size, by, 1, size, dim(accent, 0.6))
+  const m = mapOf(s.track), last = s.track.length
+  const at = (z: number) => {
+    const i = Math.max(0, Math.min(last - 1, Math.floor(z))), t = Math.max(0, Math.min(1, z - i))
+    return { x: m.x[i] + (m.x[i + 1] - m.x[i]) * t, y: m.y[i] + (m.y[i + 1] - m.y[i]) * t, h: m.h[i] + (m.h[i + 1] - m.h[i]) * t }
+  }
+  const me = at(Math.max(0, s.z)), cos = Math.cos(me.h), sin = Math.sin(me.h)
+  const scale = (size * 0.72) / MAP_AHEAD, cx = bx + size / 2, cy = by + size * 0.78
+  /** A place of the road on the map, turned so the car heads up. */
+  const onMap = (z: number) => {
+    const p = at(z), dx = p.x - me.x, dy = p.y - me.y
+    return { x: cx + (dx * cos - dy * sin) * scale, y: cy - (dx * sin + dy * cos) * scale }
+  }
+  const inside = (p: { x: number; y: number }, r: number) => p.x >= bx + r && p.y >= by + r && p.x < bx + size - r && p.y < by + size - r
+  const dot = (p: { x: number; y: number }, r: number, c: string) => board.rect(Math.round(p.x - r / 2), Math.round(p.y - r / 2), r, r, c)
+  // the road: its edge in ink, then the road, a dot every other stretch, darker in the tunnel
+  const from = Math.max(0, Math.floor(s.z) - MAP_BEHIND), to = Math.min(last, s.z + MAP_AHEAD)
+  for (let z = from; z < to; z += 2) { const p = onMap(z); if (inside(p, 2)) dot(p, 5, '#0c0c14') }
+  for (let z = from; z < to; z += 2) { const p = onMap(z); if (inside(p, 2)) dot(p, 3, s.track[z].zone === 'tunnel' ? '#6a6a7a' : '#c8c8d8') }
+  // the checkpoints and the line, if they are on it
+  for (const c of s.checks) { const p = onMap(c); if (inside(p, 2)) { dot({ x: p.x - 2, y: p.y }, 2, '#3aff6a'); dot({ x: p.x + 2, y: p.y }, 2, '#3aff6a') } }
+  { const p = onMap(s.finish); if (inside(p, 3)) for (let k = 0; k < 4; k += 1) dot({ x: p.x - 3 + k * 2, y: p.y + (k % 2) }, 2, k % 2 ? '#1a1a22' : '#faf6ec') }
+  // the traffic, then the rivals: on the map, or at its edge pointing where they are
+  for (const t of s.traffic) { if (t.z < from || t.z > to) continue; const p = onMap(t.z); if (inside(p, 1)) dot(p, 3, '#5a5a6a') }
+  for (const r of s.rivals) {
+    const p = onMap(r.z), c = RIVAL_COLOUR[r.kind]
+    if (r.z >= from && r.z <= to && inside(p, 3)) { dot(p, 6, '#0c0c14'); dot(p, 4, c); continue }
+    const ahead = r.z > s.z, ex = Math.max(bx + 3, Math.min(bx + size - 4, p.x)), ey = ahead ? by + 3 : by + size - 4
+    for (let k = 0; k < 3; k += 1) board.rect(Math.round(ex - k), ahead ? ey + k : ey - k, k * 2 + 1, 1, c)
+  }
+  // the player's car: an arrow pointing ahead, blinking
+  const me2 = (s.steps >> 3) % 2 ? '#ffffff' : mix(accent, '#ffffff', 0.4)
+  for (let k = 0; k < 6; k += 1) board.rect(Math.round(cx - k / 2 - 1), Math.round(cy - 3 + k), Math.round(k + 2), 1, '#0c0c14')
+  for (let k = 0; k < 5; k += 1) board.rect(Math.round(cx - k / 2 - 0.5), Math.round(cy - 2 + k), Math.max(1, Math.round(k + 1)), 1, me2)
 }
 
 /** Where, past the line, the road divides, and where the gantry with the two worlds stands, in stretches. */
