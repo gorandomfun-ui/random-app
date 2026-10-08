@@ -22,7 +22,7 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { CAR_STATS, createRacing, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { CAR_STATS, createRacing, FORK_LEN, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
@@ -182,6 +182,42 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   for (let i = 0; i < 200; i += 1) { stepRacing(s, 0, true, false, true); fastest = Math.max(fastest, s.speed) }
   assert.equal(s.boost, 0)
   assert.ok(fastest > 1.1, `with the turbo: ${fastest.toFixed(2)}`)
+})
+
+test('racing: in the middle of each level from the second, the road divides — two roads as long, each its own way and its own offers — and the side the car is on takes one', () => {
+  for (const world of RACING_WORLDS) for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) {
+    const c = racingCourse(level, world), f = c.fork!
+    assert.ok(f && f.kinds[0] !== f.kinds[1], `${world} ${level}: a fork with two different roads`)
+    assert.ok(f.at > c.checks[0] && f.at + FORK_LEN < c.checks[1], `${world} ${level}: between the checkpoints`)
+    assert.equal(f.tracks[0].length, FORK_LEN); assert.equal(f.tracks[1].length, FORK_LEN)
+    // both start straight and end level with the road they leave
+    for (const road of f.tracks) { assert.ok(road.slice(0, 40).every((g) => g.curve === 0), 'straight while the car decides'); assert.equal(road[FORK_LEN - 1].curve, 0) }
+    assert.ok(f.items[0].length && f.items[1].length, 'each road offers something')
+  }
+  assert.equal(racingCourse(1, 'coast').fork, null, 'none at the first level')
+  // the side the car is on, a little before it: its road
+  for (const side of [-1, 1] as const) {
+    const s = createRacing('landscape', 5, 2, { single: true, world: 'desert' })
+    const f = s.fork!
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+    s.traffic = []; s.rivals.forEach((r) => { r.z = -900 })
+    s.z = f.at - 60; s.x = side * 0.6; s.speed = 0.9
+    // kept on its side through the bends before the fork
+    for (let i = 0; i < 80; i += 1) stepRacing(s, s.x < side * 0.6 - 0.05 ? 1 : s.x > side * 0.6 + 0.05 ? -1 : 0, true)
+    const pick = side < 0 ? 0 : 1
+    assert.equal(s.forkPick, pick)
+    assert.ok(s.track.slice(f.at, f.at + FORK_LEN).every((g, k) => g.curve === f.tracks[pick][k].curve), 'its road laid down')
+    assert.ok(f.items[pick].every((it) => s.items.some((o) => o.z === it.z && o.kind === it.kind)), 'its offers on it')
+    assert.ok(racingCourse(5, 'desert').track === racingCourse(5, 'desert').track && s.track !== racingCourse(5, 'desert').track, 'the level\'s own road untouched')
+  }
+})
+
+test('racing: never a hill steeper than a road can be, never too high', () => {
+  for (const world of RACING_WORLDS) for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) {
+    const track = racingCourse(level, world).track
+    assert.ok(track.every((g) => Math.abs(g.y2 - g.y1) <= 0.1201), `${world} ${level}: gentle enough`)
+    assert.ok(track.every((g) => Math.abs(g.y2) <= 10.01), `${world} ${level}: within reach of the start's level`)
+  }
 })
 
 test('racing: the engine climbs with the speed through its gears, dropping back at each change; quiet at the pit stop', () => {

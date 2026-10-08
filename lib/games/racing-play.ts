@@ -26,15 +26,14 @@ import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
-  racingHour, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
+  FORK_NAME, racingHour, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
 import {
-  blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
+  blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
   facadePiece, puddle, puff, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type Tier,
 } from './racing-scene'
 import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
 import { shop, SHOPS, TOWN_UNIT } from './racing-town'
-import { ROCK_ZONES } from './racing-worlds'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
 import { arcadeText, CREAM, GREY, HUD_HEIGHT, INK } from './ui'
@@ -326,7 +325,9 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     if (p.behind || b.y >= maxY || b.y >= a.y) continue
     const top = Math.max(0, Math.ceil(b.y - 0.5)), bottom = Math.min(maxY, Math.ceil(a.y - 0.5))
     const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1, wave = ((i >> 2) + (frame >> 4)) & 1
-    pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y); groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h: b.u + (a.u - b.u) * t, band, zone: g.zone, fog: p.fog, wave, land: true }, tier, frame) } })
+    // past the fork, the road not taken going away on its side
+    const gone = s.fork && s.forkPick >= 0 && i >= s.fork.at && i < s.fork.at + GHOST_LEN ? (s.forkPick === 0 ? 1 : -1) * (2.3 + ((i - s.fork.at) / GHOST_LEN) ** 1.8 * 5) : 0
+    pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y); groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h: b.u + (a.u - b.u) * t, band, zone: g.zone, fog: p.fog, wave, land: true, ghost: gone }, tier, frame) } })
     maxY = Math.min(maxY, top)
     farX = b.x; farZone = g.zone
   }
@@ -343,18 +344,15 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   // the lights on after sunset; in the city, always: it is lit up from the start
   const lit = world === 'city' || tier >= 0.55
   const night = world === 'city' || tier >= 1.4
-  // furthest first: the rock and the tunnel, the barriers, what lies on the road, what stands by it, the gantries, the cars
+  // furthest first: the tunnel, the barriers, what lies on the road, what stands by it, the gantries, the cars
   for (let n = rows.length - 1; n >= 0; n -= 1) {
     const p = rows[n]
     if (p.clip <= 0 || p.behind) continue
     const { i, a, b, seg: g, clip, fog } = p
-    const band = Math.floor(i / 3) & 1
     if (g.zone === 'tunnel') {
       tunnelPiece(board, a, b, i, clip, tier, fog)
     } else {
-      // the rock on the land's side, on both sides in the canyon; the rails and the blocks
-      if (ROCK_ZONES.has(g.zone)) cliffPiece(board, a, b, 1, band, clip, tier, fog, i, g.zone === 'cliff' ? 3.8 : g.zone === 'gorge' ? 3.6 : 3.0)
-      if (g.zone === 'canyon') cliffPiece(board, a, b, -1, band, clip, tier, fog, i, 2.8)
+      // the rails and the blocks
       const [left, right] = FENCES[g.zone]
       if (left) left(board, a, b, -1, i, clip, tier, fog)
       if (right) right(board, a, b, 1, i, clip, tier, fog)
@@ -387,12 +385,15 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
         drawArt(board, pic, cx - w / 2, a.y - h, w, h, clip, thing.flip, rgb, by, sway)
       } else if (thing.kind === 'globe') { if (fog < 9) lampPool(board, a.x + thing.x * 0.8 * a.u, a.y, a.u, clip); globeLamp(board, cx, a.y, a.u, clip, tier, fog, lit && fog < 13) }
       else if (thing.kind === 'lights') trafficLights(board, a, clip, tier, fog, frame, thing.look)
-      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
+      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
       else lively(board, thing.kind, thing.look, i, cx, a.y, a.u, thing.flip, clip, tier, fog, frame, lit)
     }
     // past the line, where the road divides: a striped barrier down the middle, the gantry with the two worlds
     if (s.routes && i > s.finish + FORK_FROM) median(board, a, b, i, clip, tier, fog)
-    if (s.routes && i === s.finish + FORK_SIGN) forkGantry(board, a, clip, s.routes, tier, fog)
+    if (s.routes && i === s.finish + FORK_GANTRY) forkGantry(board, a, clip, s.routes.map((w) => WORLD_SIGN[w]) as [Sign, Sign], tier, fog)
+    // the fork in the middle of the level: the same barrier up to it while the car decides, the gantry with what each road offers
+    if (s.fork && s.forkPick < 0 && i >= s.fork.at - 90 && i < s.fork.at) median(board, a, b, i, clip, tier, fog)
+    if (s.fork && s.forkPick < 0 && i === s.fork.at - 70) forkGantry(board, a, clip, s.fork.kinds.map((k) => FORK_SIGN[k]) as [Sign, Sign], tier, fog)
     if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
     if (s.checks.includes(i)) gantry(board, a, clip, 'check', 0, accent, tier, fog)
     if (i === s.finish) gantry(board, a, clip, 'finish', 0, accent, tier, fog)
@@ -590,9 +591,17 @@ function minimap(board: PixelBuffer, s: RacingState, accent: string): void {
 
 /** Where, past the line, the road divides, and where the gantry with the two worlds stands, in stretches. */
 const FORK_FROM = 20
-const FORK_SIGN = 75
+const FORK_GANTRY = 75
+/** The fork's call stops a little before the side is decided. */
+const FORK_DECIDE_SHOWN = 30
+/** A sign over the road: its words and its colour. */
+type Sign = { name: string; colour: string }
+/** The stretches the road not taken at the fork is seen going away for. */
+const GHOST_LEN = 120
+/** What each road of the fork says on its sign. */
+const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
 /** Each world's name and colour, on the fork's signs. */
-const WORLD_SIGN: Record<RacingWorld, { name: string; colour: string }> = { coast: { name: 'COAST', colour: '#1a8ab0' }, mountain: { name: 'MOUNTAINS', colour: '#2e8a48' }, desert: { name: 'DESERT', colour: '#d0702e' }, city: { name: 'CITY', colour: '#7a3ae0' } }
+const WORLD_SIGN: Record<RacingWorld, Sign> = { coast: { name: 'COAST', colour: '#1a8ab0' }, mountain: { name: 'MOUNTAINS', colour: '#2e8a48' }, desert: { name: 'DESERT', colour: '#d0702e' }, city: { name: 'CITY', colour: '#7a3ae0' } }
 /** Each rival's colour, for its mark when it is close behind. */
 const RIVAL_COLOUR: Record<RacingCarKind, string> = { rosso: '#ff3a2a', giallo: '#ffd23f', burger: '#ff9a3a' }
 
@@ -613,17 +622,17 @@ function median(board: PixelBuffer, a: End, b: End, i: number, clip: number, tie
   void b
 }
 
-/** The gantry over the fork: its posts, and over each half of the road a panel with the world it leads to and an arrow. */
-function forkGantry(board: PixelBuffer, p: End, clip: number, routes: [RacingWorld, RacingWorld], tier: Tier, fog: number): void {
+/** The gantry over a fork: its posts, and over each half of the road a panel with where it leads (a world, what it offers) and an arrow. */
+function forkGantry(board: PixelBuffer, p: End, clip: number, signs: [Sign, Sign], tier: Tier, fog: number): void {
   const u = p.u, top = p.y - 2.3 * u, panel = Math.max(3, 0.5 * u), post = Math.max(1, 0.08 * u)
   const { rgb, by } = tintFor(tier, fog), paint = (c: string) => mix(c, `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`, by * 0.6)
   for (const x of [-1.95, 0, 1.95]) block(board, p.x + x * u - post / 2, top, post, p.y - top, paint('#3a3a4a'), clip)
-  routes.forEach((world, k) => {
+  signs.forEach((sign, k) => {
     const side = k === 0 ? -1 : 1, x0 = p.x + (side < 0 ? -1.9 : 0.1) * u, w = 1.8 * u
     if (top + panel >= clip) return
     block(board, x0 - 1, top - 1, w + 2, panel + 2, paint('#141420'), clip)
-    block(board, x0, top, w, panel, paint(WORLD_SIGN[world].colour), clip)
-    const label = `${side < 0 ? '< ' : ''}${WORLD_SIGN[world].name}${side > 0 ? ' >' : ''}`
+    block(board, x0, top, w, panel, paint(sign.colour), clip)
+    const label = `${side < 0 ? '< ' : ''}${sign.name}${side > 0 ? ' >' : ''}`
     const scale = text7Width(label, 2, true) < w - 6 && panel >= 18 ? 2 : 1
     if (text7Width(label, scale, true) < w - 4 && panel >= 9 && top + panel < clip) drawText7(board, label, Math.round(x0 + (w - text7Width(label, scale, true)) / 2), Math.round(top + (panel - 7 * scale) / 2), '#faf6ec', scale, true)
   })
@@ -725,13 +734,17 @@ function scenery(board: PixelBuffer, thing: RacingThing, i: number, a: End, clip
   let pic: PixelBuffer | null
   if (kind === 'pine' || kind === 'saguaro' || kind === 'rock' || kind === 'butte') pic = racingArt(kind)
   else if (kind === 'redrock') { const rock = racingArt('rock'); pic = rock ? redRock(rock) : null }
+  else if (kind === 'crag') { const rock = racingArt('rock'); pic = rock ? coastRock(rock) : null }
   else if (kind === 'shrub') pic = shrubPicture()
   else if (kind === 'tree') pic = treePicture(thing.look)
   else if (kind === 'fountain') pic = fountainPicture(frame >> 3, lit)
   else pic = tumbleweedPicture(frame >> 2)
   if (!pic) return
-  const h = SCENERY_HIGH[kind] * a.u
-  if (h < 2) return
+  // the rocks of all sizes (`look`), the bigger further back
+  const rocky = kind === 'rock' || kind === 'redrock' || kind === 'crag' || kind === 'butte'
+  const h = SCENERY_HIGH[kind] * a.u * (rocky ? (0.7 + thing.look * 0.2) * (Math.abs(thing.x) > 3 && kind !== 'butte' ? 1.8 : 1) : 1)
+  // too small to see, or so close it would fill the screen with its pixels: left out
+  if (h < 2 || (rocky && h > board.height * 1.1)) return
   const w = (pic.width * h) / pic.height
   let x = a.x + thing.x * a.u, foot = a.y
   if (kind === 'tumbleweed') {
@@ -810,6 +823,13 @@ function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: n
     return
   } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
   if (s.news && (s.news.steps > 20 || (s.news.steps >> 2) % 2 === 0)) said(out, s.news.text, W / 2, top + 40, s.news.text.startsWith('CHECK') ? '#3aff6a' : '#ffd23f', W >= 400 ? 3 : 2)
+  // the fork coming: what each road offers, on its side, the side the car is on lit
+  if (s.fork && s.forkPick < 0 && s.z > s.fork.at - 200 && s.z < s.fork.at - FORK_DECIDE_SHOWN) {
+    const [left, right] = s.fork.kinds.map((k) => FORK_SIGN[k]), on = s.x < 0 ? 0 : 1, blink = (s.steps >> 3) % 2
+    said(out, 'PICK YOUR ROAD', W / 2, top + 64, '#faf6ec', 1)
+    said(out, `< ${left.name}`, W * 0.26, top + 76, on === 0 && blink ? '#ffffff' : mix(left.colour, '#ffffff', 0.35), 1)
+    said(out, `${right.name} >`, W * 0.74, top + 76, on === 1 && blink ? '#ffffff' : mix(right.colour, '#ffffff', 0.35), 1)
+  }
   gauge(out, s, top)
   // the brushes, the overtakes, the turbo ready: small, over the car, the latest lowest, rising as they fade
   s.pops.forEach((p, k) => {

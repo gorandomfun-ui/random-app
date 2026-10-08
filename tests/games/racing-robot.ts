@@ -46,10 +46,14 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     past.push({ x: s.x, z: s.z, speed: s.speed })
     if (past.length > d.see + 1) past.shift()
     const seen = past[0]
+    // the sharpest bend coming, and how fast it can be taken
+    let worst = 0
+    for (let k = 0; k < d.look; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, seen.z + k).curve))
+    const limit = racingBendSpeed(s, worst) * d.margin
     // each lane weighed: a car slower than the driver means to go (even once stuck behind it), a cone or a puddle in it ahead counts against it, a stopwatch or the turbo for it
     const worth = (l: number) => {
       let w = l === lane ? 0.5 : 0
-      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && Math.abs(c.x - l) < 0.62 && c.speed < Math.max(seen.speed, RACING_TOP * 0.8) + 0.05) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
+      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && Math.abs(c.x - l) < 0.62 && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
       for (const it of s.items) {
         if (it.taken || it.z < seen.z || it.z - seen.z > d.ahead || Math.abs(it.x - l) > 0.4) continue
         if (it.kind === 'cone') w -= 6
@@ -69,10 +73,6 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     const both = left.length > 0 && right.length > 0, beside = both ? null : alongside[0]
     if (both) wobble = 0
     else if (beside && Math.sign(wobble) === Math.sign(beside.x - lane)) wobble = -wobble
-    // the sharpest bend coming, and how fast it can be taken
-    let worst = 0
-    for (let k = 0; k < d.look; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, seen.z + k).curve))
-    const limit = racingBendSpeed(s, worst) * d.margin
     // and no gas into a slower car right ahead, overlapping: anyone lifts and goes round it
     const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 0 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.58 && c.speed < seen.speed)
     const gas = seen.speed < limit && !stuck
