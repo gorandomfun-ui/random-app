@@ -30,6 +30,7 @@ import type { RacingWorld } from '@/lib/games/racing-worlds'
 import { lastName, type GameName } from '@/lib/games/scores'
 import { THEMES } from '@/lib/theme'
 import { useScore } from '@/providers/ScoreProvider'
+import { prepareSound } from '@/utils/sound'
 
 const GamePlayer = dynamic(() => import('@/components/games/GamePlayer'), {
   ssr: false,
@@ -58,6 +59,9 @@ export default function ArcadePage({ game, themeIndex, startLevel, startWorld }:
     document.body.classList.add('arcade-body')
     return () => document.body.classList.remove('arcade-body')
   }, [])
+
+  // an iPhone or an iPad gets its sound players ready, warmed by the first touch, as on Random's page
+  useEffect(() => { prepareSound() }, [])
 
   // the card is made ahead, so the share sheet opens within the tap
   useEffect(() => {

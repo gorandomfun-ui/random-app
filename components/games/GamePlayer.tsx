@@ -546,6 +546,8 @@ export default function GamePlayer({
       if (dir) { steer(dir); touch.x = e.clientX; touch.y = e.clientY }
     }
     const onUp = (e: PointerEvent) => {
+      // a finger lifted is the moment an iPhone lets a sound start (not the moment it comes down)
+      if (e.pointerType !== 'mouse') touched()
       if (held.fingers.delete(e.pointerId)) { s.dirty = true; return }
       if (thumb && thumb.id === e.pointerId) { thumb = null; return }
       if (!touch || touch.id !== e.pointerId) return
@@ -573,6 +575,8 @@ export default function GamePlayer({
       }
     }
     const onCancel = (e: PointerEvent) => { touch = null; thumb = null; held.fingers.delete(e.pointerId) }
+    // Safari's own moment for sound: the end of a touch
+    const onTouchEnd = () => touched()
     const onHidden = () => { if (document.hidden) pause() }
     const watch = new ResizeObserver(() => {
       box.width = frameBox.clientWidth
@@ -590,6 +594,7 @@ export default function GamePlayer({
     frameBox.addEventListener('pointermove', onMove)
     frameBox.addEventListener('pointerup', onUp)
     frameBox.addEventListener('pointercancel', onCancel)
+    frameBox.addEventListener('touchend', onTouchEnd, { passive: true })
     return () => {
       if (control) { control.togglePause = undefined; control.pause = undefined; control.resume = undefined; control.start = undefined; control.retry = undefined; control.finishRound = undefined; control.touch = undefined }
       cancelAnimationFrame(raf)
@@ -603,6 +608,7 @@ export default function GamePlayer({
       frameBox.removeEventListener('pointermove', onMove)
       frameBox.removeEventListener('pointerup', onUp)
       frameBox.removeEventListener('pointercancel', onCancel)
+      frameBox.removeEventListener('touchend', onTouchEnd)
     }
   }, [game, accent, control, startLevel, startWorld])
 
