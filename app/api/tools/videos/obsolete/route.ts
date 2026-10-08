@@ -1012,7 +1012,7 @@ export async function GET(req: NextRequest) {
   if (url.searchParams.get('mode') === 'nightly') {
     // The night's check (lib/v3/ingest/lines/obsolete.ts) and the dead waiting for the owner's deletion.
     const [lastRun, pending] = await Promise.all([
-      db.collection('ingest_runs_v3').find({ line: 'obsolete' }, { projection: { startedAt: 1, finishedAt: 1, status: 1, note: 1, counters: 1, host: 1 }, sort: { startedAt: -1 }, limit: 1, maxTimeMS: 10_000 }).next().catch(() => null),
+      db.collection('ingest_runs_v3').find({ line: 'obsolete', dryRun: { $ne: true } }, { projection: { startedAt: 1, finishedAt: 1, status: 1, note: 1, counters: 1, host: 1 }, sort: { startedAt: -1 }, limit: 1, maxTimeMS: 10_000 }).next().catch(() => null),
       db.collection('items').aggregate([{ $match: { type: 'video', obsoleteVideoStatus: 'obsolete' } }, { $group: { _id: '$provider', n: { $sum: 1 } } }], { hint: 'idx_video_obsolete_status', maxTimeMS: 30_000 }).toArray().catch(() => [] as Array<{ _id: string; n: number }>),
     ])
     const providers = Object.fromEntries(pending.map((row) => [String(row._id ?? 'unknown'), Number(row.n) || 0]))
