@@ -5,6 +5,8 @@ import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { randomUUID } from 'crypto'
 import { ObjectId, type Db, type Filter } from 'mongodb'
 import { getDbSafe } from '@/lib/random/data'
+import { checkDailymotionVideos, checkYouTubeVideos, dailymotionPlayerVerdict, outcomeOfPlayer } from '@/lib/v3/obsolete/check'
+import { dueFilter } from '@/lib/v3/obsolete/due'
 
 type VideoDoc = {
   _id: ObjectId
@@ -96,6 +98,8 @@ const PERSISTED_SCAN_CONCURRENCY = 12
 const PERSISTED_SCAN_TIMEOUT_MS = 4500
 const PERSISTED_SCAN_LEASE_MS = 2 * 60 * 1000
 const PERSISTED_DELETE_BATCH_SIZE = 25
+/** Dead videos checked once more and deleted per call of the page's "delete the dead" button: one Dailymotion list call, the player for each. */
+const CONFIRMED_DELETE_BATCH_SIZE = 100
 let videoScanIndexPromise: Promise<void> | null = null
 
 function isAuthorized(req: NextRequest): boolean {
@@ -122,59 +126,6 @@ function headersToObject(headers: HeadersInit | undefined): Record<string, strin
     return out
   }
   return { ...(headers as Record<string, string>) }
-}
-
-function normalizeReasonText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function isExplicitDailymotionUnavailableMessage(message?: string): boolean {
-  if (!message) return false
-  const normalized = normalizeReasonText(message)
-  if (!normalized) return false
-  const unavailableFragments = [
-    'no longer available',
-    'has been deleted',
-    'was deleted',
-    'has been removed',
-    'was removed',
-    'removed because',
-    'removed due to',
-    'terms violation',
-    'terms of use',
-    'made private',
-    'is private',
-    'private by',
-    'video is private',
-    'cette video n est plus disponible',
-    'cette video a ete supprimee',
-    'cette video a ete retiree',
-    'droits d auteur',
-    'conditions d utilisation',
-    'deze video is niet meer beschikbaar',
-    'niet meer beschikbaar',
-    'is verwijderd',
-    'prive is gemaakt',
-    'inbreuk op de gebruiksvoorwaarden',
-    'este video ya no esta disponible',
-    'ha sido eliminado',
-    'se ha eliminado',
-    'questo video non e piu disponibile',
-    'e stato rimosso',
-    'dieses video ist nicht mehr verfugbar',
-    'wurde entfernt',
-    'dm002',
-    'dm005',
-    'dm010',
-    'dm020',
-  ]
-  return unavailableFragments.some((fragment) => normalized.includes(fragment))
 }
 
 function closeResponse(response: Response | null) {
@@ -239,72 +190,6 @@ function classifyHttpStatus(status: number | null, reasonPrefix: string): CheckO
     return { obsolete: false, status, reason: 'restricted', kind: 'ambiguous' }
   }
   return { obsolete: false, status, reason: `${reasonPrefix}-${status}`, kind: 'ambiguous' }
-}
-
-async function fetchDailymotionMetadata(
-  id: string,
-  { timeoutMs = DEFAULT_SCAN_TIMEOUT_MS }: { timeoutMs?: number } = {},
-): Promise<{ status: number | null; unavailable: boolean; ambiguous?: boolean; reason?: string }> {
-  const metadataUrl = `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(id)}`
-  const response = await fetchWithTimeout(metadataUrl, { timeoutMs })
-  if (!response) {
-    return { status: null, unavailable: false, ambiguous: true, reason: 'network-error' }
-  }
-  const status = response.status ?? null
-  let payload: unknown
-  try {
-    payload = await response.json()
-  } catch {
-    payload = null
-  } finally {
-    closeResponse(response)
-  }
-
-  const extractError = (): string | undefined => {
-    if (!payload || typeof payload !== 'object') return undefined
-    const asAny = payload as Record<string, unknown>
-    if (typeof asAny.error === 'string') return asAny.error
-    if (asAny.error && typeof asAny.error === 'object') {
-      const err = asAny.error as Record<string, unknown>
-      if (typeof err.message === 'string') return err.message
-      if (typeof err.code === 'string') return err.code
-    }
-    if (Array.isArray(asAny.errors) && asAny.errors.length) {
-      const errEntry = asAny.errors[0]
-      if (typeof errEntry === 'string') return errEntry
-      if (errEntry && typeof errEntry === 'object') {
-        const typed = errEntry as Record<string, unknown>
-        if (typeof typed.message === 'string') return typed.message
-        if (typeof typed.code === 'string') return typed.code
-      }
-    }
-    if (typeof asAny.message === 'string') return asAny.message
-    return undefined
-  }
-
-  const errorMessage = extractError()
-
-  if (status === 404 || status === 410) {
-    return { status, unavailable: true, reason: `dailymotion-${status}` }
-  }
-  if (status === 429) {
-    return { status, unavailable: false, ambiguous: true, reason: 'rate-limited' }
-  }
-  if (status === 401 || status === 403 || status >= 500) {
-    return { status, unavailable: false, ambiguous: true, reason: `dailymotion-${status}` }
-  }
-  if (errorMessage) {
-    const reason = `dailymotion-metadata-${errorMessage.replace(/\s+/g, '-').toLowerCase()}`
-    if (isExplicitDailymotionUnavailableMessage(errorMessage)) {
-      return { status, unavailable: true, reason }
-    }
-    return { status, unavailable: false, ambiguous: true, reason }
-  }
-  if (status >= 400) {
-    return { status, unavailable: false, ambiguous: true, reason: `dailymotion-${status}` }
-  }
-
-  return { status, unavailable: false }
 }
 
 function extractYouTubeId(rawUrl: string): string | null {
@@ -385,85 +270,9 @@ async function checkVideo(
     if (!id) {
       return { obsolete: false, reason: 'missing-video-id', kind: 'ambiguous' }
     }
-
-    const response = await fetchWithTimeout(
-      `https://api.dailymotion.com/video/${encodeURIComponent(id)}?fields=availability`,
-      { timeoutMs },
-    )
-    const availabilityStatus = response?.status ?? null
-    let availability = ''
-    try {
-      if (response?.ok) {
-        const json = (await response.json()) as { availability?: string } | null
-        if (typeof json?.availability === 'string') {
-          availability = json.availability.trim().toLowerCase()
-        }
-      }
-    } catch {
-      availability = ''
-    } finally {
-      closeResponse(response)
-    }
-
-    if (availabilityStatus === 429) {
-      return { obsolete: false, status: availabilityStatus, reason: 'rate-limited', kind: 'rate-limited' }
-    }
-    if (availabilityStatus === 401 || availabilityStatus === 403 || (availabilityStatus !== null && availabilityStatus >= 500)) {
-      return { obsolete: false, status: availabilityStatus, reason: `dailymotion-${availabilityStatus}`, kind: 'ambiguous' }
-    }
-    if (availabilityStatus === 404 || availabilityStatus === 410) {
-      return { obsolete: true, status: availabilityStatus, reason: `dailymotion-${availabilityStatus}` }
-    }
-
-    if (availabilityStatus !== null && availabilityStatus >= 200 && availabilityStatus < 300) {
-      const explicitlyUnavailable = new Set([
-        'blocked',
-        'deleted',
-        'private',
-        'rejected',
-        'removed',
-        'unavailable',
-      ])
-      if (explicitlyUnavailable.has(availability)) {
-        return {
-          obsolete: true,
-          status: availabilityStatus,
-          reason: `dailymotion-availability-${availability}`,
-        }
-      }
-      if (availability && availability !== 'available' && availability !== 'allowed') {
-        return {
-          obsolete: false,
-          status: availabilityStatus,
-          reason: `dailymotion-availability-${availability}`,
-          kind: 'ambiguous',
-        }
-      }
-
-      const metadata = await fetchDailymotionMetadata(id, { timeoutMs })
-      if (metadata.reason === 'rate-limited') {
-        return { obsolete: false, status: metadata.status, reason: 'rate-limited', kind: 'rate-limited' }
-      }
-      if (metadata.unavailable) {
-        return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
-      }
-      if (metadata.ambiguous) {
-        return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-metadata-ambiguous', kind: 'ambiguous' }
-      }
-      return { obsolete: false, status: availabilityStatus ?? metadata.status ?? null }
-    }
-
-    const metadata = await fetchDailymotionMetadata(id, { timeoutMs })
-    if (metadata.reason === 'rate-limited') {
-      return { obsolete: false, status: metadata.status, reason: 'rate-limited', kind: 'rate-limited' }
-    }
-    if (metadata.unavailable) {
-      return { obsolete: true, status: metadata.status, reason: metadata.reason || 'dailymotion-player-error' }
-    }
-    if (metadata.status !== null && metadata.status >= 200 && metadata.status < 400) {
-      return { obsolete: false, status: metadata.status }
-    }
-    return { obsolete: false, status: metadata.status, reason: metadata.reason || 'dailymotion-ambiguous', kind: 'ambiguous' }
+    // The player alone: the API's `availability` field has answered "unrecognized value" for every video since
+    // at least October 2026 (tested on 85 live and dead videos, 8 October); it decided nothing and doubled the calls.
+    return outcomeOfPlayer(await dailymotionPlayerVerdict(id, { timeoutMs }))
   }
 
   const fallbackId = videoId ? sanitizeProviderId(videoId) : ''
@@ -484,110 +293,8 @@ async function checkYouTubeBatch(
   docs: VideoDoc[],
   { timeoutMs = PERSISTED_SCAN_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<Map<string, CheckOutcome>> {
-  const outcomes = new Map<string, CheckOutcome>()
   const key = (process.env.YOUTUBE_API_KEY || '').trim()
-  if (!key) return outcomes
-
-  const candidates = docs
-    .map((doc) => ({
-      doc,
-      id: sanitizeProviderId(doc.videoId?.trim() || extractYouTubeId(doc.url?.trim() || '') || ''),
-    }))
-    .filter((candidate) => candidate.id)
-
-  for (let offset = 0; offset < candidates.length; offset += 50) {
-    const chunk = candidates.slice(offset, offset + 50)
-    const params = new URLSearchParams({
-      key,
-      part: 'status',
-      id: chunk.map((candidate) => candidate.id).join(','),
-    })
-    const response = await fetchWithTimeout(
-      `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`,
-      { timeoutMs },
-    )
-    const status = response?.status ?? null
-
-    if (!response || !response.ok) {
-      const outcome = classifyHttpStatus(status, 'youtube-api')
-      const safeOutcome = outcome.obsolete
-        ? { obsolete: false, status, reason: outcome.reason, kind: 'ambiguous' as const }
-        : outcome
-      for (const candidate of chunk) {
-        outcomes.set(candidate.doc._id.toHexString(), safeOutcome)
-      }
-      closeResponse(response)
-      continue
-    }
-
-    let payload: unknown
-    try {
-      payload = await response.json()
-    } catch {
-      payload = null
-    } finally {
-      closeResponse(response)
-    }
-
-    const items =
-      payload && typeof payload === 'object' && Array.isArray((payload as { items?: unknown }).items)
-        ? ((payload as { items: unknown[] }).items as Array<{
-            id?: string
-            status?: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string }
-          }>)
-        : null
-
-    if (!items) {
-      for (const candidate of chunk) {
-        outcomes.set(candidate.doc._id.toHexString(), {
-          obsolete: false,
-          status,
-          reason: 'youtube-api-invalid-response',
-          kind: 'ambiguous',
-        })
-      }
-      continue
-    }
-
-    const returned = new Map(items.filter((item) => item.id).map((item) => [item.id as string, item]))
-    for (const candidate of chunk) {
-      const item = returned.get(candidate.id)
-      if (!item) {
-        outcomes.set(candidate.doc._id.toHexString(), {
-          obsolete: true,
-          status,
-          reason: 'youtube-api-not-returned',
-        })
-        continue
-      }
-
-      const uploadStatus = item.status?.uploadStatus || ''
-      const privacyStatus = item.status?.privacyStatus || ''
-      if (['deleted', 'failed', 'rejected'].includes(uploadStatus)) {
-        outcomes.set(candidate.doc._id.toHexString(), {
-          obsolete: true,
-          status,
-          reason: `youtube-upload-${uploadStatus}`,
-        })
-      } else if (privacyStatus && privacyStatus !== 'public') {
-        outcomes.set(candidate.doc._id.toHexString(), {
-          obsolete: true,
-          status,
-          reason: `youtube-privacy-${privacyStatus}`,
-        })
-      } else if (item.status?.embeddable === false) {
-        outcomes.set(candidate.doc._id.toHexString(), {
-          obsolete: true,
-          status,
-          reason: 'youtube-not-embeddable',
-        })
-      } else {
-        outcomes.set(candidate.doc._id.toHexString(), { obsolete: false, status })
-      }
-    }
-  }
-
-  return outcomes
+  return (await checkYouTubeVideos(docs, { key, timeoutMs })).outcomes
 }
 
 function delay(ms: number) {
@@ -780,12 +487,17 @@ async function scanVideoDocs(
 
   const youtubeDocs = docs.filter((doc) => normalizeProvider(doc.provider).includes('youtube'))
   const youtubeOutcomes = await checkYouTubeBatch(youtubeDocs, { timeoutMs })
+  // Dailymotion a hundred per call; the player is asked only about the videos its list leaves out (lib/v3/obsolete/check.ts).
+  const dailymotionDocs = docs.filter((doc) => normalizeProvider(doc.provider).includes('dailymotion'))
+  const dailymotionOutcomes = await checkDailymotionVideos(dailymotionDocs, { timeoutMs, concurrency: Math.min(concurrency, 12) })
 
   await runWithConcurrency(docs, concurrency, async (doc) => {
     try {
+      const known = youtubeOutcomes.get(doc._id.toHexString()) || dailymotionOutcomes.get(doc._id.toHexString())
       const outcome =
-        youtubeOutcomes.get(doc._id.toHexString()) ||
-        (await checkVideoWithRetry(doc, retries, { timeoutMs }))
+        known && !(retries > 0 && isAmbiguousOutcome(known))
+          ? known
+          : await checkVideoWithRetry(doc, retries, { timeoutMs })
       outcomes.push({ doc, outcome })
       addScanOutcome(doc, outcome, {
         obsolete,
@@ -852,30 +564,17 @@ function buildChunkFilter({
   }
 
   if (!force) {
-    const staleBefore = new Date(Date.now() - staleHours * 60 * 60 * 1000)
-    filter.$or = [
-      { obsoleteVideoRuntimeSuspect: true },
-      { obsoleteVideoCheckedAt: { $exists: false } },
-      { obsoleteVideoCheckedAt: null },
-      { obsoleteVideoCheckedAt: { $lt: staleBefore } },
-      { obsoleteVideoStatus: { $in: ['obsolete', 'rate-limited', 'ambiguous'] } },
-    ]
+    // What is due (lib/v3/obsolete/due.ts): the recent Dailymotion entries every two days, the rest less often.
+    void staleHours
+    return { ...filter, ...dueFilter(Date.now()), type: 'video' }
   }
 
   return filter
 }
 
-function buildPersistedCandidateFilter(staleBefore: Date): Filter<VideoDoc> {
-  return {
-    type: 'video',
-    $or: [
-      { obsoleteVideoRuntimeSuspect: true },
-      { obsoleteVideoCheckedAt: { $exists: false } },
-      { obsoleteVideoCheckedAt: null },
-      { obsoleteVideoCheckedAt: { $lt: staleBefore } },
-      { obsoleteVideoStatus: { $in: ['obsolete', 'rate-limited', 'ambiguous'] as const } },
-    ],
-  }
+/** What a page scan started at `at` checks: what is due then (lib/v3/obsolete/due.ts). */
+function buildPersistedCandidateFilter(at: Date): Filter<VideoDoc> {
+  return dueFilter(at.getTime()) as Filter<VideoDoc>
 }
 
 async function runChunkScan(
@@ -1115,7 +814,7 @@ async function startOrResumePersistedJob(db: Db) {
 
   await ensureVideoScanIndexes(db)
   const staleBefore = new Date(now.getTime() - DEFAULT_STALE_HOURS * 60 * 60 * 1000)
-  const candidateFilter = buildPersistedCandidateFilter(staleBefore)
+  const candidateFilter = buildPersistedCandidateFilter(now)
   const [latest, total] = await Promise.all([
     db.collection<VideoDoc>('items')
       .find(candidateFilter, { projection: { _id: 1 } })
@@ -1198,7 +897,8 @@ async function runPersistedJobStep(db: Db) {
     if (job.cursor) idFilter.$gt = new ObjectId(job.cursor)
     const items = db.collection<VideoDoc>('items')
     const staleBefore = job.staleBefore || new Date(job.startedAt.getTime() - DEFAULT_STALE_HOURS * 60 * 60 * 1000)
-    const candidateFilter = buildPersistedCandidateFilter(staleBefore)
+    const candidateFilter = buildPersistedCandidateFilter(job.startedAt)
+    void staleBefore
     const suspectDocs = await items
       .find(
         {
@@ -1309,6 +1009,18 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl
+  if (url.searchParams.get('mode') === 'nightly') {
+    // The night's check (lib/v3/ingest/lines/obsolete.ts) and the dead waiting for the owner's deletion.
+    const [lastRun, pending] = await Promise.all([
+      db.collection('ingest_runs_v3').find({ line: 'obsolete' }, { projection: { startedAt: 1, finishedAt: 1, status: 1, note: 1, counters: 1, host: 1 }, sort: { startedAt: -1 }, limit: 1, maxTimeMS: 10_000 }).next().catch(() => null),
+      db.collection('items').aggregate([{ $match: { type: 'video', obsoleteVideoStatus: 'obsolete' } }, { $group: { _id: '$provider', n: { $sum: 1 } } }], { hint: 'idx_video_obsolete_status', maxTimeMS: 30_000 }).toArray().catch(() => [] as Array<{ _id: string; n: number }>),
+    ])
+    const providers = Object.fromEntries(pending.map((row) => [String(row._id ?? 'unknown'), Number(row.n) || 0]))
+    return NextResponse.json({
+      lastRun: lastRun ? { startedAt: lastRun.startedAt, finishedAt: lastRun.finishedAt ?? null, status: lastRun.status, note: lastRun.note ?? null, checked: lastRun.counters?.scanned ?? 0 } : null,
+      pending: { total: Object.values(providers).reduce((sum, n) => sum + n, 0), providers },
+    }, { headers: { 'Cache-Control': 'no-store' } })
+  }
   if (url.searchParams.get('mode') === 'job') {
     const job = await db.collection<VideoScanJob>('maintenance_jobs').findOne({ _id: PERSISTED_JOB_ID })
     return NextResponse.json(await serializePersistedJob(db, job), {
@@ -1554,6 +1266,35 @@ export async function DELETE(req: NextRequest) {
     payload = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  if (payload && typeof payload === 'object' && (payload as { confirmed?: unknown }).confirmed === true) {
+    // The dead found by the night's check or a page scan, a hundred at a time, the oldest verdicts first: each is
+    // checked once more right now, and only what is still dead is deleted; the others get their new status.
+    const docs = await db
+      .collection<VideoDoc>('items')
+      .find(
+        { type: 'video', obsoleteVideoStatus: 'obsolete' },
+        { projection: { _id: 1, provider: 1, url: 1, videoId: 1, title: 1, thumb: 1, thumbUrl: 1 }, hint: 'idx_video_obsolete_status', sort: { obsoleteVideoCheckedAt: 1 }, limit: CONFIRMED_DELETE_BATCH_SIZE, maxTimeMS: 30_000 },
+      )
+      .toArray()
+    if (!docs.length) {
+      return NextResponse.json({ deleted: 0, verified: 0, checked: 0, remaining: 0, done: true })
+    }
+    const verification = await scanVideoDocs(db, docs, { concurrency: 12, retries: 0, timeoutMs: DEFAULT_SCAN_TIMEOUT_MS, persist: true })
+    const verifiedIds = verification.obsolete.map((item) => new ObjectId(item.id))
+    const deletion = verifiedIds.length
+      ? await db.collection('items').deleteMany({ _id: { $in: verifiedIds }, type: 'video', obsoleteVideoStatus: 'obsolete' })
+      : { deletedCount: 0 }
+    const remaining = await db.collection('items').countDocuments({ type: 'video', obsoleteVideoStatus: 'obsolete' }, { hint: 'idx_video_obsolete_status', maxTimeMS: 30_000 }).catch(() => -1)
+    return NextResponse.json({
+      deleted: deletion.deletedCount ?? 0,
+      verified: verifiedIds.length,
+      checked: docs.length,
+      revived: docs.length - verifiedIds.length,
+      remaining,
+      done: remaining === 0,
+    })
   }
 
   const scanId =

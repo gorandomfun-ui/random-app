@@ -13,6 +13,7 @@
 #   bash /opt/random-app/server/run-line.sh pools
 #   bash /opt/random-app/server/run-line.sh dig
 #   bash /opt/random-app/server/run-line.sh lookalike
+#   bash /opt/random-app/server/run-line.sh obsolete
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -100,6 +101,11 @@ case "${LINE}" in
     # The previews' lock is waited for up to twenty-five minutes: their run lasts twenty at most, and the 07:15 window of 7 October gave up at fifteen.
     # The night site check's too (the 03:50 window follows it): twenty minutes a night, seventy-five at most.
     RANDOM_LOOKALIKE_MINUTES="${RANDOM_LOOKALIKE_MINUTES:-30}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 1500 /home/random/locks/web-previews.lock flock -w 1500 /home/random/locks/web-embed.lock node --import tsx scripts/v3/lookalike-direct.ts
+    ;;
+  obsolete)
+    # The nightly check of the stored videos: the dead are marked and hidden, the owner deletes them from the page
+    # (public/erase-obsolete-videos.html). No model, little memory; it ends before the 06:35 look-alikes (35 minutes).
+    RANDOM_OBSOLETE_MINUTES="${RANDOM_OBSOLETE_MINUTES:-35}" run node --import tsx scripts/v3/obsolete-direct.ts
     ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.

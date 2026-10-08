@@ -284,11 +284,34 @@
           color: #b7bcc5;
         }
       }
+      .nightly {
+        border: 1px solid #ddd;
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin: 0 0 20px;
+      }
+      .nightly h2 {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
     </style>
   </head>
   <body>
     <main class="card">
       <h1>Erase Obsolete Videos</h1>
+
+      <section id="nightly" class="nightly">
+        <h2>Vérification de nuit</h2>
+        <p id="nightlyRun" class="note">Lecture de la dernière vérification…</p>
+        <p id="nightlyPending"></p>
+        <div class="controls">
+          <button id="deleteConfirmedBtn" class="danger" type="button" disabled>Supprimer les vidéos mortes</button>
+          <button id="stopConfirmedBtn" type="button" disabled>Arrêter</button>
+        </div>
+        <p class="note">Elles sont déjà invisibles sur le site. Chacune est vérifiée une dernière fois juste avant d'être supprimée : une vidéo revenue en ligne est gardée.</p>
+        <div id="deleteConfirmedStatus" class="status"></div>
+      </section>
+
       <p class="description">
         Scan all videos, safely resume after a network interruption, then delete only confirmed unavailable videos.
       </p>
@@ -993,8 +1016,80 @@
         if (!deleting) deleteVideos()
       })
 
+      // The night's check (server, 05:50 Paris) and the dead waiting for deletion.
+      const nightlyRunEl = document.getElementById('nightlyRun')
+      const nightlyPendingEl = document.getElementById('nightlyPending')
+      const deleteConfirmedBtn = document.getElementById('deleteConfirmedBtn')
+      const stopConfirmedBtn = document.getElementById('stopConfirmedBtn')
+      const deleteConfirmedStatusEl = document.getElementById('deleteConfirmedStatus')
+      let deletingConfirmed = false
+      let stopConfirmed = false
+      const fr = (n) => Number(n || 0).toLocaleString('fr-FR')
+      const when = (value) => (value ? new Date(value).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '')
+
+      async function loadNightly() {
+        if (!getAdminKey(false)) return
+        try {
+          const res = await adminFetch('/api/tools/videos/obsolete?mode=nightly', { method: 'GET' })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data?.error || res.statusText)
+          const run = data.lastRun
+          nightlyRunEl.textContent = run
+            ? `Dernière vérification : ${when(run.startedAt)}${run.status && run.status !== 'ok' ? ` (${run.status})` : ''}. ${run.note || ''}`
+            : 'Pas encore de vérification de nuit.'
+          const pending = data.pending || { total: 0, providers: {} }
+          const detail = Object.entries(pending.providers || {}).map(([provider, n]) => `${provider} ${fr(n)}`).join(', ')
+          nightlyPendingEl.innerHTML = pending.total
+            ? `<strong>${fr(pending.total)} vidéos mortes</strong> à supprimer${detail ? ` (${detail})` : ''}.`
+            : 'Aucune vidéo morte à supprimer.'
+          deleteConfirmedBtn.disabled = deletingConfirmed || !pending.total
+        } catch (error) {
+          nightlyRunEl.textContent = `Lecture impossible : ${error instanceof Error ? error.message : String(error)}`
+        }
+      }
+
+      async function deleteConfirmed() {
+        deletingConfirmed = true
+        stopConfirmed = false
+        deleteConfirmedBtn.disabled = true
+        stopConfirmedBtn.disabled = false
+        let deleted = 0, kept = 0, rounds = 0
+        try {
+          while (!stopConfirmed) {
+            const res = await adminFetch('/api/tools/videos/obsolete', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ confirmed: true }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || res.statusText)
+            rounds += 1
+            deleted += data.deleted || 0
+            kept += data.revived || 0
+            deleteConfirmedStatusEl.textContent = `${fr(deleted)} supprimées, ${fr(kept)} gardées car encore en ligne${data.remaining >= 0 ? `, ${fr(data.remaining)} restantes` : ''}…`
+            if (data.done || !data.checked) break
+          }
+          deleteConfirmedStatusEl.textContent = `${stopConfirmed ? 'Arrêté' : 'Terminé'} : ${fr(deleted)} vidéos supprimées, ${fr(kept)} gardées car encore en ligne.`
+        } catch (error) {
+          deleteConfirmedStatusEl.textContent = `Erreur : ${error instanceof Error ? error.message : String(error)} (${fr(deleted)} déjà supprimées, on peut relancer)`
+        } finally {
+          deletingConfirmed = false
+          stopConfirmedBtn.disabled = true
+          await loadNightly()
+        }
+      }
+
+      deleteConfirmedBtn.addEventListener('click', () => {
+        if (!deletingConfirmed && window.confirm('Supprimer les vidéos mortes ? Chacune est revérifiée juste avant.')) deleteConfirmed()
+      })
+      stopConfirmedBtn.addEventListener('click', () => {
+        stopConfirmed = true
+        deleteConfirmedStatusEl.textContent = 'Arrêt après le lot en cours…'
+      })
+
       window.addEventListener('online', loadPersistedJob)
       loadPersistedJob()
+      loadNightly()
     </script>
   </body>
 </html>

@@ -55,6 +55,7 @@ const LINE_LABEL: Record<string, string> = {
   dig: 'La fouille (4 bases)',
   drift: 'La dérive (Dailymotion)',
   lookalike: 'Les sosies de tes likes (IA, Dailymotion)',
+  obsolete: 'Vérification de nuit des vidéos mortes',
   'web-previews': 'Sites : visites et aperçus',
   'web-commoncrawl': 'Sites : Common Crawl (un pays par jour)',
 }

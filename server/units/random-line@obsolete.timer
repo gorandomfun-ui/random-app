@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM nightly check of the stored videos (05:50 Paris, after the night's last look-alikes and the sites' check, done before the 06:35 look-alikes: the dead are marked and hidden, the owner deletes them from his page)
+
+[Timer]
+OnCalendar=*-*-* 05:50:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
