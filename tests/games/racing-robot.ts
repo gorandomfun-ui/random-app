@@ -1,30 +1,48 @@
 /**
  * Drivers for RANDOM RACING's tests, to know a level can be won by a
- * player and how much time it leaves: a good one, who looks ahead, lifts
- * before a sharp bend, goes round the cars, the cones and the puddles and
- * picks up the stopwatches and the turbo on the way; a casual one, who sees
- * things a fifth of a second late and not as far, aims roughly, brakes late
- * for a bend and then takes it slower than it could, and misses a puddle now
- * and then.
+ * player and how much time it leaves: a good one, who times the start on the
+ * third light, looks ahead, lifts before a sharp bend, goes round the cars,
+ * the cones and the puddles, picks up the stopwatches and the mustard on the
+ * way and lets the turbo go on a clear straight; a casual one, who sees
+ * things a fifth of a second late and not as far, aims roughly, presses A at
+ * the start whenever, brakes late for a bend and then takes it slower than it
+ * could, misses a puddle now and then and lets the turbo go only once the
+ * gauge is full. Both take, between levels, the improvement of their car's
+ * weakest point.
  */
 
-import { bendLimit, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
+import { racingBendSpeed, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
 
-export type Driver = { see: number; aim: number; look: number; margin: number; ahead: number; misses: number }
-export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70, misses: 0 }
-export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 0.95, ahead: 40, misses: 0.35 }
+export type Driver = { see: number; aim: number; look: number; margin: number; ahead: number; misses: number; good: boolean }
+export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70, misses: 0, good: true }
+export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 0.95, ahead: 40, misses: 0.35, good: false }
 
 type Seen = { x: number; z: number; speed: number }
 
-/** One driver's moves for a race: give it the state each step, it answers steer, gas, brake. */
-export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0 | 1; gas: boolean; brake: boolean } {
+export type Move = { steer: -1 | 0 | 1; gas: boolean; brake: boolean; nitro: boolean }
+
+/** One driver's moves for a race: give it the state each step, it answers steer, gas, brake, the turbo. */
+export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
   const past: Seen[] = []
   // what it has steered since what it sees: a driver knows what it has been pressing
   const moves: number[] = []
   let lane = 0, wobble = 0, n = seed
   const rnd = () => { n = (n * 1103515245 + 12345) % 2147483648; return n / 2147483648 }
   const missed = new Set<number>()
+  // when a casual driver presses A at the lights: whenever, from a second and a half on
+  let pressAt = -1
   return (s) => {
+    // the lights: A on the third red light (a good driver), whenever (a casual one)
+    if (s.phase === 'start') {
+      if (s.phaseTimer === 0) pressAt = d.good ? 2 * 60 + 8 : Math.round(90 + rnd() * 100)
+      return { steer: 0, gas: s.phaseTimer >= pressAt, brake: false, nitro: false }
+    }
+    // the garage: towards the improvement of the weakest point, then A (let go first, pressed again)
+    if (s.phase === 'garage' && s.garage) {
+      const g = s.garage, want = g.options.reduce((best, n, k) => (s.stats[n] < s.stats[g.options[best]] ? k : best), 0)
+      const tick = s.steps % 2 === 0
+      return { steer: want === g.pick || !tick ? 0 : want > g.pick ? 1 : -1, gas: want === g.pick && s.phaseTimer > 24 && tick, brake: false, nitro: false }
+    }
     past.push({ x: s.x, z: s.z, speed: s.speed })
     if (past.length > d.see + 1) past.shift()
     const seen = past[0]
@@ -54,7 +72,7 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     // the sharpest bend coming, and how fast it can be taken
     let worst = 0
     for (let k = 0; k < d.look; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, seen.z + k).curve))
-    const limit = bendLimit(worst, s.level) * RACING_TOP * d.margin
+    const limit = racingBendSpeed(s, worst) * d.margin
     // and no gas into a slower car right ahead, overlapping: anyone lifts and goes round it
     const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 0 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.58 && c.speed < seen.speed)
     const gas = seen.speed < limit && !stuck
@@ -69,7 +87,12 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => { steer: -1 | 0
     const steer: -1 | 0 | 1 = e > 0.03 ? 1 : e < -0.03 ? -1 : 0
     moves.push(steer * (1 / 30) * Math.min(1, share * 1.25))
     if (moves.length > d.see) moves.shift()
-    return { steer, gas, brake }
+    // the turbo: a good driver on a clear straight with half a gauge or more, a casual one once it is full
+    let clear = true
+    for (let k = 0; k < 80 && clear; k += 4) if (Math.abs(segmentOf(s.track, seen.z + k).curve) > 2) clear = false
+    const open = ![...s.rivals, ...s.traffic].some((c) => c.z > seen.z && c.z - seen.z < 50 && Math.abs(c.x - lane) < 0.62)
+    const nitro = s.phase === 'play' && s.turbo === 0 && (d.good ? s.boost >= 0.5 && clear && open : s.boost >= 0.99) && s.steps % 2 === 0
+    return { steer, gas, brake, nitro }
   }
 }
 
@@ -83,7 +106,7 @@ export function race(s: RacingState, d: Driver, seed = 7, maxSteps = 240 * 60): 
   for (let i = 0; i < maxSteps; i += 1) {
     const move = drive(s)
     const before = s.check
-    stepRacing(s, move.steer, move.gas, move.brake)
+    stepRacing(s, move.steer, move.gas, move.brake, move.nitro)
     if (s.heard.includes('thud') || s.heard.includes('clink')) knocks += 1
     if (s.heard.includes('slip')) skids += 1
     if (s.heard.includes('note') || s.heard.includes('power')) pickups += 1

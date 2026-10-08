@@ -431,14 +431,14 @@ export function farGround(d: Uint8ClampedArray, W: number, from: number, to: num
 /** One end of a stretch on the screen: the road's middle, its row, the scale (pixels a half width), and the row nearer ground hides from. */
 export type End = { x: number; y: number; u: number }
 
-/** A wall standing along the road, `off` half widths out, `high` tall, between a stretch's two ends: filled column by column, its colour by height. */
-export function wallPiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, colour: (t: number, x: number, y: number) => RGB): void {
+/** A wall standing along the road, `off` half widths out, `high` tall (`highB` at the far end, if it differs), between a stretch's two ends: filled column by column, its colour by height. */
+export function wallPiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, colour: (t: number, x: number, y: number) => RGB, highB = high): void {
   const xa = a.x + off * a.u, xb = b.x + off * b.u
   const from = Math.max(0, Math.round(Math.min(xa, xb))), to = Math.min(buffer.width - 1, Math.round(Math.max(xa, xb)))
   const d = buffer.data, W = buffer.width, bottom = Math.min(clip, buffer.height)
   for (let x = from; x <= to; x += 1) {
     const t = xb === xa ? 0 : (x - xa) / (xb - xa)
-    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - high * u, span = Math.max(1, foot - top)
+    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - (high + (highB - high) * t) * u, span = Math.max(1, foot - top)
     for (let y = Math.max(0, Math.round(top)); y < Math.min(bottom, Math.round(foot)); y += 1) { const rgb = colour((foot - y) / span, x, y), o = (y * W + x) * 4; d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2] }
   }
 }
@@ -466,14 +466,14 @@ export function rail(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, i: numbe
  * end) to `ub` (at the far end) laid along it, its rows up it, so it goes by
  * in perspective; its clear pixels left out; through the hour and the haze.
  */
-export function facadePiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, tex: PixelBuffer, ua: number, ub: number, tint: { rgb: RGB; by: number }): void {
+export function facadePiece(buffer: PixelBuffer, a: End, b: End, off: number, high: number, clip: number, tex: PixelBuffer, ua: number, ub: number, tint: { rgb: RGB; by: number }, highB = high): void {
   const xa = a.x + off * a.u, xb = b.x + off * b.u
   const from = Math.max(0, Math.round(Math.min(xa, xb))), to = Math.min(buffer.width - 1, Math.round(Math.max(xa, xb)))
   const d = buffer.data, s = tex.data, W = buffer.width, tw = tex.width, th = tex.height, bottom = Math.min(clip, buffer.height)
   const [tr, tg, tb] = tint.rgb, k = tint.by
   for (let x = from; x <= to; x += 1) {
     const t = xb === xa ? 0 : (x - xa) / (xb - xa)
-    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - high * u, span = Math.max(1, foot - top)
+    const foot = a.y + (b.y - a.y) * t, u = a.u + (b.u - a.u) * t, top = foot - (high + (highB - high) * t) * u, span = Math.max(1, foot - top)
     const col = Math.max(0, Math.min(tw - 1, Math.floor(ua + (ub - ua) * t)))
     for (let y = Math.max(0, Math.round(top)); y < Math.min(bottom, Math.round(foot)); y += 1) {
       const row = Math.max(0, Math.min(th - 1, Math.floor(((y - top) / span) * th))), o = (row * tw + col) * 4
@@ -500,14 +500,61 @@ export function shopSide(buffer: PixelBuffer, a: End, off: number, depth: number
   }
 }
 
-/** The cliff's rock along the land's side: in layers, lit at their tops, darker low down. */
-export function cliffPiece(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, band: number, clip: number, tier: Tier, fog: number): void {
-  const lit = tone('rockLit', tier, fog), r0 = tone('rock0', tier, fog), r1 = tone('rock1', tier, fog), dark = tone('rockDark', tier, fog)
-  wallPiece(buffer, a, b, side * 1.92, 4.2, clip, (t, x, y) => {
-    const layer = Math.floor(t * 9 + band * 0.5) % 3
-    const g = grain(x >> 1, y >> 1)
-    return t < 0.12 ? dark : layer === 0 && g > 0.4 ? lit : g > 0.55 ? r0 : r1
-  })
+/**
+ * How tall the rock stands at a stretch, in half widths: swelling and
+ * sinking slowly along the road, never the same twice, so its crest reads as
+ * a ridge of rock and not a ruled line.
+ */
+export function rockHeight(i: number, side: -1 | 1, base: number): number {
+  const k = i + (side < 0 ? 977 : 0)
+  const swell = 0.55 * Math.sin(k * 0.031) + 0.3 * Math.sin(k * 0.083 + 1.7) + 0.15 * Math.sin(k * 0.21 + 0.4)
+  return base * (0.8 + 0.2 * swell)
+}
+
+/** The coast's rock: the mountains' face in the cliff's own violets, its light and shade kept; made once. */
+let coastFace: PixelBuffer | null = null
+function coastRock(face: PixelBuffer): PixelBuffer {
+  if (coastFace) return coastFace
+  const out = new PixelBuffer(face.width, face.height, '#000000')
+  const ramp = [BASE.rockDark, BASE.rock1, BASE.rock0, BASE.rockLit, '#9a5a8a', '#b8789e'].map(hex)
+  for (let i = 0; i < face.data.length; i += 4) {
+    const l = (0.3 * face.data[i] + 0.59 * face.data[i + 1] + 0.11 * face.data[i + 2]) / 255
+    const c = ramp[Math.max(0, Math.min(ramp.length - 1, Math.floor(l * ramp.length * 1.1)))]
+    out.data[i] = c[0]; out.data[i + 1] = c[1]; out.data[i + 2] = c[2]; out.data[i + 3] = 255
+  }
+  coastFace = out
+  return out
+}
+
+/** Stretches of road one rock face's picture covers, along it. */
+const FACE_STRETCHES = 12
+
+/**
+ * The rock along the road — the coast's cliff, the mountains' gorge, the
+ * desert's mesas and canyon, on one side or both — as the owner's pictures
+ * have it: a piece of their rock face (`face-desert`, `face-mountain`, the
+ * coast's the mountains' in violet) laid along the road like the shops'
+ * fronts, going by in perspective, as tall as `rockHeight` says; its crest
+ * picked out, its foot in shadow. Before the picture has come, its colours in
+ * plain strata.
+ */
+export function cliffPiece(buffer: PixelBuffer, a: End, b: End, side: -1 | 1, band: number, clip: number, tier: Tier, fog: number, i = 0, base = 3.6): void {
+  const ha = rockHeight(i, side, base), hb = rockHeight(i + 1, side, base)
+  const art = racingArt(world === 'desert' ? 'face-desert' : 'face-mountain')
+  if (art) {
+    const tex = world === 'coast' ? coastRock(art) : art
+    // the face's columns along the road, the right way round on either side
+    const k = ((i % FACE_STRETCHES) + FACE_STRETCHES) % FACE_STRETCHES, ua = (k / FACE_STRETCHES) * tex.width, ub = ((k + 1) / FACE_STRETCHES) * tex.width
+    facadePiece(buffer, a, b, side * 1.92, ha, clip, tex, side > 0 ? tex.width - ua : ua, side > 0 ? tex.width - ub : ub, tintFor(tier, fog), hb)
+  } else {
+    const r0 = tone('rock0', tier, fog), r1 = tone('rock1', tier, fog)
+    wallPiece(buffer, a, b, side * 1.92, ha, clip, (t) => (Math.floor(t * 7) % 2 ? r0 : r1), hb)
+  }
+  // the crest picked out, the foot in shadow
+  const lit = tone('rockLit', tier, fog), dark = tone('rockDark', tier, fog)
+  wallPiece(buffer, { ...a, y: a.y - (ha - 0.08) * a.u }, { ...b, y: b.y - (hb - 0.08) * b.u }, side * 1.92, 0.08, clip, () => lit)
+  wallPiece(buffer, a, b, side * 1.92, 0.12, clip, () => dark)
+  void band
 }
 
 /** The tunnel at a stretch: its two walls and its vault, a light in the vault every eighth stretch. */

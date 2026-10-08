@@ -26,7 +26,7 @@ import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
-  racingHour, racingKmh, racingSunset, segmentOf, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
+  racingHour, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
 import {
   blocks, bottle, chevron, cliffPiece, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
@@ -67,7 +67,7 @@ const PALM_HIGH = 2.7
 const FLAT: RacingSegment = { curve: 0, y1: 0, y2: 0, zone: 'beach', things: [] }
 
 /** The traced pictures each world needs. */
-const WORLD_ART: Record<RacingWorld, RacingArtName[]> = { coast: ['playBack', 'palm'], mountain: ['far-mountain', 'pine', 'rock'], desert: ['far-desert', 'saguaro', 'rock'], city: ['far-city', 'palm'] }
+const WORLD_ART: Record<RacingWorld, RacingArtName[]> = { coast: ['playBack', 'palm', 'face-mountain'], mountain: ['far-mountain', 'pine', 'rock', 'face-mountain'], desert: ['far-desert', 'saguaro', 'butte', 'rock', 'face-desert'], city: ['far-city', 'palm'] }
 
 /** What runs along each side of each kind of road, left and right: the metal rail, the coast's concrete blocks, or nothing (the streets, the rock). */
 const FENCES: Record<RacingZone, [typeof rail | null, typeof rail | null]> = {
@@ -86,37 +86,38 @@ type Projected = { i: number; seg: RacingSegment; a: End; b: End; clip: number; 
 
 // ---------------------------------------------------------------- the controls
 
-/** The controls under (or beside) the board on a touch screen: the arrows left and right, A (gas) and B (brake). */
-export type RacingPad = { zone: Hit; left: Hit; right: Hit; gas: { cx: number; cy: number; r: number }; brake: { cx: number; cy: number; r: number } }
+/** The controls under (or beside) the board on a touch screen: the arrows left and right, A (gas), B (brake) and T (the turbo). */
+export type RacingPad = { zone: Hit; left: Hit; right: Hit; gas: { cx: number; cy: number; r: number }; brake: { cx: number; cy: number; r: number }; nitro: { cx: number; cy: number; r: number } }
 export function racingPadGeometry(layout: Layout, pad: Pad): RacingPad | null {
   if (pad === 'none') return null
   const { width, height } = playSize(layout, pad)
   const board = RACING_BOARD[layout]
   if (pad === 'side') {
     const x = board.width, a = 56, r = 30
-    return { zone: { x, y: HUD_HEIGHT, w: width - x, h: height - HUD_HEIGHT }, left: { x: x + 14, y: height - 24 - a, w: a, h: a }, right: { x: x + 24 + a, y: height - 24 - a, w: a, h: a }, gas: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 70, r }, brake: { cx: x + (width - x) / 2 - 30, cy: HUD_HEIGHT + 150, r } }
+    return { zone: { x, y: HUD_HEIGHT, w: width - x, h: height - HUD_HEIGHT }, left: { x: x + 14, y: height - 24 - a, w: a, h: a }, right: { x: x + 24 + a, y: height - 24 - a, w: a, h: a }, gas: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 70, r }, brake: { cx: x + (width - x) / 2 - 30, cy: HUD_HEIGHT + 150, r }, nitro: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 150, r: 22 } }
   }
   const y = HUD_HEIGHT + board.height, h = height - y
   const left = { x: 14, y: y + (h - (pad === 'big' ? 68 : 60)) / 2, w: pad === 'big' ? 68 : 60, h: pad === 'big' ? 68 : 60 }
   const right = { ...left, x: left.x + left.w + 10 }
   // B a little lower and further in, A further out and higher, as a thumb rests; in the tall band, one over the other's shoulder
   if (pad === 'big') {
-    const r = 34, gas = { cx: width - 16 - r, cy: y + h * 0.33, r }
-    return { zone: { x: 0, y, w: width, h }, left, right, gas, brake: { cx: gas.cx - r * 2 - 4, cy: y + h * 0.68, r } }
+    const r = 34, gas = { cx: width - 16 - r, cy: y + h * 0.33, r }, brake = { cx: gas.cx - r * 2 - 4, cy: y + h * 0.68, r }
+    return { zone: { x: 0, y, w: width, h }, left, right, gas, brake, nitro: { cx: brake.cx - 8, cy: y + h * 0.22, r: 22 } }
   }
   const r = 27
-  return { zone: { x: 0, y, w: width, h }, left, right, gas: { cx: width - 14 - r, cy: y + h / 2 - r * 0.35, r }, brake: { cx: width - 14 - r * 3.3, cy: y + h / 2 + r * 0.35, r } }
+  return { zone: { x: 0, y, w: width, h }, left, right, gas: { cx: width - 14 - r, cy: y + h / 2 - r * 0.35, r }, brake: { cx: width - 14 - r * 3.3, cy: y + h / 2 + r * 0.35, r }, nitro: { cx: right.x + right.w + 22 + 2, cy: y + h / 2 - 4, r: 20 } }
 }
 /** Which control a finger at (`x`, `y`) means: anywhere in their band counts, the nearest wins. */
-export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'right' | 'gas' | 'brake' | null {
+export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'right' | 'gas' | 'brake' | 'nitro' | null {
   const { zone } = pad
   if (x < zone.x || y < zone.y || x >= zone.x + zone.w || y >= zone.y + zone.h) return null
   const d = (cx: number, cy: number) => Math.hypot(x - cx, y - cy)
-  const parts: Array<['left' | 'right' | 'gas' | 'brake', number]> = [
+  const parts: Array<['left' | 'right' | 'gas' | 'brake' | 'nitro', number]> = [
     ['left', d(pad.left.x + pad.left.w / 2, pad.left.y + pad.left.h / 2)],
     ['right', d(pad.right.x + pad.right.w / 2, pad.right.y + pad.right.h / 2)],
     ['gas', d(pad.gas.cx, pad.gas.cy) - pad.gas.r * 0.3],
     ['brake', d(pad.brake.cx, pad.brake.cy) - pad.brake.r * 0.3],
+    ['nitro', d(pad.nitro.cx, pad.nitro.cy) - pad.nitro.r * 0.3],
   ]
   return parts.sort((a, b) => a[1] - b[1])[0][0]
 }
@@ -142,12 +143,20 @@ function roundButton(buffer: PixelBuffer, b: { cx: number; cy: number; r: number
   drawText7(buffer, label, Math.round(b.cx - w / 2) + 1, Math.round(b.cy - 3.5 * scale) + push + 1, INK, scale, true)
   drawText7(buffer, label, Math.round(b.cx - w / 2), Math.round(b.cy - 3.5 * scale) + push, CREAM, scale, true)
 }
-/** The controls, the ones held pressed down. */
-function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: RacingView['pressed'] = {}): void {
+/** The controls, the ones held pressed down; T, the turbo, lit as far as its gauge is full, dull below what lets it go. */
+function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: RacingView['pressed'] = {}, boost = 0): void {
   arrowButton(buffer, pad.left, -1, !!pressed.left, accent)
   arrowButton(buffer, pad.right, 1, !!pressed.right, accent)
   roundButton(buffer, pad.brake, 'B', '#3a7aff', !!pressed.brake)
   roundButton(buffer, pad.gas, 'A', '#2ac05a', !!pressed.gas)
+  const n = pad.nitro, ready = boost >= 0.3
+  roundButton(buffer, n, 'T', ready ? '#ffb020' : '#6a5a3a', !!pressed.nitro)
+  // the gauge round it, filling clockwise from the top
+  for (let k = 0; k < 48; k += 1) {
+    if (k / 48 > boost) break
+    const a = -Math.PI / 2 + (k / 48) * Math.PI * 2
+    buffer.disc(n.cx + Math.cos(a) * (n.r + 4), n.cy + Math.sin(a) * (n.r + 4), 1.6, boost >= 1 ? '#fff3a0' : '#ffd02a')
+  }
 }
 
 // ---------------------------------------------------------------- the bar and the words
@@ -192,7 +201,7 @@ function said(buffer: PixelBuffer, text: string, cx: number, y: number, color: s
 const surfaces = new Map<string, PixelBuffer>()
 
 /** What the play screen shows over the race: the pause card (RESUME 0, QUIT 1), or RESUME alone; where the controls go; which of them are held. */
-export type RacingView = { pause?: 0 | 1 | null; pad?: Pad; resumeOnly?: boolean; pressed?: { left?: boolean; right?: boolean; gas?: boolean; brake?: boolean } }
+export type RacingView = { pause?: 0 | 1 | null; pad?: Pad; resumeOnly?: boolean; pressed?: { left?: boolean; right?: boolean; gas?: boolean; brake?: boolean; nitro?: boolean } }
 
 export function renderRacingGame(s: RacingState, accent: string, view: RacingView = {}): PixelBuffer {
   const layout = s.layout
@@ -207,7 +216,7 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   // the board under the bar, the controls beside or under it (their band cleared first)
   for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width + 0) * 4)
   const controls = racingPadGeometry(layout, pad)
-  if (controls) controlsOn(out, layout, pad, controls, accent, view.pressed ?? {}, W, H)
+  if (controls) controlsOn(out, layout, pad, controls, accent, view.pressed ?? {}, W, H, s.boost)
   racingHud(out, accent, s)
   words(out, s, accent, W, H)
   if (s.phase === 'won' && s.single) playCard(out, layout, accent, 'LEVEL CLEAR', [])
@@ -218,13 +227,14 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
 /** The controls' band as last drawn, kept while no button changes. */
 const bands = new Map<string, { key: string; rows: Array<[number, Uint8ClampedArray]> }>()
 /** The controls' band: cleared to ink and the buttons drawn, or as kept from before. */
-function controlsOn(out: PixelBuffer, layout: Layout, pad: Pad, controls: RacingPad, accent: string, pressed: NonNullable<RacingView['pressed']>, W: number, H: number): void {
+function controlsOn(out: PixelBuffer, layout: Layout, pad: Pad, controls: RacingPad, accent: string, pressed: NonNullable<RacingView['pressed']>, W: number, H: number, boost: number): void {
   const area = out.width > W ? { x: W, y: HUD_HEIGHT, w: out.width - W, h: out.height - HUD_HEIGHT } : { x: 0, y: HUD_HEIGHT + H, w: out.width, h: out.height - HUD_HEIGHT - H }
-  const key = `${accent}|${pressed.left ? 1 : 0}${pressed.right ? 1 : 0}${pressed.gas ? 1 : 0}${pressed.brake ? 1 : 0}`, where = `${layout}|${pad}`
+  const gauge = Math.floor(boost * 24) / 24
+  const key = `${accent}|${pressed.left ? 1 : 0}${pressed.right ? 1 : 0}${pressed.gas ? 1 : 0}${pressed.brake ? 1 : 0}${pressed.nitro ? 1 : 0}|${gauge}`, where = `${layout}|${pad}`
   const kept = bands.get(where)
   if (kept && kept.key === key) { for (const [o, row] of kept.rows) out.data.set(row, o); return }
   inkOver(out, area.x, area.y, area.w, area.h)
-  drawPad(out, controls, accent, pressed)
+  drawPad(out, controls, accent, pressed, gauge)
   const rows: Array<[number, Uint8ClampedArray]> = []
   for (let y = area.y; y < area.y + area.h; y += 1) { const o = (y * out.width + area.x) * 4; rows.push([o, out.data.slice(o, o + area.w * 4)]) }
   bands.set(where, { key, rows })
@@ -271,7 +281,7 @@ function farView(board: PixelBuffer, tier: Tier, sinking: number, horizon: numbe
 }
 
 /** The things to draw on each stretch ahead: what lies on the road, the rivals and the traffic ahead of the player. */
-type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind | RacingTrafficModel; traffic: boolean; z: number; x: number; turn: -1 | 0 | 1; look: number; speed: number }> }
+type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind | RacingTrafficModel; traffic: boolean; z: number; x: number; turn: -1 | 0 | 1; look: number; speed: number; boost?: boolean }> }
 
 /** Which way a car turns on the screen: toward the lane it is heading for, else with a sharp bend. */
 const turnOf = (lane: number, x: number, curve: number): -1 | 0 | 1 => (Math.abs(lane - x) > 0.04 ? (lane > x ? 1 : -1) : Math.abs(curve) > 2.5 ? (curve > 0 ? 1 : -1) : 0)
@@ -328,7 +338,7 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   // what lies on each stretch and the cars on it, ahead of the player
   const cargo: Cargo[] = rows.map(() => ({ items: [], cars: [] }))
   for (const it of s.items) { if (it.taken) continue; const n = Math.floor(it.z) - b0; if (n >= 0 && n < rows.length) cargo[n].items.push(it) }
-  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, traffic: false, look: 0, z: r.z, x: r.x, speed: r.speed, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve) }) }
+  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, traffic: false, look: 0, z: r.z, x: r.x, speed: r.speed, boost: r.turbo > 0, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve) }) }
   for (const t of s.traffic) { const n = Math.floor(t.z) - b0; if (n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, traffic: true, z: t.z, x: t.x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve) }) }
   // the lights on after sunset; in the city, always: it is lit up from the start
   const lit = world === 'city' || tier >= 0.55
@@ -343,8 +353,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       tunnelPiece(board, a, b, i, clip, tier, fog)
     } else {
       // the rock on the land's side, on both sides in the canyon; the rails and the blocks
-      if (ROCK_ZONES.has(g.zone)) cliffPiece(board, a, b, 1, band, clip, tier, fog)
-      if (g.zone === 'canyon') cliffPiece(board, a, b, -1, band, clip, tier, fog)
+      if (ROCK_ZONES.has(g.zone)) cliffPiece(board, a, b, 1, band, clip, tier, fog, i, g.zone === 'cliff' ? 3.8 : g.zone === 'gorge' ? 3.6 : 3.0)
+      if (g.zone === 'canyon') cliffPiece(board, a, b, -1, band, clip, tier, fog, i, 2.8)
       const [left, right] = FENCES[g.zone]
       if (left) left(board, a, b, -1, i, clip, tier, fog)
       if (right) right(board, a, b, 1, i, clip, tier, fog)
@@ -377,9 +387,12 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
         drawArt(board, pic, cx - w / 2, a.y - h, w, h, clip, thing.flip, rgb, by, sway)
       } else if (thing.kind === 'globe') { if (fog < 9) lampPool(board, a.x + thing.x * 0.8 * a.u, a.y, a.u, clip); globeLamp(board, cx, a.y, a.u, clip, tier, fog, lit && fog < 13) }
       else if (thing.kind === 'lights') trafficLights(board, a, clip, tier, fog, frame, thing.look)
-      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
+      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
       else lively(board, thing.kind, thing.look, i, cx, a.y, a.u, thing.flip, clip, tier, fog, frame, lit)
     }
+    // past the line, where the road divides: a striped barrier down the middle, the gantry with the two worlds
+    if (s.routes && i > s.finish + FORK_FROM) median(board, a, b, i, clip, tier, fog)
+    if (s.routes && i === s.finish + FORK_SIGN) forkGantry(board, a, clip, s.routes, tier, fog)
     if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
     if (s.checks.includes(i)) gantry(board, a, clip, 'check', 0, accent, tier, fog)
     if (i === s.finish) gantry(board, a, clip, 'finish', 0, accent, tier, fog)
@@ -387,7 +400,12 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       const at = place(p, c.z, c.x)
       const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
       if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
-      else drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+      else {
+        drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+        // a rival's own turbo: flames out of its exhausts
+        const w = RACING_CAR_WIDTH * at.u
+        if (c.boost && w > 6 && at.y < clip) for (const side of [-1, 1]) flames(board, at.x + side * w * 0.28, at.y - bob - 3, w * 0.14, frame + side)
+      }
     }
   }
   // the player's car: turning as it steers, bouncing at speed, shaken by a knock; its lights on the road after dark
@@ -407,6 +425,18 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     puff(board, cx + width * 0.28, v.foot - 6, 1, frame >> 1, 2)
   }
   if (s.skid > 0) for (const side of [-1, 1]) glow(board, cx + side * width * 0.4, v.foot - 2, width * 0.18, '#c81a1a', 0.5)
+  // the wheels spinning after a start too early: smoke all round them
+  if (s.spin > 0) for (let k = 0; k < 3; k += 1) for (const side of [-1, 1]) puff(board, cx + side * width * (0.3 + k * 0.08), v.foot - 4, side, frame + k * 2, k, '#d8d4e0', 0.75)
+  // in a car's slipstream: the air rushing past, lines along the sides
+  if (s.drafting && s.phase === 'play') slipstream(board, frame, horizon)
+  // a rival close behind, out of sight: a mark at the foot of the screen, in its colour, on its side
+  for (const r of s.rivals) {
+    const behind = s.z - r.z
+    if (behind <= 2 || behind > 45 || r.z > camZ + 2) continue
+    const tx = W / 2 + (r.x - s.x) * v.half * 0.9, near = 1 - behind / 45, c = RIVAL_COLOUR[r.kind]
+    const size = 4 + Math.round(near * 4), ty = H - 3
+    if ((frame >> 3) % 2 || near > 0.6) for (let k = 0; k < size; k += 1) board.rect(Math.round(tx - k), ty - size + k, k * 2 + 1, 1, c)
+  }
   // a car just behind, nearer the eye than the player's
   for (const r of s.rivals) if (r.z < s.z && r.z > camZ + 2) { const n = Math.floor(r.z) - b0, p = rows[n]; if (p) { const at = place(p, r.z, r.x); drawCar(board, r.kind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: turnOf(r.lane, r.x, 0), tier, fog: 0, lights: night }) } }
   if (tier === 3) { if (world === 'mountain') snow(board, frame); else if (world === 'desert') sandstorm(board, frame); else storm(board, frame, horizon) }
@@ -483,6 +513,64 @@ function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, 
     if (Math.floor(z) !== i) continue
     const foot = place(p, z, side * SHOP_FRONT)
     glow(board, foot.x, foot.y - (front.height - g.y) * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.3, p.clip)
+  }
+}
+
+/** Where, past the line, the road divides, and where the gantry with the two worlds stands, in stretches. */
+const FORK_FROM = 20
+const FORK_SIGN = 75
+/** Each world's name and colour, on the fork's signs. */
+const WORLD_SIGN: Record<RacingWorld, { name: string; colour: string }> = { coast: { name: 'COAST', colour: '#1a8ab0' }, mountain: { name: 'MOUNTAINS', colour: '#2e8a48' }, desert: { name: 'DESERT', colour: '#d0702e' }, city: { name: 'CITY', colour: '#7a3ae0' } }
+/** Each rival's colour, for its mark when it is close behind. */
+const RIVAL_COLOUR: Record<RacingCarKind, string> = { rosso: '#ff3a2a', giallo: '#ffd23f', burger: '#ff9a3a' }
+
+/** Fills a rectangle of the board (fractions allowed), no row at or under `clip`. */
+function block(board: PixelBuffer, x: number, y: number, w: number, h: number, colour: string, clip: number): void {
+  const x0 = Math.max(0, Math.round(x)), x1 = Math.min(board.width, Math.max(Math.round(x + w), x0 + 1)), y0 = Math.max(0, Math.round(y)), y1 = Math.min(clip, board.height, Math.round(y + h))
+  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width
+  for (let yy = y0; yy < y1; yy += 1) for (let xx = x0, t = (yy * W + x0) * 4; xx < x1; xx += 1, t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
+}
+
+/** The barrier down the middle where the road divides: a low block at each stretch, yellow and black in turn, through the hour. */
+function median(board: PixelBuffer, a: End, b: End, i: number, clip: number, tier: Tier, fog: number): void {
+  const w = 0.14 * a.u, h = 0.26 * a.u
+  if (h < 1) return
+  const { rgb, by } = tintFor(tier, fog), paint = (c: string) => mix(c, `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`, by)
+  block(board, a.x - w / 2, a.y - h, w, h, paint(Math.floor(i / 2) % 2 ? '#ffd23f' : '#1a1a22'), clip)
+  block(board, a.x - w / 2, a.y - h, w, Math.max(1, h * 0.18), paint('#f6f2e8'), clip)
+  void b
+}
+
+/** The gantry over the fork: its posts, and over each half of the road a panel with the world it leads to and an arrow. */
+function forkGantry(board: PixelBuffer, p: End, clip: number, routes: [RacingWorld, RacingWorld], tier: Tier, fog: number): void {
+  const u = p.u, top = p.y - 2.3 * u, panel = Math.max(3, 0.5 * u), post = Math.max(1, 0.08 * u)
+  const { rgb, by } = tintFor(tier, fog), paint = (c: string) => mix(c, `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`, by * 0.6)
+  for (const x of [-1.95, 0, 1.95]) block(board, p.x + x * u - post / 2, top, post, p.y - top, paint('#3a3a4a'), clip)
+  routes.forEach((world, k) => {
+    const side = k === 0 ? -1 : 1, x0 = p.x + (side < 0 ? -1.9 : 0.1) * u, w = 1.8 * u
+    if (top + panel >= clip) return
+    block(board, x0 - 1, top - 1, w + 2, panel + 2, paint('#141420'), clip)
+    block(board, x0, top, w, panel, paint(WORLD_SIGN[world].colour), clip)
+    const label = `${side < 0 ? '< ' : ''}${WORLD_SIGN[world].name}${side > 0 ? ' >' : ''}`
+    const scale = text7Width(label, 2, true) < w - 6 && panel >= 18 ? 2 : 1
+    if (text7Width(label, scale, true) < w - 4 && panel >= 9 && top + panel < clip) drawText7(board, label, Math.round(x0 + (w - text7Width(label, scale, true)) / 2), Math.round(top + (panel - 7 * scale) / 2), '#faf6ec', scale, true)
+  })
+}
+
+/** The air rushing past in a slipstream: pale lines along both sides of the screen, flowing toward the viewer. */
+function slipstream(board: PixelBuffer, frame: number, horizon: number): void {
+  const W = board.width, H = board.height, d = board.data
+  for (let k = 0; k < 20; k += 1) {
+    const side = k % 2 ? 1 : -1, lane = (k >> 1) / 10
+    const t = ((frame * 0.06 + k * 0.37) % 1)
+    const x = W / 2 + side * W * (0.3 + lane * 0.2 + t * 0.25), y = horizon + (H - horizon) * (0.15 + t * 0.85)
+    const len = 6 + t * 18
+    for (let j = 0; j < len; j += 1) {
+      const px = Math.round(x + side * j * 0.8), py = Math.round(y + j * 0.5)
+      if (px < 0 || px >= W || py < 0 || py >= H) continue
+      const o = (py * W + px) * 4, f = 0.8 * (1 - j / len)
+      d[o] += (240 - d[o]) * f; d[o + 1] += (244 - d[o + 1]) * f; d[o + 2] += (255 - d[o + 2]) * f
+    }
   }
 }
 
@@ -563,7 +651,7 @@ function celebrate(board: PixelBuffer, t: number, level: number, horizon: number
 function scenery(board: PixelBuffer, thing: RacingThing, i: number, a: End, clip: number, tier: Tier, fog: number, frame: number, lit: boolean): void {
   const kind = thing.kind as keyof typeof SCENERY_HIGH
   let pic: PixelBuffer | null
-  if (kind === 'pine' || kind === 'saguaro' || kind === 'rock') pic = racingArt(kind)
+  if (kind === 'pine' || kind === 'saguaro' || kind === 'rock' || kind === 'butte') pic = racingArt(kind)
   else if (kind === 'redrock') { const rock = racingArt('rock'); pic = rock ? redRock(rock) : null }
   else if (kind === 'shrub') pic = shrubPicture()
   else if (kind === 'tree') pic = treePicture(thing.look)
@@ -626,31 +714,108 @@ function storm(board: PixelBuffer, frame: number, horizon: number): void {
 /** The words over the board: the level and the lights at the start, GO!, a checkpoint, the stopwatch or the turbo just taken, GOAL! and its points, TIME UP. */
 function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: number): void {
   const top = HUD_HEIGHT, mid = top + Math.round(H * 0.36)
+  if (s.phase === 'garage') { garageCard(out, s, accent, W, H); return }
   if (s.phase === 'start') {
     arcadeText(out, `LEVEL ${String(s.level).padStart(2, '0')}`, W / 2, top + 12, 3, accent)
     if (s.phaseTimer >= 20) said(out, String(3 - Math.floor(s.phaseTimer / 60)), W / 2, top + 46, CREAM, 5)
+    // how to start well, over the first levels
+    if (s.level <= 3 && s.phaseTimer >= 20) said(out, 'PRESS A ON 1: TURBO START', W / 2, top + 96, '#ffd23f', 1)
+    gauge(out, s, top)
     return
   }
-  if (s.phase === 'play' && s.phaseTimer < 50 && s.z < 60) said(out, 'GO!', W / 2, top + 46, '#3aff6a', 5)
+  if (s.phase === 'play' && s.phaseTimer < 50 && s.z < 60 && s.launch === 'none') said(out, 'GO!', W / 2, top + 46, '#3aff6a', 5)
   else if (s.phase === 'goal') {
     arcadeText(out, 'GOAL!', W / 2, mid - 6, 4, accent)
     if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE +${s.bonus.place}`, W / 2, mid + 36, s.bonus.rank === 1 ? '#ffd23f' : CREAM, 2)
     if (s.phaseTimer > 70 && s.bonus) said(out, `TIME +${s.bonus.time}`, W / 2, mid + 56, CREAM, 2)
+    // the road divides: steer into a side, each side's world named on it
+    if (s.routes) {
+      said(out, 'PICK YOUR ROAD', W / 2, top + 8, '#faf6ec', 1)
+      const [left, right] = s.routes, on = s.x < 0 ? 0 : 1
+      said(out, `< ${WORLD_SIGN[left].name}`, W * 0.27, top + 22, on === 0 && (s.steps >> 3) % 2 ? '#ffffff' : mix(WORLD_SIGN[left].colour, '#ffffff', 0.35), 2)
+      said(out, `${WORLD_SIGN[right].name} >`, W * 0.73, top + 22, on === 1 && (s.steps >> 3) % 2 ? '#ffffff' : mix(WORLD_SIGN[right].colour, '#ffffff', 0.35), 2)
+    }
     return
   } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
   if (s.news && (s.news.steps > 20 || (s.news.steps >> 2) % 2 === 0)) said(out, s.news.text, W / 2, top + 40, s.news.text.startsWith('CHECK') ? '#3aff6a' : '#ffd23f', W >= 400 ? 3 : 2)
-  // the turbo: the bottle and what is left of it, under the bar
-  if (s.turbo > 0) {
-    out.blit(MUSTARD, 10, top + 6, BONUS_PALETTE, { scale: 2 })
-    out.rect(28, top + 14, 40, 4, '#2a2a3a')
-    out.rect(28, top + 14, Math.max(1, Math.round((40 * s.turbo) / 240)), 4, '#ffd02a')
+  gauge(out, s, top)
+  // the brushes, the overtakes, the turbo ready: small, over the car, the latest lowest, rising as they fade
+  s.pops.forEach((p, k) => {
+    const rise = Math.round((70 - p.steps) * 0.25), y = top + Math.round(H * 0.6) - (s.pops.length - 1 - k) * 12 - rise
+    if (p.steps > 12 || (p.steps >> 1) % 2 === 0) said(out, p.text, W / 2, y, p.colour, 1)
+  })
+}
+
+/** The turbo's gauge under the bar: the mustard bottle, dull until the turbo can be let go, and the gauge — or, while the turbo runs, what is left of it. */
+function gauge(out: PixelBuffer, s: RacingState, top: number): void {
+  const full = s.boost >= 1, ready = s.boost >= 0.3
+  out.blit(MUSTARD, 10, top + 6, ready ? BONUS_PALETTE : { ...BONUS_PALETTE, r: '#6a5a3a', R: '#4a3e2a', P: '#8a7a5a' }, { scale: 2 })
+  out.rect(28, top + 13, 42, 6, '#14141c')
+  out.rect(29, top + 14, 40, 4, '#2a2a3a')
+  if (s.turbo > 0) out.rect(29, top + 14, Math.max(1, Math.min(40, Math.round((40 * s.turbo) / 240))), 4, (s.steps >> 2) % 2 ? '#ff7a1a' : '#ffd02a')
+  else if (s.boost > 0) out.rect(29, top + 14, Math.max(1, Math.round(40 * s.boost)), 4, full && (s.steps >> 3) % 2 ? '#fff3a0' : ready ? '#ffd02a' : '#a08a3a')
+  // the threshold that lets it go
+  out.rect(29 + 12, top + 12, 1, 8, '#faf6ec')
+}
+
+/** Each improvement's name and colour, in the garage and on the title. */
+export const STAT_LOOK: Record<RacingStat, { name: string; colour: string }> = {
+  speed: { name: 'SPEED', colour: '#ff5a4a' }, accel: { name: 'ACCEL', colour: '#3aff6a' }, grip: { name: 'GRIP', colour: '#3af0ff' }, turbo: { name: 'TURBO', colour: '#ffd02a' },
+}
+
+/** Where the garage's three improvements stand on the screen (the bar included), for drawing them and for a finger. */
+function garageBoxes(layout: Layout, n: number): Hit[] {
+  const { width: W, height: H } = RACING_BOARD[layout]
+  const bw = Math.min(118, Math.floor((W - 24 - (n - 1) * 8) / n)), bh = 64, y = HUD_HEIGHT + Math.round(H * 0.3)
+  const x0 = Math.round((W - (n * bw + (n - 1) * 8)) / 2)
+  return Array.from({ length: n }, (_, k) => ({ x: x0 + k * (bw + 8), y, w: bw, h: bh }))
+}
+/** Which of the garage's improvements a finger at (`x`, `y`) is on, if any. */
+export function racingGarageAt(layout: Layout, x: number, y: number, n = 3): number | null {
+  const k = garageBoxes(layout, n).findIndex((b) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h)
+  return k < 0 ? null : k
+}
+
+/** One of the car's points as a row of pips: those it has, the one an improvement would add blinking. */
+function pips(out: PixelBuffer, x: number, y: number, have: number, colour: string, adding: boolean, frame: number): void {
+  for (let k = 0; k < STAT_MAX; k += 1) {
+    const on = k < have, next = adding && k === have
+    out.rect(x + k * 9, y, 7, 6, on ? colour : next && (frame >> 3) % 2 ? mix(colour, '#ffffff', 0.4) : '#2a2a3a')
   }
+}
+
+/** The garage between two levels: three improvements of the car to pick from, the one pointed at lit, the car's points under them. */
+function garageCard(out: PixelBuffer, s: RacingState, accent: string, W: number, H: number): void {
+  const g = s.garage
+  if (!g) return
+  out.shade(0, HUD_HEIGHT, W, H, 0.6)
+  const top = HUD_HEIGHT
+  arcadeText(out, 'PIT STOP', W / 2, top + 14, 3, accent)
+  said(out, 'PICK AN UPGRADE', W / 2, top + 44, CREAM, 1)
+  garageBoxes(s.layout, g.options.length).forEach((b, k) => {
+    const stat = g.options[k], look = STAT_LOOK[stat], on = k === g.pick
+    out.rect(b.x - 2, b.y - 2 - (on ? 3 : 0), b.w + 4, b.h + 4, on ? accent : '#3a3a4a')
+    out.rect(b.x, b.y - (on ? 3 : 0), b.w, b.h, on ? '#1c1c2c' : '#14141e')
+    const y = b.y - (on ? 3 : 0)
+    said(out, look.name, b.x + b.w / 2, y + 10, on ? look.colour : dim(look.colour, 0.65), 2)
+    said(out, '+1', b.x + b.w / 2, y + 36, on ? CREAM : GREY, 2)
+  })
+  // the car's points, the one pointed at about to grow
+  const rows = RACING_STATS.length, y0 = top + Math.round(H * 0.3) + 80, x0 = Math.round(W / 2 - (44 + STAT_MAX * 9) / 2)
+  RACING_STATS.forEach((stat, k) => {
+    const look = STAT_LOOK[stat], y = y0 + k * 14
+    drawText(out, look.name, x0, y, look.colour)
+    pips(out, x0 + 44, y, s.stats[stat], look.colour, g.options[g.pick] === stat, s.steps)
+  })
+  if (y0 + rows * 14 + 12 < top + H) said(out, '< >  CHOOSE    A  TAKE', W / 2, y0 + rows * 14 + 6, GREY, 1)
 }
 
 // ---------------------------------------------------------------- a moment of play, for the gallery
 
 /** A driver for the gallery's moment of play: gas held, toward its lane, lifting before the sharp bends. */
 function demoMove(s: RacingState): { steer: -1 | 0 | 1; gas: boolean } {
+  // the lights: A on the third, a perfect start
+  if (s.phase === 'start') return { steer: 0, gas: s.phaseTimer >= 125 }
   let worst = 0
   for (let k = 0; k < 40; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, s.z + k).curve))
   const limit = worst < 1e-6 ? 1 : Math.min(1, Math.sqrt(1 / (0.3 * worst)))

@@ -23,9 +23,9 @@ export type SoundName =
   | 'bite' | 'fries' | 'shake' | 'donut' | 'gold' | 'crash'
   | 'item' | 'sauce' | 'slip' | 'coin' | 'note' | 'bundle' | 'card' | 'caught'
   | 'squirt' | 'pop' | 'clink' | 'power' | 'hurt' | 'rip' | 'whoosh' | 'thud' | 'boom'
-  | 'beep' | 'go'
+  | 'beep' | 'go' | 'engine'
   | 'level' | 'over' | 'winner'
-export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'beep', 'go', 'level', 'over', 'winner']
+export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'beep', 'go', 'engine', 'level', 'over', 'winner']
 
 /** A diner's shuffle for EATER, a convenience store's bossa for CATCHER, a fifties film from space for ATTACKS, a drive down the coast at sunset for RACING. */
 export type TuneName = 'diner' | 'store' | 'mars' | 'coast'
@@ -328,6 +328,13 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
     m.tone({ at: 0, dur: 0.48, freq: hz('A6'), wave: 'pulse', duty: 0.5, gain: 0.38, release: 0.08 })
     m.tone({ at: 0, dur: 0.48, freq: hz('A5'), wave: 'triangle', gain: 0.3, release: 0.08 })
   } },
+  // RACING's engine: a buzzing growl to be looped and played faster as the car goes — half a second of a 60 Hz pulse, its octave and a low rumble,
+  // whole periods of each so the loop has no seam (rendered a second long, the second half kept, once the filters have settled)
+  engine: { seconds: 1, peak: SOUND_PEAK * 0.42, build: (m) => {
+    m.tone({ at: 0, dur: 1, freq: 60, wave: 'pulse', duty: 0.3, gain: 0.4, attack: 0, release: 0, lowpass: 1100 })
+    m.tone({ at: 0, dur: 1, freq: 120, wave: 'pulse', duty: 0.5, gain: 0.18, attack: 0, release: 0, lowpass: 900 })
+    m.tone({ at: 0, dur: 1, freq: 30, wave: 'triangle', gain: 0.35, attack: 0, release: 0 })
+  } },
   // a level won: up the chord
   level: { seconds: 0.75, peak: JINGLE_PEAK, build: (m) => {
     const up = ['C5', 'E5', 'G5', 'C6']
@@ -360,7 +367,9 @@ export function renderSound(name: SoundName): Float32Array {
   const spec = SOUNDS[name]
   const mix = new Mix(spec.seconds)
   spec.build(mix)
-  return mix.finish(spec.peak)
+  const out = mix.finish(spec.peak)
+  // the engine's loop: its second half, steady
+  return name === 'engine' ? out.slice(out.length / 2) : out
 }
 
 // ——— the tunes ———

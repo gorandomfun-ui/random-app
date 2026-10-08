@@ -33,6 +33,8 @@ export type GameSounds = {
   play: (name: SoundName) => void
   /** Whether the tune should be heard now: said at every frame, acted on only when it changes. */
   tune: (on: boolean) => void
+  /** RACING's engine: how fast its loop plays (its pitch), or null for silence; said at every frame. */
+  engine: (rate: number | null) => void
   /** To be called during a touch or a key: an iPhone lets a player start only after one. */
   touch: () => void
   dispose: () => void
@@ -122,6 +124,18 @@ function livePlayers(game: GameName): GameSounds {
   }
   let timer = window.setTimeout(warm, 300)
 
+  // the engine: a loop played faster or slower as the car goes
+  let motor: AudioBufferSourceNode | null = null
+  let motorLevel: GainNode | null = null
+  const quiet = () => {
+    if (!motor || !motorLevel) return
+    const context = motorLevel.context
+    motorLevel.gain.setTargetAtTime(0, context.currentTime, 0.04)
+    motor.stop(context.currentTime + 0.2)
+    motor = null
+    motorLevel = null
+  }
+
   return {
     play(name) {
       if (silent()) return
@@ -137,8 +151,26 @@ function livePlayers(game: GameName): GameSounds {
       if (!want) { stop(); return }
       if (!source && performance.now() - tried > 1000) start()
     },
+    engine(rate) {
+      if (rate == null || silent() || !alive) { quiet(); return }
+      const context = gameSoundContext()
+      if (!context) return
+      if (!motor) {
+        const gain = context.createGain()
+        gain.gain.setValueAtTime(0, context.currentTime)
+        gain.gain.setTargetAtTime(1, context.currentTime, 0.08)
+        const node = context.createBufferSource()
+        node.buffer = bufferOf(context, 'engine', soundSamples('engine'))
+        node.loop = true
+        node.connect(gain).connect(context.destination)
+        node.start()
+        motor = node
+        motorLevel = gain
+      }
+      motor.playbackRate.setTargetAtTime(rate, context.currentTime, 0.03)
+    },
     touch() { tried = 0 },
-    dispose() { alive = false; want = false; window.clearTimeout(timer); stop() },
+    dispose() { alive = false; want = false; window.clearTimeout(timer); stop(); quiet() },
   }
 }
 
@@ -157,6 +189,10 @@ function filePlayers(game: GameName): GameSounds {
   for (const name of sounds) players.set(name, Array.from({ length: TWICE.has(name) ? 2 : 1 }, () => take(soundFile(name))))
   const music = take(tuneFile(tune))
   music.loop = true
+  // RACING's engine, a loop played faster or slower, its pitch with it
+  const motor = game === 'racing' ? take(soundFile('engine')) : null
+  if (motor) { motor.loop = true; const m = motor as HTMLAudioElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean }; m.preservesPitch = false; m.webkitPreservesPitch = false }
+  let motorRate = 1, motorTried = 0
   const met = new Set<HTMLAudioElement>()
   let want = false, tried = 0
 
@@ -178,12 +214,21 @@ function filePlayers(game: GameName): GameSounds {
       if (!want) { if (!music.paused) music.pause(); return }
       if (music.paused && performance.now() - tried > 1000) start()
     },
+    engine(rate) {
+      if (!motor) return
+      if (rate == null || silent()) { if (!motor.paused) motor.pause(); return }
+      const next = Math.max(0.5, Math.min(2, rate))
+      // the rate changed by a little or more: a phone does not like being told every frame
+      if (Math.abs(next - motorRate) > 0.02) { motorRate = next; motor.playbackRate = next }
+      if (motor.paused && performance.now() - motorTried > 1000) { motorTried = performance.now(); void motor.play().catch(() => undefined) }
+    },
     touch() {
       // every player this game has not met yet is started and stopped at once, silently, during the touch
       for (const audio of all) {
         if (met.has(audio)) continue
         met.add(audio)
         if (audio === music && want) { start(); continue }
+        if (audio === motor) { motorTried = 0 }
         audio.muted = true
         audio.play().then(
           () => { if (!(audio === music && want)) { audio.pause(); audio.currentTime = 0 } audio.muted = false },
