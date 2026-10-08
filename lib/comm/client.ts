@@ -143,10 +143,25 @@ export async function screenshotOf(element: HTMLElement): Promise<Blob | null> {
   try { return await toBlob(element, { pixelRatio: ratio, cacheBust: true, backgroundColor: '#191916' }) } catch { return null }
 }
 
-/** True when the browser can film its own tab (Chrome and Edge on a computer). */
+/**
+ * True when the browser can film its own tab with its sound: Chrome and Edge
+ * on a computer. Safari offers a window or the screen, without the tab's
+ * sound, and holds the player back; Firefox has no tab capture either.
+ */
 export function canCaptureTab(): boolean {
-  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices) && !/iPhone|iPad|Android/i.test(navigator.userAgent)
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return false
+  if (!navigator.mediaDevices || !('getDisplayMedia' in navigator.mediaDevices)) return false
+  if (/iPhone|iPad|Android/i.test(navigator.userAgent)) return false
+  const chromium = /Chrome\/|Chromium\/|Edg\//.test(navigator.userAgent) || 'CropTarget' in window
+  return chromium
 }
+
+/** A computer's browser that is not Chrome: the message names the way out. */
+export function desktopWithoutTabCapture(): boolean {
+  return typeof navigator !== 'undefined' && !/iPhone|iPad|Android/i.test(navigator.userAgent) && !canCaptureTab()
+}
+
+export const CHROME_NOTE = 'La capture d’un extrait filme l’onglet avec son son : seul Chrome (ou Edge) sait le faire. Ouvre cette page dans Chrome, ou importe un enregistrement.'
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace('.0', '')} Mo`

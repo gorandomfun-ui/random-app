@@ -9,7 +9,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 
-import { canCaptureTab, commImportSource, commList, commRemove, commRemoveMedia, formatBytes, LICENSE_COLORS, LICENSE_WORDS, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
+import { canCaptureTab, CHROME_NOTE, commImportSource, commList, commRemove, commRemoveMedia, desktopWithoutTabCapture, formatBytes, LICENSE_COLORS, LICENSE_WORDS, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
 import type { MediaDoc } from '@/lib/comm/model'
 
 const TYPE_WORDS: Record<string, string> = { video: 'Vidéo', image: 'Image', web: 'Site', quote: 'Citation', fact: 'Fait', joke: 'Blague' }
@@ -146,7 +146,8 @@ export default function CommQueueClient() {
                   {item.contentType === 'image' && !isGif ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'image')}>Télécharger l’image</button> : null}
                   {item.contentType === 'image' && isGif ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'gif')}>Récupérer le GIF</button> : null}
                   {item.contentType === 'video' && desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Capturer un extrait</Link> : null}
-                  {item.contentType === 'video' && !desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Mode capture (téléphone)</Link> : null}
+                  {item.contentType === 'video' && !desktop && !desktopWithoutTabCapture() ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Mode capture (téléphone)</Link> : null}
+                  {item.contentType === 'video' && desktopWithoutTabCapture() ? <span className="text-xs text-amber-200" title={CHROME_NOTE}>Extrait : dans Chrome</span> : null}
                   <button className={small} disabled={busy === item._id} onClick={() => { fileTarget.current = item._id; fileInput.current?.click() }}>Importer</button>
                   {item.snapshot.thumb ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'thumb')}>Utiliser la miniature</button> : null}
                   <Link href={`/admin/comm/compose?items=${item._id}`} className={small}>Composer</Link>

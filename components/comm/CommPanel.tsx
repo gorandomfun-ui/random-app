@@ -9,7 +9,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 
-import { canCaptureTab, commAdd, commImportSource, commRemove, commRemoveMedia, formatBytes, LICENSE_COLORS, LICENSE_WORDS, screenshotOf, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
+import { canCaptureTab, CHROME_NOTE, commAdd, commImportSource, commRemove, commRemoveMedia, desktopWithoutTabCapture, formatBytes, LICENSE_COLORS, LICENSE_WORDS, screenshotOf, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
 import type { MediaDoc } from '@/lib/comm/model'
 
 export type CommPanelProps = {
@@ -147,7 +147,7 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
               {item.snapshot.thumb ? <button type="button" className={button} style={{ borderColor: '#F8F5E6', color: '#F8F5E6' }} disabled={Boolean(busy)} onClick={() => importSource('thumb', 'Récupération de la miniature')}>Utiliser la miniature</button> : null}
               <input ref={fileInput} type="file" accept="video/*,image/*" multiple hidden onChange={onFiles} />
             </div>
-            {type === 'video' && !desktop ? <p className="mt-2 text-xs opacity-80">Sur téléphone : enregistre l’écran avec la fonction du téléphone, puis Importer.</p> : null}
+            {type === 'video' && !desktop ? <p className="mt-2 text-xs opacity-80">{desktopWithoutTabCapture() ? CHROME_NOTE : 'Sur téléphone : enregistre l’écran avec la fonction du téléphone, puis Importer.'}</p> : null}
 
             {busy ? <p role="status" className="mt-3 text-sm">{busy}…{progress != null ? ` ${Math.round(progress * 100)} %` : ''}</p> : null}
             {error ? <p role="alert" className="mt-3 text-sm" style={{ color: '#FF978F' }}>{error}</p> : null}
