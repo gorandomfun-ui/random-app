@@ -142,6 +142,16 @@ const LAUNCH_FROM = 2 * SECOND
 const LAUNCH_BOOST = 1.2 * SECOND
 const SPIN_STEPS = 0.8 * SECOND
 /**
+ * Every fourth level a duel: one rival only — no quicker than the others at
+ * the fourth level, a little quicker at each next one, easing off less ahead
+ * and moving across more often — to be beaten to the line, or the game is
+ * over; beaten, its points.
+ */
+export const racingIsDuel = (level: number): boolean => level % 4 === 0
+export const RACING_DUEL_BONUS = 1500
+const duelPace = (level: number) => 0.93 + Math.min(RACING_LAST_LEVEL, level) * 0.005
+const duelEase = (level: number) => 0.16 - (Math.min(RACING_LAST_LEVEL, level) / RACING_LAST_LEVEL) * 0.11
+/**
  * A crash: how much faster than the car ahead the player's must come for one
  * (less, a knock); how long the player's car spins and a car hit spins; how
  * much speed each spinning step keeps, and how far across it slides.
@@ -810,7 +820,10 @@ export type RacingState = {
   run: number
   place: number
   /** The points of the finish line: for the time left and for the place, and the place they were for. */
-  bonus: { time: number; place: number; rank: number } | null
+  bonus: { time: number; place: number; rank: number; duel: number } | null
+  /** The rival of this level's duel, if it is one; whether it got to the line first. */
+  duel: RacingCarKind | null
+  duelLost: boolean
   /** The step the line was crossed at (the fireworks start from it), or -1. */
   goalAt: number
   /** Steps of the shake after a knock; whether the car is off the road (sand or bushes flying). */
@@ -901,9 +914,11 @@ function freshLevel(s: RacingState): void {
   s.launch = 'none'
   s.spin = 0
   s.pops = []
-  // the grid as on the title: the three cars side by side, the player's in the middle
+  // the grid as on the title: the three cars side by side, the player's in the middle; for a duel, the two of them, the rival a little quicker — one, then the other, every fourth level
   const pace = racingPace(s.level)
-  s.rivals = rivalsOf(s.car).map((kind, i) => ({ kind, z: 0, x: RACING_LANES[i === 0 ? 0 : 2], speed: 0, lane: RACING_LANES[i === 0 ? 0 : 2], pace: pace * (i === 0 ? 1.025 : 0.975), next: 5 * SECOND + Math.floor(s.rnd() * 3 * SECOND), ahead: false, passed: false, turbo: 0, cool: RIVAL_COOL + Math.floor(s.rnd() * 6 * SECOND), spin: 0, spinWay: 1 }))
+  s.duel = racingIsDuel(s.level) ? rivalsOf(s.car)[(s.level / 4 - 1) % 2] : null
+  s.duelLost = false
+  s.rivals = (s.duel ? [s.duel] : rivalsOf(s.car)).map((kind, i) => ({ kind, z: 0, x: RACING_LANES[i === 0 ? 0 : 2], speed: 0, lane: RACING_LANES[i === 0 ? 0 : 2], pace: pace * (s.duel ? duelPace(s.level) : i === 0 ? 1.025 : 0.975), next: 5 * SECOND + Math.floor(s.rnd() * 3 * SECOND), ahead: false, passed: false, turbo: 0, cool: RIVAL_COOL + Math.floor(s.rnd() * 6 * SECOND), spin: 0, spinWay: 1 }))
   s.place = 1
 }
 
@@ -919,7 +934,7 @@ export function createRacing(layout: RacingLayout, level = 1, seed = 1, options:
     // a game from a later level (a round, the test page), the car as improved as it would be by then
     stats: racingStatsAt(car, lv), fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
     track: [], finish: 0, checks: [], check: 0, items: [], traffic: [], z: 0, x: 0, speed: 0, steer: 0, rivals: [], time: 0, phase: 'start', phaseTimer: 0,
-    score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, cheered: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
+    score: options.score ?? 0, run: 0, place: 3, bonus: null, duel: null, duelLost: false, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, cheered: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
   }
   freshLevel(s)
   return s
@@ -1013,14 +1028,17 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
     if (s.z >= s.finish) {
       // the line: the time left and the place, in points
       const left = Math.ceil(s.time / SECOND)
-      s.bonus = { time: left * 50, place: [1000, 400, 100][s.place - 1] ?? 0, rank: s.place }
-      s.score += s.bonus.time + s.bonus.place
+      s.bonus = { time: left * 50, place: [1000, 400, 100][s.place - 1] ?? 0, rank: s.place, duel: s.duel ? RACING_DUEL_BONUS : 0 }
+      s.score += s.bonus.time + s.bonus.place + s.bonus.duel
       s.phase = 'goal'
       s.phaseTimer = 0
       s.goalAt = s.steps
       s.turbo = 0
       s.heard.push('level', 'cheer')
       s.cheered = CHEER_STEPS
+    } else if (s.duel && s.rivals[0].z >= s.finish) {
+      // the duel's rival over the line first: lost
+      s.duelLost = true; s.phase = 'timeup'; s.phaseTimer = 0
     } else if (s.time <= 0) { s.time = 0; s.phase = 'timeup'; s.phaseTimer = 0 }
   } else if (s.phase === 'goal' && s.phaseTimer >= GOAL_STEPS) {
     if (s.single || s.level >= RACING_LAST_LEVEL) s.phase = 'won'
@@ -1183,10 +1201,10 @@ function stepRivals(s: RacingState): void {
     const gap = r.z - s.z
     if (gap < 0 && s.phase === 'play') {
       const pull = Math.min(1, -gap / RIVAL_REACH)
-      // far behind, harder still: never out of the race for long
-      const chase = 1 + 0.1 * Math.min(1, Math.max(0, -gap - RIVAL_REACH) / 60)
+      // far behind, harder still: never out of the race for long (a duel's rival no harder than its top: a clean race beats it)
+      const chase = s.duel ? 1 : 1 + 0.1 * Math.min(1, Math.max(0, -gap - RIVAL_REACH) / 60)
       want = Math.min(bend * chase, want + (rivalTop(s.level) * scale * chase - want) * pull)
-    } else if (gap > 10) want *= 1 - 0.12 * Math.min(1, (gap - 10) / 80)
+    } else if (gap > 10) want *= 1 - (s.duel ? duelEase(s.level) : 0.12) * Math.min(1, (gap - 10) / 80)
     // its own turbo, behind the player on a clear straight
     if (r.cool > 0) r.cool -= 1
     if (r.turbo > 0) { r.turbo -= 1; want = Math.max(want, Math.min(bend, RACING_TOP * scale * TURBO_TOP * 0.95)) }
@@ -1209,7 +1227,7 @@ function stepRivals(s: RacingState): void {
       r.next = s.steps + 3 * SECOND + Math.floor(s.rnd() * 4 * SECOND)
       const behind = s.z - r.z
       // the player close behind and coming: from the third level, now and then (more often as the levels go), it moves across
-      if (s.level >= 3 && behind < -4 && behind > -40 && s.speed > r.speed && s.rnd() < Math.min(0.3, (s.level - 2) * 0.03)) r.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
+      if (s.level >= 3 && behind < -4 && behind > -40 && s.speed > r.speed && s.rnd() < Math.min(0.3, (s.level - 2) * 0.03) * (s.duel ? 2 : 1)) r.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
       else {
         const free = RACING_LANES.filter((l) => l !== r.lane && !ahead(l, 30) && !s.rivals.some((o) => o !== r && Math.abs(o.z - r.z) < 30 && Math.abs(o.lane - l) < 0.1))
         if (free.length) r.lane = free[Math.floor(s.rnd() * free.length)]
@@ -1329,6 +1347,6 @@ export function racingLevelMax(level: number): number {
     const clock = racingTime(level, world) + course.checks.reduce((sum, _, k) => sum + racingExtension(level, k + 1, world), 0) + watches * 3
     // the brushes past cars: every car of the traffic and the rivals a few times each, at the combo's most
     const brushes = (course.traffic.length + 12) * NEAR_POINTS * 5
-    return Math.ceil((course.finish / 5) * 1.35) + 200 + coins * 100 + 1000 + clock * 50 + brushes
+    return Math.ceil((course.finish / 5) * 1.35) + 200 + coins * 100 + 1000 + clock * 50 + brushes + (racingIsDuel(level) ? RACING_DUEL_BONUS : 0)
   }))
 }

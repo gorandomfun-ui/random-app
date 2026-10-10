@@ -54,11 +54,13 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     for (let k = 0; k < d.look; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, seen.z + k).curve))
     const limit = racingBendSpeed(s, worst) * d.margin
     // each lane weighed: a car slower than the driver means to go (even once stuck behind it), a cone or a puddle in it ahead counts against it, a stopwatch or the turbo for it
+    // a car moving across counts where it is heading too, as anyone sees it coming over
+    const toward = (c: { x: number; lane: number }, l: number) => Math.abs(c.x - l) < 0.62 || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - l) < 0.62)
     const worth = (l: number) => {
       let w = l === lane ? 0.5 : 0
-      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && Math.abs(c.x - l) < 0.62 && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
+      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && toward(c, l) && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
       // and no lane to reach across a car close by: it would run into its side
-      if (Math.abs(l - seen.x) > 0.3 && [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > -4 && c.z - seen.z < 12 && Math.abs(c.x - seen.x) > 0.3 && c.x > Math.min(seen.x, l) - 0.25 && c.x < Math.max(seen.x, l) + 0.25)) w -= 8
+      if (Math.abs(l - seen.x) > 0.3 && [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > -3 && c.z - seen.z < 9 && Math.abs(c.x - seen.x) > 0.3 && c.x > Math.min(seen.x, l) - 0.25 && c.x < Math.max(seen.x, l) + 0.25)) w -= 8
       for (const it of s.items) {
         if (it.taken || it.z < seen.z || it.z - seen.z > d.ahead || Math.abs(it.x - l) > 0.4) continue
         if (it.kind === 'cone') w -= 6
@@ -82,7 +84,7 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 0 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.58 && c.speed < seen.speed)
     // and the brake for a slower car in its way that it cannot go round in time: running into it is a crash
     const late = [...s.rivals, ...s.traffic].some((c) => {
-      if (c.z <= seen.z || c.speed >= seen.speed || Math.abs(c.x - seen.x) > 0.55 || Math.abs(c.x - lane) > 0.55) return false
+      if (c.z <= seen.z || c.speed >= seen.speed || !((Math.abs(c.x - seen.x) <= 0.55 && Math.abs(c.x - lane) <= 0.55) || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - lane) <= 0.55))) return false
       const dv = seen.speed - c.speed
       return c.z - seen.z - 8 < (dv * dv) / (2 * BRAKING) + dv * 6
     })

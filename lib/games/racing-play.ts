@@ -780,6 +780,8 @@ function otherRoad(s: RacingState, i: number): number {
 const OTHER_FAR = 12, OTHER_ALONG = 260, OTHER_GONE = 40, OTHER_FADE = 140
 /** What each road of the fork says on its sign. */
 const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
+/** Each rival as the duel names it. */
+const DUEL_NAME: Record<RacingCarKind, string> = { rosso: 'RED CAR', giallo: 'YELLOW CAR', burger: 'BURGER' }
 /** Each rival's colour, for its mark when it is close behind. */
 const RIVAL_COLOUR: Record<RacingCarKind, string> = { rosso: '#ff3a2a', giallo: '#ffd23f', burger: '#ff9a3a' }
 
@@ -1116,8 +1118,10 @@ function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: n
   if (s.phase === 'start') {
     arcadeText(out, `LEVEL ${String(s.level).padStart(2, '0')}`, W / 2, top + 12, 3, accent)
     if (s.phaseTimer >= 20) said(out, String(3 - Math.floor(s.phaseTimer / 60)), W / 2, top + 46, CREAM, 5)
+    // a duel: who to beat
+    if (s.duel) { said(out, 'DUEL!', W / 2, top + 96, RIVAL_COLOUR[s.duel], 3); said(out, `BEAT THE ${DUEL_NAME[s.duel]} TO THE LINE`, W / 2, top + 124, CREAM, 1) }
     // how to start well, over the first levels
-    if (s.level <= 3 && s.phaseTimer >= 20) said(out, 'PRESS A ON 1: TURBO START', W / 2, top + 96, '#ffd23f', 1)
+    else if (s.level <= 3 && s.phaseTimer >= 20) said(out, 'PRESS A ON 1: TURBO START', W / 2, top + 96, '#ffd23f', 1)
     gauge(out, s, top)
     return
   }
@@ -1126,8 +1130,11 @@ function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: n
     arcadeText(out, 'GOAL!', W / 2, mid - 6, 4, accent)
     if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE +${s.bonus.place}`, W / 2, mid + 36, s.bonus.rank === 1 ? '#ffd23f' : CREAM, 2)
     if (s.phaseTimer > 70 && s.bonus) said(out, `TIME +${s.bonus.time}`, W / 2, mid + 56, CREAM, 2)
+    if (s.phaseTimer > 100 && s.bonus?.duel) said(out, `DUEL WON +${s.bonus.duel}`, W / 2, mid + 76, '#ffd23f', 2)
     return
-  } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
+  } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, s.duelLost ? 'DUEL LOST' : 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
+  // in a duel, where the rival is: ahead or behind, in its colour
+  if (s.duel && s.phase === 'play' && s.phaseTimer >= 50 && !(s.news && s.news.steps > 0)) said(out, s.place === 1 ? 'DUEL: AHEAD' : `DUEL: ${DUEL_NAME[s.duel]} AHEAD`, W / 2, top + 44, s.place === 1 ? '#3aff6a' : RIVAL_COLOUR[s.duel], 1)
   if (s.news && (s.news.steps > 20 || (s.news.steps >> 2) % 2 === 0)) said(out, s.news.text, W / 2, top + 40, s.news.text.startsWith('CHECK') ? '#3aff6a' : '#ffd23f', W >= 400 ? 3 : 2)
   // the fork coming: what each road offers, on its side, the side the car is on lit
   if (s.fork && s.forkPick < 0 && s.z > s.fork.at - 200 && s.z < s.fork.at - FORK_DECIDE_SHOWN) {

@@ -22,7 +22,7 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { CAR_STATS, createRacing, FORK_FROM, FORK_SHARE, FORK_ZONES, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { CAR_STATS, createRacing, FORK_FROM, FORK_SHARE, FORK_ZONES, RACING_CARS, RACING_DUEL_BONUS, racingIsDuel, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
@@ -284,7 +284,7 @@ test('racing: past the line, fireworks and confetti over the public, thicker as 
   const party = (level: number) => {
     const s = createRacing('landscape', level, 3, { single: true, world: 'coast' })
     const d = driver(GOOD, 3)
-    for (let i = 0; i < 30000 && s.goalAt < 0; i += 1) { const m = d(s); stepRacing(s, m.steer, m.gas, m.brake) }
+    for (let i = 0; i < 30000 && s.goalAt < 0; i += 1) { const m = d(s); stepRacing(s, m.steer, m.gas, m.brake, m.nitro) }
     assert.ok(s.goalAt >= 0, `level ${level}: the line crossed`)
     const crowds = s.track.slice(s.finish, s.finish + 130).filter((g) => g.things.some((t) => t.kind === 'crowd')).length
     for (let i = 0; i < 70; i += 1) stepRacing(s)
@@ -376,6 +376,33 @@ test('racing: the public cheers as the car goes by it — not again for a few se
   assert.ok(cheers.length >= 4, `cheered along the road (${cheers.length})`)
   assert.ok(cheers.every((at, k) => k === 0 || at - cheers[k - 1] >= 7 * 60), 'never twice within seven seconds')
   assert.ok(line, 'and at the line')
+})
+
+test('racing: every fourth level a duel — one rival, one then the other, to be beaten to the line: first over it, the game is over; beaten, its points', () => {
+  for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) {
+    const s = createRacing('landscape', level, 2, { single: true, car: 'burger' })
+    assert.equal(s.rivals.length, racingIsDuel(level) ? 1 : 2, `level ${level}`)
+    assert.equal(s.duel !== null, level % 4 === 0)
+  }
+  const kinds = [4, 8, 12, 16].map((level) => createRacing('landscape', level, 2, { single: true, car: 'burger' }).duel)
+  assert.deepEqual(kinds, ['rosso', 'giallo', 'rosso', 'giallo'], 'one, then the other')
+  // the rival first over the line: lost
+  const lost = createRacing('landscape', 4, 2, { single: true, car: 'burger' })
+  for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(lost)
+  lost.rivals[0].z = lost.finish - 0.5; lost.rivals[0].speed = 1; lost.z = lost.finish - 300
+  for (let i = 0; i < 3; i += 1) stepRacing(lost, 0, true)
+  assert.ok(lost.duelLost && lost.phase === 'timeup', 'the duel lost')
+  for (let i = 0; i < 300; i += 1) stepRacing(lost)
+  assert.equal(lost.phase as string, 'over')
+  // over it first: the duel's points with the place's
+  const won = createRacing('landscape', 4, 2, { single: true, car: 'burger' })
+  for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(won)
+  won.rivals[0].z = won.finish - 300; won.z = won.finish - 1; won.speed = 1
+  const before = won.score
+  stepRacing(won, 0, true)
+  assert.equal(won.phase, 'goal')
+  assert.equal(won.bonus?.duel, RACING_DUEL_BONUS)
+  assert.ok(won.score >= before + RACING_DUEL_BONUS + 1000, 'the duel\'s points and first place\'s')
 })
 
 test('racing: a good driver wins every level of every world with time to spare, and the first five in first place', () => {
