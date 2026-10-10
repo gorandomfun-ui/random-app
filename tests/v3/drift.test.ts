@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { toDigVideo } from '../../lib/v3/dig/dailymotion'
-import { driftDoor, SMALL_UPLOADER } from '../../lib/v3/ingest/lines/drift'
+import { driftDoor, SMALL_UPLOADER, UPLOADER_VIDEOS, UPLOADERS_PER_RUN } from '../../lib/v3/ingest/lines/drift'
 
 test('a Dailymotion row becomes a video the lines read; private, unembeddable or explicit ones do not', () => {
   const row = { id: 'x7ch5x6', title: 'ビオフェルミンVC CM', description: '', url: 'https://www.dailymotion.com/video/x7ch5x6', duration: 15, created_time: 1_540_000_000, views_total: 11_110, 'owner.id': 'x1abc', 'owner.screenname': 'Deaththekid200', 'owner.videos_total': 163, channel: 'shortfilms', language: 'ja' }
@@ -15,6 +15,9 @@ test('a Dailymotion row becomes a video the lines read; private, unembeddable or
   assert.equal(toDigVideo({ ...row, private: true }), null)
   assert.equal(toDigVideo({ ...row, allow_embed: false }), null)
   assert.ok(SMALL_UPLOADER >= 500)
+  // Twenty videos an uploader, forty uploaders a run (the owner, 10 October): no channel gives a hundred in a day any more.
+  assert.equal(UPLOADER_VIDEOS, 20)
+  assert.ok(UPLOADERS_PER_RUN * UPLOADER_VIDEOS >= 15 * 50, 'the volume kept')
 })
 
 test('the drift\'s own door: a clean title, no live, no AI mark, no celebrity news, one still album and two let\'s plays a batch', () => {

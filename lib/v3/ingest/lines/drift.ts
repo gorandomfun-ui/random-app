@@ -10,9 +10,9 @@
  * media and the compilations. The drift searches nothing: it starts from
  * seeds — the owner's likes on Dailymotion, what the dig's weird themes and
  * likes brought in, a few searches sorted at random among uploads of years
- * ago — and follows Dailymotion's own "related" for two hops, reading whole
- * the small uploaders it meets (a person, not a house: `SMALL_UPLOADER`
- * videos at most). No name to match: the common door only (ads, serials,
+ * ago — and follows Dailymotion's own "related" for two hops, and reads
+ * twenty videos, at random, of the small uploaders it meets (a person, not a
+ * house: `SMALL_UPLOADER` videos at most). No name to match: the common door only (ads, serials,
  * AI, duplicates), the week's cap per channel, the media windows, the
  * title's cleanliness, and the player's own word that the video plays.
  * Everything is free on Dailymotion; the line is bounded by time and count.
@@ -33,9 +33,14 @@ import { emptyCounters } from '../journal'
 
 /** An uploader with this many videos at most is a person; past it, the uploader is read like a channel met by the dig (two videos a pass). */
 export const SMALL_UPLOADER = Number(process.env.RANDOM_DRIFT_SMALL_UPLOADER ?? 2000)
-/** Uploaders read whole in one run, and how many of their videos. */
-export const UPLOADERS_PER_RUN = Number(process.env.RANDOM_DRIFT_UPLOADERS ?? 15)
-const UPLOADER_VIDEOS = 100
+/**
+ * Uploaders read in one run, and how many of their videos, at random. Until 10 October an uploader was read whole —
+ * a hundred videos, past the week's cap — and gave half the drift: three channels 113 to 116 videos each in a day.
+ * The owner (8 and 10 October): the cap for them too, the volume found elsewhere — twenty each, counted in the week's
+ * cap like any channel, and forty uploaders a run instead of fifteen: the same volume, two and a half times the variety.
+ */
+export const UPLOADERS_PER_RUN = Number(process.env.RANDOM_DRIFT_UPLOADERS ?? 40)
+export const UPLOADER_VIDEOS = 20
 /** Seeds a run starts from, and how far it drifts from each. */
 export const SEEDS_PER_RUN = Number(process.env.RANDOM_DRIFT_SEEDS ?? 40)
 const HOPS = 2
@@ -143,7 +148,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     for (const video of fresh) visited.add(video.videoId)
     if (!fresh.length) return []
     const door = driftDoor(fresh)
-    // A small uploader read whole is a person, not an outlet: the week's cap is for the houses (the dry run of 2 October refused 439 of a person's videos).
+    // The week's cap per channel, for everyone since 10 October: a small uploader gives twenty a week, like a house.
     const weekly = await underWeeklyCap(ctx, guards, door.kept, 'dailymotion', own)
     if (weekly.refused) door.refused['chaîne cette semaine'] = weekly.refused
     const media = await withoutMedia(ctx, guards, '', weekly.kept, 'dailymotion', own)
@@ -162,7 +167,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     return checked
   }
 
-  /** A small uploader met on the way is read whole, once. */
+  /** A small uploader met on the way: twenty of its videos at random, once a run, under the week's cap like any channel. */
   const readUploader = async (video: DigVideo): Promise<void> => {
     const owner = video.channelId
     if (!owner || uploadersRead.has(owner) || uploadersRead.size >= UPLOADERS_PER_RUN) return
@@ -171,7 +176,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     uploaders += 1
     try {
       const videos = await uploaderVideos(owner, http, undefined, UPLOADER_VIDEOS)
-      await admit(videos, `uploader ${video.channelTitle ?? owner}`, new Set([owner]))
+      await admit(videos, `uploader ${video.channelTitle ?? owner}`)
     } catch (error) { errors.push(`uploader ${video.channelTitle ?? owner} : ${message(error)}`) }
     await wait(SPACING_MS)
   }

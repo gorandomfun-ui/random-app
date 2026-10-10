@@ -1035,7 +1035,7 @@
           if (!res.ok) throw new Error(data?.error || res.statusText)
           const run = data.lastRun
           nightlyRunEl.textContent = run
-            ? `Dernière vérification : ${when(run.startedAt)}${run.status && run.status !== 'ok' ? ` (${run.status})` : ''}. ${run.note || ''}`
+            ? `Dernière vérification : ${when(run.startedAt)}${run.status === 'failed' ? ' (interrompue)' : ''}. ${run.note || ''}`
             : 'Pas encore de vérification de nuit.'
           const pending = data.pending || { total: 0, providers: {} }
           const detail = Object.entries(pending.providers || {}).map(([provider, n]) => `${provider} ${fr(n)}`).join(', ')
