@@ -32,7 +32,7 @@ import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } f
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
 import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout, type Pad } from '@/lib/games/screens'
-import { gameSounds } from '@/lib/games/sound'
+import { GAME_SOUNDS, gameSounds, RACING_TUNES } from '@/lib/games/sound'
 import type { Direction } from '@/lib/games/sprites'
 import { HUD_HEIGHT } from '@/lib/games/ui'
 import { wakeSound } from '@/utils/sound'
@@ -439,7 +439,8 @@ export default function GamePlayer({
       }
       if (s.dirty) { s.dirty = false; paint() }
       report()
-      // the tune on the title and under the play; paused, over, or between screens, quiet
+      // the tune on the title and under the play (RACING's, the world's it is in); paused, over, or between screens, quiet
+      sounds.music(s.racing && s.mode !== 'title' ? RACING_TUNES[s.racing.world] : GAME_SOUNDS[game].tune)
       sounds.tune(s.mode === 'title' || (s.mode === 'play' && s.pause == null))
       // RACING's engine, its pitch with the speed
       sounds.engine(s.racing && s.mode === 'play' && s.pause == null ? racingEngine(s.racing) : null)

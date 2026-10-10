@@ -352,6 +352,22 @@ test('racing: smoke now and then — the tyres braking hard, a car after a crash
   assert.ok(lightness(shot('mountain', 'forest', 860)) > lightness(shot('mountain', 'forest', 600)) + 6, 'in a bank of mist, the view whiter')
 })
 
+test('racing: the public cheers as the car goes by it — not again for a few seconds — and at the line', () => {
+  const s = createRacing('landscape', 1, 3, { single: true, world: 'coast' })
+  const drive = driver(GOOD, 3)
+  const cheers: number[] = []
+  let line = false
+  for (let i = 0; i < 240 * 60 && s.phase !== 'won'; i += 1) {
+    const m = drive(s)
+    stepRacing(s, m.steer, m.gas, m.brake, m.nitro)
+    if (s.heard.includes('level')) line = s.heard.includes('cheer')
+    else if (s.heard.includes('cheer')) cheers.push(s.steps)
+  }
+  assert.ok(cheers.length >= 4, `cheered along the road (${cheers.length})`)
+  assert.ok(cheers.every((at, k) => k === 0 || at - cheers[k - 1] >= 7 * 60), 'never twice within seven seconds')
+  assert.ok(line, 'and at the line')
+})
+
 test('racing: a good driver wins every level of every world with time to spare, and the first five in first place', () => {
   for (const world of RACING_WORLDS) for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) {
     const out = race(createRacing('landscape', level, 3, { single: true, world }), GOOD, 3)

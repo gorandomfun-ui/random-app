@@ -17,6 +17,7 @@ import { playNowOrNever, returnSoundPlayer, spareSoundPlayer } from '@/lib/sound
 import { gameSoundContext, getMuted, soundByFiles } from '@/utils/sound'
 
 import { renderSound, renderTuneSoftly, SOUND_RATE, type SoundName, type TuneName } from './chiptune'
+import type { RacingWorld } from './racing-worlds'
 import type { GameName } from './scores'
 
 /** Each game's tune and the sounds it can make. */
@@ -24,8 +25,10 @@ export const GAME_SOUNDS: Record<GameName, { tune: TuneName; sounds: readonly So
   eater: { tune: 'diner', sounds: ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'level', 'over', 'winner'] },
   catcher: { tune: 'store', sounds: ['item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'level', 'over', 'winner'] },
   attacks: { tune: 'mars', sounds: ['squirt', 'pop', 'clink', 'gold', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'crash', 'level', 'over', 'winner'] },
-  racing: { tune: 'coast', sounds: ['beep', 'go', 'thud', 'smash', 'whoosh', 'gold', 'note', 'power', 'coin', 'slip', 'clink', 'level', 'over', 'winner'] },
+  racing: { tune: 'coast', sounds: ['beep', 'go', 'thud', 'smash', 'cheer', 'whoosh', 'gold', 'note', 'power', 'coin', 'slip', 'clink', 'level', 'over', 'winner'] },
 }
+/** RACING's tune in each of its worlds. */
+export const RACING_TUNES: Record<RacingWorld, TuneName> = { coast: 'coast', mountain: 'peaks', desert: 'mesa', city: 'neon' }
 /** Sounds that can follow one another closely get two players. */
 const TWICE: ReadonlySet<SoundName> = new Set(['bite', 'item', 'coin', 'squirt', 'pop', 'clink', 'thud'])
 
@@ -33,6 +36,8 @@ export type GameSounds = {
   play: (name: SoundName) => void
   /** Whether the tune should be heard now: said at every frame, acted on only when it changes. */
   tune: (on: boolean) => void
+  /** Which tune, for a game with more than one (RACING's, a world each): said at every frame, acted on only when it changes. */
+  music: (name: TuneName) => void
   /** RACING's engine: how fast its loop plays (its pitch), or null for silence; said at every frame. */
   engine: (rate: number | null) => void
   /** To be called during a touch or a key: an iPhone lets a player start only after one. */
@@ -65,7 +70,8 @@ export function gameSounds(game: GameName): GameSounds {
 
 /** A computer, an Android phone: Random's engine plays the samples. */
 function livePlayers(game: GameName): GameSounds {
-  const { tune, sounds } = GAME_SOUNDS[game]
+  const { tune: first, sounds } = GAME_SOUNDS[game]
+  let tune = first
   const buffers = new Map<string, AudioBuffer>()
   let alive = true, want = false, tried = 0
   let loop: Float32Array | null = null
@@ -151,6 +157,15 @@ function livePlayers(game: GameName): GameSounds {
       if (!want) { stop(); return }
       if (!source && performance.now() - tried > 1000) start()
     },
+    music(name) {
+      if (name === tune) return
+      // another tune: this one stopped, the other made (if it is not yet) and started from its beginning
+      tune = name
+      stop()
+      offset = 0
+      loop = null
+      void tuneSamples(name).then((data) => { if (tune !== name || !alive) return; loop = data; start() })
+    },
     engine(rate) {
       if (rate == null || silent() || !alive) { quiet(); return }
       const context = gameSoundContext()
@@ -176,7 +191,8 @@ function livePlayers(game: GameName): GameSounds {
 
 /** An iPhone, an iPad: the same sounds as files, each on a player of its own. */
 function filePlayers(game: GameName): GameSounds {
-  const { tune, sounds } = GAME_SOUNDS[game]
+  const { tune: first, sounds } = GAME_SOUNDS[game]
+  let tune = first
   const all: HTMLAudioElement[] = []
   const take = (src: string) => {
     const audio = spareSoundPlayer()
@@ -213,6 +229,15 @@ function filePlayers(game: GameName): GameSounds {
       want = on && !silent()
       if (!want) { if (!music.paused) music.pause(); return }
       if (music.paused && performance.now() - tried > 1000) start()
+    },
+    music(name) {
+      if (name === tune) return
+      // another tune on the same player: a phone lets a player it has met play any file
+      tune = name
+      music.pause()
+      music.src = tuneFile(name)
+      music.loop = true
+      if (want) start()
     },
     engine(rate) {
       if (!motor) return

@@ -61,10 +61,11 @@ export const RACING_CARS: readonly RacingCarKind[] = ['rosso', 'burger', 'giallo
 
 /**
  * What can be heard: a light of the start (and the last seconds), the green
- * light, a knock, a crash, a rival passed, the finish line, a checkpoint, a
- * stopwatch, the turbo, a coin, a skid, a cone knocked over.
+ * light, a knock, a crash, the public cheering, a rival passed, the finish
+ * line, a checkpoint, a stopwatch, the turbo, a coin, a skid, a cone knocked
+ * over.
  */
-export type RacingSound = 'beep' | 'go' | 'thud' | 'smash' | 'whoosh' | 'level' | 'gold' | 'note' | 'power' | 'coin' | 'slip' | 'clink'
+export type RacingSound = 'beep' | 'go' | 'thud' | 'smash' | 'cheer' | 'whoosh' | 'level' | 'gold' | 'note' | 'power' | 'coin' | 'slip' | 'clink'
 
 /** A stretch's length, in half widths of the road. */
 export const RACING_SEGMENT = 0.1
@@ -153,6 +154,8 @@ const CRASH_SLIDE = 0.006
 /** How long sparks fly off a rail after it is touched; how long the car smokes after a crash. */
 const SPARK_STEPS = 14
 const SMOKE_STEPS = 5 * SECOND
+/** How long the public waits before it may be heard cheering again. */
+const CHEER_STEPS = 7 * SECOND
 /** The gauge: what each risk gives; what it takes to let the turbo go. */
 const NEAR_MISS = 0.2
 const DRAFT_FILL = 0.006
@@ -743,6 +746,8 @@ export type RacingState = {
   /** Whether the car brakes hard this step (its tyres smoke); steps left of smoke out of it after a crash. */
   braking: boolean
   smoke: number
+  /** Steps before the public may be heard cheering again. */
+  cheered: number
   offroad: boolean
   /** Steps left of the turbo, of a skid (and which way it slides). */
   turbo: number
@@ -806,6 +811,7 @@ function freshLevel(s: RacingState): void {
   s.sparks = 0
   s.braking = false
   s.smoke = 0
+  s.cheered = 0
   s.offroad = false
   s.turbo = 0
   s.skid = 0
@@ -836,7 +842,7 @@ export function createRacing(layout: RacingLayout, level = 1, seed = 1, options:
     // a game from a later level (a round, the test page), the car as improved as it would be by then
     stats: racingStatsAt(car, lv), fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
     track: [], finish: 0, checks: [], check: 0, items: [], traffic: [], z: 0, x: 0, speed: 0, steer: 0, rivals: [], time: 0, phase: 'start', phaseTimer: 0,
-    score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
+    score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, cheered: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
   }
   freshLevel(s)
   return s
@@ -865,6 +871,7 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   if (s.knock > 0) s.knock -= 1
   if (s.sparks > 0) s.sparks -= 1
   if (s.smoke > 0) s.smoke -= 1
+  if (s.cheered > 0) s.cheered -= 1
   if (s.news && --s.news.steps <= 0) s.news = null
   for (const p of s.pops) p.steps -= 1
   s.pops = s.pops.filter((p) => p.steps > 0)
@@ -903,7 +910,10 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   }
   const cars = [...s.rivals, ...s.traffic]
   const ahead = cars.map((c) => c.z > s.z)
+  const from = s.z
   drive(s, steer, gas, brake)
+  // going by the public: it cheers (not again for a few seconds)
+  if (s.phase === 'play' && s.cheered === 0) for (let i = Math.floor(from) + 1; i <= Math.floor(s.z); i += 1) if (i >= 0 && i < s.track.length && s.track[i].things.some((t) => t.kind === 'crowd')) { s.heard.push('cheer'); s.cheered = CHEER_STEPS; break }
   if (s.fork && s.forkPick < 0 && s.z >= s.fork.at - FORK_DECIDE) takeFork(s, s.x < 0 ? 0 : 1)
   stepRivals(s)
   stepTraffic(s)
@@ -932,7 +942,8 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
       s.phaseTimer = 0
       s.goalAt = s.steps
       s.turbo = 0
-      s.heard.push('level')
+      s.heard.push('level', 'cheer')
+      s.cheered = CHEER_STEPS
     } else if (s.time <= 0) { s.time = 0; s.phase = 'timeup'; s.phaseTimer = 0 }
   } else if (s.phase === 'goal' && s.phaseTimer >= GOAL_STEPS) {
     if (s.single || s.level >= RACING_LAST_LEVEL) s.phase = 'won'
