@@ -22,7 +22,7 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { CAR_STATS, createRacing, FORK_LEN, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { CAR_STATS, createRacing, FORK_FROM, FORK_SHARE, FORK_ZONES, RACING_CARS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
@@ -177,14 +177,24 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   assert.ok(fastest > 1.1, `with the turbo: ${fastest.toFixed(2)}`)
 })
 
-test('racing: in the middle of each level from the second, the road divides — two roads as long, each its own way and its own offers — and the side the car is on takes one', () => {
+test('racing: from the second level, the road divides after its first quarter into two roads for half the level — each its own way, through its own country, with its own offers — and the side the car is on takes one', () => {
   for (const world of RACING_WORLDS) for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) {
     const c = racingCourse(level, world), f = c.fork!
-    assert.ok(f && f.kinds[0] !== f.kinds[1], `${world} ${level}: a fork with two different roads`)
-    assert.ok(f.at > c.checks[0] && f.at + FORK_LEN < c.checks[1], `${world} ${level}: between the checkpoints`)
-    assert.equal(f.tracks[0].length, FORK_LEN); assert.equal(f.tracks[1].length, FORK_LEN)
-    // both start straight and end level with the road they leave
-    for (const road of f.tracks) { assert.ok(road.slice(0, 40).every((g) => g.curve === 0), 'straight while the car decides'); assert.equal(road[FORK_LEN - 1].curve, 0) }
+    assert.ok(f && f.kinds[0] !== f.kinds[1], `${world} ${level}: two different roads`)
+    assert.ok(f.at >= c.finish * (FORK_FROM - 0.03) && f.at <= c.finish * (FORK_FROM + 0.1), `${world} ${level}: after the first quarter (${(f.at / c.finish).toFixed(2)})`)
+    assert.ok(f.len >= c.finish * (FORK_SHARE - 0.06) && f.at + f.len < c.finish - 200, `${world} ${level}: half the level, back together before the line`)
+    assert.equal(f.tracks[0].length, f.len); assert.equal(f.tracks[1].length, f.len)
+    for (const [k, road] of f.tracks.entries()) {
+      // both start straight on the road they leave, and end straight, level with the road they meet again
+      assert.ok(road.slice(0, 40).every((g) => g.curve === 0 && g.zone === c.track[f.at - 1].zone), 'straight while the car decides')
+      assert.equal(road[f.len - 1].curve, 0)
+      assert.ok(Math.abs(road[f.len - 1].y2 - c.track[f.at + f.len].y1) < 0.06, `${world} ${level}: back at the height it meets`)
+      // through its own country
+      const country = new Set(road.slice(60, f.len - 80).map((g) => g.zone))
+      assert.ok([...country].every((z) => FORK_ZONES[world][f.kinds[k]].includes(z) || z === 'tunnel' || z === c.track[f.at + f.len].zone), `${world} ${level} ${f.kinds[k]}: its own country (${[...country].join(', ')})`)
+    }
+    const zonesOf = (k: 0 | 1) => new Set(f.tracks[k].slice(60, f.len - 80).map((g) => g.zone))
+    assert.ok([...zonesOf(0)].some((z) => !zonesOf(1).has(z)) || [...zonesOf(1)].some((z) => !zonesOf(0).has(z)), `${world} ${level}: not the same country`)
     assert.ok(f.items[0].length && f.items[1].length, 'each road offers something')
   }
   assert.equal(racingCourse(1, 'coast').fork, null, 'none at the first level')
@@ -199,7 +209,7 @@ test('racing: in the middle of each level from the second, the road divides — 
     for (let i = 0; i < 80; i += 1) stepRacing(s, s.x < side * 0.6 - 0.05 ? 1 : s.x > side * 0.6 + 0.05 ? -1 : 0, true)
     const pick = side < 0 ? 0 : 1
     assert.equal(s.forkPick, pick)
-    assert.ok(s.track.slice(f.at, f.at + FORK_LEN).every((g, k) => g.curve === f.tracks[pick][k].curve), 'its road laid down')
+    assert.ok(s.track.slice(f.at, f.at + f.len).every((g, k) => g.curve === f.tracks[pick][k].curve), 'its road laid down')
     assert.ok(f.items[pick].every((it) => s.items.some((o) => o.z === it.z && o.kind === it.kind)), 'its offers on it')
     assert.ok(racingCourse(5, 'desert').track === racingCourse(5, 'desert').track && s.track !== racingCourse(5, 'desert').track, 'the level\'s own road untouched')
   }
@@ -420,7 +430,8 @@ test('racing: each level its own character — the sprint straight, the twisty l
     const share = (level: number, f: (g: ReturnType<typeof road>[number]) => boolean) => road(level).filter(f).length / road(level).length
     const straight = (g: ReturnType<typeof road>[number]) => Math.abs(g.curve) < 0.3, sharp = (g: ReturnType<typeof road>[number]) => Math.abs(g.curve) >= 3.5
     const height = (level: number) => { const ys = road(level).map((g) => g.y2); return Math.max(...ys) - Math.min(...ys) }
-    assert.ok(share(7, straight) > 0.5 && share(7, straight) > share(9, straight) * 2, `${world}: the sprint mostly straight`)
+    // (half of each level on its two roads, each road its own shape: the sprint a little less than twice as straight as the twisty level in the desert, the straightest world)
+    assert.ok(share(7, straight) > 0.5 && share(7, straight) > share(9, straight) * 1.8, `${world}: the sprint mostly straight (${share(7, straight).toFixed(2)} / ${share(9, straight).toFixed(2)})`)
     assert.ok(share(9, sharp) > share(7, sharp) * 2, `${world}: the twisty level sharp`)
     assert.ok(share(10, (g) => g.zone === 'tunnel') > 0.2, `${world}: the tunnel level in the rock`)
     if (world !== 'city') assert.ok(height(8) > height(7) * 1.5, `${world}: the hills high (${height(8)} / ${height(7)})`)
@@ -433,7 +444,9 @@ test('racing: each level harder than the one before — more traffic, more on th
   const traffic = (level: number) => RACING_WORLDS.reduce((a, w) => a + racingCourse(level, w).traffic.length, 0)
   for (let level = 4; level <= RACING_LAST_LEVEL; level += 4) {
     assert.ok(traffic(level) > traffic(level - 3), `more traffic at ${level}`)
-    assert.ok(count(level, 'puddle') > count(level - 3, 'puddle') && count(level, 'cone') >= count(level - 3, 'cone'), `more on the road at ${level}`)
+    // more puddles, and more on the road all told (a roadworks ten cones; a twisty level has fewer, its bends leaving few places for them)
+    const all = (lv: number) => count(lv, 'puddle') + count(lv, 'cone') / 10
+    assert.ok(count(level, 'puddle') > count(level - 3, 'puddle') && all(level) > all(level - 3), `more on the road at ${level}`)
   }
   assert.ok(RACING_WORLDS.every((w) => racingCourse(4, w).traffic.some((t) => t.swerve) || racingCourse(5, w).traffic.some((t) => t.swerve)), 'cars that swerve from the fourth level')
   // never roadworks in a sharp bend
@@ -517,7 +530,8 @@ test('racing: the coast is alive — the public at the start, the checkpoints an
     assert.ok(at('crowd', 0, 80), `level ${level}: the public at the start`)
     for (const k of c.checks) assert.ok(at('crowd', k - 35, k + 10) || c.track[k].zone === 'tunnel', `level ${level}: the public at a checkpoint`)
     assert.ok(at('crowd', c.finish - 80, c.finish + 15), `level ${level}: the public at the line`)
-    const things = c.track.flatMap((g) => g.things.map((t) => t.kind))
+    // by whichever of its two roads
+    const things = [...c.track, ...(c.fork?.tracks[0] ?? [])].flatMap((g) => g.things.map((t) => t.kind))
     for (const kind of ['parasol', 'sailboat', 'buoy', 'lighthouse']) assert.ok(things.includes(kind as never), `level ${level}: ${kind}`)
     assert.ok(c.track.some((g) => g.shop), `level ${level}: shops`)
     // nobody in the tunnel
@@ -549,9 +563,14 @@ test('racing: the traffic is everyday cars, and the shops each look like their t
 
 /** A race put just short of something on the road, at speed, in its lane. */
 function before(kind: string, level = 5): { s: ReturnType<typeof createRacing>; it: ReturnType<typeof createRacing>['items'][number] } {
-  const s = createRacing('landscape', level, 1)
+  // the first level from `level` on with one on its road
+  let lv = level
+  while (!createRacing('landscape', lv, 1).items.some((o) => o.kind === kind)) lv += 1
+  const s = createRacing('landscape', lv, 1)
   for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
   const it = s.items.find((o) => o.kind === kind)!
+  // on the right-hand road if it is on one of the two: as if taken
+  if (s.fork) s.forkPick = 1
   s.z = it.z - 12; s.x = it.x; s.speed = 0.8
   s.rivals.forEach((r) => { r.z = 0 }); s.traffic = []
   return { s, it }

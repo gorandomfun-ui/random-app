@@ -26,7 +26,7 @@ import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_SPIN_STEPS, RACING_CAR_WIDTH, RACING_CRASH_STEPS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
-  FORK_NAME, racingHour, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
+  FORK_NAME, FORK_NEAR, racingHour, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
 import {
   blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
@@ -325,8 +325,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     if (p.behind || b.y >= maxY || b.y >= a.y) continue
     const top = Math.max(0, Math.ceil(b.y - 0.5)), bottom = Math.min(maxY, Math.ceil(a.y - 0.5))
     const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1, wave = ((i >> 2) + (frame >> 4)) & 1
-    // past the fork, the road not taken going away on its side
-    const gone = s.fork && s.forkPick >= 0 && i >= s.fork.at && i < s.fork.at + GHOST_LEN ? (s.forkPick === 0 ? 1 : -1) * (2.3 + ((i - s.fork.at) / GHOST_LEN) ** 1.8 * 5) : 0
+    // the other road, on its side, where it can be seen
+    const gone = g.zone === 'tunnel' ? 0 : otherRoad(s, i)
     pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y); groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h: b.u + (a.u - b.u) * t, band, zone: g.zone, fog: p.fog, wave, land: true, ghost: gone }, tier, frame) } })
     maxY = Math.min(maxY, top)
     farX = b.x; farZone = g.zone
@@ -396,7 +396,7 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
       else lively(board, thing.kind, thing.look, i, cx, a.y, a.u, thing.flip, clip, tier, fog, frame, lit)
     }
-    // the fork in the middle of the level: the same barrier up to it while the car decides, the gantry with what each road offers
+    // where the road divides into the level's two roads: the same barrier up to it while the car decides, the gantry with what each road offers
     if (s.fork && s.forkPick < 0 && i >= s.fork.at - 90 && i < s.fork.at) median(board, a, b, i, clip, tier, fog)
     if (s.fork && s.forkPick < 0 && i === s.fork.at - 70) forkGantry(board, a, clip, s.fork.kinds.map((k) => FORK_SIGN[k]) as [Sign, Sign], tier, fog)
     if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
@@ -570,6 +570,33 @@ function mapOf(track: RacingSegment[]): { x: Float32Array; y: Float32Array; h: F
   maps.set(track, out)
   return out
 }
+/**
+ * The other road of the two on the map: its own bends from where the roads
+ * divide, bowed out to its side and drawn in so it meets the road again
+ * where they are one.
+ */
+const otherMaps = new WeakMap<object, Map<number, { x: Float32Array; y: Float32Array }>>()
+function otherMapOf(f: NonNullable<RacingState['fork']>, k: 0 | 1, m: { x: Float32Array; y: Float32Array; h: Float32Array }): { x: Float32Array; y: Float32Array } {
+  let known = otherMaps.get(m)
+  if (!known) { known = new Map(); otherMaps.set(m, known) }
+  const had = known.get(k)
+  if (had) return had
+  const road = f.tracks[k], n = f.len + 1, x = new Float32Array(n), y = new Float32Array(n)
+  let h = m.h[f.at]
+  x[0] = m.x[f.at]; y[0] = m.y[f.at]
+  for (let i = 0; i < f.len; i += 1) { h += road[i].curve * MAP_TURN; x[i + 1] = x[i] + Math.sin(h); y[i + 1] = y[i] + Math.cos(h) }
+  // drawn in to meet the road at its end, bowed out to its side (left of the way the road heads, or right) on the way
+  const ex = m.x[f.at + f.len] - x[f.len], ey = m.y[f.at + f.len] - y[f.len], side = k === 0 ? -1 : 1, h0 = m.h[f.at]
+  for (let i = 0; i <= f.len; i += 1) {
+    const t = i / f.len, bow = Math.sin(Math.PI * t) ** 0.7 * MAP_BOW * side
+    x[i] += ex * t + Math.cos(h0) * bow; y[i] += ey * t - Math.sin(h0) * bow
+  }
+  const out = { x, y }
+  known.set(k, out)
+  return out
+}
+const MAP_BOW = 70
+
 /** The stretches the map shows, behind the car and ahead of it. */
 const MAP_BEHIND = 120
 const MAP_AHEAD = 380
@@ -595,14 +622,17 @@ function minimap(board: PixelBuffer, s: RacingState, accent: string): void {
   const me = at(Math.max(0, s.z)), cos = Math.cos(me.h), sin = Math.sin(me.h)
   const scale = (size * 0.72) / MAP_AHEAD, cx = bx + size / 2, cy = by + size * 0.78
   /** A place of the road on the map, turned so the car heads up. */
-  const onMap = (z: number) => {
-    const p = at(z), dx = p.x - me.x, dy = p.y - me.y
-    return { x: cx + (dx * cos - dy * sin) * scale, y: cy - (dx * sin + dy * cos) * scale }
-  }
+  const turned = (p: { x: number; y: number }) => { const dx = p.x - me.x, dy = p.y - me.y; return { x: cx + (dx * cos - dy * sin) * scale, y: cy - (dx * sin + dy * cos) * scale } }
+  const onMap = (z: number) => turned(at(z))
   const inside = (p: { x: number; y: number }, r: number) => p.x >= bx + r && p.y >= by + r && p.x < bx + size - r && p.y < by + size - r
   const dot = (p: { x: number; y: number }, r: number, c: string) => board.rect(Math.round(p.x - r / 2), Math.round(p.y - r / 2), r, r, c)
-  // the road: its edge in ink, then the road, a dot every other stretch, darker in the tunnel
   const from = Math.max(0, Math.floor(s.z) - MAP_BEHIND), to = Math.min(last, s.z + MAP_AHEAD)
+  // the other road of the two, dimmer, going its own way and coming back
+  if (s.fork) {
+    const f = s.fork, other = otherMapOf(f, s.forkPick === 0 ? 1 : 0, m)
+    for (let z = Math.max(from, f.at); z < Math.min(to, f.at + f.len); z += 2) { const p = turned({ x: other.x[z - f.at], y: other.y[z - f.at] }); if (inside(p, 2)) dot(p, 3, '#4a4a5c') }
+  }
+  // the road: its edge in ink, then the road, a dot every other stretch, darker in the tunnel
   for (let z = from; z < to; z += 2) { const p = onMap(z); if (inside(p, 2)) dot(p, 5, '#0c0c14') }
   for (let z = from; z < to; z += 2) { const p = onMap(z); if (inside(p, 2)) dot(p, 3, s.track[z].zone === 'tunnel' ? '#6a6a7a' : '#c8c8d8') }
   // the checkpoints and the line, if they are on it
@@ -626,8 +656,28 @@ function minimap(board: PixelBuffer, s: RacingState, accent: string): void {
 const FORK_DECIDE_SHOWN = 30
 /** A sign over the road: its words and its colour. */
 type Sign = { name: string; colour: string }
-/** The stretches the road not taken at the fork is seen going away for. */
-const GHOST_LEN = 120
+/**
+ * Where the other road of the two is, beside this one at stretch `i`, in
+ * half widths (on its side), or 0 where it is out of sight: going away where
+ * the roads divide, running far off for a while, gone over the horizon, then
+ * coming back and closer till the two roads are one again.
+ */
+function otherRoad(s: RacingState, i: number): number {
+  const f = s.fork
+  if (!f || s.forkPick < 0) return 0
+  const k = i - f.at, home = f.len - k, side = s.forkPick === 0 ? 1 : -1
+  if (k < 0 || home <= 0) return 0
+  const near = (n: number) => 2.3 + (n / FORK_NEAR) ** 1.6 * (OTHER_FAR - 2.3)
+  const away = (n: number) => OTHER_FAR + ((n - FORK_NEAR) / OTHER_FADE) ** 2 * (OTHER_GONE - OTHER_FAR)
+  if (k < FORK_NEAR) return side * near(k)
+  if (home < FORK_NEAR) return side * near(home)
+  if (k < FORK_NEAR + OTHER_ALONG) return side * OTHER_FAR
+  if (k < FORK_NEAR + OTHER_ALONG + OTHER_FADE) return side * away(k - OTHER_ALONG)
+  if (home < FORK_NEAR + OTHER_FADE) return side * away(home)
+  return 0
+}
+/** How far off the other road runs, for how long, and how far it goes as it leaves the view (or comes into it) and over how many stretches. */
+const OTHER_FAR = 12, OTHER_ALONG = 260, OTHER_GONE = 40, OTHER_FADE = 140
 /** What each road of the fork says on its sign. */
 const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
 /** Each rival's colour, for its mark when it is close behind. */
