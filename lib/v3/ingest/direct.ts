@@ -45,6 +45,11 @@ export type DirectOptions = {
   youtubeBucket?: string
   log?: (message: string) => void
   http?: typeof fetch
+  /**
+   * A line that checks what the base holds and admits nothing (the nightly check of dead videos): judged on what it
+   * read, like a dry run — its zero insertions are its nature, not a failure (it was journaled "failed" every night).
+   */
+  checkOnly?: boolean
 }
 
 export type DirectRun = {
@@ -170,9 +175,11 @@ export async function directContext(db: Db, options: DirectOptions): Promise<Dir
       const finishedAt = new Date()
       const hitDeadline = finishedAt.getTime() >= deadline
       // A dry run inserts nothing by design: it is judged on what it read, not on what it wrote.
-      const status: RunStatus = options.dryRun
-        ? (result.errors.length ? 'partial' : result.counters.scanned ? 'ok' : 'skipped')
-        : judge(result.counters, result.errors, hitDeadline)
+      const status: RunStatus = options.checkOnly
+        ? (!result.counters.scanned ? (result.errors.length ? 'failed' : 'skipped') : result.errors.length || hitDeadline ? 'partial' : 'ok')
+        : options.dryRun
+          ? (result.errors.length ? 'partial' : result.counters.scanned ? 'ok' : 'skipped')
+          : judge(result.counters, result.errors, hitDeadline)
       if (runId) await closeRun(db, runId, { finishedAt, status, counters: result.counters, errors: result.errors, ...(note ? { note } : {}) }).catch(() => log('journal indisponible ; le passage lui-même n_est pas affecté'))
       await db.collection(LOCKS_COLLECTION).updateOne({ _id: options.journalLine } as Document, { $set: { until: new Date(0) } }).catch(() => undefined)
       return { status, hitDeadline }
