@@ -30,11 +30,11 @@ import {
 } from './racing-rules'
 import {
   blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
-  facadePiece, puddle, puff, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type Tier,
+  facadePiece, puddle, puff, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
 } from './racing-scene'
 import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
 import { carSide, CAR_SPAN } from './racing-sides'
-import { shop, SHOPS, TOWN_UNIT } from './racing-town'
+import { shop, SHOPS, TOWN_UNIT, type ShopKind } from './racing-town'
 import { TRAFFIC_WIDTH, trafficHigh } from './racing-traffic'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
@@ -528,16 +528,20 @@ const SHOP_FRONT = 2.25, SHOP_DEPTH = 1.9
  * what stands on its roof and its lights where they are along it.
  */
 function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, lit: boolean, tier: Tier, side: -1 | 1): void {
-  const s = shop(SHOPS[at.kind % SHOPS.length], lit), { front } = s
+  const kind = SHOPS[at.kind % SHOPS.length], s = shop(kind, lit), { front } = s
   const high = front.height * TOWN_UNIT, fog = p.fog, tint = tintFor(tier, fog), soft = lit ? { rgb: tint.rgb, by: tint.by * 0.55 } : tint
   const col = (z: number) => (side > 0 ? 1 - (z - at.start) / at.len : (z - at.start) / at.len) * front.width
   const along = (c: number) => at.start + (side > 0 ? 1 - c / front.width : c / front.width) * at.len
-  facadePiece(board, p.a, p.b, side * SHOP_FRONT, high, p.clip, front, col(i), col(i + 1), soft)
-  if (i === at.start) shopSide(board, p.a, side * SHOP_FRONT, SHOP_DEPTH, high, p.clip, s.wall, s.floors, lit, tint)
+  // its front, set back from the road if it is a big one
+  const face = SHOP_FRONT + (SHOP_BACK[kind] ?? 0)
+  facadePiece(board, p.a, p.b, side * face, high, p.clip, front, col(i), col(i + 1), soft)
+  if (i === at.start) shopSide(board, p.a, side * face, SHOP_DEPTH, high, p.clip, s.wall, s.floors, lit, tint)
+  // what stands out of its front toward the road: the roof's edge, an awning or a porch on its posts, a sign
+  relief(board, p, RELIEF[kind], i - at.start, at.len, side * face, high, lit, tint)
   if (s.top) {
     const z = along(s.top.x0 + s.top.pic.width / 2)
     if (Math.floor(z) === i) {
-      const foot = place(p, z, side * (SHOP_FRONT + SHOP_DEPTH * 0.3)), roof = foot.y - high * foot.u
+      const foot = place(p, z, side * (face + SHOP_DEPTH * 0.3)), roof = foot.y - high * foot.u
       const h = s.top.pic.height * TOWN_UNIT * foot.u, w = s.top.pic.width * TOWN_UNIT * foot.u
       if (h >= 2) drawArt(board, s.top.pic, foot.x - w / 2, roof - h, w, h, p.clip, false, soft.rgb, soft.by)
       if (lit && fog < 13) for (const g of s.top.glows) glow(board, foot.x - w / 2 + g.x * TOWN_UNIT * foot.u, roof - h + g.y * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.35, p.clip)
@@ -546,8 +550,104 @@ function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, 
   if (lit && fog < 13) for (const g of s.frontGlows) {
     const z = along(g.x)
     if (Math.floor(z) !== i) continue
-    const foot = place(p, z, side * SHOP_FRONT)
+    const foot = place(p, z, side * face)
     glow(board, foot.x, foot.y - (front.height - g.y) * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.3, p.clip)
+  }
+}
+
+/**
+ * What stands out of a shop's front, in half widths: the roof's edge over it
+ * (`eave`, how far out); an awning in its two colours of stripes, or a
+ * porch's roof on its posts (`awning`: how high it hangs from the front, how
+ * far out, how much lower its outer edge); a sign sticking out toward the
+ * road (`blade`: where along the front, how high its middle, how wide and
+ * tall, its colour), its bulbs lit after dark.
+ */
+type Relief = {
+  eave?: { out: number; colour: string }
+  awning?: { at: number; out: number; drop: number; colours: [string, string]; posts?: string }
+  blade?: { along: number; at: number; w: number; h: number; colour: string }
+}
+const RELIEF: Record<ShopKind, Relief> = {
+  icecream: { awning: { at: 0.7, out: 0.32, drop: 0.12, colours: ['#ff9ac0', '#fff4f0'] } },
+  surf: { awning: { at: 0.8, out: 0.32, drop: 0.12, colours: ['#2ab0b0', '#f6f2e8'] }, blade: { along: 0.2, at: 1.05, w: 0.42, h: 0.4, colour: '#1a7a8a' } },
+  burger: { awning: { at: 0.62, out: 0.3, drop: 0.1, colours: ['#e83a2a', '#fff4e0'] } },
+  diner: { eave: { out: 0.14, colour: '#c8c8d8' }, blade: { along: 0.85, at: 0.9, w: 0.36, h: 0.36, colour: '#e8402a' } },
+  motel: { awning: { at: 0.82, out: 0.42, drop: 0.05, colours: ['#c8a070', '#b89060'], posts: '#f4e2b8' } },
+  hotel: { blade: { along: 0.15, at: 1.45, w: 0.28, h: 1.1, colour: '#e8406a' } },
+  tiki: { eave: { out: 0.35, colour: '#c8a050' } },
+  station: { eave: { out: 0.4, colour: '#e8e8f0' } },
+  pizza: { awning: { at: 0.72, out: 0.3, drop: 0.1, colours: ['#2e9a48', '#fff4e0'] }, blade: { along: 0.85, at: 1.05, w: 0.38, h: 0.38, colour: '#c83a2a' } },
+  arcade: { blade: { along: 0.2, at: 1.0, w: 0.34, h: 0.7, colour: '#7a3ae0' } },
+  records: { awning: { at: 0.8, out: 0.3, drop: 0.1, colours: ['#8a5ae0', '#f0e8ff'] }, blade: { along: 0.8, at: 1.15, w: 0.4, h: 0.4, colour: '#2a2a3a' } },
+  chalet: { eave: { out: 0.45, colour: '#5a3418' } },
+  alphotel: { eave: { out: 0.3, colour: '#7a4a2a' }, awning: { at: 0.85, out: 0.3, drop: 0.08, colours: ['#b8402a', '#f2e6c8'] } },
+  skishop: { awning: { at: 0.85, out: 0.32, drop: 0.12, colours: ['#2a5ab0', '#f2f2f8'] }, blade: { along: 0.2, at: 1.25, w: 0.4, h: 0.4, colour: '#2a5ab0' } },
+  cablecar: { eave: { out: 0.25, colour: '#8a8a94' } },
+  cheese: { awning: { at: 0.8, out: 0.32, drop: 0.12, colours: ['#f2c43a', '#fff8e0'] }, blade: { along: 0.8, at: 1.1, w: 0.4, h: 0.34, colour: '#e8a020' } },
+  chapel: { eave: { out: 0.2, colour: '#8a3a2a' } },
+  adobe: { awning: { at: 0.85, out: 0.45, drop: 0.04, colours: ['#8a5a30', '#7a4a24'], posts: '#6a3a1a' } },
+  saloon: { awning: { at: 0.95, out: 0.5, drop: 0.04, colours: ['#8a5a30', '#7a4a24'], posts: '#5a3418' }, blade: { along: 0.5, at: 1.75, w: 0.55, h: 0.3, colour: '#7a4a24' } },
+  tradingpost: { awning: { at: 0.85, out: 0.45, drop: 0.04, colours: ['#9a7048', '#8a6038'], posts: '#5a3a20' } },
+  cinema: { awning: { at: 1.05, out: 0.48, drop: 0.06, colours: ['#f2d23a', '#e8402a'] } },
+  tower: {},
+  club: { blade: { along: 0.2, at: 1.2, w: 0.3, h: 1.0, colour: '#ff3aa0' } },
+  boutique: { awning: { at: 0.85, out: 0.3, drop: 0.1, colours: ['#1a1a22', '#f6f2ea'] } },
+  cafe: { awning: { at: 0.85, out: 0.32, drop: 0.1, colours: ['#1a6a42', '#f2e8c8'] }, blade: { along: 0.8, at: 1.05, w: 0.34, h: 0.34, colour: '#1a5a3a' } },
+}
+/** How much further back from the road a big shop stands (the filling station, its forecourt before it). */
+const SHOP_BACK: Partial<Record<ShopKind, number>> = { station: 1 }
+
+/** A shop's relief on stretch `k` of its `len` (from its near end), its front at `face` (negative on the left), `high` tall. */
+function relief(board: PixelBuffer, p: Projected, r: Relief, k: number, len: number, face: number, high: number, lit: boolean, tint: { rgb: RGB; by: number }): void {
+  const toward = -Math.sign(face), clip = p.clip
+  const paint = (c: string) => { const [cr, cg, cb] = rgbOf(c); return `#${[cr, cg, cb].map((v, n) => Math.round(v + (tint.rgb[n] - v) * tint.by).toString(16).padStart(2, '0')).join('')}` }
+  /** A point of the front's world on this stretch: `x` across, `y` up, at its near end (`e` 0) or its far end (1). */
+  const pt = (e: 0 | 1, x: number, y: number): [number, number] => { const q = e ? p.b : p.a; return [q.x + x * q.u, q.y - y * q.u] }
+  // a plane sticking out of the front: from height `top` at the front to `low` at `out` toward the road
+  const slab = (top: number, low: number, out: number, colour: string) => quad(board, [pt(0, face, top), pt(0, face + toward * out, low), pt(1, face + toward * out, low), pt(1, face, top)], paint(colour), clip)
+  if (r.eave) {
+    slab(high, high - 0.05, r.eave.out, r.eave.colour)
+    quad(board, [pt(0, face + toward * r.eave.out, high - 0.05), pt(0, face + toward * r.eave.out, high - 0.12), pt(1, face + toward * r.eave.out, high - 0.12), pt(1, face + toward * r.eave.out, high - 0.05)], paint(mix(r.eave.colour, '#1a1424', 0.45)), clip)
+  }
+  if (r.awning) {
+    const a = r.awning, low = a.at - a.drop, edge = face + toward * a.out
+    // its stripes across, two stretches each
+    slab(a.at, low, a.out, a.colours[Math.floor(k / 2) % 2])
+    // the hanging edge
+    quad(board, [pt(0, edge, low), pt(0, edge, low - 0.08), pt(1, edge, low - 0.08), pt(1, edge, low)], paint(mix(a.colours[0], '#1a1424', 0.25)), clip)
+    // the posts, under a porch's edge
+    if (a.posts && k % 5 === 2) { const [x, y0] = pt(0, edge, 0), [, y1] = pt(0, edge, low), w = Math.max(1, p.a.u * 0.04); block(board, x - w / 2, y1, w, y0 - y1, paint(a.posts), clip) }
+  }
+  if (r.blade && k === Math.min(len - 1, Math.floor(len * r.blade.along))) {
+    const b = r.blade, [x0, yt] = pt(0, face, b.at + b.h / 2), [x1, yb] = pt(0, face + toward * b.w, b.at - b.h / 2)
+    const left = Math.min(x0, x1), w = Math.abs(x1 - x0), h = yb - yt
+    if (w >= 2) {
+      block(board, left, yt, w, h, paint('#1a1424'), clip)
+      block(board, left + 1, yt + 1, w - 2, h - 2, paint(b.colour), clip)
+      block(board, left + w * 0.2, yt + h * 0.25, w * 0.6, Math.max(1, h * 0.12), paint(mix(b.colour, '#ffffff', 0.55)), clip)
+      // its bracket to the front, and its bulbs
+      block(board, Math.min(x0, x1 + (x0 - x1) * 1.1), yt - Math.max(1, h * 0.06), w * 1.1, Math.max(1, h * 0.06), paint('#2a2a34'), clip)
+      for (let n = 0; n < 3; n += 1) { const bx = left + w * (0.25 + n * 0.25), by = yt + h * 0.7; block(board, bx - 0.5, by, Math.max(1, w * 0.06), Math.max(1, w * 0.06), lit ? '#fff2b0' : paint('#f2e8c8'), clip); if (lit) glow(board, bx, by, Math.max(2, w * 0.18), '#ffd890', 0.4, clip) }
+    }
+  }
+}
+
+/** A convex shape filled, row by row, nothing at or under `clip`. */
+function quad(board: PixelBuffer, pts: Array<[number, number]>, colour: string, clip: number): void {
+  const ys = pts.map((q) => q[1]), top = Math.max(0, Math.ceil(Math.min(...ys))), bottom = Math.min(clip, board.height, Math.ceil(Math.max(...ys)))
+  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width
+  for (let y = top; y < bottom; y += 1) {
+    const c = y + 0.5
+    let lo = Infinity, hi = -Infinity
+    for (let n = 0; n < pts.length; n += 1) {
+      const [ax, ay] = pts[n], [bx, by] = pts[(n + 1) % pts.length]
+      if ((c < ay && c < by) || (c > ay && c > by) || ay === by) continue
+      const x = ax + ((c - ay) / (by - ay)) * (bx - ax)
+      lo = Math.min(lo, x); hi = Math.max(hi, x)
+    }
+    if (hi < lo) continue
+    for (let x = Math.max(0, Math.round(lo)), o = (y * W + x) * 4; x < Math.min(W, Math.round(hi) + 1); x += 1, o += 4) { d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255 }
   }
 }
 

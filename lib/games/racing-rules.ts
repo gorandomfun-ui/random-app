@@ -591,7 +591,8 @@ function dress(track: RacingSegment[], finish: number, lv: number, world: Racing
     if (rock) {
       if (due('crag', i, 4, 5)) seg.things.push({ kind: rock, x: 2.15 + place() * 0.5, flip: place() < 0.5, look: Math.floor(place() * 4) })
       if (z === 'canyon' && due('cragL', i, 4, 5)) seg.things.push({ kind: rock, x: -2.15 - place() * 0.5, flip: place() < 0.5, look: Math.floor(place() * 4) })
-      if (due('bluff', i, 14, 16)) { const side = z === 'canyon' && place() < 0.5 ? -1 : 1; seg.things.push({ kind: bluffOf[z]!, x: side * (5 + place() * 3.5), flip: place() < 0.5, look: 3 + Math.floor(place() * 2) }) }
+      // the big ones well back from the road — a butte never brushed going by
+      if (due('bluff', i, 14, 16)) { const side = z === 'canyon' && place() < 0.5 ? -1 : 1, kind = bluffOf[z]!; seg.things.push({ kind, x: side * ((kind === 'butte' ? 7 : 5.5) + place() * 3), flip: place() < 0.5, look: 3 + Math.floor(place() * 2) }) }
     }
     if (lv >= 6 && i >= next.along && (landLeft.has(z) || landRight.has(z))) {
       const side = landRight.has(z) && (!landLeft.has(z) || place() < 0.5) ? 1 : -1
