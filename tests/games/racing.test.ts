@@ -124,14 +124,11 @@ test('racing: three cars that drive their own way — the red one fastest, the y
   for (const car of RACING_CARS) assert.equal(RACING_STATS.reduce((a, n) => a + CAR_STATS[car][n], 0), 8, `${car}: eight points, its own way`)
 })
 
-test('racing: between two levels the pit stop — three improvements, one taken, the car better — then the road divides and the side chosen is the next world', () => {
+test('racing: between two levels the pit stop — three improvements, one taken, the car better — then the next world of the game\'s draw', () => {
   const s = createRacing('landscape', 1, 3, { car: 'giallo' })
   const d = driver(GOOD, 3)
-  const routes = s.routes
-  assert.ok(routes && routes[0] !== routes[1] && !routes.includes(s.world), 'two other worlds offered at the fork')
-  for (let i = 0; i < 30000 && s.phase !== 'garage'; i += 1) { const m = d(s); stepRacing(s, s.phase === 'goal' ? 1 : m.steer, m.gas, m.brake, m.nitro) }
+  for (let i = 0; i < 30000 && s.phase !== 'garage'; i += 1) { const m = d(s); stepRacing(s, m.steer, m.gas, m.brake, m.nitro) }
   assert.equal(s.phase, 'garage')
-  assert.equal(s.worlds[1], routes![1], 'the right-hand road taken')
   const g = s.garage!
   assert.equal(g.options.length, 3)
   const stat = g.options[2], before = s.stats[stat]
@@ -142,12 +139,8 @@ test('racing: between two levels the pit stop — three improvements, one taken,
   stepRacing(s, 1); stepRacing(s, 0); stepRacing(s, 0, true)
   assert.equal(s.stats[stat], before + 1, 'the car one point better')
   assert.equal(s.level, 2)
-  assert.equal(s.world, routes![1])
+  assert.equal(s.world, racingWorldOrder(3)[1])
   assert.equal(s.phase, 'start')
-  // a round, the test page's single world, the last level: no fork, no pit stop
-  assert.equal(createRacing('landscape', 4, 3, { single: true }).routes, null)
-  assert.equal(createRacing('landscape', 4, 3, { world: 'city' }).routes, null)
-  assert.equal(createRacing('landscape', RACING_LAST_LEVEL, 3).routes, null)
   const t = createRacing('landscape', 2, 5)
   assert.equal(racingGaragePick(t, 0), false, 'no pit stop in the middle of a race')
   // a round at a later level: the car as improved as it would be by then

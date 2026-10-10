@@ -30,8 +30,8 @@
  * the clock at zero, it is over; the finish line in time clears the level,
  * with points for the time left and the place.
  *
- * Past the line the road divides, a world written over each side: the side
- * the player steers into is the next level's world.
+ * In the middle of each level from the second, the road divides: two roads
+ * offering different things, the side the car is on taking one.
  *
  * Each level is its own road, always the same for it, longer and harder:
  * more of the road's kinds, sharper bends, more traffic and more surprises,
@@ -127,9 +127,8 @@ export function racingStatsAt(car: RacingCarKind, level: number): Record<RacingS
 
 /** The start: three red lights a second apart, then green. */
 export const RACING_START_STEPS = 3 * SECOND
-/** The finish line crossed: the car rolls on while the points add up (a little longer when there is a road to choose); the clock at zero: it comes to a stop. */
+/** The finish line crossed: the car rolls on while the points add up; the clock at zero: it comes to a stop. */
 const GOAL_STEPS = 3 * SECOND
-const ROUTE_STEPS = 4 * SECOND
 const TIMEUP_STEPS = 2 * SECOND
 /** Past the finish line the road goes on, so the car has somewhere to roll. */
 const RUNOFF = 500
@@ -673,8 +672,6 @@ export type RacingState = {
   world: RacingWorld
   /** The car's points now. */
   stats: Record<RacingStat, number>
-  /** The two worlds the road divides into past this level's line, left and right; none in a round or at the last level. */
-  routes: [RacingWorld, RacingWorld] | null
   /** The level's fork in the middle of the road, and the road taken there: −1 not yet, 0 the left, 1 the right. */
   fork: RacingFork | null
   forkPick: -1 | 0 | 1
@@ -756,13 +753,6 @@ export function racingEngine(s: RacingState): number | null {
 /** The two cars that are not the player's, in the order they line up. */
 export const rivalsOf = (car: RacingCarKind): RacingCarKind[] => RACING_CARS.filter((k) => k !== car)
 
-/** The two worlds offered at a level's fork: the two driven least lately, other than this one, in an order of the game's drawing. */
-function routesFor(s: RacingState): [RacingWorld, RacingWorld] {
-  const last = (w: RacingWorld) => s.worlds.slice(0, s.level).lastIndexOf(w)
-  const two = RACING_WORLDS.filter((w) => w !== s.world).sort((a, b) => last(a) - last(b)).slice(0, 2)
-  return (s.rnd() < 0.5 ? [two[0], two[1]] : [two[1], two[0]]) as [RacingWorld, RacingWorld]
-}
-
 function freshLevel(s: RacingState): void {
   s.world = s.worlds[s.level - 1]
   const course = racingCourse(s.level, s.world)
@@ -798,7 +788,6 @@ function freshLevel(s: RacingState): void {
   s.launch = 'none'
   s.spin = 0
   s.pops = []
-  s.routes = s.single || s.fixed || s.level >= RACING_LAST_LEVEL ? null : routesFor(s)
   // the grid as on the title: the three cars side by side, the player's in the middle
   const pace = racingPace(s.level)
   s.rivals = rivalsOf(s.car).map((kind, i) => ({ kind, z: 0, x: RACING_LANES[i === 0 ? 0 : 2], speed: 0, lane: RACING_LANES[i === 0 ? 0 : 2], pace: pace * (i === 0 ? 1.025 : 0.975), next: 5 * SECOND + Math.floor(s.rnd() * 3 * SECOND), ahead: false, passed: false, turbo: 0, cool: RIVAL_COOL + Math.floor(s.rnd() * 6 * SECOND) }))
@@ -815,7 +804,7 @@ export function createRacing(layout: RacingLayout, level = 1, seed = 1, options:
   const s: RacingState = {
     layout, level: lv, single: !!options.single, car, worlds, world: worlds[0], fixed: !!options.world,
     // a game from a later level (a round, the test page), the car as improved as it would be by then
-    stats: racingStatsAt(car, lv), routes: null, fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
+    stats: racingStatsAt(car, lv), fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
     track: [], finish: 0, checks: [], check: 0, items: [], traffic: [], z: 0, x: 0, speed: 0, steer: 0, rivals: [], time: 0, phase: 'start', phaseTimer: 0,
     score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
   }
@@ -871,9 +860,8 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   s.phaseTimer += 1
   if (s.comboSteps > 0 && (s.comboSteps -= 1) === 0) s.combo = 0
   const rolling = s.phase === 'goal' || s.phase === 'timeup'
-  // past the line or out of time, the car drives itself, lifting off, back to the middle — where the road divides, the player steers into a side
-  const choosing = s.phase === 'goal' && s.routes != null
-  if (rolling) { if (!choosing) steer = Math.abs(s.x) > 0.1 ? (s.x > 0 ? -1 : 1) : 0; gas = s.phase === 'goal' && s.speed < RACING_TOP * 0.45; brake = s.phase === 'timeup' }
+  // past the line or out of time, the car drives itself, lifting off, back to the middle
+  if (rolling) { steer = Math.abs(s.x) > 0.1 ? (s.x > 0 ? -1 : 1) : 0; gas = s.phase === 'goal' && s.speed < RACING_TOP * 0.45; brake = s.phase === 'timeup' }
   // the turbo let go: as long as the gauge was full
   if (pressed.nitro && s.phase === 'play' && s.turbo === 0 && s.boost >= BOOST_MIN) {
     s.turbo = Math.round(s.boost * TURBO_STEPS * statTurbo(s.stats.turbo))
@@ -914,13 +902,9 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
       s.turbo = 0
       s.heard.push('level')
     } else if (s.time <= 0) { s.time = 0; s.phase = 'timeup'; s.phaseTimer = 0 }
-  } else if (s.phase === 'goal' && s.phaseTimer >= (s.routes ? ROUTE_STEPS : GOAL_STEPS)) {
+  } else if (s.phase === 'goal' && s.phaseTimer >= GOAL_STEPS) {
     if (s.single || s.level >= RACING_LAST_LEVEL) s.phase = 'won'
-    else {
-      // the side of the road the car is on: the next level's world
-      if (s.routes) s.worlds[s.level] = s.routes[s.x < 0 ? 0 : 1]
-      openGarage(s)
-    }
+    else openGarage(s)
   } else if (s.phase === 'timeup' && s.phaseTimer >= TIMEUP_STEPS) s.phase = 'over'
 }
 

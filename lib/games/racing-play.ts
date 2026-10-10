@@ -303,8 +303,6 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   const slope = (heightAt(s.track, s.z + 8) - heightAt(s.track, Math.max(0, s.z - 2))) / (10 * RACING_SEGMENT)
   const horizon = Math.round(v.horizon + Math.max(-34, Math.min(34, slope * K * 0.3)))
   const here = segmentOf(s.track, Math.max(0, s.z)).zone
-  farView(board, tier, sinking, horizon, -s.view, world)
-  sky(board, frame, horizon, tier, accent, world)
   // the stretches ahead, nearest first: each drawn only where nearer ground has not been
   const b0 = Math.floor(camZ)
   const flat = FLAT.zone === s.track[0].zone ? FLAT : { ...FLAT, zone: s.track[0].zone }
@@ -332,6 +330,10 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     farX = b.x; farZone = g.zone
   }
   // under the horizon where no road reaches: the sea, the land on the land's side of the road's far end
+  // the far view stands on the horizon — or, up a hill, on its crest: the landscape always behind the road's top, never sky alone
+  const backdrop = Math.max(8, Math.min(horizon, maxY + 2))
+  farView(board, tier, sinking, backdrop, -s.view, world)
+  sky(board, frame, backdrop, tier, accent, world)
   farGround(d, W, Math.max(0, horizon), Math.max(0, Math.min(H, maxY)), Math.round(farX + 6), farZone, tier, frame)
   for (const draw of pending) draw()
   // in the tunnel, its dark
@@ -388,9 +390,6 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
       else lively(board, thing.kind, thing.look, i, cx, a.y, a.u, thing.flip, clip, tier, fog, frame, lit)
     }
-    // past the line, where the road divides: a striped barrier down the middle, the gantry with the two worlds
-    if (s.routes && i > s.finish + FORK_FROM) median(board, a, b, i, clip, tier, fog)
-    if (s.routes && i === s.finish + FORK_GANTRY) forkGantry(board, a, clip, s.routes.map((w) => WORLD_SIGN[w]) as [Sign, Sign], tier, fog)
     // the fork in the middle of the level: the same barrier up to it while the car decides, the gantry with what each road offers
     if (s.fork && s.forkPick < 0 && i >= s.fork.at - 90 && i < s.fork.at) median(board, a, b, i, clip, tier, fog)
     if (s.fork && s.forkPick < 0 && i === s.fork.at - 70) forkGantry(board, a, clip, s.fork.kinds.map((k) => FORK_SIGN[k]) as [Sign, Sign], tier, fog)
@@ -589,9 +588,6 @@ function minimap(board: PixelBuffer, s: RacingState, accent: string): void {
   for (let k = 0; k < 5; k += 1) board.rect(Math.round(cx - k / 2 - 0.5), Math.round(cy - 2 + k), Math.max(1, Math.round(k + 1)), 1, me2)
 }
 
-/** Where, past the line, the road divides, and where the gantry with the two worlds stands, in stretches. */
-const FORK_FROM = 20
-const FORK_GANTRY = 75
 /** The fork's call stops a little before the side is decided. */
 const FORK_DECIDE_SHOWN = 30
 /** A sign over the road: its words and its colour. */
@@ -600,8 +596,6 @@ type Sign = { name: string; colour: string }
 const GHOST_LEN = 120
 /** What each road of the fork says on its sign. */
 const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
-/** Each world's name and colour, on the fork's signs. */
-const WORLD_SIGN: Record<RacingWorld, Sign> = { coast: { name: 'COAST', colour: '#1a8ab0' }, mountain: { name: 'MOUNTAINS', colour: '#2e8a48' }, desert: { name: 'DESERT', colour: '#d0702e' }, city: { name: 'CITY', colour: '#7a3ae0' } }
 /** Each rival's colour, for its mark when it is close behind. */
 const RIVAL_COLOUR: Record<RacingCarKind, string> = { rosso: '#ff3a2a', giallo: '#ffd23f', burger: '#ff9a3a' }
 
@@ -813,13 +807,6 @@ function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: n
     arcadeText(out, 'GOAL!', W / 2, mid - 6, 4, accent)
     if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE +${s.bonus.place}`, W / 2, mid + 36, s.bonus.rank === 1 ? '#ffd23f' : CREAM, 2)
     if (s.phaseTimer > 70 && s.bonus) said(out, `TIME +${s.bonus.time}`, W / 2, mid + 56, CREAM, 2)
-    // the road divides: steer into a side, each side's world named on it
-    if (s.routes) {
-      said(out, 'PICK YOUR ROAD', W / 2, top + 8, '#faf6ec', 1)
-      const [left, right] = s.routes, on = s.x < 0 ? 0 : 1
-      said(out, `< ${WORLD_SIGN[left].name}`, W * 0.27, top + 22, on === 0 && (s.steps >> 3) % 2 ? '#ffffff' : mix(WORLD_SIGN[left].colour, '#ffffff', 0.35), 2)
-      said(out, `${WORLD_SIGN[right].name} >`, W * 0.73, top + 22, on === 1 && (s.steps >> 3) % 2 ? '#ffffff' : mix(WORLD_SIGN[right].colour, '#ffffff', 0.35), 2)
-    }
     return
   } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
   if (s.news && (s.news.steps > 20 || (s.news.steps >> 2) % 2 === 0)) said(out, s.news.text, W / 2, top + 40, s.news.text.startsWith('CHECK') ? '#3aff6a' : '#ffd23f', W >= 400 ? 3 : 2)
