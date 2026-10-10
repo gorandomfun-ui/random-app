@@ -9,11 +9,11 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 
-import { canCaptureTab, commImportSource, commList, commRemove, commRemoveMedia, formatBytes, LICENSE_COLORS, LICENSE_WORDS, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
+import { canCaptureTab, CHROME_NOTE, commImportSource, commList, commRemove, commRemoveMedia, desktopWithoutTabCapture, formatBytes, LICENSE_COLORS, LICENSE_WORDS, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
 import type { MediaDoc } from '@/lib/comm/model'
 
 const TYPE_WORDS: Record<string, string> = { video: 'Vidéo', image: 'Image', web: 'Site', quote: 'Citation', fact: 'Fait', joke: 'Blague' }
-const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature' }
+const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe', render: 'Rendu', poster: 'Image du clip' }
 
 export default function CommQueueClient() {
   const [items, setItems] = useState<QueueItemWithMedia[]>([])
@@ -88,12 +88,13 @@ export default function CommQueueClient() {
   return (
     <main className="min-h-screen bg-black px-5 py-8 text-white">
       <div className="mx-auto max-w-4xl space-y-5">
-        <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link></nav>
+        <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link><Link href="/admin/comm/config" className="underline">Configuration</Link></nav>
         <header className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-2xl font-bold">Comm — la file</h1>
+          <Link href="/admin/comm/compose" className="rounded-full border border-white bg-white px-5 py-2 text-sm font-bold uppercase text-black">Composer</Link>
           {status ? <p className="text-sm">{status.count} / {status.max}{!status.blob ? <span className="ml-3 text-amber-300">Blob non configuré : aucun média ne peut être pris.</span> : null}</p> : null}
         </header>
-        <p className="text-sm text-gray-300">Ce que tu as mis de côté depuis la curation, avec les médias pris sur le moment. Un élément part avec ses médias après publication ou export, ou ici à la main.</p>
+        <p className="text-sm text-gray-300">Ce que tu as mis de côté depuis la curation, avec les médias pris sur le moment. « Composer » ouvre un post vide où tu ajoutes les médias de la file, slide par slide. Un élément reste ici jusqu’à ce que tu le supprimes.</p>
 
         <div className="flex flex-wrap gap-2 text-sm">
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">Tous les types</option>{Object.entries(TYPE_WORDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
@@ -129,9 +130,10 @@ export default function CommQueueClient() {
                   </div>
                 </div>
 
-                {item.media.length ? (
+                {(item as QueueItemWithMedia & { usedBy?: number[] }).usedBy?.length ? <p className="mt-2 text-xs text-green-300">Déjà utilisé dans {((item as QueueItemWithMedia & { usedBy?: number[] }).usedBy ?? []).map((n) => `n° ${n}`).join(', ')} — supprime-le quand tu as fini avec.</p> : null}
+                {item.media.filter((m) => m.kind !== 'render' && m.kind !== 'poster').length ? (
                   <ul className="mt-3 flex flex-wrap gap-3">
-                    {item.media.map((media) => (
+                    {item.media.filter((m) => m.kind !== 'render' && m.kind !== 'poster').map((media) => (
                       <li key={media._id} className="flex items-center gap-2 text-xs">
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
                         {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
@@ -146,7 +148,8 @@ export default function CommQueueClient() {
                   {item.contentType === 'image' && !isGif ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'image')}>Télécharger l’image</button> : null}
                   {item.contentType === 'image' && isGif ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'gif')}>Récupérer le GIF</button> : null}
                   {item.contentType === 'video' && desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Capturer un extrait</Link> : null}
-                  {item.contentType === 'video' && !desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Mode capture (téléphone)</Link> : null}
+                  {item.contentType === 'video' && !desktop && !desktopWithoutTabCapture() ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Mode capture (téléphone)</Link> : null}
+                  {item.contentType === 'video' && desktopWithoutTabCapture() ? <span className="text-xs text-amber-200" title={CHROME_NOTE}>Extrait : dans Chrome</span> : null}
                   <button className={small} disabled={busy === item._id} onClick={() => { fileTarget.current = item._id; fileInput.current?.click() }}>Importer</button>
                   {item.snapshot.thumb ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'thumb')}>Utiliser la miniature</button> : null}
                   <Link href={`/admin/comm/compose?items=${item._id}`} className={small}>Composer</Link>

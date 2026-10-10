@@ -1,6 +1,6 @@
 /**
  * The files ready to post, in the browser: one PNG per picture slide, the
- * clip and its dressing for a video slide (the montage joins them later), the
+ * clip for a video slide, with its dressing apart when it is not a montage, the
  * caption as text; numbered, zipped, downloaded. Nothing crosses a function.
  */
 

@@ -89,6 +89,8 @@ const PROTECTED_ROUTES: ProtectedRoute[] = [
   { path: '/api/admin/comm/posts', module: '@/app/api/admin/comm/posts/route', methods: ['GET', 'POST'] },
   { path: '/api/admin/comm/posts/x', module: '@/app/api/admin/comm/posts/[id]/route', methods: ['GET', 'PATCH', 'DELETE'] },
   { path: '/api/admin/comm/posts/x/exported', module: '@/app/api/admin/comm/posts/[id]/exported/route', methods: ['POST'] },
+  { path: '/api/admin/comm/publish/instagram', module: '@/app/api/admin/comm/publish/instagram/route', methods: ['GET', 'POST'] },
+  { path: '/api/admin/comm/config', module: '@/app/api/admin/comm/config/route', methods: ['GET', 'POST'] },
 ]
 
 /** Each of these must be refused; the label names the bypass being tried. */

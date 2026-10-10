@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   if (!commAllowed(req, true)) return json({ error: 'Unauthorized' }, 401)
   const body = await bodyOf(req)
   const ids = Array.isArray(body?.queueItemIds) ? body!.queueItemIds.filter((id): id is string => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)) : []
-  if (typeof body?.destination !== 'string' || typeof body?.format !== 'string' || !ids.length) return json({ error: 'Invalid request' }, 400)
+  if (typeof body?.destination !== 'string' || typeof body?.format !== 'string') return json({ error: 'Invalid request' }, 400)
   try {
     const result = await createDraft(await commDb(), { destination: body.destination, format: body.format, queueItemIds: ids })
     return result.ok ? json({ post: result.post }) : json({ error: result.reason }, 400)

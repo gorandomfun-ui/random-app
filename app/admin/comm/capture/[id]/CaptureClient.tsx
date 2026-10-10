@@ -10,7 +10,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 
-import { canCaptureTab, commItem, uploadMedia, type QueueItemWithMedia } from '@/lib/comm/client'
+import { canCaptureTab, CHROME_NOTE, commItem, desktopWithoutTabCapture, uploadMedia, type QueueItemWithMedia } from '@/lib/comm/client'
 import { captureEmbedUrl, COVER_SECONDS, formatSeconds, parseStartSeconds, pickRecorderType } from '@/lib/comm/capture'
 import { clipMaxSeconds } from '@/lib/comm/model'
 
@@ -35,6 +35,7 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
   const timerRef = useRef<number | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
   const desktop = canCaptureTab()
+  const otherBrowser = desktopWithoutTabCapture()
   const maxSeconds = clipMaxSeconds()
 
   useEffect(() => {
@@ -93,6 +94,12 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
         // Chrome: offer this very tab, keep the picker on tabs, keep the capture here.
         preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', monitorTypeSurfaces: 'exclude',
       } as DisplayMediaStreamOptions)
+      const surface = (stream.getVideoTracks()[0]?.getSettings() as { displaySurface?: string }).displaySurface
+      if (surface && surface !== 'browser') {
+        stream.getTracks().forEach((track) => track.stop())
+        setPhase('idle'); setError('Tu as choisi une fenêtre ou l’écran entier. Dans la fenêtre de Chrome, prends l’onglet « Onglet Chrome », puis cette page.')
+        return
+      }
       streamRef.current = stream
       stream.getVideoTracks()[0]?.addEventListener('ended', () => { void finish() })
       const CropTargetApi = (window as unknown as { CropTarget?: { fromElement: (element: Element) => Promise<unknown> } }).CropTarget
@@ -167,10 +174,16 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
             <label>Cache au départ (s)<br /><input className="mt-1 w-20 rounded border border-white/40 bg-black px-2 py-1" value={coverText} onChange={(e) => setCoverText(e.target.value)} placeholder={String(coverSeconds)} /></label>
             <span className="text-gray-300">{maxSeconds} s au plus · Échap ou s pour arrêter</span>
           </div>
-          {desktop ? (
+          {otherBrowser ? (
+            <div className="space-y-3">
+              <p className="text-amber-200">{CHROME_NOTE}</p>
+              <p className="text-sm text-gray-300">Copie l’adresse de cette page dans Chrome, connecte-toi avec la même clé, et lance la capture depuis là. Ou importe ci-dessous un enregistrement fait autrement.</p>
+              <button className="rounded-full border border-white px-5 py-2 font-bold uppercase disabled:opacity-50" disabled={phase === 'uploading'} onClick={() => fileInput.current?.click()}>Importer</button>
+            </div>
+          ) : desktop ? (
             <>
               <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-300">
-                <li>Lance : le navigateur demande quel onglet filmer. Choisis <b>cet onglet</b> et coche <b>Partager l’audio de l’onglet</b>.</li>
+                <li>Lance : Chrome demande quoi filmer. Dans sa fenêtre, prends l’onglet <b>« Onglet Chrome »</b>, choisis <b>cette page</b>, et coche <b>Partager l’audio de l’onglet</b>.</li>
                 <li>Le lecteur passe en grand, couvert {coverSeconds} s le temps que ses boutons s’effacent, puis l’enregistrement commence.</li>
                 <li>Ne touche à rien pendant l’enregistrement. Échap ou s pour arrêter ; l’extrait part dans la file.</li>
               </ol>
@@ -189,7 +202,7 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
               </div>
             </>
           )}
-          {desktop ? <button className="text-sm underline" disabled={phase === 'uploading'} onClick={() => fileInput.current?.click()}>Importer un fichier à la place</button> : null}
+          {desktop && !otherBrowser ? <button className="text-sm underline" disabled={phase === 'uploading'} onClick={() => fileInput.current?.click()}>Importer un fichier à la place</button> : null}
           <input ref={fileInput} type="file" accept="video/*" multiple hidden onChange={onFiles} />
           {phase === 'uploading' ? <p role="status">Envoi… {progress != null ? `${Math.round(progress * 100)} %` : ''}</p> : null}
           {result ? <p role="status" className="text-green-300">{result} <Link href="/admin/comm" className="underline">Voir la file</Link></p> : null}

@@ -9,6 +9,7 @@ import { COMM_MEDIA, COMM_QUEUE, queueMax, type MediaDoc, type MediaKind, type Q
 import { snapshotFromRow, subjectRefsOf, withLabels } from './snapshot'
 import { blobConfigured, blobKeyFor, deleteBlobs, extensionOf, putBlob, MEDIA_CONTENT_TYPES, MEDIA_MAX_BYTES } from './blob'
 import { imageSizeOf } from './imageSize'
+import { lookupAuthor } from './authorLookup'
 
 const QUERY_MS = 2500
 
@@ -70,6 +71,12 @@ export async function addToQueue(db: Db, contentId: string): Promise<AddResult> 
   if (!row) return { ok: false, reason: 'unknown' }
   const built = snapshotFromRow(row as Record<string, unknown>)
   if (!built) return { ok: false, reason: 'unsupported' }
+  // The base does not know the author: the provider is asked once, now; the curator never types a name.
+  if (!built.snapshot.author) {
+    const found = await lookupAuthor({ provider: built.snapshot.provider, url: built.snapshot.url, sourceUrl: built.snapshot.sourceUrl, videoId: typeof row.videoId === 'string' ? row.videoId : null })
+    if (found) built.snapshot.author = found.slice(0, 120)
+  }
+  built.snapshot.authorRequired = false
   const refs = subjectRefsOf(row as Record<string, unknown>)
   const labels = new Map<string, string>()
   if (refs.length) {
@@ -123,10 +130,14 @@ export type MediaInput = {
   height: number | null
   durationSec: number | null
   animated: boolean
+  trim?: { startSec: number; endSec: number } | null
+  crop?: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number } | null
+  sourceMediaId?: string | null
+  templateKey?: string | null
 }
 
 export async function registerMedia(db: Db, input: MediaInput): Promise<MediaDoc> {
-  const doc = { ...input, createdAt: new Date(), trim: null, crop: null }
+  const doc = { ...input, createdAt: new Date(), trim: input.trim ?? null, crop: input.crop ?? null, sourceMediaId: input.sourceMediaId ?? null, templateKey: input.templateKey ?? null }
   const inserted = await db.collection(COMM_MEDIA).insertOne(doc)
   return { ...doc, _id: String(inserted.insertedId) }
 }

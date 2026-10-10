@@ -61,9 +61,9 @@ test('trois destinations, Instagram seule en direct ; chaque format porte ses co
   assert.equal(formatSpec('reddit', 'link'), null); assert.equal(destinationSpec('x')?.linkInBio, false)
 })
 
-test('les phrases de départ : 20 à 30, français et anglais, cinq familles ; une phrase vide n_est admise que dans la famille vide', () => {
+test('les phrases de départ : une soixantaine, français et anglais, cinq familles ; une phrase vide n_est admise que dans la famille vide', () => {
   const seeds = seedPhrases()
-  assert.ok(seeds.length >= 20 && seeds.length <= 30, String(seeds.length))
+  assert.ok(seeds.length >= 50 && seeds.length <= 80, String(seeds.length))
   assert.deepEqual([...new Set(seeds.map((p) => p.family))].sort(), ['decouverte', 'invitation', 'reaction', 'serie', 'vide'])
   assert.ok(seeds.some((p) => p.lang === 'fr') && seeds.some((p) => p.lang === 'en'))
   assert.ok(validPhrase({ family: 'reaction', lang: 'fr', text: 'Oh.' })); assert.equal(validPhrase({ family: 'reaction', lang: 'fr', text: '  ' }), null); assert.ok(validPhrase({ family: 'vide', lang: 'fr', text: '' })); assert.equal(validPhrase({ family: 'x', lang: 'fr', text: 'a' }), null)

@@ -99,7 +99,8 @@ export function snapshotFromRow(row: Record<string, unknown>): { contentType: Co
       provider,
       providerLabel: providerLabel(provider, source.name),
       durationSec: contentType === 'video' ? isoDurationSeconds(row.duration ?? row.durationSec) : null,
-      authorRequired: licenseHint === 'prudence',
+      // Decided on 8 October 2026: a missing author never blocks; the provider is asked, else the provider is named.
+      authorRequired: false,
       gifMp4: contentType === 'image' && provider.toLowerCase() === 'giphy' ? giphyMp4Of(url) : null,
       text: contentType === 'video' || contentType === 'image' ? null : body || null,
     },

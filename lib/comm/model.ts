@@ -70,7 +70,8 @@ export type QueueItem = {
   licenseHint: LicenseHint
 }
 
-export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb'
+/** montage: a clip cut, framed and dressed by the browser, ready to post; still: one frame of a video, as a picture; render: a slide as a JPEG, only for the time of a publication; poster: one frame of a clip, so the engine can show the clip's slide. */
+export type MediaKind = 'capture' | 'import' | 'gif' | 'image' | 'screenshot' | 'thumb' | 'montage' | 'still' | 'render' | 'poster'
 
 export type MediaDoc = {
   _id: string
@@ -87,13 +88,35 @@ export type MediaDoc = {
   blobKey: string
   trim: { startSec: number; endSec: number } | null
   crop: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number } | null
+  /** For a montage or a still: the media it was made from, and the template it was dressed with. */
+  sourceMediaId?: string | null
+  templateKey?: string | null
 }
 
 export type Destination = 'instagram' | 'tiktok' | 'x'
 export const DESTINATIONS: readonly Destination[] = ['instagram', 'tiktok', 'x']
 
 /** One slide: the item it shows (its credit, its source, its thumbnail when no media is picked), the media, the dressing. */
-export type PostSlide = { itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number }
+export type TextPosition = 'top' | 'middle' | 'bottom'
+/** A block the curator places by hand: its top-left corner as shares of the canvas, its size in px on a 1080-wide canvas. */
+export type Placement = { x: number; y: number; size: number; align?: 'left' | 'center' | 'right'; width?: number }
+export type PostSlide = {
+  itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number
+  /** Full screen (cover) or framed whole (contain); empty keeps the template's own. */
+  fit?: 'cover' | 'contain' | null
+  /** Where the words sit; empty keeps the template's own. */
+  textPosition?: TextPosition | null
+  /** The words placed by hand, over the template and the position presets. */
+  textPlace?: Placement | null
+  /** The credit and the source placed by hand. */
+  sourcePlace?: Placement | null
+  /** The margin around the picture: none (full screen) or the Random glitch. */
+  margin?: 'none' | 'glitch' | null
+  /** The picture's own rectangle, moved and sized by hand, as shares of the canvas. */
+  mediaPlace?: { x: number; y: number; w: number; h: number } | null
+  /** The logo placed by hand: its top-left corner, its width in px on a 1080-wide canvas. */
+  logoPlace?: Placement | null
+}
 
 export type PostDoc = {
   _id: string

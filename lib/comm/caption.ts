@@ -131,13 +131,15 @@ export function seedPhrases(): Phrase[] {
   const p = (family: Phrase['family'], lang: Phrase['lang'], text: string): Phrase => ({ family, lang, text, seed: true })
   return [
     p('decouverte', 'fr', 'Trouvé sur Random'), p('decouverte', 'fr', 'Ça vient de sortir du hasard'), p('decouverte', 'fr', 'Le hasard fait bien les choses'), p('decouverte', 'fr', 'Tombé dessus par hasard'), p('decouverte', 'fr', 'Une découverte du jour'),
+    p('decouverte', 'fr', 'Je ne cherchais pas ça'), p('decouverte', 'fr', 'Un random, et puis ça'), p('decouverte', 'fr', 'Sorti de nulle part'), p('decouverte', 'fr', 'Le genre de truc qu’on ne cherche pas'), p('decouverte', 'fr', 'Perdu dans Random, trouvé ça'), p('decouverte', 'fr', 'Pas prévu, pas cherché'),
     p('decouverte', 'en', 'Found on Random'), p('decouverte', 'en', 'Straight out of the random'), p('decouverte', 'en', 'Today’s find'), p('decouverte', 'en', 'Stumbled upon this'),
-    p('invitation', 'fr', 'Tu tombes sur quoi, toi ?'), p('invitation', 'fr', 'À ton tour de tirer'), p('invitation', 'fr', 'Un random, et on voit'),
-    p('invitation', 'en', 'What do you land on?'), p('invitation', 'en', 'Your turn to roll'), p('invitation', 'en', 'One random, and we’ll see'),
-    p('reaction', 'fr', 'Je ne m’attendais pas à ça'), p('reaction', 'fr', 'Celui-là, je le garde'), p('reaction', 'fr', 'Pourquoi c’est si bien ?'), p('reaction', 'fr', 'Regarde jusqu’au bout'),
-    p('reaction', 'en', 'Did not see that coming'), p('reaction', 'en', 'This one stays with me'), p('reaction', 'en', 'Watch till the end'),
-    p('serie', 'fr', '5 trucs de la semaine'), p('serie', 'fr', 'Les trouvailles du dimanche'), p('serie', 'fr', 'Un par jour'),
-    p('serie', 'en', '5 things this week'), p('serie', 'en', 'Sunday finds'), p('serie', 'en', 'One a day'),
+    p('decouverte', 'en', 'Wasn’t looking for this'), p('decouverte', 'en', 'Out of nowhere'), p('decouverte', 'en', 'Lost in Random, found this'), p('decouverte', 'en', 'Not planned, not searched'),
+    p('invitation', 'fr', 'Tu tombes sur quoi, toi ?'), p('invitation', 'fr', 'À ton tour de tirer'), p('invitation', 'fr', 'Un random, et on voit'), p('invitation', 'fr', 'Va voir par toi-même'), p('invitation', 'fr', 'Ton tour'), p('invitation', 'fr', 'Essaie, tu verras'),
+    p('invitation', 'en', 'What do you land on?'), p('invitation', 'en', 'Your turn to roll'), p('invitation', 'en', 'One random, and we’ll see'), p('invitation', 'en', 'Go see for yourself'), p('invitation', 'en', 'Try it, you’ll see'),
+    p('reaction', 'fr', 'Je ne m’attendais pas à ça'), p('reaction', 'fr', 'Celui-là, je le garde'), p('reaction', 'fr', 'Pourquoi c’est si bien ?'), p('reaction', 'fr', 'Regarde jusqu’au bout'), p('reaction', 'fr', 'Attends la fin'), p('reaction', 'fr', 'Je sais pas pourquoi j’aime ça'), p('reaction', 'fr', 'Ça existe, donc'), p('reaction', 'fr', 'Trop bien'), p('reaction', 'fr', 'Monte le son'),
+    p('reaction', 'en', 'Did not see that coming'), p('reaction', 'en', 'This one stays with me'), p('reaction', 'en', 'Watch till the end'), p('reaction', 'en', 'So this exists'), p('reaction', 'en', 'Sound on'), p('reaction', 'en', 'No idea why I love this'),
+    p('serie', 'fr', '5 trucs de la semaine'), p('serie', 'fr', 'Les trouvailles du dimanche'), p('serie', 'fr', 'Un par jour'), p('serie', 'fr', 'Le random du soir'), p('serie', 'fr', 'Vieilleries'), p('serie', 'fr', 'Du monde entier'),
+    p('serie', 'en', '5 things this week'), p('serie', 'en', 'Sunday finds'), p('serie', 'en', 'One a day'), p('serie', 'en', 'Tonight’s random'), p('serie', 'en', 'Old stuff'), p('serie', 'en', 'From everywhere'),
     p('vide', 'fr', ''), p('vide', 'en', ''),
   ]
 }
