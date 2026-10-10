@@ -23,6 +23,8 @@ export const TRAFFIC_WIDTH: Record<TrafficModel, number> = { hatch: 0.9, saloon:
 export const TRAFFIC_SQUASH: Partial<Record<TrafficModel, number>> = { camper: 0.88, icecream: 0.86, pickup: 0.94 }
 /** Each car's height in steps of its hundred across. */
 const HEIGHT: Record<TrafficModel, number> = { hatch: 62, saloon: 56, camper: 98, pickup: 74, estate: 68, beetle: 60, icecream: 108 }
+/** How tall each car stands on the road, as a share of its width (the tall ones lowered as drawn). */
+export const trafficHigh = (model: TrafficModel): number => (HEIGHT[model] / 100) * (TRAFFIC_SQUASH[model] ?? 1)
 /** Where its rear lights are, as shares of its width and height, to glow after dark. */
 export const TRAFFIC_LIGHTS: Record<TrafficModel, Array<[number, number]>> = {
   hatch: [[0.13, 0.58], [0.87, 0.58]], saloon: [[0.18, 0.6], [0.82, 0.6]], camper: [[0.09, 0.79], [0.91, 0.79]], pickup: [[0.07, 0.65], [0.93, 0.65]],

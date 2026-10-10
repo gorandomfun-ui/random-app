@@ -33,7 +33,9 @@ import {
   facadePiece, puddle, puff, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type Tier,
 } from './racing-scene'
 import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
+import { carSide, CAR_SPAN } from './racing-sides'
 import { shop, SHOPS, TOWN_UNIT } from './racing-town'
+import { TRAFFIC_WIDTH, trafficHigh } from './racing-traffic'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
 import { arcadeText, CREAM, GREY, HUD_HEIGHT, INK } from './ui'
@@ -399,6 +401,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     for (const c of cargo[n].cars.sort((m, k) => k.z - m.z)) {
       const at = place(p, c.z, c.x)
       const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
+      // its flank, when it shows
+      flank(board, rows, b0, c, at, at.y - bob, tier, fog, clip)
       if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
       else {
         drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
@@ -437,8 +441,17 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     const size = 4 + Math.round(near * 4), ty = H - 3
     if ((frame >> 3) % 2 || near > 0.6) for (let k = 0; k < size; k += 1) board.rect(Math.round(tx - k), ty - size + k, k * 2 + 1, 1, c)
   }
-  // a car just behind, nearer the eye than the player's
-  for (const r of s.rivals) if (r.z < s.z && r.z > camZ + 2) { const n = Math.floor(r.z) - b0, p = rows[n]; if (p) { const at = place(p, r.z, r.x); drawCar(board, r.kind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: turnOf(r.lane, r.x, 0), tier, fog: 0, lights: night }) } }
+  // a car being passed, its back already behind the player's but still beside it, nearer the eye: its flank, then its back, until it goes out at the foot of the screen
+  const passing = [...s.rivals.map((r) => ({ kind: r.kind as RacingCarKind | RacingTrafficModel, traffic: false, z: r.z, x: r.x, look: 0, speed: r.speed, turn: turnOf(r.lane, r.x, 0) })), ...s.traffic.map((t) => ({ kind: t.kind as RacingCarKind | RacingTrafficModel, traffic: true, z: t.z, x: t.x, look: t.look, speed: t.speed, turn: turnOf(t.lane, t.x, 0) }))]
+  for (const c of passing.filter((c) => c.z < s.z && c.z > camZ + 2).sort((m, k) => k.z - m.z)) {
+    const p = rows[Math.floor(c.z) - b0]
+    if (!p) continue
+    const at = place(p, c.z, c.x)
+    if (at.y - RACING_CAR_WIDTH * at.u * 0.7 > H) continue
+    flank(board, rows, b0, c, at, at.y, tier, 0, H)
+    if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
+    else drawCar(board, c.kind as RacingCarKind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
+  }
   if (tier === 3) { if (world === 'mountain') snow(board, frame); else if (world === 'desert') sandstorm(board, frame); else storm(board, frame, horizon) }
   if (s.phase !== 'garage') minimap(board, s, accent)
   if (s.goalAt >= 0) celebrate(board, s.steps - s.goalAt, s.level, horizon)
@@ -666,6 +679,39 @@ function sky(board: PixelBuffer, frame: number, horizon: number, tier: Tier, acc
     board.rect(bx, y - 2 + wave, bw, 11, '#faf6ec')
     drawText7(board, word, bx + 4, y + wave, accent, 1, true)
   }
+}
+
+/**
+ * A car's flank, the side of it that shows: the one whose nose stands out past
+ * its back on the screen (a car off to a side, or turning in a bend). Drawn
+ * in the pictures' own eye, level with the cars: from the back's edge toward
+ * the nose, at the back's height, narrowing as the nose is further, rising
+ * only a little with the road: the car's back alone far ahead, then a
+ * three-quarter view, then more of its side as it comes alongside.
+ */
+function flank(board: PixelBuffer, rows: Projected[], b0: number, c: Cargo['cars'][number], at: { x: number; y: number; u: number }, foot: number, tier: Tier, fog: number, clip: number): void {
+  const nose = rows[Math.floor(c.z + CAR_SPAN) - b0]
+  if (!nose || nose.behind || at.u < 2) return
+  const wide = c.traffic ? RACING_CAR_WIDTH * TRAFFIC_WIDTH[c.kind as RacingTrafficModel] : RACING_CAR_WIDTH
+  const high = c.traffic ? wide * trafficHigh(c.kind as RacingTrafficModel) : wide * rivalHigh(c.kind as RacingCarKind)
+  const front = place(nose, c.z + CAR_SPAN, c.x), r = front.u / at.u
+  const lb = at.x - (wide / 2) * at.u, lf = front.x - (wide / 2) * front.u, rb = at.x + (wide / 2) * at.u, rf = front.x + (wide / 2) * front.u
+  let xb: number, xf: number
+  if (lf < lb - 1) { xb = lb; xf = lf } else if (rf > rb + 1) { xb = rb; xf = rf } else return
+  // a car turning shows its flank on the side it turns to, in its own picture: never the other side as well
+  if (c.turn !== 0 && Math.sign(xf - xb) !== c.turn) return
+  // tucked a little under the back's edge, so no gap shows between them
+  xb -= Math.sign(xf - xb) * Math.max(1, wide * at.u * 0.03)
+  const eye = foot - FLANK_EYE * high * at.u, yf = eye + (foot - eye) * r + (front.y - at.y) * FLANK_LIFT
+  const { pic, share } = carSide(c.traffic ? (c.kind as RacingTrafficModel) : (c.kind as RacingCarKind), c.look)
+  facadePiece(board, { x: xb, y: foot, u: at.u }, { x: xf, y: yf, u: at.u * r }, 0, high * share, clip, pic, 0, pic.width, tintFor(tier, fog))
+}
+/** Where the pictures' eye stands on a car (a share of its height from its foot), and how much of the road's rise its flank follows. */
+const FLANK_EYE = 0.5, FLANK_LIFT = 0
+/** A racing car's height as a share of its width, from its picture. */
+function rivalHigh(kind: RacingCarKind): number {
+  const pic = racingArt(`car-${kind}-104`)
+  return pic ? pic.height / pic.width : 0.55
 }
 
 /** Where a point of the road at `z`, `x` stands on the screen, inside its stretch. */
