@@ -58,7 +58,11 @@ test('un brouillon prend un numéro, une clé, une slide par élément, et une l
   const again = await posts.createDraft(db, { destination: 'tiktok', format: 'video', queueItemIds: [ids[0]] })
   assert.ok(again.ok && again.post.number === 2)
   assert.equal((await posts.createDraft(db, { destination: 'reddit', format: 'link', queueItemIds: ids })).ok, false)
-  assert.equal((await posts.createDraft(db, { destination: 'instagram', format: 'post', queueItemIds: ['ffffffffffffffffffffffff'] })).ok, false)
+  const empty = await posts.createDraft(db, { destination: 'instagram', format: 'post', queueItemIds: ['ffffffffffffffffffffffff'] })
+  assert.ok(empty.ok && empty.post.slides.length === 1 && empty.post.slides[0].itemId === null, 'un brouillon peut naître vide, ses médias viennent après')
+  const filled = await posts.updateDraft(db, empty.post._id, { slides: [{ itemId: ids[1], mediaId: null, templateKey: 'post-plein', text: '', palette: 0, logoVariant: 'white', mediaPlace: { x: 0.1, y: 0.1, w: 0.8, h: 0.5 }, logoPlace: { x: 0.5, y: 0.9, size: 200 } }] })
+  assert.ok(filled.ok); assert.deepEqual(filled.post.queueItemIds, [ids[1]]); assert.equal(filled.post.provider, 'Pexels', 'le premier média nomme le post'); assert.deepEqual(filled.post.slides[0].mediaPlace, { x: 0.1, y: 0.1, w: 0.8, h: 0.5 }); assert.equal(filled.post.slides[0].logoPlace?.size, 200)
+  await posts.deleteDraft(db, empty.post._id)
 })
 
 test('le brouillon survit et se borne : pas plus de slides que le format n_en permet, hashtags normalisés', { skip }, async () => {

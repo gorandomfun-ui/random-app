@@ -31,6 +31,8 @@ export type MontagePanelProps = {
   defaultMode?: CropMode | null
   /** The slide's glitch, 0 to 1: how much the frame and the ground move during the clip. */
   glitch?: number | null
+  /** The picture's rectangle when the curator moved it, as shares of the canvas. */
+  mediaPlace?: { x: number; y: number; w: number; h: number } | null
   onClose: () => void
   /** The montage or the still is in the queue: the slide switches to it. */
   onDone: (media: MediaDoc) => void
@@ -38,7 +40,7 @@ export type MontagePanelProps = {
 
 type Phase = 'loading' | 'ready' | 'rendering' | 'uploading' | 'error'
 
-export default function MontagePanel({ queueItemId, media, template, canvas, overlayUrl, background, maxSeconds, defaultMode, glitch, onClose, onDone }: MontagePanelProps) {
+export default function MontagePanel({ queueItemId, media, template, canvas, overlayUrl, background, maxSeconds, defaultMode, glitch, mediaPlace, onClose, onDone }: MontagePanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const previewRef = useRef<HTMLCanvasElement | null>(null)
   const overlayRef = useRef<HTMLImageElement | null>(null)
@@ -52,7 +54,7 @@ export default function MontagePanel({ queueItemId, media, template, canvas, ove
   const [strip, setStrip] = useState<string[]>([])
   const [progress, setProgress] = useState('')
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
-  const area = useMemo(() => areaOf(template.layers), [template])
+  const area = useMemo(() => (mediaPlace ? { left: mediaPlace.x, top: mediaPlace.y, width: mediaPlace.w, height: mediaPlace.h } : areaOf(template.layers)), [template, mediaPlace])
   const backdrop = useMemo(() => hasBackdrop(template.layers), [template])
   const glitchSpec = useMemo(() => glitchOf(template.layers), [template])
   const intensity = glitch ?? glitchSpec?.intensity ?? 0

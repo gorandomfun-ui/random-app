@@ -38,6 +38,10 @@ export type RenderInput = {
   sourcePlace?: Placement | null
   /** A smaller draw of the same slide, for previews: 1 is the real size. */
   scale?: number | null
+  /** The picture's rectangle moved and sized by hand, as shares of the canvas. */
+  mediaPlace?: { x: number; y: number; w: number; h: number } | null
+  /** The logo placed by hand: corner and width (px on a 1080-wide canvas). */
+  logoPlace?: Placement | null
 }
 
 /** Where the words start for each position, as a share of the height; the bottom stays above the credit's zone. */
@@ -67,8 +71,9 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
 
   // The media's frame: the whole canvas, the band a framed template leaves it, or a rectangle with sides.
   const mediaLayer = template.layers.find((layer): layer is Extract<Layer, { type: 'media' }> => layer.type === 'media')
-  const mediaTop = Math.round((mediaLayer?.top ?? 0) * height), mediaHeight = Math.round((mediaLayer?.height ?? 1) * height)
-  const mediaLeft = Math.round((mediaLayer?.left ?? 0) * width), mediaWidth = Math.round((mediaLayer?.width ?? 1) * width)
+  const mp = input.mediaPlace
+  const mediaTop = Math.round((mp?.y ?? mediaLayer?.top ?? 0) * height), mediaHeight = Math.round((mp?.h ?? mediaLayer?.height ?? 1) * height)
+  const mediaLeft = Math.round((mp?.x ?? mediaLayer?.left ?? 0) * width), mediaWidth = Math.round((mp?.w ?? mediaLayer?.width ?? 1) * width)
   const mediaRect = { x: mediaLeft, y: mediaTop, w: mediaWidth, h: mediaHeight }
 
   for (const [index, layer] of template.layers.entries()) {
@@ -115,9 +120,10 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
         const uri = await logoDataUri(layer.variant, layer.color === 'auto' ? logoColor : color(layer.color))
         if (!uri) break
         const size = LOGO_SIZES[layer.variant]
-        const w = Math.round(layer.width * width), h = Math.round(w * size.height / size.width)
+        const lp = input.logoPlace
+        const w = Math.round(lp ? lp.size * scale : layer.width * width), h = Math.round(w * size.height / size.width)
         children.push(
-          <div key={key} style={abs(Math.round(layer.x * width), Math.round(layer.y * height), w, h)}>
+          <div key={key} style={abs(Math.round((lp?.x ?? layer.x) * width), Math.round((lp?.y ?? layer.y) * height), w, h)}>
             {/* eslint-disable-next-line @next/next/no-img-element -- the logo composed from its letters */}
             <img src={uri} alt="Random" width={w} height={h} style={{ width: w, height: h }} />
           </div>,

@@ -19,6 +19,7 @@ import type { Placement } from '@/lib/comm/model'
 import { buildExportZip, downloadBlob, type ExportSlide } from '@/lib/comm/exportZip'
 import { FAMILY_SIZES } from '@/lib/comm/templates'
 import { glitchOf } from '@/lib/comm/templates'
+import { areaOf } from '@/lib/comm/montage'
 import { clipMaxSeconds } from '@/lib/comm/model'
 import dynamic from 'next/dynamic'
 import { prepareInstagramAssets, publishInstagram } from '@/lib/comm/publishClient'
@@ -82,12 +83,12 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const destSpec = useMemo(() => DESTINATION_SPECS.find((d) => d.key === destination) ?? null, [destination])
 
   const createDraft = useCallback(async () => {
-    if (!destination || !format || !itemIds.length) return
+    if (!destination || !format) return
     setBusy('Création du brouillon'); setError('')
     const response = await fetch('/api/admin/comm/posts', { method: 'POST', headers, body: JSON.stringify({ destination, format, queueItemIds: itemIds }) })
     const body = await response.json().catch(() => ({}))
     setBusy('')
-    if (!body.post) { setError(body.error === 'items' ? 'Aucun des éléments choisis n’est dans la file.' : 'Le brouillon n’a pas pu être créé.'); return }
+    if (!body.post) { setError('Le brouillon n’a pas pu être créé.'); return }
     router.replace(`/admin/comm/compose?post=${body.post._id}`)
   }, [destination, format, itemIds, router])
 
@@ -152,6 +153,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     const placeParam = (p: Placement) => [p.x, p.y, p.size, p.align ?? '', p.width ?? ''].join(',')
     if (s.textPlace) params.set('textplace', placeParam(s.textPlace))
     if (s.sourcePlace) params.set('sourceplace', placeParam(s.sourcePlace))
+    if (s.logoPlace) params.set('logoplace', placeParam(s.logoPlace))
+    if (s.mediaPlace) params.set('mediaplace', [s.mediaPlace.x, s.mediaPlace.y, s.mediaPlace.w, s.mediaPlace.h].join(','))
     if (item) params.set('item', item._id)
     if (s.mediaId) params.set('media', s.mediaId); else params.set('thumb', '1')
     if (post?.credit) params.set('credit', post.credit)
@@ -193,7 +196,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     save({ slides }); setCurrent(target)
   }, [current, post, save])
 
-  const firstItem = items[0] ?? null
+  const firstItem = useMemo(() => { const id = post?.slides.find((s) => s.itemId)?.itemId; return (id ? material.find((i) => i._id === id) : null) ?? items[0] ?? null }, [post, material, items])
   const caption = useMemo(() => (post && firstItem ? buildCaption({ destination: post.destination, format: post.format, title: post.captionHead ? '' : firstItem.snapshot.title, phrase: post.captionHead ? post.captionHead : post.phrase, snapshot: firstItem.snapshot, credit: post.credit, number: post.number, hashtags: post.hashtags, homeUrl: post.homeLink ? (typeof window === 'undefined' ? 'https://gorandom.fun/' : window.location.origin) : null }) : null), [post, firstItem])
   useEffect(() => { if (caption && post && caption.text !== post.caption) save({ caption: caption.text }) }, [caption, post, save])
 
@@ -245,6 +248,10 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const margin: 'none' | 'glitch' = slide?.templateKey.endsWith('-glitch') ? 'glitch' : 'none'
   const defaultTextPlace = (): Placement => ({ x: 0.06, y: slide?.textPosition === 'middle' ? 0.42 : slide?.textPosition === 'bottom' ? 0.74 : 0.1, size: 64, align: 'left', width: 0.88 })
   const defaultSourcePlace = (): Placement => ({ x: 0.06, y: spec?.family === '16:9' ? 0.86 : spec?.family === '9:16' ? 0.905 : 0.9, size: 30, align: 'left', width: 0.88 })
+  const defaultLogoPlace = (): Placement => ({ x: 0.06, y: 0.035, size: slideTemplate?.key.endsWith('-glitch') ? 280 : 300 })
+  const templateArea = slideTemplate ? areaOf(slideTemplate.layers) : { left: 0, top: 0, width: 1, height: 1 }
+  const defaultMediaPlace = () => ({ x: templateArea.left, y: templateArea.top, w: templateArea.width, h: templateArea.height })
+  const mediaRect = slide?.mediaPlace ?? defaultMediaPlace()
 
   useEffect(() => {
     if (previewIndex == null) return
@@ -270,7 +277,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
         {step === 2 ? (
           <section className="space-y-3">
             <h1 className="text-2xl font-bold">Où on publie</h1>
-            {!itemIds.length ? <p className="text-amber-300">Choisis d’abord des éléments dans la file.</p> : <p className="text-sm text-gray-300">{itemIds.length} élément{itemIds.length > 1 ? 's' : ''} choisi{itemIds.length > 1 ? 's' : ''}.</p>}
+            <p className="text-sm text-gray-300">{itemIds.length ? `${itemIds.length} élément${itemIds.length > 1 ? 's' : ''} de la file pour commencer ; tu pourras en ajouter d’autres.` : 'Un post vide : tu ajouteras les médias de la file slide par slide.'}</p>
             <div className="flex flex-wrap gap-3">
               {DESTINATION_SPECS.map((d) => (
                 <button key={d.key} className={`${button} ${destination === d.key ? 'bg-white text-black' : ''}`} onClick={() => { setDestination(d.key); setFormat('') }}>
@@ -279,7 +286,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
               ))}
             </div>
             {destSpec ? <p className="text-xs text-gray-300">{destSpec.direct ? 'Publication directe' : 'Export de fichiers'} — {destSpec.directNote}</p> : null}
-            <button className={button} disabled={!destination || !itemIds.length} onClick={() => setStep(3)}>Continuer</button>
+            <button className={button} disabled={!destination} onClick={() => setStep(3)}>Continuer</button>
           </section>
         ) : null}
 
@@ -325,18 +332,37 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   <div className="relative mx-auto w-full max-w-md select-none overflow-hidden rounded-xl border border-white/20 bg-[#191916]" style={{ aspectRatio: spec.family.replace(':', '/') }}>
                     {/* eslint-disable-next-line @next/next/no-img-element -- what you see is what gets exported */}
                     <img src={renderUrl(settledSlide(current) ?? slide, current, 'full', 0.5)} alt="Aperçu" className="absolute inset-0 h-full w-full" draggable={false} />
-                    {slide.text.trim() ? <DragBox place={slide.textPlace ?? defaultTextPlace()} label="texte" onChange={(place) => updateSlide({ textPlace: place })} /> : null}
-                    <DragBox place={slide.sourcePlace ?? defaultSourcePlace()} label="source" onChange={(place) => updateSlide({ sourcePlace: place })} />
+                    <DragBox rect={{ x: mediaRect.x, y: mediaRect.y, w: mediaRect.w, h: mediaRect.h }} label="média" onMove={(x, y) => updateSlide({ mediaPlace: { ...mediaRect, x, y } })} />
+                    {(() => { const lp = slide.logoPlace ?? defaultLogoPlace(); return <DragBox rect={{ x: lp.x, y: lp.y, w: lp.size / 1080, h: (lp.size / 1080) * (135 / 584) * ((spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.5625)) }} label="logo" onMove={(x, y) => updateSlide({ logoPlace: { ...lp, x, y } })} /> })()}
+                    {slide.text.trim() ? (() => { const tp = slide.textPlace ?? defaultTextPlace(); return <DragBox rect={{ x: tp.x, y: tp.y, w: tp.width ?? 0.88, h: (tp.size * 2.4 / 1080) * ((spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.5625)) }} label="texte" onMove={(x, y) => updateSlide({ textPlace: { ...tp, x, y } })} /> })() : null}
+                    {(() => { const sp = slide.sourcePlace ?? defaultSourcePlace(); return <DragBox rect={{ x: sp.x, y: sp.y, w: sp.width ?? 0.88, h: (sp.size * 2.6 / 1080) * ((spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.5625)) }} label="source" onMove={(x, y) => updateSlide({ sourcePlace: { ...sp, x, y } })} /> })()}
                   </div>
-                  <p className="mt-2 text-center text-xs text-gray-400">Slide {current + 1}{isVideoSlide && !isBaked ? ' · un clip : le montage le fait bouger' : ''}{isBaked ? ' · montage figé' : ''} · glisse le texte et la source où tu veux</p>
+                  <p className="mt-2 text-center text-xs text-gray-400">Slide {current + 1}{isVideoSlide && !isBaked ? ' · un clip : le montage le fait bouger' : ''}{isBaked ? ' · montage figé' : ''} · glisse le média, le logo, le texte et la source où tu veux</p>
                 </div>
 
                 <div className="space-y-4">
                   <div className={card}>
                     <h2 className={cardTitle}>Média</h2>
-                    <select className="w-full rounded border border-white/40 bg-black px-2 py-1" value={slide.mediaId ?? (slide.itemId ? `thumb:${slide.itemId}` : '')} onChange={(e) => { const choice = mediaChoices.find((c) => c.key === e.target.value); updateSlide({ itemId: choice?.itemId ?? slide.itemId, mediaId: choice?.mediaId ?? null }) }}>
-                      {mediaChoices.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-                    </select>
+                    {!mediaChoices.length ? <p className="text-xs text-amber-200">La file est vide : depuis la curation, le bouton Comm y met des contenus.</p> : null}
+                    <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto">
+                      {mediaChoices.map((c) => { const active = c.key === (slide.mediaId ?? (slide.itemId ? `thumb:${slide.itemId}` : ''))
+                        return (
+                          <button key={c.key} title={c.label} className={`relative h-20 w-20 overflow-hidden rounded border ${active ? 'border-white' : 'border-white/20'}`} onClick={() => updateSlide({ itemId: c.itemId, mediaId: c.mediaId })}>
+                            {c.media?.contentType.startsWith('video/') ? <video src={c.media.blobUrl} muted playsInline className="h-full w-full object-cover" /> : c.thumb ? (
+                              /* eslint-disable-next-line @next/next/no-img-element -- a thumbnail of the queue */
+                              <img src={c.thumb} alt="" className="h-full w-full object-cover" />
+                            ) : null}
+                            <span className="absolute bottom-0 left-0 right-0 truncate bg-black/70 px-1 text-left text-[10px]">{c.label.split(' · ')[0]}</span>
+                          </button>
+                        ) })}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="w-16 text-xs text-gray-400">Largeur</span><input type="range" min={0.2} max={1} step={0.02} value={mediaRect.w} onChange={(e) => updateSlide({ mediaPlace: { ...mediaRect, w: Number(e.target.value) } })} className="flex-1" /><span className="w-10 text-right text-xs">{Math.round(mediaRect.w * 100)} %</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="w-16 text-xs text-gray-400">Hauteur</span><input type="range" min={0.2} max={1} step={0.02} value={mediaRect.h} onChange={(e) => updateSlide({ mediaPlace: { ...mediaRect, h: Number(e.target.value) } })} className="flex-1" /><span className="w-10 text-right text-xs">{Math.round(mediaRect.h * 100)} %</span>
+                      <button className={small} onClick={() => updateSlide({ mediaPlace: null })}>Remettre</button>
+                    </div>
                     {isVideoSlide && !isBaked ? <div className="mt-3 flex flex-wrap items-center gap-2"><button className={small} disabled={!slideTemplate} onClick={() => setMontageOpen(true)}>Couper l’extrait</button><span className="text-xs text-gray-400">le début et la fin ; la marge, le texte et le glitch suivent</span></div> : null}
                     {isBaked ? <p className="mt-2 text-xs text-gray-300">Montage figé{slideMedia?.trim ? `, ${Math.round(slideMedia.trim.endSec - slideMedia.trim.startSec)} s` : ''}. Pour changer son habillage, repars de l’extrait d’origine ci-dessus.</p> : null}
                   </div>
@@ -380,7 +406,11 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                       {PALETTE_COLORS.map((c, i) => <button key={c} aria-label={`Palette ${i + 1}`} className={`h-7 w-7 rounded-full border-2 ${slide.palette === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => updateSlide({ palette: i })} />)}
                       <button className={small} onClick={() => updateSlide({ palette: Math.floor(Math.random() * 6) })}>Au hasard</button>
                     </div>
-                    <div className="mt-3 flex items-center gap-2"><span className="w-16 text-xs text-gray-400">Logo</span><button className={`${small} ${slide.logoVariant === 'white' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'white' })}>blanc</button><button className={`${small} ${slide.logoVariant === 'black' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'black' })}>noir</button></div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Logo</span><button className={`${small} ${slide.logoVariant === 'white' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'white' })}>blanc</button><button className={`${small} ${slide.logoVariant === 'black' ? 'bg-white text-black' : ''}`} onClick={() => updateSlide({ logoVariant: 'black' })}>noir</button>
+                      {([['haut gauche', 0.06, 0.035], ['haut centre', null, 0.035], ['haut droite', null, 0.035], ['bas gauche', 0.06, 0.93], ['bas centre', null, 0.93], ['bas droite', null, 0.93]] as const).map(([name, x, y]) => { const lp = slide.logoPlace ?? defaultLogoPlace(); const w = lp.size / 1080; const nx = x ?? (name.endsWith('centre') ? (1 - w) / 2 : 0.94 - w); const ny = name.startsWith('bas') ? 0.96 - w * (135 / 584) * (spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.56) : y
+                        return <button key={name} className={small} onClick={() => updateSlide({ logoPlace: { ...lp, x: Math.round(nx * 1000) / 1000, y: Math.round(ny * 1000) / 1000 } })}>{name}</button> })}
+                    </div>
+                    <label className="mt-2 flex items-center gap-2"><span className="w-16 text-xs text-gray-400">Taille</span><input type="range" min={120} max={900} step={10} value={slide.logoPlace?.size ?? defaultLogoPlace().size} onChange={(e) => updateSlide({ logoPlace: { ...(slide.logoPlace ?? defaultLogoPlace()), size: Number(e.target.value) } })} className="flex-1" /><span className="w-10 text-right text-xs">{slide.logoPlace?.size ?? defaultLogoPlace().size}</span><button className={small} onClick={() => updateSlide({ logoPlace: null })}>Remettre</button></label>
                   </div>
                 </div>
               </div>
@@ -460,6 +490,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
             maxSeconds={Math.min(spec.maxSeconds ?? clipMaxSeconds(), clipMaxSeconds())}
             defaultMode="centered"
             glitch={slide.glitch ?? null}
+            mediaPlace={slide.mediaPlace ?? null}
             onClose={() => setMontageOpen(false)}
             onDone={onMontageDone}
           />
@@ -488,29 +519,28 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   )
 }
 
-/** A block the curator drags over the preview: its place is saved as shares of the picture. */
-function DragBox({ place, label, onChange }: { place: Placement; label: string; onChange: (place: Placement) => void }) {
+/** A block the curator drags over the preview: its corner is saved as shares of the picture. */
+function DragBox({ rect, label, onMove }: { rect: { x: number; y: number; w: number; h: number }; label: string; onMove: (x: number, y: number) => void }) {
   const dragRef = useRef<{ startX: number; startY: number; x: number; y: number; w: number; h: number } | null>(null)
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const parent = event.currentTarget.parentElement!
-    dragRef.current = { startX: event.clientX, startY: event.clientY, x: place.x, y: place.y, w: parent.clientWidth, h: parent.clientHeight }
+    dragRef.current = { startX: event.clientX, startY: event.clientY, x: rect.x, y: rect.y, w: parent.clientWidth, h: parent.clientHeight }
     event.currentTarget.setPointerCapture(event.pointerId)
-    event.preventDefault()
+    event.preventDefault(); event.stopPropagation()
   }
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     if (!drag) return
-    const x = Math.max(-0.2, Math.min(0.95, drag.x + (event.clientX - drag.startX) / drag.w))
-    const y = Math.max(-0.1, Math.min(0.97, drag.y + (event.clientY - drag.startY) / drag.h))
-    onChange({ ...place, x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 })
+    const x = Math.max(-0.3, Math.min(0.97, drag.x + (event.clientX - drag.startX) / drag.w))
+    const y = Math.max(-0.3, Math.min(0.97, drag.y + (event.clientY - drag.startY) / drag.h))
+    onMove(Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000)
   }
   const onPointerUp = () => { dragRef.current = null }
-  const heightShare = label === 'source' ? (place.size * 2.6) / 1080 : (place.size * 2.4) / 1080
   return (
     <div
       role="button" aria-label={`Déplacer : ${label}`}
-      className="absolute cursor-move touch-none rounded border border-dashed border-white/50 hover:border-white"
-      style={{ left: `${place.x * 100}%`, top: `${place.y * 100}%`, width: `${(place.width ?? 0.88) * 100}%`, height: `${heightShare * 100 * (1080 / 1920) * 1.78}%`, minHeight: 18 }}
+      className="absolute cursor-move touch-none rounded border border-dashed border-white/40 hover:border-white"
+      style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.w * 100}%`, height: `${rect.h * 100}%`, minHeight: 14 }}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
     >
       <span className="absolute -top-4 left-0 rounded bg-black/70 px-1 text-[10px] text-white/80">{label}</span>

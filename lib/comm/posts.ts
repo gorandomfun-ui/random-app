@@ -64,24 +64,24 @@ export async function createDraft(db: Db, input: { destination: string; format: 
   if (!spec) return { ok: false, reason: 'format' }
   const items: QueueItemWithMedia[] = []
   for (const id of input.queueItemIds.slice(0, 20)) { const item = await queueItemById(db, id); if (item) items.push(item) }
-  if (!items.length) return { ok: false, reason: 'items' }
-  const slides: PostSlide[] = items.slice(0, spec.slides.max).map((item) => {
+  // The composer is global: a draft may start empty, its media picked from the queue afterwards.
+  const slides: PostSlide[] = items.length ? items.slice(0, spec.slides.max).map((item) => {
     const media = item.media.find((m) => (spec.media === 'video' ? m.contentType.startsWith('video/') : spec.media === 'image' ? m.contentType.startsWith('image/') : true)) ?? item.media[0] ?? null
     // A quote, a fact, a joke or a site has its words: they are the slide's text from the start.
     const text = !media && item.snapshot.text ? item.snapshot.text.slice(0, 600) : ''
     return { itemId: item._id, mediaId: media?._id ?? null, templateKey: defaultTemplate(spec.family, spec.media === 'video'), text, palette: Math.floor(Math.random() * 6), logoVariant: 'white' as const }
-  })
-  const first = items[0]
-  const hashtags = suggestHashtags(first.subjects).slice(0, Math.min(5, spec.hashtags))
+  }) : [{ itemId: null, mediaId: null, templateKey: defaultTemplate(spec.family, spec.media === 'video'), text: '', palette: Math.floor(Math.random() * 6), logoVariant: 'white' as const }]
+  const first = items[0] ?? null
+  const hashtags = first ? suggestHashtags(first.subjects).slice(0, Math.min(5, spec.hashtags)) : ['#Random', '#GoRandom']
   const now = new Date()
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const last = await db.collection(COMM_POSTS).find({}, { sort: { number: -1 }, limit: 1, projection: { number: 1 }, maxTimeMS: QUERY_MS }).toArray()
     const number = (Number(last[0]?.number) || 0) + 1
-    const caption = buildCaption({ destination: input.destination, format: input.format, title: first.snapshot.title, phrase: '', snapshot: first.snapshot, number, hashtags })
+    const caption = first ? buildCaption({ destination: input.destination, format: input.format, title: first.snapshot.title, phrase: '', snapshot: first.snapshot, number, hashtags }).text : ''
     const doc = {
-      number, destination: input.destination as Destination, format: input.format, slides, caption: caption.text, captionHead: '', phrase: '', hashtags, credit: '', homeLink: false,
+      number, destination: input.destination as Destination, format: input.format, slides, caption, captionHead: '', phrase: '', hashtags, credit: '', homeLink: false,
       linkKey: newLinkKey(), status: 'draft' as const,
-      title: first.snapshot.title, author: first.snapshot.author, provider: first.snapshot.providerLabel, sourceUrl: first.snapshot.sourceUrl || first.snapshot.url,
+      title: first?.snapshot.title ?? '', author: first?.snapshot.author ?? '', provider: first?.snapshot.providerLabel ?? '', sourceUrl: first ? first.snapshot.sourceUrl || first.snapshot.url : '',
       queueItemIds: items.map((item) => item._id), createdAt: now, updatedAt: now, publishedAt: null, remoteId: null, remoteUrl: null, error: null, clicks: 0,
     }
     try {
@@ -105,6 +105,11 @@ function defaultTemplate(family: string, video: boolean): string {
 export type DraftPatch = Partial<Pick<PostDoc, 'slides' | 'caption' | 'hashtags' | 'format' | 'author'>> & { captionHead?: string; phrase?: string; credit?: string; homeLink?: boolean }
 
 const unit = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= -0.5 && n <= 1.5
+function rectOf(value: unknown): { x: number; y: number; w: number; h: number } | null {
+  const r = value as { x?: unknown; y?: unknown; w?: unknown; h?: unknown } | null
+  if (!r || typeof r !== 'object' || !unit(r.x) || !unit(r.y) || typeof r.w !== 'number' || typeof r.h !== 'number' || r.w < 0.1 || r.w > 1.5 || r.h < 0.1 || r.h > 1.5) return null
+  return { x: Math.round((r.x as number) * 1000) / 1000, y: Math.round((r.y as number) * 1000) / 1000, w: Math.round(r.w * 1000) / 1000, h: Math.round(r.h * 1000) / 1000 }
+}
 function placementOf(value: unknown, maxSize: number): Placement | null {
   const p = value as Partial<Placement> | null
   if (!p || typeof p !== 'object' || !unit(p.x) || !unit(p.y) || typeof p.size !== 'number' || !Number.isFinite(p.size)) return null
@@ -139,16 +144,19 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         ...(typeof (slide as { glitch?: unknown }).glitch === 'number' ? { glitch: Math.min(1, Math.max(0, (slide as { glitch: number }).glitch)) } : {}),
         fit: slide.fit === 'cover' || slide.fit === 'contain' ? slide.fit : null,
         textPosition: slide.textPosition === 'top' || slide.textPosition === 'middle' || slide.textPosition === 'bottom' ? slide.textPosition : null,
-        textPlace: placementOf(slide.textPlace, 400), sourcePlace: placementOf(slide.sourcePlace, 120),
+        textPlace: placementOf(slide.textPlace, 400), sourcePlace: placementOf(slide.sourcePlace, 120), logoPlace: placementOf(slide.logoPlace, 1080),
+        mediaPlace: rectOf(slide.mediaPlace),
         margin: slide.margin === 'glitch' ? 'glitch' : slide.margin === 'none' ? 'none' : null,
       })
     }
     set.slides = clean
-    // The items the post draws from: those its slides show, checked to exist, the original ones kept as a floor.
+    // The items the post draws from: those its slides show, checked to exist; the first one names the post.
     const used = Array.from(new Set(clean.map((s) => s.itemId).filter((id): id is string => Boolean(id))))
-    const existing: string[] = []
-    for (const id of used) if (await queueItemById(db, id)) existing.push(id)
-    set.queueItemIds = existing.length ? existing : post.queueItemIds
+    const existing: QueueItemWithMedia[] = []
+    for (const id of used) { const item = await queueItemById(db, id); if (item) existing.push(item) }
+    set.queueItemIds = existing.length ? existing.map((i) => i._id) : post.queueItemIds
+    const first = existing[0]
+    if (first) { set.title = first.snapshot.title; set.author = first.snapshot.author; set.provider = first.snapshot.providerLabel; set.sourceUrl = first.snapshot.sourceUrl || first.snapshot.url }
   }
   if (typeof patch.caption === 'string') set.caption = patch.caption.slice(0, 4000)
   if (typeof patch.captionHead === 'string') set.captionHead = patch.captionHead.slice(0, 2000)

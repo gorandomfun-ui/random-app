@@ -112,6 +112,10 @@ export type PostSlide = {
   sourcePlace?: Placement | null
   /** The margin around the picture: none (full screen) or the Random glitch. */
   margin?: 'none' | 'glitch' | null
+  /** The picture's own rectangle, moved and sized by hand, as shares of the canvas. */
+  mediaPlace?: { x: number; y: number; w: number; h: number } | null
+  /** The logo placed by hand: its top-left corner, its width in px on a 1080-wide canvas. */
+  logoPlace?: Placement | null
 }
 
 export type PostDoc = {

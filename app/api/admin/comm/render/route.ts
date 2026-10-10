@@ -41,6 +41,12 @@ export async function GET(req: Request) {
   const scale = Number.isFinite(scaleRaw) && scaleRaw >= 0.2 && scaleRaw < 1 ? scaleRaw : null
   const textPlace = placeOf(params.get('textplace'), 400)
   const sourcePlace = placeOf(params.get('sourceplace'), 120)
+  const logoPlace = placeOf(params.get('logoplace'), 1080)
+  const mediaPlace = (() => {
+    const raw = params.get('mediaplace'); if (!raw) return null
+    const [x, y, w, h] = raw.split(',').map(Number)
+    return [x, y, w, h].every(Number.isFinite) && w >= 0.1 && h >= 0.1 && w <= 1.5 && h <= 1.5 && x >= -0.5 && y >= -0.5 && x <= 1.5 && y <= 1.5 ? { x, y, w, h } : null
+  })()
   const textPosition = ['top', 'middle', 'bottom'].includes(params.get('textpos') ?? '') ? (params.get('textpos') as 'top' | 'middle' | 'bottom') : null
   const glitchRaw = Number(params.get('glitch'))
   const glitch = params.has('glitch') && Number.isFinite(glitchRaw) ? Math.min(1, Math.max(0, glitchRaw)) : null
@@ -70,7 +76,7 @@ export async function GET(req: Request) {
       // A credit that only repeats the provider says nothing the source line does not: left out on the slide.
       credit: item ? (creditLineOf(item.snapshot, creditTyped) === item.snapshot.providerLabel ? '' : creditLineOf(item.snapshot, creditTyped)) : creditTyped,
       source: item ? sourceLineOf(item.snapshot) : '',
-      media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key, fit, textPosition, textPlace, sourcePlace, scale,
+      media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key, fit, textPosition, textPlace, sourcePlace, scale, logoPlace, mediaPlace,
     })
     return new Response(out.png, { status: 200, headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store', 'X-Comm-Truncated': out.truncated ? '1' : '0', 'X-Comm-Text-Size': String(out.textSize), 'X-Comm-Picture': picture ? '1' : '0' } })
   } catch { return json({ error: 'unavailable' }, 503) }

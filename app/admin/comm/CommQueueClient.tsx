@@ -91,9 +91,10 @@ export default function CommQueueClient() {
         <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link><Link href="/admin/comm/config" className="underline">Configuration</Link></nav>
         <header className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-2xl font-bold">Comm — la file</h1>
+          <Link href="/admin/comm/compose" className="rounded-full border border-white bg-white px-5 py-2 text-sm font-bold uppercase text-black">Composer</Link>
           {status ? <p className="text-sm">{status.count} / {status.max}{!status.blob ? <span className="ml-3 text-amber-300">Blob non configuré : aucun média ne peut être pris.</span> : null}</p> : null}
         </header>
-        <p className="text-sm text-gray-300">Ce que tu as mis de côté depuis la curation, avec les médias pris sur le moment. Un élément part avec ses médias après publication ou export, ou ici à la main.</p>
+        <p className="text-sm text-gray-300">Ce que tu as mis de côté depuis la curation, avec les médias pris sur le moment. « Composer » ouvre un post vide où tu ajoutes les médias de la file, slide par slide. Un élément reste ici jusqu’à ce que tu le supprimes.</p>
 
         <div className="flex flex-wrap gap-2 text-sm">
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">Tous les types</option>{Object.entries(TYPE_WORDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
