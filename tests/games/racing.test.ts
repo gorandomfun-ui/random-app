@@ -155,7 +155,7 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
   // a slow car ahead in the next lane: passed close, at speed
   s.z = 300; s.speed = 0.95; s.x = 0
-  s.traffic = [{ kind: 'hatch', look: 0, z: 330, x: 0.7, lane: 0.7, speed: 0.4, swerve: false, swerved: false }, { kind: 'saloon', look: 1, z: 345, x: -0.7, lane: -0.7, speed: 0.4, swerve: false, swerved: false }]
+  s.traffic = [{ kind: 'hatch', look: 0, z: 330, x: 0.7, lane: 0.7, speed: 0.4, swerve: false, swerved: false, spin: 0, spinWay: 1 as const }, { kind: 'saloon', look: 1, z: 345, x: -0.7, lane: -0.7, speed: 0.4, swerve: false, swerved: false, spin: 0, spinWay: 1 as const }]
   const score = s.score
   for (let i = 0; i < 120; i += 1) stepRacing(s, 0, true)
   assert.equal(s.combo, 2, 'two brushes in a row')
@@ -164,7 +164,7 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   assert.ok(s.pops.some((p) => p.text.startsWith('NEAR MISS x2')))
   // riding behind a car fills it too
   const drafted = s.boost
-  s.traffic = [{ kind: 'hatch', look: 0, z: s.z + 8, x: 0, lane: 0, speed: 0.95, swerve: false, swerved: false }]
+  s.traffic = [{ kind: 'hatch', look: 0, z: s.z + 8, x: 0, lane: 0, speed: 0.95, swerve: false, swerved: false, spin: 0, spinWay: 1 as const }]
   for (let i = 0; i < 30; i += 1) { s.traffic[0].z = s.z + 8; stepRacing(s, 0, true) }
   assert.ok(s.drafting && s.boost > drafted, 'the slipstream')
   // let go: faster than the car's own top speed for a while, the gauge emptied
@@ -243,13 +243,14 @@ test('racing: the rivals are the two cars not chosen', () => {
   }
 })
 
-test('racing: the rails stop the car with a knock; off the road it slows', () => {
+test('racing: the rails stop the car with a knock and sparks; off the road it slows', () => {
   const s = createRacing('landscape', 1, 1)
   for (let i = 0; i < RACING_START_STEPS + 400; i += 1) stepRacing(s, 0, true)
   const fast = s.speed
-  let knocked = false, slowest = fast
-  for (let i = 0; i < 200; i += 1) { stepRacing(s, 1, true); knocked ||= s.heard.includes('thud'); slowest = Math.min(slowest, s.speed) }
+  let knocked = false, sparked = false, slowest = fast
+  for (let i = 0; i < 200; i += 1) { stepRacing(s, 1, true); knocked ||= s.heard.includes('thud'); sparked ||= s.sparks > 0 && s.sparkSide === 1; slowest = Math.min(slowest, s.speed) }
   assert.ok(knocked, 'a knock on the rail')
+  assert.ok(sparked, 'sparks off it, on its side')
   assert.ok(slowest < fast * 0.6, 'the car slowed')
   assert.ok(Math.abs(s.x) < 1.7, 'held inside the rails')
 })
@@ -297,6 +298,34 @@ test('racing: the clock at zero, TIME UP, then over', () => {
   for (let i = 0; i < steps && s.phase !== 'over'; i += 1) stepRacing(s, 0, false)
   assert.equal(s.phase, 'over')
   assert.equal(s.time, 0)
+})
+
+test('racing: running into a car much slower is a crash — both spin, the player\'s car out of hand a moment and slowed; a little faster, only a knock', () => {
+  const at = (speed: number) => {
+    const s = createRacing('landscape', 3, 1, { single: true, world: 'desert' })
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+    s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
+    s.items = []; s.rivals.forEach((r) => { r.z = -500 })
+    s.z = 300; s.x = 0.1; s.speed = speed
+    s.traffic = [{ kind: 'saloon', look: 0, z: 320, x: 0, lane: 0, speed: 0.45, swerve: false, swerved: false, spin: 0, spinWay: 1 }]
+    const heard: string[] = []
+    for (let i = 0; i < 150 && !heard.includes('smash') && !heard.includes('thud'); i += 1) { stepRacing(s, 0, speed > 0.7, false); heard.push(...s.heard) }
+    return { s, heard }
+  }
+  const { s, heard } = at(1)
+  assert.ok(heard.includes('smash'), 'a crash')
+  assert.ok(s.crash > 0 && s.traffic[0].spin > 0, 'both cars spinning')
+  assert.notEqual(s.crashWay, s.traffic[0].spinWay, 'each its own way')
+  assert.ok(s.speed < 0.45, `the player's car slowed (${s.speed.toFixed(2)})`)
+  // out of hand: steering and the pedals do nothing while it spins
+  const x = s.x, way = s.crashWay
+  for (let i = 0; i < 20; i += 1) stepRacing(s, way === 1 ? -1 : 1, true)
+  assert.ok((s.x - x) * way > 0, 'it slides its way whatever the steering')
+  for (let i = 0; i < 120; i += 1) stepRacing(s, 0, true)
+  assert.equal(s.crash, 0, 'then the hand again')
+  assert.equal(s.traffic[0].spin, 0, 'and the other car back in a lane')
+  const soft = at(0.7)
+  assert.ok(soft.heard.includes('thud') && !soft.heard.includes('smash') && soft.s.crash === 0, 'a little faster: a knock only')
 })
 
 test('racing: a good driver wins every level of every world with time to spare, and the first five in first place', () => {

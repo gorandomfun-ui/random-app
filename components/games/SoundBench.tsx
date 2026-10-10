@@ -19,7 +19,7 @@ const LABELS: Record<SoundName, string> = {
   item: 'Article avalé', sauce: 'Bouteille de sauce', slip: 'Client qui glisse', coin: 'Pièce', note: 'Billet', bundle: 'Liasse', card: 'Carte', caught: 'Attrapé',
   squirt: 'Giclée de ketchup', pop: 'Burger touché', clink: 'Assiette ébréchée', power: 'Bonus attrapé', hurt: 'Cuisinier touché',
   rip: 'Papier alu arraché', whoosh: 'Plongeurs qui partent / rival dépassé', thud: 'Boss touché / choc', boom: 'Boss qui explose',
-  beep: 'Feu rouge', go: 'Feu vert', engine: 'Moteur (en boucle)',
+  beep: 'Feu rouge', go: 'Feu vert', engine: 'Moteur (en boucle)', smash: 'Accident (tête-à-queue)',
   level: 'Niveau gagné', over: 'Game over', winner: 'Winner',
 }
 const GAMES: GameName[] = ['eater', 'catcher', 'attacks', 'racing']
@@ -30,7 +30,7 @@ const PLAY: Record<GameName, SoundName[]> = {
   eater: ['bite', 'bite', 'fries', 'bite', 'bite', 'shake', 'bite', 'donut', 'bite', 'bite', 'gold', 'bite', 'level'],
   catcher: ['item', 'item', 'coin', 'item', 'sauce', 'item', 'slip', 'note', 'item', 'card', 'item', 'bundle', 'caught', 'item', 'level'],
   attacks: ['squirt', 'pop', 'squirt', 'rip', 'squirt', 'pop', 'whoosh', 'squirt', 'pop', 'clink', 'squirt', 'thud', 'squirt', 'thud', 'gold', 'power', 'squirt', 'hurt', 'boom', 'level'],
-  racing: ['beep', 'beep', 'beep', 'go', 'coin', 'coin', 'coin', 'whoosh', 'note', 'slip', 'thud', 'power', 'clink', 'gold', 'whoosh', 'beep', 'beep', 'level'],
+  racing: ['beep', 'beep', 'beep', 'go', 'coin', 'coin', 'coin', 'whoosh', 'note', 'slip', 'thud', 'power', 'smash', 'clink', 'gold', 'whoosh', 'beep', 'beep', 'level'],
 }
 
 export default function SoundBench({ accent }: { accent: string }) {

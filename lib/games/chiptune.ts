@@ -23,9 +23,9 @@ export type SoundName =
   | 'bite' | 'fries' | 'shake' | 'donut' | 'gold' | 'crash'
   | 'item' | 'sauce' | 'slip' | 'coin' | 'note' | 'bundle' | 'card' | 'caught'
   | 'squirt' | 'pop' | 'clink' | 'power' | 'hurt' | 'rip' | 'whoosh' | 'thud' | 'boom'
-  | 'beep' | 'go' | 'engine'
+  | 'beep' | 'go' | 'engine' | 'smash'
   | 'level' | 'over' | 'winner'
-export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'beep', 'go', 'engine', 'level', 'over', 'winner']
+export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'beep', 'go', 'engine', 'smash', 'level', 'over', 'winner']
 
 /** A diner's shuffle for EATER, a convenience store's bossa for CATCHER, a fifties film from space for ATTACKS, a drive down the coast at sunset for RACING. */
 export type TuneName = 'diner' | 'store' | 'mars' | 'coast'
@@ -317,6 +317,13 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
     m.tone({ at: 0, dur: 1, freq: 3000, wave: 'noise', gain: 0.6, decay: 0.35, lowpass: 900, seed: 191 })
     m.tone({ at: 0, dur: 0.7, freq: 110, to: 32, wave: 'pulse', duty: 0.5, gain: 0.5, decay: 0.3 })
     m.tone({ at: 0.18, dur: 0.5, freq: 2000, wave: 'noise', gain: 0.35, decay: 0.2, lowpass: 600, seed: 192 })
+  } },
+  // RACING: a crash at speed: the crunch, the thump, the tyres screaming as the car spins
+  smash: { seconds: 0.9, peak: SOUND_PEAK, build: (m) => {
+    m.tone({ at: 0, dur: 0.18, freq: 4000, wave: 'noise', gain: 0.55, decay: 0.08, lowpass: 2600, seed: 211 })
+    m.tone({ at: 0, dur: 0.26, freq: 140, to: 48, wave: 'pulse', duty: 0.5, gain: 0.45, decay: 0.12 })
+    m.tone({ at: 0.08, dur: 0.66, freq: 1180, to: 820, wave: 'pulse', duty: 0.25, gain: 0.16, attack: 0.04, release: 0.12, vibrato: { rate: 23, depth: 0.7 } })
+    m.tone({ at: 0.08, dur: 0.66, freq: 6000, wave: 'noise', gain: 0.12, attack: 0.05, decay: 0.4, highpass: 2500, seed: 212 })
   } },
   // RACING: a red light of the start, and the last seconds on the clock: a short square beep
   beep: { seconds: 0.22, peak: SOUND_PEAK, build: (m) => {

@@ -48,9 +48,9 @@ const SHOULDER: Partial<Record<RacingCarKind | TrafficModel, number>> = { rosso:
 export type CarSide = { pic: PixelBuffer; share: number }
 const made = new Map<string, CarSide>()
 
-/** A car's side, and what share of the car's height it is: a racing car (its own colours) or an everyday car of the traffic (in its colour). */
-export function carSide(kind: RacingCarKind | TrafficModel, look = 0): CarSide {
-  const key = `${kind}|${look}`
+/** A car's side, and what share of the car's height it is: a racing car (its own colours) or an everyday car of the traffic (in its colour); `whole` with its cabin, as a car turned sideways shows it. */
+export function carSide(kind: RacingCarKind | TrafficModel, look = 0, whole = false): CarSide {
+  const key = `${kind}|${look}|${whole}`
   const known = made.get(key)
   if (known) return known
   const p = new Painter(SIDE_LENGTH, SIDE_HIGH), B = SIDE_HIGH - 9
@@ -131,7 +131,7 @@ export function carSide(kind: RacingCarKind | TrafficModel, look = 0): CarSide {
   const d = p.pic.data
   for (let o = 0; o < d.length; o += 4) { d[o] *= FLANK_SHADE; d[o + 1] *= FLANK_SHADE; d[o + 2] *= FLANK_SHADE * 1.04 }
   // from the car's highest point, or from its shoulder, its top edge inked
-  const top = topOf(p.pic), from = Math.max(top, SHOULDER[kind] ?? 0)
+  const top = topOf(p.pic), from = whole ? top : Math.max(top, SHOULDER[kind] ?? 0)
   const pic = new PixelBuffer(SIDE_LENGTH, SIDE_HIGH - from, '#000000')
   pic.data.set(p.pic.data.subarray(from * SIDE_LENGTH * 4))
   if (from > top) for (let x = 0; x < SIDE_LENGTH; x += 1) { const o = x * 4; if (pic.data[o + 3] > 0) pic.set(x, 0, INK_LINE) }

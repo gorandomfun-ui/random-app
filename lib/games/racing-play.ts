@@ -25,7 +25,7 @@ import { BONUS_PALETTE, MUSTARD } from './attacks-sprites'
 import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
-  createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
+  createRacing, heightAt, RACING_BEND, RACING_CAR_SPIN_STEPS, RACING_CAR_WIDTH, RACING_CRASH_STEPS, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_START_STEPS,
   FORK_NAME, racingHour, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
 import {
@@ -282,7 +282,7 @@ function farView(board: PixelBuffer, tier: Tier, sinking: number, horizon: numbe
 }
 
 /** The things to draw on each stretch ahead: what lies on the road, the rivals and the traffic ahead of the player. */
-type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind | RacingTrafficModel; traffic: boolean; z: number; x: number; turn: -1 | 0 | 1; look: number; speed: number; boost?: boolean }> }
+type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind | RacingTrafficModel; traffic: boolean; z: number; x: number; turn: -1 | 0 | 1; look: number; speed: number; boost?: boolean; pose: number }> }
 
 /** Which way a car turns on the screen: toward the lane it is heading for, else with a sharp bend. */
 const turnOf = (lane: number, x: number, curve: number): -1 | 0 | 1 => (Math.abs(lane - x) > 0.04 ? (lane > x ? 1 : -1) : Math.abs(curve) > 2.5 ? (curve > 0 ? 1 : -1) : 0)
@@ -343,8 +343,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   // what lies on each stretch and the cars on it, ahead of the player
   const cargo: Cargo[] = rows.map(() => ({ items: [], cars: [] }))
   for (const it of s.items) { if (it.taken) continue; const n = Math.floor(it.z) - b0; if (n >= 0 && n < rows.length) cargo[n].items.push(it) }
-  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, traffic: false, look: 0, z: r.z, x: r.x, speed: r.speed, boost: r.turbo > 0, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve) }) }
-  for (const t of s.traffic) { const n = Math.floor(t.z) - b0; if (n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, traffic: true, z: t.z, x: t.x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve) }) }
+  for (const r of s.rivals) { const n = Math.floor(r.z) - b0; if (n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, traffic: false, look: 0, z: r.z, x: r.x, speed: r.speed, boost: r.turbo > 0, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve), pose: spinPose(r.spin, RACING_CAR_SPIN_STEPS, r.spinWay) }) }
+  for (const t of s.traffic) { const n = Math.floor(t.z) - b0; if (n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, traffic: true, z: t.z, x: t.x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve), pose: spinPose(t.spin, RACING_CAR_SPIN_STEPS, t.spinWay) }) }
   // the lights on after sunset; in the city, always: it is lit up from the start
   const lit = world === 'city' || tier >= 0.55
   const night = world === 'city' || tier >= 1.4
@@ -401,6 +401,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     for (const c of cargo[n].cars.sort((m, k) => k.z - m.z)) {
       const at = place(p, c.z, c.x)
       const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
+      // a car spinning after a crash, in its smoke
+      if (c.pose) { posed(board, c, at.x, at.y, RACING_CAR_WIDTH * at.u, c.pose, frame, { clip, tier, fog, lights: night }); continue }
       // its flank, when it shows
       flank(board, rows, b0, c, at, at.y - bob, tier, fog, clip)
       if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
@@ -418,8 +420,11 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   const bob = s.speed > 0.05 && (frame >> 2) % 2 ? 1 : 0
   const cx = W / 2 + shake
   if (night) glow(board, cx, v.foot - width * 0.95, width * 1.3, '#fff6d8', 0.13, v.foot - width * 0.35, 0.22)
-  drawCar(board, s.car, cx, v.foot - bob, width, { turn: s.steer, tier: tier === 3 ? 2 : tier, fog: 0, lights: night })
-  if (s.turbo > 0) for (const side of [-1, 1]) flames(board, cx + side * width * 0.28, v.foot - 6, width * 0.14, frame + side)
+  if (s.crash > 0) posed(board, { kind: s.car, traffic: false, look: 0 }, cx, v.foot, width, spinPose(s.crash, RACING_CRASH_STEPS, s.crashWay), frame, { tier: tier === 3 ? 2 : tier, fog: 0, lights: night })
+  else drawCar(board, s.car, cx, v.foot - bob, width, { turn: s.steer, tier: tier === 3 ? 2 : tier, fog: 0, lights: night })
+  // scraping a rail: sparks off the car's side
+  if (s.sparks > 0) sparks(board, cx + s.sparkSide * width * 0.5, v.foot - width * 0.12, s.sparkSide, frame, width)
+  if (s.crash > 0) { /* its smoke is drawn with it */ } else if (s.turbo > 0) for (const side of [-1, 1]) flames(board, cx + side * width * 0.28, v.foot - 6, width * 0.14, frame + side)
   else if (s.offroad && s.speed > 0.05) {
     const color = dustOf(here, s.x)
     puff(board, cx - width * 0.42, v.foot - 4, -1, frame, 0, color, 0.7)
@@ -442,12 +447,13 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     if ((frame >> 3) % 2 || near > 0.6) for (let k = 0; k < size; k += 1) board.rect(Math.round(tx - k), ty - size + k, k * 2 + 1, 1, c)
   }
   // a car being passed, its back already behind the player's but still beside it, nearer the eye: its flank, then its back, until it goes out at the foot of the screen
-  const passing = [...s.rivals.map((r) => ({ kind: r.kind as RacingCarKind | RacingTrafficModel, traffic: false, z: r.z, x: r.x, look: 0, speed: r.speed, turn: turnOf(r.lane, r.x, 0) })), ...s.traffic.map((t) => ({ kind: t.kind as RacingCarKind | RacingTrafficModel, traffic: true, z: t.z, x: t.x, look: t.look, speed: t.speed, turn: turnOf(t.lane, t.x, 0) }))]
+  const passing = [...s.rivals.map((r) => ({ kind: r.kind as RacingCarKind | RacingTrafficModel, traffic: false, z: r.z, x: r.x, look: 0, speed: r.speed, turn: turnOf(r.lane, r.x, 0), pose: spinPose(r.spin, RACING_CAR_SPIN_STEPS, r.spinWay) })), ...s.traffic.map((t) => ({ kind: t.kind as RacingCarKind | RacingTrafficModel, traffic: true, z: t.z, x: t.x, look: t.look, speed: t.speed, turn: turnOf(t.lane, t.x, 0), pose: spinPose(t.spin, RACING_CAR_SPIN_STEPS, t.spinWay) }))]
   for (const c of passing.filter((c) => c.z < s.z && c.z > camZ + 2).sort((m, k) => k.z - m.z)) {
     const p = rows[Math.floor(c.z) - b0]
     if (!p) continue
     const at = place(p, c.z, c.x)
     if (at.y - RACING_CAR_WIDTH * at.u * 0.7 > H) continue
+    if (c.pose) { posed(board, c, at.x, at.y, RACING_CAR_WIDTH * at.u, c.pose, frame, { tier, fog: 0, lights: night }); continue }
     flank(board, rows, b0, c, at, at.y, tier, 0, H)
     if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
     else drawCar(board, c.kind as RacingCarKind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
@@ -708,6 +714,56 @@ function flank(board: PixelBuffer, rows: Projected[], b0: number, c: Cargo['cars
 }
 /** Where the pictures' eye stands on a car (a share of its height from its foot), and how much of the road's rise its flank follows. */
 const FLANK_EYE = 0.5, FLANK_LIFT = 0
+
+/**
+ * How far round a spinning car has turned, in degrees (its nose to the right
+ * for more than 0), `left` steps before its spin ends: round to its side and
+ * back, then a smaller swing the other way as it catches.
+ */
+function spinPose(left: number, total: number, way: -1 | 1): number {
+  if (left <= 0) return 0
+  const t = 1 - left / total
+  return way * (t < 0.7 ? 100 * Math.sin((Math.PI * t) / 0.7) : -28 * Math.sin((Math.PI * (t - 0.7)) / 0.3))
+}
+
+/**
+ * A car spinning after a crash, `width` wide at its back: from behind, turned
+ * (its turning picture), then side on (its side, as long as the car), by how
+ * far round it is; in the smoke of its tyres.
+ */
+function posed(board: PixelBuffer, c: { kind: RacingCarKind | RacingTrafficModel; traffic: boolean; look: number }, cx: number, foot: number, width: number, pose: number, frame: number, options: { clip?: number; tier: Tier; fog: number; lights: boolean }): void {
+  const clip = options.clip ?? board.height, turn: -1 | 1 = pose > 0 ? 1 : -1, round = Math.abs(pose)
+  const back = c.traffic ? width * TRAFFIC_WIDTH[c.kind as RacingTrafficModel] : width
+  if (round >= 62) {
+    const high = c.traffic ? trafficHigh(c.kind as RacingTrafficModel) : rivalHigh(c.kind as RacingCarKind)
+    const { pic } = carSide(c.traffic ? (c.kind as RacingTrafficModel) : (c.kind as RacingCarKind), c.look, true)
+    const w = back * SIDE_ON, h = back * high
+    glow(board, cx, foot - 1, w * 0.55, '#0a0814', 0.55, clip, 0.13)
+    const { rgb, by } = tintFor(options.tier, options.fog)
+    drawArt(board, pic, cx - w / 2, foot - h, w, h, clip, turn < 0, rgb, by)
+  } else {
+    const t = round >= 22 ? turn : 0
+    if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, cx, foot, width, { turn: t, clip, tier: options.tier, fog: options.fog, lights: options.lights })
+    else drawCar(board, c.kind as RacingCarKind, cx, foot, width, { turn: t, clip, tier: options.tier, fog: options.fog, lights: options.lights })
+  }
+  // the tyres' smoke, rolling up round the wheels and drifting back
+  if (back > 4) for (let k = 0; k < 6; k += 1) {
+    const age = ((frame + k * 5) % 26) / 26, r = back * (0.18 + age * 0.4)
+    glow(board, cx + (k - 2.5) * back * 0.24 + Math.sin(frame * 0.2 + k) * back * 0.05, foot - back * 0.04 - age * back * 0.26, r, '#ece8f2', 0.7 * (1 - age * 0.8), clip, 0.7)
+  }
+}
+/** How long a car side on is, for its back's width. */
+const SIDE_ON = 1.75
+
+/** Sparks off a rail scraped, from the car's side at `x`, `y`, flying back and out (`side` the rail's), white then yellow then orange. */
+function sparks(board: PixelBuffer, x: number, y: number, side: -1 | 1, frame: number, size: number): void {
+  for (let k = 0; k < 14; k += 1) {
+    const n = (frame * 13 + k * 29) % 37, len = size * (0.08 + (n % 5) * 0.04), dx = side * (0.25 + (n % 7) * 0.13), dy = (n % 4) * 0.3 - 0.45
+    const x0 = x + side * (n % 4), y0 = y - (n % 8), colour = k % 3 === 0 ? '#fffbe0' : k % 3 === 1 ? '#ffd23a' : '#ff8a1e'
+    for (let j = 0; j < len; j += 1) board.set(Math.round(x0 + dx * j), Math.round(y0 + dy * j), colour)
+  }
+  glow(board, x, y, size * 0.18, '#ffcf5a', 0.7)
+}
 /** A racing car's height as a share of its width, from its picture. */
 function rivalHigh(kind: RacingCarKind): number {
   const pic = racingArt(`car-${kind}-104`)

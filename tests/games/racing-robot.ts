@@ -2,8 +2,9 @@
  * Drivers for RANDOM RACING's tests, to know a level can be won by a
  * player and how much time it leaves: a good one, who times the start on the
  * third light, looks ahead, lifts before a sharp bend, goes round the cars,
- * the cones and the puddles, picks up the stopwatches and the mustard on the
- * way and lets the turbo go on a clear straight; a casual one, who sees
+ * the cones and the puddles (and brakes for a car it cannot go round), picks
+ * up the stopwatches and the mustard on the way and lets the turbo go on a
+ * clear straight; a casual one, who sees
  * things a fifth of a second late and not as far, aims roughly, presses A at
  * the start whenever, brakes late for a bend and then takes it slower than it
  * could, misses a puddle now and then and lets the turbo go only once the
@@ -18,6 +19,8 @@ export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70,
 export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 0.95, ahead: 40, misses: 0.35, good: false }
 
 type Seen = { x: number; z: number; speed: number }
+/** What the brake takes off the speed each step (as the rules have it). */
+const BRAKING = RACING_TOP / 70
 
 export type Move = { steer: -1 | 0 | 1; gas: boolean; brake: boolean; nitro: boolean }
 
@@ -54,6 +57,8 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     const worth = (l: number) => {
       let w = l === lane ? 0.5 : 0
       for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && Math.abs(c.x - l) < 0.62 && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
+      // and no lane to reach across a car close by: it would run into its side
+      if (Math.abs(l - seen.x) > 0.3 && [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > -4 && c.z - seen.z < 12 && Math.abs(c.x - seen.x) > 0.3 && c.x > Math.min(seen.x, l) - 0.25 && c.x < Math.max(seen.x, l) + 0.25)) w -= 8
       for (const it of s.items) {
         if (it.taken || it.z < seen.z || it.z - seen.z > d.ahead || Math.abs(it.x - l) > 0.4) continue
         if (it.kind === 'cone') w -= 6
@@ -75,8 +80,14 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     else if (beside && Math.sign(wobble) === Math.sign(beside.x - lane)) wobble = -wobble
     // and no gas into a slower car right ahead, overlapping: anyone lifts and goes round it
     const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 0 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.58 && c.speed < seen.speed)
-    const gas = seen.speed < limit && !stuck
-    const brake = seen.speed > limit + 0.06
+    // and the brake for a slower car in its way that it cannot go round in time: running into it is a crash
+    const late = [...s.rivals, ...s.traffic].some((c) => {
+      if (c.z <= seen.z || c.speed >= seen.speed || Math.abs(c.x - seen.x) > 0.55 || Math.abs(c.x - lane) > 0.55) return false
+      const dv = seen.speed - c.speed
+      return c.z - seen.z - 8 < (dv * dv) / (2 * BRAKING) + dv * 6
+    })
+    const gas = seen.speed < limit && !stuck && !late
+    const brake = seen.speed > limit + 0.06 || late
     const curve = segmentOf(s.track, seen.z).curve, share = seen.speed / RACING_TOP
     const drift = -(1 / 30) * share * share * curve * 0.3 * (s.level >= 13 ? 1.12 : 1)
     // and well off a car alongside, out toward the kerb, as anyone overtaking keeps; between two, right between them
@@ -107,7 +118,7 @@ export function race(s: RacingState, d: Driver, seed = 7, maxSteps = 240 * 60): 
     const move = drive(s)
     const before = s.check
     stepRacing(s, move.steer, move.gas, move.brake, move.nitro)
-    if (s.heard.includes('thud') || s.heard.includes('clink')) knocks += 1
+    if (s.heard.includes('thud') || s.heard.includes('clink') || s.heard.includes('smash')) knocks += 1
     if (s.heard.includes('slip')) skids += 1
     if (s.heard.includes('note') || s.heard.includes('power')) pickups += 1
     if (s.check > before) checkLeft.push(Math.round(s.time / 60))
