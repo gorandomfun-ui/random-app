@@ -19,8 +19,8 @@ test('les sons : chacun se fabrique propre, à son niveau, court, et toujours pa
     const a = renderSound(name), b = renderSound(name)
     assert.ok(a.every(Number.isFinite), `${name} : des valeurs finies`)
     const peak = peakOf(a)
-    // ATTACKS' squirt comes several times a second, a chipped plate, torn foil, a diver, a hit on a boss often: lower on purpose; RACING's engine, under everything, lowest
-    const share = ({ squirt: 0.6, clink: 0.7, rip: 0.8, whoosh: 0.8, thud: 0.75, engine: 0.42 } as Partial<Record<string, number>>)[name] ?? 1
+    // ATTACKS' squirt comes several times a second, a chipped plate, torn foil, a diver, a hit on a boss often: lower on purpose; RACING's public, heard along the road, a little lower; its engine, under everything, lowest
+    const share = ({ squirt: 0.6, clink: 0.7, rip: 0.8, whoosh: 0.8, thud: 0.75, cheer: 0.85, engine: 0.42 } as Partial<Record<string, number>>)[name] ?? 1
     assert.ok(peak > 0.29 * share && peak <= 0.3601 * share, `${name} : crête ${peak}`)
     assert.ok(a.length / SOUND_RATE <= 2, `${name} : court`)
     assert.ok(a.every((v, i) => v === b[i]), `${name} : identique d'une fois à l'autre`)

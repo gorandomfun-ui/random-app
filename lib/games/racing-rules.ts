@@ -30,8 +30,8 @@
  * the clock at zero, it is over; the finish line in time clears the level,
  * with points for the time left and the place.
  *
- * Past the line the road divides, a world written over each side: the side
- * the player steers into is the next level's world.
+ * In the middle of each level from the second, the road divides: two roads
+ * offering different things, the side the car is on taking one.
  *
  * Each level is its own road, always the same for it, longer and harder:
  * more of the road's kinds, sharper bends, more traffic and more surprises,
@@ -61,10 +61,11 @@ export const RACING_CARS: readonly RacingCarKind[] = ['rosso', 'burger', 'giallo
 
 /**
  * What can be heard: a light of the start (and the last seconds), the green
- * light, a knock, a rival passed, the finish line, a checkpoint, a stopwatch,
- * the turbo, a coin, a skid, a cone knocked over.
+ * light, a knock, a crash, the public cheering, a rival passed, the finish
+ * line, a checkpoint, a stopwatch, the turbo, a coin, a skid, a cone knocked
+ * over.
  */
-export type RacingSound = 'beep' | 'go' | 'thud' | 'whoosh' | 'level' | 'gold' | 'note' | 'power' | 'coin' | 'slip' | 'clink'
+export type RacingSound = 'beep' | 'go' | 'thud' | 'smash' | 'cheer' | 'whoosh' | 'level' | 'gold' | 'note' | 'power' | 'coin' | 'slip' | 'clink'
 
 /** A stretch's length, in half widths of the road. */
 export const RACING_SEGMENT = 0.1
@@ -127,9 +128,8 @@ export function racingStatsAt(car: RacingCarKind, level: number): Record<RacingS
 
 /** The start: three red lights a second apart, then green. */
 export const RACING_START_STEPS = 3 * SECOND
-/** The finish line crossed: the car rolls on while the points add up (a little longer when there is a road to choose); the clock at zero: it comes to a stop. */
+/** The finish line crossed: the car rolls on while the points add up; the clock at zero: it comes to a stop. */
 const GOAL_STEPS = 3 * SECOND
-const ROUTE_STEPS = 4 * SECOND
 const TIMEUP_STEPS = 2 * SECOND
 /** Past the finish line the road goes on, so the car has somewhere to roll. */
 const RUNOFF = 500
@@ -141,6 +141,31 @@ const STOPWATCH = 3 * SECOND
 const LAUNCH_FROM = 2 * SECOND
 const LAUNCH_BOOST = 1.2 * SECOND
 const SPIN_STEPS = 0.8 * SECOND
+/**
+ * Every fourth level a duel: one rival only — no quicker than the others at
+ * the fourth level, a little quicker at each next one, easing off less ahead
+ * and moving across more often — to be beaten to the line, or the game is
+ * over; beaten, its points.
+ */
+export const racingIsDuel = (level: number): boolean => level % 4 === 0
+export const RACING_DUEL_BONUS = 1500
+const duelPace = (level: number) => 0.93 + Math.min(RACING_LAST_LEVEL, level) * 0.005
+const duelEase = (level: number) => 0.16 - (Math.min(RACING_LAST_LEVEL, level) / RACING_LAST_LEVEL) * 0.11
+/**
+ * A crash: how much faster than the car ahead the player's must come for one
+ * (less, a knock); how long the player's car spins and a car hit spins; how
+ * much speed each spinning step keeps, and how far across it slides.
+ */
+const CRASH_CLOSING = RACING_TOP * 0.35
+export const RACING_CRASH_STEPS = Math.round(1 * SECOND)
+export const RACING_CAR_SPIN_STEPS = Math.round(1.2 * SECOND)
+const CRASH_SLOW = 0.992
+const CRASH_SLIDE = 0.006
+/** How long sparks fly off a rail after it is touched; how long the car smokes after a crash. */
+const SPARK_STEPS = 14
+const SMOKE_STEPS = 5 * SECOND
+/** How long the public waits before it may be heard cheering again. */
+const CHEER_STEPS = 7 * SECOND
 /** The gauge: what each risk gives; what it takes to let the turbo go. */
 const NEAR_MISS = 0.2
 const DRAFT_FILL = 0.006
@@ -197,20 +222,37 @@ export type RacingItem = { kind: RacingItemKind; z: number; x: number; taken: bo
 /** The everyday cars of the traffic. */
 export type RacingTrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream'
 /** A slow car of the traffic: the model and its colour (`look`), its lane, its speed; whether it swerves into another lane when the player comes. */
-export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean }
+export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean; spin: number; spinWay: -1 | 1 }
+/** What a level's traffic starts as: not swerved, not spinning. */
+type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay'>
 
 /**
- * The two roads of the fork in the middle of a level: what each offers —
- * bends and coins (and a stopwatch), a fast road and the mustard, a run
- * under the mountain with time to gain. Both as long, both back on the same
- * road at their end.
+ * The two roads of a level, from where the road divides, after its first
+ * quarter, to where they meet again, a little after its three quarters: two
+ * roads of their own through their own country — bends and coins (and
+ * stopwatches), a fast road and the mustard, a run under the mountain with
+ * time to gain. Both as long, both back on the same road at their end.
  */
 export type RacingForkKind = 'bends' | 'fast' | 'tunnel'
 export const RACING_FORK_KINDS: readonly RacingForkKind[] = ['bends', 'fast', 'tunnel']
 export type RacingFork = { at: number; len: number; kinds: [RacingForkKind, RacingForkKind]; tracks: [RacingSegment[], RacingSegment[]]; items: [Array<Omit<RacingItem, 'taken'>>, Array<Omit<RacingItem, 'taken'>>] }
-/** How long each road of the fork runs, and how far before it the side the car is on decides. */
-export const FORK_LEN = 480
+/** Where the road divides (a share of the level), how much of it the two roads run, and how far before it the side the car is on decides. */
+export const FORK_FROM = 0.24
+export const FORK_SHARE = 0.5
 export const FORK_DECIDE = 30
+/**
+ * The country each road of the two runs through, in each world: the bends
+ * along the beach and the promenade, through the woods and the village, the
+ * canyon, the park; the fast road over the causeway, by the lake, across the
+ * dunes and the town, over the bridge and down the avenue; the run under the
+ * mountain in and out of the cliff, the gorge, the mesas, downtown.
+ */
+export const FORK_ZONES: Record<RacingWorld, Record<RacingForkKind, readonly RacingZone[]>> = {
+  coast: { bends: ['beach', 'promenade'], fast: ['causeway'], tunnel: ['cliff', 'tunnel'] },
+  mountain: { bends: ['forest', 'village'], fast: ['lake'], tunnel: ['gorge', 'tunnel'] },
+  desert: { bends: ['canyon'], fast: ['dunes', 'town'], tunnel: ['mesa', 'tunnel'] },
+  city: { bends: ['park'], fast: ['bridge', 'avenue'], tunnel: ['downtown', 'tunnel'] },
+}
 
 /** A level's road and what is on it, always the same for the level (with its fork's right-hand road, until the player takes the left). */
 export type RacingCourse = {
@@ -223,11 +265,28 @@ export type RacingCourse = {
   /** The par of each part of the road (to the first checkpoint, between them, to the line), in seconds. */
   pars: number[]
   items: Array<Omit<RacingItem, 'taken'>>
-  traffic: Array<Omit<RacingTraffic, 'swerved'>>
+  traffic: TrafficAtStart[]
 }
 
 const easeIn = (a: number, b: number, t: number) => a + (b - a) * t * t
 const easeInOut = (a: number, b: number, t: number) => a + (b - a) * (-Math.cos(t * Math.PI) / 2 + 0.5)
+
+/**
+ * A piece of road laid at the end of `out`, of the kind `zone`: easing into
+ * its bend, holding it, easing out, and rising or falling by `height` —
+ * never steeper than a road can be climbed (the rise bounded by the piece's
+ * length), the height kept within reach of the start's (from `from` when
+ * nothing is laid yet).
+ */
+function lay(out: RacingSegment[], zone: RacingZone, enter: number, hold: number, leave: number, curve: number, height: number, from = 0): void {
+  const total = enter + hold + leave, steepest = (total * MAX_SLOPE) / (Math.PI / 2)
+  const y0 = out.length ? out[out.length - 1].y2 : from, y1 = Math.max(-MAX_HEIGHT, Math.min(MAX_HEIGHT, y0 + Math.max(-steepest, Math.min(steepest, height))))
+  let n = 0
+  const push = (c: number) => { out.push({ curve: c, y1: easeInOut(y0, y1, n / total), y2: easeInOut(y0, y1, (n + 1) / total), zone, things: [] }); n += 1 }
+  for (let i = 0; i < enter; i += 1) push(easeIn(0, curve, i / enter))
+  for (let i = 0; i < hold; i += 1) push(curve)
+  for (let i = 0; i < leave; i += 1) push(easeInOut(curve, 0, i / leave))
+}
 
 /** How long a level's road is, about, to the finish line, in stretches. */
 export const racingLength = (level: number): number => 2800 + Math.min(RACING_LAST_LEVEL, level) * 120
@@ -290,16 +349,7 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
   const track: RacingSegment[] = []
   const lastY = () => (track.length ? track[track.length - 1].y2 : 0)
   let zone: RacingZone = featured
-  const add = (enter: number, hold: number, leave: number, curve: number, height: number) => {
-    // never steeper than a road can be climbed: the rise bounded by the piece's length, the height kept within reach of the start's
-    const total = enter + hold + leave, steepest = (total * MAX_SLOPE) / (Math.PI / 2)
-    const y0 = lastY(), y1 = Math.max(-MAX_HEIGHT, Math.min(MAX_HEIGHT, y0 + Math.max(-steepest, Math.min(steepest, height))))
-    let n = 0
-    const push = (c: number) => { track.push({ curve: c, y1: easeInOut(y0, y1, n / total), y2: easeInOut(y0, y1, (n + 1) / total), zone, things: [] }); n += 1 }
-    for (let i = 0; i < enter; i += 1) push(easeIn(0, curve, i / enter))
-    for (let i = 0; i < hold; i += 1) push(curve)
-    for (let i = 0; i < leave; i += 1) push(easeInOut(curve, 0, i / leave))
-  }
+  const add = (enter: number, hold: number, leave: number, curve: number, height: number) => lay(track, zone, enter, hold, leave, curve, height)
   // up or down, back toward the start's level when the road has climbed or dropped far; flat on the water and in the tunnel
   // a hills level's hills higher, and from its start
   const hilly = character === 'hills' ? 2.2 : character === 'sprint' ? 0.6 : 1
@@ -322,20 +372,22 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
   const end = racingLength(lv) - 140
   add(0, 80, 0, 0, 0)
   let left = between(320, 520), tunnels = 0
-  // from the second level, a fork a little past the first checkpoint: its place kept straight and flat, its two roads made afterwards
-  const forkFrom = lv >= 2 ? Math.round(end * 0.38) : Infinity
+  // from the second level, the road divides after its first quarter into two roads for half of it: their place kept straight and flat, the two roads made afterwards
+  const forkFrom = lv >= 2 ? Math.round(end * FORK_FROM) : Infinity, forkLen = Math.round(end * FORK_SHARE)
   let forkAt = -1
   while (track.length < end) {
     if (forkAt < 0 && track.length >= forkFrom && zone !== 'tunnel') {
       forkAt = track.length
-      add(0, FORK_LEN, 0, 0, 0)
-      left -= FORK_LEN
+      add(0, forkLen, 0, 0, 0)
+      left = 0
       continue
     }
     if (left <= 0) {
       // the next kind of road; the tunnel only out of the rock, and back into it — a tunnel level's long, twice
       const long = character === 'tunnel' && tunnels < 2
-      if (zone === TUNNEL_FROM[world] && (long || (lv >= 6 && rnd() < 0.55))) { zone = 'tunnel'; left = long ? between(420, 640) : between(140, 240); tunnels += 1 }
+      // never into the rock so near where the road divides that it would put the two roads off
+      const room = forkAt >= 0 || track.length + (long ? 640 : 240) + 40 < forkFrom
+      if (zone === TUNNEL_FROM[world] && room && (long || (lv >= 6 && rnd() < 0.55))) { zone = 'tunnel'; left = long ? between(420, 640) : between(140, 240); tunnels += 1 }
       else if (zone === 'tunnel') { zone = TUNNEL_FROM[world]; left = between(160, 260) }
       else if (character === 'tunnel' && tunnels < 2) { zone = TUNNEL_FROM[world]; left = between(120, 200) }
       else { zone = nextZone(); left = between(300, 560) }
@@ -369,19 +421,27 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
   while (Math.abs(lastY()) > 0.05) add(30, 70, 30, 0, -lastY())
   const finish = track.length
   add(0, RUNOFF, 0, 0, 0)
-  // the fork's two roads, each as long, flat at the place's height; the right-hand one laid down, the left one kept for the player's choice
-  const fork = forkAt >= 0 ? forkRoads(forkAt, track, lv, world) : null
-  if (fork) for (let k = 0; k < FORK_LEN; k += 1) track[forkAt + k] = fork.tracks[1][k]
-  const open: [number, number] | null = fork ? [forkAt - 100, forkAt + 80] : null
-  dress(track, finish, lv, world, fork ? [forkAt - 100, forkAt, forkAt + 80, forkAt + FORK_LEN] : [], null, 0, open)
+  // the two roads, each as long, back at the place's height at their end; the right-hand one laid down, the left one kept for the player's choice
+  const fork = forkAt >= 0 ? forkRoads(forkAt, forkLen, track, lv, world) : null
   if (fork) {
-    // what stands by the left-hand road, dressed on its own
-    const other = track.slice()
-    for (let k = 0; k < FORK_LEN; k += 1) other[forkAt + k] = fork.tracks[0][k]
-    dress(other, finish, lv, world, [forkAt + 80, forkAt + FORK_LEN], [forkAt, forkAt + FORK_LEN], 1, open)
+    for (let k = 0; k < fork.len; k += 1) track[forkAt + k] = fork.tracks[1][k]
+    // the slower road gives back most of what it costs, in stopwatches along it, for whoever picks them up
+    const par = (road: RacingSegment[]) => road.reduce((t, g) => t + 1 / usualSpeed(g.curve, lv), 0) / SECOND
+    const slow = par(fork.tracks[0]) > par(fork.tracks[1]) ? 0 : 1, more = Math.round((Math.abs(par(fork.tracks[0]) - par(fork.tracks[1])) * GIVE_BACK) / 3)
+    for (let k = 0; k < more; k += 1) fork.items[slow].push({ kind: 'time', z: forkAt + Math.round(fork.len * (0.18 + (0.66 * (k + 0.5)) / more)), x: RACING_LANES[(k + lv) % 3] })
   }
-  // the public at the start, at each checkpoint and all along the end, on both sides
-  const cheer = (from: number, to: number, every: number) => { for (let i = Math.max(4, from); i < Math.min(track.length, to); i += every) if (track[i].zone !== 'tunnel') for (const side of [-1, 1]) track[i].things.push({ kind: 'crowd', x: side * 2.08, flip: side < 0, look: i * 2 + (side < 0 ? 1 : 0) }) }
+  // where the other road is close by — going away, coming back — open ground
+  const open: Array<[number, number]> = fork ? [[forkAt - 100, forkAt + FORK_NEAR], [forkAt + forkLen - FORK_NEAR - 40, forkAt + forkLen + 20]] : []
+  dress(track, finish, lv, world, fork ? [forkAt - 100, forkAt, forkAt + FORK_NEAR, forkAt + forkLen] : [], null, 0, open)
+  // the road as it is with the left-hand road laid in
+  const other = fork ? track.slice() : track
+  if (fork) {
+    for (let k = 0; k < fork.len; k += 1) other[forkAt + k] = fork.tracks[0][k]
+    // what stands by it, dressed on its own
+    dress(other, finish, lv, world, [forkAt + FORK_NEAR, forkAt + forkLen], [forkAt, forkAt + forkLen], 1, open)
+  }
+  // the public at the start, at each checkpoint and all along the end, on both sides — by whichever road
+  const cheer = (from: number, to: number, every: number) => { for (let i = Math.max(4, from); i < Math.min(track.length, to); i += every) for (const road of other === track ? [track] : [track, other]) if (road[i].zone !== 'tunnel' && (road === track || road[i] !== track[i])) for (const side of [-1, 1]) road[i].things.push({ kind: 'crowd', x: side * 2.08, flip: side < 0, look: i * 2 + (side < 0 ? 1 : 0) }) }
   const checks = [Math.round(finish / 3), Math.round((finish * 2) / 3)]
   cheer(10, 70, 9)
   for (const c of checks) cheer(c - 30, c + 8, 8)
@@ -389,65 +449,106 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
   cheer(finish - 70, finish + 130, Math.max(4, 8 - Math.floor(lv / 4)))
   // the checkpoints at a third and two thirds, each part's par
   const marks = [0, ...checks, finish]
-  // each part's par: with the fork, the two roads' pars taken half and half
-  const curveAt = (i: number, k: 0 | 1) => (fork && i >= fork.at && i < fork.at + FORK_LEN ? fork.tracks[k][i - fork.at].curve : track[i].curve)
+  // each part's par: with the two roads, their pars taken half and half
+  const curveAt = (i: number, k: 0 | 1) => (k === 0 ? other[i].curve : track[i].curve)
   const pars = marks.slice(1).map((to, part) => { let steps = 0; for (let i = marks[part]; i < to; i += 1) steps += (1 / usualSpeed(curveAt(i, 0), lv) + 1 / usualSpeed(curveAt(i, 1), lv)) / 2; return steps / SECOND })
   let items = placeItems(track, finish, lv, world)
-  if (fork) items = [...items.filter((it) => it.z < fork.at || it.z >= fork.at + FORK_LEN), ...fork.items[1]].sort((a, b) => a.z - b.z)
+  if (fork) {
+    // on each road, what is on any road (cones, puddles, coins, stopwatches) as it falls on that road, and what that road offers
+    const on = (list: Array<Omit<RacingItem, 'taken'>>) => list.filter((it) => it.z >= fork.at + 50 && it.z < fork.at + fork.len - 30)
+    fork.items[0] = [...fork.items[0], ...on(placeItems(other, finish, lv, world))].sort((a, b) => a.z - b.z)
+    fork.items[1] = [...fork.items[1], ...on(items)].sort((a, b) => a.z - b.z)
+    items = [...items.filter((it) => it.z < fork.at || it.z >= fork.at + fork.len), ...fork.items[1]].sort((a, b) => a.z - b.z)
+  }
   const course: RacingCourse = { world, fork, track, finish, checks, pars, items, traffic: placeTraffic(finish, lv, world) }
   courses.set(key, course)
   return course
 }
 
 /**
- * The fork's two roads, at stretch `at` of a level: two of its kinds, drawn
- * for the level. Each starts with forty stretches straight (the two alike
- * while the car decides), then its own way — S bends and chicanes; long
- * straights and a sweeper; a run through the rock — and ends straight, back
- * on the road; flat at the height of the place they are on; with what each
- * offers on it.
+ * The two roads, at stretch `at` of a level, `len` long: two of the three
+ * kinds, in turn from level to level. Each starts with forty stretches
+ * straight on the road it leaves (the two alike while the car decides), then
+ * runs its own way through its own country (`FORK_ZONES`) — S bends,
+ * chicanes and hairpins; long straights, sweepers and crests; in and out of
+ * the rock — over hills of its own, and comes back at the height and on the
+ * kind of road it meets again, straight; with what it offers on it, spread
+ * along it.
  */
-function forkRoads(at: number, track: RacingSegment[], lv: number, world: RacingWorld): RacingFork {
+function forkRoads(at: number, len: number, track: RacingSegment[], lv: number, world: RacingWorld): RacingFork {
   const rnd = seeded(4099 + lv * 271 + RACING_WORLDS.indexOf(world) * 53)
-  // the three pairs in turn from level to level (and world to world), which on the left drawn
+  const between = (a: number, b: number) => Math.round(a + rnd() * (b - a))
+  // the level's character's own two roads (a sprint's both quick, a twisty level's bends, a tunnel level's run in the rock), else the three pairs in turn from level to level (and world to world); which on the left drawn
+  const character = racingCharacter(lv)
   const pairs: Array<[RacingForkKind, RacingForkKind]> = [['bends', 'fast'], ['fast', 'tunnel'], ['bends', 'tunnel']]
-  const pair = pairs[(lv + RACING_WORLDS.indexOf(world)) % pairs.length]
+  const pair = CHARACTER_FORKS[character] ?? pairs[(lv + RACING_WORLDS.indexOf(world)) % pairs.length]
+  // a sprint's roads straighter, a twisty level's and a hairpins level's sharper
+  const straighter = character === 'sprint', sharper = character === 'twisty' || character === 'hairpins'
   const two: [RacingForkKind, RacingForkKind] = rnd() < 0.5 ? [pair[0], pair[1]] : [pair[1], pair[0]]
-  const y = track[at].y1, here = track[at].zone
+  const y0 = track[at].y1, here = track[at].zone, back = track[at + len].zone
   const road = (kind: RacingForkKind): RacingSegment[] => {
-    const out: RacingSegment[] = []
-    const piece = (enter: number, hold: number, leave: number, curve: number, zone: RacingZone) => {
-      for (let i = 0; i < enter; i += 1) out.push({ curve: easeIn(0, curve, i / enter), y1: y, y2: y, zone, things: [] })
-      for (let i = 0; i < hold; i += 1) out.push({ curve, y1: y, y2: y, zone, things: [] })
-      for (let i = 0; i < leave; i += 1) out.push({ curve: easeInOut(curve, 0, i / leave), y1: y, y2: y, zone, things: [] })
-    }
-    piece(0, 40, 0, 0, here)
-    const inside = kind === 'tunnel' ? 'tunnel' : here
-    // its own way while a whole piece still fits before its end
-    while (out.length < FORK_LEN - 270) {
-      const dir = rnd() < 0.5 ? -1 : 1
-      if (kind === 'bends') {
-        if (rnd() < 0.55) { const c = 3.5 + rnd() * 2; piece(18, 20 + Math.round(rnd() * 16), 18, dir * c, inside); piece(18, 20 + Math.round(rnd() * 16), 18, -dir * c, inside) }
-        else { const c = 4.5 + rnd() * 1.2; piece(12, 8, 12, dir * c, inside); piece(12, 8, 12, -dir * c, inside) }
+    // a tunnel level's roads both through the rock now and then
+    const out: RacingSegment[] = [], zones: readonly RacingZone[] = character === 'tunnel' && kind !== 'tunnel' ? [...FORK_ZONES[world][kind], 'tunnel'] : FORK_ZONES[world][kind]
+    let zone: RacingZone = here
+    const add = (enter: number, hold: number, leave: number, curve: number, height: number) => lay(out, zone, enter, hold, leave, curve, height, y0)
+    const lastY = () => out[out.length - 1].y2
+    // hills of its own, never far from the height it comes back to
+    const hill = () => (zone === 'tunnel' || zone === 'lake' || zone === 'causeway' || zone === 'bridge' || lv < 3 ? 0 : Math.max(-ROAD_HILLS, Math.min(ROAD_HILLS, lastY() - y0 + (rnd() < 0.5 ? -1 : 1) * between(1, 3))) - (lastY() - y0))
+    add(0, 40, 0, 0, 0)
+    let next = 0, left = 0
+    // its own way while the biggest piece and the way back still fit
+    while (out.length < len - 520) {
+      if (left <= 0) { zone = zones[next % zones.length]; next += 1; left = zone === 'tunnel' ? between(260, 420) : between(220, 380) }
+      const start = out.length, dir = rnd() < 0.5 ? -1 : 1
+      if (zone === 'tunnel') add(30, between(60, 110), 30, rnd() < (straighter ? 0.92 : sharper ? 0.1 : 0.4) ? 0 : dir * (sharper ? 2.5 + rnd() * 1.5 : 1.4 + rnd() * 1.4), 0)
+      else if (kind === 'bends') {
+        const r = rnd()
+        if (r < 0.4) { const c = 3.5 + rnd() * 2; add(18, between(20, 36), 18, dir * c, hill()); add(18, between(20, 36), 18, -dir * c, 0) }
+        else if (r < 0.65) { const c = 4.5 + rnd() * 1.2; add(12, 8, 12, dir * c, 0); add(12, 8, 12, -dir * c, 0) }
+        else if (r < (sharper ? 0.95 : 0.72) && (lv >= 8 || sharper)) add(22, between(30, 50), 22, dir * (6 + rnd() * 1.2), hill())
+        else add(0, between(20, 40), 0, 0, 0)
       } else if (kind === 'fast') {
-        if (rnd() < 0.5) piece(0, 60 + Math.round(rnd() * 40), 0, 0, inside)
-        else piece(30, 50 + Math.round(rnd() * 30), 30, dir * (1.2 + rnd() * 0.6), inside)
-      } else piece(25, 30 + Math.round(rnd() * 30), 25, dir * (1.4 + rnd() * 1.2), inside)
+        const r = rnd()
+        if (r < (straighter ? 0.85 : 0.45)) add(0, between(80, 200), 0, 0, hill())
+        else if (r < 0.85) add(between(40, 60), between(80, 160), between(40, 60), dir * (1.2 + rnd() * 0.8), hill())
+        else { add(30, between(40, 60), 30, dir * (2 + rnd()), hill()); add(25, 20, 25, 0, 0) }
+      } else if (straighter && rnd() < 0.92) add(0, between(60, 140), 0, 0, hill())
+      else add(25, between(30, 60), 25, dir * (sharper ? 3.6 + rnd() * 1.5 : 2 + rnd() * 1.5), hill())
+      left -= out.length - start
     }
-    // straight to its end, out of the rock forty stretches before it, back on the road
-    const rest = FORK_LEN - out.length
-    if (kind === 'tunnel') { piece(0, Math.max(0, rest - 40), 0, 0, inside); piece(0, 40, 0, 0, here) } else piece(0, rest, 0, 0, inside)
-    return out.slice(0, FORK_LEN)
+    // then smaller pieces of its own kind, while they fit before the way back
+    const wayBack = () => (zone === 'tunnel' ? 40 : 0) + (Math.abs(lastY() - y0) > 0.05 ? 130 * Math.ceil(Math.abs(lastY() - y0) / 9.5) : 0)
+    while (out.length + wayBack() + 60 + 110 < len) {
+      const dir = rnd() < 0.5 ? -1 : 1
+      if (zone === 'tunnel') add(20, between(20, 50), 20, straighter ? 0 : dir * (1.4 + rnd() * 1.4), 0)
+      else if (kind === 'bends') { const c = 3.5 + rnd() * (sharper ? 2 : 1); add(14, 10, 14, dir * c, 0); add(14, 10, 14, -dir * c, 0) }
+      else if (kind === 'fast') add(20, between(30, 50), 20, straighter ? 0 : dir * (1.2 + rnd() * 0.8), 0)
+      else add(20, between(20, 40), 20, straighter ? 0 : dir * (sharper ? 3.6 + rnd() * 1.5 : 2 + rnd() * 1.5), 0)
+    }
+    // the way back: out of the rock, to the height of the place it comes back to, straight onto that road
+    if (zone === 'tunnel') { zone = kind === 'tunnel' ? TUNNEL_FROM[world] : zones[0]; add(0, 40, 0, 0, 0) }
+    for (let k = 0; k < 3 && Math.abs(lastY() - y0) > 0.05; k += 1) add(30, 70, 30, straighter ? 0 : (k % 2 ? -1 : 1) * (sharper ? 3.6 : 2), y0 - lastY())
+    zone = back
+    add(0, Math.max(0, len - out.length), 0, 0, 0)
+    return out.slice(0, len)
   }
   const lane = () => RACING_LANES[Math.floor(rnd() * 3)]
   const offered = (kind: RacingForkKind): Array<Omit<RacingItem, 'taken'>> => {
-    const coins = (z: number) => { const x = lane(); return Array.from({ length: 5 }, (_, k) => ({ kind: 'coin' as const, z: at + z + k * 7, x })) }
-    if (kind === 'bends') return [...coins(90), ...coins(200), ...coins(330), { kind: 'time', z: at + 270, x: lane() }]
-    if (kind === 'fast') return [{ kind: 'turbo', z: at + 80, x: lane() }, { kind: 'turbo', z: at + 300, x: lane() }]
-    return [{ kind: 'time', z: at + 150, x: lane() }, ...coins(240), ...coins(360)]
+    const coins = (share: number) => { const x = lane(), z = at + Math.round(len * share); return Array.from({ length: 5 }, (_, k) => ({ kind: 'coin' as const, z: z + k * 7, x })) }
+    const watch = (share: number) => ({ kind: 'time' as const, z: at + Math.round(len * share), x: lane() })
+    if (kind === 'bends') return [...coins(0.12), ...coins(0.3), ...coins(0.55), ...coins(0.75), watch(0.42), watch(0.85)]
+    if (kind === 'fast') return [{ kind: 'turbo', z: at + Math.round(len * 0.12), x: lane() }, { kind: 'turbo', z: at + Math.round(len * 0.5), x: lane() }, { kind: 'turbo', z: at + Math.round(len * 0.82), x: lane() }]
+    return [watch(0.25), watch(0.6), ...coins(0.4), ...coins(0.78)]
   }
-  return { at, len: FORK_LEN, kinds: two, tracks: [road(two[0]), road(two[1])], items: [offered(two[0]), offered(two[1])] }
+  return { at, len, kinds: two, tracks: [road(two[0]), road(two[1])], items: [offered(two[0]), offered(two[1])] }
 }
+/** How much of the slower road's extra time (as the clock reckons it: a driver loses about twice that in its bends) comes back in its stopwatches. */
+const GIVE_BACK = 1.4
+/** The two roads of a level of some characters: a sprint's both quick, a twisty level's and a hairpins level's bends, a tunnel level's run in the rock. */
+const CHARACTER_FORKS: Partial<Record<RacingCharacter, [RacingForkKind, RacingForkKind]>> = { sprint: ['fast', 'tunnel'], twisty: ['bends', 'tunnel'], hairpins: ['bends', 'fast'], tunnel: ['tunnel', 'bends'] }
+/** How far the two roads' own hills go from the height they meet again at; for how many stretches the other road is close by, going away and coming back. */
+const ROAD_HILLS = 4
+export const FORK_NEAR = 200
 
 /**
  * What stands by a world's road, a little irregular, more of it (the
@@ -459,7 +560,7 @@ function forkRoads(at: number, track: RacingSegment[], lv: number, world: Racing
  * traffic lights over the road, boats in the bay. Chevrons on the outside of
  * bends; the shops one after another where the world has them.
  */
-function dress(track: RacingSegment[], finish: number, lv: number, world: RacingWorld, cuts: number[] = [], only: [number, number] | null = null, seedShift = 0, clear: [number, number] | null = null): void {
+function dress(track: RacingSegment[], finish: number, lv: number, world: RacingWorld, cuts: number[] = [], only: [number, number] | null = null, seedShift = 0, clear: Array<[number, number]> = []): void {
   const place = seeded(77 + lv * 131 + RACING_WORLDS.indexOf(world) * 7 + seedShift * 7919)
   const shops = WORLD_SHOPS[world]
   // the gaps between the shops and between the groups of the public, closing up as the levels go
@@ -495,12 +596,13 @@ function dress(track: RacingSegment[], finish: number, lv: number, world: Racing
     const z = seg.zone
     if (z === 'tunnel') return
     // where the road divides and the other road goes away: open ground, nothing standing (but the chevrons)
-    if (clear && i >= clear[0] && i < clear[1]) { if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0, look: 0 }); return }
+    if (clear.some(([a, b]) => i >= a && i < b)) { if (Math.abs(seg.curve) >= 3 && i % 9 === 0) seg.things.push({ kind: 'chevron', x: seg.curve > 0 ? -1.95 : 1.95, flip: seg.curve < 0, look: 0 }); return }
     const rock = rockOf[z]
     if (rock) {
       if (due('crag', i, 4, 5)) seg.things.push({ kind: rock, x: 2.15 + place() * 0.5, flip: place() < 0.5, look: Math.floor(place() * 4) })
       if (z === 'canyon' && due('cragL', i, 4, 5)) seg.things.push({ kind: rock, x: -2.15 - place() * 0.5, flip: place() < 0.5, look: Math.floor(place() * 4) })
-      if (due('bluff', i, 14, 16)) { const side = z === 'canyon' && place() < 0.5 ? -1 : 1; seg.things.push({ kind: bluffOf[z]!, x: side * (5 + place() * 3.5), flip: place() < 0.5, look: 3 + Math.floor(place() * 2) }) }
+      // the big ones well back from the road — a butte never brushed going by
+      if (due('bluff', i, 14, 16)) { const side = z === 'canyon' && place() < 0.5 ? -1 : 1, kind = bluffOf[z]!; seg.things.push({ kind, x: side * ((kind === 'butte' ? 7 : 5.5) + place() * 3), flip: place() < 0.5, look: 3 + Math.floor(place() * 2) }) }
     }
     if (lv >= 6 && i >= next.along && (landLeft.has(z) || landRight.has(z))) {
       const side = landRight.has(z) && (!landLeft.has(z) || place() < 0.5) ? 1 : -1
@@ -574,9 +676,11 @@ function placeItems(track: RacingSegment[], finish: number, lv: number, world: R
   const works = 1 + Math.floor(lv / 3)
   const sharp = (z0: number) => track.slice(Math.max(0, z0 - 20), z0 + 60).some((g) => Math.abs(g.curve) > 3)
   for (let k = 0; k < works; k += 1) {
-    let z0 = Math.round(from + ((k + 0.5) / works) * (to - from) + (rnd() - 0.5) * 200)
-    // the nearest place further on out of the bends
+    const at = Math.round(from + ((k + 0.5) / works) * (to - from) + (rnd() - 0.5) * 200)
+    // the nearest place further on out of the bends, else further back
+    let z0 = at
     for (let tries = 0; tries < 30 && z0 < to - 60 && sharp(z0); tries += 1) z0 += 20
+    if (sharp(z0) || z0 >= to - 60) { z0 = at; for (let tries = 0; tries < 30 && z0 > from && sharp(z0); tries += 1) z0 -= 20 }
     if (track[z0]?.zone === 'tunnel' || sharp(z0) || busy(z0 - 40, z0 + 100)) continue
     const x = lane()
     for (let z = z0; z < z0 + 60; z += 6) items.push({ kind: 'cone', z, x })
@@ -604,7 +708,7 @@ function placeItems(track: RacingSegment[], finish: number, lv: number, world: R
 }
 
 /** The traffic: the world's everyday cars spread along the road, two at the first level and more as the levels go; from the fourth, some swerve when the player comes, more of them as the levels go. */
-function placeTraffic(finish: number, lv: number, world: RacingWorld): Array<Omit<RacingTraffic, 'swerved'>> {
+function placeTraffic(finish: number, lv: number, world: RacingWorld): TrafficAtStart[] {
   const rnd = seeded(53 + lv * 613 + RACING_WORLDS.indexOf(world) * 3001)
   const MODELS: readonly RacingTrafficModel[] = WORLD_TRAFFIC[world]
   const n = Math.round(1.5 + lv * 0.75)
@@ -658,6 +762,9 @@ export type RacingRival = {
   /** Steps left of its own turbo, and before it may use one again. */
   turbo: number
   cool: number
+  /** Steps left of a spin after a crash, and which way it turns. */
+  spin: number
+  spinWay: -1 | 1
 }
 
 export type RacingPhase = 'start' | 'play' | 'goal' | 'garage' | 'timeup' | 'won' | 'over'
@@ -668,14 +775,12 @@ export type RacingState = {
   /** A single level (a round of the Random flow): its end is the round's. */
   single: boolean
   car: RacingCarKind
-  /** The world of each level in this game (the first drawn at its start, the next ones chosen at the fork); the world of this one. */
+  /** The world of each level in this game, drawn at its start; the world of this one. */
   worlds: RacingWorld[]
   world: RacingWorld
   /** The car's points now. */
   stats: Record<RacingStat, number>
-  /** The two worlds the road divides into past this level's line, left and right; none in a round or at the last level. */
-  routes: [RacingWorld, RacingWorld] | null
-  /** The level's fork in the middle of the road, and the road taken there: −1 not yet, 0 the left, 1 the right. */
+  /** The level's two roads, where the road divides, and the one taken there: −1 not yet, 0 the left, 1 the right. */
   fork: RacingFork | null
   forkPick: -1 | 0 | 1
   /** Between two levels, the improvements offered and the one pointed at. */
@@ -715,11 +820,24 @@ export type RacingState = {
   run: number
   place: number
   /** The points of the finish line: for the time left and for the place, and the place they were for. */
-  bonus: { time: number; place: number; rank: number } | null
+  bonus: { time: number; place: number; rank: number; duel: number } | null
+  /** The rival of this level's duel, if it is one; whether it got to the line first. */
+  duel: RacingCarKind | null
+  duelLost: boolean
   /** The step the line was crossed at (the fireworks start from it), or -1. */
   goalAt: number
   /** Steps of the shake after a knock; whether the car is off the road (sand or bushes flying). */
   knock: number
+  /** Steps left of a crash's spin (no steering, no pedals), and which way the car turns; steps left of sparks off a rail, and on which side. */
+  crash: number
+  crashWay: -1 | 1
+  sparks: number
+  sparkSide: -1 | 1
+  /** Whether the car brakes hard this step (its tyres smoke); steps left of smoke out of it after a crash. */
+  braking: boolean
+  smoke: number
+  /** Steps before the public may be heard cheering again. */
+  cheered: number
   offroad: boolean
   /** Steps left of the turbo, of a skid (and which way it slides). */
   turbo: number
@@ -750,18 +868,11 @@ export function racingEngine(s: RacingState): number | null {
   let gear = 0
   while (gear < gears.length - 2 && share > gears[gear + 1]) gear += 1
   const within = Math.min(1, (share - gears[gear]) / (gears[gear + 1] - gears[gear]))
-  return 0.65 + gear * 0.1 + within * 0.85 + (s.turbo > 0 ? 0.15 : 0) + (s.spin > 0 ? 0.5 : 0)
+  return 0.65 + gear * 0.1 + within * 0.85 + (s.turbo > 0 ? 0.15 : 0) + (s.spin > 0 ? 0.5 : 0) + (s.crash > 0 ? 0.3 : 0)
 }
 
 /** The two cars that are not the player's, in the order they line up. */
 export const rivalsOf = (car: RacingCarKind): RacingCarKind[] => RACING_CARS.filter((k) => k !== car)
-
-/** The two worlds offered at a level's fork: the two driven least lately, other than this one, in an order of the game's drawing. */
-function routesFor(s: RacingState): [RacingWorld, RacingWorld] {
-  const last = (w: RacingWorld) => s.worlds.slice(0, s.level).lastIndexOf(w)
-  const two = RACING_WORLDS.filter((w) => w !== s.world).sort((a, b) => last(a) - last(b)).slice(0, 2)
-  return (s.rnd() < 0.5 ? [two[0], two[1]] : [two[1], two[0]]) as [RacingWorld, RacingWorld]
-}
 
 function freshLevel(s: RacingState): void {
   s.world = s.worlds[s.level - 1]
@@ -774,7 +885,7 @@ function freshLevel(s: RacingState): void {
   s.checks = course.checks
   s.check = 0
   s.items = course.items.map((it) => ({ ...it, taken: false }))
-  s.traffic = course.traffic.map((t) => ({ ...t, swerved: false }))
+  s.traffic = course.traffic.map((t) => ({ ...t, swerved: false, spin: 0, spinWay: 1 }))
   s.z = 0
   s.x = 0
   s.speed = 0
@@ -786,6 +897,11 @@ function freshLevel(s: RacingState): void {
   s.bonus = null
   s.goalAt = -1
   s.knock = 0
+  s.crash = 0
+  s.sparks = 0
+  s.braking = false
+  s.smoke = 0
+  s.cheered = 0
   s.offroad = false
   s.turbo = 0
   s.skid = 0
@@ -798,10 +914,11 @@ function freshLevel(s: RacingState): void {
   s.launch = 'none'
   s.spin = 0
   s.pops = []
-  s.routes = s.single || s.fixed || s.level >= RACING_LAST_LEVEL ? null : routesFor(s)
-  // the grid as on the title: the three cars side by side, the player's in the middle
+  // the grid as on the title: the three cars side by side, the player's in the middle; for a duel, the two of them, the rival a little quicker — one, then the other, every fourth level
   const pace = racingPace(s.level)
-  s.rivals = rivalsOf(s.car).map((kind, i) => ({ kind, z: 0, x: RACING_LANES[i === 0 ? 0 : 2], speed: 0, lane: RACING_LANES[i === 0 ? 0 : 2], pace: pace * (i === 0 ? 1.025 : 0.975), next: 5 * SECOND + Math.floor(s.rnd() * 3 * SECOND), ahead: false, passed: false, turbo: 0, cool: RIVAL_COOL + Math.floor(s.rnd() * 6 * SECOND) }))
+  s.duel = racingIsDuel(s.level) ? rivalsOf(s.car)[(s.level / 4 - 1) % 2] : null
+  s.duelLost = false
+  s.rivals = (s.duel ? [s.duel] : rivalsOf(s.car)).map((kind, i) => ({ kind, z: 0, x: RACING_LANES[i === 0 ? 0 : 2], speed: 0, lane: RACING_LANES[i === 0 ? 0 : 2], pace: pace * (s.duel ? duelPace(s.level) : i === 0 ? 1.025 : 0.975), next: 5 * SECOND + Math.floor(s.rnd() * 3 * SECOND), ahead: false, passed: false, turbo: 0, cool: RIVAL_COOL + Math.floor(s.rnd() * 6 * SECOND), spin: 0, spinWay: 1 }))
   s.place = 1
 }
 
@@ -815,9 +932,9 @@ export function createRacing(layout: RacingLayout, level = 1, seed = 1, options:
   const s: RacingState = {
     layout, level: lv, single: !!options.single, car, worlds, world: worlds[0], fixed: !!options.world,
     // a game from a later level (a round, the test page), the car as improved as it would be by then
-    stats: racingStatsAt(car, lv), routes: null, fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
+    stats: racingStatsAt(car, lv), fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
     track: [], finish: 0, checks: [], check: 0, items: [], traffic: [], z: 0, x: 0, speed: 0, steer: 0, rivals: [], time: 0, phase: 'start', phaseTimer: 0,
-    score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
+    score: options.score ?? 0, run: 0, place: 3, bonus: null, duel: null, duelLost: false, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, cheered: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
   }
   freshLevel(s)
   return s
@@ -844,6 +961,9 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   s.heard = []
   s.steps += 1
   if (s.knock > 0) s.knock -= 1
+  if (s.sparks > 0) s.sparks -= 1
+  if (s.smoke > 0) s.smoke -= 1
+  if (s.cheered > 0) s.cheered -= 1
   if (s.news && --s.news.steps <= 0) s.news = null
   for (const p of s.pops) p.steps -= 1
   s.pops = s.pops.filter((p) => p.steps > 0)
@@ -871,9 +991,8 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   s.phaseTimer += 1
   if (s.comboSteps > 0 && (s.comboSteps -= 1) === 0) s.combo = 0
   const rolling = s.phase === 'goal' || s.phase === 'timeup'
-  // past the line or out of time, the car drives itself, lifting off, back to the middle — where the road divides, the player steers into a side
-  const choosing = s.phase === 'goal' && s.routes != null
-  if (rolling) { if (!choosing) steer = Math.abs(s.x) > 0.1 ? (s.x > 0 ? -1 : 1) : 0; gas = s.phase === 'goal' && s.speed < RACING_TOP * 0.45; brake = s.phase === 'timeup' }
+  // past the line or out of time, the car drives itself, lifting off, back to the middle
+  if (rolling) { steer = Math.abs(s.x) > 0.1 ? (s.x > 0 ? -1 : 1) : 0; gas = s.phase === 'goal' && s.speed < RACING_TOP * 0.45; brake = s.phase === 'timeup' }
   // the turbo let go: as long as the gauge was full
   if (pressed.nitro && s.phase === 'play' && s.turbo === 0 && s.boost >= BOOST_MIN) {
     s.turbo = Math.round(s.boost * TURBO_STEPS * statTurbo(s.stats.turbo))
@@ -883,7 +1002,10 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   }
   const cars = [...s.rivals, ...s.traffic]
   const ahead = cars.map((c) => c.z > s.z)
+  const from = s.z
   drive(s, steer, gas, brake)
+  // going by the public: it cheers (not again for a few seconds)
+  if (s.phase === 'play' && s.cheered === 0) for (let i = Math.floor(from) + 1; i <= Math.floor(s.z); i += 1) if (i >= 0 && i < s.track.length && s.track[i].things.some((t) => t.kind === 'crowd')) { s.heard.push('cheer'); s.cheered = CHEER_STEPS; break }
   if (s.fork && s.forkPick < 0 && s.z >= s.fork.at - FORK_DECIDE) takeFork(s, s.x < 0 ? 0 : 1)
   stepRivals(s)
   stepTraffic(s)
@@ -906,21 +1028,21 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
     if (s.z >= s.finish) {
       // the line: the time left and the place, in points
       const left = Math.ceil(s.time / SECOND)
-      s.bonus = { time: left * 50, place: [1000, 400, 100][s.place - 1] ?? 0, rank: s.place }
-      s.score += s.bonus.time + s.bonus.place
+      s.bonus = { time: left * 50, place: [1000, 400, 100][s.place - 1] ?? 0, rank: s.place, duel: s.duel ? RACING_DUEL_BONUS : 0 }
+      s.score += s.bonus.time + s.bonus.place + s.bonus.duel
       s.phase = 'goal'
       s.phaseTimer = 0
       s.goalAt = s.steps
       s.turbo = 0
-      s.heard.push('level')
+      s.heard.push('level', 'cheer')
+      s.cheered = CHEER_STEPS
+    } else if (s.duel && s.rivals[0].z >= s.finish) {
+      // the duel's rival over the line first: lost
+      s.duelLost = true; s.phase = 'timeup'; s.phaseTimer = 0
     } else if (s.time <= 0) { s.time = 0; s.phase = 'timeup'; s.phaseTimer = 0 }
-  } else if (s.phase === 'goal' && s.phaseTimer >= (s.routes ? ROUTE_STEPS : GOAL_STEPS)) {
+  } else if (s.phase === 'goal' && s.phaseTimer >= GOAL_STEPS) {
     if (s.single || s.level >= RACING_LAST_LEVEL) s.phase = 'won'
-    else {
-      // the side of the road the car is on: the next level's world
-      if (s.routes) s.worlds[s.level] = s.routes[s.x < 0 ? 0 : 1]
-      openGarage(s)
-    }
+    else openGarage(s)
   } else if (s.phase === 'timeup' && s.phaseTimer >= TIMEUP_STEPS) s.phase = 'over'
 }
 
@@ -956,10 +1078,12 @@ function takeFork(s: RacingState, pick: 0 | 1): void {
   const f = s.fork!
   s.forkPick = pick
   if (pick === 0) {
+    // a road of its own again, so what is drawn of it (the map) is made anew
+    s.track = s.track.slice()
     for (let k = 0; k < f.len; k += 1) s.track[f.at + k] = f.tracks[0][k]
     s.items = [...s.items.filter((it) => it.z < f.at || it.z >= f.at + f.len), ...f.items[0].map((it) => ({ ...it, taken: false }))].sort((a, b) => a.z - b.z)
   }
-  if (f.kinds[pick] === 'fast') for (let k = 0; k < 3; k += 1) { const lane = RACING_LANES[Math.floor(s.rnd() * 3)]; s.traffic.push({ kind: (['hatch', 'saloon', 'estate'] as const)[k], look: Math.floor(s.rnd() * 9), z: f.at + 70 + k * 110, x: lane, lane, speed: RACING_TOP * (0.45 + s.rnd() * 0.1), swerve: false, swerved: false }) }
+  if (f.kinds[pick] === 'fast') for (let k = 0; k < 3; k += 1) { const lane = RACING_LANES[Math.floor(s.rnd() * 3)]; s.traffic.push({ kind: (['hatch', 'saloon', 'estate'] as const)[k], look: Math.floor(s.rnd() * 9), z: f.at + 70 + Math.round(((k + 0.5) / 3) * (f.len - 160)), x: lane, lane, speed: RACING_TOP * (0.45 + s.rnd() * 0.1), swerve: false, swerved: false, spin: 0, spinWay: 1 }) }
   pop(s, FORK_NAME[f.kinds[pick]], '#faf6ec')
 }
 /** Each road of the fork as its sign says it. */
@@ -1010,9 +1134,19 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
   if (s.turbo > 0) { s.turbo -= 1; gas = true }
   // the wheels spinning after a start too early: going nowhere for a moment
   if (s.spin > 0) { s.spin -= 1; gas = false; brake = false }
+  // a crash: the car spins, no steering, no pedals, sliding on and losing its speed
+  const crashing = s.crash > 0
+  if (crashing) {
+    s.crash -= 1
+    steer = 0; gas = false; brake = false
+    s.turbo = 0
+    s.speed *= CRASH_SLOW
+    s.x += s.crashWay * CRASH_SLIDE * Math.min(1, (s.speed / RACING_TOP) * 2)
+  }
+  s.braking = brake && s.speed > RACING_TOP * 0.45
   if (brake) s.speed -= BRAKE
   else if (gas) s.speed += ACCEL * statAccel(s.stats.accel) * (s.turbo > 0 ? 2.2 : 1) * (s.drafting ? 1.2 : 1) * (1 - 0.35 * Math.min(1, s.speed / own))
-  else s.speed -= COAST
+  else if (!crashing) s.speed -= COAST
   if (s.speed > top) s.speed = Math.max(top, s.speed - COAST * 3)
   s.offroad = Math.abs(s.x) > RACING_KERB
   if (s.offroad && s.speed > OFFROAD_TOP) s.speed -= OFFROAD
@@ -1036,6 +1170,8 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
   const wall = RACING_RAIL - RACING_CAR_WIDTH / 2
   if (Math.abs(s.x) > wall) {
     if (s.speed > RACING_TOP * 0.25 && s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
+    // scraping along it: sparks
+    if (s.speed > RACING_TOP * 0.2) { s.sparks = SPARK_STEPS; s.sparkSide = s.x > 0 ? 1 : -1 }
     s.speed = Math.min(s.speed, RACING_TOP * 0.5) * 0.92
     s.x = Math.sign(s.x) * (wall - 0.04)
     s.skid = 0
@@ -1054,6 +1190,7 @@ const blocking = (z: number, x: number, others: ReadonlyArray<{ z: number; x: nu
  */
 function stepRivals(s: RacingState): void {
   for (const r of s.rivals) {
+    if (spinning(r)) { r.z += r.speed; continue }
     // the sharpest bend coming, as a driver sees it, and how fast it can be taken
     let sharpest = 0
     for (let k = 5; k <= 35; k += 5) sharpest = Math.max(sharpest, Math.abs(segmentOf(s.track, r.z + k).curve))
@@ -1064,10 +1201,10 @@ function stepRivals(s: RacingState): void {
     const gap = r.z - s.z
     if (gap < 0 && s.phase === 'play') {
       const pull = Math.min(1, -gap / RIVAL_REACH)
-      // far behind, harder still: never out of the race for long
-      const chase = 1 + 0.1 * Math.min(1, Math.max(0, -gap - RIVAL_REACH) / 60)
+      // far behind, harder still: never out of the race for long (a duel's rival no harder than its top: a clean race beats it)
+      const chase = s.duel ? 1 : 1 + 0.1 * Math.min(1, Math.max(0, -gap - RIVAL_REACH) / 60)
       want = Math.min(bend * chase, want + (rivalTop(s.level) * scale * chase - want) * pull)
-    } else if (gap > 10) want *= 1 - 0.12 * Math.min(1, (gap - 10) / 80)
+    } else if (gap > 10) want *= 1 - (s.duel ? duelEase(s.level) : 0.12) * Math.min(1, (gap - 10) / 80)
     // its own turbo, behind the player on a clear straight
     if (r.cool > 0) r.cool -= 1
     if (r.turbo > 0) { r.turbo -= 1; want = Math.max(want, Math.min(bend, RACING_TOP * scale * TURBO_TOP * 0.95)) }
@@ -1090,7 +1227,7 @@ function stepRivals(s: RacingState): void {
       r.next = s.steps + 3 * SECOND + Math.floor(s.rnd() * 4 * SECOND)
       const behind = s.z - r.z
       // the player close behind and coming: from the third level, now and then (more often as the levels go), it moves across
-      if (s.level >= 3 && behind < -4 && behind > -40 && s.speed > r.speed && s.rnd() < Math.min(0.3, (s.level - 2) * 0.03)) r.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
+      if (s.level >= 3 && behind < -4 && behind > -40 && s.speed > r.speed && s.rnd() < Math.min(0.3, (s.level - 2) * 0.03) * (s.duel ? 2 : 1)) r.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
       else {
         const free = RACING_LANES.filter((l) => l !== r.lane && !ahead(l, 30) && !s.rivals.some((o) => o !== r && Math.abs(o.z - r.z) < 30 && Math.abs(o.lane - l) < 0.1))
         if (free.length) r.lane = free[Math.floor(s.rnd() * free.length)]
@@ -1104,6 +1241,7 @@ function stepRivals(s: RacingState): void {
 /** The traffic: each car at its speed, slower in the sharp bends; one that swerves moves into another lane as the player comes near. */
 function stepTraffic(s: RacingState): void {
   for (const t of s.traffic) {
+    if (spinning(t)) { t.z += t.speed; continue }
     const seg = segmentOf(s.track, t.z + 15)
     const speed = Math.min(t.speed, RACING_TOP * bendLimit(seg.curve, s.level) * 0.85)
     if (t.swerve && !t.swerved && t.z - s.z < 32 && t.z > s.z) {
@@ -1116,25 +1254,59 @@ function stepTraffic(s: RacingState): void {
   }
 }
 
-/** The player's car against the other cars: running into one from behind brings it down to that car's speed; a rival running into it is held back. */
+/**
+ * The player's car against the other cars. Running into one from behind: a
+ * crash when it comes much faster — both cars spin, each its own way, the
+ * player's down to a crawl; a knock otherwise, down to that car's speed and
+ * thrown a little aside. A rival running into it is held back, and spins if
+ * it came much faster.
+ */
 function touchCars(s: RacingState): void {
-  const touch = (c: { z: number; x: number; speed: number }, rival: boolean) => {
+  const touch = (c: { z: number; x: number; speed: number; spin: number; spinWay: -1 | 1 }, rival: boolean) => {
     const dz = c.z - s.z
     if (Math.abs(dz) >= CAR_LENGTH || Math.abs(c.x - s.x) >= RACING_CAR_WIDTH * 0.92) return
     if (dz >= 0 && s.speed > c.speed) {
-      if (s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
-      s.speed = c.speed * 0.8
+      const way: -1 | 1 = s.x >= c.x ? 1 : -1
+      if (s.crash === 0 && s.speed - c.speed >= CRASH_CLOSING) {
+        s.crash = RACING_CRASH_STEPS
+        s.crashWay = way
+        s.smoke = SMOKE_STEPS
+        s.knock = 20
+        s.speed = c.speed * 0.7
+        s.heard.push('smash')
+        spinOut(c, way === 1 ? -1 : 1)
+      } else {
+        if (s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
+        s.speed = Math.min(s.speed, c.speed * 0.8)
+        // thrown a little aside
+        if (s.crash === 0) s.x += way * 0.08
+      }
       s.turbo = 0
       s.z = c.z - CAR_LENGTH
-      // thrown a little aside
-      s.x += s.x >= c.x ? 0.08 : -0.08
     } else if (dz < 0 && rival && c.speed > s.speed) {
+      if (c.speed - s.speed >= CRASH_CLOSING && c.spin === 0) { spinOut(c, c.x >= s.x ? 1 : -1); s.heard.push('smash'); if (s.knock === 0) s.knock = 12 }
       c.speed = s.speed * 0.9
       c.z = s.z - CAR_LENGTH
     }
   }
   for (const r of s.rivals) touch(r, true)
   for (const t of s.traffic) touch(t, false)
+}
+
+/** A car hit hard: it spins `way`, slowing. */
+function spinOut(c: { speed: number; spin: number; spinWay: -1 | 1 }, way: -1 | 1): void {
+  c.spin = RACING_CAR_SPIN_STEPS
+  c.spinWay = way
+  c.speed *= 0.7
+}
+/** A spinning car of the traffic or a rival: sliding its way, slowing, back in the nearest lane once it stops. */
+function spinning(c: { x: number; lane: number; speed: number; spin: number; spinWay: -1 | 1 }): boolean {
+  if (c.spin <= 0) return false
+  c.spin -= 1
+  c.speed *= CRASH_SLOW
+  c.x = Math.max(-1.05, Math.min(1.05, c.x + c.spinWay * CRASH_SLIDE * 0.8))
+  if (c.spin === 0) c.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - c.x) < Math.abs(a - c.x) ? b : a))
+  return true
 }
 
 /** What the car runs over: a stopwatch, the turbo, a coin; a puddle (a skid); a cone (a knock). */
@@ -1168,11 +1340,13 @@ function placeAndPasses(s: RacingState, rolling: boolean): void {
 export function racingLevelMax(level: number): number {
   return Math.max(...RACING_WORLDS.map((world) => {
     const course = racingCourse(level, world)
-    const coins = course.items.filter((it) => it.kind === 'coin').length + (course.fork ? 15 : 0)
-    const watches = course.items.filter((it) => it.kind === 'time').length
+    // off the two roads, and on the one that has the most
+    const f = course.fork, off = f ? course.items.filter((it) => it.z < f.at || it.z >= f.at + f.len) : course.items
+    const most = (kind: RacingItem['kind']) => off.filter((it) => it.kind === kind).length + (f ? Math.max(...f.items.map((road) => road.filter((it) => it.kind === kind).length)) : 0)
+    const coins = most('coin'), watches = most('time')
     const clock = racingTime(level, world) + course.checks.reduce((sum, _, k) => sum + racingExtension(level, k + 1, world), 0) + watches * 3
     // the brushes past cars: every car of the traffic and the rivals a few times each, at the combo's most
     const brushes = (course.traffic.length + 12) * NEAR_POINTS * 5
-    return Math.ceil((course.finish / 5) * 1.35) + 200 + coins * 100 + 1000 + clock * 50 + brushes
+    return Math.ceil((course.finish / 5) * 1.35) + 200 + coins * 100 + 1000 + clock * 50 + brushes + (racingIsDuel(level) ? RACING_DUEL_BONUS : 0)
   }))
 }
