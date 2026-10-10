@@ -623,10 +623,11 @@ const disc = (buffer: PixelBuffer, cx: number, cy: number, r: number, colour: st
 /** A soft round light added over what is there, strongest in the middle. */
 export function glow(buffer: PixelBuffer, cx: number, cy: number, r: number, colour: string, strength: number, clip = buffer.height, flat = 1): void {
   const [cr, cg, cb] = rgbOf(colour), d = buffer.data
-  for (let y = Math.floor(cy - r * flat); y <= Math.ceil(cy + r * flat); y += 1) {
-    if (y < 0 || y >= clip || y >= buffer.height) continue
-    for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x += 1) {
-      if (x < 0 || x >= buffer.width) continue
+  // only the rows and columns on the board
+  const y0 = Math.max(0, Math.floor(cy - r * flat)), y1 = Math.min(Math.ceil(cy + r * flat), Math.ceil(clip) - 1, buffer.height - 1)
+  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(Math.ceil(cx + r), buffer.width - 1)
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
       const q = ((x - cx) / r) ** 2 + ((y - cy) / (r * flat)) ** 2
       if (q >= 1) continue
       const f = 1 - q, k = strength * f * f, o = (y * buffer.width + x) * 4

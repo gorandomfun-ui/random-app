@@ -150,8 +150,9 @@ export const RACING_CRASH_STEPS = Math.round(1 * SECOND)
 export const RACING_CAR_SPIN_STEPS = Math.round(1.2 * SECOND)
 const CRASH_SLOW = 0.992
 const CRASH_SLIDE = 0.006
-/** How long sparks fly off a rail after it is touched. */
+/** How long sparks fly off a rail after it is touched; how long the car smokes after a crash. */
 const SPARK_STEPS = 14
+const SMOKE_STEPS = 5 * SECOND
 /** The gauge: what each risk gives; what it takes to let the turbo go. */
 const NEAR_MISS = 0.2
 const DRAFT_FILL = 0.006
@@ -739,6 +740,9 @@ export type RacingState = {
   crashWay: -1 | 1
   sparks: number
   sparkSide: -1 | 1
+  /** Whether the car brakes hard this step (its tyres smoke); steps left of smoke out of it after a crash. */
+  braking: boolean
+  smoke: number
   offroad: boolean
   /** Steps left of the turbo, of a skid (and which way it slides). */
   turbo: number
@@ -800,6 +804,8 @@ function freshLevel(s: RacingState): void {
   s.knock = 0
   s.crash = 0
   s.sparks = 0
+  s.braking = false
+  s.smoke = 0
   s.offroad = false
   s.turbo = 0
   s.skid = 0
@@ -830,7 +836,7 @@ export function createRacing(layout: RacingLayout, level = 1, seed = 1, options:
     // a game from a later level (a round, the test page), the car as improved as it would be by then
     stats: racingStatsAt(car, lv), fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
     track: [], finish: 0, checks: [], check: 0, items: [], traffic: [], z: 0, x: 0, speed: 0, steer: 0, rivals: [], time: 0, phase: 'start', phaseTimer: 0,
-    score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
+    score: options.score ?? 0, run: 0, place: 3, bonus: null, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
   }
   freshLevel(s)
   return s
@@ -858,6 +864,7 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   s.steps += 1
   if (s.knock > 0) s.knock -= 1
   if (s.sparks > 0) s.sparks -= 1
+  if (s.smoke > 0) s.smoke -= 1
   if (s.news && --s.news.steps <= 0) s.news = null
   for (const p of s.pops) p.steps -= 1
   s.pops = s.pops.filter((p) => p.steps > 0)
@@ -1028,6 +1035,7 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
     s.speed *= CRASH_SLOW
     s.x += s.crashWay * CRASH_SLIDE * Math.min(1, (s.speed / RACING_TOP) * 2)
   }
+  s.braking = brake && s.speed > RACING_TOP * 0.45
   if (brake) s.speed -= BRAKE
   else if (gas) s.speed += ACCEL * statAccel(s.stats.accel) * (s.turbo > 0 ? 2.2 : 1) * (s.drafting ? 1.2 : 1) * (1 - 0.35 * Math.min(1, s.speed / own))
   else if (!crashing) s.speed -= COAST
@@ -1154,6 +1162,7 @@ function touchCars(s: RacingState): void {
       if (s.crash === 0 && s.speed - c.speed >= CRASH_CLOSING) {
         s.crash = RACING_CRASH_STEPS
         s.crashWay = way
+        s.smoke = SMOKE_STEPS
         s.knock = 20
         s.speed = c.speed * 0.7
         s.heard.push('smash')

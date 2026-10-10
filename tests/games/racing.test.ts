@@ -317,6 +317,7 @@ test('racing: running into a car much slower is a crash — both spin, the playe
   assert.ok(s.crash > 0 && s.traffic[0].spin > 0, 'both cars spinning')
   assert.notEqual(s.crashWay, s.traffic[0].spinWay, 'each its own way')
   assert.ok(s.speed < 0.45, `the player's car slowed (${s.speed.toFixed(2)})`)
+  assert.ok(s.smoke > 0, 'smoking after it')
   // out of hand: steering and the pedals do nothing while it spins
   const x = s.x, way = s.crashWay
   for (let i = 0; i < 20; i += 1) stepRacing(s, way === 1 ? -1 : 1, true)
@@ -326,6 +327,29 @@ test('racing: running into a car much slower is a crash — both spin, the playe
   assert.equal(s.traffic[0].spin, 0, 'and the other car back in a lane')
   const soft = at(0.7)
   assert.ok(soft.heard.includes('thud') && !soft.heard.includes('smash') && soft.s.crash === 0, 'a little faster: a knock only')
+})
+
+test('racing: smoke now and then — the tyres braking hard, a car after a crash; the mountain\'s mist on the road', () => {
+  const s = createRacing('portrait', 2, 1, { single: true, world: 'mountain' })
+  for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+  s.speed = 0.9
+  stepRacing(s, 0, false, true)
+  assert.ok(s.braking, 'braking hard at speed')
+  s.speed = 0.3
+  stepRacing(s, 0, false, true)
+  assert.ok(!s.braking, 'not slowly')
+  // the same road in and out of a bank of mist
+  const shot = (world: 'mountain', zone: 'forest', z: number) => {
+    const r = createRacing('portrait', 2, 1, { single: true, world })
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(r)
+    r.items = []; r.traffic = []; r.rivals.forEach((c) => { c.z = -400 })
+    r.track = r.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0, zone, shop: undefined, shopL: undefined }))
+    r.z = z
+    const board = renderRacingGame(r, '#12c45c', { pad: 'band' })
+    return Uint8ClampedArray.from(board.data)
+  }
+  const lightness = (d: Uint8ClampedArray) => { let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / (d.length / 4) }
+  assert.ok(lightness(shot('mountain', 'forest', 860)) > lightness(shot('mountain', 'forest', 600)) + 6, 'in a bank of mist, the view whiter')
 })
 
 test('racing: a good driver wins every level of every world with time to spare, and the first five in first place', () => {

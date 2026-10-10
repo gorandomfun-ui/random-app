@@ -365,6 +365,10 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     // the shops along the road: their fronts going by, their sides at their near ends, what stands on their roofs, their lights after dark
     if (g.shop) shopPiece(board, p, g.shop, i, lit, tier, 1)
     if (g.shopL) shopPiece(board, p, g.shopL, i, lit, tier, -1)
+    // the world's own air over the road: the mountain's banks of mist, the city's steam out of the drains, the desert's dust blown across
+    if (world === 'mountain' && misty(g.zone, i) && i % 4 === 0 && a.u < 90) glow(board, a.x, a.y - a.u * 0.15, a.u * 2.6, mistOf(tier), 0.2, clip, 0.22)
+    if (world === 'city' && (g.zone === 'avenue' || g.zone === 'downtown') && i % STEAM_EVERY === 17) steam(board, place(p, i + 0.5, (((i * 7) % 3) - 1) * 0.64), i, frame, clip)
+    if (world === 'desert' && (g.zone === 'dunes' || g.zone === 'canyon' || g.zone === 'mesa') && i % GUST_EVERY === 46) gust(board, p, i, frame, clip)
     for (const it of cargo[n].items) {
       const at = place(p, it.z, it.x)
       if (it.kind === 'puddle') puddle(board, at.x, at.y, at.u, clip, tier, fog)
@@ -414,6 +418,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       }
     }
   }
+  // inside a bank of mist, the mountain's whole view whitened
+  if (world === 'mountain') { const inside = mistAround(s); if (inside > 0) whiten(board, Math.max(0, horizon - 30), inside, mistOf(tier)) }
   // the player's car: turning as it steers, bouncing at speed, shaken by a knock; its lights on the road after dark
   const width = RACING_CAR_WIDTH * v.half
   const shake = s.knock > 0 ? ((s.knock >> 1) % 2 ? 2 : -2) : 0
@@ -429,11 +435,20 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     const color = dustOf(here, s.x)
     puff(board, cx - width * 0.42, v.foot - 4, -1, frame, 0, color, 0.7)
     puff(board, cx + width * 0.42, v.foot - 4, 1, frame, 2, color, 0.7)
+    // in the desert's sand, a cloud of it behind
+    if (world === 'desert') for (let k = 0; k < 3; k += 1) { const age = ((frame + k * 9) % 27) / 27; glow(board, cx + (k - 1) * width * 0.4, v.foot - age * width * 0.3, width * (0.2 + age * 0.35), color, 0.55 * (1 - age), H, 0.6) }
   } else if (s.speed < 0.35 && s.phase !== 'over') {
     puff(board, cx - width * 0.28, v.foot - 6, -1, frame >> 1, 0)
     puff(board, cx + width * 0.28, v.foot - 6, 1, frame >> 1, 2)
   }
   if (s.skid > 0) for (const side of [-1, 1]) glow(board, cx + side * width * 0.4, v.foot - 2, width * 0.18, '#c81a1a', 0.5)
+  // braking hard or skidding: the tyres smoke
+  if ((s.braking || s.skid > 0) && s.crash === 0) tyreSmoke(board, cx, v.foot, width, frame)
+  // after a crash, the car smokes a while
+  if (s.smoke > 0) for (let k = 0; k < 5; k += 1) {
+    const age = ((frame + k * 8) % 40) / 40, fade = Math.min(1, s.smoke / 60)
+    glow(board, cx + Math.sin(frame * 0.07 + k * 1.7) * width * 0.08 + age * width * 0.2, v.foot - width * 0.4 - age * width * 0.9, width * (0.1 + age * 0.3), '#8a8494', 0.7 * (1 - age) * fade)
+  }
   // the wheels spinning after a start too early: smoke all round them
   if (s.spin > 0) for (let k = 0; k < 3; k += 1) for (const side of [-1, 1]) puff(board, cx + side * width * (0.3 + k * 0.08), v.foot - 4, side, frame + k * 2, k, '#d8d4e0', 0.75)
   // in a car's slipstream: the air rushing past, lines along the sides
@@ -754,6 +769,58 @@ function posed(board: PixelBuffer, c: { kind: RacingCarKind | RacingTrafficModel
 }
 /** How long a car side on is, for its back's width. */
 const SIDE_ON = 1.75
+
+/** The tyres smoking at the car's back wheels, braking hard or skidding, drifting back and out. */
+function tyreSmoke(board: PixelBuffer, cx: number, foot: number, width: number, frame: number): void {
+  for (let k = 0; k < 3; k += 1) for (const side of [-1, 1]) {
+    const age = ((frame + k * 5 + (side > 0 ? 2 : 0)) % 15) / 15
+    glow(board, cx + side * width * (0.36 + age * 0.12), foot - 2 + age * width * 0.08, width * (0.08 + age * 0.16), '#e6e2ec', 0.5 * (1 - age), board.height, 0.7)
+  }
+}
+
+/** The mountain's mist: banks of it over the road, one in every few hundred stretches, in the woods, by the lake and in the gorge; its colour by the hour. */
+const MIST_EVERY = 420, MIST_LEN = 70
+const misty = (zone: RacingZone, i: number): boolean => (zone === 'forest' || zone === 'lake' || zone === 'gorge') && i > 60 && i % MIST_EVERY < MIST_LEN
+const MIST_HOURS = ['#eef2f6', '#f0e4e0', '#c8c2da', '#9a9ab8']
+const mistOf = (tier: Tier): string => { const k = Math.max(0, Math.min(3, tier)), lo = Math.floor(k); return mix(MIST_HOURS[lo], MIST_HOURS[Math.min(3, lo + 1)], k - lo) }
+/** How deep in a bank of mist the eye is, 0 to 1: thickening as it goes in, thinning as it comes out. */
+function mistAround(s: RacingState): number {
+  let n = 0, inside = 0
+  for (let k = -10; k <= 40; k += 5) { const i = Math.floor(s.z) + k; n += 1; if (i >= 0 && misty(segmentOf(s.track, i).zone, i)) inside += 1 }
+  return inside / n
+}
+/** The view whitened from `top` down, thicker toward the far end, `by` 0 to 1. */
+function whiten(board: PixelBuffer, top: number, by: number, colour: string): void {
+  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width, H = board.height
+  for (let y = top; y < H; y += 1) {
+    const k = by * 0.42 * (1 - ((y - top) / (H - top)) * 0.55) * Math.min(1, (y - top) / 40)
+    for (let x = 0, o = y * W * 4; x < W; x += 1, o += 4) { d[o] += (r - d[o]) * k; d[o + 1] += (g - d[o + 1]) * k; d[o + 2] += (b - d[o + 2]) * k }
+  }
+}
+
+/** The city's steam: out of a drain in the road, one in every so many stretches, rising and drifting, its grate dark under it. */
+const STEAM_EVERY = 41
+function steam(board: PixelBuffer, at: { x: number; y: number; u: number }, i: number, frame: number, clip: number): void {
+  if (at.u < 3 || at.u > 160) return
+  glow(board, at.x, at.y, at.u * 0.14, '#16141e', 0.7, clip, 0.3)
+  for (let k = 0; k < 6; k += 1) {
+    const age = ((frame + k * 9 + i * 3) % 54) / 54
+    glow(board, at.x + Math.sin(age * 3 + i) * at.u * 0.15 + age * at.u * 0.3, at.y - age * at.u * 2, at.u * (0.18 + age * 0.55), '#e6e8f2', 0.5 * (1 - age * 0.85), clip, 0.85)
+  }
+}
+
+/** The desert's dust: a cloud of it blown across the road, one in every so many stretches, going over and over. */
+const GUST_EVERY = 130
+function gust(board: PixelBuffer, p: Projected, i: number, frame: number, clip: number): void {
+  const t = (frame * 0.004 + i * 0.37) % 1, at = place(p, i + 0.5, -2.6 + t * 5.2)
+  // gone by once it is right before the eye
+  if (at.u < 2 || at.u > 120) return
+  const fade = Math.min(1, Math.sin(Math.PI * t) * 1.6)
+  for (let k = 0; k < 4; k += 1) {
+    const swirl = frame * 0.05 + k * 1.6
+    glow(board, at.x + Math.cos(swirl) * at.u * 0.45, at.y - at.u * (0.25 + k * 0.22), at.u * (0.75 - k * 0.1), k % 2 ? '#f6e2c0' : '#ecc898', 0.55 * fade, clip, 0.7)
+  }
+}
 
 /** Sparks off a rail scraped, from the car's side at `x`, `y`, flying back and out (`side` the rail's), white then yellow then orange. */
 function sparks(board: PixelBuffer, x: number, y: number, side: -1 | 1, frame: number, size: number): void {
