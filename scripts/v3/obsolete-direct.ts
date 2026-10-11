@@ -16,8 +16,8 @@ import { emptyCounters, journalHost } from '@/lib/v3/ingest/journal'
 import { run } from '@/lib/v3/ingest/lines/obsolete'
 
 const MAX_MINUTES = Number(process.env.RANDOM_OBSOLETE_MINUTES ?? 35)
-/** YouTube units a night: the dig keeps its 7,000, the day leaves about 2,300 once the look-alikes took theirs. */
-const YOUTUBE_UNITS = Number(process.env.RANDOM_OBSOLETE_YOUTUBE_UNITS ?? 500)
+/** YouTube units a night: 500 left about 8,000 YouTube videos for the next night each time (10–11 October); a thousand checks 50,000. */
+const YOUTUBE_UNITS = Number(process.env.RANDOM_OBSOLETE_YOUTUBE_UNITS ?? 1000)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')

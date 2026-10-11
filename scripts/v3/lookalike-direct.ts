@@ -19,8 +19,8 @@ import { emptyCounters, journalHost } from '@/lib/v3/ingest/journal'
 import { run, type LookalikeCursor } from '@/lib/v3/ingest/lines/lookalike'
 
 const MAX_MINUTES = Number(process.env.RANDOM_LOOKALIKE_MINUTES ?? 15)
-/** YouTube units a day for the likes' channels (the dig keeps its 7,000; the day leaves 2,600): about 250 are used over the sixty-one YouTube likes. */
-const YOUTUBE_UNITS = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_UNITS ?? 400)
+/** YouTube units a day for the likes' channels: 400 ran out four times on 10 October; Google's counter showed most of the 10,000 unused. */
+const YOUTUBE_UNITS = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_UNITS ?? 1000)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')

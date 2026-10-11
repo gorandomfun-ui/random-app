@@ -56,6 +56,7 @@ const LINE_LABEL: Record<string, string> = {
   drift: 'La dérive (Dailymotion)',
   lookalike: 'Les sosies de tes likes (IA, Dailymotion)',
   obsolete: 'Vérification de nuit des vidéos mortes',
+  'youtube-drift': 'La dérive YouTube (chaînes)',
   'web-previews': 'Sites : visites et aperçus',
   'web-commoncrawl': 'Sites : Common Crawl (un pays par jour)',
 }

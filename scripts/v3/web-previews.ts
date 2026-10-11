@@ -257,6 +257,15 @@ function handCandidates(): Candidate[] {
   })
 }
 
+/** A site's whole visit, at most. Past it the site is "failed" and comes back with the next retries. */
+const SITE_MS = 60_000
+function withinSiteLimit(visiting: Promise<Visit>): Promise<Visit> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve({ status: 'failed', outcome: 'visite trop longue (plus d’une minute)' }), SITE_MS)
+    visiting.then((result) => { clearTimeout(timer); resolve(result) }, (error) => { clearTimeout(timer); reject(error) })
+  })
+}
+
 async function main(): Promise<void> {
   const byHand = handCandidates()
   const dryRun = process.argv.includes('--dry') || byHand.length > 0
@@ -285,6 +294,21 @@ async function main(): Promise<void> {
   const pending: Array<{ candidate: Candidate; result: Visit }> = []
   let refilling: Promise<void> | null = null
   let hitDeadline = false
+  /**
+   * A visit that never ends — a page that holds the browser — kept the run past systemd's 26 minutes nine times in
+   * three days (9–11 October): killed, its journal left "running", its last captures lost. A visit gets a minute at
+   * most; and three minutes past its time the run closes its journal itself and leaves.
+   */
+  const hardStop = setTimeout(() => {
+    hitDeadline = true
+    void (async () => {
+      await flush().catch(() => undefined)
+      if (runId) await closeRun(db, runId, { finishedAt: new Date(), status: 'partial', counters, errors: [...errors, 'arrêt : le temps du passage est dépassé'] }).catch(() => undefined)
+      await camera?.close().catch(() => undefined)
+      process.exit(0)
+    })()
+  }, (minutes + 3) * 60_000)
+  hardStop.unref()
 
   async function next(): Promise<Candidate | null> {
     if (!queue.length) {
@@ -326,7 +350,7 @@ async function main(): Promise<void> {
       counters.scanned += 1
       let result: Visit
       try {
-        result = await visit(db, candidate, camera, upload, dryRun)
+        result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun))
       } catch (error) {
         result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
       }

@@ -14,6 +14,7 @@
 #   bash /opt/random-app/server/run-line.sh dig
 #   bash /opt/random-app/server/run-line.sh lookalike
 #   bash /opt/random-app/server/run-line.sh obsolete
+#   bash /opt/random-app/server/run-line.sh youtube-drift
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -30,6 +31,34 @@ set +a
 export RANDOM_INGEST_SERVER=1
 
 run() { echo "[$(date -u +%FT%TZ)] ${LINE}: $*"; "$@"; }
+
+# The 2 € brake (the owner, 8 and 11 October: never more than 2 € a month on Google Cloud). What the server sent this
+# month, counted on its own network card and kept across restarts in /home/random/egress/<month>: past 15 GiB (about
+# 1.50 € at Google's 0.1056 € a GiB after the first) the lines that send the most wait for the 1st of the next month;
+# past 18 GiB (about 1.80 €), every line does. A normal month sends about 15 GB (measured 11 October: ~0.5 GB a day).
+EGRESS_DIR=/home/random/egress
+mkdir -p "${EGRESS_DIR}"
+egress_month_bytes() {
+  local state tx
+  state="${EGRESS_DIR}/$(date -u +%Y-%m)"
+  tx=$(awk '$1 ~ /^(ens|eth)[0-9a-z]*:$/ { print $10; exit }' /proc/net/dev)
+  (
+    flock -w 10 9 || { echo 0; exit 0; }
+    if read -r last sum < "${state}" 2>/dev/null; then :; else last=${tx}; sum=0; fi
+    if [ "${tx}" -ge "${last}" ]; then sum=$(( sum + tx - last )); else sum=$(( sum + tx )); fi
+    echo "${tx} ${sum}" > "${state}"
+    echo "${sum}"
+  ) 9>"${EGRESS_DIR}/.lock"
+}
+sent_gib=$(( $(egress_month_bytes || echo 0) / 1073741824 ))
+case "${LINE}" in
+  web-previews|web-embed|web-commoncrawl|web-search|drift|youtube-drift) heavy=1 ;;
+  *) heavy=0 ;;
+esac
+if [ "${sent_gib}" -ge "${RANDOM_BRAKE_ALL_GIB:-18}" ] || { [ "${heavy}" = 1 ] && [ "${sent_gib}" -ge "${RANDOM_BRAKE_GIB:-15}" ]; }; then
+  echo "[$(date -u +%FT%TZ)] ${LINE}: frein des 2 € : ${sent_gib} Go envoyés ce mois-ci, en pause jusqu'au 1er du mois"
+  exit 0
+fi
 
 case "${LINE}" in
   daily-auto-morning|daily-auto-evening)
@@ -101,6 +130,11 @@ case "${LINE}" in
     # The previews' lock is waited for up to twenty-five minutes: their run lasts twenty at most, and the 07:15 window of 7 October gave up at fifteen.
     # The night site check's too (the 03:50 window follows it): twenty minutes a night, seventy-five at most.
     RANDOM_LOOKALIKE_MINUTES="${RANDOM_LOOKALIKE_MINUTES:-30}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 1500 /home/random/locks/web-previews.lock flock -w 1500 /home/random/locks/web-embed.lock node --import tsx scripts/v3/lookalike-direct.ts
+    ;;
+  youtube-drift)
+    # The channels of the YouTube videos the base took, ten new uploads each, in the YouTube units the searches leave
+    # (the owner, 11 October: the whole quota, for the ingestion). No model; it ends before the small model's next window.
+    RANDOM_YT_DRIFT_MINUTES="${RANDOM_YT_DRIFT_MINUTES:-25}" run node --import tsx scripts/v3/youtube-drift-direct.ts
     ;;
   obsolete)
     # The nightly check of the stored videos: the dead are marked and hidden, the owner deletes them from the page

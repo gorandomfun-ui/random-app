@@ -1,0 +1,13 @@
+[Unit]
+Description=RANDOM YouTube drift (four runs a day, Paris, each ending before the small model's next window: the channels of the YouTube videos the base took, ten new uploads each, in the YouTube units the searches leave)
+
+[Timer]
+OnCalendar=*-*-* 05:06:00 Europe/Paris
+OnCalendar=*-*-* 14:12:00 Europe/Paris
+OnCalendar=*-*-* 18:06:00 Europe/Paris
+OnCalendar=*-*-* 20:45:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
