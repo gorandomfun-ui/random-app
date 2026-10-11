@@ -111,7 +111,8 @@ test('racing: three cars that drive their own way — the red one fastest, the y
   const drive = (car: 'rosso' | 'giallo' | 'burger') => {
     const s = createRacing('landscape', 1, 1, { car })
     for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
-    s.traffic = []
+    // the car alone on the road: nothing in its way
+    s.traffic = []; s.rivals = []
     s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
     let to200 = 0
     for (let i = 0; i < 1200; i += 1) { stepRacing(s, 0, true); if (!to200 && s.speed >= 0.69) to200 = i }
@@ -317,7 +318,7 @@ test('racing: running into a car much slower is a crash — both spin, the playe
     s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
     s.items = []; s.rivals.forEach((r) => { r.z = -500 })
     s.z = 300; s.x = 0.1; s.speed = speed
-    s.traffic = [{ kind: 'saloon', look: 0, z: 320, x: 0, lane: 0, speed: 0.45, swerve: false, swerved: false, spin: 0, spinWay: 1 }]
+    s.traffic = [{ kind: 'saloon', look: 0, z: speed > 0.7 ? 320 : 308, x: 0, lane: 0, speed: 0.45, swerve: false, swerved: false, spin: 0, spinWay: 1 }]
     const heard: string[] = []
     for (let i = 0; i < 150 && !heard.includes('smash') && !heard.includes('thud'); i += 1) { stepRacing(s, 0, speed > 0.7, false); heard.push(...s.heard) }
     return { s, heard }
@@ -367,15 +368,19 @@ test('racing: the public cheers as the car goes by it — not again for a few se
   const drive = driver(GOOD, 3)
   const cheers: number[] = []
   let line = false
+  let lineAt = -1
   for (let i = 0; i < 240 * 60 && s.phase !== 'won'; i += 1) {
     const m = drive(s)
     stepRacing(s, m.steer, m.gas, m.brake, m.nitro)
-    if (s.heard.includes('level')) line = s.heard.includes('cheer')
-    else if (s.heard.includes('cheer')) cheers.push(s.steps)
+    if (s.heard.includes('level')) lineAt = s.steps
+    if (!s.heard.includes('cheer')) continue
+    // the line's own, once its fanfare is over
+    if (lineAt >= 0) line = s.steps - lineAt >= 30
+    else cheers.push(s.steps)
   }
   assert.ok(cheers.length >= 4, `cheered along the road (${cheers.length})`)
   assert.ok(cheers.every((at, k) => k === 0 || at - cheers[k - 1] >= 7 * 60), 'never twice within seven seconds')
-  assert.ok(line, 'and at the line')
+  assert.ok(line, 'and at the line, after its fanfare')
 })
 
 test('racing: every fourth level a duel — one rival, one then the other, to be beaten to the line: first over it, the game is over; beaten, its points', () => {

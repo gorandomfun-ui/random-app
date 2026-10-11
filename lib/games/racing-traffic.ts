@@ -31,7 +31,7 @@ export const TRAFFIC_LIGHTS: Record<TrafficModel, Array<[number, number]>> = {
   estate: [[0.12, 0.6], [0.88, 0.6]], beetle: [[0.12, 0.73], [0.88, 0.73]], icecream: [[0.08, 0.8], [0.92, 0.8]],
 }
 
-const TYRE = '#1a1a24', GLASS = '#2a3a5c', GLINT = '#6a84bc', BUMPER = '#8a8a96', PLATE = '#f2efe6', RED = '#d8302a', RED_LIT = '#ff8a78', CREAM = '#f4ecd8'
+const TYRE = '#1a1a24', RIM = '#8a8a98', GLASS = '#2a3a5c', GLINT = '#6a84bc', BUMPER = '#8a8a96', PLATE = '#f2efe6', RED = '#d8302a', RED_LIT = '#ff8a78', CREAM = '#f4ecd8'
 
 /**
  * A car from behind, a hundred steps wide (`s` pixels a step), its colour
@@ -56,9 +56,14 @@ function paint(model: TrafficModel, c: string, s: number, turn: boolean): PixelB
   const sideOf = (x: number, top: number, foot: number, cabin?: { foot: number; top: number; y: number }) => {
     if (!turn) return
     poly([[x, top], [x + flank, top - 2], [x + flank, foot - 4], [x, foot]], side)
+    // its shoulder catching the light, its sill in shade, a door's seam
+    poly([[x, top], [x + flank, top - 2], [x + flank, top], [x, top + 2.5]], tone(c, 0.92))
+    poly([[x, foot - 3], [x + flank, foot - 6], [x + flank, foot - 4], [x, foot]], tone(c, 0.45))
+    rect(x + flank * 0.5, top + 2, 0.6, foot - top - 7, tone(c, 0.48))
     rect(x, top, 1, foot - top, dark)
     if (cabin) poly([[cabin.foot, top], [cabin.top, cabin.y], [cabin.top + flank * 0.55, cabin.y + 1], [cabin.foot + flank * 0.8, top - 1]], tone(GLASS, 0.8))
-    ellipse(x + flank * 0.55, foot - 3, flank * 0.32, 5, TYRE)
+    // its two wheels, the far one a little higher and smaller, each with its hub
+    for (const [at, r, up] of [[0.24, 0.17, 0], [0.8, 0.14, 2.5]] as const) { ellipse(x + flank * at, foot - 3 - up, flank * r, 5 - up * 0.4, TYRE); ellipse(x + flank * at, foot - 3 - up, flank * r * 0.45, 2, RIM) }
   }
   const H = HEIGHT[model]
   if (model === 'hatch') {

@@ -76,7 +76,14 @@ export const RACING_KERB = 1.12
 export const RACING_RAIL = 1.7
 /** A car's width, and how close two must come, along the road, to touch (in stretches). */
 export const RACING_CAR_WIDTH = 0.6
-const CAR_LENGTH = 7
+/** How close behind another a car keeps, in stretches. */
+const FOLLOW = 9
+/**
+ * Where two cars touch: along the road, as close as their pictures meet on
+ * the screen (in stretches); across it, a hair less than a car's width.
+ */
+const TOUCH_LENGTH = 3.5
+const TOUCH_WIDTH = RACING_CAR_WIDTH * 0.92
 /** The three lanes' middles. */
 export const RACING_LANES = [-0.64, 0, 0.64] as const
 
@@ -149,7 +156,7 @@ const SPIN_STEPS = 0.8 * SECOND
  */
 export const racingIsDuel = (level: number): boolean => level % 4 === 0
 export const RACING_DUEL_BONUS = 1500
-const duelPace = (level: number) => 0.93 + Math.min(RACING_LAST_LEVEL, level) * 0.005
+const duelPace = (level: number) => 0.93 + Math.min(RACING_LAST_LEVEL, level) * 0.0045
 const duelEase = (level: number) => 0.16 - (Math.min(RACING_LAST_LEVEL, level) / RACING_LAST_LEVEL) * 0.11
 /**
  * A crash: how much faster than the car ahead the player's must come for one
@@ -166,6 +173,8 @@ const SPARK_STEPS = 14
 const SMOKE_STEPS = 5 * SECOND
 /** How long the public waits before it may be heard cheering again. */
 const CHEER_STEPS = 7 * SECOND
+/** How long after the line the public there is heard, the fanfare over. */
+const LINE_CHEER = 50
 /** The gauge: what each risk gives; what it takes to let the turbo go. */
 const NEAR_MISS = 0.2
 const DRAFT_FILL = 0.006
@@ -222,9 +231,9 @@ export type RacingItem = { kind: RacingItemKind; z: number; x: number; taken: bo
 /** The everyday cars of the traffic. */
 export type RacingTrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream'
 /** A slow car of the traffic: the model and its colour (`look`), its lane, its speed; whether it swerves into another lane when the player comes. */
-export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean; spin: number; spinWay: -1 | 1 }
-/** What a level's traffic starts as: not swerved, not spinning. */
-type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay'>
+export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean; spin: number; spinWay: -1 | 1; cruise?: number }
+/** What a level's traffic starts as: not swerved, not spinning (its own pace, `cruise`, the speed it starts at). */
+type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay' | 'cruise'>
 
 /**
  * The two roads of a level, from where the road divides, after its first
@@ -836,8 +845,9 @@ export type RacingState = {
   /** Whether the car brakes hard this step (its tyres smoke); steps left of smoke out of it after a crash. */
   braking: boolean
   smoke: number
-  /** Steps before the public may be heard cheering again. */
+  /** Steps before the public may be heard cheering again; steps till the public at the line cheers (after the line's own fanfare), or 0. */
   cheered: number
+  cheerLater: number
   offroad: boolean
   /** Steps left of the turbo, of a skid (and which way it slides). */
   turbo: number
@@ -902,6 +912,7 @@ function freshLevel(s: RacingState): void {
   s.braking = false
   s.smoke = 0
   s.cheered = 0
+  s.cheerLater = 0
   s.offroad = false
   s.turbo = 0
   s.skid = 0
@@ -934,7 +945,7 @@ export function createRacing(layout: RacingLayout, level = 1, seed = 1, options:
     // a game from a later level (a round, the test page), the car as improved as it would be by then
     stats: racingStatsAt(car, lv), fork: null, forkPick: -1, garage: null, boost: 0, drafting: false, combo: 0, comboSteps: 0, revFrom: -1, launch: 'none', spin: 0, pops: [], held: { steer: 0, gas: false, nitro: false },
     track: [], finish: 0, checks: [], check: 0, items: [], traffic: [], z: 0, x: 0, speed: 0, steer: 0, rivals: [], time: 0, phase: 'start', phaseTimer: 0,
-    score: options.score ?? 0, run: 0, place: 3, bonus: null, duel: null, duelLost: false, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, cheered: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
+    score: options.score ?? 0, run: 0, place: 3, bonus: null, duel: null, duelLost: false, goalAt: -1, knock: 0, crash: 0, crashWay: 1, sparks: 0, sparkSide: 1, braking: false, smoke: 0, cheered: 0, cheerLater: 0, offroad: false, turbo: 0, skid: 0, skidWay: 1, news: null, view: 0, steps: 0, heard: [], passed: 0, rnd: seeded(seed),
   }
   freshLevel(s)
   return s
@@ -964,6 +975,7 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
   if (s.sparks > 0) s.sparks -= 1
   if (s.smoke > 0) s.smoke -= 1
   if (s.cheered > 0) s.cheered -= 1
+  if (s.cheerLater > 0 && (s.cheerLater -= 1) === 0) s.heard.push('cheer')
   if (s.news && --s.news.steps <= 0) s.news = null
   for (const p of s.pops) p.steps -= 1
   s.pops = s.pops.filter((p) => p.steps > 0)
@@ -1034,7 +1046,8 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
       s.phaseTimer = 0
       s.goalAt = s.steps
       s.turbo = 0
-      s.heard.push('level', 'cheer')
+      s.heard.push('level')
+      s.cheerLater = LINE_CHEER
       s.cheered = CHEER_STEPS
     } else if (s.duel && s.rivals[0].z >= s.finish) {
       // the duel's rival over the line first: lost
@@ -1180,7 +1193,7 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
 }
 
 /** A car on the road ahead of another, in the same lane and close: the one behind keeps behind it. */
-const blocking = (z: number, x: number, others: ReadonlyArray<{ z: number; x: number; speed: number }>, reach = CAR_LENGTH + 2) =>
+const blocking = (z: number, x: number, others: ReadonlyArray<{ z: number; x: number; speed: number }>, reach = FOLLOW) =>
   others.filter((o) => o.z > z && o.z - z < reach && Math.abs(o.x - x) < RACING_CAR_WIDTH).reduce<number | null>((m, o) => (m == null || o.speed < m ? o.speed : m), null)
 
 /**
@@ -1242,6 +1255,9 @@ function stepRivals(s: RacingState): void {
 function stepTraffic(s: RacingState): void {
   for (const t of s.traffic) {
     if (spinning(t)) { t.z += t.speed; continue }
+    // back to its own pace after a knock or a push
+    t.cruise ??= t.speed
+    t.speed += Math.max(-ACCEL, Math.min(ACCEL * 0.6, t.cruise - t.speed))
     const seg = segmentOf(s.track, t.z + 15)
     const speed = Math.min(t.speed, RACING_TOP * bendLimit(seg.curve, s.level) * 0.85)
     if (t.swerve && !t.swerved && t.z - s.z < 32 && t.z > s.z) {
@@ -1255,42 +1271,64 @@ function stepTraffic(s: RacingState): void {
 }
 
 /**
- * The player's car against the other cars. Running into one from behind: a
- * crash when it comes much faster — both cars spin, each its own way, the
- * player's down to a crawl; a knock otherwise, down to that car's speed and
- * thrown a little aside. A rival running into it is held back, and spins if
- * it came much faster.
+ * The player's car against the other cars, where their pictures meet. Nose
+ * to tail: running into a car much slower, a crash — both spin, each its own
+ * way, the player's down to a crawl; a little faster, a knock, the car ahead
+ * pushed on; a car running into the player's back the same, the other way
+ * round. Side by side: the two pushed apart, scraping, sparks; at speed and
+ * steering into it, the other car sent spinning.
  */
 function touchCars(s: RacingState): void {
-  const touch = (c: { z: number; x: number; speed: number; spin: number; spinWay: -1 | 1 }, rival: boolean) => {
-    const dz = c.z - s.z
-    if (Math.abs(dz) >= CAR_LENGTH || Math.abs(c.x - s.x) >= RACING_CAR_WIDTH * 0.92) return
-    if (dz >= 0 && s.speed > c.speed) {
-      const way: -1 | 1 = s.x >= c.x ? 1 : -1
-      if (s.crash === 0 && s.speed - c.speed >= CRASH_CLOSING) {
-        s.crash = RACING_CRASH_STEPS
-        s.crashWay = way
-        s.smoke = SMOKE_STEPS
-        s.knock = 20
-        s.speed = c.speed * 0.7
-        s.heard.push('smash')
-        spinOut(c, way === 1 ? -1 : 1)
+  const touch = (c: { z: number; x: number; speed: number; spin: number; spinWay: -1 | 1 }) => {
+    const dz = c.z - s.z, dx = c.x - s.x
+    if (Math.abs(dz) >= TOUCH_LENGTH || Math.abs(dx) >= TOUCH_WIDTH) return
+    // which way the player's car is pushed across: away from the other
+    const away: -1 | 1 = dx > 0 ? -1 : 1
+    if ((TOUCH_LENGTH - Math.abs(dz)) / TOUCH_LENGTH < (TOUCH_WIDTH - Math.abs(dx)) / TOUCH_WIDTH) {
+      if (dz >= 0) {
+        // into the back of the car ahead
+        const closing = s.speed - c.speed
+        s.z = c.z - TOUCH_LENGTH
+        if (closing <= 0) return
+        if (s.crash === 0 && closing >= CRASH_CLOSING) {
+          s.crash = RACING_CRASH_STEPS
+          s.crashWay = away
+          s.smoke = SMOKE_STEPS
+          s.knock = 20
+          s.speed = c.speed * 0.7
+          s.heard.push('smash')
+          spinOut(c, away === 1 ? -1 : 1)
+        } else {
+          if (s.knock === 0) { s.heard.push('thud'); s.knock = 14 }
+          s.speed = c.speed - closing * 0.2
+          c.speed += closing * 0.4
+        }
+        s.turbo = 0
       } else {
-        if (s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
-        s.speed = Math.min(s.speed, c.speed * 0.8)
-        // thrown a little aside
-        if (s.crash === 0) s.x += way * 0.08
+        // a car into the player's back
+        const closing = c.speed - s.speed
+        c.z = s.z - TOUCH_LENGTH
+        if (closing <= 0) return
+        if (closing >= CRASH_CLOSING && c.spin === 0) { spinOut(c, away === 1 ? -1 : 1); s.heard.push('smash') }
+        else if (s.knock === 0) s.heard.push('thud')
+        if (s.knock === 0) s.knock = 12
+        s.speed += closing * 0.4
+        c.speed = s.speed - closing * 0.2
       }
-      s.turbo = 0
-      s.z = c.z - CAR_LENGTH
-    } else if (dz < 0 && rival && c.speed > s.speed) {
-      if (c.speed - s.speed >= CRASH_CLOSING && c.spin === 0) { spinOut(c, c.x >= s.x ? 1 : -1); s.heard.push('smash'); if (s.knock === 0) s.knock = 12 }
-      c.speed = s.speed * 0.9
-      c.z = s.z - CAR_LENGTH
+      return
     }
+    // side by side: apart, scraping — a little slower at the first touch, not all the while they rub
+    const into = TOUCH_WIDTH - Math.abs(dx) + 0.01
+    s.x += away * into * 0.6
+    c.x -= away * into * 0.4
+    if (s.knock === 0) { s.speed *= 0.97; c.speed *= 0.97 }
+    s.sparks = SPARK_STEPS
+    s.sparkSide = away === 1 ? -1 : 1
+    if (s.speed > RACING_TOP * 0.7 && s.steer === -away && c.spin === 0 && into > TOUCH_WIDTH * 0.2) { spinOut(c, away === 1 ? -1 : 1); s.heard.push('smash'); s.knock = 14 }
+    else if (s.knock === 0) { s.heard.push('thud'); s.knock = 12 }
   }
-  for (const r of s.rivals) touch(r, true)
-  for (const t of s.traffic) touch(t, false)
+  for (const r of s.rivals) touch(r)
+  for (const t of s.traffic) touch(t)
 }
 
 /** A car hit hard: it spins `way`, slowing. */

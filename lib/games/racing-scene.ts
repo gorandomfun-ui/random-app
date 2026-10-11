@@ -492,15 +492,39 @@ export function facadePiece(buffer: PixelBuffer, a: End, b: End, off: number, hi
   }
 }
 
-/** A shop's side facing the road ahead, at its near end `a`: from its front (`off`, negative on the left) back `depth` half widths away from the road, `high` tall; its walls in shade, a window or two a floor (lit after dark), the roof's edge on top. */
-export function shopSide(buffer: PixelBuffer, a: End, off: number, depth: number, high: number, clip: number, wall: string, floors: number, lit: boolean, tint: { rgb: RGB; by: number }): void {
+/** A convex shape filled, row by row, nothing at or under `clip`. */
+export function quad(board: PixelBuffer, pts: Array<[number, number]>, colour: string, clip: number): void {
+  const ys = pts.map((q) => q[1]), top = Math.max(0, Math.ceil(Math.min(...ys))), bottom = Math.min(clip, board.height, Math.ceil(Math.max(...ys)))
+  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width
+  for (let y = top; y < bottom; y += 1) {
+    const c = y + 0.5
+    let lo = Infinity, hi = -Infinity
+    for (let n = 0; n < pts.length; n += 1) {
+      const [ax, ay] = pts[n], [bx, by] = pts[(n + 1) % pts.length]
+      if ((c < ay && c < by) || (c > ay && c > by) || ay === by) continue
+      const x = ax + ((c - ay) / (by - ay)) * (bx - ax)
+      lo = Math.min(lo, x); hi = Math.max(hi, x)
+    }
+    if (hi < lo) continue
+    for (let x = Math.max(0, Math.round(lo)), o = (y * W + x) * 4; x < Math.min(W, Math.round(hi) + 1); x += 1, o += 4) { d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255 }
+  }
+}
+
+/** A shop's side facing the road ahead, at its near end `a`: from its front (`off`, negative on the left) back `depth` half widths away from the road, `high` tall; its walls in shade, a window or two a floor (lit after dark), the roof's edge on top — or, under a pitched roof (`ridge`), its gable up to the ridge with the roof's edges. */
+export function shopSide(buffer: PixelBuffer, a: End, off: number, depth: number, high: number, clip: number, wall: string, floors: number, lit: boolean, tint: { rgb: RGB; by: number }, ridge?: { high: number; roof: string }): void {
   const xa = a.x + off * a.u, xb = a.x + (off + Math.sign(off) * depth) * a.u, x0 = Math.min(xa, xb), x1 = Math.max(xa, xb), top = a.y - high * a.u
   const paint = (c: string) => { const [r, g, b] = rgbOf(c); return `#${[r, g, b].map((v, i) => Math.round(v + (tint.rgb[i] - v) * tint.by).toString(16).padStart(2, '0')).join('')}` }
   const side = paint(mix(wall, '#2a1a3a', 0.32)), edge = paint(mix(wall, '#ffffff', 0.2)), glass = paint(lit ? '#ffd690' : '#2a3a62'), foot = paint(mix(wall, '#2a1a3a', 0.5))
   const W = x1 - x0, H = a.y - top
   if (W < 1 || H < 2) return
   fill(buffer, x0, top, W, H, side, clip)
-  fill(buffer, x0, top, W, Math.max(1, H * 0.05), edge, clip)
+  // a pitched roof's gable over it, up to the roof's ridge, the roof's edge along its two slopes
+  if (ridge && ridge.high > high + 0.05) {
+    const apex = a.y - ridge.high * a.u, mid = (x0 + x1) / 2, eave = Math.max(1.5, (ridge.high - high) * a.u * 0.22), roof = paint(ridge.roof)
+    quad(buffer, [[x0, top], [mid, apex], [x1, top]], side, clip)
+    quad(buffer, [[x0 - eave * 0.6, top + eave * 0.4], [mid, apex - eave], [mid, apex + eave * 0.3], [x0 + eave * 0.4, top + eave * 0.4]], roof, clip)
+    quad(buffer, [[x1 + eave * 0.6, top + eave * 0.4], [mid, apex - eave], [mid, apex + eave * 0.3], [x1 - eave * 0.4, top + eave * 0.4]], roof, clip)
+  } else fill(buffer, x0, top, W, Math.max(1, H * 0.05), edge, clip)
   fill(buffer, x0, a.y - Math.max(1, H * 0.06), W, Math.max(1, H * 0.06), foot, clip)
   for (let f = 0; f < floors; f += 1) {
     const fy = top + H * (0.12 + (f / Math.max(1, floors)) * 0.8), fh = (H * 0.8) / Math.max(1, floors)
@@ -828,18 +852,50 @@ export function gantry(buffer: PixelBuffer, p: { x: number; y: number; u: number
 const sizeFor = (width: number) => (width > 112 ? 130 : width > 70 ? 104 : 60)
 
 /**
+ * A turning picture with its flank — the columns past the back's `back` —
+ * drawn `by` times as wide: the car's side showing more as it comes
+ * alongside. Made once a picture and a quarter step of `by`.
+ */
+const widenedPics = new WeakMap<PixelBuffer, Map<number, PixelBuffer>>()
+function widened(pic: PixelBuffer, back: number, by: number): PixelBuffer {
+  const q = Math.round(by * 4) / 4, cut = Math.round(back)
+  if (q <= 1 || pic.width <= cut) return pic
+  let known = widenedPics.get(pic)
+  if (!known) { known = new Map(); widenedPics.set(pic, known) }
+  const had = known.get(q)
+  if (had) return had
+  const flank = pic.width - cut, wide = Math.round(flank * q), out = new PixelBuffer(cut + wide, pic.height, '#000000')
+  out.data.fill(0)
+  for (let y = 0; y < pic.height; y += 1) {
+    out.data.set(pic.data.subarray(y * pic.width * 4, (y * pic.width + cut) * 4), y * out.width * 4)
+    for (let x = 0; x < wide; x += 1) {
+      const from = (y * pic.width + cut + Math.min(flank - 1, Math.floor((x + 0.5) / q))) * 4
+      out.data.set(pic.data.subarray(from, from + 4), (y * out.width + cut + x) * 4)
+    }
+  }
+  known.set(q, out)
+  return out
+}
+/** How much wider a car's flank is drawn, at most, right alongside. */
+const FLANK_STRETCH = 2.5
+/** Which side of a car shows and how much (`view`, −1 its left side on the left of its back, 1 its right), else the way it turns. */
+const turnFor = (view: number, turn: -1 | 0 | 1): -1 | 0 | 1 => (Math.abs(view) > 0.05 ? (view < 0 ? -1 : 1) : turn)
+
+/**
  * A car seen from behind, `width` wide on the screen (its back), its foot at
  * `foot`, its middle at `cx`: straight, or turning (`turn` −1 left, 1
- * right) with its flank showing; its shadow on the road under it; through
- * the hour and the haze.
+ * right) with its flank showing — or, off to a side of the eye (`view`), its
+ * side toward the eye, wider the further aside it is; its shadow on the road
+ * under it; through the hour and the haze.
  */
-export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
-  const turn = options.turn ?? 0, clip = options.clip ?? buffer.height, size = sizeFor(width)
+export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; view?: number; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+  const view = options.view ?? 0, turn = turnFor(view, options.turn ?? 0), clip = options.clip ?? buffer.height, size = sizeFor(width)
   const straightName = `car-${kind}-${size}` as RacingArtName, turnName = `car-${kind}-${size}-turn` as RacingArtName
   const straight = racingArt(straightName)
   if (!straight || width < 2) return
   const turnPic = turn ? racingArt(turnName) : null
-  const pic = turnPic ?? straight
+  // the burger leans rather than shows a side
+  const pic = turnPic && kind !== 'burger' && Math.abs(view) > 0.05 ? widened(turnPic, straight.width, 1 + Math.abs(view) * FLANK_STRETCH) : turnPic ?? straight
   // the back is the straight picture's width; a turning picture's flank (or lean) reaches past it
   const scale = width / straight.width, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale))
   const x0 = turnPic && turn < 0 ? Math.round(cx + width / 2 - w) : Math.round(cx - width / 2)
@@ -851,11 +907,12 @@ export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, fo
 }
 
 /** An everyday car of the traffic, `width` wide on the screen (with its share of a racing car's width), as `drawCar` draws the racing ones. */
-export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
-  const turn = options.turn ?? 0, clip = options.clip ?? buffer.height
+export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; view?: number; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+  const view = options.view ?? 0, turn = turnFor(view, options.turn ?? 0), clip = options.clip ?? buffer.height
   const back = width * TRAFFIC_WIDTH[model]
   if (back < 2) return
-  const { pic, back: steps } = trafficPicture(model, colour, turn !== 0, back)
+  const made = trafficPicture(model, colour, turn !== 0, back), steps = made.back
+  const pic = turn !== 0 && Math.abs(view) > 0.05 ? widened(made.pic, steps, 1 + Math.abs(view) * FLANK_STRETCH) : made.pic
   const scale = back / steps, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale * (TRAFFIC_SQUASH[model] ?? 1)))
   const x0 = turn < 0 ? Math.round(cx + back / 2 - w) : Math.round(cx - back / 2)
   glow(buffer, cx, foot - 1, back * 0.58, '#0a0814', 0.55, clip, 0.13)
