@@ -588,7 +588,9 @@ export default function GamePlayer({
     const onCancel = (e: PointerEvent) => { touch = null; thumb = null; held.fingers.delete(e.pointerId) }
     // Safari's own moment for sound: the end of a touch
     const onTouchEnd = () => touched()
-    const onHidden = () => { if (document.hidden) pause() }
+    // out of focus or out of sight: paused, and quiet at once — the frames that would quiet it do not come while the page is hidden
+    const hush = () => { pause(); sounds.tune(false); sounds.engine(null) }
+    const onHidden = () => { if (document.hidden) hush() }
     const watch = new ResizeObserver(() => {
       box.width = frameBox.clientWidth
       box.height = frameBox.clientHeight
@@ -599,7 +601,7 @@ export default function GamePlayer({
     tell({ kind: 'title' })
     window.addEventListener('keydown', onKey)
     window.addEventListener('keyup', onKeyUp)
-    window.addEventListener('blur', pause)
+    window.addEventListener('blur', hush)
     document.addEventListener('visibilitychange', onHidden)
     frameBox.addEventListener('pointerdown', onDown)
     frameBox.addEventListener('pointermove', onMove)
@@ -613,7 +615,7 @@ export default function GamePlayer({
       watch.disconnect()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('blur', pause)
+      window.removeEventListener('blur', hush)
       document.removeEventListener('visibilitychange', onHidden)
       frameBox.removeEventListener('pointerdown', onDown)
       frameBox.removeEventListener('pointermove', onMove)
