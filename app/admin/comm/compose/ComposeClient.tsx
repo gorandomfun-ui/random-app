@@ -56,6 +56,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [exported, setExported] = useState<{ number: number } | null>(null)
   const [progress, setProgress] = useState('')
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  /** For a video slide: the clip playing in its place over the engine's picture, or the still picture alone. */
+  const [playPreview, setPlayPreview] = useState(true)
   const [customTag, setCustomTag] = useState('')
   const [montageOpen, setMontageOpen] = useState(false)
   const [published, setPublished] = useState<{ remoteUrl: string | null; commented: boolean } | null>(null)
@@ -332,12 +334,24 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   <div className="relative mx-auto w-full max-w-md select-none overflow-hidden rounded-xl border border-white/20 bg-[#191916]" style={{ aspectRatio: spec.family.replace(':', '/') }}>
                     {/* eslint-disable-next-line @next/next/no-img-element -- what you see is what gets exported */}
                     <img src={renderUrl(settledSlide(current) ?? slide, current, 'full', 0.5)} alt="Aperçu" className="absolute inset-0 h-full w-full" draggable={false} />
+                    {isVideoSlide && slideMedia && playPreview ? (
+                      <>
+                        <div className="absolute overflow-hidden" style={{ left: `${mediaRect.x * 100}%`, top: `${mediaRect.y * 100}%`, width: `${mediaRect.w * 100}%`, height: `${mediaRect.h * 100}%` }}>
+                          <video src={slideMedia.blobUrl} muted loop autoPlay playsInline className="h-full w-full" style={{ objectFit: isBaked ? 'contain' : 'cover' }} />
+                        </div>
+                        {!isBaked ? (
+                          /* eslint-disable-next-line @next/next/no-img-element -- the dressing over the moving clip */
+                          <img src={renderUrl(settledSlide(current) ?? slide, current, 'overlay', 0.5)} alt="" className="pointer-events-none absolute inset-0 h-full w-full" draggable={false} />
+                        ) : null}
+                      </>
+                    ) : null}
                     <DragBox rect={{ x: mediaRect.x, y: mediaRect.y, w: mediaRect.w, h: mediaRect.h }} label="média" onMove={(x, y) => updateSlide({ mediaPlace: { ...mediaRect, x, y } })} />
                     {(() => { const lp = slide.logoPlace ?? defaultLogoPlace(); return <DragBox rect={{ x: lp.x, y: lp.y, w: lp.size / 1080, h: (lp.size / 1080) * (135 / 584) * ((spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.5625)) }} label="logo" onMove={(x, y) => updateSlide({ logoPlace: { ...lp, x, y } })} /> })()}
                     {slide.text.trim() ? (() => { const tp = slide.textPlace ?? defaultTextPlace(); return <DragBox rect={{ x: tp.x, y: tp.y, w: tp.width ?? 0.88, h: (tp.size * 2.4 / 1080) * ((spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.5625)) }} label="texte" onMove={(x, y) => updateSlide({ textPlace: { ...tp, x, y } })} /> })() : null}
                     {(() => { const sp = slide.sourcePlace ?? defaultSourcePlace(); return <DragBox rect={{ x: sp.x, y: sp.y, w: sp.width ?? 0.88, h: (sp.size * 2.6 / 1080) * ((spec ? FAMILY_SIZES[spec.family].width / FAMILY_SIZES[spec.family].height : 0.5625)) }} label="source" onMove={(x, y) => updateSlide({ sourcePlace: { ...sp, x, y } })} /> })()}
                   </div>
-                  <p className="mt-2 text-center text-xs text-gray-400">Slide {current + 1}{isVideoSlide && !isBaked ? ' · un clip : le montage le fait bouger' : ''}{isBaked ? ' · montage figé' : ''} · glisse le média, le logo, le texte et la source où tu veux</p>
+                  <p className="mt-2 text-center text-xs text-gray-400">Slide {current + 1} · glisse le média, le logo, le texte et la source où tu veux</p>
+                  {isVideoSlide ? <div className="mt-1 flex items-center justify-center gap-2 text-xs"><button className={`${small} ${playPreview ? 'bg-white text-black' : ''}`} onClick={() => setPlayPreview(true)}>Vidéo qui joue</button><button className={`${small} ${!playPreview ? 'bg-white text-black' : ''}`} onClick={() => setPlayPreview(false)}>Image fixe</button>{slideMedia?.durationSec ? <span className="text-gray-400">{Math.round(slideMedia.durationSec)} s{slideMedia.trim ? `, coupé ${slideMedia.trim.startSec}–${slideMedia.trim.endSec} s` : ''}</span> : null}</div> : null}
                 </div>
 
                 <div className="space-y-4">
@@ -363,7 +377,12 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                       <span className="w-16 text-xs text-gray-400">Hauteur</span><input type="range" min={0.2} max={1} step={0.02} value={mediaRect.h} onChange={(e) => updateSlide({ mediaPlace: { ...mediaRect, h: Number(e.target.value) } })} className="flex-1" /><span className="w-10 text-right text-xs">{Math.round(mediaRect.h * 100)} %</span>
                       <button className={small} onClick={() => updateSlide({ mediaPlace: null })}>Remettre</button>
                     </div>
-                    {isVideoSlide && !isBaked ? <div className="mt-3 flex flex-wrap items-center gap-2"><button className={small} disabled={!slideTemplate} onClick={() => setMontageOpen(true)}>Couper l’extrait</button><span className="text-xs text-gray-400">le début et la fin ; la marge, le texte et le glitch suivent</span></div> : null}
+                    {isVideoSlide && !isBaked ? (
+                      <div className="mt-3 rounded border border-amber-300/50 p-2">
+                        <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-amber-200">Durée{slideMedia?.durationSec ? ` : ${Math.round(slideMedia.durationSec)} s` : ''}</span><button className={`${small} border-amber-300 text-amber-200`} disabled={!slideTemplate} onClick={() => setMontageOpen(true)}>Couper : choisir le début et la fin</button></div>
+                        <p className="mt-1 text-xs text-gray-400">Pour ne garder qu’un bout : deux curseurs, début et fin, puis « Monter l’extrait ». Le montage pose la marge, le texte et le glitch sur la vidéo et produit le MP4 qui part.</p>
+                      </div>
+                    ) : null}
                     {isBaked ? <p className="mt-2 text-xs text-gray-300">Montage figé{slideMedia?.trim ? `, ${Math.round(slideMedia.trim.endSec - slideMedia.trim.startSec)} s` : ''}. Pour changer son habillage, repars de l’extrait d’origine ci-dessus.</p> : null}
                   </div>
 
@@ -500,10 +519,17 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
           <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/95 p-4" onClick={() => setPreviewIndex(null)}>
             <div className="relative max-h-[85vh] max-w-full" style={{ aspectRatio: spec?.family.replace(':', '/') }} onClick={(e) => e.stopPropagation()}>
               {(() => { const s = post.slides[previewIndex]; const m = s.mediaId ? allMedia.find((x) => x._id === s.mediaId) ?? null : null
+                const video = Boolean(m?.contentType.startsWith('video/'))
+                const t = familyTemplates.find((x) => x.key === s.templateKey); const a = s.mediaPlace ? { left: s.mediaPlace.x, top: s.mediaPlace.y, width: s.mediaPlace.w, height: s.mediaPlace.h } : t ? areaOf(t.layers) : { left: 0, top: 0, width: 1, height: 1 }
                 return m?.kind === 'montage'
                   ? <video src={m.blobUrl} controls autoPlay playsInline className="max-h-[85vh] max-w-full" />
-                  /* eslint-disable-next-line @next/next/no-img-element -- the slide, large */
-                  : <img src={renderUrl(s, previewIndex, 'full')} alt={`Slide ${previewIndex + 1}`} className="max-h-[85vh] max-w-full" />
+                  : <div className="relative max-h-[85vh]" style={{ aspectRatio: spec?.family.replace(':', '/'), height: '85vh' }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- the slide, large */}
+                      <img src={renderUrl(s, previewIndex, 'full')} alt={`Slide ${previewIndex + 1}`} className="absolute inset-0 h-full w-full" />
+                      {video && m ? <><div className="absolute overflow-hidden" style={{ left: `${a.left * 100}%`, top: `${a.top * 100}%`, width: `${a.width * 100}%`, height: `${a.height * 100}%` }}><video src={m.blobUrl} muted loop autoPlay playsInline className="h-full w-full object-cover" /></div>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- the dressing over the clip */}
+                        <img src={renderUrl(s, previewIndex, 'overlay')} alt="" className="pointer-events-none absolute inset-0 h-full w-full" /></> : null}
+                    </div>
               })()}
             </div>
             <div className="flex items-center gap-3 text-sm" onClick={(e) => e.stopPropagation()}>

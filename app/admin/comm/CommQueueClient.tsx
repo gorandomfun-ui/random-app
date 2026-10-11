@@ -138,7 +138,7 @@ export default function CommQueueClient() {
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
                         {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
                         <span>{KIND_WORDS[media.kind]}<br />{formatBytes(media.bytes)}{media.width && media.height ? <><br />{media.width}×{media.height}</> : null}{media.durationSec ? <><br />{Math.round(media.durationSec)} s</> : null}</span>
-                        <button className={small} disabled={busy === item._id} onClick={() => removeMedia(item, media)} aria-label="Supprimer ce média">×</button>
+                        <button className={small} disabled={busy === item._id} onClick={() => { if (window.confirm('Supprimer ce média ? Il disparaît aussi du stockage.')) void removeMedia(item, media) }} aria-label="Supprimer ce média">×</button>
                       </li>
                     ))}
                   </ul>

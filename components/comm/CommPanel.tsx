@@ -159,7 +159,7 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
                     {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
                     {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline className="h-12 w-12 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-12 w-12 rounded object-cover" />}
                     <span className="flex-1">{KIND_WORDS[media.kind]} · {formatBytes(media.bytes)}{media.width && media.height ? ` · ${media.width}×${media.height}` : ''}{media.durationSec ? ` · ${Math.round(media.durationSec)} s` : ''}</span>
-                    <button type="button" aria-label="Supprimer ce média" className="px-2 text-base" disabled={Boolean(busy)} onClick={() => removeOne(media)}>×</button>
+                    <button type="button" aria-label="Supprimer ce média" className="px-2 text-base" disabled={Boolean(busy)} onClick={() => { if (window.confirm('Supprimer ce média ? Il disparaît aussi du stockage.')) void removeOne(media) }}>×</button>
                   </li>
                 ))}
               </ul>
