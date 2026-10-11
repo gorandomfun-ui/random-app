@@ -35,7 +35,6 @@
     "clsx": "^2.1.1",
     "franc-min": "^6.2.0",
     "html-to-image": "^1.11.13",
-    "jszip": "^3.10.2",
     "lucide-react": "^0.544.0",
     "mongodb": "^6.19.0",
     "mongoose": "^8.18.1",

@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const key = params.get('template') ?? ''
   if (!/^[a-z0-9-]{2,40}$/.test(key)) return json({ error: 'Invalid request' }, 400)
   const mode = params.get('mode') === 'overlay' ? 'overlay' : 'full'
-  const logo = params.get('logo') === 'black' ? 'black' : 'white'
+  const logo = params.get('logo') === 'black' ? 'black' : params.get('logo') === 'none' ? 'none' : 'white'
   const fit = params.get('fit') === 'cover' ? 'cover' : params.get('fit') === 'contain' ? 'contain' : null
   // A block placed by hand: "x,y,size[,align[,width]]", shares of the canvas and px on a 1080-wide one.
   const placeOf = (raw: string | null, maxSize: number): Placement | null => {

@@ -15,8 +15,8 @@ import { iconDataUri, logoDataUri, LOGO_SIZES, ICON_RATIO, resolveColor, type Pa
 export type RenderInput = {
   template: Template
   palette: Palette
-  /** The logo's colour on this slide, black or white (the site's deep and cream). */
-  logo: 'black' | 'white'
+  /** The logo's colour on this slide, black or white (the site's deep and cream); 'none' leaves it out. */
+  logo: 'black' | 'white' | 'none'
   text: string
   credit: string
   source: string
@@ -117,6 +117,7 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
         break
       }
       case 'logo': {
+        if (input.logo === 'none') break
         const uri = await logoDataUri(layer.variant, layer.color === 'auto' ? logoColor : color(layer.color))
         if (!uri) break
         const size = LOGO_SIZES[layer.variant]

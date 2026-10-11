@@ -1,28 +1,24 @@
 'use client'
 
 /**
- * The small panel over a content in the curation: it sets the content aside
- * and takes its media right now, while the curator is looking at it. Loaded
- * only when the Comm button is pressed; the public Random never carries it.
+ * The small panel over a content in the curation: one press, the content is
+ * in the queue with its picture taken on the spot. A clip is filmed from
+ * here, in Chrome. Nothing else to choose. Loaded only when the Comm button
+ * is pressed; the public Random never carries it.
  */
 
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { canCaptureTab, CHROME_NOTE, commAdd, commImportSource, commRemove, commRemoveMedia, desktopWithoutTabCapture, formatBytes, LICENSE_COLORS, LICENSE_WORDS, screenshotOf, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
-import type { MediaDoc } from '@/lib/comm/model'
+import { canCaptureTab, CHROME_NOTE, commAdd, commImportSource, commRemove, desktopWithoutTabCapture, LICENSE_COLORS, LICENSE_WORDS, screenshotOf, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
 
 export type CommPanelProps = {
   itemId: string
   accent: string
   onClose: () => void
-  /** Tells the page whether the content is now in the queue, and how full the queue is. */
   onQueueChange: (inQueue: boolean, status: QueueStatus) => void
-  /** The content zone to picture for a site, a quiz or a text. */
   captureTarget?: () => HTMLElement | null
 }
-
-const KIND_WORDS: Record<MediaDoc['kind'], string> = { capture: 'Extrait capturé', import: 'Import', gif: 'GIF', image: 'Image', screenshot: 'Capture', thumb: 'Miniature', montage: 'Montage', still: 'Image fixe', render: 'Rendu', poster: 'Image du clip' }
 
 export default function CommPanel({ itemId, accent, onClose, onQueueChange, captureTarget }: CommPanelProps) {
   const [item, setItem] = useState<QueueItemWithMedia | null>(null)
@@ -30,24 +26,52 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
   const [full, setFull] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const [progress, setProgress] = useState<number | null>(null)
-  const fileInput = useRef<HTMLInputElement | null>(null)
+  const [taken, setTaken] = useState<string | null>(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  const captureRef = useRef(captureTarget)
+  captureRef.current = captureTarget
 
+  // One press: into the queue, and the picture taken at once when there is one to take.
   useEffect(() => {
     let cancelled = false
-    void commAdd(itemId).then((result) => {
+    void (async () => {
+      const result = await commAdd(itemId)
       if (cancelled) return
       const next = { count: result.count ?? 0, max: result.max ?? 30, blob: result.blob ?? false }
       setStatus(next)
-      if (result.item) { setItem(result.item); onQueueChange(true, next); return }
-      if (result.status === 409) { setFull(true); onQueueChange(false, next); return }
-      setError(result.error === 'unsupported' ? 'Ce type de contenu ne se partage pas.' : 'Mise de côté impossible. Vérifie ton accès.')
-    })
+      if (!result.item) {
+        if (result.status === 409) { setFull(true); onQueueChange(false, next); return }
+        setError(result.error === 'unsupported' ? 'Ce type de contenu ne se partage pas.' : 'Mise de côté impossible. Vérifie ton accès.')
+        return
+      }
+      setItem(result.item); onQueueChange(true, next)
+      if (!next.blob) return
+      const already = result.item.media.some((m) => ['image', 'gif', 'screenshot', 'capture', 'import'].includes(m.kind))
+      if (already) { setTaken('déjà pris'); return }
+      const type = result.item.contentType
+      if (type === 'image') {
+        const gif = result.item.snapshot.url.toLowerCase().includes('.gif') || ['giphy', 'tenor'].includes(result.item.snapshot.provider.toLowerCase())
+        setBusy(gif ? 'Récupération du GIF' : 'Récupération de l’image')
+        const imported = await commImportSource(result.item._id, gif ? 'gif' : 'image')
+        if (cancelled) return
+        setBusy('')
+        if (imported.media) setTaken(gif ? 'GIF pris' : 'image prise'); else setError(imported.message ?? 'L’image n’a pas pu être récupérée.')
+      } else if (type === 'web' || type === 'fact' || type === 'quote' || type === 'joke') {
+        const target = captureRef.current?.() ?? null
+        if (!target) { setError('La zone de contenu est introuvable.'); return }
+        setBusy('Capture de l’écran')
+        const blob = await screenshotOf(target)
+        if (cancelled) return
+        if (!blob) { setBusy(''); setError('La capture a échoué (contenu d’un autre site).'); return }
+        const uploaded = await uploadMedia(result.item._id, blob, 'screenshot')
+        if (cancelled) return
+        setBusy('')
+        if (uploaded.media) setTaken('capture prise'); else setError(uploaded.message ?? 'Envoi impossible.')
+      }
+    })()
     return () => { cancelled = true }
-    // The panel is mounted for one content: it runs once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mounted for one content
   }, [itemId])
 
   useEffect(() => {
@@ -56,61 +80,17 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const withMedia = useCallback((media: MediaDoc) => setItem((current) => (current ? { ...current, media: [...current.media, media] } : current)), [])
-
-  const importSource = useCallback(async (what: 'image' | 'gif' | 'thumb', label: string) => {
-    if (!item) return
-    setBusy(label); setError('')
-    const result = await commImportSource(item._id, what)
-    setBusy('')
-    if (result.media) withMedia(result.media)
-    else setError(result.message ?? 'Récupération impossible.')
-  }, [item, withMedia])
-
-  const sendFile = useCallback(async (file: Blob, kind: MediaDoc['kind'], label: string) => {
-    if (!item) return
-    setBusy(label); setError(''); setProgress(0)
-    const result = await uploadMedia(item._id, file, kind, setProgress)
-    setBusy(''); setProgress(null)
-    if (result.media) withMedia(result.media)
-    else setError(result.message ?? 'Envoi impossible.')
-  }, [item, withMedia])
-
-  const onFiles = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    event.target.value = ''
-    for (const file of files) await sendFile(file, 'import', `Import de ${file.name}`)
-  }, [sendFile])
-
-  const screenshot = useCallback(async () => {
-    const target = captureTarget?.() ?? null
-    if (!target) { setError('La zone de contenu est introuvable.'); return }
-    setBusy('Capture de la zone'); setError('')
-    const blob = await screenshotOf(target)
-    if (!blob) { setBusy(''); setError('La capture a échoué (contenu d’un autre site, non copiable).'); return }
-    await sendFile(blob, 'screenshot', 'Envoi de la capture')
-  }, [captureTarget, sendFile])
-
-  const removeOne = useCallback(async (media: MediaDoc) => {
-    setBusy('Suppression'); setError('')
-    const result = await commRemoveMedia(media._id)
-    setBusy('')
-    if (result.removed) setItem((current) => (current ? { ...current, media: current.media.filter((m) => m._id !== media._id) } : current))
-  }, [])
-
   const removeItem = useCallback(async () => {
     if (!item) return
-    setBusy('Retrait'); setError('')
+    setBusy('Retrait')
     const result = await commRemove(item._id)
     setBusy('')
-    const next = { count: result.count ?? 0, max: result.max ?? 30, blob: result.blob ?? false }
-    onQueueChange(false, next)
+    onQueueChange(false, { count: result.count ?? 0, max: result.max ?? 30, blob: result.blob ?? false })
     onClose()
   }, [item, onClose, onQueueChange])
 
   const type = item?.contentType
-  const isGif = type === 'image' && (item?.snapshot.url.toLowerCase().includes('.gif') || ['giphy', 'tenor'].includes(item?.snapshot.provider.toLowerCase() ?? ''))
-  const desktop = canCaptureTab()
+  const chrome = canCaptureTab()
   const button = 'rounded-full border px-4 py-2 text-sm font-bold uppercase tracking-wide disabled:opacity-50'
 
   return (
@@ -118,56 +98,27 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
       <div className="w-full max-w-md rounded-2xl p-4 shadow-2xl" style={{ background: '#191916', color: '#F8F5E6', border: `1px solid ${accent}` }} onClick={(event) => event.stopPropagation()}>
         <header className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-tomorrow text-lg font-black uppercase" style={{ color: accent }}>Comm</h2>
-          <div className="text-sm">
-            {status ? <span>{status.count} / {status.max}</span> : null}
-            <Link href="/admin/comm" target="_blank" className="ml-3 underline">Ouvrir la file</Link>
-          </div>
+          <div className="text-sm">{status ? <span>{status.count} / {status.max}</span> : null}<Link href="/admin/comm" target="_blank" className="ml-3 underline">La file</Link></div>
         </header>
 
-        {full ? (
-          <p role="alert" className="text-sm">File comm pleine : {status?.count} / {status?.max} — publie ou supprime d’abord. <Link href="/admin/comm" target="_blank" className="underline">Ouvrir la file</Link></p>
-        ) : null}
+        {full ? <p role="alert" className="text-sm">File pleine : {status?.count} / {status?.max}. Supprime des éléments dans <Link href="/admin/comm" target="_blank" className="underline">la file</Link>.</p> : null}
 
         {item ? (
           <>
-            <p className="text-sm leading-snug">
-              <span className="font-bold">{item.snapshot.title}</span>
-              <br />
-              <span className="opacity-80">{item.snapshot.providerLabel}{item.snapshot.author ? ` · ${item.snapshot.author}` : ''}</span>
-              <span title={LICENSE_WORDS[item.licenseHint]} aria-label={LICENSE_WORDS[item.licenseHint]} className="ml-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: LICENSE_COLORS[item.licenseHint] }} />
-            </p>
-            {!status?.blob ? <p role="alert" className="mt-2 text-xs" style={{ color: '#E5972B' }}>Le stockage Blob n’est pas configuré : l’élément est dans la file, mais aucun média ne peut être pris.</p> : null}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {type === 'image' && !isGif ? <button type="button" className={button} style={{ borderColor: accent, color: accent }} disabled={Boolean(busy)} onClick={() => importSource('image', 'Téléchargement de l’image')}>Télécharger l’image</button> : null}
-              {type === 'image' && isGif ? <button type="button" className={button} style={{ borderColor: accent, color: accent }} disabled={Boolean(busy)} onClick={() => importSource('gif', 'Récupération du GIF')}>Récupérer le GIF</button> : null}
-              {type === 'video' && desktop ? <Link href={`/admin/comm/capture/${item._id}`} target="_blank" className={button} style={{ borderColor: accent, color: accent }}>Capturer un extrait</Link> : null}
-              {type === 'video' || type === 'image' ? <button type="button" className={button} style={{ borderColor: accent, color: accent }} disabled={Boolean(busy)} onClick={() => fileInput.current?.click()}>Importer</button> : null}
-              {type === 'web' || type === 'fact' || type === 'quote' || type === 'joke' ? <button type="button" className={button} style={{ borderColor: accent, color: accent }} disabled={Boolean(busy)} onClick={screenshot}>Capturer</button> : null}
-              {item.snapshot.thumb ? <button type="button" className={button} style={{ borderColor: '#F8F5E6', color: '#F8F5E6' }} disabled={Boolean(busy)} onClick={() => importSource('thumb', 'Récupération de la miniature')}>Utiliser la miniature</button> : null}
-              <input ref={fileInput} type="file" accept="video/*,image/*" multiple hidden onChange={onFiles} />
-            </div>
-            {type === 'video' && !desktop ? <p className="mt-2 text-xs opacity-80">{desktopWithoutTabCapture() ? CHROME_NOTE : 'Sur téléphone : enregistre l’écran avec la fonction du téléphone, puis Importer.'}</p> : null}
-
-            {busy ? <p role="status" className="mt-3 text-sm">{busy}…{progress != null ? ` ${Math.round(progress * 100)} %` : ''}</p> : null}
+            <p className="text-sm leading-snug"><span className="font-bold">{item.snapshot.title}</span><br /><span className="opacity-80">{item.snapshot.providerLabel}{item.snapshot.author ? ` · ${item.snapshot.author}` : ''}</span><span title={LICENSE_WORDS[item.licenseHint]} className="ml-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: LICENSE_COLORS[item.licenseHint] }} /></p>
+            {!status?.blob ? <p role="alert" className="mt-2 text-xs" style={{ color: '#E5972B' }}>Le stockage n’est pas configuré : l’élément est dans la file, sans média.</p> : null}
+            {busy ? <p role="status" className="mt-3 text-sm">{busy}…</p> : null}
+            {taken ? <p className="mt-3 text-sm" style={{ color: accent }}>C’est dans la file, {taken}.</p> : null}
             {error ? <p role="alert" className="mt-3 text-sm" style={{ color: '#FF978F' }}>{error}</p> : null}
-
-            {item.media.length ? (
-              <ul className="mt-3 space-y-2">
-                {item.media.map((media) => (
-                  <li key={media._id} className="flex items-center gap-3 text-xs">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
-                    {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline className="h-12 w-12 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-12 w-12 rounded object-cover" />}
-                    <span className="flex-1">{KIND_WORDS[media.kind]} · {formatBytes(media.bytes)}{media.width && media.height ? ` · ${media.width}×${media.height}` : ''}{media.durationSec ? ` · ${Math.round(media.durationSec)} s` : ''}</span>
-                    <button type="button" aria-label="Supprimer ce média" className="px-2 text-base" disabled={Boolean(busy)} onClick={() => { if (window.confirm('Supprimer ce média ? Il disparaît aussi du stockage.')) void removeOne(media) }}>×</button>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="mt-3 text-xs opacity-70">Aucun média encore : prends-en un maintenant, ou plus tard depuis la file.</p>}
-
+            {type === 'video' ? (
+              <div className="mt-3 space-y-2">
+                {chrome ? <Link href={`/admin/comm/capture/${item._id}`} target="_blank" className={button} style={{ borderColor: accent, color: accent, display: 'inline-block' }}>Filmer un extrait</Link> : null}
+                <p className="text-xs opacity-80">{chrome ? 'Chrome filme cet onglet avec le son ; tu arrêtes quand tu veux, l’extrait arrive dans la file.' : desktopWithoutTabCapture() ? CHROME_NOTE : 'Sur téléphone : enregistre l’écran, puis « Importer » depuis la file.'}</p>
+              </div>
+            ) : null}
             <footer className="mt-4 flex items-center justify-between gap-3 text-sm">
               <button type="button" className="underline" disabled={Boolean(busy)} onClick={removeItem}>Retirer de la file</button>
-              <button type="button" className={button} style={{ background: accent, borderColor: accent, color: '#191916' }} onClick={onClose}>Fermer (Échap)</button>
+              <button type="button" className={button} style={{ background: accent, borderColor: accent, color: '#191916' }} onClick={onClose}>Fermer</button>
             </footer>
           </>
         ) : !full && !error ? <p role="status" className="text-sm">Mise de côté…</p> : null}

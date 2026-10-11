@@ -94,14 +94,13 @@ export default function CommQueueClient() {
           <Link href="/admin/comm/compose" className="rounded-full border border-white bg-white px-5 py-2 text-sm font-bold uppercase text-black">Composer</Link>
           {status ? <p className="text-sm">{status.count} / {status.max}{!status.blob ? <span className="ml-3 text-amber-300">Blob non configuré : aucun média ne peut être pris.</span> : null}</p> : null}
         </header>
-        <p className="text-sm text-gray-300">Ce que tu as mis de côté depuis la curation, avec les médias pris sur le moment. « Composer » ouvre un post vide où tu ajoutes les médias de la file, slide par slide. Un élément reste ici jusqu’à ce que tu le supprimes.</p>
+        <p className="text-sm text-gray-300">Ce que tu as mis de côté depuis la curation, avec l’image ou l’extrait pris sur le moment. « Composer » fait un post avec ce qui est ici. Un élément reste tant que tu ne le supprimes pas.</p>
 
         <div className="flex flex-wrap gap-2 text-sm">
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}><option value="">Tous les types</option>{Object.entries(TYPE_WORDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)}><option value="">Tous les providers</option>{providers.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select className="rounded border border-white/40 bg-black px-2 py-1" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}><option value="">Tous les sujets</option>{subjects.map((s) => <option key={s} value={s}>{s}</option>)}</select>
           <button className={small} disabled={loading} onClick={() => reload()}>Actualiser</button>
-          {selected.size ? <Link href={`/admin/comm/compose?items=${[...selected].join(',')}`} className={`${small} border-white bg-white text-black`}>Composer avec la sélection ({selected.size})</Link> : null}
           {selected.size ? <button className={`${small} border-red-400 text-red-300`} disabled={Boolean(busy)} onClick={() => removeItems([...selected])}>Supprimer la sélection ({selected.size})</button> : null}
         </div>
 
@@ -131,9 +130,9 @@ export default function CommQueueClient() {
                 </div>
 
                 {(item as QueueItemWithMedia & { usedBy?: number[] }).usedBy?.length ? <p className="mt-2 text-xs text-green-300">Déjà utilisé dans {((item as QueueItemWithMedia & { usedBy?: number[] }).usedBy ?? []).map((n) => `n° ${n}`).join(', ')} — supprime-le quand tu as fini avec.</p> : null}
-                {item.media.filter((m) => m.kind !== 'render' && m.kind !== 'poster').length ? (
+                {item.media.filter((m) => !['render', 'poster', 'still', 'thumb'].includes(m.kind)).length ? (
                   <ul className="mt-3 flex flex-wrap gap-3">
-                    {item.media.filter((m) => m.kind !== 'render' && m.kind !== 'poster').map((media) => (
+                    {item.media.filter((m) => !['render', 'poster', 'still', 'thumb'].includes(m.kind)).map((media) => (
                       <li key={media._id} className="flex items-center gap-2 text-xs">
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
                         {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
@@ -145,14 +144,10 @@ export default function CommQueueClient() {
                 ) : <p className="mt-3 text-xs text-gray-400">Aucun média.</p>}
 
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {item.contentType === 'image' && !isGif ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'image')}>Télécharger l’image</button> : null}
-                  {item.contentType === 'image' && isGif ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'gif')}>Récupérer le GIF</button> : null}
-                  {item.contentType === 'video' && desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Capturer un extrait</Link> : null}
-                  {item.contentType === 'video' && !desktop && !desktopWithoutTabCapture() ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Mode capture (téléphone)</Link> : null}
-                  {item.contentType === 'video' && desktopWithoutTabCapture() ? <span className="text-xs text-amber-200" title={CHROME_NOTE}>Extrait : dans Chrome</span> : null}
-                  <button className={small} disabled={busy === item._id} onClick={() => { fileTarget.current = item._id; fileInput.current?.click() }}>Importer</button>
-                  {item.snapshot.thumb ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, 'thumb')}>Utiliser la miniature</button> : null}
-                  <Link href={`/admin/comm/compose?items=${item._id}`} className={small}>Composer</Link>
+                  {item.contentType === 'image' && !item.media.some((m) => ['image', 'gif'].includes(m.kind)) ? <button className={small} disabled={busy === item._id} onClick={() => importSource(item, isGif ? 'gif' : 'image')}>Reprendre l’image</button> : null}
+                  {item.contentType === 'video' && desktop ? <Link href={`/admin/comm/capture/${item._id}`} className={small}>Filmer un extrait</Link> : null}
+                  {item.contentType === 'video' && desktopWithoutTabCapture() ? <span className="text-xs text-amber-200" title={CHROME_NOTE}>Filmer : dans Chrome</span> : null}
+                  {item.contentType === 'video' ? <button className={small} disabled={busy === item._id} onClick={() => { fileTarget.current = item._id; fileInput.current?.click() }}>Importer un enregistrement du téléphone</button> : null}
                   <button className={`${small} border-red-400 text-red-300`} disabled={Boolean(busy)} onClick={() => removeItems([item._id])}>Supprimer</button>
                   {busy === item._id ? <span role="status" className="text-xs">En cours…</span> : null}
                 </div>

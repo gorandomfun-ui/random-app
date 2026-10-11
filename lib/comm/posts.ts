@@ -147,6 +147,9 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         textPlace: placementOf(slide.textPlace, 400), sourcePlace: placementOf(slide.sourcePlace, 120), logoPlace: placementOf(slide.logoPlace, 1080),
         mediaPlace: rectOf(slide.mediaPlace),
         margin: slide.margin === 'glitch' ? 'glitch' : slide.margin === 'none' ? 'none' : null,
+        logoCorner: ['tl', 'tr', 'bl', 'br', 'none'].includes(slide.logoCorner as string) ? (slide.logoCorner as PostSlide['logoCorner']) : null,
+        trim: slide.trim && typeof slide.trim === 'object' && typeof slide.trim.startSec === 'number' && typeof slide.trim.endSec === 'number' && slide.trim.startSec >= 0 && slide.trim.endSec > slide.trim.startSec
+          ? { startSec: Math.round(slide.trim.startSec * 100) / 100, endSec: Math.round(slide.trim.endSec * 100) / 100 } : null,
       })
     }
     set.slides = clean

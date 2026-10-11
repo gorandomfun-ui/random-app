@@ -116,6 +116,10 @@ export type PostSlide = {
   mediaPlace?: { x: number; y: number; w: number; h: number } | null
   /** The logo placed by hand: its top-left corner, its width in px on a 1080-wide canvas. */
   logoPlace?: Placement | null
+  /** Where the logo sits, or none at all. */
+  logoCorner?: 'tl' | 'tr' | 'bl' | 'br' | 'none' | null
+  /** The part of the clip to keep, in seconds. */
+  trim?: { startSec: number; endSec: number } | null
 }
 
 export type PostDoc = {
