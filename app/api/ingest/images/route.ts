@@ -5,6 +5,7 @@ import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ingestImages, IMAGE_PROVIDERS } from '@/lib/ingest/images';
+import { recordWord } from '@/lib/ingest/gifWords';
 import type { ImageProvider } from '@/lib/ingest/images';
 import { buildComboQueries } from '@/lib/ingest/keywords/combo';
 import { buildRegionalQueries, mixRegionalQueries, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools';
@@ -83,6 +84,8 @@ export async function GET(req: Request) {
     const dry = url.searchParams.get('dry') || url.searchParams.get('preview');
     const dryRun = dry === '1' || dry === 'true';
     const insertOnly = parseBoolean(url.searchParams.get('insertOnly') || url.searchParams.get('insert_only'), false);
+    const pages = Math.max(1, Math.min(10, Number(url.searchParams.get('pages') || 1) || 1));
+    const track = parseBoolean(url.searchParams.get('track'), false);
 
     let finalQueries = queries;
     if (!finalQueries.length) {
@@ -103,7 +106,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const baseProviders = providers ?? [...IMAGE_PROVIDERS];
+    const baseProviders = providers ?? IMAGE_PROVIDERS.filter((provider) => provider !== 'tenor');
     const filteredProviders = region === 'global'
       ? baseProviders
       : baseProviders.filter((provider) => provider !== 'pixabay' && provider !== 'pexels');
@@ -116,7 +119,12 @@ export async function GET(req: Request) {
       dryRun,
       sampleSize: 6,
       insertOnly,
+      pages,
     });
+    // The words of the day keep their record: a word that brings nothing twice is not offered again (words/route.ts).
+    if (track && !dryRun && finalQueries.length === 1) {
+      await recordWord(finalQueries[0], result.inserted + result.updated, result.scanned).catch(() => undefined);
+    }
 
     return NextResponse.json({
       ok: true,

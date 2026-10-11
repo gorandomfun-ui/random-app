@@ -48,6 +48,7 @@ const PROTECTED_ROUTES: ProtectedRoute[] = [
   { path: '/api/ingest/daily-auto/report', module: '@/app/api/ingest/daily-auto/report/route', methods: ['POST'] },
   { path: '/api/ingest/facts', module: '@/app/api/ingest/facts/route', methods: ['GET'] },
   { path: '/api/ingest/images', module: '@/app/api/ingest/images/route', methods: ['GET'] },
+  { path: '/api/ingest/images/words', module: '@/app/api/ingest/images/words/route', methods: ['GET'] },
   { path: '/api/ingest/jokes', module: '@/app/api/ingest/jokes/route', methods: ['GET'] },
   { path: '/api/ingest/keywords/combo', module: '@/app/api/ingest/keywords/combo/route', methods: ['GET'] },
   { path: '/api/ingest/quotes', module: '@/app/api/ingest/quotes/route', methods: ['GET'] },
