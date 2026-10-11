@@ -30,10 +30,10 @@ import {
 } from './racing-rules'
 import {
   blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
-  facadePiece, puddle, puff, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
+  facadePiece, puddle, puff, quad, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
 } from './racing-scene'
 import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
-import { carSide, CAR_SPAN } from './racing-sides'
+import { carSide } from './racing-sides'
 import { shop, SHOPS, TOWN_UNIT, type ShopKind } from './racing-town'
 import { TRAFFIC_WIDTH, trafficHigh } from './racing-traffic'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
@@ -363,8 +363,8 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       if (seg(i + 1).zone === 'tunnel' && i >= 0) tunnelMouth(board, b, clip, tier, fog)
     }
     // the shops along the road: their fronts going by, their sides at their near ends, what stands on their roofs, their lights after dark
-    if (g.shop) shopPiece(board, p, g.shop, i, lit, tier, 1)
-    if (g.shopL) shopPiece(board, p, g.shopL, i, lit, tier, -1)
+    if (g.shop) shopPiece(board, p, g.shop, i, lit, tier, 1, camH)
+    if (g.shopL) shopPiece(board, p, g.shopL, i, lit, tier, -1, camH)
     // the world's own air over the road: the mountain's banks of mist, the city's steam out of the drains, the desert's dust blown across
     if (world === 'mountain' && misty(g.zone, i) && i % 4 === 0 && a.u < 90) glow(board, a.x, a.y - a.u * 0.15, a.u * 2.6, mistOf(tier), 0.2, clip, 0.22)
     if (world === 'city' && (g.zone === 'avenue' || g.zone === 'downtown') && i % STEAM_EVERY === 17) steam(board, place(p, i + 0.5, (((i * 7) % 3) - 1) * 0.64), i, frame, clip)
@@ -407,11 +407,11 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
       // a car spinning after a crash, in its smoke
       if (c.pose) { posed(board, c, at.x, at.y, RACING_CAR_WIDTH * at.u, c.pose, frame, { clip, tier, fog, lights: night }); continue }
-      // its flank, when it shows
-      flank(board, rows, b0, c, at, at.y - bob, tier, fog, clip)
-      if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+      // its side toward the eye, when it is off to a side
+      const view = sideView(at.x - W / 2, K)
+      if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, view, clip, tier, fog, lights: night })
       else {
-        drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+        drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, view, clip, tier, fog, lights: night })
         // a rival's own turbo: flames out of its exhausts
         const w = RACING_CAR_WIDTH * at.u
         if (c.boost && w > 6 && at.y < clip) for (const side of [-1, 1]) flames(board, at.x + side * w * 0.28, at.y - bob - 3, w * 0.14, frame + side)
@@ -469,9 +469,9 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     const at = place(p, c.z, c.x)
     if (at.y - RACING_CAR_WIDTH * at.u * 0.7 > H) continue
     if (c.pose) { posed(board, c, at.x, at.y, RACING_CAR_WIDTH * at.u, c.pose, frame, { tier, fog: 0, lights: night }); continue }
-    flank(board, rows, b0, c, at, at.y, tier, 0, H)
-    if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
-    else drawCar(board, c.kind as RacingCarKind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
+    const view = sideView(at.x - W / 2, K)
+    if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, view, tier, fog: 0, lights: night })
+    else drawCar(board, c.kind as RacingCarKind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, view, tier, fog: 0, lights: night })
   }
   if (tier === 3) { if (world === 'mountain') snow(board, frame); else if (world === 'desert') sandstorm(board, frame); else storm(board, frame, horizon) }
   if (s.phase !== 'garage') minimap(board, s, accent)
@@ -527,15 +527,23 @@ const SHOP_FRONT = 2.25, SHOP_DEPTH = 1.9
  * left, as it reads from the road — the shop's side if this is its near end,
  * what stands on its roof and its lights where they are along it.
  */
-function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, lit: boolean, tier: Tier, side: -1 | 1): void {
+function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, lit: boolean, tier: Tier, side: -1 | 1, eye: number): void {
   const kind = SHOPS[at.kind % SHOPS.length], s = shop(kind, lit), { front } = s
   const high = front.height * TOWN_UNIT, fog = p.fog, tint = tintFor(tier, fog), soft = lit ? { rgb: tint.rgb, by: tint.by * 0.55 } : tint
   const col = (z: number) => (side > 0 ? 1 - (z - at.start) / at.len : (z - at.start) / at.len) * front.width
   const along = (c: number) => at.start + (side > 0 ? 1 - c / front.width : c / front.width) * at.len
   // its front, set back from the road if it is a big one
   const face = SHOP_FRONT + (SHOP_BACK[kind] ?? 0)
+  const edge = wallEdge(front)[side > 0 ? 1 : 0], walled = edge.rows * TOWN_UNIT
+  // its flat roof, seen from above when it is lower than the eye: from the top of its front back to the back of the house, behind the front
+  if (!PITCHED.has(kind) && walled < eye - 0.05) {
+    const pt = (q: End, x: number): [number, number] => [q.x + x * q.u, q.y - walled * q.u]
+    quad(board, [pt(p.a, side * face), pt(p.a, side * (face + SHOP_DEPTH)), pt(p.b, side * (face + SHOP_DEPTH)), pt(p.b, side * face)], roofOf(s.wall, tint), p.clip)
+  }
   facadePiece(board, p.a, p.b, side * face, high, p.clip, front, col(i), col(i + 1), soft)
-  if (i === at.start) shopSide(board, p.a, side * face, SHOP_DEPTH, high, p.clip, s.wall, s.floors, lit, tint)
+  // its side at its near end: where its wall stands in the picture (not the picture's edge), as tall as that wall (not its sign or its false front)
+  const z = along(side > 0 ? edge.col + 1 : edge.col)
+  if (Math.floor(z) === i) shopSide(board, place(p, z, 0), side * face, SHOP_DEPTH, walled, p.clip, s.wall, s.floors, lit, tint, PITCHED.has(kind) ? ridgeOf(front) : undefined)
   // what stands out of its front toward the road: the roof's edge, an awning or a porch on its posts, a sign
   relief(board, p, RELIEF[kind], i - at.start, at.len, side * face, high, lit, tint)
   if (s.top) {
@@ -556,15 +564,13 @@ function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, 
 }
 
 /**
- * What stands out of a shop's front, in half widths: the roof's edge over it
- * (`eave`, how far out); an awning in its two colours of stripes, or a
+ * What stands out of a shop's front, in half widths: an awning in its two colours of stripes, or a
  * porch's roof on its posts (`awning`: how high it hangs from the front, how
  * far out, how much lower its outer edge); a sign sticking out toward the
  * road (`blade`: where along the front, how high its middle, how wide and
  * tall, its colour), its bulbs lit after dark.
  */
 type Relief = {
-  eave?: { out: number; colour: string }
   awning?: { at: number; out: number; drop: number; colours: [string, string]; posts?: string }
   blade?: { along: number; at: number; w: number; h: number; colour: string }
 }
@@ -572,20 +578,20 @@ const RELIEF: Record<ShopKind, Relief> = {
   icecream: { awning: { at: 0.7, out: 0.32, drop: 0.12, colours: ['#ff9ac0', '#fff4f0'] } },
   surf: { awning: { at: 0.8, out: 0.32, drop: 0.12, colours: ['#2ab0b0', '#f6f2e8'] }, blade: { along: 0.2, at: 1.05, w: 0.42, h: 0.4, colour: '#1a7a8a' } },
   burger: { awning: { at: 0.62, out: 0.3, drop: 0.1, colours: ['#e83a2a', '#fff4e0'] } },
-  diner: { eave: { out: 0.14, colour: '#c8c8d8' }, blade: { along: 0.85, at: 0.9, w: 0.36, h: 0.36, colour: '#e8402a' } },
+  diner: { blade: { along: 0.85, at: 0.9, w: 0.36, h: 0.36, colour: '#e8402a' } },
   motel: { awning: { at: 0.82, out: 0.42, drop: 0.05, colours: ['#c8a070', '#b89060'], posts: '#f4e2b8' } },
   hotel: { blade: { along: 0.15, at: 1.45, w: 0.28, h: 1.1, colour: '#e8406a' } },
-  tiki: { eave: { out: 0.35, colour: '#c8a050' } },
-  station: { eave: { out: 0.4, colour: '#e8e8f0' } },
+  tiki: {},
+  station: {},
   pizza: { awning: { at: 0.72, out: 0.3, drop: 0.1, colours: ['#2e9a48', '#fff4e0'] }, blade: { along: 0.85, at: 1.05, w: 0.38, h: 0.38, colour: '#c83a2a' } },
   arcade: { blade: { along: 0.2, at: 1.0, w: 0.34, h: 0.7, colour: '#7a3ae0' } },
   records: { awning: { at: 0.8, out: 0.3, drop: 0.1, colours: ['#8a5ae0', '#f0e8ff'] }, blade: { along: 0.8, at: 1.15, w: 0.4, h: 0.4, colour: '#2a2a3a' } },
-  chalet: { eave: { out: 0.45, colour: '#5a3418' } },
-  alphotel: { eave: { out: 0.3, colour: '#7a4a2a' }, awning: { at: 0.85, out: 0.3, drop: 0.08, colours: ['#b8402a', '#f2e6c8'] } },
+  chalet: {},
+  alphotel: { awning: { at: 0.85, out: 0.3, drop: 0.08, colours: ['#b8402a', '#f2e6c8'] } },
   skishop: { awning: { at: 0.85, out: 0.32, drop: 0.12, colours: ['#2a5ab0', '#f2f2f8'] }, blade: { along: 0.2, at: 1.25, w: 0.4, h: 0.4, colour: '#2a5ab0' } },
-  cablecar: { eave: { out: 0.25, colour: '#8a8a94' } },
+  cablecar: {},
   cheese: { awning: { at: 0.8, out: 0.32, drop: 0.12, colours: ['#f2c43a', '#fff8e0'] }, blade: { along: 0.8, at: 1.1, w: 0.4, h: 0.34, colour: '#e8a020' } },
-  chapel: { eave: { out: 0.2, colour: '#8a3a2a' } },
+  chapel: {},
   adobe: { awning: { at: 0.85, out: 0.45, drop: 0.04, colours: ['#8a5a30', '#7a4a24'], posts: '#6a3a1a' } },
   saloon: { awning: { at: 0.95, out: 0.5, drop: 0.04, colours: ['#8a5a30', '#7a4a24'], posts: '#5a3418' }, blade: { along: 0.5, at: 1.75, w: 0.55, h: 0.3, colour: '#7a4a24' } },
   tradingpost: { awning: { at: 0.85, out: 0.45, drop: 0.04, colours: ['#9a7048', '#8a6038'], posts: '#5a3a20' } },
@@ -598,6 +604,45 @@ const RELIEF: Record<ShopKind, Relief> = {
 /** How much further back from the road a big shop stands (the filling station, its forecourt before it). */
 const SHOP_BACK: Partial<Record<ShopKind, number>> = { station: 1 }
 
+/** A flat roof's colour: the walls' darkened, through the hour and the haze. */
+function roofOf(wall: string, tint: { rgb: RGB; by: number }): string {
+  const [r, g, b] = rgbOf(mix(wall, '#2a2234', 0.45))
+  return `#${[r, g, b].map((v, n) => Math.round(v + (tint.rgb[n] - v) * tint.by).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** The shops under a pitched roof: their sides are gables. */
+const PITCHED: ReadonlySet<ShopKind> = new Set(['chalet', 'alphotel', 'skishop', 'cheese', 'chapel', 'tiki'])
+/** A pitched roof's ridge in a front picture — how high it is (a bell tower or a chimney left out) — and its colour. */
+const ridges = new WeakMap<PixelBuffer, { high: number; roof: string }>()
+function ridgeOf(front: PixelBuffer): { high: number; roof: string } {
+  const known = ridges.get(front)
+  if (known) return known
+  const W = front.width, H = front.height, solid = (x: number, y: number) => front.data[(y * W + x) * 4 + 3] > 0
+  const tops: number[] = []
+  for (let x = Math.floor(W * 0.15); x < W * 0.85; x += 1) { let y = 0; while (y < H - 1 && !solid(x, y)) y += 1; tops.push(y) }
+  tops.sort((m, n) => m - n)
+  const ridge = tops[Math.floor(tops.length * 0.6)], x = Math.floor(W * 0.3), o = (Math.min(H - 1, ridge + 3) * W + x) * 4
+  const roof = solid(x, Math.min(H - 1, ridge + 3)) ? `#${[0, 1, 2].map((k) => front.data[o + k].toString(16).padStart(2, '0')).join('')}` : '#5a3a2a'
+  const out = { high: (H - ridge) * TOWN_UNIT, roof }
+  ridges.set(front, out)
+  return out
+}
+
+/** Where a shop's walls end in its front picture, left and right: the last columns standing on the ground, and how many rows tall the wall is there. */
+const walls = new WeakMap<PixelBuffer, [{ col: number; rows: number }, { col: number; rows: number }]>()
+function wallEdge(front: PixelBuffer): [{ col: number; rows: number }, { col: number; rows: number }] {
+  const known = walls.get(front)
+  if (known) return known
+  const W = front.width, H = front.height, solid = (x: number, y: number) => front.data[(y * W + x) * 4 + 3] > 0
+  const top = (x: number) => { let y = 0; while (y < H - 1 && !solid(x, y)) y += 1; return y }
+  let l = 0, r = W - 1
+  while (l < W - 1 && !solid(l, H - 1)) l += 1
+  while (r > 0 && !solid(r, H - 1)) r -= 1
+  const out: [{ col: number; rows: number }, { col: number; rows: number }] = [{ col: l, rows: H - top(l) }, { col: r, rows: H - top(r) }]
+  walls.set(front, out)
+  return out
+}
+
 /** A shop's relief on stretch `k` of its `len` (from its near end), its front at `face` (negative on the left), `high` tall. */
 function relief(board: PixelBuffer, p: Projected, r: Relief, k: number, len: number, face: number, high: number, lit: boolean, tint: { rgb: RGB; by: number }): void {
   const toward = -Math.sign(face), clip = p.clip
@@ -606,10 +651,6 @@ function relief(board: PixelBuffer, p: Projected, r: Relief, k: number, len: num
   const pt = (e: 0 | 1, x: number, y: number): [number, number] => { const q = e ? p.b : p.a; return [q.x + x * q.u, q.y - y * q.u] }
   // a plane sticking out of the front: from height `top` at the front to `low` at `out` toward the road
   const slab = (top: number, low: number, out: number, colour: string) => quad(board, [pt(0, face, top), pt(0, face + toward * out, low), pt(1, face + toward * out, low), pt(1, face, top)], paint(colour), clip)
-  if (r.eave) {
-    slab(high, high - 0.05, r.eave.out, r.eave.colour)
-    quad(board, [pt(0, face + toward * r.eave.out, high - 0.05), pt(0, face + toward * r.eave.out, high - 0.12), pt(1, face + toward * r.eave.out, high - 0.12), pt(1, face + toward * r.eave.out, high - 0.05)], paint(mix(r.eave.colour, '#1a1424', 0.45)), clip)
-  }
   if (r.awning) {
     const a = r.awning, low = a.at - a.drop, edge = face + toward * a.out
     // its stripes across, two stretches each
@@ -633,23 +674,6 @@ function relief(board: PixelBuffer, p: Projected, r: Relief, k: number, len: num
   }
 }
 
-/** A convex shape filled, row by row, nothing at or under `clip`. */
-function quad(board: PixelBuffer, pts: Array<[number, number]>, colour: string, clip: number): void {
-  const ys = pts.map((q) => q[1]), top = Math.max(0, Math.ceil(Math.min(...ys))), bottom = Math.min(clip, board.height, Math.ceil(Math.max(...ys)))
-  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width
-  for (let y = top; y < bottom; y += 1) {
-    const c = y + 0.5
-    let lo = Infinity, hi = -Infinity
-    for (let n = 0; n < pts.length; n += 1) {
-      const [ax, ay] = pts[n], [bx, by] = pts[(n + 1) % pts.length]
-      if ((c < ay && c < by) || (c > ay && c > by) || ay === by) continue
-      const x = ax + ((c - ay) / (by - ay)) * (bx - ax)
-      lo = Math.min(lo, x); hi = Math.max(hi, x)
-    }
-    if (hi < lo) continue
-    for (let x = Math.max(0, Math.round(lo)), o = (y * W + x) * 4; x < Math.min(W, Math.round(hi) + 1); x += 1, o += 4) { d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255 }
-  }
-}
 
 // ---------------------------------------------------------------- the map in the corner
 
@@ -855,32 +879,12 @@ function sky(board: PixelBuffer, frame: number, horizon: number, tier: Tier, acc
 }
 
 /**
- * A car's flank, the side of it that shows: the one whose nose stands out past
- * its back on the screen (a car off to a side, or turning in a bend). Drawn
- * in the pictures' own eye, level with the cars: from the back's edge toward
- * the nose, at the back's height, narrowing as the nose is further, rising
- * only a little with the road: the car's back alone far ahead, then a
- * three-quarter view, then more of its side as it comes alongside.
+ * How much of a car's side shows, from where it stands on the screen (`off`
+ * pixels from the middle, the eye's focal length `K`): its side toward the
+ * middle (negative, its left side, when it is to the right), none straight
+ * ahead, the most right alongside.
  */
-function flank(board: PixelBuffer, rows: Projected[], b0: number, c: Cargo['cars'][number], at: { x: number; y: number; u: number }, foot: number, tier: Tier, fog: number, clip: number): void {
-  const nose = rows[Math.floor(c.z + CAR_SPAN) - b0]
-  if (!nose || nose.behind || at.u < 2) return
-  const wide = c.traffic ? RACING_CAR_WIDTH * TRAFFIC_WIDTH[c.kind as RacingTrafficModel] : RACING_CAR_WIDTH
-  const high = c.traffic ? wide * trafficHigh(c.kind as RacingTrafficModel) : wide * rivalHigh(c.kind as RacingCarKind)
-  const front = place(nose, c.z + CAR_SPAN, c.x), r = front.u / at.u
-  const lb = at.x - (wide / 2) * at.u, lf = front.x - (wide / 2) * front.u, rb = at.x + (wide / 2) * at.u, rf = front.x + (wide / 2) * front.u
-  let xb: number, xf: number
-  if (lf < lb - 1) { xb = lb; xf = lf } else if (rf > rb + 1) { xb = rb; xf = rf } else return
-  // a car turning shows its flank on the side it turns to, in its own picture: never the other side as well
-  if (c.turn !== 0 && Math.sign(xf - xb) !== c.turn) return
-  // tucked a little under the back's edge, so no gap shows between them
-  xb -= Math.sign(xf - xb) * Math.max(1, wide * at.u * 0.03)
-  const eye = foot - FLANK_EYE * high * at.u, yf = eye + (foot - eye) * r + (front.y - at.y) * FLANK_LIFT
-  const { pic, share } = carSide(c.traffic ? (c.kind as RacingTrafficModel) : (c.kind as RacingCarKind), c.look)
-  facadePiece(board, { x: xb, y: foot, u: at.u }, { x: xf, y: yf, u: at.u * r }, 0, high * share, clip, pic, 0, pic.width, tintFor(tier, fog))
-}
-/** Where the pictures' eye stands on a car (a share of its height from its foot), and how much of the road's rise its flank follows. */
-const FLANK_EYE = 0.5, FLANK_LIFT = 0
+const sideView = (off: number, K: number): number => -Math.sign(off) * Math.max(0, Math.min(1, (Math.abs(off) / K - 0.06) / 0.24))
 
 /**
  * How far round a spinning car has turned, in degrees (its nose to the right

@@ -330,13 +330,16 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
     m.tone({ at: 0.08, dur: 0.66, freq: 1180, to: 820, wave: 'pulse', duty: 0.25, gain: 0.16, attack: 0.04, release: 0.12, vibrato: { rate: 23, depth: 0.7 } })
     m.tone({ at: 0.08, dur: 0.66, freq: 6000, wave: 'noise', gain: 0.12, attack: 0.05, decay: 0.4, highpass: 2500, seed: 212 })
   } },
-  // RACING: the public as the car goes by it, and at the line: a roar of voices swelling and falling, hands clapping, a whistle or two
-  cheer: { seconds: 1.7, peak: SOUND_PEAK * 0.85, build: (m) => {
-    m.tone({ at: 0, dur: 1.2, freq: 3000, wave: 'noise', gain: 0.45, attack: 0.25, decay: 0.6, lowpass: 1900, highpass: 350, tremolo: { rate: 7, depth: 0.3 }, seed: 221 })
-    m.tone({ at: 0.05, dur: 1.1, freq: 5000, wave: 'noise', gain: 0.2, attack: 0.3, decay: 0.5, lowpass: 3500, highpass: 1200, tremolo: { rate: 11, depth: 0.4 }, seed: 222 })
-    for (const [at, seed] of [[0.12, 223], [0.21, 224], [0.27, 225], [0.38, 226], [0.45, 227], [0.56, 228], [0.61, 229], [0.73, 230], [0.84, 231], [0.92, 232]] as const) m.tone({ at, dur: 0.02, freq: 6000, wave: 'noise', gain: 0.22, decay: 0.012, highpass: 1500, seed })
-    m.tone({ at: 0.3, dur: 0.32, freq: 1700, to: 2500, wave: 'sine', gain: 0.12, attack: 0.03, release: 0.05 })
-    m.tone({ at: 0.7, dur: 0.18, freq: 2300, to: 2000, wave: 'sine', gain: 0.1, attack: 0.02, release: 0.04 })
+  // RACING: the public as the car goes by it, and at the line: a crowd's voices rising together — each its own pitch, starting a little apart, wavering — over their roar, hands clapping, a whistle
+  cheer: { seconds: 1.95, peak: SOUND_PEAK, build: (m) => {
+    for (let k = 0; k < 16; k += 1) {
+      const h = ((k * 7919) % 97) / 97, g = ((k * 104729) % 89) / 89, f = 170 + h * 260
+      m.tone({ at: 0.02 + g * 0.22, dur: 0.85 + h * 0.5, freq: f * 0.92, to: f * 1.18, wave: 'pulse', duty: 0.22 + g * 0.2, gain: 0.075, attack: 0.07, release: 0.35, vibrato: { rate: 5 + h * 3, depth: 0.45, after: 0.12 }, lowpass: 1700, highpass: 220 })
+    }
+    m.tone({ at: 0, dur: 1.4, freq: 3000, wave: 'noise', gain: 0.2, attack: 0.15, decay: 0.8, lowpass: 2200, highpass: 400, tremolo: { rate: 9, depth: 0.25 }, seed: 221 })
+    for (let k = 0; k < 14; k += 1) m.tone({ at: 0.15 + ((k * 37) % 23) / 20, dur: 0.02, freq: 6000, wave: 'noise', gain: 0.2, decay: 0.012, highpass: 1500, seed: 223 + k })
+    m.tone({ at: 0.35, dur: 0.22, freq: 1800, to: 2600, wave: 'sine', gain: 0.1, attack: 0.03, release: 0.03 })
+    m.tone({ at: 0.62, dur: 0.3, freq: 2600, to: 1500, wave: 'sine', gain: 0.1, attack: 0.02, release: 0.06 })
   } },
   // RACING: a red light of the start, and the last seconds on the clock: a short square beep
   beep: { seconds: 0.22, peak: SOUND_PEAK, build: (m) => {
