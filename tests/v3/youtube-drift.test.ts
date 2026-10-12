@@ -11,7 +11,7 @@ test("a channel's uploads playlist is its id with UU for UC", () => {
   assert.equal(uploadsOf('x1abc'), null)
 })
 
-test('the YouTube drift: each channel read once, ten new uploads at most, two units a channel, through the doors, then admitted', async () => {
+test('the YouTube drift: each channel read once, five new uploads at most, two units a channel, through the doors, then admitted', async () => {
   const channel = 'UCabcdefghijklmnopqrstuv'
   const uploads = Array.from({ length: 50 }, (_, index) => `vid${String(index).padStart(8, '0')}`)
   const calls: string[] = []
@@ -24,7 +24,7 @@ test('the YouTube drift: each channel read once, ten new uploads at most, two un
     }
     if (url.pathname.endsWith('/videos')) {
       const ids = (url.searchParams.get('id') ?? '').split(',')
-      assert.ok(ids.length <= VIDEOS_PER_CHANNEL, 'ten at most')
+      assert.ok(ids.length <= VIDEOS_PER_CHANNEL, 'five at most')
       assert.ok(!ids.includes('vid00000000'), 'not what the base holds')
       return json({ items: ids.map((id, index) => ({ id, snippet: { title: index === 0 ? 'LIVE NOW 24/7 stream' : `A small film about pottery number ${index}`, description: '', channelId: channel, channelTitle: 'potter', publishedAt: '2026-10-01T00:00:00Z', liveBroadcastContent: index === 0 ? 'live' : 'none' }, status: { embeddable: true, privacyStatus: 'public' }, statistics: { viewCount: '120' }, contentDetails: { duration: 'PT3M' } })) })
     }
@@ -69,4 +69,20 @@ test('the YouTube drift stops cleanly when the day\'s units are spent', async ()
   const result = await run(ctx, { youtubeKey: 'k', seeds: [{ channelId: 'UCabcdefghijklmnopqrstuv' }] })
   assert.equal(result.counters.inserted, 0)
   assert.ok(result.errors.includes('youtube : budget du jour atteint'))
+})
+
+test('the mix: Shorts and the little videos of a few places keep their share, the rest pass', async () => {
+  const { Mix, heavyGroupOf } = await import('../../lib/v3/ingest/mix')
+  assert.equal(heavyGroupOf('Coisas que NÃO SÃO COMESTÍVEIS mas dão uma vontade incontrolável de morder'), 'BR')
+  assert.equal(heavyGroupOf('नवरात्रि का पहला दिन माँ शैलपुत्री की आरती'), 'IN')
+  assert.equal(heavyGroupOf('물놀이가 하고 싶었던 수달'), null, 'Korean is not among them')
+  assert.equal(heavyGroupOf('A small film about pottery'), null)
+  const mix = new Mix(0.15, 0.06, 2)
+  let shorts = 0, longs = 0
+  for (let index = 0; index < 100; index += 1) {
+    if (mix.accepts({ title: `A funny clip number ${index}`, seconds: 30 })) shorts += 1
+    if (mix.accepts({ title: `A long walk in the woods part ${index}`, seconds: 600 })) longs += 1
+  }
+  assert.equal(longs, 100, 'the others are never refused')
+  assert.ok(shorts >= 15 && shorts <= 22, `Shorts limited, not excluded (${shorts})`)
 })

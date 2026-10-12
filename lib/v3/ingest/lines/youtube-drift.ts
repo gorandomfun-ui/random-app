@@ -1,12 +1,12 @@
 /**
- * STOPPED on 12 October, its timer removed: the channels of anything brought anything — 43 % Shorts, Roblox and
- * streamers — and the owner asked for YouTube near his likes instead ("pourquoi pas plutôt pour chercher des vidéos
- * proches des likes"): lib/v3/ingest/lines/lookalike.ts. Its 12,906 entries not near a like were set aside
- * (`suppressedReason: 'youtube-drift-untargeted'`). Kept for the record.
+ * 12 October: stopped in the morning — the channels of anything brought 43 % Shorts — then back in the evening with a
+ * mix (the owner: "YouTube ne va servir qu'à mes likes ??? … pas d'extrême, un bon mélange"): five videos a channel,
+ * Shorts kept to 15 % of what it lets in and the little videos of Brazil and South and Southeast Asia to 6 % each
+ * (lib/v3/ingest/mix.ts). The likes have their own YouTube searches (lib/v3/ingest/lines/lookalike.ts).
  *
  * The YouTube drift: the channels of the YouTube videos the base already took
  * — found by the dig's searches, the look-alikes, the charts, the likes — and
- * twenty of each one's latest uploads, as the Dailymotion drift does with the
+ * a few of each one's latest uploads, as the Dailymotion drift does with the
  * small uploaders it meets.
  *
  * Why (11 October): YouTube's own counter showed 1,900 to 4,200 units used a
@@ -31,6 +31,7 @@ import { LIST_UNITS, playlistPage, videoDetails } from '../../dig/youtube'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { emptyCounters } from '../journal'
 import { driftDoor } from './drift'
+import { Mix } from '../mix'
 
 /** Channels read in one run at most; the units and the minutes stop it first. */
 export const CHANNELS_PER_RUN = Number(process.env.RANDOM_YT_DRIFT_CHANNELS ?? 800)
@@ -38,9 +39,10 @@ export const CHANNELS_PER_RUN = Number(process.env.RANDOM_YT_DRIFT_CHANNELS ?? 8
  * Of a channel's latest fifty uploads, those not in the base, at random, this many. A dry run of 120 channels (11 October)
  * read 2,296 new videos and would have let in about sixteen a channel at twenty: at YouTube's full 10,000 units that is
  * some thirty thousand videos a day, more than the small base can hold for long (4.8 GB of 24 on its disk, ~2.3 KB a
- * video). Ten a channel, and the day's units set the pace (scripts/v3/youtube-drift-direct.ts).
+ * video). Five a channel since 12 October, so that no channel weighs, and the day's units set the pace
+ * (scripts/v3/youtube-drift-direct.ts).
  */
-export const VIDEOS_PER_CHANNEL = 10
+export const VIDEOS_PER_CHANNEL = 5
 /** Where the seeds come from: the YouTube videos that entered these last days. */
 const SEED_DAYS = 10
 const SEED_ROWS = 6_000
@@ -111,6 +113,7 @@ export async function run(ctx: LineContext, deps: { youtubeKey?: string; random?
   let units = 0, read = 0, stopped = false
   const refused: Record<string, number> = {}
   const add = (why: string, count: number) => { if (count) refused[why] = (refused[why] ?? 0) + count }
+  const mix = new Mix()
 
   // Through the doors together, a batch of channels at a time.
   let batch: DigVideo[] = []
@@ -131,8 +134,11 @@ export async function run(ctx: LineContext, deps: { youtubeKey?: string; random?
     add('chaîne cette semaine', weekly.refused)
     const media = await withoutMedia(ctx, guards, key, weekly.kept, 'youtube', new Set())
     add('média', media.refused)
-    if (!media.kept.length) return
-    const result = await ctx.admit({ subjectId: 'youtube-drift', videos: media.kept })
+    // The mix: Shorts and the little videos of a few places keep their share of what this run lets in.
+    const mixed = media.kept.filter((video) => mix.accepts({ title: video.title, seconds: video.seconds }))
+    add('au-delà de sa part (Shorts ou pays)', media.kept.length - mixed.length)
+    if (!mixed.length) return
+    const result = await ctx.admit({ subjectId: 'youtube-drift', videos: mixed })
     addAdmission(counters, { ...result, scanned: 0, rejected: result.rejected })
     counters.byProvider = { ...(counters.byProvider ?? {}), youtube: ((counters.byProvider ?? {}).youtube ?? 0) + result.inserted }
   }

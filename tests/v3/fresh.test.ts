@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { capForeignSketches, capHeavyRegions, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
+import { capForeignSketches, capHeavyRegions, capShorts, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
 
 const entry = (videoId: string, bucket: FreshBucket, region: string, rank: number, views = 0, channel?: string): FreshEntry =>
   ({ id: videoId.padStart(24, '0'), videoId, bucket, region, rank, views, channel })
@@ -34,8 +34,7 @@ test('a still album cover or a long gaming session does not open a feed', () => 
   assert.equal(isFreshFormat({ channelTitle: 'Wisp', universe: 'gaming', duration: 'PT34M' }), false)
   assert.equal(isFreshFormat({ channelTitle: 'Wisp', universe: 'gaming', duration: 'PT9M' }), true)
   assert.equal(isFreshFormat({ channelTitle: 'Concert Hall', universe: 'music', duration: 'PT1H2M' }), true, 'only gaming sessions are cut for length')
-  assert.equal(isFreshFormat({ channelTitle: 'Funny', universe: 'humor-memes', duration: 'PT45S' }), false, 'a Short opens no session (12 October)')
-  assert.equal(isFreshFormat({ channelTitle: 'Funny', universe: 'humor-memes', duration: 'PT1M5S' }), true)
+  assert.equal(isFreshFormat({ channelTitle: 'Funny', universe: 'humor-memes', duration: 'PT45S' }), true, 'a Short is limited by its share, not refused (12 October)')
 })
 
 test('a zone by rank lets every country bring its own; the world takes the biggest', () => {
@@ -143,6 +142,9 @@ test("Brazil and South and Southeast Asia keep a small share each of the day's l
   const entry = (id: string, region: string): FreshEntry => ({ id, videoId: id, bucket: 'world', rank: 1, region, views: 1 })
   const list = [...Array.from({ length: 40 }, (_, index) => entry(`br${index}`, 'BR')), ...Array.from({ length: 30 }, (_, index) => entry(`in${index}`, 'IN')), ...Array.from({ length: 30 }, (_, index) => entry(`fr${index}`, 'FR')), ...Array.from({ length: 20 }, (_, index) => entry(`kr${index}`, 'KR'))]
   const capped = capHeavyRegions(new Map([['world' as FreshBucket, list]]), 0.05)
+  const shorts = capShorts(new Map([['world' as FreshBucket, Array.from({ length: 100 }, (_, index) => ({ ...entry(`s${index}`, 'FR'), seconds: index < 40 ? 30 : 120 }))]]), 0.15).get('world')!
+  assert.equal(shorts.filter((item) => (item.seconds ?? 0) < 60).length, 15, 'Shorts keep fifteen per cent, not none')
+  assert.equal(shorts.filter((item) => (item.seconds ?? 0) >= 60).length, 60)
   const kept = capped.get('world')!
   assert.equal(kept.filter((item) => item.region === 'BR').length, 6, 'five per cent of 120')
   assert.equal(kept.filter((item) => item.region === 'IN').length, 6)

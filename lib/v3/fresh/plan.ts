@@ -111,10 +111,11 @@ export function isForeignSketch(entry: Pick<FreshEntry, 'bucket' | 'region' | 'u
 /**
  * The countries whose charts filled the sessions' openings with what the owner asked "pas trop" of, twice (28 September,
  * 12 October): Brazil and South and Southeast Asia — "pas forcément chinois, coréen… ça au contraire il n'y en a pas
- * trop". Each keeps a small share of the day's list, whatever the universe; the others are not touched.
+ * trop". Each keeps its share of the day's list, whatever the universe; the others are not touched. Six per cent each,
+ * not three (the owner, 12 October: "3 % c'est peu… pas d'extrême, un bon mélange").
  */
 export const FRESH_HEAVY_REGIONS = new Set(['BR', 'IN', 'ID', 'PH', 'PK', 'BD', 'TH', 'VN', 'MY'])
-export const FRESH_HEAVY_REGION_SHARE = 0.03
+export const FRESH_HEAVY_REGION_SHARE = 0.06
 
 export function capHeavyRegions(picked: Map<FreshBucket, FreshEntry[]>, share = FRESH_HEAVY_REGION_SHARE, regions: ReadonlySet<string> = FRESH_HEAVY_REGIONS): Map<FreshBucket, FreshEntry[]> {
   const total = [...picked.values()].reduce((sum, list) => sum + list.length, 0)
@@ -150,21 +151,41 @@ export function capForeignSketches(picked: Map<FreshBucket, FreshEntry[]>, share
   return out
 }
 
-/**
- * Under a minute, the charts' Shorts: 28 % of the list of 12 October, the "petites vidéos" the owner found again opening
- * his sessions ("pleins de petites vidéos marrantes du Brésil… d'Inde", 12 October). They stay in the base, drawn
- * elsewhere; they no longer open a session.
- */
-export const FRESH_MIN_SECONDS = 60
+/** A video's length in seconds from YouTube's ISO duration; 0 when unknown. */
+export function isoSeconds(duration: unknown): number {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(duration ?? ''))
+  return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0
+}
 
-/** A still album cover ("- Topic" channels), a Short, or a gaming session past fifteen minutes: not what opens a feed. */
+/** A still album cover ("- Topic" channels), or a gaming session past fifteen minutes: not what opens a feed. */
 export function isFreshFormat(row: { channelTitle?: unknown; duration?: unknown; universe?: unknown }): boolean {
   if (/ - Topic$/.test(String(row.channelTitle ?? ''))) return false
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(row.duration ?? ''))
-  const seconds = match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0
-  if (seconds > 0 && seconds < FRESH_MIN_SECONDS) return false
-  if (row.universe === 'gaming' && seconds > 15 * 60) return false
+  if (row.universe === 'gaming' && isoSeconds(row.duration) > 15 * 60) return false
   return true
+}
+
+/**
+ * Under a minute, the charts' Shorts: 28 % of the list of 12 October, the "petites vidéos" the owner found again opening
+ * his sessions. Limited, not excluded (the owner, 12 October: "limiter n'est pas exclure… il y a des vidéos de moins
+ * d'une minute qui doivent être très bien"): they keep this share of the day's list, the best placed first.
+ */
+export const FRESH_SHORT_SECONDS = 60
+export const FRESH_SHORT_SHARE = 0.15
+
+export function capShorts(picked: Map<FreshBucket, FreshEntry[]>, share = FRESH_SHORT_SHARE): Map<FreshBucket, FreshEntry[]> {
+  const total = [...picked.values()].reduce((sum, list) => sum + list.length, 0)
+  let allowed = Math.floor(total * share)
+  const out = new Map<FreshBucket, FreshEntry[]>()
+  for (const [bucket, list] of picked) {
+    out.set(bucket, list.filter((entry) => {
+      const seconds = entry.seconds ?? 0
+      if (!(seconds > 0 && seconds < FRESH_SHORT_SECONDS)) return true
+      if (allowed <= 0) return false
+      allowed -= 1
+      return true
+    }))
+  }
+  return out
 }
 
 /** News on the fresh list: one or two at most, the owner's rule for TV news anywhere. */
@@ -187,6 +208,8 @@ export type FreshEntry = {
   channel?: string
   family?: string
   universe?: string
+  /** Its length, for the Shorts' share. */
+  seconds?: number
 }
 
 /** A zone's picks: the biggest first, or each country in turn by its own chart order. */
