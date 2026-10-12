@@ -7,7 +7,7 @@
  */
 
 import { recorderChoice } from './montage'
-import { burstSchedule, createDrawer } from './montageDraw'
+import { burstSchedule, createDrawer, inksOf } from './montageDraw'
 
 export type BrandLoopInput = {
   accent: string
@@ -30,7 +30,6 @@ type Scene = 'card' | 'burst' | 'tinted' | 'line' | 'filled'
 /** The scenes in order, each with its share of the loop; the bursts are short and the card is home. */
 const SCENES: Array<[Scene, number]> = [['card', 0.16], ['burst', 0.07], ['tinted', 0.14], ['burst', 0.06], ['line', 0.15], ['burst', 0.07], ['filled', 0.15], ['burst', 0.06], ['card', 0.14]]
 
-const INKS = ['#00eaff', '#ff006f', '#0FC55D', '#ffe600', '#3D42CC', '#E5972B']
 const hash = (...n: number[]) => { let h = 2166136261; for (const v of n) { h ^= v + 0x9e3779b9; h = Math.imul(h, 16777619) } return ((h >>> 0) % 10000) / 10000 }
 
 export function sceneAt(fraction: number): { scene: Scene; local: number } {
@@ -48,7 +47,8 @@ export async function recordBrandLoop(input: BrandLoopInput): Promise<{ blob: Bl
   const ctx = work.getContext('2d')!
   const scene = document.createElement('canvas'); scene.width = width; scene.height = height
   const sctx = scene.getContext('2d')!
-  const drawer = createDrawer({ width, height, background: bg, rect: { x: 0, y: 0, w: width, h: height }, overlays: [], intensity: input.intensity, style: 'mosh', accent: input.accent })
+  const inks = inksOf(input.accent)
+  const drawer = createDrawer({ width, height, background: bg, rect: { x: 0, y: 0, w: width, h: height }, overlays: [], intensity: input.intensity, style: 'mosh', accent: input.accent, fragments: [input.vertical, input.horizontal, input.verticalAccent] })
 
   const logoBox = { w: Math.round(width * 0.6), x: Math.round(width * 0.2) }
   const vH = Math.round(logoBox.w * (input.vertical.naturalHeight / input.vertical.naturalWidth))
@@ -77,7 +77,7 @@ export async function recordBrandLoop(input: BrandLoopInput): Promise<{ blob: Bl
       const seed = Math.floor(local * 12)
       for (let i = 0; i < 40; i += 1) {
         const bw = Math.round(width * (0.05 + hash(seed, i, 1) * 0.2)), bh = Math.round(height * (0.01 + hash(seed, i, 2) * 0.04))
-        m.fillStyle = hash(seed, i, 3) < 0.3 ? cream : INKS[Math.floor(hash(seed, i, 4) * INKS.length)]
+        m.fillStyle = hash(seed, i, 3) < 0.3 ? cream : inks[Math.floor(hash(seed, i, 4) * inks.length)]
         m.fillRect(Math.round(hash(seed, i, 5) * width), Math.round(vY + hash(seed, i, 6) * vH), bw, bh)
       }
       m.globalCompositeOperation = 'source-over'
