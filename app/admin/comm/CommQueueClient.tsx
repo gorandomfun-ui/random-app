@@ -88,7 +88,7 @@ export default function CommQueueClient() {
   return (
     <main className="min-h-screen bg-black px-5 py-8 text-white">
       <div className="mx-auto max-w-4xl space-y-5">
-        <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link><Link href="/admin/comm/config" className="underline">Configuration</Link></nav>
+        <nav className="flex flex-wrap items-center gap-4 text-sm"><Link href="/admin/curation/random" className="underline">← Curation</Link><Link href="/admin/comm/phrases" className="underline">Phrases</Link><Link href="/admin/comm/stats" className="underline">Stats</Link><Link href="/admin/comm/config" className="underline">Configuration</Link><Link href="/admin/comm/fonds" className="underline">Fonds vidéo</Link></nav>
         <header className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-2xl font-bold">Comm — la file</h1>
           <Link href="/admin/comm/compose" className="rounded-full border border-white bg-white px-5 py-2 text-sm font-bold uppercase text-black">Composer</Link>
