@@ -162,15 +162,18 @@ case "${LINE}" in
     # The key goes through a private file, never through the journal (the run's echo logged it on 3 October).
     header_file="/home/random/.admin-header"
     (umask 077; printf 'x-admin-ingest-key: %s\n' "${ADMIN_INGEST_KEY:?}" > "${header_file}")
-    run curl -sS -m 280 -H "@${header_file}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,wikipedia&per=10&pages=3"
+    # Since 12 October also Neocities' gallery read as pages and two lists of handmade and toy sites ("lists"): onto the waiting list.
+    run curl -sS -m 280 -H "@${header_file}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,lists,wikipedia&per=10&pages=3"
     ;;
   web-commoncrawl)
     # One country a day from Common Crawl's public index: the live front pages under its domain, onto the waiting list (lib/v3/web/commoncrawl.ts). Free, no key.
     RANDOM_CC_CACHE="${RANDOM_CC_CACHE:-/home/random/cache/cc}" run node --import tsx scripts/v3/web-commoncrawl.ts
     ;;
   web-embed)
-    # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
-    run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-2000}"
+    # Which stored sites can be framed inside Random: the never asked first, then the stale verdicts. Five thousand a night
+    # from 12 October (about 23 minutes at 217 a minute): the 46,428 never asked caught up in about ten nights, since only
+    # these are drawn; a new site is asked at its visit (scripts/v3/web-previews.ts).
+    run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-5000}"
     ;;
   *)
     echo "ligne inconnue : ${LINE}" >&2

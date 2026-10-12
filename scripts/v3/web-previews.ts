@@ -27,10 +27,12 @@ import type { Browser } from 'playwright-core'
 import { closeRun, journalHost, openRun, type RunCounters } from '@/lib/v3/ingest/journal'
 import { candidateCounts, previewObjectName, settleCandidates, siteKey, storedForms, takeCandidates, type Candidate, type CandidateStatus } from '@/lib/v3/web/candidates'
 import { gcsUploader, PREVIEW_KEY_FILE, type Upload } from '@/lib/v3/web/gcs'
+import { checkEmbeddable, embedVerdict, type EmbedVerdict } from '@/lib/v3/web/embed'
 import { notASiteReason, pageImages, readPage } from '@/lib/v3/web/pageSignals'
 import { probePreview } from '@/lib/v3/web/previewImage'
-import { boringWebReason, frontPageOf } from '@/lib/v3/web/quality'
+import { boringWebReason, frontPageOf, institutionReason } from '@/lib/v3/web/quality'
 import { upsertWebRows, type WebInsertRow } from '@/lib/v3/web/store'
+import { toneOfPage } from '@/lib/v3/web/tone'
 
 const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
 const CHROMIUM = process.env.RANDOM_CHROMIUM || '/usr/bin/chromium'
@@ -57,7 +59,9 @@ function keywordsOf(value: string): string[] {
   return out
 }
 
-type Page = { finalUrl: string; html: string }
+type HeaderReader = { get(name: string): string | null }
+/** The page as received: its address after redirects, its HTML, and its answer's status and headers (whether it may be framed). */
+type Page = { finalUrl: string; html: string; status?: number; headers?: HeaderReader }
 
 async function fetchPage(url: string): Promise<Page | { error: string }> {
   try {
@@ -80,7 +84,7 @@ async function fetchPage(url: string): Promise<Page | { error: string }> {
       size += value.length
     }
     reader.cancel().catch(() => undefined)
-    return { finalUrl: response.url || url, html: Buffer.concat(chunks).toString('utf8') }
+    return { finalUrl: response.url || url, html: Buffer.concat(chunks).toString('utf8'), status: response.status, headers: response.headers }
   } catch (error) {
     const cause = (error as { cause?: { code?: string } })?.cause?.code
     return { error: `unreachable: ${cause || (error instanceof Error ? error.name : 'error')}` }
@@ -112,8 +116,8 @@ class Camera {
     return this.browser
   }
 
-  /** The page as a browser sees it: its address after redirects, its HTML, and a capture when it shows something. */
-  private async shootNow(url: string): Promise<{ image: Buffer | null; finalUrl: string; html: string; blank?: string } | { error: string }> {
+  /** The page as a browser sees it: its address after redirects, its HTML, its answer's headers, and a capture when it shows something. */
+  private async shootNow(url: string): Promise<{ image: Buffer | null; finalUrl: string; html: string; status?: number; headers?: HeaderReader; blank?: string } | { error: string }> {
     const browser = await this.open()
     this.shots += 1
     const context = await browser.newContext({ viewport: VIEWPORT, userAgent: BROWSER_UA, locale: 'en-US', acceptDownloads: false, serviceWorkers: 'block' })
@@ -122,6 +126,8 @@ class Camera {
       await page.route('**/*', (route) => (['media', 'websocket'].includes(route.request().resourceType()) ? route.abort() : route.continue()))
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 })
       if (response && response.status() >= 400) return { error: `http ${response.status()} in the browser too` }
+      const all = response ? await response.allHeaders().catch(() => ({} as Record<string, string>)) : null
+      const answer = response && all ? { status: response.status(), headers: { get: (name: string) => all[name.toLowerCase()] ?? null } } : {}
       await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined)
       await page.getByRole('button', { name: CONSENT }).first().click({ timeout: 1_500 }).then(() => page.waitForTimeout(600)).catch(() => undefined)
       // A banner the button did not close: a fixed layer speaking of cookies is hidden, the page underneath let scroll again.
@@ -142,11 +148,11 @@ class Camera {
       })).catch(() => ({ text: 0, images: 0 }))
       const finalUrl = page.url()
       const html = await page.content().catch(() => '')
-      if (visible.text < 20 && visible.images === 0) return { image: null, finalUrl, html, blank: 'blank page' }
+      if (visible.text < 20 && visible.images === 0) return { image: null, finalUrl, html, ...answer, blank: 'blank page' }
       // The e2-micro is slow: a capture can take twenty seconds when the page is heavy; animations are stopped for it.
       const image = await page.screenshot({ type: 'jpeg', quality: 72, timeout: 30_000, animations: 'disabled', caret: 'hide' })
-      if (image.length < MIN_SHOT_BYTES) return { image: null, finalUrl, html, blank: `blank capture (${image.length} bytes)` }
-      return { image, finalUrl, html }
+      if (image.length < MIN_SHOT_BYTES) return { image: null, finalUrl, html, ...answer, blank: `blank capture (${image.length} bytes)` }
+      return { image, finalUrl, html, ...answer }
     } catch (error) {
       return { error: `capture: ${error instanceof Error ? error.message.split('\n')[0].slice(0, 120) : 'error'}` }
     } finally {
@@ -177,6 +183,18 @@ async function firstPicture(urls: string[]): Promise<{ url: string; width: numbe
 
 const SAVE_DIR = process.env.RANDOM_PREVIEW_SAVE
 
+/**
+ * Whether the site opens inside Random, read from the answer the visit just received — the same verdict the night
+ * check gives (lib/v3/web/embed.ts), a day sooner and without asking again. A site left on plain http is asked once
+ * for its https twin. Since 12 October only these are drawn (the owner: "s'ouvrent toujours à côté").
+ */
+async function frameOf(page: Page): Promise<EmbedVerdict> {
+  const verdict = page.headers ? embedVerdict({ status: page.status ?? 200, headers: page.headers, url: page.finalUrl }) : await checkEmbeddable(page.finalUrl)
+  if (verdict.embeddable || verdict.reason !== 'http-only') return verdict
+  const twin = await checkEmbeddable(page.finalUrl.replace(/^http:/i, 'https:'))
+  return twin.embeddable ? twin : verdict
+}
+
 async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload: Upload | null, dryRun: boolean): Promise<Visit> {
   let page: Page | { error: string } = await fetchPage(candidate.url)
   let capture: { image: Buffer | null; blank?: string } | null = null
@@ -184,7 +202,7 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
   if ('error' in page && camera && /^http (?:403|429|503)$/.test(page.error)) {
     const shot = await camera.shoot(candidate.url)
     if ('error' in shot) return { status: 'dead', outcome: `${page.error}; ${shot.error}` }
-    page = { finalUrl: shot.finalUrl, html: shot.html }
+    page = { finalUrl: shot.finalUrl, html: shot.html, status: shot.status, headers: shot.headers }
     capture = shot
   }
   if ('error' in page) return { status: /^not a page/.test(page.error) ? 'dull' : 'dead', outcome: page.error }
@@ -198,17 +216,25 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
   const title = candidate.title || reading.title || new URL(finalUrl).hostname.replace(/^www\./, '')
   const dull = boringWebReason(finalUrl, title, front ? null : candidate.source)
   if (dull) return { status: 'dull', outcome: dull }
+  // Common Crawl's front pages of universities, town halls and administrations stay out (the owner, 12 October).
+  const institution = candidate.source === 'commoncrawl' ? institutionReason(finalUrl, title) : null
+  if (institution) return { status: 'dull', outcome: `institution: ${institution}` }
+  // A site that will not open inside Random is never drawn: it is not taken in, nor photographed.
+  const frame = await frameOf(page)
+  if (!frame.embeddable) return { status: 'noframe', outcome: `ne s'ouvre pas dans Random : ${frame.reason}` }
 
   let ogImage: string | null = null
   let imageMeta = { width: VIEWPORT.width, height: VIEWPORT.height }
-  let preview: 'og' | 'page' | 'shot' = 'og'
+  let preview: 'og' | 'source' | 'page' | 'shot' = 'og'
   const own = reading.ogImage ? await probePreview(reading.ogImage) : null
-  const picture = own ? null : await firstPicture(pageImages(page.html, finalUrl, 6))
-  if (own || picture) {
-    const chosen = (own ?? picture)!
+  // The picture its source gives — Neocities' own screenshot — before the page's pictures and before a capture.
+  const given = !own && candidate.image ? await probePreview(candidate.image) : null
+  const picture = own || given ? null : await firstPicture(pageImages(page.html, finalUrl, 6))
+  if (own || given || picture) {
+    const chosen = (own ?? given ?? picture)!
     ogImage = chosen.url
     imageMeta = { width: chosen.width, height: chosen.height }
-    preview = own ? 'og' : 'page'
+    preview = own ? 'og' : given ? 'source' : 'page'
   } else {
     if (!camera) return { status: 'noimage', outcome: 'no picture on the page (captures off)' }
     if (!capture) {
@@ -227,6 +253,8 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
   }
   const host = new URL(finalUrl).hostname.replace(/^www\./, '')
   const text = candidate.text || reading.description || title
+  // Light or dark, as the site declares it, for the logo over the frame (as the night check reads it).
+  const tone = await toneOfPage(page.html, finalUrl, { timeoutMs: 6000 })
   return {
     status: 'done',
     outcome: preview,
@@ -243,6 +271,12 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
       keywords: keywordsOf(`${title} ${text}`),
       imageMeta,
       webPreview: preview,
+      embeddable: true,
+      embedReason: 'ok',
+      embedUrl: frame.url && frame.url !== finalUrl ? frame.url : null,
+      embedTone: tone.tone,
+      embedToneEvidence: tone.evidence,
+      embedCheckedAt: new Date(),
     },
   }
 }
@@ -278,7 +312,7 @@ async function main(): Promise<void> {
   const startedAt = new Date()
   const runId = dryRun ? null : await openRun(db, { line: 'web-previews', startedAt, host: journalHost() })
   const counters: RunCounters = { scanned: 0, inserted: 0, duplicates: 0, rejected: {}, byProvider: {} }
-  const previews = { og: 0, page: 0, shot: 0 }
+  const previews = { og: 0, source: 0, page: 0, shot: 0 }
   const errors: string[] = []
   let upload: Upload | null = null
   if (!dryRun) {
@@ -368,7 +402,7 @@ async function main(): Promise<void> {
     await Promise.all(Array.from({ length: parallel }, () => worker()))
     await flush()
     const waiting = await candidateCounts(db)
-    const note = `${counters.scanned} sites visités : ${counters.inserted} ajoutés (${previews.og} avec leur image, ${previews.page} avec une photo de leur page, ${previews.shot} photographiés), ` +
+    const note = `${counters.scanned} sites visités : ${counters.inserted} ajoutés (${previews.og} avec leur image, ${previews.source ? `${previews.source} avec celle de leur source, ` : ''}${previews.page} avec une photo de leur page, ${previews.shot} photographiés), ` +
       `${Object.entries(counters.rejected).map(([reason, n]) => `${n} ${reason}`).join(', ') || 'aucun refus'} ; en attente ${waiting.new}`
     if (runId) {
       const status = hitDeadline ? 'partial' : counters.scanned ? 'ok' : 'skipped'

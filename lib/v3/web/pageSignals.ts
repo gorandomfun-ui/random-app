@@ -52,10 +52,21 @@ export function readPage(html: string, pageUrl: string): PageReading {
   return { title: title.slice(0, 160), description: description.slice(0, 280), ogImage, words }
 }
 
-/** A domain waiting to be sold, a host's placeholder, a closed account: said anywhere on the page. */
-const PARKED = /\b(?:domain (?:name )?(?:is |may be )?for sale|buy this domain|this domain (?:is|has been) (?:parked|registered)|domain parking|parked (?:free|domain)|hugedomains|afternic|sedo\s?parking|account (?:has been )?suspended|welcome to nginx|apache2? (?:debian |ubuntu )?default page|index of \/|checking your browser|attention required! \| cloudflare)/i
+/**
+ * A domain waiting to be sold, a host's placeholder, a closed account: said anywhere on the page. Widened on 12 October
+ * with what Common Crawl brought ("BOUTIK.RE - Nom de domaine à vendre !", "lttlmg.ht is a custom short domain", a
+ * registrar's "Bravo ! Votre domaine…"): the owner asked for the "pages Parking" to stay out.
+ */
+const PARKED = /\b(?:domain (?:name )?(?:is |may be )?for sale|buy this domain|this domain (?:is|has been) (?:parked|registered)|domain parking|parked (?:free|domain)|hugedomains|afternic|sedo\s?parking|account (?:has been )?suspended|welcome to nginx|apache2? (?:debian |ubuntu )?default page|index of \/|checking your browser|attention required! \| cloudflare|(?:nom de )?domaine (?:est )?à vendre|dominio (?:está |esta )?(?:en venta|a la venta|in vendita)|domínio (?:está )?à venda|domain (?:steht )?zum verkauf|diese domain (?:kaufen|steht zum verkauf)|(?:custom|branded) short domain|(?:bravo|félicitations) ?! votre (?:nom de )?domaine|votre (?:nom de )?domaine (?:a bien été|est bien) (?:créé|enregistré|activé)|congratulations!? your domain)/i
 /** The same, told by the page's own name only: "coming soon" in a shop's text is just news. */
 const PLACEHOLDER_TITLE = /\b(?:coming soon|under construction|en construction|en construcción|em construção|under maintenance|en maintenance|site not found|page not found|page non trouvée|página no encontrada|404|403 forbidden|access denied|default (?:web )?page|future home of|it works!|website (?:is )?(?:expired|unavailable)|domain (?:has )?expired|just a moment)/i
+
+/**
+ * A page called only "Home", "Welcome", "Accueil"… with almost nothing written on it: a site never filled in (the owner,
+ * 12 October, of what Common Crawl brings). Under this many words; a page with that name and something to read stays.
+ */
+const GENERIC_TITLE = /^(?:home|home ?page|welcome!?|bienvenue|accueil|startseite|willkommen|inicio|início|bienvenido|benvenuto|my site(?: \d+)?|home \| my site(?: \d+)?|untitled|sans titre|index|website|default)$/i
+export const THIN_WORDS = 80
 
 export function notASiteReason(reading: Pick<PageReading, 'title' | 'description' | 'words'>, bodySample = ''): string | null {
   const parked = PARKED.exec(`${reading.title} ${reading.description} ${bodySample.slice(0, 4000)}`)
@@ -63,6 +74,7 @@ export function notASiteReason(reading: Pick<PageReading, 'title' | 'description
   const placeholder = PLACEHOLDER_TITLE.exec(`${reading.title} ${reading.description}`)
   if (placeholder) return `placeholder: ${placeholder[0].toLowerCase()}`
   if (reading.words < 12 && !reading.title) return 'empty'
+  if (GENERIC_TITLE.test(reading.title.trim()) && reading.words < THIN_WORDS) return `placeholder: "${reading.title.trim().toLowerCase()}", almost nothing on it`
   return null
 }
 

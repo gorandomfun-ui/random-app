@@ -20,8 +20,18 @@ export type WebInsertRow = {
   tags?: string[]
   keywords?: string[]
   imageMeta?: { width: number; height: number }
-  /** Where the preview comes from: the site's own og:image, the largest picture of its page, or a capture made by the server. */
-  webPreview?: 'og' | 'page' | 'shot'
+  /**
+   * Where the preview comes from: the site's own og:image, the picture its source gives (Neocities' own screenshot),
+   * the largest picture of its page, or a capture made by the server.
+   */
+  webPreview?: 'og' | 'source' | 'page' | 'shot'
+  /** Whether it opens inside Random, asked at the visit that brings it in (as the night check does: lib/v3/web/embed.ts). */
+  embeddable?: boolean
+  embedReason?: string
+  embedUrl?: string | null
+  embedTone?: 'light' | 'dark' | null
+  embedToneEvidence?: string | null
+  embedCheckedAt?: Date
 }
 
 /** `insertedIndexes`: the rows that were new to the catalogue, by position. */

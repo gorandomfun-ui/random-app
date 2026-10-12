@@ -31,6 +31,22 @@ test('a parked domain, a placeholder or an empty page is not a site; "coming soo
   assert.equal(notASiteReason(readPage(shop, 'https://soleil.cm/'), shop), null)
 })
 
+test('what Common Crawl brought on 12 October: a domain for sale, a short-link domain, a registrar\'s page, a "Home" with nothing on it', () => {
+  for (const [html, url] of [
+    ['<title>BOUTIK.RE - Nom de domaine à vendre !</title><body></body>', 'https://boutik.re/'],
+    ['<title>lttlmg.ht</title><body>lttlmg.ht is a custom short domain. Active Branded Short Domain.</body>', 'https://lttlmg.ht/'],
+    ['<title>Bravo ! Votre domaine olivierfannyavocat.fr est en ligne</title><body></body>', 'https://olivierfannyavocat.fr/'],
+    ['<title>Dominio en venta</title><body>Este dominio está en venta.</body>', 'https://x.es/'],
+  ]) assert.match(String(notASiteReason(readPage(html, url), html)), /^parked/, url)
+  const empty = '<title>Accueil</title><body><nav>Accueil Contact</nav><p>Bienvenue sur notre site.</p></body>'
+  assert.match(String(notASiteReason(readPage(empty, 'https://x.re/'), empty)), /^placeholder: "accueil"/)
+  const words = Array.from({ length: 120 }, (_, index) => `mot${index}`).join(' ')
+  const filled = `<title>Accueil</title><body><p>${words}</p></body>`
+  assert.equal(notASiteReason(readPage(filled, 'https://x.re/'), filled), null, 'a page called "Accueil" with something to read stays')
+  const named = '<title>Accueil - Camping Lou Pk2</title><body><p>Bienvenue.</p></body>'
+  assert.equal(notASiteReason(readPage(named, 'https://camping.fr/'), named), null, 'a home page that says its name is not a placeholder')
+})
+
 test("a page's pictures, big announced ones first, backgrounds last, without logos or trackers", () => {
   const html = `<header><img src="/img/logo.png"><img src="/icons/phone.svg"></header>
     <div class="hero" style="background-image: url('/img/atelier.jpg')"></div>

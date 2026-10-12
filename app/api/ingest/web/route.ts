@@ -13,6 +13,7 @@ import { generateKeywordCombo } from '@/lib/ingest/keywords/combo'
 import { buildRegionalQuery, resolveRegionKey, type RegionKey } from '@/lib/ingest/keywords/regionPools'
 import { CURATED_WEB_SOURCES, type CuratedWebSource } from '@/lib/ingest/sources/webCurated'
 import { enqueueSites, type CandidateInput } from '@/lib/v3/web/candidates'
+import { GOSSIPS_WEB, NEOCITIES_BROWSE, parseGossipsWeb, parseNeocitiesBrowse, parseUselessWeb, USELESS_WEB, type ListedSite } from '@/lib/v3/web/smallWeb'
 import { reserveCseSearch } from '@/lib/v3/web/cseQuota'
 import { frontPageOf } from '@/lib/v3/web/quality'
 import { upsertWebRows } from '@/lib/v3/web/store'
@@ -156,24 +157,6 @@ function deriveKeywords(value: string, limit = 8): string[] {
     if (out.length >= limit) break
   }
   return out
-}
-
-function normalizeStrings(value: unknown): string[] {
-  if (!value) return []
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => (typeof entry === 'string' ? entry : typeof entry === 'number' ? String(entry) : ''))
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => entry.toLowerCase())
-  }
-  if (typeof value === 'string') {
-    return value
-      .split(/[,;]+/)
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean)
-  }
-  return []
 }
 
 const REGION_GL_MAP: Partial<Record<RegionKey, string>> = {
@@ -436,68 +419,45 @@ async function runGoogleCSE(queries: Array<string | WorldQuery>, per: number, pa
   return { rows: [], scanned, checked: 0, filtered: filteredLocal, queued, searches }
 }
 
-type NeocitiesListResponse = {
-  result?: string
-  sites?: Array<{
-    sitename?: string
-    description?: string
-    tags?: unknown
-    url?: string
-    views?: number
-    updated_at?: string
-  }>
+/**
+ * Neocities' gallery, a few pages in random order, and two lists of handmade and toy sites (lib/v3/web/smallWeb.ts):
+ * all onto the waiting list, where the server's visit judges each site, asks whether it opens inside Random and makes
+ * its preview — Neocities' own screenshot when it is good (12 October; the owner: "plus de Neocities, de Show HN et de
+ * listes choisies"). The lists change little: the first run brings them, the next ones only what was added.
+ */
+const NEOCITIES_PAGES = 3
+
+async function pageText(url: string): Promise<string | null> {
+  const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RandomAppBot/1.0; +https://gorandom.fun)' }, signal: AbortSignal.timeout(12_000), cache: 'no-store' }).catch(() => null)
+  return response?.ok ? response.text().catch(() => null) : null
 }
 
-async function pullNeocities(limit: number, requireOg = true): Promise<ProviderResult> {
-  const response = await fetchJson<NeocitiesListResponse>('https://neocities.org/api/list?t=' + Date.now(), {
-    headers: ROUTE_HEADERS,
-    timeoutMs: 10000,
-  })
-  const sites = Array.isArray(response?.sites) ? response?.sites ?? [] : []
-  if (!sites.length) return { rows: [], scanned: 0, checked: 0 }
+/** A listed site onto the waiting list; its name only when the list gives one, else the visit reads the page's. */
+function listedCandidate(site: ListedSite, source: string, sourceName: string, sourceUrl: string): CandidateInput {
+  const host = hostFromUrl(site.url)
+  const named = site.title && site.title.replace(/^www\./, '').replace(/\/$/, '') !== host && !site.url.includes(site.title)
+  return { url: site.url, source, ...(named ? { title: site.title } : {}), tags: site.tags.slice(0, 8), sourceName, sourceUrl, ...(site.image ? { image: site.image } : {}) }
+}
 
-  const raw: WebRow[] = []
-  for (const site of shuffle(sites)) {
-    if (!site) continue
-    const name = typeof site.sitename === 'string' ? site.sitename.trim() : ''
-    if (!name) continue
-    const link = site.url && typeof site.url === 'string' && site.url.startsWith('http')
-      ? site.url.trim()
-      : `https://${name}.neocities.org`
-    const host = hostFromUrl(link)
-    if (!host) continue
-    const description = typeof site.description === 'string' ? site.description.trim() : ''
-    const title = description ? `${name} — ${description}` : `${name}.neocities.org`
-    const sitePage = `https://neocities.org/site/${encodeURIComponent(name)}`
-    const tags = Array.from(new Set([
-      ...normalizeStrings(site.tags),
-      'neocities',
-      'retro',
-      host,
-    ])).filter(Boolean)
-    const keywords = deriveKeywords(`${name} ${description}`, 8)
-    raw.push({
-      type: 'web',
-      url: link,
-      title,
-      text: description || title,
-      host,
-      ogImage: null,
-      provider: 'neocities',
-      source: { name: 'Neocities', url: sitePage },
-      tags,
-      keywords,
-    })
+async function pullNeocities(dryRun = false): Promise<ProviderResult> {
+  const found = new Map<string, ListedSite>()
+  for (let page = 0; page < NEOCITIES_PAGES; page += 1) {
+    const html = await pageText(`${NEOCITIES_BROWSE}&_=${Date.now()}${page}`)
+    for (const site of html ? parseNeocitiesBrowse(html) : []) found.set(site.url, site)
   }
+  const sites = [...found.values()]
+  const queued = dryRun || !sites.length ? 0 : await enqueue(sites.map((site) => listedCandidate(site, 'neocities', 'Neocities', `https://neocities.org/site/${encodeURIComponent(site.name ?? '')}`)))
+  return { rows: [], scanned: sites.length, checked: sites.length, queued }
+}
 
-  const { rows: filteredRows, filtered } = filterBlockedRows(dedupeByUrl(raw))
-  const limited = limitRowsByDomain(filteredRows, MAX_PAGES_PER_DOMAIN)
-  if (!requireOg) {
-    return { rows: limited.slice(0, limit), scanned: raw.length, checked: limited.length, filtered: filtered + (filteredRows.length - limited.length) }
-  }
-
-  const ensured = await ensureOgImages(limited, limit)
-  return { rows: ensured.rows, scanned: raw.length, checked: ensured.checked, filtered: filtered + (filteredRows.length - limited.length), ogFailed: ensured.failed }
+async function pullSmallWebLists(dryRun = false): Promise<ProviderResult> {
+  const [gossips, useless] = await Promise.all([pageText(GOSSIPS_WEB), pageText(USELESS_WEB)])
+  const candidates = [
+    ...(gossips ? parseGossipsWeb(gossips) : []).map((site) => listedCandidate(site, 'curated-list', "Gossip's Web", GOSSIPS_WEB)),
+    ...(useless ? parseUselessWeb(useless) : []).map((site) => listedCandidate(site, 'curated-list', 'The Useless Web', 'https://theuselessweb.com/')),
+  ]
+  const queued = dryRun || !candidates.length ? 0 : await enqueue(candidates)
+  return { rows: [], scanned: candidates.length, checked: candidates.length, queued }
 }
 
 type WikipediaExternalLinksResponse = {
@@ -606,7 +566,9 @@ async function pullCurated(limit: number, requireOg = true, region: RegionKey = 
 }
 
 /* ---------------------------- Hacker News ------------------------------ */
-const HN_SEARCHES_PER_RUN = 8
+/** Twice as many as before 12 October (8), and up to sixty sites a run whatever the other sources ask. */
+const HN_SEARCHES_PER_RUN = 16
+const HN_SITES_PER_RUN = 60
 
 /** Addresses already in the catalogue: no need to fetch their preview again. */
 async function storedUrls(urls: string[]): Promise<Set<string>> {
@@ -684,7 +646,7 @@ export async function GET(req: NextRequest) {
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
-  const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia', 'hn'])
+  const allowedProviders = new Set(['cse', 'curated', 'neocities', 'wikipedia', 'hn', 'lists'])
   const requestedProviders = providersParam.filter((value) => allowedProviders.has(value))
   // Google's search only when a caller names it: the owner wants sites found without CSE (2 October), and a caller
   // without providers — the old lines, back by mistake on 1-2 October — spent the free searches of two days.
@@ -742,18 +704,25 @@ export async function GET(req: NextRequest) {
 
   if (providers.includes('neocities')) {
     try {
-      const result = await pullNeocities(perProviderTarget, requireOg)
-      aggregated.push(...result.rows)
+      const result = await pullNeocities(dryRun)
+      queued += result.queued ?? 0
       scanned += result.scanned
       checked += result.checked
-      filteredByHost += result.filtered ?? 0
-      ogFailed += result.ogFailed ?? 0
+    } catch {}
+  }
+
+  if (providers.includes('lists')) {
+    try {
+      const result = await pullSmallWebLists(dryRun)
+      queued += result.queued ?? 0
+      scanned += result.scanned
+      checked += result.checked
     } catch {}
   }
 
   if (providers.includes('hn')) {
     try {
-      const result = await pullHackerNews(Math.min(perProviderTarget, 60), requireOg, dryRun)
+      const result = await pullHackerNews(HN_SITES_PER_RUN, requireOg, dryRun)
       aggregated.push(...result.rows)
       queued += result.queued ?? 0
       scanned += result.scanned

@@ -3,7 +3,7 @@
  * the live front pages under the country's domain, put on the waiting list
  * the previews line visits.
  *
- *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts                 the country of the day, then the next ones (RANDOM_CC_COUNTRIES, 6) until RANDOM_CC_MAX sites (3,000)
+ *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts                 the country of the day, then the next ones (RANDOM_CC_COUNTRIES, 6) until RANDOM_CC_MAX sites (1,500)
  *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts --country=cm    a country
  *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts --dry           reads, queues nothing
  *
@@ -26,7 +26,8 @@ import { enqueueSites, type CandidateInput } from '@/lib/v3/web/candidates'
 import { blocksFor, clusterUrl, countriesFrom, fetchBlock, latestCrawl, rootPagesIn, type Block, type RootPage } from '@/lib/v3/web/commoncrawl'
 import { WORLD_COUNTRIES } from '@/lib/v3/web/worldQueries'
 
-const MAX_SITES = Number(process.env.RANDOM_CC_MAX ?? 3000)
+/** Halved on 12 October: its front pages were most of what the owner found dull ("99 % des sites sont un peu nazes"). */
+const MAX_SITES = Number(process.env.RANDOM_CC_MAX ?? 1500)
 /** Countries a run may go through when the day's one is small. */
 const MAX_COUNTRIES = Number(process.env.RANDOM_CC_COUNTRIES ?? 6)
 const MAX_MINUTES = Number(process.env.RANDOM_CC_MINUTES ?? 20)
