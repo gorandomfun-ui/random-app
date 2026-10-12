@@ -108,6 +108,32 @@ export function isForeignSketch(entry: Pick<FreshEntry, 'bucket' | 'region' | 'u
   return (entry.universe === 'humor-memes' || entry.universe === 'people-everyday') && !SHARED_LANGUAGE_REGIONS.has(entry.region)
 }
 
+/**
+ * The countries whose charts filled the sessions' openings with what the owner asked "pas trop" of, twice (28 September,
+ * 12 October): Brazil and South and Southeast Asia — "pas forcément chinois, coréen… ça au contraire il n'y en a pas
+ * trop". Each keeps a small share of the day's list, whatever the universe; the others are not touched.
+ */
+export const FRESH_HEAVY_REGIONS = new Set(['BR', 'IN', 'ID', 'PH', 'PK', 'BD', 'TH', 'VN', 'MY'])
+export const FRESH_HEAVY_REGION_SHARE = 0.03
+
+export function capHeavyRegions(picked: Map<FreshBucket, FreshEntry[]>, share = FRESH_HEAVY_REGION_SHARE, regions: ReadonlySet<string> = FRESH_HEAVY_REGIONS): Map<FreshBucket, FreshEntry[]> {
+  const total = [...picked.values()].reduce((sum, list) => sum + list.length, 0)
+  const allowed = Math.max(1, Math.floor(total * share))
+  const used = new Map<string, number>()
+  const out = new Map<FreshBucket, FreshEntry[]>()
+  // Zone by zone in the plan's order, each video in its zone's order: the best placed of each country keep their place.
+  for (const [bucket, list] of picked) {
+    out.set(bucket, list.filter((entry) => {
+      if (!regions.has(entry.region)) return true
+      const count = used.get(entry.region) ?? 0
+      if (count >= allowed) return false
+      used.set(entry.region, count + 1)
+      return true
+    }))
+  }
+  return out
+}
+
 export function capForeignSketches(picked: Map<FreshBucket, FreshEntry[]>, share = FRESH_SPOKEN_SHARE): Map<FreshBucket, FreshEntry[]> {
   const total = [...picked.values()].reduce((sum, list) => sum + list.length, 0)
   let allowed = Math.floor(total * share)
@@ -124,14 +150,20 @@ export function capForeignSketches(picked: Map<FreshBucket, FreshEntry[]>, share
   return out
 }
 
-/** A still album cover ("- Topic" channels), or a gaming session past fifteen minutes: not what opens a feed. */
+/**
+ * Under a minute, the charts' Shorts: 28 % of the list of 12 October, the "petites vidéos" the owner found again opening
+ * his sessions ("pleins de petites vidéos marrantes du Brésil… d'Inde", 12 October). They stay in the base, drawn
+ * elsewhere; they no longer open a session.
+ */
+export const FRESH_MIN_SECONDS = 60
+
+/** A still album cover ("- Topic" channels), a Short, or a gaming session past fifteen minutes: not what opens a feed. */
 export function isFreshFormat(row: { channelTitle?: unknown; duration?: unknown; universe?: unknown }): boolean {
   if (/ - Topic$/.test(String(row.channelTitle ?? ''))) return false
-  if (row.universe === 'gaming') {
-    const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(row.duration ?? ''))
-    const seconds = match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0
-    if (seconds > 15 * 60) return false
-  }
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(row.duration ?? ''))
+  const seconds = match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0
+  if (seconds > 0 && seconds < FRESH_MIN_SECONDS) return false
+  if (row.universe === 'gaming' && seconds > 15 * 60) return false
   return true
 }
 

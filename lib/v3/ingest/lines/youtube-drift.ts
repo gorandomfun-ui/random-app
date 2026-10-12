@@ -1,4 +1,9 @@
 /**
+ * STOPPED on 12 October, its timer removed: the channels of anything brought anything — 43 % Shorts, Roblox and
+ * streamers — and the owner asked for YouTube near his likes instead ("pourquoi pas plutôt pour chercher des vidéos
+ * proches des likes"): lib/v3/ingest/lines/lookalike.ts. Its 12,906 entries not near a like were set aside
+ * (`suppressedReason: 'youtube-drift-untargeted'`). Kept for the record.
+ *
  * The YouTube drift: the channels of the YouTube videos the base already took
  * — found by the dig's searches, the look-alikes, the charts, the likes — and
  * twenty of each one's latest uploads, as the Dailymotion drift does with the

@@ -47,7 +47,7 @@ import { LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, sameScript, say
 import { LIKE_INDEX } from '../../ai/pool'
 import { loadLikePool } from '../../cool/likePool'
 import { playable, relatedDailymotion, searchDailymotion } from '../../dig/dailymotion'
-import { LIST_UNITS, PAGE_SIZE, playlistPage, videoDetails } from '../../dig/youtube'
+import { LIST_UNITS, PAGE_SIZE, playlistPage, SEARCH_UNITS, searchPage, videoDetails } from '../../dig/youtube'
 import { newGuardState, underWeeklyCap, withoutMedia } from '../../dig/guards'
 import { practiceTheme, wordsTheme } from '../../dig/likes'
 import type { DigVideo } from '../../dig/video'
@@ -71,6 +71,14 @@ const RELATED = 20
 const YOUTUBE_PAGES = 2
 /** Look-alikes already found around a like whose neighbours a visit reads, each once. */
 const SPREAD_PER_VISIT = 5
+/**
+ * YouTube searches a run, with a like's words, judged by the model like Dailymotion's (the owner, 12 October: "pourquoi
+ * pas plutôt pour chercher des vidéos proches des likes"): YouTube allows a hundred searches a day for all the lines, the
+ * dig keeps about fifty-five, the twelve windows take three each.
+ */
+export const YOUTUBE_SEARCHES_PER_RUN = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_SEARCHES ?? 3)
+/** YouTube look-alikes already found whose channels a run reads, each once: the latest uploads, judged by the model. */
+export const YOUTUBE_CHANNELS_PER_RUN = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_CHANNELS ?? 10)
 const MAX_PLAYABLE_CHECKS = 600
 const DEADLINE_MARGIN_MS = 45_000
 const SPACING_MS = 250
@@ -239,11 +247,49 @@ export async function ensureSeenClock(ctx: LineContext): Promise<void> {
 }
 
 /** The base's look-alikes of one like, the nearest first: their titles for the searches, and up to `spread` Dailymotion ones whose neighbours are still to read. */
-async function foundAround(ctx: LineContext, like: LikeRow): Promise<{ titles: string[]; toSpread: Array<{ _id: ObjectId; videoId: string }> }> {
+async function foundAround(ctx: LineContext, like: LikeRow): Promise<{ titles: string[]; toSpread: Array<{ _id: ObjectId; videoId: string }>; youtubeToSpread: Array<{ _id: ObjectId; channelId: string }> }> {
   const items = ctx.db.collection('items')
   const nearest = await items.find({ 'v3.lookalike.like': like.id } as Document, { projection: { title: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: NEAR_TITLE_QUERIES, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
   const toSpread = await items.find({ 'v3.lookalike.like': like.id, provider: 'dailymotion', 'v3.lookalike.spread': { $exists: false } } as Document, { projection: { videoId: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: SPREAD_PER_VISIT, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
-  return { titles: nearest.map((row) => String(row.title ?? '')), toSpread: toSpread.flatMap((row) => (typeof row.videoId === 'string' ? [{ _id: row._id as ObjectId, videoId: row.videoId }] : [])) }
+  const youtubeToSpread = await items.find({ 'v3.lookalike.like': like.id, provider: 'youtube', 'v3.lookalike.spread': { $exists: false } } as Document, { projection: { channelId: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: 2, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
+  return {
+    titles: nearest.map((row) => String(row.title ?? '')),
+    toSpread: toSpread.flatMap((row) => (typeof row.videoId === 'string' ? [{ _id: row._id as ObjectId, videoId: row.videoId }] : [])),
+    youtubeToSpread: youtubeToSpread.flatMap((row) => (typeof row.channelId === 'string' && uploadsOf(row.channelId) ? [{ _id: row._id as ObjectId, channelId: row.channelId }] : [])),
+  }
+}
+
+/** A YouTube search with a like's words: fifty ids, the details of those the base does not hold and the model has not judged. */
+async function youtubeSearch(ctx: LineContext, query: string, skip: ReadonlySet<string>, key: string): Promise<{ videos: DigVideo[]; units: number; stopped: boolean; known: number }> {
+  const http = ctx.http ?? fetch
+  if (!(await ctx.quota.reserve(SEARCH_UNITS))) return { videos: [], units: 0, stopped: true, known: 0 }
+  let units = SEARCH_UNITS
+  const page = await searchPage(key, query, 'relevance', { request: http })
+  const fresh = [...new Set(page.ids)].filter((id) => !skip.has(id))
+  const held = await knownIds(ctx, fresh)
+  const seen = await judgedIds(ctx, fresh.filter((id) => !held.has(id)))
+  const wanted = fresh.filter((id) => !held.has(id) && !seen.has(id))
+  if (!wanted.length) return { videos: [], units, stopped: false, known: held.size }
+  if (!(await ctx.quota.reserve(LIST_UNITS))) return { videos: [], units, stopped: true, known: held.size }
+  units += LIST_UNITS
+  return { videos: await videoDetails(key, wanted.slice(0, PAGE_SIZE), http), units, stopped: false, known: held.size }
+}
+
+/** A YouTube look-alike's channel: its latest fifty uploads, the details of the new ones; each read once (`v3.lookalike.spread`). */
+async function youtubeChannelUploads(ctx: LineContext, channelId: string, skip: ReadonlySet<string>, key: string): Promise<{ videos: DigVideo[]; units: number; stopped: boolean; known: number }> {
+  const http = ctx.http ?? fetch
+  const playlist = uploadsOf(channelId)
+  if (!playlist) return { videos: [], units: 0, stopped: false, known: 0 }
+  if (!(await ctx.quota.reserve(LIST_UNITS))) return { videos: [], units: 0, stopped: true, known: 0 }
+  let units = LIST_UNITS
+  const fresh = [...new Set((await playlistPage(key, playlist, undefined, http)).ids)].filter((id) => !skip.has(id))
+  const held = await knownIds(ctx, fresh)
+  const seen = await judgedIds(ctx, fresh.filter((id) => !held.has(id)))
+  const wanted = fresh.filter((id) => !held.has(id) && !seen.has(id))
+  if (!wanted.length) return { videos: [], units, stopped: false, known: held.size }
+  if (!(await ctx.quota.reserve(LIST_UNITS))) return { videos: [], units, stopped: true, known: held.size }
+  units += LIST_UNITS
+  return { videos: await videoDetails(key, wanted.slice(0, PAGE_SIZE), http), units, stopped: false, known: held.size }
 }
 
 /** `prints`: the model (lib/v3/ai/fingerprint.ts); `likes`: the owner's printed likes, read from the like pool unless a test gives them. */
@@ -260,7 +306,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
   let youtubeStopped = !key
   const visited = new Set<string>()
   const titles = new Set<string>()
-  let read = 0, fingerprinted = 0, near = 0, copies = 0, checks = 0, likesDone = 0, searches = 0, spread = 0, channels = 0, units = 0
+  let read = 0, fingerprinted = 0, near = 0, copies = 0, checks = 0, likesDone = 0, searches = 0, spread = 0, channels = 0, units = 0, youtubeSearches = 0, youtubeChannels = 0
 
   const likes = await (deps.likes ?? loadLikes)(ctx).catch((error) => { errors.push(`likes : ${message(error)}`); return [] as LikeRow[] })
   const likeVideoIds = new Set(likes.map((like) => like.videoId).filter((id): id is string => Boolean(id)))
@@ -292,12 +338,37 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       spread += around.toSpread.length
       await ctx.db.collection('items').updateMany({ _id: { $in: around.toSpread.map((row) => row._id) } }, { $set: { 'v3.lookalike.spread': true } }).catch((error) => { errors.push(`voisins lus : ${message(error)}`) })
     }
-    // A YouTube like: its channel's uploads, two pages a visit, while the day's units last.
+    // YouTube too, judged like the rest: a search with the like's words (three a run), and the channels of the YouTube
+    // look-alikes already found (each read once). The units and YouTube's hundred searches a day set the pace.
     let youtubeUnits = 0
+    const youtubeSkip = new Set([...visited, ...likeVideoIds])
+    const youtubeStep = async (step: () => Promise<{ videos: DigVideo[]; units: number; stopped: boolean; known: number }>, what: string): Promise<void> => {
+      try {
+        const got = await step()
+        found.push(...got.videos)
+        youtubeUnits += got.units
+        units += got.units
+        counters.duplicates += got.known
+        if (got.stopped) { youtubeStopped = true; errors.push('youtube : budget du jour atteint') }
+      } catch (error) {
+        if (/HTTP 403|HTTP 429/.test(message(error))) { youtubeStopped = true; errors.push(`youtube : refus (${what})`) } else errors.push(`${what} : ${message(error).slice(0, 80)}`)
+      }
+    }
+    if (!youtubeStopped && youtubeSearches < YOUTUBE_SEARCHES_PER_RUN && queries.length && ctx.timeLeft() >= DEADLINE_MARGIN_MS) {
+      youtubeSearches += 1
+      await youtubeStep(() => youtubeSearch(ctx, queries[0], youtubeSkip, key), `recherche YouTube "${queries[0]}"`)
+    }
+    for (const row of around.youtubeToSpread) {
+      if (youtubeStopped || youtubeChannels >= YOUTUBE_CHANNELS_PER_RUN || ctx.timeLeft() < DEADLINE_MARGIN_MS) break
+      youtubeChannels += 1
+      await youtubeStep(() => youtubeChannelUploads(ctx, row.channelId, youtubeSkip, key), 'chaîne d’un sosie YouTube')
+      if (!ctx.dryRun) await ctx.db.collection('items').updateOne({ _id: row._id }, { $set: { 'v3.lookalike.spread': true } }).catch(() => undefined)
+    }
+    // A YouTube like: its channel's uploads, two pages a visit, while the day's units last.
     if (like.provider === 'youtube' && like.channelId && !youtubeStopped && ctx.timeLeft() >= DEADLINE_MARGIN_MS) {
       const uploads = await youtubeUploads(ctx, like, cursor, new Set([...visited, ...likeVideoIds]), key, errors)
       found.push(...uploads.videos)
-      youtubeUnits = uploads.units
+      youtubeUnits += uploads.units
       units += uploads.units
       counters.duplicates += uploads.known
       if (uploads.units) channels += 1
@@ -375,7 +446,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
 
   cursor.next %= Math.max(1, likes.length)
   if (!ctx.dryRun) await meta.updateOne({ _id: CURSOR_ID } as Document, { $set: { next: cursor.next, visits: cursor.visits, youtube: cursor.youtube, at: new Date() } }, { upsert: true }).catch((error) => { errors.push(`place : ${message(error)}`) })
-  cursor.note = `${likesDone} likes visités · ${searches} recherches · ${spread} voisinages de sosies · ${channels} chaînes YouTube (${units} unités) · ${read} vidéos lues · ${fingerprinted} lues par l'IA · ${near} ressemblent à un like${copies ? ` (${copies} copies écartées)` : ''} · ${counters.inserted} entrées${counters.byProvider?.youtube ? ` dont ${counters.byProvider.youtube} YouTube` : ''}`
+  cursor.note = `${likesDone} likes visités · ${searches} recherches · ${spread} voisinages de sosies · ${youtubeSearches} recherches YouTube · ${channels + youtubeChannels} chaînes YouTube (${units} unités) · ${read} vidéos lues · ${fingerprinted} lues par l'IA · ${near} ressemblent à un like${copies ? ` (${copies} copies écartées)` : ''} · ${counters.inserted} entrées${counters.byProvider?.youtube ? ` dont ${counters.byProvider.youtube} YouTube` : ''}`
   ctx.log(`sosies : ${cursor.note}`)
   return { counters, cursor, errors }
 }

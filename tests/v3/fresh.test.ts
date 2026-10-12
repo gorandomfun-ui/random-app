@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { capForeignSketches, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
+import { capForeignSketches, capHeavyRegions, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
 
 const entry = (videoId: string, bucket: FreshBucket, region: string, rank: number, views = 0, channel?: string): FreshEntry =>
   ({ id: videoId.padStart(24, '0'), videoId, bucket, region, rank, views, channel })
@@ -34,6 +34,8 @@ test('a still album cover or a long gaming session does not open a feed', () => 
   assert.equal(isFreshFormat({ channelTitle: 'Wisp', universe: 'gaming', duration: 'PT34M' }), false)
   assert.equal(isFreshFormat({ channelTitle: 'Wisp', universe: 'gaming', duration: 'PT9M' }), true)
   assert.equal(isFreshFormat({ channelTitle: 'Concert Hall', universe: 'music', duration: 'PT1H2M' }), true, 'only gaming sessions are cut for length')
+  assert.equal(isFreshFormat({ channelTitle: 'Funny', universe: 'humor-memes', duration: 'PT45S' }), false, 'a Short opens no session (12 October)')
+  assert.equal(isFreshFormat({ channelTitle: 'Funny', universe: 'humor-memes', duration: 'PT1M5S' }), true)
 })
 
 test('a zone by rank lets every country bring its own; the world takes the biggest', () => {
@@ -135,4 +137,16 @@ test('spoken sketches from countries most visitors do not understand keep a shar
   assert.equal(capped.get('fun')!.filter((item) => item.region === 'ID').length, 1, 'one in ten of a list of ten')
   assert.equal(capped.get('fun')!.filter((item) => item.region === 'US').length, 1, 'a sketch in a shared language stays')
   assert.equal(capped.get('animals')!.length, 5, 'a dog from Brazil needs no words')
+})
+
+test("Brazil and South and Southeast Asia keep a small share each of the day's list (the owner, 12 October)", () => {
+  const entry = (id: string, region: string): FreshEntry => ({ id, videoId: id, bucket: 'world', rank: 1, region, views: 1 })
+  const list = [...Array.from({ length: 40 }, (_, index) => entry(`br${index}`, 'BR')), ...Array.from({ length: 30 }, (_, index) => entry(`in${index}`, 'IN')), ...Array.from({ length: 30 }, (_, index) => entry(`fr${index}`, 'FR')), ...Array.from({ length: 20 }, (_, index) => entry(`kr${index}`, 'KR'))]
+  const capped = capHeavyRegions(new Map([['world' as FreshBucket, list]]), 0.05)
+  const kept = capped.get('world')!
+  assert.equal(kept.filter((item) => item.region === 'BR').length, 6, 'five per cent of 120')
+  assert.equal(kept.filter((item) => item.region === 'IN').length, 6)
+  assert.equal(kept.filter((item) => item.region === 'FR').length, 30, 'the others untouched')
+  assert.equal(kept.filter((item) => item.region === 'KR').length, 20, 'Korea is not among them')
+  assert.deepEqual(kept.filter((item) => item.region === 'BR').map((item) => item.id), ['br0', 'br1', 'br2', 'br3', 'br4', 'br5'], 'the best placed keep their place')
 })

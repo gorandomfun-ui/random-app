@@ -235,8 +235,9 @@ test("a YouTube like gives its channel: two pages of uploads a visit, details on
   assert.equal(result.counters.byProvider?.youtube, 1)
   assert.equal(calls.filter((path) => path.endsWith('/playlistItems')).length, 2, 'two pages')
   assert.equal(calls.filter((path) => path === 'www.googleapis.com/youtube/v3/videos').length, 1, 'one details call')
-  // Two pages, one details call, one channel-size call for the media windows: four units, each reserved first.
-  assert.equal(reserved.length, 4)
+  // A YouTube search with the like's words (12 October), two pages, one details call, one channel-size call for the media windows: each reserved first.
+  assert.equal(reserved.length, 5)
+  assert.ok(calls.some((path) => path === 'www.googleapis.com/youtube/v3/search'), 'the like searched on YouTube too')
   assert.equal((saved as unknown as { youtube: Record<string, string | null> }).youtube[String(likeId)], null, 'past the last page: the next visit starts over')
   assert.equal(uploadsOf('UCabcdefghijklmnopqrstuv'), 'UUabcdefghijklmnopqrstuv')
   assert.equal(uploadsOf('x1abc'), null)

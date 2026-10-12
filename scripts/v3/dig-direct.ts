@@ -20,13 +20,13 @@ const MAX_MINUTES = Number(process.env.RANDOM_DIG_MINUTES ?? 40)
  * took the whole day in half an hour and met YouTube's own "search queries per
  * day" limit before our counter did; the two later runs found nothing left.
  * That limit is 100 searches a day (Google's quota page, 11 October), apart from
- * the 10,000 units; at 7,000 here the dig made 49 to 57 a day. Eleven thousand
- * lets it make about ninety-two, its lists counted in, leaving a few to the
- * owner's own page (the owner, 11 October: "il faut utiliser tout le quota").
+ * the 10,000 units; at 7,000 here the dig makes about fifty-five a day. The
+ * owner (12 October): the rest for videos near the likes — the look-alikes take
+ * three a window, thirty-six a day (lib/v3/ingest/lines/lookalike.ts).
  * A run takes at most its share, so the runs each serve their turn of the world.
  */
-const UNITS = Number(process.env.RANDOM_DIG_UNITS ?? 11000)
-const RUN_UNITS = Number(process.env.RANDOM_DIG_RUN_UNITS ?? 3000)
+const UNITS = Number(process.env.RANDOM_DIG_UNITS ?? 7000)
+const RUN_UNITS = Number(process.env.RANDOM_DIG_RUN_UNITS ?? 2600)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')
