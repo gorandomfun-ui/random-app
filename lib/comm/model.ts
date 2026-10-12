@@ -99,7 +99,7 @@ export const DESTINATIONS: readonly Destination[] = ['instagram', 'tiktok', 'x']
 /** One slide: the item it shows (its credit, its source, its thumbnail when no media is picked), the media, the dressing. */
 export type TextPosition = 'top' | 'middle' | 'bottom'
 /** A block the curator places by hand: its top-left corner as shares of the canvas, its size in px on a 1080-wide canvas. */
-export type Placement = { x: number; y: number; size: number; align?: 'left' | 'center' | 'right'; width?: number }
+export type Placement = { x: number; y: number; size: number; align?: 'left' | 'center' | 'right'; width?: number; font?: 'Tomorrow' | 'InterTight'; weight?: 400 | 700 | 900 }
 export type PostSlide = {
   itemId: string | null; mediaId: string | null; templateKey: string; text: string; palette: number; logoVariant: 'black' | 'white'; glitch?: number
   /** Full screen (cover) or framed whole (contain); empty keeps the template's own. */
@@ -120,6 +120,10 @@ export type PostSlide = {
   logoCorner?: 'tl' | 'tr' | 'bl' | 'br' | 'none' | null
   /** The part of the clip to keep, in seconds. */
   trim?: { startSec: number; endSec: number } | null
+  /** The site's glitch, or the corrupted-stream look of the reference. */
+  glitchStyle?: 'random' | 'mosh' | null
+  /** One of the site's icons placed by hand; size is its width in px on a 1080-wide canvas. */
+  iconPlace?: { name: string; x: number; y: number; size: number } | null
 }
 
 export type PostDoc = {

@@ -29,14 +29,23 @@ export async function GET(req: Request) {
   // A block placed by hand: "x,y,size[,align[,width]]", shares of the canvas and px on a 1080-wide one.
   const placeOf = (raw: string | null, maxSize: number): Placement | null => {
     if (!raw) return null
-    const [x, y, size, align, width] = raw.split(',')
+    const [x, y, size, align, width, font, weight] = raw.split(',')
     const nx = Number(x), ny = Number(y), ns = Number(size), nw = Number(width)
     if (![nx, ny, ns].every(Number.isFinite) || nx < -0.5 || nx > 1.5 || ny < -0.5 || ny > 1.5) return null
     const place: Placement = { x: nx, y: ny, size: Math.min(maxSize, Math.max(12, ns)) }
     if (align === 'left' || align === 'center' || align === 'right') place.align = align
     if (Number.isFinite(nw) && nw > 0.05 && nw <= 1) place.width = nw
+    if (font === 'Tomorrow' || font === 'InterTight') place.font = font
+    if (weight === '400' || weight === '700' || weight === '900') place.weight = Number(weight) as 400 | 700 | 900
     return place
   }
+  const glitchStyle = params.get('gstyle') === 'mosh' ? 'mosh' : 'random'
+  const iconPlace = (() => {
+    const raw = params.get('iconplace'); if (!raw) return null
+    const [name, x, y, size] = raw.split(',')
+    const nx = Number(x), ny = Number(y), ns = Number(size)
+    return /^[a-z]{2,20}$/.test(name ?? '') && [nx, ny, ns].every(Number.isFinite) && nx >= -0.5 && nx <= 1.5 && ny >= -0.5 && ny <= 1.5 ? { name, x: nx, y: ny, size: Math.min(800, Math.max(24, ns)) } : null
+  })()
   const scaleRaw = Number(params.get('scale'))
   const scale = Number.isFinite(scaleRaw) && scaleRaw >= 0.2 && scaleRaw < 1 ? scaleRaw : null
   const textPlace = placeOf(params.get('textplace'), 400)
@@ -76,7 +85,7 @@ export async function GET(req: Request) {
       // A credit that only repeats the provider says nothing the source line does not: left out on the slide.
       credit: item ? (creditLineOf(item.snapshot, creditTyped) === item.snapshot.providerLabel ? '' : creditLineOf(item.snapshot, creditTyped)) : creditTyped,
       source: item ? sourceLineOf(item.snapshot) : '',
-      media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key, fit, textPosition, textPlace, sourcePlace, scale, logoPlace, mediaPlace,
+      media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key, fit, textPosition, textPlace, sourcePlace, scale, logoPlace, mediaPlace, glitchStyle, iconPlace,
     })
     return new Response(out.png, { status: 200, headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store', 'X-Comm-Truncated': out.truncated ? '1' : '0', 'X-Comm-Text-Size': String(out.textSize), 'X-Comm-Picture': picture ? '1' : '0' } })
   } catch { return json({ error: 'unavailable' }, 503) }

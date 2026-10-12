@@ -117,6 +117,8 @@ function placementOf(value: unknown, maxSize: number): Placement | null {
     x: Math.round(p.x! * 1000) / 1000, y: Math.round(p.y! * 1000) / 1000, size: Math.round(Math.min(maxSize, Math.max(12, p.size))),
     ...(p.align === 'left' || p.align === 'center' || p.align === 'right' ? { align: p.align } : {}),
     ...(typeof p.width === 'number' && p.width > 0.05 && p.width <= 1 ? { width: Math.round(p.width * 1000) / 1000 } : {}),
+    ...(p.font === 'Tomorrow' || p.font === 'InterTight' ? { font: p.font } : {}),
+    ...(p.weight === 400 || p.weight === 700 || p.weight === 900 ? { weight: p.weight } : {}),
   }
 }
 
@@ -148,6 +150,9 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         mediaPlace: rectOf(slide.mediaPlace),
         margin: slide.margin === 'glitch' ? 'glitch' : slide.margin === 'none' ? 'none' : null,
         logoCorner: ['tl', 'tr', 'bl', 'br', 'none'].includes(slide.logoCorner as string) ? (slide.logoCorner as PostSlide['logoCorner']) : null,
+        glitchStyle: slide.glitchStyle === 'mosh' ? 'mosh' : slide.glitchStyle === 'random' ? 'random' : null,
+        iconPlace: slide.iconPlace && typeof slide.iconPlace === 'object' && typeof slide.iconPlace.name === 'string' && /^[a-z]{2,20}$/.test(slide.iconPlace.name) && unit(slide.iconPlace.x) && unit(slide.iconPlace.y) && typeof slide.iconPlace.size === 'number'
+          ? { name: slide.iconPlace.name, x: Math.round(slide.iconPlace.x * 1000) / 1000, y: Math.round(slide.iconPlace.y * 1000) / 1000, size: Math.round(Math.min(800, Math.max(24, slide.iconPlace.size))) } : null,
         trim: slide.trim && typeof slide.trim === 'object' && typeof slide.trim.startSec === 'number' && typeof slide.trim.endSec === 'number' && slide.trim.startSec >= 0 && slide.trim.endSec > slide.trim.startSec
           ? { startSec: Math.round(slide.trim.startSec * 100) / 100, endSec: Math.round(slide.trim.endSec * 100) / 100 } : null,
       })

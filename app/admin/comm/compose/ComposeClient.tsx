@@ -18,6 +18,9 @@ import { clipMaxSeconds } from '@/lib/comm/model'
 import { FAMILY_SIZES, type Family } from '@/lib/comm/templates'
 import { commList, uploadMedia, type QueueItemWithMedia } from '@/lib/comm/client'
 import { downloadBlob, recordMontage, renderJpeg } from '@/lib/comm/montageRun'
+import { burstSchedule, createDrawer, type GlitchStyle } from '@/lib/comm/montageDraw'
+import { cropRect, cropRectIn } from '@/lib/comm/montage'
+import { ICON_NAMES } from '@/lib/comm/templates'
 import { publishInstagram } from '@/lib/comm/publishClient'
 import type { PublishAsset } from '@/lib/comm/publish'
 
@@ -25,8 +28,8 @@ const headers = { 'Content-Type': 'application/json' }
 const PALETTE_COLORS = ['#0FC55D', '#D90845', '#E5972B', '#FF978F', '#3D42CC', '#AF3BF2']
 const TEMPLATE_OF: Record<Family, string> = { '9:16': 'story-plein', '4:5': 'post-plein', '1:1': 'carre', '16:9': 'paysage' }
 const TEXT_SIZES = { S: 44, M: 64, L: 96 } as const
-const GLITCH = { off: 0, light: 0.35, strong: 0.8 } as const
 const LOGO_SIZE = 300
+const FONTS = [['Tomorrow', 900, 'Tomorrow'], ['Tomorrow', 700, 'Tomorrow fin'], ['InterTight', 700, 'Inter Tight']] as const
 const chip = 'rounded-full border border-white/40 px-3 py-1.5 text-sm disabled:opacity-40'
 const chipOn = 'rounded-full border border-white bg-white px-3 py-1.5 text-sm text-black'
 const primary = 'rounded-full border border-white bg-white px-5 py-2.5 text-sm font-bold uppercase text-black disabled:opacity-40'
@@ -62,7 +65,9 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [done, setDone] = useState<{ kind: 'exported' | 'published'; url?: string | null } | null>(null)
   const [customTag, setCustomTag] = useState('')
   const [clipDuration, setClipDuration] = useState<number | null>(null)
+  const [lastFile, setLastFile] = useState<{ url: string; name: string } | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const liveRef = useRef<HTMLCanvasElement | null>(null)
   const saveTimer = useRef<number | null>(null)
   const dirty = useRef<Partial<PostDoc>>({})
 
@@ -131,12 +136,14 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   useEffect(() => { if (!post) return; const t = window.setTimeout(() => setSettled(post.slides), 500); return () => window.clearTimeout(t) }, [post])
 
   const renderUrl = useCallback((s: PostSlide, index: number, mode: 'full' | 'overlay', scale?: number, seed?: string) => {
-    const params = new URLSearchParams({ template: TEMPLATE_OF[family], palette: String(s.palette), logo: s.logoCorner === 'none' ? 'none' : s.logoVariant, text: s.text, mode, seed: seed ?? `${post?._id ?? 'x'}-${index}`, glitch: String(s.glitch ?? 0) })
+    const params = new URLSearchParams({ template: TEMPLATE_OF[family], palette: String(s.palette), logo: s.logoCorner === 'none' ? 'none' : s.logoVariant, text: s.text, mode, seed: seed ?? `${post?._id ?? 'x'}-${index}`, glitch: String(s.glitch ?? 0), gstyle: s.glitchStyle ?? 'random' })
+    if (s.iconPlace) params.set('iconplace', [s.iconPlace.name, s.iconPlace.x, s.iconPlace.y, s.iconPlace.size].join(','))
+    if (s.mediaPlace) params.set('mediaplace', [s.mediaPlace.x, s.mediaPlace.y, s.mediaPlace.w, s.mediaPlace.h].join(','))
     if (scale) params.set('scale', String(scale))
     if (s.itemId) params.set('item', s.itemId)
     if (s.mediaId) params.set('media', s.mediaId); else params.set('thumb', '1')
     if (post?.credit) params.set('credit', post.credit)
-    const place = (p: Placement) => [p.x, p.y, p.size, p.align ?? '', p.width ?? ''].join(',')
+    const place = (p: Placement) => [p.x, p.y, p.size, p.align ?? '', p.width ?? '', p.font ?? '', p.weight ?? ''].join(',')
     params.set('textplace', place(s.textPlace ?? { x: 0.06, y: 0.72, size: TEXT_SIZES.M, align: 'left', width: 0.88 }))
     if (s.sourcePlace) params.set('sourceplace', place(s.sourcePlace))
     const logo = logoPlaceOf(s.logoCorner ?? 'tl', family)
@@ -155,6 +162,35 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     return () => { video.removeEventListener('loadedmetadata', onMeta); video.removeEventListener('timeupdate', onTime) }
   }, [isVideo, slide?.trim, slideMedia])
 
+  // The live preview: the same drawer as the export, on a half-size canvas, following the clip as it plays.
+  const overlayKey = slide ? renderUrl(settled?.[current] ?? slide, current, 'overlay', 0.5) : ''
+  useEffect(() => {
+    const video = videoRef.current, live = liveRef.current
+    if (!video || !live || !isVideo || !slide) return
+    let stopped = false, handle = 0, frame = 0
+    const w = Math.round(canvas.width / 2), h = Math.round(canvas.height / 2)
+    live.width = w; live.height = h
+    const ctx = live.getContext('2d')!
+    const calm = `${window.location.origin}${renderUrl({ ...slide, glitch: 0 }, current, 'overlay', 0.5)}`
+    const urls = [calm, ...[1, 2, 3, 4].map((k) => `${window.location.origin}${renderUrl(slide, current, 'overlay', 0.5, `${post?._id}-${current}-g${k}`)}`)]
+    const load = (url: string) => new Promise<HTMLImageElement | null>((resolve) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url })
+    void Promise.all(urls.map(load)).then((loaded) => {
+      if (stopped) return
+      const overlays = loaded.filter((img): img is HTMLImageElement => Boolean(img))
+      const size = { width: video.videoWidth || 16, height: video.videoHeight || 9 }
+      const mp = slide.mediaPlace
+      const rect = mp ? cropRectIn(size, { width: w, height: h }, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, { width: w, height: h }, { top: 0, height: 1 }, 'centered')
+      const clip = mp ? { x: Math.round(mp.x * w), y: Math.round(mp.y * h), w: Math.round(mp.w * w), h: Math.round(mp.h * h) } : null
+      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, style: (slide.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp) })
+      const schedule = burstSchedule(60_000, slide.glitch ?? 0, overlays.length)
+      const started = performance.now()
+      const tick = () => { if (stopped) return; drawer(ctx, video, (performance.now() - started) % 60_000, schedule, frame); frame += 1; handle = requestAnimationFrame(tick) }
+      tick()
+    })
+    return () => { stopped = true; if (handle) cancelAnimationFrame(handle) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawn when the dressing changes
+  }, [overlayKey, isVideo, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette])
+
   const trim = slide?.trim ?? { startSec: 0, endSec: Math.min(clipDuration ?? slideMedia?.durationSec ?? maxSeconds, maxSeconds) }
   const setTrim = (startSec: number, endSec: number) => {
     const total = clipDuration ?? slideMedia?.durationSec ?? maxSeconds
@@ -170,11 +206,24 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const ready = Boolean(post && spec && post.slides.length >= spec.slides.min && post.slides.every((s) => s.itemId) && caption && !caption.overLimit)
 
   /** One slide to a file: a clip through the montage, a picture through the engine. */
-  const fileOf = useCallback(async (s: PostSlide, index: number): Promise<{ blob: Blob; extension: string; video: boolean }> => {
+  /** Started inside the click, so the browser lets each clip play again later, sound on, once the dressing is loaded. */
+  const activateClips = useCallback((): Map<number, HTMLVideoElement> => {
+    const map = new Map<number, HTMLVideoElement>()
+    for (const [index, s] of (post?.slides ?? []).entries()) {
+      const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
+      if (!media?.contentType.startsWith('video/')) continue
+      const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.preload = 'auto'; v.playsInline = true; v.muted = false; v.volume = 0.001; v.src = media.blobUrl
+      v.play().then(() => v.pause()).catch(() => { /* then the recording plays it muted */ })
+      map.set(index, v)
+    }
+    return map
+  }, [allMedia, post])
+
+  const fileOf = useCallback(async (s: PostSlide, index: number, clips: Map<number, HTMLVideoElement>): Promise<{ blob: Blob; extension: string; video: boolean }> => {
     const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
     if (media?.contentType.startsWith('video/')) {
       const overlays = [renderUrl({ ...s, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(s, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
-      const out = await recordMontage({ src: media.blobUrl, canvas, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) }, overlayUrls: overlays, intensity: s.glitch ?? 0, background: '#191916', onProgress: (sec, total) => setProgress(total ? sec / total : null) })
+      const out = await recordMontage({ src: media.blobUrl, video: clips.get(index) ?? null, canvas, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) }, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', onProgress: (sec, total) => setProgress(total ? sec / total : null) })
       return { blob: out.blob, extension: out.extension, video: true }
     }
     const blob = await renderJpeg(`${window.location.origin}${renderUrl(s, index, 'full')}`)
@@ -183,28 +232,32 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
 
   const doExport = useCallback(async () => {
     if (!post || !ready || !caption) return
+    const clips = activateClips()
     setError(''); setBusy('Export'); setProgress(null)
     try {
       for (const [index, s] of post.slides.entries()) {
         setBusy(post.slides.length > 1 ? `Export ${index + 1} / ${post.slides.length}` : 'Export')
-        const file = await fileOf(s, index)
-        downloadBlob(file.blob, `random-${String(post.number).padStart(3, '0')}${post.slides.length > 1 ? `-${index + 1}` : ''}.${file.extension}`)
+        const file = await fileOf(s, index, clips)
+        const name = `random-${String(post.number).padStart(3, '0')}${post.slides.length > 1 ? `-${index + 1}` : ''}.${file.extension}`
+        setLastFile({ url: URL.createObjectURL(file.blob), name })
+        downloadBlob(file.blob, name)
       }
       try { await navigator.clipboard?.writeText(caption.text) } catch { /* the caption stays on screen */ }
       await fetch(`/api/admin/comm/posts/${post._id}/exported`, { method: 'POST', headers, body: JSON.stringify({}) })
       setDone({ kind: 'exported' })
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Export impossible.') }
     setBusy(''); setProgress(null)
-  }, [caption, fileOf, post, ready])
+  }, [activateClips, caption, fileOf, post, ready])
 
   const doPublish = useCallback(async () => {
     if (!post || !ready || !caption || !instagramReady) return
+    const clips = activateClips()
     setError(''); setBusy('Préparation'); setProgress(null)
     try {
       const assets: PublishAsset[] = []
       for (const [index, s] of post.slides.entries()) {
         setBusy(`Préparation ${index + 1} / ${post.slides.length}`)
-        const file = await fileOf(s, index)
+        const file = await fileOf(s, index, clips)
         const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
         const uploaded = await uploadMedia(s.itemId ?? post.queueItemIds[0], file.blob, file.video ? 'montage' : 'render', (f) => setProgress(f), file.video ? { trim: s.trim ?? undefined, sourceMediaId: media?._id, templateKey: TEMPLATE_OF[family] } : {})
         if (!uploaded.media) throw new Error(uploaded.message ?? 'Envoi impossible.')
@@ -216,7 +269,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
       else setError(outcome.reason)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Publication impossible.') }
     setBusy(''); setProgress(null)
-  }, [allMedia, caption, family, fileOf, instagramReady, post, ready])
+  }, [activateClips, allMedia, caption, family, fileOf, instagramReady, post, ready])
 
   const textPlace = slide?.textPlace ?? { x: 0.06, y: 0.72, size: TEXT_SIZES.M, align: 'left' as const, width: 0.88 }
   const sourcePlace = slide?.sourcePlace ?? { x: 0.06, y: family === '16:9' ? 0.86 : family === '9:16' ? 0.905 : 0.9, size: 30, align: 'left' as const, width: 0.88 }
@@ -255,7 +308,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
         </header>
         {busy ? <div className="rounded border border-white/20 p-2 text-sm"><span role="status">{busy}…</span>{progress != null ? <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-white/10"><div className="h-full bg-white" style={{ width: `${Math.round(progress * 100)}%` }} /></div> : null}</div> : null}
         {error ? <p role="alert" className="rounded border border-red-400/50 p-2 text-sm text-red-300">{error}</p> : null}
-        {done ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">{done.kind === 'published' ? <>Publié sur Instagram. {done.url ? <a href={done.url} target="_blank" rel="noreferrer" className="underline">Voir le post</a> : null}</> : 'Exporté : le fichier est téléchargé, la légende est copiée.'} La publication porte le n° {post.number}.</p> : null}
+        {done ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">{done.kind === 'published' ? <>Publié sur Instagram. {done.url ? <a href={done.url} target="_blank" rel="noreferrer" className="underline">Voir le post</a> : null}</> : <>Exporté : le fichier est téléchargé, la légende est copiée.{lastFile ? <> Pas de téléchargement ? <a href={lastFile.url} download={lastFile.name} className="underline">Télécharger {lastFile.name}</a>.</> : null}</>} La publication porte le n° {post.number}.</p> : null}
 
         <section className={section}>
           <h2 className={title}>Média{spec.slides.max > 1 ? ' · slides' : ''}</h2>
@@ -288,15 +341,18 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="md:sticky md:top-4 md:self-start">
               <div className="relative mx-auto w-full max-w-sm select-none overflow-hidden rounded-xl border border-white/20 bg-[#191916]" style={{ aspectRatio: aspect }}>
-                {/* eslint-disable-next-line @next/next/no-img-element -- the slide as it will leave */}
-                <img src={renderUrl(settled?.[current] ?? slide, current, 'full', 0.5)} alt="Aperçu" className="absolute inset-0 h-full w-full" draggable={false} />
+                {!isVideo ? (
+                  /* eslint-disable-next-line @next/next/no-img-element -- the slide as it will leave */
+                  <img src={renderUrl(settled?.[current] ?? slide, current, 'full', 0.5)} alt="Aperçu" className="absolute inset-0 h-full w-full" draggable={false} />
+                ) : null}
                 {isVideo && slideMedia ? (
                   <>
-                    <video ref={videoRef} src={slideMedia.blobUrl} crossOrigin="anonymous" muted loop autoPlay playsInline className="absolute inset-0 h-full w-full object-cover" />
-                    {/* eslint-disable-next-line @next/next/no-img-element -- the dressing over the playing clip */}
-                    <img src={renderUrl(settled?.[current] ?? slide, current, 'overlay', 0.5)} alt="" className="pointer-events-none absolute inset-0 h-full w-full" draggable={false} />
+                    <video ref={videoRef} src={slideMedia.blobUrl} crossOrigin="anonymous" muted loop autoPlay playsInline className="absolute h-px w-px opacity-0" />
+                    <canvas ref={liveRef} className="absolute inset-0 h-full w-full" aria-label="Aperçu" />
                   </>
                 ) : null}
+                {slide.mediaPlace ? <DragBox rect={slide.mediaPlace} label="média" onMove={(x, y) => updateSlide({ mediaPlace: { ...slide.mediaPlace!, x, y } })} /> : null}
+                {slide.iconPlace ? <DragBox rect={{ x: slide.iconPlace.x, y: slide.iconPlace.y, w: slide.iconPlace.size / 1080 * (1080 / canvas.width), h: (slide.iconPlace.size * 22 / 24) / canvas.height * (canvas.width / 1080) }} label="icône" onMove={(x, y) => updateSlide({ iconPlace: { ...slide.iconPlace!, x, y } })} /> : null}
                 {slide.text.trim() ? <DragBox rect={{ x: textPlace.x, y: textPlace.y, w: textPlace.width ?? 0.88, h: textHeight }} label="texte" onMove={(x, y) => updateSlide({ textPlace: { ...textPlace, x, y } })} /> : null}
                 <DragBox rect={{ x: sourcePlace.x, y: sourcePlace.y, w: sourcePlace.width ?? 0.88, h: sourceHeight }} label="source" onMove={(x, y) => updateSlide({ sourcePlace: { ...sourcePlace, x, y } })} />
               </div>
@@ -322,14 +378,28 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                     {(Object.keys(TEXT_SIZES) as Array<keyof typeof TEXT_SIZES>).map((k) => <button key={k} className={textPlace.size === TEXT_SIZES[k] ? chipOn : chip} onClick={() => updateSlide({ textPlace: { ...textPlace, size: TEXT_SIZES[k] } })}>{k}</button>)}
                     {(['left', 'center', 'right'] as const).map((a) => <button key={a} className={(textPlace.align ?? 'left') === a ? chipOn : chip} onClick={() => updateSlide({ textPlace: { ...textPlace, align: a } })}>{a === 'left' ? 'Gauche' : a === 'center' ? 'Centré' : 'Droite'}</button>)}
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Police</span>{FONTS.map(([font, weight, name]) => <button key={name} className={(textPlace.font ?? 'Tomorrow') === font && (textPlace.weight ?? 900) === weight ? chipOn : chip} onClick={() => updateSlide({ textPlace: { ...textPlace, font, weight } })}>{name}</button>)}</div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Icône</span>
+                    <select className="rounded border border-white/40 bg-black px-2 py-1 text-xs" value={slide.iconPlace?.name ?? ''} onChange={(e) => updateSlide({ iconPlace: e.target.value ? { name: e.target.value, x: slide.iconPlace?.x ?? 0.8, y: slide.iconPlace?.y ?? 0.06, size: slide.iconPlace?.size ?? 120 } : null })}><option value="">Aucune</option>{ICON_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}</select>
+                    {slide.iconPlace ? <><input type="range" min={48} max={400} step={8} value={slide.iconPlace.size} onChange={(e) => updateSlide({ iconPlace: { ...slide.iconPlace!, size: Number(e.target.value) } })} className="w-32" aria-label="Taille de l’icône" /><span className="text-xs text-gray-400">glisse-la sur l’image</span></> : null}
+                  </div>
                 </section>
               ) : (
                 <section className={section}>
                   <h2 className={title}>Style</h2>
                   <div className="flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Couleur</span>{PALETTE_COLORS.map((c, i) => <button key={c} aria-label={`Couleur ${i + 1}`} className={`h-7 w-7 rounded-full border-2 ${slide.palette === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => updateSlide({ palette: i })} />)}</div>
                   <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Logo</span>{([['tl', 'haut gauche'], ['tr', 'haut droite'], ['bl', 'bas gauche'], ['br', 'bas droite'], ['none', 'aucun']] as const).map(([k, name]) => <button key={k} className={(slide.logoCorner ?? 'tl') === k ? chipOn : chip} onClick={() => updateSlide({ logoCorner: k })}>{name}</button>)}</div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Glitch</span>{([['off', 'Off'], ['light', 'Léger'], ['strong', 'Fort']] as const).map(([k, name]) => <button key={k} className={(slide.glitch ?? 0) === GLITCH[k] ? chipOn : chip} onClick={() => updateSlide({ glitch: GLITCH[k] })}>{name}</button>)}</div>
-                  <p className="mt-2 text-xs text-gray-500">Le glitch de Random : des rafales, des bandes, des morceaux de l’image. Sur une vidéo il bouge.</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Glitch</span>
+                    <button className={(slide.glitchStyle ?? 'random') === 'random' ? chipOn : chip} onClick={() => updateSlide({ glitchStyle: 'random' })}>Random</button>
+                    <button className={(slide.glitchStyle ?? 'random') === 'mosh' ? chipOn : chip} onClick={() => updateSlide({ glitchStyle: 'mosh' })}>Datamosh</button>
+                    <input type="range" min={0} max={1} step={0.05} value={slide.glitch ?? 0} onChange={(e) => updateSlide({ glitch: Number(e.target.value) })} className="w-36" aria-label="Intensité du glitch" /><span className="w-10 text-xs">{Math.round((slide.glitch ?? 0) * 100)} %</span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">Random : rafales, bandes, morceaux de l’image. Datamosh : blocs, couleurs saturées, compteurs, comme ta vidéo d’inspiration. L’aperçu montre le vrai résultat.</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Vidéo</span>
+                    <button className={!slide.mediaPlace ? chipOn : chip} onClick={() => updateSlide({ mediaPlace: null })}>Plein écran</button>
+                    <input type="range" min={0.3} max={1} step={0.02} value={slide.mediaPlace?.w ?? 1} onChange={(e) => { const w = Number(e.target.value); const v = videoRef.current; const ratio = v && v.videoWidth && v.videoHeight ? v.videoHeight / v.videoWidth : 9 / 16; const h = Math.min(1, Math.round(w * (canvas.width / canvas.height) * ratio * 1000) / 1000); updateSlide({ mediaPlace: w >= 1 ? null : { x: Math.round((1 - w) / 2 * 1000) / 1000, y: slide.mediaPlace?.y ?? Math.round((1 - h) / 2 * 1000) / 1000, w, h } }) }} className="w-36" aria-label="Taille de la vidéo" /><span className="w-10 text-xs">{Math.round((slide.mediaPlace?.w ?? 1) * 100)} %</span>
+                    {slide.mediaPlace ? <span className="text-xs text-gray-400">glisse-la ; le fond est l’image agrandie</span> : null}
+                  </div>
                 </section>
               )}
 

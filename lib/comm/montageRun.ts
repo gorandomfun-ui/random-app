@@ -5,8 +5,9 @@
  * back. No panel, no choices: full screen, cover, the Random glitch in bursts.
  */
 
-import { recorderChoice, cropRect, expectedSeconds } from './montage'
+import { recorderChoice, cropRect, cropRectIn, expectedSeconds } from './montage'
 import { videoDuration } from './client'
+import { burstSchedule, createDrawer, type GlitchStyle } from './montageDraw'
 
 export type MontageRunInput = {
   /** The clip's address in the store; CORS lets the canvas read it. */
@@ -17,7 +18,13 @@ export type MontageRunInput = {
   overlayUrls: string[]
   /** 0 keeps every frame calm; up to 1 for bursts most of the time. */
   intensity: number
+  style: GlitchStyle
+  accent: string
   background: string
+  /** The picture's rectangle as shares of the canvas, when the curator made it smaller; full screen otherwise. */
+  mediaPlace?: { x: number; y: number; w: number; h: number } | null
+  /** A video element already started by the curator's gesture, so the browser lets it play again. */
+  video?: HTMLVideoElement | null
   onProgress?: (seconds: number, total: number) => void
 }
 
@@ -43,23 +50,10 @@ function loadVideo(src: string): Promise<HTMLVideoElement> {
 
 const seek = (video: HTMLVideoElement, time: number) => new Promise<void>((resolve) => { const done = () => { video.removeEventListener('seeked', done); resolve() }; video.addEventListener('seeked', done); video.currentTime = time })
 
-/** The glitch's rhythm: calm stretches, then bursts of a few tenths of a second, more often as the intensity rises. */
-export function burstSchedule(lengthMs: number, intensity: number, variants: number): Array<{ until: number; variant: number }> {
-  const out: Array<{ until: number; variant: number }> = []
-  let at = 0, k = 0
-  while (at < lengthMs + 2000) {
-    const calm = intensity <= 0 || ((k * 7919) % 100) / 100 > intensity * 0.75
-    const length = calm ? 350 + ((k * 104729) % 900) : 100 + ((k * 15485863) % 320)
-    at += length; k += 1
-    out.push({ until: at, variant: calm || variants < 2 ? 0 : 1 + (k % (variants - 1)) })
-  }
-  return out
-}
-
 export async function recordMontage(input: MontageRunInput): Promise<MontageRunResult> {
   const choice = recorderChoice((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t))
   if (!choice) throw new Error('Ce navigateur n’enregistre pas de vidéo : utilise Chrome ou Edge sur ordinateur.')
-  const video = await loadVideo(input.src)
+  const video = input.video ?? await loadVideo(input.src)
   const known = await videoDuration(video)
   const duration = known ?? input.trim.endSec
   const start = Math.max(0, Math.min(input.trim.startSec, duration)), end = Math.max(start + 0.5, Math.min(input.trim.endSec, duration))
@@ -68,7 +62,9 @@ export async function recordMontage(input: MontageRunInput): Promise<MontageRunR
   const work = document.createElement('canvas'); work.width = width; work.height = height
   const ctx = work.getContext('2d')!
   const size = { width: video.videoWidth || 16, height: video.videoHeight || 9 }
-  const rect = cropRect(size, input.canvas, { top: 0, height: 1 }, 'centered')
+  const mp = input.mediaPlace
+  const rect = mp ? cropRectIn(size, input.canvas, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, input.canvas, { top: 0, height: 1 }, 'centered')
+  const area = mp ? { x: Math.round(mp.x * width), y: Math.round(mp.y * height), w: Math.round(mp.w * width), h: Math.round(mp.h * height) } : { x: 0, y: 0, w: width, h: height }
   const stream = work.captureStream(30)
   let audio: AudioContext | null = null
   try {
@@ -84,25 +80,10 @@ export async function recordMontage(input: MontageRunInput): Promise<MontageRunR
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
   const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve() })
   const schedule = burstSchedule((end - start) * 1000, input.intensity, overlays.length)
-  const draw = (atMs: number) => {
-    ctx.fillStyle = input.background; ctx.fillRect(0, 0, width, height)
-    ctx.drawImage(video, rect.x, rect.y, rect.w, rect.h)
-    const slot = schedule.find((s) => atMs < s.until)
-    const variant = slot?.variant ?? 0
-    if (variant > 0 && input.intensity > 0) {
-      // A few bands of the frame copied sideways: the picture itself tearing.
-      const pieces = Math.round(2 + input.intensity * 6)
-      for (let i = 0; i < pieces; i += 1) {
-        const seedy = (variant * 131 + i * 17) % 97 / 97, seedx = (variant * 53 + i * 29) % 89 / 89
-        const ph = Math.max(4, Math.round(height * (0.006 + seedy * 0.03 * input.intensity)))
-        const y = Math.round(height * 0.08 + seedy * (height * 0.76 - ph))
-        const shift = Math.round((seedx - 0.5) * width * 0.12 * (0.5 + input.intensity))
-        ctx.drawImage(work, 0, y, width, ph, shift, y, width, ph)
-      }
-    }
-    const overlay = overlays[variant] ?? overlays[0]
-    if (overlay) ctx.drawImage(overlay, 0, 0, width, height)
-  }
+  // The video drawn into its rectangle, and the frame's own tearing: one drawer, the preview's too.
+  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, style: input.style, accent: input.accent, ground: Boolean(mp) })
+  let frame = 0
+  const draw = (atMs: number) => { drawer(ctx, video, atMs, schedule, frame); frame += 1 }
   await seek(video, start)
   draw(0)
   recorder.start(1000)
