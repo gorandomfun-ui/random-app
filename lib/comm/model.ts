@@ -120,8 +120,10 @@ export type PostSlide = {
   logoCorner?: 'tl' | 'tr' | 'bl' | 'br' | 'none' | null
   /** The part of the clip to keep, in seconds. */
   trim?: { startSec: number; endSec: number } | null
-  /** The site's glitch, or the corrupted-stream look of the reference. */
-  glitchStyle?: 'random' | 'mosh' | null
+  /** The site's glitch, or one of the six animations after the references. */
+  glitchStyle?: 'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters' | null
+  /** For a picture given an animation: how long the clip lasts, in seconds. */
+  animSeconds?: number | null
   /** One of the site's icons placed by hand; size is its width in px on a 1080-wide canvas. */
   iconPlace?: { name: string; x: number; y: number; size: number } | null
 }

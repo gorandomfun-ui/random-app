@@ -12,6 +12,9 @@ import { burstSchedule, createDrawer, type GlitchStyle } from './montageDraw'
 export type MontageRunInput = {
   /** The clip's address in the store; CORS lets the canvas read it. */
   src: string
+  /** A still picture instead of a clip: the animation runs for `seconds`. */
+  image?: HTMLImageElement | null
+  seconds?: number
   canvas: { width: number; height: number }
   trim: { startSec: number; endSec: number }
   /** The dressing, transparent: the calm draw first, then the glitched variants. */
@@ -25,6 +28,10 @@ export type MontageRunInput = {
   mediaPlace?: { x: number; y: number; w: number; h: number } | null
   /** A video element already started by the curator's gesture, so the browser lets it play again. */
   video?: HTMLVideoElement | null
+  /** Other pictures of the queue, for the collage and the feed. */
+  extras?: CanvasImageSource[]
+  text?: string
+  titleFont?: string
   onProgress?: (seconds: number, total: number) => void
 }
 
@@ -53,6 +60,7 @@ const seek = (video: HTMLVideoElement, time: number) => new Promise<void>((resol
 export async function recordMontage(input: MontageRunInput): Promise<MontageRunResult> {
   const choice = recorderChoice((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t))
   if (!choice) throw new Error('Ce navigateur n’enregistre pas de vidéo : utilise Chrome ou Edge sur ordinateur.')
+  if (input.image) return recordStill(input, input.image, choice)
   const video = input.video ?? await loadVideo(input.src)
   const known = await videoDuration(video)
   const duration = known ?? input.trim.endSec
@@ -81,7 +89,7 @@ export async function recordMontage(input: MontageRunInput): Promise<MontageRunR
   const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve() })
   const schedule = burstSchedule((end - start) * 1000, input.intensity, overlays.length)
   // The video drawn into its rectangle, and the frame's own tearing: one drawer, the preview's too.
-  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, style: input.style, accent: input.accent, ground: Boolean(mp) })
+  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, style: input.style, accent: input.accent, ground: Boolean(mp), extras: input.extras, text: input.text, titleFont: input.titleFont })
   let frame = 0
   const draw = (atMs: number) => { drawer(ctx, video, atMs, schedule, frame); frame += 1 }
   await seek(video, start)
@@ -125,4 +133,41 @@ export function downloadBlob(blob: Blob, filename: string): void {
   const a = document.createElement('a')
   a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+
+/** A picture animated for a few seconds: the same drawer, no clip to play, no sound. */
+async function recordStill(input: MontageRunInput, image: HTMLImageElement, choice: { mimeType: string; extension: 'mp4' | 'webm' }): Promise<MontageRunResult> {
+  const { width, height } = input.canvas
+  const seconds = input.seconds ?? 5
+  const overlays = (await Promise.all(input.overlayUrls.map(loadImage))).filter((img): img is HTMLImageElement => Boolean(img))
+  const work = document.createElement('canvas'); work.width = width; work.height = height
+  const ctx = work.getContext('2d')!
+  const size = { width: image.naturalWidth || 16, height: image.naturalHeight || 9 }
+  const mp = input.mediaPlace
+  const rect = mp ? cropRectIn(size, input.canvas, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, input.canvas, { top: 0, height: 1 }, 'centered')
+  const area = mp ? { x: Math.round(mp.x * width), y: Math.round(mp.y * height), w: Math.round(mp.w * width), h: Math.round(mp.h * height) } : { x: 0, y: 0, w: width, h: height }
+  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, style: input.style, accent: input.accent, ground: Boolean(mp), extras: input.extras, text: input.text, titleFont: input.titleFont })
+  const schedule = burstSchedule(seconds * 1000, input.intensity, overlays.length)
+  const stream = work.captureStream(30)
+  const recorder = new MediaRecorder(stream, { mimeType: choice.mimeType, videoBitsPerSecond: 8_000_000 })
+  const chunks: Blob[] = []
+  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+  const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve() })
+  recorder.start(1000)
+  const started = performance.now()
+  let frame = 0
+  await new Promise<void>((resolve) => {
+    const tick = () => {
+      const at = performance.now() - started
+      if (at >= seconds * 1000) { resolve(); return }
+      drawer(ctx, image, at, schedule, frame); frame += 1
+      input.onProgress?.(at / 1000, seconds)
+      requestAnimationFrame(tick)
+    }
+    tick()
+  })
+  recorder.stop(); await stopped
+  const blob = new Blob(chunks, { type: choice.mimeType.split(';')[0] })
+  if (!blob.size) throw new Error('Rien n’a été enregistré.')
+  return { blob, mimeType: choice.mimeType.split(';')[0], extension: choice.extension, seconds, width, height }
 }

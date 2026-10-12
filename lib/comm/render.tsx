@@ -42,13 +42,12 @@ export type RenderInput = {
   mediaPlace?: { x: number; y: number; w: number; h: number } | null
   /** The logo placed by hand: corner and width (px on a 1080-wide canvas). */
   logoPlace?: Placement | null
-  /** The site's glitch, or the corrupted-stream look. */
-  glitchStyle?: 'random' | 'mosh' | null
+  /** The site's glitch, or an animation: the still shows the site's glitch either way; the motion is the browser's. */
+  glitchStyle?: string | null
   /** One of the site's icons placed by hand. */
   iconPlace?: { name: string; x: number; y: number; size: number } | null
 }
 
-const MOSH_INKS = ['#00eaff', '#ff006f', '#0FC55D', '#ffe600']
 
 /** Where the words start for each position, as a share of the height; the bottom stays above the credit's zone. */
 export const TEXT_POSITIONS: Record<'top' | 'middle' | 'bottom', number> = { top: 0.1, middle: 0.42, bottom: 0.68 }
@@ -194,8 +193,7 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
       case 'glitch': {
         const intensity = input.glitch ?? layer.intensity
         if (intensity <= 0) break
-        if (input.glitchStyle === 'mosh') children.push(...moshPieces(input, intensity, random, width, height))
-        else children.push(...glitchPieces(input, intensity, random, width, height, mediaTop, mediaHeight, layer.zone === 'frame' ? mediaRect : null))
+        children.push(...glitchPieces(input, intensity, random, width, height, mediaTop, mediaHeight, layer.zone === 'frame' ? mediaRect : null))
         break
       }
     }
@@ -283,62 +281,6 @@ function glitchPieces(input: RenderInput, intensity: number, random: () => numbe
         </div>,
       )
     }
-  }
-  return out
-}
-
-/**
- * The corrupted stream, one frame of it: blocks of the picture jumping, some
- * tinted in saturated inks, rows smeared sideways, thin strips, and the tape
- * deck's counter and brackets in the corners. Never on the credit's line.
- */
-function moshPieces(input: RenderInput, intensity: number, random: () => number, width: number, height: number): ReactElement[] {
-  const { palette } = input
-  const out: ReactElement[] = []
-  const zoneTop = Math.round(height * 0.08), zoneBottom = Math.round(height * 0.84)
-  if (input.mode === 'full' && input.media) {
-    const blocks = Math.round(6 + intensity * 22)
-    for (let i = 0; i < blocks; i += 1) {
-      const bw = Math.round(width * (0.05 + random() * 0.25)), bh = Math.round(height * (0.01 + random() * 0.05))
-      const top = Math.round(zoneTop + random() * (zoneBottom - zoneTop - bh)), left = Math.round(random() * (width - bw))
-      const shift = Math.round((random() - 0.5) * width * 0.3 * intensity)
-      const tint = random() < 0.35 * intensity ? MOSH_INKS[Math.floor(random() * MOSH_INKS.length)] : null
-      out.push(
-        <div key={`mb-${i}`} style={{ ...abs(left, top, bw, bh), overflow: 'hidden', opacity: 0.85 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- a block of the picture, jumped */}
-          <img src={input.media} alt="" width={width} height={height} style={{ position: 'absolute', left: -left + shift, top: -top, width, height, objectFit: 'cover' }} />
-          {tint ? <div style={{ ...abs(0, 0, bw, bh), background: tint, opacity: 0.5 }} /> : null}
-        </div>,
-      )
-    }
-    const smears = Math.round(2 + intensity * 6)
-    for (let i = 0; i < smears; i += 1) {
-      const sh = Math.max(2, Math.round(height * 0.004 * (1 + intensity * 3)))
-      const top = Math.round(zoneTop + random() * (zoneBottom - zoneTop - sh)), left = Math.round(random() * width * 0.6)
-      out.push(
-        <div key={`ms-${i}`} style={{ ...abs(0, top, width, sh), overflow: 'hidden', opacity: 0.9 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- one row of the picture, stretched */}
-          <img src={input.media} alt="" width={width * 40} height={height * 40} style={{ position: 'absolute', left: -left * 40, top: -top * 40, width: width * 40, height: height * 40, objectFit: 'cover' }} />
-        </div>,
-      )
-    }
-  }
-  const strips = Math.round(3 + intensity * 10)
-  for (let i = 0; i < strips; i += 1) {
-    const h = Math.max(2, Math.round(height * 0.003 * (1 + intensity * 4)))
-    const top = Math.round(zoneTop + random() * (zoneBottom - zoneTop - h)), left = Math.round(random() * width * 0.5), w = Math.round(width * (0.2 + random() * 0.8))
-    const ink = random() < 0.4 ? palette.accent : MOSH_INKS[Math.floor(random() * MOSH_INKS.length)]
-    out.push(<div key={`mt-${i}`} style={{ ...abs(left, top, w, h), background: ink, opacity: 0.5 + random() * 0.4 }} />)
-  }
-  // The tape deck in the corners.
-  const small = Math.round(width * 0.022)
-  out.push(<div key="hud-counter" style={{ ...abs(Math.round(width * 0.04), Math.round(height * 0.025), Math.round(width * 0.5)), fontFamily: 'InterTight', fontWeight: 700, fontSize: small, color: palette.cream, whiteSpace: 'nowrap' }}>{`17:13  ${String(140 + Math.floor(random() * 9)).padStart(3, '0')}`}</div>)
-  out.push(<div key="hud-frn" style={{ ...abs(Math.round(width * 0.9), Math.round(height * 0.06), Math.round(width * 0.1)), fontFamily: 'InterTight', fontWeight: 700, fontSize: small, color: palette.cream, whiteSpace: 'nowrap' }}>F R N</div>)
-  const m = Math.round(width * 0.035), l = Math.round(width * 0.05), t = Math.max(2, Math.round(width * 0.003))
-  for (const [i, [x, y, dx, dy]] of ([[m, m, 1, 1], [width - m, m, -1, 1], [m, height - m, 1, -1], [width - m, height - m, -1, -1]] as const).entries()) {
-    const ink = i % 2 ? palette.cream : palette.accent
-    out.push(<div key={`br-h-${i}`} style={{ ...abs(dx > 0 ? x : x - l, dy > 0 ? y : y - t, l, t), background: ink }} />)
-    out.push(<div key={`br-v-${i}`} style={{ ...abs(dx > 0 ? x : x - t, dy > 0 ? y : y - l, t, l), background: ink }} />)
   }
   return out
 }

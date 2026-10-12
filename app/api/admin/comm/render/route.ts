@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     if (weight === '400' || weight === '700' || weight === '900') place.weight = Number(weight) as 400 | 700 | 900
     return place
   }
-  const glitchStyle = params.get('gstyle') === 'mosh' ? 'mosh' : 'random'
+  const glitchStyle = params.get('gstyle') ?? 'random'
   const iconPlace = (() => {
     const raw = params.get('iconplace'); if (!raw) return null
     const [name, x, y, size] = raw.split(',')

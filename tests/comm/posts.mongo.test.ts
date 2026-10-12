@@ -98,4 +98,11 @@ test('après export, la publication reste, les éléments restent dans la file m
   assert.equal((await posts.postById(db, id))?.clicks, 1)
   assert.equal((await link.GET(new Request('https://comm.test/l/zzzzzzzz'), { params: { key: 'zzzzzzzz' } })).status, 404)
   assert.equal((await link.GET(new Request('https://comm.test/l/../x'), { params: { key: '../x' } })).status, 404)
+  // Exported, the post is still the curator's to change and export again; published, it is fixed.
+  const again = await posts.updateDraft(db, id, { phrase: 'Encore une fois' })
+  assert.equal(again.ok, true, 'un post exporté se modifie encore')
+  await db.collection('comm_posts').updateOne({ _id: row!._id }, { $set: { status: 'published' } })
+  const fixed = await posts.updateDraft(db, id, { phrase: 'Trop tard' })
+  assert.deepEqual(fixed, { ok: false, reason: 'published' })
+  await db.collection('comm_posts').updateOne({ _id: row!._id }, { $set: { status: 'exported' } })
 })

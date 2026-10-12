@@ -126,7 +126,8 @@ function placementOf(value: unknown, maxSize: number): Placement | null {
 export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promise<{ ok: true; post: PostDoc } | { ok: false; reason: string }> {
   const post = await postById(db, id)
   if (!post) return { ok: false, reason: 'not-found' }
-  if (post.status !== 'draft' && post.status !== 'failed') return { ok: false, reason: 'not-a-draft' }
+  // An exported post is still the curator's: changed and exported again as often as wanted. Only a published one is fixed.
+  if (post.status === 'published') return { ok: false, reason: 'published' }
   const format = patch.format ?? post.format
   const spec = formatSpec(post.destination, format)
   if (!spec) return { ok: false, reason: 'format' }
@@ -150,7 +151,8 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         mediaPlace: rectOf(slide.mediaPlace),
         margin: slide.margin === 'glitch' ? 'glitch' : slide.margin === 'none' ? 'none' : null,
         logoCorner: ['tl', 'tr', 'bl', 'br', 'none'].includes(slide.logoCorner as string) ? (slide.logoCorner as PostSlide['logoCorner']) : null,
-        glitchStyle: slide.glitchStyle === 'mosh' ? 'mosh' : slide.glitchStyle === 'random' ? 'random' : null,
+        glitchStyle: ['random', 'slices', 'bands', 'sweep', 'collage', 'feed', 'letters'].includes(slide.glitchStyle as string) ? (slide.glitchStyle as PostSlide['glitchStyle']) : null,
+        animSeconds: typeof slide.animSeconds === 'number' && [3, 5, 8, 10].includes(slide.animSeconds) ? slide.animSeconds : null,
         iconPlace: slide.iconPlace && typeof slide.iconPlace === 'object' && typeof slide.iconPlace.name === 'string' && /^[a-z]{2,20}$/.test(slide.iconPlace.name) && unit(slide.iconPlace.x) && unit(slide.iconPlace.y) && typeof slide.iconPlace.size === 'number'
           ? { name: slide.iconPlace.name, x: Math.round(slide.iconPlace.x * 1000) / 1000, y: Math.round(slide.iconPlace.y * 1000) / 1000, size: Math.round(Math.min(800, Math.max(24, slide.iconPlace.size))) } : null,
         trim: slide.trim && typeof slide.trim === 'object' && typeof slide.trim.startSec === 'number' && typeof slide.trim.endSec === 'number' && slide.trim.startSec >= 0 && slide.trim.endSec > slide.trim.startSec
