@@ -233,9 +233,9 @@ export type RacingItem = { kind: RacingItemKind; z: number; x: number; taken: bo
 /** The everyday cars of the traffic. */
 export type RacingTrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream'
 /** A slow car of the traffic: the model and its colour (`look`), its lane, its speed; whether it swerves into another lane when the player comes. */
-export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean; spin: number; spinWay: -1 | 1; cruise?: number }
+export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean; spin: number; spinWay: -1 | 1; cruise?: number; elsewhere?: boolean }
 /** What a level's traffic starts as: not swerved, not spinning (its own pace, `cruise`, the speed it starts at). */
-type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay' | 'cruise'>
+type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay' | 'cruise' | 'elsewhere'>
 
 /**
  * The two roads of a level, from where the road divides, after its first
@@ -249,18 +249,23 @@ export const RACING_FORK_KINDS: readonly RacingForkKind[] = ['bends', 'fast', 't
 export type RacingFork = { at: number; len: number; kinds: [RacingForkKind, RacingForkKind]; tracks: [RacingSegment[], RacingSegment[]]; items: [Array<Omit<RacingItem, 'taken'>>, Array<Omit<RacingItem, 'taken'>>] }
 /**
  * Where the road divides (a share of the level), how much of it the two
- * roads run; how far before it the barrier down the middle begins — the side
- * the car is on there is the road it takes, and the barrier keeps it there —
- * and, further back still, the gantry saying where each side leads.
+ * roads run. The left-hand road comes out of this one before it, as an exit
+ * does: widening out of its left edge (`FORK_TAPER` stretches), then running
+ * joined to it, side by side (`FORK_ALONGSIDE`), the car free to drive onto
+ * it; where they part, the road the car is on is the road it takes. Further
+ * back, the gantry saying where each leads.
  */
 export const FORK_FROM = 0.24
 export const FORK_SHARE = 0.5
-export const FORK_DECIDE = 90
-export const FORK_GANTRY = 150
-/** The barrier's half width, in half widths of the road. */
-const MEDIAN_HALF = 0.07
-/** Whether a place of the road is where it is divided by the barrier (and the stretch just before it, where the cars keep to a side). */
-const divided = (s: RacingState, z: number, before = 0): boolean => !!s.fork && z >= s.fork.at - FORK_DECIDE - before && z < s.fork.at
+export const FORK_ALONGSIDE = 90
+export const FORK_TAPER = 40
+export const FORK_GANTRY = 170
+/** How far the left-hand road's middle is from this one's while they run side by side, in half widths: joined, edge to edge. */
+export const FORK_BESIDE = 2
+/** Whether the left-hand road runs joined to this one at a place, the side not yet taken. */
+const alongside = (s: RacingState, z: number): boolean => !!s.fork && s.forkPick < 0 && z >= s.fork.at - FORK_ALONGSIDE && z < s.fork.at
+/** How far ahead or behind a car is still seen: those on the other road there are seen going their way. */
+const SEEN = 160
 /**
  * The country each road of the two runs through, in each world: the bends
  * along the beach and the promenade, through the woods and the village, the
@@ -799,6 +804,8 @@ export type RacingRival = {
   /** Steps left of a spin after a crash, and which way it turns. */
   spin: number
   spinWay: -1 | 1
+  /** On the other of the level's two roads (its place across that road), till they meet again. */
+  elsewhere?: boolean
 }
 
 export type RacingPhase = 'start' | 'play' | 'goal' | 'lost' | 'garage' | 'timeup' | 'won' | 'over'
@@ -1040,13 +1047,14 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
     s.news = { text: 'TURBO!', steps: 60 }
     s.heard.push('power')
   }
-  const cars = [...s.rivals, ...s.traffic]
+  // the cars on this road (not those on the other road of the two)
+  const cars = [...s.rivals, ...s.traffic].filter((c) => !c.elsewhere)
   const ahead = cars.map((c) => c.z > s.z)
   const from = s.z
   drive(s, steer, gas, brake)
   // going by the public: it cheers (not again for a few seconds)
   if (s.phase === 'play' && s.cheered === 0) for (let i = Math.floor(from) + 1; i <= Math.floor(s.z); i += 1) if (i >= 0 && i < s.track.length && s.track[i].things.some((t) => t.kind === 'crowd')) { s.heard.push('cheer'); s.cheered = CHEER_STEPS; break }
-  if (s.fork && s.forkPick < 0 && s.z >= s.fork.at - FORK_DECIDE) takeFork(s, s.x < 0 ? 0 : 1)
+  if (s.fork && s.forkPick < 0 && s.z >= s.fork.at) takeFork(s, s.x < -FORK_BESIDE / 2 ? 0 : 1)
   stepRivals(s)
   stepTraffic(s)
   touchCars(s)
@@ -1130,6 +1138,11 @@ function risks(s: RacingState, cars: ReadonlyArray<{ z: number; x: number }>, ah
 function takeFork(s: RacingState, pick: 0 | 1): void {
   const f = s.fork!
   s.forkPick = pick
+  // on the left-hand road: its middle the road's middle now; the cars still on the other road near enough to be seen go their way on it, the others are on this one too
+  if (pick === 0) {
+    s.x += FORK_BESIDE
+    for (const c of [...s.rivals, ...s.traffic]) if (Math.abs(c.z - s.z) < SEEN) c.elsewhere = true
+  }
   if (pick === 0) {
     // a road of its own again, so what is drawn of it (the map) is made anew
     s.track = s.track.slice()
@@ -1203,7 +1216,9 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
   else if (gas) s.speed += ACCEL * pace * statAccel(s.stats.accel) * (s.turbo > 0 ? 2.2 : 1) * (s.drafting ? 1.2 : 1) * (1 - 0.35 * Math.min(1, s.speed / own))
   else if (!crashing) s.speed -= COAST
   if (s.speed > top) s.speed = Math.max(top, s.speed - COAST * 3)
-  s.offroad = Math.abs(s.x) > RACING_KERB
+  // the left-hand road joined to this one, before they part: the car may drive onto it
+  const beside = alongside(s, s.z) ? FORK_BESIDE : 0
+  s.offroad = s.x > RACING_KERB || s.x < -RACING_KERB - beside
   if (s.offroad && s.speed > OFFROAD_TOP) s.speed -= OFFROAD
   s.speed = Math.max(0, s.speed)
   const share = s.speed / RACING_TOP
@@ -1223,23 +1238,13 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
   if (Math.abs(seg.curve) < 0.5) s.view *= 0.997
   // the rails: a knock, the car thrown back a little
   const wall = RACING_RAIL - RACING_CAR_WIDTH / 2
-  if (Math.abs(s.x) > wall) {
+  if (s.x > wall || s.x < -wall - beside) {
     if (s.speed > RACING_TOP * 0.25 && s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
     // scraping along it: sparks
     if (s.speed > RACING_TOP * 0.2) { s.sparks = SPARK_STEPS; s.sparkSide = s.x > 0 ? 1 : -1 }
     s.speed = Math.min(s.speed, RACING_TOP * 0.5) * 0.92
-    s.x = Math.sign(s.x) * (wall - 0.04)
+    s.x = s.x > 0 ? wall - 0.04 : -wall - beside + 0.04
     s.skid = 0
-  }
-  // the barrier down the middle where the road divides: the car kept on the side it took
-  if (s.forkPick >= 0 && divided(s, s.z)) {
-    const side = s.forkPick === 0 ? -1 : 1, edge = MEDIAN_HALF + RACING_CAR_WIDTH / 2
-    if (s.x * side < edge) {
-      if (s.speed > RACING_TOP * 0.25 && s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
-      if (s.speed > RACING_TOP * 0.2) { s.sparks = SPARK_STEPS; s.sparkSide = side === 1 ? -1 : 1 }
-      s.speed *= 0.97
-      s.x = side * edge
-    }
   }
   s.z += s.speed
 }
@@ -1255,6 +1260,7 @@ const blocking = (z: number, x: number, others: ReadonlyArray<{ z: number; x: nu
  */
 function stepRivals(s: RacingState): void {
   for (const r of s.rivals) {
+    rejoin(s, r)
     if (spinning(r)) { r.z += r.speed; continue }
     // the sharpest bend coming, as a driver sees it, and how fast it can be taken
     let sharpest = 0
@@ -1281,7 +1287,7 @@ function stepRivals(s: RacingState): void {
     r.speed += r.speed < want ? ACCEL * racingLevelPace(s.level) * 1.15 * (r.turbo > 0 ? 2.2 : 1) : -Math.min(BRAKE * 0.4, r.speed - want)
     r.speed = Math.max(0, r.speed)
     // the other cars, the player's among them: it goes round them all
-    const others = [...s.rivals.filter((o) => o !== r), ...s.traffic, { z: s.z, x: s.x, speed: s.speed }]
+    const others = [...s.rivals.filter((o) => o !== r), ...s.traffic, { z: s.z, x: s.x, speed: s.speed, elsewhere: false }].filter((o) => !o.elsewhere === !r.elsewhere)
     // traffic or a cone ahead in its lane: another lane if one is free, else it keeps behind
     const ahead = (lane: number, reach: number) => others.some((o) => o.z > r.z && o.z - r.z < reach && Math.abs(o.x - lane) < RACING_CAR_WIDTH) || s.items.some((it) => it.kind === 'cone' && !it.taken && it.z > r.z && it.z - r.z < reach && Math.abs(it.x - lane) < 0.3)
     if (ahead(r.lane, 40)) {
@@ -1300,22 +1306,24 @@ function stepRivals(s: RacingState): void {
         if (free.length) r.lane = free[Math.floor(s.rnd() * free.length)]
       }
     }
-    keepSide(s, r)
     r.x += Math.max(-0.012, Math.min(0.012, r.lane - r.x))
     r.z += r.speed
   }
 }
 
-/** Where the road divides, a car keeps to the side of the barrier it is on: never the middle lane, never across. */
-function keepSide(s: RacingState, c: { z: number; x: number; lane: number }): void {
-  if (!divided(s, c.z, 40)) return
-  const side = c.x < 0 ? -1 : 1
-  if (Math.abs(c.lane) < 0.3 || Math.sign(c.lane) !== side) c.lane = side * RACING_LANES[2]
+/** A car on the other road where the two meet again: on this one, coming in from its side, back to its lane. */
+function rejoin(s: RacingState, c: { z: number; x: number; lane: number; elsewhere?: boolean }): void {
+  const f = s.fork
+  if (!c.elsewhere || !f || c.z < f.at + f.len) return
+  c.elsewhere = false
+  c.x += s.forkPick === 0 ? FORK_BESIDE : -FORK_BESIDE
+  c.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - c.x) < Math.abs(a - c.x) ? b : a))
 }
 
 /** The traffic: each car at its speed, slower in the sharp bends; one that swerves moves into another lane as the player comes near. */
 function stepTraffic(s: RacingState): void {
   for (const t of s.traffic) {
+    rejoin(s, t)
     if (spinning(t)) { t.z += t.speed; continue }
     // back to its own pace after a knock or a push
     t.cruise ??= t.speed
@@ -1327,7 +1335,6 @@ function stepTraffic(s: RacingState): void {
       const near = RACING_LANES.filter((l) => l !== t.lane).sort((a, b) => Math.abs(a - s.x) - Math.abs(b - s.x))
       t.lane = near[0]
     }
-    keepSide(s, t)
     t.x += Math.max(-0.01, Math.min(0.01, t.lane - t.x))
     t.z += speed
   }
@@ -1390,8 +1397,7 @@ function touchCars(s: RacingState): void {
     if (s.speed > RACING_TOP * 0.7 && s.steer === -away && c.spin === 0 && into > TOUCH_WIDTH * 0.2) { spinOut(c, away === 1 ? -1 : 1); s.heard.push('smash'); s.knock = 14 }
     else if (s.knock === 0) { s.heard.push('thud'); s.knock = 12 }
   }
-  for (const r of s.rivals) touch(r)
-  for (const t of s.traffic) touch(t)
+  for (const c of [...s.rivals, ...s.traffic]) if (!c.elsewhere) touch(c)
 }
 
 /** A car hit hard: it spins `way`, slowing. */
