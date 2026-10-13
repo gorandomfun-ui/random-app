@@ -70,6 +70,9 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const extrasRef = useRef<HTMLImageElement[]>([])
   const [extrasReady, setExtrasReady] = useState(0)
   const imageRef = useRef<HTMLImageElement | null>(null)
+  /** The wordmark, for the letters' filter. */
+  const logoRef = useRef<HTMLImageElement | null>(null)
+  useEffect(() => { const img = new Image(); img.onload = () => { logoRef.current = img; setExtrasReady((n) => n + 1) }; img.src = `/api/admin/comm/brand?variant=horizontal&color=${encodeURIComponent('#F8F5E6')}` }, [])
   const titleFont = typeof window !== 'undefined' ? (getComputedStyle(document.body).getPropertyValue('--font-tomorrow').trim() || 'Tomorrow, sans-serif') : 'Tomorrow, sans-serif'
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const liveRef = useRef<HTMLCanvasElement | null>(null)
@@ -187,10 +190,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     const w = Math.round(canvas.width / 2), h = Math.round(canvas.height / 2)
     live.width = w; live.height = h
     const ctx = live.getContext('2d')!
-    // Under the giant letters the dressing carries no text of its own.
-    const dressed = (slide.glitchStyle ?? 'random') === 'letters' ? { ...slide, text: '' } : slide
-    const calm = `${window.location.origin}${renderUrl({ ...dressed, glitch: 0 }, current, 'overlay', 0.5)}`
-    const urls = [calm, ...[1, 2, 3, 4].map((k) => `${window.location.origin}${renderUrl(dressed, current, 'overlay', 0.5, `${post?._id}-${current}-g${k}`)}`)]
+    const calm = `${window.location.origin}${renderUrl({ ...slide, glitch: 0 }, current, 'overlay', 0.5)}`
+    const urls = [calm, ...[1, 2, 3, 4].map((k) => `${window.location.origin}${renderUrl(slide, current, 'overlay', 0.5, `${post?._id}-${current}-g${k}`)}`)]
     const load = (url: string) => new Promise<HTMLImageElement | null>((resolve) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url })
     const stillLoad = stillUrl ? new Promise<HTMLImageElement | null>((resolve) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = stillUrl }) : Promise.resolve(null)
     void Promise.all([Promise.all(urls.map(load)), stillLoad]).then(([loaded, still]) => {
@@ -203,7 +204,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
       const mp = slide.mediaPlace
       const rect = mp ? cropRectIn(size, { width: w, height: h }, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, { width: w, height: h }, { top: 0, height: 1 }, 'centered')
       const clip = mp ? { x: Math.round(mp.x * w), y: Math.round(mp.y * h), w: Math.round(mp.w * w), h: Math.round(mp.h * h) } : null
-      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, style: (slide.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp), extras: extrasRef.current, text: slide.text, titleFont })
+      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, style: (slide.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp), extras: extrasRef.current, text: slide.text, titleFont, cleanOnTop: Boolean(slide.mediaOnTop), logo: logoRef.current, letterAlpha: slide.letterAlpha ?? 0.7 })
       const schedule = burstSchedule(60_000, slide.glitch ?? 0, overlays.length)
       const started = performance.now()
       const tick = () => { if (stopped) return; drawer(ctx, source, (performance.now() - started) % 60_000, schedule, frame); frame += 1; handle = requestAnimationFrame(tick) }
@@ -211,7 +212,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     })
     return () => { stopped = true; if (handle) cancelAnimationFrame(handle) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawn when the dressing changes
-  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, extrasReady])
+  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.letterAlpha, extrasReady])
 
   const trim = slide?.trim ?? { startSec: 0, endSec: Math.min(clipDuration ?? slideMedia?.durationSec ?? maxSeconds, maxSeconds) }
   const setTrim = (startSec: number, endSec: number) => {
@@ -243,9 +244,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
 
   const fileOf = useCallback(async (s: PostSlide, index: number, clips: Map<number, HTMLVideoElement>): Promise<{ blob: Blob; extension: string; video: boolean }> => {
     const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
-    const dressed = (s.glitchStyle ?? 'random') === 'letters' ? { ...s, text: '' } : s
-    const overlays = [renderUrl({ ...dressed, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(dressed, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
-    const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', extras: extrasRef.current, text: s.text, titleFont, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
+    const overlays = [renderUrl({ ...s, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(s, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
+    const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', extras: extrasRef.current, text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
     if (media?.contentType.startsWith('video/')) {
       const out = await recordMontage({ ...common, src: media.blobUrl, video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
       return { blob: out.blob, extension: out.extension, video: true }
@@ -430,6 +430,13 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Force</span><input type="range" min={0} max={1} step={0.05} value={slide.glitch ?? 0} onChange={(e) => updateSlide({ glitch: Number(e.target.value) })} className="w-40" aria-label="Intensité du glitch" /><span className="w-10 text-xs">{Math.round((slide.glitch ?? 0) * 100)} %</span></div>
                   <p className="mt-1 text-xs text-gray-500">{GLITCH_STYLES.find((g) => g.key === (slide.glitchStyle ?? 'random'))?.hint}. L’aperçu montre le vrai résultat ; Collage et Défilé piochent aussi dans les autres images de la file.</p>
+                  {(slide.glitchStyle ?? 'random') === 'letters' ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Filtre</span><input type="range" min={0.1} max={1} step={0.05} value={slide.letterAlpha ?? 0.7} onChange={(e) => updateSlide({ letterAlpha: Number(e.target.value) })} className="w-40" aria-label="Intensité du texte-filtre" /><span className="w-10 text-xs">{Math.round((slide.letterAlpha ?? 0.7) * 100)} %</span><span className="text-xs text-gray-500">les lettres couvrent plus ou moins l’image</span></div> : null}
+                  {isVideo || animated ? <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(slide.mediaOnTop)} onChange={(e) => {
+                    // The ground needs room: the picture shrinks when it fills the frame.
+                    const on = e.target.checked
+                    if (on && !slide.mediaPlace) { const v = videoRef.current; const ratio = v && v.videoWidth && v.videoHeight ? v.videoHeight / v.videoWidth : (imageRef.current && imageRef.current.naturalWidth ? imageRef.current.naturalHeight / imageRef.current.naturalWidth : 9 / 16); const w = 0.72; const h = Math.min(1, Math.round(w * (canvas.width / canvas.height) * ratio * 1000) / 1000); updateSlide({ mediaOnTop: true, mediaPlace: { x: Math.round((1 - w) / 2 * 1000) / 1000, y: Math.round((1 - h) / 2 * 1000) / 1000, w, h } }) }
+                    else updateSlide({ mediaOnTop: on ? true : null })
+                  }} />Animation en fond, média propre par-dessus<span className="text-gray-500">(le média est réduit à 72 % s’il remplissait l’écran ; règle sa taille plus bas)</span></label> : null}
                   {!isVideo && animated ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Durée</span>{[3, 5, 8, 10].map((n) => <button key={n} className={(slide.animSeconds ?? 5) === n ? chipOn : chip} onClick={() => updateSlide({ animSeconds: n })}>{n} s</button>)}<span className="text-xs text-gray-500">l’image devient un clip</span></div> : null}
                   <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Vidéo</span>
                     <button className={!slide.mediaPlace ? chipOn : chip} onClick={() => updateSlide({ mediaPlace: null })}>Plein écran</button>
