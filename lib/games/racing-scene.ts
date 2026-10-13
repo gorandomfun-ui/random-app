@@ -852,50 +852,18 @@ export function gantry(buffer: PixelBuffer, p: { x: number; y: number; u: number
 const sizeFor = (width: number) => (width > 112 ? 130 : width > 70 ? 104 : 60)
 
 /**
- * A turning picture with its flank — the columns past the back's `back` —
- * drawn `by` times as wide: the car's side showing more as it comes
- * alongside. Made once a picture and a quarter step of `by`.
- */
-const widenedPics = new WeakMap<PixelBuffer, Map<number, PixelBuffer>>()
-function widened(pic: PixelBuffer, back: number, by: number): PixelBuffer {
-  const q = Math.round(by * 4) / 4, cut = Math.round(back)
-  if (q <= 1 || pic.width <= cut) return pic
-  let known = widenedPics.get(pic)
-  if (!known) { known = new Map(); widenedPics.set(pic, known) }
-  const had = known.get(q)
-  if (had) return had
-  const flank = pic.width - cut, wide = Math.round(flank * q), out = new PixelBuffer(cut + wide, pic.height, '#000000')
-  out.data.fill(0)
-  for (let y = 0; y < pic.height; y += 1) {
-    out.data.set(pic.data.subarray(y * pic.width * 4, (y * pic.width + cut) * 4), y * out.width * 4)
-    for (let x = 0; x < wide; x += 1) {
-      const from = (y * pic.width + cut + Math.min(flank - 1, Math.floor((x + 0.5) / q))) * 4
-      out.data.set(pic.data.subarray(from, from + 4), (y * out.width + cut + x) * 4)
-    }
-  }
-  known.set(q, out)
-  return out
-}
-/** How much wider a car's flank is drawn, at most, right alongside. */
-const FLANK_STRETCH = 1.5
-/** Which side of a car shows and how much (`view`, −1 its left side on the left of its back, 1 its right), else the way it turns. */
-const turnFor = (view: number, turn: -1 | 0 | 1): -1 | 0 | 1 => (Math.abs(view) > 0.05 ? (view < 0 ? -1 : 1) : turn)
-
-/**
  * A car seen from behind, `width` wide on the screen (its back), its foot at
  * `foot`, its middle at `cx`: straight, or turning (`turn` −1 left, 1
- * right) with its flank showing — or, off to a side of the eye (`view`), its
- * side toward the eye, wider the further aside it is; its shadow on the road
- * under it; through the hour and the haze.
+ * right) with its flank showing; its shadow on the road under it; through
+ * the hour and the haze.
  */
-export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; view?: number; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
-  const view = options.view ?? 0, turn = turnFor(view, options.turn ?? 0), clip = options.clip ?? buffer.height, size = sizeFor(width)
+export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+  const turn = options.turn ?? 0, clip = options.clip ?? buffer.height, size = sizeFor(width)
   const straightName = `car-${kind}-${size}` as RacingArtName, turnName = `car-${kind}-${size}-turn` as RacingArtName
   const straight = racingArt(straightName)
   if (!straight || width < 2) return
   const turnPic = turn ? racingArt(turnName) : null
-  // the burger leans rather than shows a side
-  const pic = turnPic && kind !== 'burger' && Math.abs(view) > 0.05 ? widened(turnPic, straight.width, 1 + Math.abs(view) * FLANK_STRETCH) : turnPic ?? straight
+  const pic = turnPic ?? straight
   // the back is the straight picture's width; a turning picture's flank (or lean) reaches past it
   const scale = width / straight.width, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale))
   const x0 = turnPic && turn < 0 ? Math.round(cx + width / 2 - w) : Math.round(cx - width / 2)
@@ -907,12 +875,11 @@ export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, fo
 }
 
 /** An everyday car of the traffic, `width` wide on the screen (with its share of a racing car's width), as `drawCar` draws the racing ones. */
-export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; view?: number; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
-  const view = options.view ?? 0, turn = turnFor(view, options.turn ?? 0), clip = options.clip ?? buffer.height
+export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+  const turn = options.turn ?? 0, clip = options.clip ?? buffer.height
   const back = width * TRAFFIC_WIDTH[model]
   if (back < 2) return
-  const made = trafficPicture(model, colour, turn !== 0, back), steps = made.back
-  const pic = turn !== 0 && Math.abs(view) > 0.05 ? widened(made.pic, steps, 1 + Math.abs(view) * FLANK_STRETCH) : made.pic
+  const { pic, back: steps } = trafficPicture(model, colour, turn !== 0, back)
   const scale = back / steps, w = Math.max(2, Math.round(pic.width * scale)), h = Math.max(1, Math.round(pic.height * scale * (TRAFFIC_SQUASH[model] ?? 1)))
   const x0 = turn < 0 ? Math.round(cx + back / 2 - w) : Math.round(cx - back / 2)
   glow(buffer, cx, foot - 1, back * 0.58, '#0a0814', 0.55, clip, 0.13)

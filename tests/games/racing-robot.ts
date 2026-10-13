@@ -12,7 +12,7 @@
  * weakest point.
  */
 
-import { racingBendSpeed, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
+import { FORK_DECIDE, racingBendSpeed, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
 
 export type Driver = { see: number; aim: number; look: number; margin: number; ahead: number; misses: number; good: boolean }
 export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70, misses: 0, good: true }
@@ -58,6 +58,8 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     const toward = (c: { x: number; lane: number }, l: number) => Math.abs(c.x - l) < 0.62 || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - l) < 0.62)
     const worth = (l: number) => {
       let w = l === lane ? 0.5 : 0
+      // where the road divides, the barrier down the middle: a side, never the middle lane — once a side is taken, that side
+      if (s.fork && seen.z > s.fork.at - FORK_DECIDE - 60 && seen.z < s.fork.at && (l === 0 || (s.forkPick >= 0 && Math.sign(l) !== (s.forkPick === 0 ? -1 : 1)))) w -= 50
       for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && toward(c, l) && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
       // and no lane to reach across a car close by: it would run into its side
       if (Math.abs(l - seen.x) > 0.3 && [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > -3 && c.z - seen.z < 9 && Math.abs(c.x - seen.x) > 0.3 && c.x > Math.min(seen.x, l) - 0.25 && c.x < Math.max(seen.x, l) + 0.25)) w -= 8
@@ -81,7 +83,8 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     if (both) wobble = 0
     else if (beside && Math.sign(wobble) === Math.sign(beside.x - lane)) wobble = -wobble
     // and no gas into a slower car right ahead, overlapping: anyone lifts and goes round it
-    const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 0 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.58 && c.speed < seen.speed)
+    // (a car alongside, half a car aside or more, is not in the way: the gas takes the driver past it)
+    const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 4 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.45 && c.speed < seen.speed)
     // and the brake for a slower car in its way that it cannot go round in time: running into it is a crash
     const late = [...s.rivals, ...s.traffic].some((c) => {
       if (c.z <= seen.z || c.speed >= seen.speed || !((Math.abs(c.x - seen.x) <= 0.55 && Math.abs(c.x - lane) <= 0.55) || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - lane) <= 0.55))) return false
