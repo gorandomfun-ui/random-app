@@ -124,8 +124,10 @@ export type PostSlide = {
   glitchStyle?: 'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters' | null
   /** For a picture given an animation: how long the clip lasts, in seconds. */
   animSeconds?: number | null
-  /** The animation as the ground, the picture drawn clean over it. */
+  /** The animation as the ground, the picture drawn clean over it, in a window of the screen's shape with a margin. */
   mediaOnTop?: boolean | null
+  /** The picture's zoom inside that window, 1 to 3. */
+  mediaZoom?: number | null
   /** How much the giant letters cover the picture (Lettres), 0 to 1. */
   letterAlpha?: number | null
   /** One of the site's icons placed by hand; size is its width in px on a 1080-wide canvas. */

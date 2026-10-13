@@ -5,12 +5,15 @@
  *   random   bands of the picture shifted, the engine's lines over it;
  *   slices   horizontal slices of the picture thrown sideways, fringed in the theme's colours;
  *   bands    lines of noise in the theme's colours over the frame, the picture through;
- *   sweep    a line crossing — whole, partial, backwards or downwards — the strips it touches sliding, blocks and lines with it;
- *   collage  blocks cut from the picture and from the queue's other pictures, bordered, jumping;
- *   feed     the picture in a framed card; now and then a feed of the pictures rushes past and it settles back;
- *   letters  a filter of giant letters — the slide's words, the wordmark or the brand block — open on the pictures.
+ *   sweep    a fine line passes — across, backwards, downwards, part of the way — leaving a mirrored trail,
+ *            the strips it touches shifted a little, ectoplasms drifting beside it;
+ *   collage  the picture cut in rows; in some rows, blocks of the picture itself slide sideways, thinly framed;
+ *   feed     the picture in a framed card under a camera's interface; now and then the feed scrolls one card;
+ *   letters  a filter of giant letters — the slide's words, the wordmark or the brand block — open on the picture.
+ * Only the slide's own picture is ever drawn: nothing from elsewhere appears without its source.
  * The force goes from nothing (the picture alone) to a lot, and the picture stays readable at the top.
- * With cleanOnTop the animation is the ground and the picture sits on it untouched.
+ * With cleanOnTop the animation is the ground and the picture sits on it untouched, in a window of the
+ * screen's shape with a margin around it, zoomed as the curator wants.
  * No gradient, no blur, no RGB: the colours are the theme's — cream, deep, the accent and their mixes.
  * Every number comes from a hash, so a frame is the same twice.
  */
@@ -20,10 +23,10 @@ export const GLITCH_STYLES: Array<{ key: GlitchStyle; name: string; hint: string
   { key: 'random', name: 'Random', hint: 'rafales, bandes, morceaux de l’image' },
   { key: 'slices', name: 'Tranches', hint: 'tranches horizontales jetées de côté, franges aux couleurs du thème' },
   { key: 'bands', name: 'Bandes', hint: 'des lignes de bruit aux couleurs du thème, l’image à travers' },
-  { key: 'sweep', name: 'Balayage', hint: 'une ligne traverse — entière, partielle, à rebours ou vers le bas — les bandes glissent, des blocs et des lignes l’accompagnent' },
-  { key: 'collage', name: 'Collage', hint: 'des blocs découpés dans les images, qui sautent ; rien à zéro, beaucoup au maximum' },
-  { key: 'feed', name: 'Défilé', hint: 'l’image dans un cadre ; de temps en temps un défilé des images passe et elle se repose' },
-  { key: 'letters', name: 'Lettres', hint: 'un filtre de lettres géantes — ton texte, RANDOM ou le bloc marque — ouvert sur les images' },
+  { key: 'sweep', name: 'Balayage', hint: 'une ligne fine passe — en travers, à rebours, vers le bas, en partie — et laisse une trace en miroir ; des ectoplasmes dérivent à côté' },
+  { key: 'collage', name: 'Collage', hint: 'l’image coupée en rangées ; dans certaines, des blocs de l’image glissent, finement encadrés' },
+  { key: 'feed', name: 'Défilé', hint: 'l’image dans une carte sous l’interface d’une caméra ; de temps en temps le fil défile d’une carte' },
+  { key: 'letters', name: 'Lettres', hint: 'un filtre de lettres géantes — ton texte, RANDOM ou le bloc marque — ouvert sur l’image' },
 ]
 
 export type DrawerInput = {
@@ -41,13 +44,12 @@ export type DrawerInput = {
   accent: string
   /** When the picture sits in a smaller rectangle, the ground behind it: the picture enlarged and darkened, or nothing. */
   ground?: boolean
-  /** Other pictures of the queue, for the collage and the feed. */
-  extras?: CanvasImageSource[]
   /** The slide's words and the typeface for the letters. */
   text?: string
   titleFont?: string
-  /** The animation fills the frame as a ground; the picture is drawn clean on top, at its rect. */
+  /** The animation fills the frame as a ground; the picture is drawn clean on top, covering its clip, zoomed. */
   cleanOnTop?: boolean
+  zoom?: number
   /** The wordmark, for the letters' filter; the word RANDOM in the typeface when absent. */
   logo?: CanvasImageSource | null
   /** How much the giant letters cover the picture, 0 to 1. */
@@ -96,9 +98,28 @@ function cover(ctx: CanvasRenderingContext2D, src: CanvasImageSource, x: number,
   ctx.drawImage(src, sx, sy, cw, ch, x, y, w, h)
 }
 
+/** An organic blob path — the ectoplasm — around a centre, breathing with time. */
+function blobPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, t: number) {
+  const n = 7 + Math.floor(hash(seed, 1) * 3)
+  const pts: Array<[number, number]> = []
+  for (let i = 0; i < n; i += 1) {
+    const a = (i / n) * Math.PI * 2
+    const rr = r * (0.7 + hash(seed, i, 2) * 0.5 + Math.sin(t * 2.1 + i * 1.7 + seed) * 0.12)
+    pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * (0.75 + hash(seed, 3) * 0.5)])
+  }
+  ctx.beginPath()
+  for (let i = 0; i < n; i += 1) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % n]
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2
+    if (i === 0) ctx.moveTo(mx, my)
+    const [x2, y2] = pts[(i + 2) % n]
+    ctx.quadraticCurveTo(x1, y1, (x1 + x2) / 2, (y1 + y2) / 2)
+  }
+  ctx.closePath()
+}
+
 export function createDrawer(input: DrawerInput) {
   const { width, height } = input
-  const extras = input.extras ?? []
   const accent = input.accent
   /** The theme's tones: the accent, cream, deep, and their mixes. */
   const TONES = [accent, CREAM, DEEP, mix(accent, DEEP, 0.45), mix(accent, CREAM, 0.5)]
@@ -108,6 +129,7 @@ export function createDrawer(input: DrawerInput) {
   const s = scratch.getContext('2d')!
   const scratch2 = document.createElement('canvas'); scratch2.width = width; scratch2.height = height
   const s2 = scratch2.getContext('2d')!
+  const px = Math.max(1, Math.round(width / 1080))
 
   /** The fringes of a torn edge: a hairline of the accent above, of cream below (or the reverse). */
   const fringe = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number, q: number) => {
@@ -137,17 +159,26 @@ export function createDrawer(input: DrawerInput) {
     }
     ctx.globalAlpha = 1
   }
-  /** A block of a picture, bordered. */
-  const block = (ctx: CanvasRenderingContext2D, src: CanvasImageSource, x: number, y: number, w: number, h: number, q: number) => {
-    cover(ctx, src, x, y, w, h, hash(q, 40), hash(q, 41), 1 + hash(q, 42) * 2)
-    ctx.lineWidth = 2 + Math.round(hash(q, 43) * 3); ctx.strokeStyle = hash(q, 44) < 0.5 ? DEEP : CREAM; ctx.strokeRect(x, y, w, h)
+  /** Fine hairlines, a pixel or two, in cream or the accent. */
+  const hairlines = (ctx: CanvasRenderingContext2D, seed: number, n: number, vertical: boolean, from: number, to: number) => {
+    for (let i = 0; i < n; i += 1) {
+      const p = Math.round(from + hash(seed, i, 90) * (to - from))
+      const len = Math.round((vertical ? height : width) * (0.1 + hash(seed, i, 91) * 0.6)), start = Math.round(hash(seed, i, 92) * ((vertical ? height : width) - len))
+      ctx.fillStyle = hash(seed, i, 93) < 0.5 ? CREAM : accent; ctx.globalAlpha = 0.5 + hash(seed, i, 94) * 0.4
+      if (vertical) ctx.fillRect(p, start, px, len); else ctx.fillRect(start, p, len, px)
+    }
+    ctx.globalAlpha = 1
   }
-  const hud = (ctx: CanvasRenderingContext2D, frame: number, atMs: number) => {
+  /** The camera's interface: a status bar, the counters, REC blinking, the corner brackets. Thin. */
+  const cam = (ctx: CanvasRenderingContext2D, frame: number, atMs: number, rec: boolean) => {
     ctx.save(); ctx.fillStyle = CREAM; ctx.font = `${Math.round(width * 0.02)}px "Inter Tight", monospace`; ctx.textBaseline = 'top'
     const t = Math.floor(atMs / 1000)
-    ctx.fillText(`17:${String(13 + t).padStart(2, '0')}  ${String(140 + (frame % 30)).padStart(3, '0')}`, Math.round(width * 0.04), Math.round(height * 0.025))
-    ctx.fillText('F R N', Math.round(width * 0.9), Math.round(height * 0.06))
-    ctx.strokeStyle = hash(frame, 22) < 0.5 ? accent : CREAM; ctx.lineWidth = Math.max(2, Math.round(width * 0.003))
+    ctx.fillText(`17:${String(13 + t).padStart(2, '0')}`, Math.round(width * 0.04), Math.round(height * 0.025))
+    ctx.fillText(`${String(140 + (frame % 30)).padStart(3, '0')}  F R N`, Math.round(width * 0.78), Math.round(height * 0.025))
+    for (let i = 0; i < 4; i += 1) ctx.fillRect(Math.round(width * 0.62) + i * 7 * px, Math.round(height * 0.025) + (3 - i) * 3 * px, 4 * px, (i + 1) * 3 * px)
+    ctx.strokeStyle = CREAM; ctx.lineWidth = px; ctx.strokeRect(Math.round(width * 0.68), Math.round(height * 0.027), 22 * px, 10 * px); ctx.fillRect(Math.round(width * 0.68) + 2 * px, Math.round(height * 0.027) + 2 * px, 14 * px, 6 * px)
+    if (rec && Math.floor(atMs / 500) % 2 === 0) { ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(Math.round(width * 0.04) + 5 * px, Math.round(height * 0.07), 5 * px, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = CREAM; ctx.fillText('REC', Math.round(width * 0.04) + 14 * px, Math.round(height * 0.07) - 8 * px) }
+    ctx.strokeStyle = hash(frame, 22) < 0.5 ? accent : CREAM; ctx.lineWidth = Math.max(1, Math.round(width * 0.002))
     const m = Math.round(width * 0.035), l = Math.round(width * 0.05)
     for (const [cx, cy, dx, dy] of [[m, m, 1, 1], [width - m, m, -1, 1], [m, height - m, 1, -1], [width - m, height - m, -1, -1]] as const) { ctx.beginPath(); ctx.moveTo(cx, cy + dy * l); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * l, cy); ctx.stroke() }
     ctx.restore()
@@ -158,6 +189,16 @@ export function createDrawer(input: DrawerInput) {
     const scale = Math.max(width / sw, height / sh)
     const gw = Math.round(sw * scale), gh = Math.round(sh * scale)
     return { x: Math.round((width - gw) / 2), y: Math.round((height - gh) / 2), w: gw, h: gh }
+  }
+  /** An ectoplasm: through the blob, the picture displaced (and mirrored now and then), a fine outline around it. */
+  const ectoplasm = (ctx: CanvasRenderingContext2D, source: CanvasImageSource, cx: number, cy: number, r: number, seed: number, atMs: number) => {
+    const g = coverRect(source)
+    ctx.save(); blobPath(ctx, cx, cy, r, seed, atMs / 1000); ctx.clip()
+    const dx = Math.round((hash(seed, 95) - 0.5) * width * 0.2), dy = Math.round((hash(seed, 96) - 0.5) * height * 0.08)
+    if (hash(seed, 97) < 0.4) { ctx.translate(width, 0); ctx.scale(-1, 1); ctx.drawImage(source, g.x - dx, g.y + dy, g.w, g.h) }
+    else ctx.drawImage(source, g.x + dx, g.y + dy, g.w, g.h)
+    ctx.restore()
+    ctx.save(); blobPath(ctx, cx, cy, r, seed, atMs / 1000); ctx.strokeStyle = hash(seed, 98) < 0.6 ? CREAM : accent; ctx.lineWidth = 1.5 * px; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.restore()
   }
 
   /**
@@ -202,12 +243,6 @@ export function createDrawer(input: DrawerInput) {
     }
     return { x: left(lw), y: cy - lh / 2, w: lw, h: lh }
   }
-  /** The scratch's shapes tinted in one colour, on the second scratch. */
-  const tinted = (colour: string) => {
-    s2.clearRect(0, 0, width, height); s2.globalCompositeOperation = 'source-over'; s2.drawImage(scratch, 0, 0)
-    s2.globalCompositeOperation = 'source-in'; s2.fillStyle = colour; s2.fillRect(0, 0, width, height); s2.globalCompositeOperation = 'source-over'
-    return scratch2
-  }
 
   return (ctx: CanvasRenderingContext2D, source: CanvasImageSource, atMs: number, schedule: Slot[], frame: number) => {
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1
@@ -227,7 +262,6 @@ export function createDrawer(input: DrawerInput) {
     const burst = variant > 0 && k > 0
     const seed = variant * 1000 + Math.floor(atMs / 90)
     const style = input.style
-    const pool: CanvasImageSource[] = [source, ...extras]
 
     // The picture itself, except for the styles that build the frame otherwise.
     if (style !== 'feed' && style !== 'letters') {
@@ -250,7 +284,7 @@ export function createDrawer(input: DrawerInput) {
       // Calm: a few slices on the move, some fringed; burst: many, thrown far. Nothing at zero.
       throwSlices(ctx, seed, burst ? Math.round(8 + k * 26) : Math.round(k * 8), (burst ? 0.35 : 0.12) * (0.4 + k), burst ? 0.6 : 0.3, k, burst ? 0.05 : 0.03)
       if (burst && hash(seed, 9) < 0.35) { ctx.globalAlpha = 0.3; ctx.drawImage(ctx.canvas, Math.round(width * 0.012), 0); ctx.fillStyle = accent; ctx.globalCompositeOperation = 'multiply'; ctx.fillRect(0, 0, width, height); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1 }
-      if (k > 0) hud(ctx, frame, atMs)
+      if (k > 0) cam(ctx, frame, atMs, false)
     }
 
     if (style === 'bands') {
@@ -260,163 +294,181 @@ export function createDrawer(input: DrawerInput) {
         if (hash(seed, i, 13) < (burst ? 0.5 : 0.25)) { const y = Math.round(hash(seed, i, 11) * height), h = Math.max(1, Math.round(height * (0.001 + hash(seed, i, 12) * 0.006))); ctx.drawImage(ctx.canvas, 0, y, width, h, Math.round((hash(seed, i, 14) - 0.5) * width * (burst ? 0.5 : 0.2)), y, width, h) }
       }
       noiseLines(ctx, seed, lines, burst ? 0.9 : 0.7)
-      if (k > 0) hud(ctx, frame, atMs)
+      if (k > 0) cam(ctx, frame, atMs, false)
     }
 
     if (style === 'sweep') {
-      // Each pass of 1.8 s has its own kind: across, backwards, a part of the way, downwards, or none — the companions stay.
-      const period = 1800, cycle = Math.floor(atMs / period), pos = (atMs % period) / period
+      // Each pass of 2.2 s has its own way: across, backwards, downwards, a part of the way, or a pause.
+      const period = 2200, cycle = Math.floor(atMs / period), pos = (atMs % period) / period
       const q = hash(cycle, 80)
-      const kind = q < 0.3 ? 'lr' : q < 0.5 ? 'rl' : q < 0.7 ? 'partial' : q < 0.85 ? 'down' : 'rest'
+      const kind = q < 0.3 ? 'lr' : q < 0.5 ? 'rl' : q < 0.7 ? 'down' : q < 0.88 ? 'partial' : 'rest'
       const x0 = hash(cycle, 81) * width * 0.5, x1 = x0 + width * (0.25 + hash(cycle, 82) * 0.35)
-      const run = Math.min(1, pos / 0.7)
-      const lineX = kind === 'lr' ? run * width : kind === 'rl' ? (1 - run) * width : kind === 'partial' ? x0 + (x1 - x0) * run : -1
-      const lineY = kind === 'down' ? run * height : -1
-      const moving = pos < 0.7 && kind !== 'rest'
-      const reach = Math.round((kind === 'down' ? height : width) * (0.06 + k * 0.22))
-      const strips = Math.round(2 + k * 12)
+      const run = Math.min(1, pos / 0.75)
+      const vertical = kind !== 'down'
+      const line = kind === 'lr' ? run * width : kind === 'rl' ? (1 - run) * width : kind === 'partial' ? x0 + (x1 - x0) * run : run * height
+      const moving = pos < 0.75 && kind !== 'rest'
+      const ahead = kind === 'rl' ? -1 : 1
       if (moving && k > 0) {
-        if (kind === 'down') {
-          // Rows near the line slide sideways, a few mirrored.
-          for (let i = 0; i < strips; i += 1) {
-            const rh = Math.round(height * (0.01 + hash(seed, i, 24) * 0.06)), ry = Math.round(lineY - reach + hash(seed, i, 25) * reach * 2)
-            if (ry + rh < 0 || ry > height) continue
-            const dx = Math.round((hash(seed, i, 26) - 0.5) * width * 0.35 * k)
-            if (hash(seed, i, 27) < 0.2) { ctx.save(); ctx.translate(width / 2, ry + rh / 2); ctx.scale(-1, 1); ctx.drawImage(ctx.canvas, 0, ry, width, rh, -width / 2 + dx, -rh / 2, width, rh); ctx.restore() }
-            else ctx.drawImage(ctx.canvas, 0, ry, width, rh, dx, ry, width, rh)
-            if (hash(seed, i, 28) < 0.4) { ctx.globalAlpha = 0.7; ctx.fillStyle = hash(seed, i, 29) < 0.5 ? accent : CREAM; ctx.fillRect(0, ry, width, 2); ctx.globalAlpha = 1 }
-          }
+        // The trail: behind the line, a narrow band of the picture in a mirror, its strips shifted a little.
+        const trail = Math.round((vertical ? width : height) * (0.03 + k * 0.12))
+        ctx.save()
+        if (vertical) {
+          const tx = Math.round(ahead > 0 ? line - trail : line), tw = trail
+          ctx.beginPath(); ctx.rect(tx, 0, tw, height); ctx.clip()
+          ctx.translate(2 * line, 0); ctx.scale(-1, 1); ctx.drawImage(ctx.canvas, 0, 0)
         } else {
-          // Columns near the line slide up and down, a few mirrored, with hairlines of the theme.
-          for (let i = 0; i < strips; i += 1) {
-            const cw = Math.round(width * (0.01 + hash(seed, i, 24) * 0.08)), cx = Math.round(lineX - reach + hash(seed, i, 25) * reach * 2)
-            if (cx + cw < 0 || cx > width) continue
-            const dy = Math.round((hash(seed, i, 26) - 0.5) * height * 0.35 * k)
-            if (hash(seed, i, 27) < 0.2) { ctx.save(); ctx.translate(cx + cw / 2, height / 2); ctx.scale(1, -1); ctx.drawImage(ctx.canvas, cx, 0, cw, height, -cw / 2, -height / 2 + dy, cw, height); ctx.restore() }
-            else ctx.drawImage(ctx.canvas, cx, 0, cw, height, cx, dy, cw, height)
-            if (hash(seed, i, 28) < 0.4) { ctx.globalAlpha = 0.7; ctx.fillStyle = hash(seed, i, 29) < 0.5 ? accent : CREAM; ctx.fillRect(cx, 0, 2, height); ctx.globalAlpha = 1 }
+          ctx.beginPath(); ctx.rect(0, Math.round(line - trail), width, trail); ctx.clip()
+          ctx.translate(0, 2 * line); ctx.scale(1, -1); ctx.drawImage(ctx.canvas, 0, 0)
+        }
+        ctx.restore()
+        // The strips the line touches, shifted a little, a few a lot.
+        const strips = Math.round(1 + k * 7)
+        for (let i = 0; i < strips; i += 1) {
+          const big = hash(seed, i, 27) < 0.15
+          const d = Math.round(((hash(seed, i, 26) - 0.5) * (big ? 0.25 : 0.05)) * (vertical ? height : width) * (0.4 + k))
+          if (vertical) {
+            const cw = Math.round(width * (0.004 + hash(seed, i, 24) * 0.03)), cx = Math.round(line - trail + hash(seed, i, 25) * trail * 2)
+            if (cx + cw > 0 && cx < width) ctx.drawImage(ctx.canvas, cx, 0, cw, height, cx, d, cw, height)
+          } else {
+            const rh = Math.round(height * (0.004 + hash(seed, i, 24) * 0.03)), ry = Math.round(line - trail + hash(seed, i, 25) * trail * 2)
+            if (ry + rh > 0 && ry < height) ctx.drawImage(ctx.canvas, 0, ry, width, rh, d, ry, width, rh)
           }
         }
-        // The companions: blocks of the picture echoed near the line, lines of noise around it.
-        const blocks = Math.round(k * 3)
-        for (let i = 0; i < blocks; i += 1) {
-          const bw = Math.round(width * (0.08 + hash(cycle, i, 83) * 0.2)), bh = Math.round(height * (0.04 + hash(cycle, i, 84) * 0.12))
-          const bx = kind === 'down' ? Math.round(hash(cycle, i, 85) * (width - bw)) : Math.round(Math.min(width - bw, Math.max(0, lineX + (hash(cycle, i, 85) - 0.5) * reach * 3)))
-          const by = kind === 'down' ? Math.round(Math.min(height - bh, Math.max(0, lineY + (hash(cycle, i, 86) - 0.5) * reach * 3))) : Math.round(hash(cycle, i, 86) * (height - bh))
-          block(ctx, pool[Math.floor(hash(cycle, i, 87) * pool.length)], bx, by, bw, bh, hash(cycle, i, 88) * 1000)
+        // The ectoplasms drifting beside the line, and fine hairlines along it.
+        const blobs = k < 0.3 ? 0 : 1 + Math.round(hash(cycle, 83) * k * 2)
+        for (let i = 0; i < blobs; i += 1) {
+          const along = hash(cycle, i, 84), side = (hash(cycle, i, 85) - 0.5) * 2
+          const rr = Math.round(width * (0.05 + hash(cycle, i, 86) * 0.1 * (0.5 + k)))
+          const cx = vertical ? line + side * trail * 1.5 - ahead * rr * 0.6 : along * width
+          const cy = vertical ? along * height : line - rr * 0.6 + side * trail
+          ectoplasm(ctx, source, cx, cy, rr, cycle * 10 + i, atMs)
         }
-        noiseLines(ctx, seed, Math.round(k * 8), 0.8, kind === 'down' ? Math.max(0, lineY - reach * 2) : 0, kind === 'down' ? Math.min(height, lineY + reach * 2) : height)
+        hairlines(ctx, seed, Math.round(1 + k * 5), vertical, Math.max(0, line - trail * 2), Math.min(vertical ? width : height, line + trail))
       }
       if (moving) {
-        ctx.fillStyle = hash(cycle, 89) < 0.6 ? CREAM : accent
-        if (kind === 'down') ctx.fillRect(0, Math.round(lineY), width, Math.max(2, Math.round(width * 0.004)))
-        else ctx.fillRect(Math.round(lineX), 0, Math.max(2, Math.round(width * 0.004)), height)
+        // The line itself, thin, with a fainter twin a few pixels behind.
+        const ink = hash(cycle, 89) < 0.6 ? CREAM : accent
+        ctx.fillStyle = ink
+        if (vertical) { ctx.fillRect(Math.round(line), 0, 2 * px, height); ctx.globalAlpha = 0.45; ctx.fillRect(Math.round(line - ahead * 6 * px), 0, px, height) }
+        else { ctx.fillRect(0, Math.round(line), width, 2 * px); ctx.globalAlpha = 0.45; ctx.fillRect(0, Math.round(line - 6 * px), width, px) }
+        ctx.globalAlpha = 1
       }
-      if (burst) throwSlices(ctx, seed, 6, 0.2, 0.4, k)
+      if (burst) throwSlices(ctx, seed, 3, 0.12, 0.4, k, 0.02)
     }
 
     if (style === 'collage') {
-      // Blocks cut from the pictures, bordered, jumping every few frames: none at zero, a handful in the calm, more in a burst; the picture stays readable.
-      const n = burst ? Math.round(3 + k * 12) : Math.round(k * 6)
-      const step = burst ? 110 : 300
-      const s3 = Math.floor(atMs / step)
-      const grow = 0.6 + 0.4 * k
-      for (let i = 0; i < n; i += 1) {
-        const w = Math.round(width * (0.08 + hash(s3, i, 33) * 0.28) * grow), h = Math.round(height * (0.05 + hash(s3, i, 34) * 0.18) * grow)
-        const x = Math.round(hash(s3, i, 35) * (width - w)), y = Math.round(hash(s3, i, 36) * (height - h))
-        const q = hash(s3, i, 37)
-        if (q < 0.1) { ctx.fillStyle = DEEP; ctx.fillRect(x, y, w, h); ctx.lineWidth = 2; ctx.strokeStyle = CREAM; ctx.strokeRect(x, y, w, h) }
-        else if (q < 0.18) { ctx.fillStyle = tone(hash(s3, i, 38)); ctx.fillRect(x, y, w, h); ctx.lineWidth = 2; ctx.strokeStyle = DEEP; ctx.strokeRect(x, y, w, h) }
-        else block(ctx, pool[Math.floor(hash(s3, i, 39) * pool.length)], x, y, w, h, hash(s3, i, 40) * 1000)
+      // The frame in rows; in the rows awake, blocks of the picture itself slide sideways, thinly framed, over their own row.
+      const rows = 5 + Math.round(k * 4)
+      const rowH = height / rows
+      const epoch = Math.floor(atMs / 2600)
+      const g = coverRect(source)
+      for (let ri = 0; ri < rows; ri += 1) {
+        // A row wakes for an epoch when the force says so; the pieces glide across it at their own speed.
+        const awake = hash(epoch, ri, 30) < k * 0.8
+        if (!awake) continue
+        const pieces = 1 + Math.round(hash(epoch, ri, 31) * (1 + k * 2))
+        const y = Math.round(ri * rowH), h = Math.round(rowH * (0.4 + hash(epoch, ri, 32) * 0.6))
+        const yy = y + Math.round(hash(epoch, ri, 33) * (rowH - h))
+        for (let pi = 0; pi < pieces; pi += 1) {
+          const w = Math.round(width * (0.12 + hash(epoch, ri, pi, 34) * 0.3))
+          const speed = (hash(epoch, ri, pi, 35) - 0.5) * width * (0.15 + k * 0.5) / 1000
+          const x = Math.round(((hash(epoch, ri, pi, 36) * (width + w) + speed * (atMs % 2600)) % (width + w) + width + w) % (width + w) - w)
+          // The piece: the same row of the picture, taken elsewhere along it.
+          const srcX = Math.round(hash(epoch, ri, pi, 37) * (width - w))
+          ctx.save(); ctx.beginPath(); ctx.rect(x, yy, w, h); ctx.clip()
+          ctx.drawImage(source, g.x + (x - srcX), g.y, g.w, g.h)
+          ctx.restore()
+          ctx.lineWidth = px; ctx.strokeStyle = hash(epoch, ri, pi, 38) < 0.6 ? CREAM : DEEP; ctx.strokeRect(x + 0.5, yy + 0.5, w - 1, h - 1)
+          if (hash(epoch, ri, pi, 39) < 0.25) { ctx.fillStyle = tone(hash(epoch, ri, pi, 40)); ctx.fillRect(x, yy + h - 2 * px, w, 2 * px) }
+        }
       }
-      noiseLines(ctx, seed, Math.round(k * 6), 0.8)
-      if (burst) throwSlices(ctx, seed, 6, 0.25, 0.3, k, 0.03)
+      hairlines(ctx, seed, Math.round(k * 4), false, 0, height)
+      if (burst) throwSlices(ctx, seed, 4, 0.2, 0.3, k, 0.02)
     }
 
     if (style === 'feed') {
-      // The picture in its framed card over its own darkened ground; now and then the feed rushes past, faster and oftener with the force.
+      // The picture in a framed card over its own darkened ground, under the camera's interface; now and then the feed scrolls one card.
       const g = coverRect(source)
       ctx.drawImage(source, g.x, g.y, g.w, g.h)
-      ctx.fillStyle = input.background; ctx.globalAlpha = 0.6; ctx.fillRect(0, 0, width, height); ctx.globalAlpha = 1
-      const cycle = 5000, t = (atMs % cycle) / cycle
-      const rushLen = k <= 0.05 ? 0 : 0.1 + 0.2 * k
-      const rushing = t < rushLen
-      const cardW = Math.round(width * 0.7), cardH = Math.round(cardW * 1.25), gap = Math.round(height * 0.05)
-      const cardX = Math.round((width - cardW) / 2)
-      const frameCard = (x: number, y: number, src: CanvasImageSource) => {
-        cover(ctx, src, x, y, cardW, cardH, 0.5, 0.5)
-        ctx.lineWidth = 3; ctx.strokeStyle = accent; ctx.strokeRect(x - 3, y - 3, cardW + 6, cardH + 6)
-        ctx.strokeStyle = CREAM; ctx.strokeRect(x + 3, y + 3, cardW - 6, cardH - 6)
+      ctx.fillStyle = input.background; ctx.globalAlpha = 0.55; ctx.fillRect(0, 0, width, height); ctx.globalAlpha = 1
+      const cardW = Math.round(width * 0.74), cardH = Math.round(cardW * 1.3), gap = Math.round(height * 0.05)
+      const cardX = Math.round((width - cardW) / 2), restY = Math.round((height - cardH) / 2)
+      const frameCard = (y: number, fy: number) => {
+        cover(ctx, source, cardX, y, cardW, cardH, 0.5, fy)
+        ctx.lineWidth = px; ctx.strokeStyle = CREAM; ctx.strokeRect(cardX - 2 * px + 0.5, y - 2 * px + 0.5, cardW + 4 * px, cardH + 4 * px)
+        ctx.strokeStyle = accent; ctx.strokeRect(cardX + 2 * px + 0.5, y + 2 * px + 0.5, cardW - 4 * px, cardH - 4 * px)
       }
-      if (rushing) {
-        // The pictures pass, the speed falling as the second goes; a faint double at a high force.
-        const ease = 1 - t / rushLen
-        const offset = (ease * ease * height * (1.5 + 2 * k)) % (cardH + gap)
-        for (let i = -1; i < 4; i += 1) {
-          const y = Math.round(i * (cardH + gap) - offset + height * 0.1)
-          const src = pool[(i + 4) % pool.length]
-          if (k > 0.6) { ctx.globalAlpha = 0.25; frameCard(cardX, y + Math.round(ease * 30), src); ctx.globalAlpha = 1 }
-          frameCard(cardX, y, src)
-        }
-        throwSlices(ctx, seed, Math.round(k * 6), 0.25, 0.3, k, 0.02)
+      const cycle = 4500, t = (atMs % cycle) / cycle
+      const scrollLen = k <= 0.05 ? 0 : 0.16 - k * 0.06
+      if (t < scrollLen) {
+        // One scroll: the card leaves upward, the next one (the picture again, framed elsewhere) takes its place.
+        const e = t / scrollLen, ease = 1 - (1 - e) * (1 - e)
+        const dy = Math.round(ease * (cardH + gap))
+        frameCard(restY - dy, 0.5)
+        frameCard(restY - dy + cardH + gap, 0.2 + hash(Math.floor(atMs / cycle), 50) * 0.6)
+        if (k > 0.5) { ctx.globalAlpha = 0.3; ctx.drawImage(ctx.canvas, 0, Math.round(-(1 - ease) * 24 * px * k)); ctx.globalAlpha = 1 }
+        hairlines(ctx, seed, Math.round(k * 4), false, 0, height)
+        throwSlices(ctx, seed, Math.round(k * 4), 0.15, 0.3, k, 0.015)
       } else {
-        const settle = rushLen ? Math.min(1, (t - rushLen) / 0.08) : 1
-        const y = Math.round((height - cardH) / 2 + (1 - settle) * height * 0.25)
-        frameCard(cardX, y, source)
-        if (burst) throwSlices(ctx, seed, 4, 0.2, 0.3, k, 0.03)
+        frameCard(restY, 0.5)
+        if (burst) throwSlices(ctx, seed, 3, 0.12, 0.3, k, 0.02)
       }
+      if (k > 0) cam(ctx, frame, atMs, true)
     }
 
     if (style === 'letters') {
-      // The filter: the slide's words, the wordmark, or the brand block, in giant letters open on the pictures; the ground is the picture, darkened as much as the letters are dense.
+      // The filter: the slide's words, the wordmark, or the brand block, in giant letters open on the picture; the ground is the picture, darkened as much as the letters cover it.
       const la = Math.min(1, Math.max(0, input.letterAlpha ?? 0.7))
       const g = coverRect(source)
       ctx.drawImage(source, g.x, g.y, g.w, g.h)
-      ctx.fillStyle = input.background; ctx.globalAlpha = Math.max(0, 0.2 + 0.55 * la - (burst ? 0.15 : 0)); ctx.fillRect(0, 0, width, height); ctx.globalAlpha = 1
+      ctx.fillStyle = input.background; ctx.globalAlpha = Math.max(0, 0.15 + 0.6 * la - (burst ? 0.15 : 0)); ctx.fillRect(0, 0, width, height); ctx.globalAlpha = 1
       // The three filters take turns every 1.8 s, so a clip of a few seconds shows them all; the first is drawn by hash.
       const seg = Math.floor(atMs / 1800)
       const modes: Array<'text' | 'wordmark' | 'block'> = input.text?.trim() ? ['text', 'wordmark', 'text', 'block'] : ['wordmark', 'block']
       const mode = modes[(seg + Math.floor(hash(0, 70) * modes.length)) % modes.length]
-      const copies = 1 + Math.round(k * 3)
+      // Placed in the upper two thirds, clear of the slide's own text below.
+      const zone = hash(seg, 72), qa = hash(seg, 73)
+      const cy = height * (zone < 0.5 ? 0.4 : zone < 0.75 ? 0.22 : 0.5)
+      const align = qa < 0.5 ? 'center' : qa < 0.75 ? 'left' : 'right'
       const s3 = Math.floor(atMs / (burst ? 120 : 400))
-      const drift = Math.sin(atMs / 700)
-      for (let ci = 0; ci < copies; ci += 1) {
-        const scale = ci === 0 ? 1 : 0.35 + hash(seg, ci, 71) * 0.35
-        const zone = hash(seg, ci, 72)
-        const cy = ci === 0 && zone < 0.5 ? height / 2 : height * (zone < 0.33 ? 0.22 : zone < 0.66 ? 0.5 : 0.78)
-        const qa = hash(seg, ci, 73)
-        const align = ci === 0 && qa < 0.5 ? 'center' : qa < 0.33 ? 'left' : qa < 0.66 ? 'center' : 'right'
-        const dx = burst ? Math.round((hash(s3, ci, 54) - 0.5) * width * 0.3) : Math.round(drift * height * 0.01 * (ci % 2 ? -1 : 1))
-        const bounds = stamp(mode, scale, cy, align)
-        const alpha = ci === 0 ? la : la * 0.6
-        // The shadow copies, deep then the accent, then the shapes in cream, then the pictures through some of them.
-        ctx.globalAlpha = alpha
-        ctx.drawImage(tinted(DEEP), dx + Math.round(width * 0.012), Math.round(height * 0.006))
-        if (burst) ctx.drawImage(tinted(accent), dx - Math.round(width * 0.006), -Math.round(height * 0.003))
-        ctx.drawImage(scratch, dx, 0)
-        if (ci === 0 || burst) {
-          const src = pool[Math.floor(hash(seg, ci, 56) * pool.length)]
-          s.globalCompositeOperation = 'source-in'
-          cover(s, src, 0, 0, width, height, hash(seg, ci, 57), hash(seg, ci, 58), 1.5)
-          s.globalCompositeOperation = 'source-over'
-          for (let i = 0; i < 2 + Math.round(k * 3); i += 1) {
-            const w = Math.round(bounds.w * (0.2 + hash(s3, ci, i, 59) * 0.5)), h = Math.round(bounds.h * (0.3 + hash(s3, ci, i, 60) * 0.7))
-            const x = Math.round(bounds.x + hash(s3, ci, i, 61) * Math.max(0, bounds.w - w)), y = Math.round(bounds.y + hash(s3, ci, i, 62) * Math.max(0, bounds.h - h))
-            ctx.drawImage(scratch, x, y, w, h, x + dx, y, w, h)
-          }
-        }
-        ctx.globalAlpha = 1
+      const dx = burst ? Math.round((hash(s3, 54) - 0.5) * width * 0.3) : 0
+      const bounds = stamp(mode, 1, cy, align)
+      // The shapes, with a hard deep shadow, composed once and laid down as one crisp layer.
+      s2.clearRect(0, 0, width, height); s2.globalCompositeOperation = 'source-over'
+      s2.drawImage(scratch, Math.round(width * 0.012), Math.round(height * 0.006))
+      s2.globalCompositeOperation = 'source-in'; s2.fillStyle = DEEP; s2.fillRect(0, 0, width, height); s2.globalCompositeOperation = 'source-over'
+      s2.drawImage(scratch, 0, 0)
+      ctx.globalAlpha = la; ctx.drawImage(scratch2, dx, 0); ctx.globalAlpha = 1
+      // The picture through some of the letters: windows cut in the shapes.
+      s.globalCompositeOperation = 'source-in'
+      cover(s, source, 0, 0, width, height, hash(seg, 57), hash(seg, 58), 1.5)
+      s.globalCompositeOperation = 'source-over'
+      for (let i = 0; i < 2 + Math.round(k * 3); i += 1) {
+        const w = Math.round(bounds.w * (0.2 + hash(s3, i, 59) * 0.5)), h = Math.round(bounds.h * (0.3 + hash(s3, i, 60) * 0.7))
+        const x = Math.round(bounds.x + hash(s3, i, 61) * Math.max(0, bounds.w - w)), y = Math.round(bounds.y + hash(s3, i, 62) * Math.max(0, bounds.h - h))
+        ctx.drawImage(scratch, x, y, w, h, x + dx, y, w, h)
       }
-      noiseLines(ctx, seed, Math.round(k * 10), 0.8)
+      // With the force, the filter repeats: smaller deep silhouettes elsewhere, and the lines.
+      const echoes = Math.round(k * 2)
+      for (let ci = 1; ci <= echoes; ci += 1) {
+        const ecy = height * (0.15 + hash(seg, ci, 74) * 0.7)
+        const ealign = hash(seg, ci, 75) < 0.5 ? 'left' : 'right'
+        stamp(mode, 0.3 + hash(seg, ci, 76) * 0.25, ecy, ealign)
+        s2.clearRect(0, 0, width, height); s2.drawImage(scratch, 0, 0); s2.globalCompositeOperation = 'source-in'; s2.fillStyle = hash(seg, ci, 77) < 0.6 ? DEEP : accent; s2.fillRect(0, 0, width, height); s2.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = Math.min(1, la + 0.2); ctx.drawImage(scratch2, 0, 0); ctx.globalAlpha = 1
+      }
+      noiseLines(ctx, seed, Math.round(k * 8), 0.8)
       if (burst) throwSlices(ctx, seed, Math.round(2 + k * 8), 0.5, 0.3, k, 0.12)
     }
 
     if (onTop) {
-      // The picture itself, untouched, over the animation.
-      ctx.save()
-      if (input.clip) { ctx.beginPath(); ctx.rect(input.clip.x, input.clip.y, input.clip.w, input.clip.h); ctx.clip() }
-      ctx.drawImage(source, input.rect.x, input.rect.y, input.rect.w, input.rect.h)
+      // The picture itself, untouched, in its window over the animation, zoomed as wanted.
+      const win = input.clip ?? input.rect
+      ctx.save(); ctx.beginPath(); ctx.rect(win.x, win.y, win.w, win.h); ctx.clip()
+      cover(ctx, source, win.x, win.y, win.w, win.h, 0.5, 0.5, Math.max(1, input.zoom ?? 1))
       ctx.restore()
+      // A fine cream edge, so the window reads as one over a ground made of the same picture.
+      ctx.lineWidth = 1.5 * px; ctx.strokeStyle = CREAM; ctx.globalAlpha = 0.9; ctx.strokeRect(win.x + 0.5, win.y + 0.5, win.w - 1, win.h - 1); ctx.globalAlpha = 1
     }
 
     const overlay = input.overlays[variant] ?? input.overlays[0]

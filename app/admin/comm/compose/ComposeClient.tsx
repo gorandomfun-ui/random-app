@@ -66,13 +66,13 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [customTag, setCustomTag] = useState('')
   const [clipDuration, setClipDuration] = useState<number | null>(null)
   const [lastFile, setLastFile] = useState<{ url: string; name: string } | null>(null)
-  /** The queue's other pictures, loaded once, for the collage and the feed. */
-  const extrasRef = useRef<HTMLImageElement[]>([])
-  const [extrasReady, setExtrasReady] = useState(0)
+  const [logoReady, setLogoReady] = useState(false)
+  /** The preview's sound: on, unless the browser refuses to start it, then the button turns it on. */
+  const [sound, setSound] = useState(true)
   const imageRef = useRef<HTMLImageElement | null>(null)
   /** The wordmark, for the letters' filter. */
   const logoRef = useRef<HTMLImageElement | null>(null)
-  useEffect(() => { const img = new Image(); img.onload = () => { logoRef.current = img; setExtrasReady((n) => n + 1) }; img.src = `/api/admin/comm/brand?variant=horizontal&color=${encodeURIComponent('#F8F5E6')}` }, [])
+  useEffect(() => { const img = new Image(); img.onload = () => { logoRef.current = img; setLogoReady(true) }; img.src = `/api/admin/comm/brand?variant=horizontal&color=${encodeURIComponent('#F8F5E6')}` }, [])
   const titleFont = typeof window !== 'undefined' ? (getComputedStyle(document.body).getPropertyValue('--font-tomorrow').trim() || 'Tomorrow, sans-serif') : 'Tomorrow, sans-serif'
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const liveRef = useRef<HTMLCanvasElement | null>(null)
@@ -123,12 +123,6 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   }, [post])
 
   const allMedia = useMemo(() => queue.flatMap((i) => i.media), [queue])
-  useEffect(() => {
-    const pictures = allMedia.filter((m) => m.contentType.startsWith('image/') && m.kind !== 'render').slice(0, 12)
-    let cancelled = false
-    void Promise.all(pictures.map((m) => new Promise<HTMLImageElement | null>((resolve) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = m.blobUrl }))).then((loaded) => { if (!cancelled) { extrasRef.current = loaded.filter((i): i is HTMLImageElement => Boolean(i)); setExtrasReady((n) => n + 1) } })
-    return () => { cancelled = true }
-  }, [allMedia])
   const choices: MediaChoice[] = useMemo(() => queue.flatMap((item) => [
     ...item.media.filter((m) => ['capture', 'import', 'gif', 'image', 'screenshot', 'montage'].includes(m.kind)).filter((m) => (spec?.media === 'video' ? m.contentType.startsWith('video/') : spec?.media === 'image' ? m.contentType.startsWith('image/') : true))
       .map((m) => ({ key: m._id, label: item.snapshot.title, itemId: item._id, mediaId: m._id, media: m, thumb: m.blobUrl, video: m.contentType.startsWith('video/') })),
@@ -170,11 +164,14 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     const video = videoRef.current
     if (!video || !isVideo) return
     const onMeta = () => { setClipDuration(Number.isFinite(video.duration) && video.duration > 0 ? video.duration : slideMedia?.durationSec ?? null) }
+    // With sound when the browser allows it (the curator has clicked around); muted otherwise, and the button says so.
+    video.muted = !sound
+    video.play().catch(() => { if (!video.muted) { setSound(false); video.muted = true; void video.play().catch(() => undefined) } })
     const onTime = () => { const t = slide?.trim; if (t && (video.currentTime >= t.endSec || video.currentTime < t.startSec - 0.5)) video.currentTime = t.startSec }
     video.addEventListener('loadedmetadata', onMeta); video.addEventListener('timeupdate', onTime)
     if (video.readyState >= 1) onMeta()
     return () => { video.removeEventListener('loadedmetadata', onMeta); video.removeEventListener('timeupdate', onTime) }
-  }, [isVideo, slide?.trim, slideMedia])
+  }, [isVideo, slide?.trim, slideMedia, sound])
 
   // The live preview: the same drawer as the export, on a half-size canvas, following the clip as it plays.
   const animated = Boolean(slide && (slide.glitchStyle ?? 'random') !== 'random')
@@ -204,7 +201,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
       const mp = slide.mediaPlace
       const rect = mp ? cropRectIn(size, { width: w, height: h }, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, { width: w, height: h }, { top: 0, height: 1 }, 'centered')
       const clip = mp ? { x: Math.round(mp.x * w), y: Math.round(mp.y * h), w: Math.round(mp.w * w), h: Math.round(mp.h * h) } : null
-      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, style: (slide.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp), extras: extrasRef.current, text: slide.text, titleFont, cleanOnTop: Boolean(slide.mediaOnTop), logo: logoRef.current, letterAlpha: slide.letterAlpha ?? 0.7 })
+      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, style: (slide.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp), text: slide.text, titleFont, cleanOnTop: Boolean(slide.mediaOnTop), zoom: slide.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: slide.letterAlpha ?? 0.7 })
       const schedule = burstSchedule(60_000, slide.glitch ?? 0, overlays.length)
       const started = performance.now()
       const tick = () => { if (stopped) return; drawer(ctx, source, (performance.now() - started) % 60_000, schedule, frame); frame += 1; handle = requestAnimationFrame(tick) }
@@ -212,7 +209,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     })
     return () => { stopped = true; if (handle) cancelAnimationFrame(handle) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawn when the dressing changes
-  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.letterAlpha, extrasReady])
+  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.mediaZoom, slide?.letterAlpha, logoReady])
 
   const trim = slide?.trim ?? { startSec: 0, endSec: Math.min(clipDuration ?? slideMedia?.durationSec ?? maxSeconds, maxSeconds) }
   const setTrim = (startSec: number, endSec: number) => {
@@ -245,7 +242,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const fileOf = useCallback(async (s: PostSlide, index: number, clips: Map<number, HTMLVideoElement>): Promise<{ blob: Blob; extension: string; video: boolean }> => {
     const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
     const overlays = [renderUrl({ ...s, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(s, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
-    const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', extras: extrasRef.current, text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
+    const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), mediaZoom: s.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
     if (media?.contentType.startsWith('video/')) {
       const out = await recordMontage({ ...common, src: media.blobUrl, video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
       return { blob: out.blob, extension: out.extension, video: true }
@@ -385,8 +382,9 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   /* eslint-disable-next-line @next/next/no-img-element -- the slide as it will leave */
                   <img src={renderUrl(settled?.[current] ?? slide, current, 'full', 0.5)} alt="Aperçu" className="absolute inset-0 h-full w-full" draggable={false} />
                 ) : null}
-                {isVideo && slideMedia ? <video ref={videoRef} src={slideMedia.blobUrl} crossOrigin="anonymous" muted loop autoPlay playsInline className="absolute h-px w-px opacity-0" /> : null}
+                {isVideo && slideMedia ? <video ref={videoRef} src={slideMedia.blobUrl} crossOrigin="anonymous" muted={!sound} loop autoPlay playsInline className="absolute h-px w-px opacity-0" /> : null}
                 {liveOn ? <canvas ref={liveRef} className="absolute inset-0 h-full w-full" aria-label="Aperçu" /> : null}
+                {isVideo ? <button type="button" className="absolute right-2 top-2 z-10 rounded-full bg-black/60 px-2 py-1 text-xs text-white" aria-label={sound ? 'Couper le son de l’aperçu' : 'Mettre le son de l’aperçu'} onClick={() => { const v = videoRef.current; const next = !sound; setSound(next); if (v) { v.muted = !next; void v.play().catch(() => setSound(false)) } }}>{sound ? '🔊 son' : '🔇 muet'}</button> : null}
                 {slide.mediaPlace ? <DragBox rect={slide.mediaPlace} label="média" onMove={(x, y) => updateSlide({ mediaPlace: { ...slide.mediaPlace!, x, y } })} /> : null}
                 {slide.iconPlace ? <DragBox rect={{ x: slide.iconPlace.x, y: slide.iconPlace.y, w: slide.iconPlace.size / 1080 * (1080 / canvas.width), h: (slide.iconPlace.size * 22 / 24) / canvas.height * (canvas.width / 1080) }} label="icône" onMove={(x, y) => updateSlide({ iconPlace: { ...slide.iconPlace!, x, y } })} /> : null}
                 {slide.text.trim() ? <DragBox rect={{ x: textPlace.x, y: textPlace.y, w: textPlace.width ?? 0.88, h: textHeight }} label="texte" onMove={(x, y) => updateSlide({ textPlace: { ...textPlace, x, y } })} /> : null}
@@ -429,20 +427,21 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                     {GLITCH_STYLES.map((g) => <button key={g.key} title={g.hint} className={(slide.glitchStyle ?? 'random') === g.key ? chipOn : chip} onClick={() => updateSlide({ glitchStyle: g.key, glitch: (slide.glitch ?? 0) > 0 ? slide.glitch : 0.6 })}>{g.name}</button>)}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Force</span><input type="range" min={0} max={1} step={0.05} value={slide.glitch ?? 0} onChange={(e) => updateSlide({ glitch: Number(e.target.value) })} className="w-40" aria-label="Intensité du glitch" /><span className="w-10 text-xs">{Math.round((slide.glitch ?? 0) * 100)} %</span></div>
-                  <p className="mt-1 text-xs text-gray-500">{GLITCH_STYLES.find((g) => g.key === (slide.glitchStyle ?? 'random'))?.hint}. L’aperçu montre le vrai résultat ; Collage et Défilé piochent aussi dans les autres images de la file.</p>
+                  <p className="mt-1 text-xs text-gray-500">{GLITCH_STYLES.find((g) => g.key === (slide.glitchStyle ?? 'random'))?.hint}. L’aperçu montre le vrai résultat ; seul ton média est dessiné, jamais une autre image.</p>
                   {(slide.glitchStyle ?? 'random') === 'letters' ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Filtre</span><input type="range" min={0.1} max={1} step={0.05} value={slide.letterAlpha ?? 0.7} onChange={(e) => updateSlide({ letterAlpha: Number(e.target.value) })} className="w-40" aria-label="Intensité du texte-filtre" /><span className="w-10 text-xs">{Math.round((slide.letterAlpha ?? 0.7) * 100)} %</span><span className="text-xs text-gray-500">les lettres couvrent plus ou moins l’image</span></div> : null}
                   {isVideo || animated ? <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(slide.mediaOnTop)} onChange={(e) => {
                     // The ground needs room: the picture shrinks when it fills the frame.
-                    const on = e.target.checked
-                    if (on && !slide.mediaPlace) { const v = videoRef.current; const ratio = v && v.videoWidth && v.videoHeight ? v.videoHeight / v.videoWidth : (imageRef.current && imageRef.current.naturalWidth ? imageRef.current.naturalHeight / imageRef.current.naturalWidth : 9 / 16); const w = 0.72; const h = Math.min(1, Math.round(w * (canvas.width / canvas.height) * ratio * 1000) / 1000); updateSlide({ mediaOnTop: true, mediaPlace: { x: Math.round((1 - w) / 2 * 1000) / 1000, y: Math.round((1 - h) / 2 * 1000) / 1000, w, h } }) }
-                    else updateSlide({ mediaOnTop: on ? true : null })
-                  }} />Animation en fond, média propre par-dessus<span className="text-gray-500">(le média est réduit à 72 % s’il remplissait l’écran ; règle sa taille plus bas)</span></label> : null}
+                    // On: the picture in a window of the screen's shape, a margin around it. Off: the picture fills the frame again.
+                    updateSlide(e.target.checked ? { mediaOnTop: true, mediaPlace: { x: 0.12, y: 0.12, w: 0.76, h: 0.76 }, mediaZoom: slide.mediaZoom ?? 1 } : { mediaOnTop: null, mediaPlace: null })
+                  }} />Animation en fond, média propre par-dessus<span className="text-gray-500">(le média dans une fenêtre à la forme de l’écran, une marge autour)</span></label> : null}
+                  {slide.mediaOnTop ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Marge</span><input type="range" min={0.03} max={0.2} step={0.01} value={slide.mediaPlace?.x ?? 0.12} onChange={(e) => { const m = Number(e.target.value); updateSlide({ mediaPlace: { x: m, y: m, w: Math.round((1 - 2 * m) * 1000) / 1000, h: Math.round((1 - 2 * m) * 1000) / 1000 } }) }} className="w-36" aria-label="Marge autour du média" /><span className="w-10 text-xs">{Math.round((slide.mediaPlace?.x ?? 0.12) * 100)} %</span>
+                    <span className="w-14 text-xs text-gray-400">Zoom</span><input type="range" min={1} max={2.5} step={0.05} value={slide.mediaZoom ?? 1} onChange={(e) => updateSlide({ mediaZoom: Number(e.target.value) })} className="w-36" aria-label="Zoom du média dans sa fenêtre" /><span className="w-10 text-xs">{Math.round((slide.mediaZoom ?? 1) * 100)} %</span></div> : null}
                   {!isVideo && animated ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Durée</span>{[3, 5, 8, 10].map((n) => <button key={n} className={(slide.animSeconds ?? 5) === n ? chipOn : chip} onClick={() => updateSlide({ animSeconds: n })}>{n} s</button>)}<span className="text-xs text-gray-500">l’image devient un clip</span></div> : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Vidéo</span>
+                  {!slide.mediaOnTop ? <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Vidéo</span>
                     <button className={!slide.mediaPlace ? chipOn : chip} onClick={() => updateSlide({ mediaPlace: null })}>Plein écran</button>
                     <input type="range" min={0.3} max={1} step={0.02} value={slide.mediaPlace?.w ?? 1} onChange={(e) => { const w = Number(e.target.value); const v = videoRef.current; const ratio = v && v.videoWidth && v.videoHeight ? v.videoHeight / v.videoWidth : 9 / 16; const h = Math.min(1, Math.round(w * (canvas.width / canvas.height) * ratio * 1000) / 1000); updateSlide({ mediaPlace: w >= 1 ? null : { x: Math.round((1 - w) / 2 * 1000) / 1000, y: slide.mediaPlace?.y ?? Math.round((1 - h) / 2 * 1000) / 1000, w, h } }) }} className="w-36" aria-label="Taille de la vidéo" /><span className="w-10 text-xs">{Math.round((slide.mediaPlace?.w ?? 1) * 100)} %</span>
                     {slide.mediaPlace ? <span className="text-xs text-gray-400">glisse-la ; le fond est l’image agrandie</span> : null}
-                  </div>
+                  </div> : null}
                 </section>
               )}
 

@@ -154,6 +154,7 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         glitchStyle: ['random', 'slices', 'bands', 'sweep', 'collage', 'feed', 'letters'].includes(slide.glitchStyle as string) ? (slide.glitchStyle as PostSlide['glitchStyle']) : null,
         animSeconds: typeof slide.animSeconds === 'number' && [3, 5, 8, 10].includes(slide.animSeconds) ? slide.animSeconds : null,
         mediaOnTop: slide.mediaOnTop === true ? true : null,
+        mediaZoom: typeof slide.mediaZoom === 'number' ? Math.min(3, Math.max(1, Math.round(slide.mediaZoom * 100) / 100)) : null,
         letterAlpha: typeof slide.letterAlpha === 'number' ? Math.min(1, Math.max(0, Math.round(slide.letterAlpha * 100) / 100)) : null,
         iconPlace: slide.iconPlace && typeof slide.iconPlace === 'object' && typeof slide.iconPlace.name === 'string' && /^[a-z]{2,20}$/.test(slide.iconPlace.name) && unit(slide.iconPlace.x) && unit(slide.iconPlace.y) && typeof slide.iconPlace.size === 'number'
           ? { name: slide.iconPlace.name, x: Math.round(slide.iconPlace.x * 1000) / 1000, y: Math.round(slide.iconPlace.y * 1000) / 1000, size: Math.round(Math.min(800, Math.max(24, slide.iconPlace.size))) } : null,
