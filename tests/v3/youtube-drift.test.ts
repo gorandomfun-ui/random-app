@@ -68,7 +68,8 @@ test('the YouTube drift stops cleanly when the day\'s units are spent', async ()
   } as unknown as LineContext
   const result = await run(ctx, { youtubeKey: 'k', seeds: [{ channelId: 'UCabcdefghijklmnopqrstuv' }] })
   assert.equal(result.counters.inserted, 0)
-  assert.ok(result.errors.includes('youtube : budget du jour atteint'))
+  assert.deepEqual(result.errors, [], 'the units spent is the run\'s end, not a failure')
+  assert.match(String((result.cursor as { note: string }).note), /unités du passage dépensées/)
 })
 
 test('the mix: Shorts and the little videos of a few places keep their share, the rest pass', async () => {

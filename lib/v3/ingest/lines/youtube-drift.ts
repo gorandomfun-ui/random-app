@@ -43,9 +43,12 @@ export const CHANNELS_PER_RUN = Number(process.env.RANDOM_YT_DRIFT_CHANNELS ?? 8
  * (scripts/v3/youtube-drift-direct.ts).
  */
 export const VIDEOS_PER_CHANNEL = 5
-/** Where the seeds come from: the YouTube videos that entered these last days. */
+/**
+ * Where the seeds come from: the YouTube videos that entered these last days. 6,000 rows gave 1,584 channels not read this
+ * fortnight on 13 October, two runs' worth; 20,000 gave 6,542, enough for the day's 6,000 units (read in about 5 s).
+ */
 const SEED_DAYS = 10
-const SEED_ROWS = 6_000
+const SEED_ROWS = 20_000
 /** A channel read is left alone this long. */
 export const REVISIT_DAYS = 14
 const SEEN = 'yt_drift_channels_v4'
@@ -169,12 +172,13 @@ export async function run(ctx: LineContext, deps: { youtubeKey?: string; random?
     if (batchChannels.length >= BATCH_CHANNELS) await flush()
   }
   await flush()
-  if (stopped) errors.push('youtube : budget du jour atteint')
+  // The run's units spent is its normal end, not an error; YouTube's own refusal (403, 429) is one, written above.
+  const spentAll = stopped && !errors.some((error) => error.startsWith('youtube :'))
 
   counters.scanned = read
   for (const [why, count] of Object.entries(refused)) counters.rejected[why] = (counters.rejected[why] ?? 0) + count
   await ctx.search({ provider: 'youtube', query: `dérive YouTube : ${cursor.channels} chaînes`, scanned: read, kept: counters.inserted, inserted: counters.inserted, duplicates: counters.duplicates, rejected: refused, quotaUnits: units, insertedIds: [] }).catch(() => undefined)
-  cursor.note = `${cursor.channels} chaînes lues · ${units} unités · ${read} vidéos nouvelles lues · ${counters.inserted} entrées`
+  cursor.note = `${cursor.channels} chaînes lues · ${units} unités · ${read} vidéos nouvelles lues · ${counters.inserted} entrées${spentAll ? ' · unités du passage dépensées' : ''}`
   ctx.log(`dérive YouTube : ${cursor.note}`)
   return { counters, cursor, errors }
 }

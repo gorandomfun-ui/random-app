@@ -1,7 +1,7 @@
 /**
  * The YouTube drift, run on the ingestion server (server/run-line.sh,
  * youtube-drift): the channels of the YouTube videos the base took these last
- * days, twenty new uploads of each, through the drift's doors.
+ * days, five new uploads of each, through the drift's doors and the mix.
  *
  *   node --import tsx scripts/v3/youtube-drift-direct.ts
  *   node --import tsx scripts/v3/youtube-drift-direct.ts --dry
@@ -18,10 +18,13 @@ import { run, type YouTubeDriftCursor } from '@/lib/v3/ingest/lines/youtube-drif
 
 const MAX_MINUTES = Number(process.env.RANDOM_YT_DRIFT_MINUTES ?? 25)
 /**
- * Units a day: two a channel, about eight videos in a channel. 1,600 is some 800 channels and 6,000 videos a day, which the
- * base, the fingerprints' windows and the nightly check absorb; YouTube's 10,000 would allow four times that, not the base.
+ * Units a day, and for one run. 1,600 until 13 October, spent by the first run of the day (2,239 videos), while Google's
+ * counter showed 5,065 of the 10,000 used on 12 October. The owner: "si elles ne sont pas utilisées, oui". 6,000 leaves
+ * about 4,000 to the other lines (they used some 3,500), and each of the four runs takes its quarter, so the drift reads
+ * the channels that entered through the day. About 18 KB sent per unit: some 80 MB a day more under the 2 € brake.
  */
-const UNITS = Number(process.env.RANDOM_YT_DRIFT_UNITS ?? 1600)
+const UNITS = Number(process.env.RANDOM_YT_DRIFT_UNITS ?? 6000)
+const RUN_UNITS = Number(process.env.RANDOM_YT_DRIFT_RUN_UNITS ?? 1500)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')
@@ -31,9 +34,13 @@ async function main(): Promise<void> {
   }, (MAX_MINUTES + 2) * 60_000).unref()
   const { getDb } = await import('@/lib/db')
   const db = await getDb()
+  // This run's ceiling: what the day already spent, plus its share, never past the day's units.
+  const { quotaDay } = await import('@/lib/discovery/exploration')
+  const spent = Number((await db.collection('discovery_quota_v2').findOne({ _id: `${quotaDay(Date.now())}:youtube:youtube-drift` } as never, { projection: { spent: 1 } }).catch(() => null))?.spent ?? 0)
+  const ceiling = Math.min(UNITS, spent + RUN_UNITS)
   let direct
   try {
-    direct = await directContext(db, { line: 'youtube-drift', journalLine: 'youtube-drift', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: UNITS, youtubeBucket: 'youtube-drift' })
+    direct = await directContext(db, { line: 'youtube-drift', journalLine: 'youtube-drift', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: ceiling, youtubeBucket: 'youtube-drift' })
   } catch (error) {
     if (error instanceof LineLocked) { console.log(JSON.stringify({ youtubeDrift: 'skipped', reason: 'locked' })); process.exit(0) }
     throw error

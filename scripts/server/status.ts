@@ -8,8 +8,10 @@
  *   node --import tsx scripts/server/status.ts
  */
 
+import { execFile } from 'node:child_process'
 import { statfs } from 'node:fs/promises'
 import os from 'node:os'
+import { promisify } from 'node:util'
 
 import { RUNS, type StoredRun } from '@/lib/v3/ingest/journal'
 import { STALE_HOURS } from '@/lib/v3/ingest/report'
@@ -17,6 +19,20 @@ import { STALE_HOURS } from '@/lib/v3/ingest/report'
 export const STATUS_COLLECTION = 'ingest_server_status'
 const STATUS_ID = 'random-ingest'
 const ALERT_EVERY_MS = 12 * 60 * 60 * 1000
+
+/**
+ * The lines whose timer is on: what the report watches. A line without one was stopped on purpose (28 September, the
+ * dig replaced them) and is no alert (the owner, 13 October: "la page… c'est le bordel").
+ */
+async function enabledLines(): Promise<string[] | null> {
+  try {
+    const { stdout } = await promisify(execFile)('systemctl', ['list-unit-files', 'random-line@*.timer', '--state=enabled', '--no-legend', '--plain'], { timeout: 10_000 })
+    const lines = [...stdout.matchAll(/random-line@([\w-]+)\.timer/g)].map((match) => match[1]).sort()
+    return lines.length ? lines : null
+  } catch {
+    return null
+  }
+}
 
 async function main(): Promise<void> {
   const { getDb } = await import('@/lib/db')
@@ -42,6 +58,7 @@ async function main(): Promise<void> {
     lastSuccessAt: lastSuccess?.finishedAt ?? null,
     hoursSinceSuccess: hoursSinceSuccess === null ? null : Math.round(hoursSinceSuccess * 10) / 10,
     failuresInARow,
+    lines: await enabledLines(),
   }
 
   const previous = await db.collection(STATUS_COLLECTION).findOne({ _id: STATUS_ID } as never, { maxTimeMS: 3000 }) as { lastAlertAt?: Date } | null

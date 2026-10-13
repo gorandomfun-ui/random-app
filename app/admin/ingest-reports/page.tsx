@@ -54,12 +54,16 @@ const LINE_LABEL: Record<string, string> = {
   fresh: 'Frais du jour',
   dig: 'La fouille (4 bases)',
   drift: 'La dérive (Dailymotion)',
-  lookalike: 'Les sosies de tes likes (IA, Dailymotion)',
+  lookalike: 'Les sosies de tes likes (IA, Dailymotion et YouTube)',
   obsolete: 'Vérification de nuit des vidéos mortes',
   'youtube-drift': 'La dérive YouTube (chaînes)',
   'web-previews': 'Sites : visites et aperçus',
-  'web-commoncrawl': 'Sites : Common Crawl (un pays par jour)',
+  'web-commoncrawl': 'Sites : Common Crawl (un pays par jour, mis en attente)',
 }
+/** The days shown; the report holds fourteen (13 October: the page was too long to read). */
+const DAYS_SHOWN = 7
+/** A recap older than this is from a line stopped since: not shown. */
+const RECAP_FRESH_MS = 2 * 24 * 60 * 60 * 1000
 
 const hoursOf = (row: HealthRow) => row.hoursSinceRun ?? row.hoursAgo ?? 0
 
@@ -92,8 +96,8 @@ const CARD_LABEL: Record<string, string> = { buzz: 'Buzz', long: 'Long', retro: 
 const DIG_BASE: Record<string, string> = { people: 'Personnes', keywords: 'Mots-clés', trends: 'Tendances', likes: 'Likes', snowball: 'Boule de neige' }
 const DIG_STATE: Record<string, string> = { queued: 'en attente', running: 'en cours', done: 'faits', exhausted: 'épuisés', paused: 'en pause' }
 const DIG_FAME: Record<string, string> = { star: 'star', known: 'connu', small: 'petit' }
-const WEB_SOURCE: Record<string, string> = { 'google-cse': 'Google', hn: 'Show HN', 'set-aside': 'Sites mis de côté', osm: 'OpenStreetMap', wikidata: 'Wikidata' }
-const WEB_STATUS: Array<[string, string]> = [['new', 'en attente'], ['done', 'ajoutés'], ['dead', 'morts'], ['dull', 'sans intérêt'], ['noimage', 'page vide'], ['failed', 'échecs']]
+const WEB_SOURCE: Record<string, string> = { 'google-cse': 'Google', hn: 'Show HN', 'set-aside': 'Sites mis de côté', osm: 'OpenStreetMap', wikidata: 'Wikidata', neocities: 'Neocities', 'curated-list': 'Listes choisies', commoncrawl: 'Common Crawl' }
+const WEB_STATUS: Array<[string, string]> = [['new', 'en attente'], ['done', 'ajoutés'], ['noframe', 'ne s\'ouvrent pas dans Random'], ['dead', 'morts'], ['dull', 'sans intérêt'], ['noimage', 'page vide'], ['failed', 'échecs']]
 const FRESH_ZONE: Record<string, string> = {
   world: 'Monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l\u2019Est', oceania: 'Océanie', music: 'Musique', fun: 'Fun',
   sport: 'Sport', animals: 'Animaux', science: 'Sciences', howto: 'Pratique', people: 'Gens', autos: 'Autos', film: 'Films et animation',
@@ -146,6 +150,7 @@ export default function IngestReportsPage() {
   const [cards, setCards] = useState<CardCensusRow[]>([])
   const [keptCards, setKeptCards] = useState<KeptCardsRow[]>([])
   const [health, setHealth] = useState<HealthRow[]>([])
+  const [retired, setRetired] = useState<string[]>([])
   const [server, setServer] = useState<ServerStatus | null>(null)
   const [key, setKey] = useState('')
   const [loading, setLoading] = useState(false)
@@ -161,9 +166,10 @@ export default function IngestReportsPage() {
         headers: { 'x-admin-ingest-key': adminKey.trim() },
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Clé refusée' : `Erreur ${response.status}`)
-      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null; cards?: CardCensusRow[]; keptCards?: KeptCardsRow[] }
+      const payload = (await response.json()) as { days: DayRow[]; health: HealthRow[]; retired?: string[]; server?: ServerStatus | null; recap?: UniverseRecapRow[]; miniSeries?: MiniSeriesReport | null; fresh?: FreshReport | null; web?: WebReport | null; dig?: DigReport | null; cards?: CardCensusRow[]; keptCards?: KeptCardsRow[] }
       setDays(payload.days ?? [])
       setHealth(payload.health ?? [])
+      setRetired(Array.isArray(payload.retired) ? payload.retired : [])
       setServer(payload.server ?? null)
       setRecap(Array.isArray(payload.recap) ? payload.recap : [])
       setMiniSeries(payload.miniSeries ?? null)
@@ -240,191 +246,6 @@ export default function IngestReportsPage() {
         </section>
       )}
 
-      {recap.length > 0 && (
-        <section style={S.section}>
-          <h2 style={S.h2}>Pools par univers</h2>
-          <p style={S.hint}>
-            Ce que chaque univers peut servir au tirage (les mini-séries mises de côté ne comptent pas), et ce qui y est entré dans les
-            24 heures avant le passage de nuit. Plancher : 20 000 — un univers en dessous reçoit plus de recherches chaque nuit.
-          </p>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <th style={S.th}>Univers</th>
-                {recap.map((row) => <th key={row.day} style={{ ...S.th, textAlign: 'right' }}>{formatDay(row.day)}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.keys(UNIVERSE_LABEL).map((universe) => (
-                <tr key={universe}>
-                  <td style={S.td}>{UNIVERSE_LABEL[universe]}</td>
-                  {recap.map((row) => (
-                    <td key={row.day} style={{ ...S.td, textAlign: 'right' }}>
-                      <span style={{ color: (row.added?.[universe] ?? 0) > 0 ? '#1b5e20' : '#bbb', fontWeight: 600 }}>+{(row.added?.[universe] ?? 0).toLocaleString('fr-FR')}</span>
-                      <span style={{ color: '#777', marginLeft: 8 }}>{(row.sizes?.[universe] ?? 0).toLocaleString('fr-FR')}</span>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {cards.length > 0 && (
-        <section style={S.section}>
-          <h2 style={S.h2}>Ce que chaque carte de la roue reçoit</h2>
-          <p style={S.hint}>
-            Les vidéos entrées chaque jour, triées dans les cartes qu'elles peuvent remplir (une vidéo peut en remplir plusieurs ; le hasard et le joker prennent tout). Écrit après chaque passe de la fouille.
-          </p>
-          <table style={S.table}>
-            <thead><tr><th style={S.th}>Jour</th><th style={S.th}>Entrées</th>{Object.keys(CARD_LABEL).map((card) => <th key={card} style={S.th}>{CARD_LABEL[card]}</th>)}<th style={S.th}>Refusées (IA / image fixe)</th></tr></thead>
-            <tbody>
-              {cards.map((row) => (
-                <tr key={row.day}>
-                  <td style={S.td}>{formatDay(row.day)}</td>
-                  <td style={S.td}>{row.total.toLocaleString('fr-FR')}</td>
-                  {Object.keys(CARD_LABEL).map((card) => <td key={card} style={S.td}>{(row.cards[card] ?? 0).toLocaleString('fr-FR')}</td>)}
-                  <td style={S.td}>{row.refused.ai} / {row.refused.still}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {keptCards.length > 0 && (
-            <>
-              <p style={S.hint}>Combien de secondes les visiteurs restent sur la vidéo de chaque carte (moyenne, et le nombre de vidéos mesurées).</p>
-              <table style={S.table}>
-                <thead><tr><th style={S.th}>Jour</th>{Object.keys(CARD_LABEL).map((card) => <th key={card} style={S.th}>{CARD_LABEL[card]}</th>)}<th style={S.th}>Hasard</th><th style={S.th}>Joker</th></tr></thead>
-                <tbody>
-                  {keptCards.map((row) => (
-                    <tr key={row.day}>
-                      <td style={S.td}>{formatDay(row.day)}</td>
-                      {[...Object.keys(CARD_LABEL), 'chance', 'joker'].map((card) => { const cell = row.cards[card]; return <td key={card} style={S.td}>{cell && cell.n > 0 ? `${Math.round(cell.seconds / cell.n)} s (${cell.n})` : '—'}</td> })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-        </section>
-      )}
-      {dig && (
-        <section style={S.section}>
-          <h2 style={S.h2}>La fouille (4 bases)</h2>
-          <p style={S.hint}>
-            Entrées le {formatDay(dig.day)} : {dig.total.toLocaleString('fr-FR')} vidéos
-            {dig.total > 0 && <> — niveaux N1 {dig.levels['1'] ?? 0} · N2 {dig.levels['2'] ?? 0} · N3 {dig.levels['3'] ?? 0} · N4 {dig.levels['4'] ?? 0} — par base : {Object.entries(dig.bases).map(([base, n]) => `${DIG_BASE[base] ?? base} ${n}`).join(' · ')}</>}.
-            {dig.runs.length > 0 && <> Passages : {dig.runs.map((run) => `${run.startedAt.slice(11, 16)} ${run.status}${run.note ? ` (${run.note})` : ''}${run.errors ? ` · ${run.errors} erreur(s)` : ''}`).join(' ; ')}.</>}
-          </p>
-          <p style={S.hint}>
-            La file : {Object.keys(DIG_BASE).map((base) => {
-              const rows = dig.queue.filter((row) => row.base === base)
-              if (!rows.length) return null
-              return `${DIG_BASE[base]} ${rows.map((row) => `${row.n} ${DIG_STATE[row.state] ?? row.state}`).join(', ')}`
-            }).filter(Boolean).join(' · ')}.
-            {dig.countries.length > 0 && <> Personnes par pays : {dig.countries.map((row) => `${row.country} ${row.n}`).join(' · ')}.</>}
-          </p>
-          {dig.subjects.length > 0 && (
-            <table style={S.table}>
-              <thead><tr><th style={S.th}>Dernier sujet servi</th><th style={S.th}>Base</th><th style={S.th}>Notoriété</th><th style={S.th}>Passes</th><th style={S.th}>Entrées</th><th style={S.th}>Exemples</th></tr></thead>
-              <tbody>
-                {dig.subjects.map((subject) => (
-                  <tr key={subject.id}>
-                    <td style={S.td}>{subject.fr ?? subject.label}{subject.fr ? <span style={{ color: '#777' }}> · {subject.label}</span> : null}</td>
-                    <td style={S.td}>{DIG_BASE[subject.base] ?? subject.base}</td>
-                    <td style={S.td}>{DIG_FAME[subject.fame] ?? subject.fame}</td>
-                    <td style={S.td}>{subject.passes}</td>
-                    <td style={S.td}>{subject.ingested}</td>
-                    <td style={{ ...S.td, fontSize: 12, color: '#555' }}>{subject.sample.join(' · ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {fresh && (
-        <section style={S.section}>
-          <h2 style={S.h2}>Frais du jour</h2>
-          <p style={S.hint}>
-            La liste du {formatDay(fresh.day)} : {fresh.total.toLocaleString('fr-FR')} vidéos du moment, dont chaque session ouvre sur dix. Par zone :{' '}
-            {Object.entries(fresh.counts).map(([zone, n]) => `${FRESH_ZONE[zone] ?? zone} ${n}`).join(' · ')}
-          </p>
-          <ol style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
-            {fresh.first.map((title, index) => <li key={index}>{title}</li>)}
-          </ol>
-        </section>
-      )}
-
-      {web && (
-        <section style={S.section}>
-          <h2 style={S.h2}>Sites web : la file des visites</h2>
-          <p style={S.hint}>
-            Les sites trouvés attendent que le serveur les visite (vivant ou non, image ou capture) avant d&apos;entrer dans le tirage.
-            Google aujourd&apos;hui : {web.googleToday} recherches sur {web.googleCap} gratuites.
-          </p>
-          <ul style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
-            {Object.entries(web.bySource).map(([source, counts]) => (
-              <li key={source}>
-                {WEB_SOURCE[source] ?? source} : {WEB_STATUS.filter(([status]) => counts[status]).map(([status, name]) => `${(counts[status] ?? 0).toLocaleString('fr-FR')} ${name}`).join(' · ')}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {miniSeries && (
-        <section style={S.section}>
-          <h2 style={S.h2}>Refusés à l&apos;entrée : mini-séries et pubs</h2>
-          <p style={S.hint}>
-            Les feuilletons verticaux et les pubs (arnaques, tops produits au-delà de dix par jour) refusés à l&apos;entrée, sur
-            trois jours, et vingt titres tirés au hasard. Si un titre qui devait passer apparaît ici, la règle est à corriger.
-          </p>
-          {miniSeries.days.length === 0 ? (
-            <p style={S.hint}>Aucun refus enregistré pour l&apos;instant.</p>
-          ) : (
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>Jour</th>
-                  <th style={{ ...S.th, textAlign: 'right' }}>Refusées</th>
-                  <th style={S.th}>Par motif</th>
-                </tr>
-              </thead>
-              <tbody>
-                {miniSeries.days.map((row) => (
-                  <tr key={row.day}>
-                    <td style={S.td}>{formatDay(row.day)}</td>
-                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 600 }}>{row.total.toLocaleString('fr-FR')}</td>
-                    <td style={S.td}>
-                      {Object.entries(row.byDetail)
-                        .sort((left, right) => right[1] - left[1])
-                        .map(([detail, n]) => `${MINI_SERIES_REASON[detail] ?? detail} ${n.toLocaleString('fr-FR')}`)
-                        .join(' · ')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {miniSeries.examples.length > 0 && (
-            <ul style={{ margin: '12px 0 0', paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
-              {miniSeries.examples.map((example, index) => (
-                <li key={`${example.at}-${index}`}>
-                  {example.title} <span style={{ color: '#777' }}>· {example.provider} · {MINI_SERIES_REASON[example.detail] ?? example.detail}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {miniSeries.studios.length > 0 && (
-            <p style={{ ...S.hint, marginTop: 12 }}>
-              Studios appris : {miniSeries.studios.map((studio) => `${studio.name} (${studio.refused})`).join(', ')}
-            </p>
-          )}
-        </section>
-      )}
-
       {health.length > 0 && (
         <section style={S.section}>
           <h2 style={S.sectionTitle}>État des lignes</h2>
@@ -437,10 +258,13 @@ export default function IngestReportsPage() {
               </div>
             ))}
           </div>
+          {retired.length > 0 && (
+            <p style={{ ...S.hint, marginTop: 12 }}>Arrêtées volontairement (plus de minuterie sur le serveur) : {retired.map(label).join(', ')}.</p>
+          )}
         </section>
       )}
 
-      {days.map((day) => (
+      {days.slice(0, DAYS_SHOWN).map((day) => (
         <section key={day.day} style={S.section}>
           <h2 style={S.dayTitle}>
             {formatDay(day.day)}
@@ -502,6 +326,191 @@ export default function IngestReportsPage() {
           </table>
         </section>
       ))}
+
+      {dig && (
+        <section style={S.section}>
+          <h2 style={S.h2}>La fouille (4 bases)</h2>
+          <p style={S.hint}>
+            Entrées le {formatDay(dig.day)} : {dig.total.toLocaleString('fr-FR')} vidéos
+            {dig.total > 0 && <> — niveaux N1 {dig.levels['1'] ?? 0} · N2 {dig.levels['2'] ?? 0} · N3 {dig.levels['3'] ?? 0} · N4 {dig.levels['4'] ?? 0} — par base : {Object.entries(dig.bases).map(([base, n]) => `${DIG_BASE[base] ?? base} ${n}`).join(' · ')}</>}.
+            {dig.runs.length > 0 && <> Passages : {dig.runs.map((run) => `${run.startedAt.slice(11, 16)} ${run.status}${run.note ? ` (${run.note})` : ''}${run.errors ? ` · ${run.errors} erreur(s)` : ''}`).join(' ; ')}.</>}
+          </p>
+          <p style={S.hint}>
+            La file : {Object.keys(DIG_BASE).map((base) => {
+              const rows = dig.queue.filter((row) => row.base === base)
+              if (!rows.length) return null
+              return `${DIG_BASE[base]} ${rows.map((row) => `${row.n} ${DIG_STATE[row.state] ?? row.state}`).join(', ')}`
+            }).filter(Boolean).join(' · ')}.
+            {dig.countries.length > 0 && <> Personnes par pays : {dig.countries.map((row) => `${row.country} ${row.n}`).join(' · ')}.</>}
+          </p>
+          {dig.subjects.length > 0 && (
+            <table style={S.table}>
+              <thead><tr><th style={S.th}>Dernier sujet servi</th><th style={S.th}>Base</th><th style={S.th}>Notoriété</th><th style={S.th}>Passes</th><th style={S.th}>Entrées</th><th style={S.th}>Exemples</th></tr></thead>
+              <tbody>
+                {dig.subjects.map((subject) => (
+                  <tr key={subject.id}>
+                    <td style={S.td}>{subject.fr ?? subject.label}{subject.fr ? <span style={{ color: '#777' }}> · {subject.label}</span> : null}</td>
+                    <td style={S.td}>{DIG_BASE[subject.base] ?? subject.base}</td>
+                    <td style={S.td}>{DIG_FAME[subject.fame] ?? subject.fame}</td>
+                    <td style={S.td}>{subject.passes}</td>
+                    <td style={S.td}>{subject.ingested}</td>
+                    <td style={{ ...S.td, fontSize: 12, color: '#555' }}>{subject.sample.join(' · ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
+
+      {fresh && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Frais du jour</h2>
+          <p style={S.hint}>
+            La liste du {formatDay(fresh.day)} : {fresh.total.toLocaleString('fr-FR')} vidéos du moment, dont chaque session ouvre sur dix. Par zone :{' '}
+            {Object.entries(fresh.counts).map(([zone, n]) => `${FRESH_ZONE[zone] ?? zone} ${n}`).join(' · ')}
+          </p>
+          <ol style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
+            {fresh.first.map((title, index) => <li key={index}>{title}</li>)}
+          </ol>
+        </section>
+      )}
+
+      {web && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Sites web : la file des visites</h2>
+          <p style={S.hint}>
+            Les sites trouvés attendent que le serveur les visite (vivant ou non, s&apos;ouvre dans Random ou non, image ou capture) avant d&apos;entrer dans le tirage.
+          </p>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 22, fontSize: 13, lineHeight: 1.5 }}>
+            {Object.entries(web.bySource).map(([source, counts]) => (
+              <li key={source}>
+                {WEB_SOURCE[source] ?? source} : {WEB_STATUS.filter(([status]) => counts[status]).map(([status, name]) => `${(counts[status] ?? 0).toLocaleString('fr-FR')} ${name}`).join(' · ')}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {cards.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Ce que chaque carte de la roue reçoit</h2>
+          <p style={S.hint}>
+            Les vidéos entrées chaque jour, triées dans les cartes qu&apos;elles peuvent remplir (une vidéo peut en remplir plusieurs ; le hasard et le joker prennent tout). Écrit après chaque passe de la fouille.
+          </p>
+          <table style={S.table}>
+            <thead><tr><th style={S.th}>Jour</th><th style={S.th}>Entrées</th>{Object.keys(CARD_LABEL).map((card) => <th key={card} style={S.th}>{CARD_LABEL[card]}</th>)}<th style={S.th}>Refusées (IA / image fixe)</th></tr></thead>
+            <tbody>
+              {cards.map((row) => (
+                <tr key={row.day}>
+                  <td style={S.td}>{formatDay(row.day)}</td>
+                  <td style={S.td}>{row.total.toLocaleString('fr-FR')}</td>
+                  {Object.keys(CARD_LABEL).map((card) => <td key={card} style={S.td}>{(row.cards[card] ?? 0).toLocaleString('fr-FR')}</td>)}
+                  <td style={S.td}>{row.refused.ai} / {row.refused.still}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {keptCards.length > 0 && (
+            <>
+              <p style={S.hint}>Combien de secondes les visiteurs restent sur la vidéo de chaque carte (moyenne, et le nombre de vidéos mesurées).</p>
+              <table style={S.table}>
+                <thead><tr><th style={S.th}>Jour</th>{Object.keys(CARD_LABEL).map((card) => <th key={card} style={S.th}>{CARD_LABEL[card]}</th>)}<th style={S.th}>Hasard</th><th style={S.th}>Joker</th></tr></thead>
+                <tbody>
+                  {keptCards.map((row) => (
+                    <tr key={row.day}>
+                      <td style={S.td}>{formatDay(row.day)}</td>
+                      {[...Object.keys(CARD_LABEL), 'chance', 'joker'].map((card) => { const cell = row.cards[card]; return <td key={card} style={S.td}>{cell && cell.n > 0 ? `${Math.round(cell.seconds / cell.n)} s (${cell.n})` : '—'}</td> })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </section>
+      )}
+
+      {miniSeries && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Refusés à l&apos;entrée : mini-séries et pubs</h2>
+          <p style={S.hint}>
+            Les feuilletons verticaux et les pubs (arnaques, tops produits au-delà de dix par jour) refusés à l&apos;entrée, sur
+            trois jours, et vingt titres tirés au hasard. Si un titre qui devait passer apparaît ici, la règle est à corriger.
+          </p>
+          {miniSeries.days.length === 0 ? (
+            <p style={S.hint}>Aucun refus enregistré pour l&apos;instant.</p>
+          ) : (
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Jour</th>
+                  <th style={{ ...S.th, textAlign: 'right' }}>Refusées</th>
+                  <th style={S.th}>Par motif</th>
+                </tr>
+              </thead>
+              <tbody>
+                {miniSeries.days.map((row) => (
+                  <tr key={row.day}>
+                    <td style={S.td}>{formatDay(row.day)}</td>
+                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 600 }}>{row.total.toLocaleString('fr-FR')}</td>
+                    <td style={S.td}>
+                      {Object.entries(row.byDetail)
+                        .sort((left, right) => right[1] - left[1])
+                        .map(([detail, n]) => `${MINI_SERIES_REASON[detail] ?? detail} ${n.toLocaleString('fr-FR')}`)
+                        .join(' · ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {miniSeries.examples.length > 0 && (
+            <ul style={{ margin: '12px 0 0', paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+              {miniSeries.examples.map((example, index) => (
+                <li key={`${example.at}-${index}`}>
+                  {example.title} <span style={{ color: '#777' }}>· {example.provider} · {MINI_SERIES_REASON[example.detail] ?? example.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {miniSeries.studios.length > 0 && (
+            <p style={{ ...S.hint, marginTop: 12 }}>
+              Studios appris : {miniSeries.studios.map((studio) => `${studio.name} (${studio.refused})`).join(', ')}
+            </p>
+          )}
+        </section>
+      )}
+
+      {recap.length > 0 && Date.now() - Date.parse(recap[0].at) < RECAP_FRESH_MS && (
+        <section style={S.section}>
+          <h2 style={S.h2}>Pools par univers</h2>
+          <p style={S.hint}>
+            Ce que chaque univers peut servir au tirage (les mini-séries mises de côté ne comptent pas), et ce qui y est entré dans les
+            24 heures avant le passage de nuit. Plancher : 20 000 — un univers en dessous reçoit plus de recherches chaque nuit.
+          </p>
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={S.th}>Univers</th>
+                {recap.map((row) => <th key={row.day} style={{ ...S.th, textAlign: 'right' }}>{formatDay(row.day)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(UNIVERSE_LABEL).map((universe) => (
+                <tr key={universe}>
+                  <td style={S.td}>{UNIVERSE_LABEL[universe]}</td>
+                  {recap.map((row) => (
+                    <td key={row.day} style={{ ...S.td, textAlign: 'right' }}>
+                      <span style={{ color: (row.added?.[universe] ?? 0) > 0 ? '#1b5e20' : '#bbb', fontWeight: 600 }}>+{(row.added?.[universe] ?? 0).toLocaleString('fr-FR')}</span>
+                      <span style={{ color: '#777', marginLeft: 8 }}>{(row.sizes?.[universe] ?? 0).toLocaleString('fr-FR')}</span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {key && !loading && !days.length && !error && <p style={S.hint}>Aucun passage sur les 14 derniers jours.</p>}
     </main>

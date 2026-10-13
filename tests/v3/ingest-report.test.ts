@@ -26,6 +26,13 @@ test('une ligne qui tourne sans rien insérer depuis un jour est muette ; une li
   assert.deepEqual(health.map((row) => row.state).slice(0, 2), ['arrêtée', 'muette'], 'le pire d_abord')
 })
 
+test('la vérification de nuit des vidéos mortes n_insère jamais : jugée sur son dernier passage, jamais « muette »', () => {
+  const health = assessHealth([run('obsolete', 13, 0, { status: 'ok' }), run('obsolete', 37, 0, { status: 'ok' })], NOW)
+  assert.equal(health[0].state, 'active')
+  assert.equal(assessHealth([run('obsolete', 13, 0, { status: 'failed' })], NOW)[0].state, 'muette', 'un échec se voit')
+  assert.equal(assessHealth([run('obsolete', 30, 0, { status: 'ok' })], NOW)[0].state, 'arrêtée')
+})
+
 test('un passage encore ouvert est « en cours » un quart d_heure, puis « interrompu »', () => {
   assert.equal(shownStatus({ status: 'running', startedAt: new Date(NOW - 60_000) }, NOW), 'en cours')
   assert.equal(shownStatus({ status: 'running', startedAt: new Date(NOW - INTERRUPTED_AFTER_MS - 1) }, NOW), 'interrompu')

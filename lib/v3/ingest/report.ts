@@ -54,8 +54,13 @@ export const LINE_LABELS: Record<string, string> = {
   fresh: 'Frais du jour',
 }
 
-/** Lines that measure rather than ingest: their "inserted" is a growth, not the day's content. */
-const MEASURING_LINES = new Set<string>(['like-pool'])
+/**
+ * Lines that measure rather than ingest: their "inserted" is a growth, not the day's content. Common Crawl's is the sites it
+ * put on the waiting list; those that enter are counted by the visits (web-previews).
+ */
+const MEASURING_LINES = new Set<string>(['like-pool', 'web-commoncrawl'])
+/** Lines that check rather than insert (the night's check of dead videos): judged by their last run, never "muette". */
+export const CHECK_LINES = new Set<string>(['obsolete'])
 
 export function shownStatus(run: Pick<JournalRun, 'status' | 'startedAt'>, now: number): ShownStatus {
   if (run.status !== 'running') return run.status
@@ -176,9 +181,10 @@ export function assessHealth(runs: JournalRun[], now: number, staleHours = STALE
       const sinceInsert = insertAt ? now - insertAt.getTime() : null
       const state: LineHealth['state'] =
         sinceRun > staleMs ? 'arrêtée'
-          : sinceInsert != null && sinceInsert <= staleMs ? 'active'
-            : shownStatus(run, now) === 'en cours' ? 'en cours'
-              : 'muette'
+          : CHECK_LINES.has(line) ? (shownStatus(run, now) === 'en cours' ? 'en cours' : run.status === 'failed' ? 'muette' : 'active')
+            : sinceInsert != null && sinceInsert <= staleMs ? 'active'
+              : shownStatus(run, now) === 'en cours' ? 'en cours'
+                : 'muette'
       return {
         line,
         lastRunAt: run.startedAt.toISOString(),

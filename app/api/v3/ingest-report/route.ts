@@ -233,15 +233,19 @@ export async function GET(request: Request) {
     const since = new Date(now - WINDOW_DAYS * 24 * 60 * 60 * 1000)
 
     const journal = await journalReport(db, since, now)
+    // The ingestion server's own word on itself, written every ten minutes by scripts/server/status.ts, with its lines on a timer.
+    const server = await db.collection('ingest_server_status').findOne({ _id: 'random-ingest' } as never, { maxTimeMS: 2000 }).catch(() => null)
+    const scheduled = Array.isArray(server?.lines) ? new Set((server.lines as unknown[]).map(String)) : null
+    // A line whose timer is off was stopped on purpose: no alert, no card, one name in a list.
+    const watched = scheduled ? journal.health.filter((row) => scheduled.has(row.line)) : journal.health
+    const retired = scheduled ? journal.health.filter((row) => !scheduled.has(row.line)).map((row) => row.line) : []
     const legacy = await legacyReport(db, since).catch(() => ({ days: [], health: [] }))
     const covered = new Set(journal.days.map((day) => day.day))
     // The journal's days first; the old report only for the days before it existed.
     const days = [...journal.days, ...legacy.days.filter((day) => !covered.has(day.day))]
       .sort((left, right) => (left.day < right.day ? 1 : -1))
-    const health = journal.health.length ? journal.health : legacy.health
-    const alerts = journal.health.filter((row) => row.state === 'arrêtée' || row.state === 'muette')
-    // The ingestion server's own word on itself, written every ten minutes by scripts/server/status.ts.
-    const server = await db.collection('ingest_server_status').findOne({ _id: 'random-ingest' } as never, { maxTimeMS: 2000 }).catch(() => null)
+    const health = journal.health.length ? watched : legacy.health
+    const alerts = watched.filter((row) => row.state === 'arrêtée' || row.state === 'muette')
     // What each pool holds and what entered it, as the nightly pools line closed the day.
     const recap = await db.collection('ingest_universe_recap').find({}, { sort: { at: -1 }, limit: 3, maxTimeMS: 2000 }).toArray().catch(() => [])
     // The mini-series refused at the door over the last three days, with examples, so a wrong refusal shows.
@@ -267,6 +271,7 @@ export async function GET(request: Request) {
       source: journal.health.length ? 'journal' : 'cron_runs',
       days,
       health,
+      retired,
       alerts,
       server,
       recap,
