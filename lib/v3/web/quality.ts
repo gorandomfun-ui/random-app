@@ -73,9 +73,10 @@ export const CURIOUS = /\b(?:museum|musée|museo|archive|archives|archivo|collec
 
 /**
  * Universities, town halls and administrations: what Common Crawl's front pages of a country are full of, beside the
- * shops and firms, and what the owner found dull (12 October: "99 % des sites sont un peu nazes"; he said yes to a door
- * for "les universités, les mairies"). Told by the address (.edu, .ac.xx, .gouv.xx…) or the name; a title that names
- * something curious — a town's museum, a university's archive or its map of the sky — still goes in.
+ * shops and firms. Told by the address (.edu, .ac.xx, .gouv.xx…) or the name; a title that names something curious — a
+ * town's museum, a university's archive or its map of the sky — is not one of them. Refused at first (12 October), then
+ * kept to a share (13 October, the owner: "les sites d'université, mairie etc ça me va, mais comme toujours pas 90 % du
+ * pool"): scripts/v3/web-previews.ts.
  */
 const UNIVERSITY_HOST = /(?:^|\.)(?:edu|ac)\.[a-z]{2}$|\.edu$/i
 const UNIVERSITY_TITLE = /\b(?:universi(?:ty|té|tà|tät|tat|teit|tet|dad|dade|ti)|hochschule|polytechnique|politecnico|politécnica|college|faculté|facultad|faculdade)\b/i

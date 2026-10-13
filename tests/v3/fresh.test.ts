@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { capForeignSketches, capHeavyRegions, capShorts, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
+import { capForeignSketches, capHeavyRegions, capShares, capShorts, capUniverses, FRESH_PLAN, FRESH_SPACING, FRESH_UNIVERSE_MAX, interleave, isAiMade, isFreshFormat, pickBucket, type FreshBucket, type FreshEntry } from '../../lib/v3/fresh/plan'
 
 const entry = (videoId: string, bucket: FreshBucket, region: string, rank: number, views = 0, channel?: string): FreshEntry =>
   ({ id: videoId.padStart(24, '0'), videoId, bucket, region, rank, views, channel })
@@ -143,12 +143,21 @@ test("Brazil and South and Southeast Asia keep a small share each of the day's l
   const list = [...Array.from({ length: 40 }, (_, index) => entry(`br${index}`, 'BR')), ...Array.from({ length: 30 }, (_, index) => entry(`in${index}`, 'IN')), ...Array.from({ length: 30 }, (_, index) => entry(`fr${index}`, 'FR')), ...Array.from({ length: 20 }, (_, index) => entry(`kr${index}`, 'KR'))]
   const capped = capHeavyRegions(new Map([['world' as FreshBucket, list]]), 0.05)
   const shorts = capShorts(new Map([['world' as FreshBucket, Array.from({ length: 100 }, (_, index) => ({ ...entry(`s${index}`, 'FR'), seconds: index < 40 ? 30 : 120 }))]]), 0.15).get('world')!
-  assert.equal(shorts.filter((item) => (item.seconds ?? 0) < 60).length, 15, 'Shorts keep fifteen per cent, not none')
+  assert.equal(shorts.filter((item) => (item.seconds ?? 0) < 60).length, 10, 'Shorts keep fifteen per cent of the list as served (10 of 70), not none')
   assert.equal(shorts.filter((item) => (item.seconds ?? 0) >= 60).length, 60)
   const kept = capped.get('world')!
-  assert.equal(kept.filter((item) => item.region === 'BR').length, 6, 'five per cent of 120')
-  assert.equal(kept.filter((item) => item.region === 'IN').length, 6)
+  assert.equal(kept.filter((item) => item.region === 'BR').length, 2, 'five per cent of the list as served (2 of 54), not of the 120 before the cut')
+  assert.equal(kept.filter((item) => item.region === 'IN').length, 2)
   assert.equal(kept.filter((item) => item.region === 'FR').length, 30, 'the others untouched')
   assert.equal(kept.filter((item) => item.region === 'KR').length, 20, 'Korea is not among them')
-  assert.deepEqual(kept.filter((item) => item.region === 'BR').map((item) => item.id), ['br0', 'br1', 'br2', 'br3', 'br4', 'br5'], 'the best placed keep their place')
+  // An Indonesian title on another country's chart counts for Indonesia (13 October: 8.3 % of the list through other charts).
+  const through = [...Array.from({ length: 20 }, (_, index) => ({ ...entry(`us${index}`, 'US'), place: 'ID' })), ...Array.from({ length: 80 }, (_, index) => entry(`gb${index}`, 'GB'))]
+  assert.equal(capHeavyRegions(new Map([['world' as FreshBucket, through]]), 0.06).get('world')!.filter((item) => item.place === 'ID').length, 5, 'six per cent of the 85 served')
+  // The Shorts last, on what the other caps leave: their share holds on the list as served.
+  const mixed = [...Array.from({ length: 30 }, (_, index) => ({ ...entry(`b${index}`, 'BR'), seconds: 120 })), ...Array.from({ length: 70 }, (_, index) => ({ ...entry(`m${index}`, 'MX'), seconds: index < 30 ? 30 : 300 }))]
+  const served = [...capShares(new Map([['world' as FreshBucket, mixed]])).values()].flat()
+  const short = served.filter((item) => (item.seconds ?? 0) < 60).length
+  assert.ok(short > 0 && short / served.length <= 0.15, `fifteen per cent at most of the list as served (${short} of ${served.length})`)
+  assert.ok(served.filter((item) => item.region === 'BR').length / served.length <= 0.06, `Brazil six per cent at most of it (${served.filter((item) => item.region === 'BR').length} of ${served.length})`)
+  assert.deepEqual(kept.filter((item) => item.region === 'BR').map((item) => item.id), ['br0', 'br1'], 'the best placed keep their place')
 })

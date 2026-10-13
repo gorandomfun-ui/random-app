@@ -184,6 +184,19 @@ async function firstPicture(urls: string[]): Promise<{ url: string; width: numbe
 const SAVE_DIR = process.env.RANDOM_PREVIEW_SAVE
 
 /**
+ * Common Crawl's universities, town halls and administrations are taken in up to this share of the sites a pass takes
+ * in (the owner, 13 October: "ça me va, mais comme toujours pas 90 % du pool"); past it, the pass leaves the next ones
+ * out. They were 4.7 % of the stored sites that day.
+ */
+const INSTITUTION_SHARE = 0.1
+class InstitutionShare {
+  private taken = 0
+  private institutions = 0
+  room(): boolean { return this.institutions + 1 <= INSTITUTION_SHARE * (this.taken + 1) + 2 }
+  count(institution: boolean): void { this.taken += 1; if (institution) this.institutions += 1 }
+}
+
+/**
  * Whether the site opens inside Random, read from the answer the visit just received — the same verdict the night
  * check gives (lib/v3/web/embed.ts), a day sooner and without asking again. A site left on plain http is asked once
  * for its https twin. Since 12 October only these are drawn (the owner: "s'ouvrent toujours à côté").
@@ -195,7 +208,7 @@ async function frameOf(page: Page): Promise<EmbedVerdict> {
   return twin.embeddable ? twin : verdict
 }
 
-async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload: Upload | null, dryRun: boolean): Promise<Visit> {
+async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload: Upload | null, dryRun: boolean, share: InstitutionShare): Promise<Visit> {
   let page: Page | { error: string } = await fetchPage(candidate.url)
   let capture: { image: Buffer | null; blank?: string } | null = null
   // A small site behind a shield often refuses a plain request and shows itself to a browser (only when captures are on).
@@ -216,9 +229,9 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
   const title = candidate.title || reading.title || new URL(finalUrl).hostname.replace(/^www\./, '')
   const dull = boringWebReason(finalUrl, title, front ? null : candidate.source)
   if (dull) return { status: 'dull', outcome: dull }
-  // Common Crawl's front pages of universities, town halls and administrations stay out (the owner, 12 October).
+  // Common Crawl's universities, town halls and administrations: in, while they stay under their share.
   const institution = candidate.source === 'commoncrawl' ? institutionReason(finalUrl, title) : null
-  if (institution) return { status: 'dull', outcome: `institution: ${institution}` }
+  if (institution && !share.room()) return { status: 'dull', outcome: `institution: ${institution}, au-delà de sa part` }
   // A site that will not open inside Random is never drawn: it is not taken in, nor photographed.
   const frame = await frameOf(page)
   if (!frame.embeddable) return { status: 'noframe', outcome: `ne s'ouvre pas dans Random : ${frame.reason}` }
@@ -255,6 +268,7 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
   const text = candidate.text || reading.description || title
   // Light or dark, as the site declares it, for the logo over the frame (as the night check reads it).
   const tone = await toneOfPage(page.html, finalUrl, { timeoutMs: 6000 })
+  share.count(Boolean(institution))
   return {
     status: 'done',
     outcome: preview,
@@ -323,6 +337,7 @@ async function main(): Promise<void> {
     }
   }
   const camera = upload || (dryRun && process.argv.includes('--captures')) ? new Camera() : null
+  const institutions = new InstitutionShare()
   const queue: Candidate[] = []
   const held: string[] = []
   const pending: Array<{ candidate: Candidate; result: Visit }> = []
@@ -384,7 +399,7 @@ async function main(): Promise<void> {
       counters.scanned += 1
       let result: Visit
       try {
-        result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun))
+        result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun, institutions))
       } catch (error) {
         result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
       }
