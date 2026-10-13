@@ -22,7 +22,7 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { CAR_STATS, createRacing, FORK_DECIDE, FORK_FROM, FORK_SHARE, FORK_ZONES, RACING_CARS, RACING_DUEL_BONUS, racingIsDuel, racingLevelPace, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { CAR_STATS, createRacing, FORK_ALONGSIDE, FORK_BESIDE, FORK_FROM, FORK_SHARE, FORK_ZONES, RACING_CARS, RACING_DUEL_BONUS, racingIsDuel, racingLevelPace, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
@@ -178,7 +178,7 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   assert.ok(fastest > 1.1, `with the turbo: ${fastest.toFixed(2)}`)
 })
 
-test('racing: from the second level, the road divides after its first quarter into two roads for half the level — each its own way, through its own country, with its own offers — and the side the car is on takes one', () => {
+test('racing: from the second level, the road divides after its first quarter into two roads for half the level — each its own way, through its own country, with its own offers — and the road the car is on where they part takes one', () => {
   for (const world of RACING_WORLDS) for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) {
     const c = racingCourse(level, world), f = c.fork!
     assert.ok(f && f.kinds[0] !== f.kinds[1], `${world} ${level}: two different roads`)
@@ -199,15 +199,16 @@ test('racing: from the second level, the road divides after its first quarter in
     assert.ok(f.items[0].length && f.items[1].length, 'each road offers something')
   }
   assert.equal(racingCourse(1, 'coast').fork, null, 'none at the first level')
-  // the side the car is on, a little before it: its road
+  // the road the car is on where they part: its road (the left-hand one joined to this one before)
   for (const side of [-1, 1] as const) {
     const s = createRacing('landscape', 5, 2, { single: true, world: 'desert' })
     const f = s.fork!
     for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
     s.traffic = []; s.rivals.forEach((r) => { r.z = -900 })
-    s.z = f.at - 60; s.x = side * 0.6; s.speed = 0.9
-    // kept on its side through the bends before the fork
-    for (let i = 0; i < 80; i += 1) stepRacing(s, s.x < side * 0.6 - 0.05 ? 1 : s.x > side * 0.6 + 0.05 ? -1 : 0, true)
+    const aim = side < 0 ? -FORK_BESIDE : 0.6
+    s.z = f.at - 60; s.x = aim; s.speed = 0.9
+    // kept on it through the bends before they part
+    for (let i = 0; i < 80; i += 1) stepRacing(s, s.forkPick >= 0 ? 0 : s.x < aim - 0.05 ? 1 : s.x > aim + 0.05 ? -1 : 0, true)
     const pick = side < 0 ? 0 : 1
     assert.equal(s.forkPick, pick)
     assert.ok(s.track.slice(f.at, f.at + f.len).every((g, k) => g.curve === f.tracks[pick][k].curve), 'its road laid down')
@@ -283,9 +284,10 @@ test('racing: each world drawn at every hour — its far view, its ground, its t
 
 test('racing: past the line, fireworks and confetti over the public, thicker as the levels go', () => {
   const party = (level: number) => {
-    const s = createRacing('landscape', level, 3, { single: true, world: 'coast' })
+    // (a race lost played again till it is won)
+    const s = createRacing('landscape', level, 3, { world: 'coast' })
     const d = driver(GOOD, 3)
-    for (let i = 0; i < 30000 && s.goalAt < 0; i += 1) { const m = d(s); stepRacing(s, m.steer, m.gas, m.brake, m.nitro) }
+    for (let i = 0; i < 60000 && s.goalAt < 0; i += 1) { const m = d(s); stepRacing(s, m.steer, m.gas, m.brake, m.nitro) }
     assert.ok(s.goalAt >= 0, `level ${level}: the line crossed`)
     const crowds = s.track.slice(s.finish, s.finish + 130).filter((g) => g.things.some((t) => t.kind === 'crowd')).length
     for (let i = 0; i < 70; i += 1) stepRacing(s)
@@ -442,17 +444,23 @@ test('racing: every level faster than the one before — the car, the rivals, th
   assert.ok(top(11) > top(1) * 1.12, 'the car itself faster')
 })
 
-test('racing: where the road divides, the barrier down the middle keeps the car on the side it took', () => {
-  const s = createRacing('landscape', 5, 2, { single: true, world: 'desert' })
-  const f = s.fork!
-  for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
-  s.traffic = []; s.rivals.forEach((r) => { r.z = -900 })
-  s.z = f.at - FORK_DECIDE - 5; s.x = -0.6; s.speed = 0.6
-  for (let i = 0; i < 12; i += 1) stepRacing(s, 0, true)
-  assert.equal(s.forkPick, 0, 'the left side: the left road')
-  let worst = -1
-  for (let i = 0; i < 80 && s.z < f.at; i += 1) { stepRacing(s, 1, true); worst = Math.max(worst, s.x) }
-  assert.ok(worst < 0, `never across the barrier (${worst.toFixed(2)})`)
+test('racing: before the road divides, the left-hand road runs joined to this one — driving onto it takes it; staying on, the other', () => {
+  for (const pick of [0, 1] as const) {
+    const s = createRacing('landscape', 5, 2, { single: true, world: 'desert' })
+    const f = s.fork!
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+    s.traffic = []; s.rivals.forEach((r) => { r.z = -900 })
+    s.z = f.at - FORK_ALONGSIDE + 5; s.x = 0; s.speed = 0.7
+    // over onto the left-hand road (no rail, no kerb between), or on along this one
+    const aim = pick === 0 ? -FORK_BESIDE : 0
+    let off = false
+    for (let i = 0; i < 200 && s.forkPick < 0; i += 1) { stepRacing(s, s.x > aim + 0.05 ? -1 : s.x < aim - 0.05 ? 1 : 0, true); off ||= s.offroad }
+    assert.equal(s.forkPick, pick)
+    assert.ok(!off, 'on tarmac all the way across')
+    // now in the middle of the road it took
+    assert.ok(Math.abs(s.x) < 0.4, `in its road (${s.x.toFixed(2)})`)
+    assert.ok(s.track.slice(f.at, f.at + f.len).every((g, k) => g.curve === f.tracks[pick][k].curve), 'its road laid down')
+  }
 })
 
 test('racing: a good driver finishes first in nearly every level of every world, with time to spare — every one of the first five', () => {

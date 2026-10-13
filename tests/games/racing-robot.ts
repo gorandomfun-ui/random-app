@@ -12,7 +12,7 @@
  * weakest point.
  */
 
-import { FORK_DECIDE, racingBendSpeed, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
+import { FORK_ALONGSIDE, FORK_BESIDE, racingBendSpeed, RACING_LANES, RACING_TOP, segmentOf, stepRacing, type RacingState } from '@/lib/games/racing-rules'
 
 export type Driver = { see: number; aim: number; look: number; margin: number; ahead: number; misses: number; good: boolean }
 export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70, misses: 0, good: true }
@@ -21,6 +21,8 @@ export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 0.95, ahea
 export const MEDIUM: Driver = { see: 6, aim: 0.06, look: 32, margin: 0.97, ahead: 55, misses: 0.15, good: false }
 
 type Seen = { x: number; z: number; speed: number }
+/** The cars on the driver's road (not those on the other road of the two). */
+const near = (s: RacingState) => [...s.rivals, ...s.traffic].filter((c) => !c.elsewhere)
 /** What the brake takes off the speed each step (as the rules have it). */
 const BRAKING = RACING_TOP / 70
 
@@ -33,6 +35,9 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
   const moves: number[] = []
   let lane = 0, wobble = 0, n = seed
   const rnd = () => { n = (n * 1103515245 + 12345) % 2147483648; return n / 2147483648 }
+  // where the road divides: the left-hand road (0) or straight on (1), its own way, the same for the whole race
+  const route: 0 | 1 = rnd() < 0.5 ? 0 : 1
+  let picked = -1
   const missed = new Set<number>()
   // when a casual driver presses A at the lights: whenever, from a second and a half on
   let pressAt = -1
@@ -48,6 +53,8 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
       const tick = s.steps % 2 === 0
       return { steer: want === g.pick || !tick ? 0 : want > g.pick ? 1 : -1, gas: want === g.pick && s.phaseTimer > 24 && tick, brake: false, nitro: false }
     }
+    // the road taken: what it saw and where it aims now measured from that road's middle
+    if (s.forkPick !== picked) { if (s.forkPick === 0) { for (const p of past) p.x += FORK_BESIDE; lane += FORK_BESIDE } picked = s.forkPick }
     past.push({ x: s.x, z: s.z, speed: s.speed })
     if (past.length > d.see + 1) past.shift()
     const seen = past[0]
@@ -60,11 +67,9 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     const toward = (c: { x: number; lane: number }, l: number) => Math.abs(c.x - l) < 0.62 || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - l) < 0.62)
     const worth = (l: number) => {
       let w = l === lane ? 0.5 : 0
-      // where the road divides, the barrier down the middle: a side, never the middle lane — once a side is taken, that side
-      if (s.fork && seen.z > s.fork.at - FORK_DECIDE - 60 && seen.z < s.fork.at && (l === 0 || (s.forkPick >= 0 && Math.sign(l) !== (s.forkPick === 0 ? -1 : 1)))) w -= 50
-      for (const c of [...s.rivals, ...s.traffic]) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && toward(c, l) && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
+      for (const c of near(s)) if (c.z > seen.z - 4 && c.z - seen.z < d.ahead && toward(c, l) && c.speed < Math.max(seen.speed, Math.min(limit, RACING_TOP * 0.8)) + 0.05 + (limit - seen.speed > 0.1 ? limit - seen.speed - 0.1 : 0)) w -= 4 * (1 - (c.z - seen.z) / d.ahead) + 1
       // and no lane to reach across a car close by: it would run into its side
-      if (Math.abs(l - seen.x) > 0.3 && [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > -3 && c.z - seen.z < 9 && Math.abs(c.x - seen.x) > 0.3 && c.x > Math.min(seen.x, l) - 0.25 && c.x < Math.max(seen.x, l) + 0.25)) w -= 8
+      if (Math.abs(l - seen.x) > 0.3 && near(s).some((c) => c.z - seen.z > -3 && c.z - seen.z < 9 && Math.abs(c.x - seen.x) > 0.3 && c.x > Math.min(seen.x, l) - 0.25 && c.x < Math.max(seen.x, l) + 0.25)) w -= 8
       for (const it of s.items) {
         if (it.taken || it.z < seen.z || it.z - seen.z > d.ahead || Math.abs(it.x - l) > 0.4) continue
         if (it.kind === 'cone') w -= 6
@@ -76,19 +81,22 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     }
     // a casual driver does not see some puddles
     for (const it of s.items) if (it.kind === 'puddle' && it.z - seen.z < d.ahead && it.z > seen.z && !missed.has(-it.z) && !missed.has(it.z)) { if (rnd() < d.misses) missed.add(it.z); else missed.add(-it.z) }
-    lane = RACING_LANES.reduce((best, l) => (worth(l) > worth(best) ? l : best), lane)
+    // the left-hand road joined to this one, if that is its way: its lanes the ones to pick from
+    const exit = route === 0 && s.fork && s.forkPick < 0 && seen.z > s.fork.at - FORK_ALONGSIDE + 10 && seen.z < s.fork.at
+    const lanes: number[] = exit ? RACING_LANES.map((l) => l - FORK_BESIDE) : [...RACING_LANES]
+    lane = lanes.reduce((best, l) => (worth(l) > worth(best) ? l : best), lanes.includes(lane) ? lane : lanes[1])
     if (s.steps % 40 === 0) wobble = (rnd() * 2 - 1) * d.aim
     // a rough aim, but away from a car alongside (none between two)
-    const alongside = [...s.rivals, ...s.traffic].filter((c) => c.z - seen.z > -3 && c.z - seen.z < 24 && Math.abs(c.x - lane) < 0.9 && Math.abs(c.x - lane) > 0.3)
+    const alongside = near(s).filter((c) => c.z - seen.z > -3 && c.z - seen.z < 24 && Math.abs(c.x - lane) < 0.9 && Math.abs(c.x - lane) > 0.3)
     const left = alongside.filter((c) => c.x < lane), right = alongside.filter((c) => c.x > lane)
     const both = left.length > 0 && right.length > 0, beside = both ? null : alongside[0]
     if (both) wobble = 0
     else if (beside && Math.sign(wobble) === Math.sign(beside.x - lane)) wobble = -wobble
     // and no gas into a slower car right ahead, overlapping: anyone lifts and goes round it
     // (a car alongside, half a car aside or more, is not in the way: the gas takes the driver past it)
-    const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 4 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.45 && c.speed < seen.speed)
+    const stuck = near(s).some((c) => c.z - seen.z > 4 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.45 && c.speed < seen.speed)
     // and the brake for a slower car in its way that it cannot go round in time: running into it is a crash
-    const late = [...s.rivals, ...s.traffic].some((c) => {
+    const late = near(s).some((c) => {
       // (ahead of it, not alongside: a car beside is passed, not braked for)
       if (c.z - seen.z <= 3 || c.speed >= seen.speed || !((Math.abs(c.x - seen.x) <= 0.48 && Math.abs(c.x - lane) <= 0.55) || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - lane) <= 0.55))) return false
       const dv = seen.speed - c.speed
@@ -109,7 +117,7 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     // the turbo: a good driver on a clear straight with half a gauge or more, a casual one once it is full
     let clear = true
     for (let k = 0; k < 80 && clear; k += 4) if (Math.abs(segmentOf(s.track, seen.z + k).curve) > 2) clear = false
-    const open = ![...s.rivals, ...s.traffic].some((c) => c.z > seen.z && c.z - seen.z < 50 && Math.abs(c.x - lane) < 0.62)
+    const open = !near(s).some((c) => c.z > seen.z && c.z - seen.z < 50 && Math.abs(c.x - lane) < 0.62)
     const nitro = s.phase === 'play' && s.turbo === 0 && (d.good ? s.boost >= 0.5 && clear && open : s.boost >= 0.99) && s.steps % 2 === 0
     return { steer, gas, brake, nitro }
   }
