@@ -877,7 +877,7 @@ function widened(pic: PixelBuffer, back: number, by: number): PixelBuffer {
   return out
 }
 /** How much wider a car's flank is drawn, at most, right alongside. */
-const FLANK_STRETCH = 2.5
+const FLANK_STRETCH = 1.5
 /** Which side of a car shows and how much (`view`, −1 its left side on the left of its back, 1 its right), else the way it turns. */
 const turnFor = (view: number, turn: -1 | 0 | 1): -1 | 0 | 1 => (Math.abs(view) > 0.05 ? (view < 0 ? -1 : 1) : turn)
 

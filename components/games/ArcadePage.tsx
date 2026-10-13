@@ -63,6 +63,14 @@ export default function ArcadePage({ game, themeIndex, startLevel, startWorld }:
   // an iPhone or an iPad gets its sound players ready, warmed by the first touch, as on Random's page
   useEffect(() => { prepareSound() }, [])
 
+  // a game going on: leaving the page by mistake — a swipe back on a trackpad, Cmd+← — is asked first by the browser
+  useEffect(() => {
+    if (playState === 'idle') return
+    const stay = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', stay)
+    return () => window.removeEventListener('beforeunload', stay)
+  }, [playState])
+
   // the card is made ahead, so the share sheet opens within the tap
   useEffect(() => {
     let cancelled = false

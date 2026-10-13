@@ -881,10 +881,13 @@ function sky(board: PixelBuffer, frame: number, horizon: number, tier: Tier, acc
 /**
  * How much of a car's side shows, from where it stands on the screen (`off`
  * pixels from the middle, the eye's focal length `K`): its side toward the
- * middle (negative, its left side, when it is to the right), none straight
- * ahead, the most right alongside.
+ * middle (negative, its left side, when it is to the right) only as the
+ * player comes up to it in the next lane and passes it — none further ahead,
+ * where a side would make it look as if it were turning.
  */
-const sideView = (off: number, K: number): number => -Math.sign(off) * Math.max(0, Math.min(1, (Math.abs(off) / K - 0.06) / 0.24))
+const sideView = (off: number, K: number): number => -Math.sign(off) * Math.max(0, Math.min(1, (Math.abs(off) / K - SIDE_FROM) / 0.22))
+/** How far aside of the eye (a share of the focal length) a car starts to show its side: a car in the next lane six stretches ahead of the player. */
+const SIDE_FROM = 0.38
 
 /**
  * How far round a spinning car has turned, in degrees (its nose to the right
