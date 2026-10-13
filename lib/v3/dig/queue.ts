@@ -66,11 +66,26 @@ export const PLAN: Record<Fame, { topPages: number; around: number; channels: nu
 export const PASS_ORDER: DigPass[] = ['top', 'around', 'channel', 'dailymotion']
 
 /**
+ * The news subjects are dug deeper on Dailymotion, which has no cap on searches (the owner, 13 October: "grossir la
+ * réserve, c'est sûr il faut"): three times the Dailymotion passes and the depth of their fame; the YouTube passes, which
+ * share YouTube's hundred searches a day, stay as they were.
+ */
+export const TRENDS_DEPTH = 3
+export function planOf(subject: Pick<QueuedSubject, 'fame' | 'base'>): (typeof PLAN)[Fame] {
+  const plan = PLAN[subject.fame]
+  return subject.base === 'trends' ? { ...plan, dailymotion: plan.dailymotion * TRENDS_DEPTH, depthTarget: plan.depthTarget * TRENDS_DEPTH } : plan
+}
+
+/**
  * The tickets of a run, from `RANDOM_DIG_BASES` — "people:4,likes:2,keywords:2,trends:2" —
  * else the default. Snowball subjects are served when a base has nothing.
  */
-/** Two tickets a round for the channels met on the way — the YouTube drift (lib/v3/dig/channels.ts) — read at one unit a page whatever the searches' cap. */
-export const DEFAULT_TICKETS: DigBase[] = ['people', 'people', 'people', 'people', 'likes', 'likes', 'keywords', 'keywords', 'trends', 'trends', 'snowball', 'snowball']
+/**
+ * Two tickets a round for the channels met on the way — the YouTube drift (lib/v3/dig/channels.ts) — read at one unit a page
+ * whatever the searches' cap. Since 13 October the news has three and the snowball one: the snowball brought 30 to 110
+ * videos a day, and the news is what the buzz card shows one time in three (lib/discovery/wheel.ts).
+ */
+export const DEFAULT_TICKETS: DigBase[] = ['people', 'people', 'people', 'people', 'likes', 'likes', 'keywords', 'keywords', 'trends', 'trends', 'trends', 'snowball']
 
 export function baseTickets(setting: string | undefined = process.env.RANDOM_DIG_BASES): DigBase[] {
   if (!setting?.trim()) return DEFAULT_TICKETS
@@ -113,7 +128,7 @@ function passesDone(subject: QueuedSubject, pass: DigPass): number {
  * (a Wikipedia list entry) goes Dailymotion first and is done unless it bit.
  */
 export function nextPass(subject: QueuedSubject, youtube = true, lists = youtube): DigPass | null {
-  const plan = PLAN[subject.fame]
+  const plan = planOf(subject)
   const dm = passesDone(subject, 'dailymotion')
   const wantsDailymotion = () => dm < plan.dailymotion
   if (subject.kind === 'topic') {
@@ -203,7 +218,7 @@ export async function enqueue(db: Db, subjects: NewSubject[]): Promise<{ inserte
       update: {
         $setOnInsert: {
           kind: subject.kind, base: subject.base, fame: subject.fame, state: 'queued', passes: {}, channelsToRead: [], ingested: 0, searches: 0,
-          depthTarget: subject.depthTarget ?? PLAN[subject.fame].depthTarget, createdAt: now, done: [], rand: Math.random(),
+          depthTarget: subject.depthTarget ?? planOf(subject).depthTarget, createdAt: now, done: [], rand: Math.random(),
           ...(subject.country ? { country: subject.country } : {}), ...(subject.lang ? { lang: subject.lang } : {}), ...(subject.universe ? { universe: subject.universe } : {}),
           ...(subject.ownChannels ? { ownChannels: subject.ownChannels } : {}), ...(subject.angles ? { angles: subject.angles } : {}), ...(subject.source ? { source: subject.source } : {}),
           ...(subject.probe ? { probe: true } : {}),

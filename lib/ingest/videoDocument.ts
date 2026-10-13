@@ -3,6 +3,16 @@ import { deriveToneAugmentation, flattenToneSegments } from './tone'
 import { videoDiscoveryFields } from './discoveryMetadata'
 import type { RawVideo, VideoDocument } from './videos'
 
+/**
+ * A platform's language code, down to its language: "en-US", "pt-BR", "zh-Hant", "es-419" → "en", "pt", "zh", "es".
+ * Nothing for "und", "zxx", "mul" or what is not a language code.
+ */
+export function declaredLanguage(code: unknown): string | undefined {
+  if (typeof code !== 'string') return undefined
+  const primary = code.trim().toLowerCase().split(/[-_]/)[0]
+  return /^[a-z]{2,3}$/.test(primary) && !['und', 'zxx', 'mul', 'mis'].includes(primary) ? primary : undefined
+}
+
 function looksLikeHttpUrl(url?: string | null): boolean {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
@@ -40,6 +50,7 @@ export function buildVideoDocument(raw: RawVideo): VideoDocument | null {
 
   if (!raw.videoId || !looksLikeHttpUrl(raw.url)) return null;
   // Sparse metadata is unknown, not invalid. Keep these items available for exploration.
+  const lang = declaredLanguage(raw.lang ?? raw.declaredLang);
 
   return {
     type: 'video',
@@ -58,6 +69,7 @@ export function buildVideoDocument(raw: RawVideo): VideoDocument | null {
     liveBroadcastContent: raw.liveBroadcastContent,
     editorialRoutine: raw.editorialRoutine,
     editorialRoutineIngestedAt: raw.editorialRoutineIngestedAt,
+    ...(lang ? { lang } : {}),
     ...videoDiscoveryFields(raw),
     tags,
     keywords,

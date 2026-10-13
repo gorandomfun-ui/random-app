@@ -12,6 +12,7 @@ import { finalizeVideoIngest, type RawVideo } from '@/lib/ingest/videos'
 import { quotaDay } from '@/lib/discovery/exploration'
 import { detectAngle } from '../tagging/angle'
 import { closeRun, judge, openRun, recordSearch, type JournalLine, type RunStatus } from './journal'
+import { Mix } from './mix'
 import type { AdmissionBatch, AdmissionResult, LineContext, LineResult, SearchInput } from './context'
 import type { Line } from '../types'
 
@@ -93,8 +94,18 @@ export function trendQuota(db: Db, dailyUnits: number, dryRun: boolean, bucket: 
 }
 
 /** The provisional admission: the current video and image insertion paths, with the line, plus the angle rule of the trend. */
+/** A video's length in seconds: the finders' own count, else YouTube's ISO duration. */
+function secondsOf(video: RawVideo & { seconds?: number }): number | undefined {
+  if (typeof video.seconds === 'number') return video.seconds
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(video.duration ?? ''))
+  return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : undefined
+}
+
 export function provisionalAdmit(db: Db, line: Line, dryRun: boolean) {
   const saturation = new Map<string, number>()
+  // The run's mix (the owner, 12 and 13 October: "limiter n'est pas exclure", "vas-y pour tout"): of what it lets in, Shorts
+  // 15 % at most and each of Brazil and South and Southeast Asia 6 % (lib/v3/ingest/mix.ts); the rest is never refused here.
+  const mix = new Mix()
   const countSaturated = async (subjectId: string): Promise<number> => {
     const known = saturation.get(subjectId)
     if (known !== undefined) return known
@@ -116,6 +127,10 @@ export function provisionalAdmit(db: Db, line: Line, dryRun: boolean) {
         if (!batch.keepAngles && (SATURATED_ANGLES as readonly string[]).includes(angle)) {
           if (saturated >= ANGLE_SATURATION) { result.rejected['angle-saturated'] = (result.rejected['angle-saturated'] ?? 0) + 1; continue }
           saturated += 1
+        }
+        if (!mix.accepts({ title: video.title, seconds: secondsOf(video), lang: video.lang ?? video.declaredLang })) {
+          result.rejected['au-delà de sa part (Shorts ou pays)'] = (result.rejected['au-delà de sa part (Shorts ou pays)'] ?? 0) + 1
+          continue
         }
         admitted.push(video)
       }

@@ -116,6 +116,17 @@ test('the passes of a name: top, Dailymotion at once, around as many times as it
   assert.equal(nextPass(queued({}), false), 'dailymotion', 'YouTube out and no top yet: the name is searched on Dailymotion')
 })
 
+test('a news subject digs three times deeper on Dailymotion, its YouTube passes unchanged (13 October)', () => {
+  const rec = { at: new Date(), read: 0, kept: 0, inserted: 0, searches: 1 }
+  const news = (dailymotion: number) => queued({ base: 'trends', fame: 'small', passes: { top: [rec], dailymotion: Array.from({ length: dailymotion }, () => rec), around: [rec] } })
+  const person = (dailymotion: number) => queued({ base: 'people', fame: 'small', passes: { top: [rec], dailymotion: Array.from({ length: dailymotion }, () => rec), around: [rec] } })
+  assert.equal(nextPass(person(2)), null, 'a small name is done after two Dailymotion passes')
+  assert.equal(nextPass(news(2)), 'dailymotion', 'the news goes on')
+  assert.equal(nextPass(news(5)), 'dailymotion')
+  assert.equal(nextPass(news(6)), null, 'six for a small news subject')
+  assert.equal(nextPass(queued({ base: 'trends', fame: 'small', passes: { top: [rec], dailymotion: [rec] } })), 'around', 'its one YouTube around, as before')
+})
+
 test('with YouTube out, a name still gets its Dailymotion passes', () => {
   const rec = { at: new Date(), read: 0, kept: 0, inserted: 0, searches: 1 }
   assert.equal(nextPass(queued({ passes: { top: [rec] } }), false), 'dailymotion')

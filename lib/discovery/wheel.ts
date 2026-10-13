@@ -40,7 +40,7 @@ import { effectiveServed } from './kept'
 import { titleLanguage } from './language'
 import { base as baseFilter } from './mongo'
 import { hardEligible, type Intent, type PoolResult, type Session } from './pool'
-import { hash, type Rng } from './random'
+import { hash, shuffled, type Rng } from './random'
 import { sampleCatalogue } from './sampling'
 import type { Candidate } from './types'
 import { arrangement } from '../v3/cool/bag'
@@ -54,6 +54,7 @@ import { POOL_FILTER, POOL_INDEX, poolSize } from '../v3/ai/pool'
 import { drawStart } from '../v3/cool/start'
 import { isNewsTitle, isTrailerTitle, livelyRank, TRAILERS_PER_SESSION, trailersSeenIn } from '../v3/cool/themes'
 import { isLetsPlay, isStillAlbum } from '../v3/dig/door'
+import { placeOf } from '../v3/ingest/mix'
 import { mediaVerdict } from '../v3/dig/outlet'
 import type { DigBase, Popularity, Universe } from '../v3/types'
 
@@ -79,6 +80,23 @@ export const NEWS_IN_TEN = 1
 export const UNIVERSE_WINDOW = 6
 /** Not the same subject, nor the same author, within this many videos. */
 export const SPACING = 10
+/**
+ * Brazil, South and Southeast Asia: two in ten videos at most, never two in a row (the owner, 13 October: "souvent ils se
+ * suivent"). Told by the declared language, the script, or a title clearly not English (lib/v3/ingest/mix.ts); a video is
+ * never removed, only put further in the session.
+ */
+export const PLACES_IN_TEN = 2
+/**
+ * One buzz in three is the news the dig found these last days, from the third buzz on, so a session still opens on the day's
+ * list; one long in three is a personality's long video (the dig's people). The news never takes the long card nor the
+ * personalities the buzz: the two do not repeat each other (the owner, 13 October: "je veux pas qu'elles soient redondantes").
+ */
+export const NEWS_EVERY = 3
+export const PEOPLE_LONG_EVERY = 3
+const NEWS_DAYS = 7
+const SUBJECTS_CACHE_MS = 10 * 60_000
+const SUBJECT_INDEX = 'v3_subject_type_rand'
+const DAY_MS = 86_400_000
 /**
  * The media channels the sweeps named (scripts/v3/outlet-sweep.ts): their
  * videos are served under the media windows of lib/v3/dig/outlet.ts — a
@@ -123,6 +141,26 @@ export function slotAt(seed: number, index: number, wheel: readonly Slot[] = WHE
   return order[at % wheel.length]
 }
 
+/**
+ * How many times `slot` came up before the session's `index`-th video: the rounds as `slotAt` turns them, counted once each.
+ */
+export function slotOrdinal(seed: number, index: number, slot: Slot, wheel: readonly Slot[] = WHEEL): number {
+  const at = Math.max(0, Math.floor(index))
+  let previous: Slot | null = null
+  let count = 0
+  for (let round = 0; round * wheel.length < at; round += 1) {
+    let order: Slot[] = arrangement(seed, 'wheel', round, wheel, previous)
+    if (round === 0) {
+      const opening = Math.max(0, order.indexOf('buzz'))
+      order = [...order.slice(opening), ...order.slice(0, opening)]
+    }
+    previous = order[order.length - 1] ?? null
+    const upto = Math.min(wheel.length, at - round * wheel.length)
+    for (let position = 0; position < upto; position += 1) if (order[position] === slot) count += 1
+  }
+  return count
+}
+
 /** The universe the bonus card names for the session's `index`-th video: the three in turn, the session's seed saying which comes first. */
 export function bonusAt(seed: number, index: number, wheel: readonly Slot[] = WHEEL, universes: readonly Universe[] = BONUS): Universe {
   const round = Math.floor(Math.max(0, Math.floor(index)) / wheel.length)
@@ -141,7 +179,7 @@ export type WheelChoice = {
 }
 export type WheelResult<T> = PoolResult<T> & { wheel: WheelChoice }
 type Decoder<T> = (row: CatalogueRow) => T | null
-type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string> }
+type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string>; ordinal?: number }
 type Filled<T> = { item: Candidate<T>; from: string; universe?: Universe }
 
 /** The signals the session's proportions read, written on the candidate so the page keeps them in its exposures. */
@@ -149,10 +187,11 @@ export function withSignals<T>(candidate: Candidate<T>): Candidate<T> {
   // The language the platform declared, when the row carries it; the detector reads the title otherwise.
   const lang = candidate.declaredLang ?? titleLanguage(candidate.title)
   const news = candidate.universe === 'news-society' || isNewsTitle(candidate.title)
-  return { ...candidate, ...(lang ? { lang } : {}), ...(news ? { news: true } : {}) }
+  const place = placeOf({ title: candidate.title, lang: candidate.declaredLang })
+  return { ...candidate, ...(lang ? { lang } : {}), ...(news ? { news: true } : {}), ...(place ? { place } : {}) }
 }
 
-export type Refusal = 'subject' | 'author' | 'foreign' | 'language' | 'news' | 'trailer' | 'universe' | 'remembered'
+export type Refusal = 'subject' | 'author' | 'foreign' | 'language' | 'news' | 'place' | 'trailer' | 'universe' | 'remembered'
 export type SessionRules = {
   /** Why the session refuses this candidate now, or null. */
   refuses: (candidate: Candidate) => Refusal | null
@@ -176,6 +215,8 @@ export function sessionRules(state: Session, remembered: ReadonlySet<number> = n
   const languages = new Map<string, number>()
   for (const exposure of recent) if (exposure.lang) languages.set(exposure.lang, (languages.get(exposure.lang) ?? 0) + 1)
   const newsFull = recent.filter((exposure) => exposure.news).length >= NEWS_IN_TEN
+  const placesFull = recent.filter((exposure) => exposure.place).length >= PLACES_IN_TEN
+  const lastPlaced = Boolean(recent[recent.length - 1]?.place)
   const universes = new Set(recent.slice(-UNIVERSE_WINDOW).flatMap((exposure) => (exposure.universe ? [exposure.universe] : [])))
   const trailersFull = trailersSeenIn(state.exposures) >= TRAILERS_PER_SESSION
   // The universes lead (the owner, 28 September): not the one of the previous video when another fits, the last three set aside when the count allows.
@@ -191,6 +232,7 @@ export function sessionRules(state: Session, remembered: ReadonlySet<number> = n
       if (stamp?.foreign && foreignFull) return 'foreign'
       if (candidate.lang && (languages.get(candidate.lang) ?? 0) >= LANGUAGE_IN_TEN) return 'language'
       if (candidate.news && newsFull) return 'news'
+      if (candidate.place && (placesFull || lastPlaced)) return 'place'
       if (candidate.universe && universes.has(candidate.universe)) return 'universe'
       if (trailersFull && isTrailerTitle(candidate.title)) return 'trailer'
       return null
@@ -345,11 +387,54 @@ async function tasteBag(db: Db, now: number): Promise<Array<{ universe: Universe
   return bag
 }
 
+/** The dig's news subjects of these last days, read every ten minutes. */
+let newsSubjects: { at: number; ids: string[] } | null = null
+async function recentNews(db: Db, now: number): Promise<string[]> {
+  if (newsSubjects && now - newsSubjects.at < SUBJECTS_CACHE_MS) return newsSubjects.ids
+  const rows = await db.collection('dig_subjects_v4').find({ base: 'trends', lastRunAt: { $gte: new Date(now - NEWS_DAYS * DAY_MS) } } as Document, { projection: { _id: 1 }, limit: 1000, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[])
+  newsSubjects = { at: now, ids: rows.map((row) => String(row._id)) }
+  return newsSubjects.ids
+}
+
+/** A news subject of these last days at random, then its short and middling videos: the long ones are the long card's. */
+async function theNews<T>(db: Db, slot: Slot, context: Context<T>): Promise<Filled<T> | null> {
+  for (const id of shuffled(await recentNews(db, context.now), context.random).slice(0, 5)) {
+    const rows = (await seek(db, { 'v3.subjects.id': id, type: 'video', ...SERVABLE }, SUBJECT_INDEX, context.random, ROWS)).filter((row) => isCleanTitle(String(row.title ?? '')) && !isLive(row))
+    const picked = choose(rows, slot, context, (_row, candidate) => seconds(candidate) <= LONG_SECONDS)
+    if (picked) return { item: picked, from: 'dig:trends' }
+  }
+  return null
+}
+
+/** The people the dig has dug, read every ten minutes. */
+let peopleSubjects: { at: number; ids: string[] } | null = null
+async function dugPeople(db: Db, now: number): Promise<string[]> {
+  if (peopleSubjects && now - peopleSubjects.at < SUBJECTS_CACHE_MS) return peopleSubjects.ids
+  const rows = await db.collection('dig_subjects_v4').find({ base: 'people', state: { $in: ['running', 'done', 'exhausted'] } } as Document, { projection: { _id: 1 }, limit: 30_000, maxTimeMS: QUERY_BUDGET_MS }).toArray().catch(() => [] as Document[])
+  peopleSubjects = { at: now, ids: rows.map((row) => String(row._id)) }
+  return peopleSubjects.ids
+}
+
+/** A personality at random, then one of their long videos; several tries, as most have none or few (1,789 subjects of 4,400 on 13 October). */
+async function aPersonLong<T>(db: Db, slot: Slot, context: Context<T>): Promise<Filled<T> | null> {
+  for (const id of shuffled(await dugPeople(db, context.now), context.random).slice(0, 8)) {
+    const rows = await seek(db, { 'v3.subjects.id': id, type: 'video', ...SERVABLE }, SUBJECT_INDEX, context.random, SIFTED_ROWS)
+    const picked = choose(rows, slot, context, (row, candidate) => seconds(candidate) > LONG_SECONDS && !isLive(row))
+    if (picked) return { item: picked, from: 'dig:people-long' }
+  }
+  return null
+}
+
 /** One card, filled from the stock; null when nothing fits it. */
 export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Promise<Filled<T> | null> {
   const { ticket, state, decode, lang, random, now, card, rules } = context
   switch (slot) {
     case 'buzz': {
+      // One buzz in three, from the third on: the news the dig found these last days (the owner, 13 October).
+      if ((context.ordinal ?? 0) % NEWS_EVERY === NEWS_EVERY - 1) {
+        const news = await theNews(db, slot, context).catch(() => null)
+        if (news) return news
+      }
       // The day's list, none this device already saw today, under the session's proportions — or, one time in two, the moment first:
       // what the trend era holds, the week's media clips among it (the owner, 1 October: being up to date); each the other's fallback.
       const momentFirst = random() < 0.5
@@ -366,8 +451,14 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       if (momentFirst) return (await theMoment()) ?? theDay()
       return (await theDay()) ?? theMoment()
     }
-    case 'long':
+    case 'long': {
+      // One long in three: a personality's long video (the owner, 13 October); never the news, which the buzz shows.
+      if ((context.ordinal ?? 0) % PEOPLE_LONG_EVERY === PEOPLE_LONG_EVERY - 1) {
+        const person = await aPersonLong(db, slot, context).catch(() => null)
+        if (person) return person
+      }
       return inUniverseThenAny(db, slot, context, SIFTED_ROWS, (row, candidate) => seconds(candidate) > LONG_SECONDS && !isLive(row))
+    }
     case 'short':
       return inUniverseThenAny(db, slot, context, ROWS, (row, candidate) => seconds(candidate) >= 15 && seconds(candidate) <= SHORT_SECONDS && livelyRank(row) === 0)
     case 'deep': {
@@ -466,7 +557,7 @@ export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, fre
   if (ticket.type !== 'video') return null
   const slot = slotAt(state.seed, state.videos ?? 0)
   const media = await mediaChannelKeys(db, now).catch(() => new Set<string>())
-  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media }
+  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media, ordinal: slotOrdinal(state.seed, state.videos ?? 0, slot) }
   let filled = await fillSlot(db, slot, context).catch(() => null)
   let fallback = false
   if (!filled && slot !== 'joker') {

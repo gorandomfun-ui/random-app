@@ -35,6 +35,7 @@ export function parseSession(value: unknown): Session | null {
       if (entry.universe != null && (typeof entry.universe !== 'string' || entry.universe.length > 40)) return null
       if (entry.lang != null && (typeof entry.lang !== 'string' || entry.lang.length > 8)) return null
       if (entry.news != null && typeof entry.news !== 'boolean') return null
+      if (entry.place != null && (typeof entry.place !== 'string' || entry.place.length > 4)) return null
       if (entry.publicationYear != null && (!Number.isSafeInteger(entry.publicationYear) ||
         Number(entry.publicationYear) < 1800 || Number(entry.publicationYear) > 2200)) return null
       if (entry.metadata != null && (typeof entry.metadata !== 'string' || !/^\d{1,10}:\d{1,10}$/.test(entry.metadata))) return null

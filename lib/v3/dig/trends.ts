@@ -14,7 +14,8 @@ import type { Universe } from '../types'
 import { enqueue, QUEUE, type NewSubject, type QueuedSubject } from './queue'
 
 export const TREND_LANGUAGES: WikiLanguage[] = ['fr', 'en', 'de', 'es', 'pt', 'it', 'ja', 'ru', 'ko']
-export const TREND_TOP = 60
+/** Yesterday's most read pages a language, at most: 60 until 13 October (13 to 47 subjects a day), then 200 to grow the news. */
+export const TREND_TOP = 200
 /** Below that, a page is just the weather: not a subject of the day. */
 const MIN_VIEWS = 40_000
 
