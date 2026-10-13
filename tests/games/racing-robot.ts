@@ -17,6 +17,8 @@ import { FORK_DECIDE, racingBendSpeed, RACING_LANES, RACING_TOP, segmentOf, step
 export type Driver = { see: number; aim: number; look: number; margin: number; ahead: number; misses: number; good: boolean }
 export const GOOD: Driver = { see: 0, aim: 0, look: 45, margin: 0.99, ahead: 70, misses: 0, good: true }
 export const CASUAL: Driver = { see: 12, aim: 0.12, look: 22, margin: 0.95, ahead: 40, misses: 0.35, good: false }
+/** Between the two: an everyday player, who sees a little late and aims a little roughly. */
+export const MEDIUM: Driver = { see: 6, aim: 0.06, look: 32, margin: 0.97, ahead: 55, misses: 0.15, good: false }
 
 type Seen = { x: number; z: number; speed: number }
 /** What the brake takes off the speed each step (as the rules have it). */
@@ -87,7 +89,8 @@ export function driver(d: Driver, seed = 7): (s: RacingState) => Move {
     const stuck = [...s.rivals, ...s.traffic].some((c) => c.z - seen.z > 4 && c.z - seen.z < 14 && Math.abs(c.x - seen.x) < 0.45 && c.speed < seen.speed)
     // and the brake for a slower car in its way that it cannot go round in time: running into it is a crash
     const late = [...s.rivals, ...s.traffic].some((c) => {
-      if (c.z <= seen.z || c.speed >= seen.speed || !((Math.abs(c.x - seen.x) <= 0.55 && Math.abs(c.x - lane) <= 0.55) || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - lane) <= 0.55))) return false
+      // (ahead of it, not alongside: a car beside is passed, not braked for)
+      if (c.z - seen.z <= 3 || c.speed >= seen.speed || !((Math.abs(c.x - seen.x) <= 0.48 && Math.abs(c.x - lane) <= 0.55) || (Math.abs(c.lane - c.x) > 0.05 && Math.abs(c.lane - lane) <= 0.55))) return false
       const dv = seen.speed - c.speed
       return c.z - seen.z - 8 < (dv * dv) / (2 * BRAKING) + dv * 6
     })

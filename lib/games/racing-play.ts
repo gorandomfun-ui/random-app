@@ -1132,7 +1132,7 @@ function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: n
     return
   } else if (s.phase === 'lost') {
     // over the line behind a rival: the level again
-    arcadeText(out, 'RACE LOST', W / 2, mid - 6, 4, '#ff5a4a')
+    arcadeText(out, s.duelLost ? 'DUEL LOST' : 'RACE LOST', W / 2, mid - 6, 4, '#ff5a4a')
     if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE`, W / 2, mid + 36, CREAM, 2)
     if (s.phaseTimer > 60) said(out, s.single ? 'BEAT THEM ALL TO THE LINE' : 'FINISH FIRST: TRY AGAIN', W / 2, mid + 58, '#ffd23f', 1)
     return

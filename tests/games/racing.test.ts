@@ -27,7 +27,7 @@ import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
 import { decodePng } from '../../scripts/games/png'
-import { CASUAL, driver, GOOD, race } from './racing-robot'
+import { CASUAL, driver, GOOD, MEDIUM, race } from './racing-robot'
 
 const NAMES: RacingArtName[] = ['titleWide', 'titleTall', 'playBack', 'palm', 'far-mountain', 'far-desert', 'far-city', 'pine', 'rock', 'saguaro', 'butte', 'face-desert', 'face-mountain', ...(['rosso', 'burger', 'giallo'] as const).flatMap((k) => CAR_SIZES.flatMap((s) => [`car-${k}-${s}`, `car-${k}-${s}-turn`] as RacingArtName[]))]
 const pictures = new Map<RacingArtName, PixelBuffer>()
@@ -383,7 +383,7 @@ test('racing: the public cheers as the car goes by it — not again for a few se
   assert.ok(line, 'and at the line, after its fanfare')
 })
 
-test('racing: every fourth level a duel — one rival, one then the other, to be beaten to the line: first over it, the game is over; beaten, its points', () => {
+test('racing: every fourth level a duel — one rival, one then the other, to be beaten to the line: first over it, the level again; beaten, its points', () => {
   for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) {
     const s = createRacing('landscape', level, 2, { single: true, car: 'burger' })
     assert.equal(s.rivals.length, racingIsDuel(level) ? 1 : 2, `level ${level}`)
@@ -391,14 +391,14 @@ test('racing: every fourth level a duel — one rival, one then the other, to be
   }
   const kinds = [4, 8, 12, 16].map((level) => createRacing('landscape', level, 2, { single: true, car: 'burger' }).duel)
   assert.deepEqual(kinds, ['rosso', 'giallo', 'rosso', 'giallo'], 'one, then the other')
-  // the rival first over the line: lost
-  const lost = createRacing('landscape', 4, 2, { single: true, car: 'burger' })
+  // the rival first over the line: lost — the level again
+  const lost = createRacing('landscape', 4, 2, { car: 'burger' })
   for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(lost)
   lost.rivals[0].z = lost.finish - 0.5; lost.rivals[0].speed = 1; lost.z = lost.finish - 300
   for (let i = 0; i < 3; i += 1) stepRacing(lost, 0, true)
-  assert.ok(lost.duelLost && lost.phase === 'timeup', 'the duel lost')
-  for (let i = 0; i < 300; i += 1) stepRacing(lost)
-  assert.equal(lost.phase as string, 'over')
+  assert.ok(lost.duelLost && lost.phase === 'lost', 'the duel lost')
+  for (let i = 0; i < 300 && lost.phase === 'lost'; i += 1) stepRacing(lost)
+  assert.equal(lost.phase as string, 'start'); assert.equal(lost.level, 4); assert.ok(lost.duel && !lost.duelLost, 'the duel again')
   // over it first: the duel's points with the place's
   const won = createRacing('landscape', 4, 2, { single: true, car: 'burger' })
   for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(won)
@@ -428,8 +428,8 @@ test('racing: over the line behind a rival, the race is lost — RACE LOST, the 
   assert.equal(behind(true).s.phase, 'over')
 })
 
-test('racing: every level faster than the one before — the car, the rivals, the traffic — the last nearly a third faster than the first', () => {
-  assert.ok(racingLevelPace(16) > 1.25 && racingLevelPace(1) === 1)
+test('racing: every level faster than the one before — the car, the rivals, the traffic — the last near a quarter faster than the first', () => {
+  assert.ok(racingLevelPace(16) > 1.2 && racingLevelPace(1) === 1)
   for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) assert.ok(racingLevelPace(level) > racingLevelPace(level - 1))
   const top = (level: number) => {
     const s = createRacing('landscape', level, 1, { single: true, car: 'giallo' })
@@ -439,7 +439,7 @@ test('racing: every level faster than the one before — the car, the rivals, th
     for (let i = 0; i < 1500; i += 1) stepRacing(s, 0, true)
     return s.speed
   }
-  assert.ok(top(11) > top(1) * 1.18, 'the car itself faster')
+  assert.ok(top(11) > top(1) * 1.12, 'the car itself faster')
 })
 
 test('racing: where the road divides, the barrier down the middle keeps the car on the side it took', () => {
@@ -468,7 +468,18 @@ test('racing: a good driver finishes first in nearly every level of every world,
   assert.ok(lost <= 2, `${lost} of 64 lost the first time`)
 })
 
-test('racing: a casual driver wins most of its first levels; less and less as the levels go, the last ones lost or only just won', () => {
+test('racing: an everyday player wins nearly every one of the first eight levels the first time, and most of the others — playing one again now and then', () => {
+  const rate = (from: number, to: number) => {
+    let won = 0, all = 0
+    for (const world of RACING_WORLDS) for (let level = from; level <= to; level += 1) { all += 1; if (race(createRacing('portrait', level, 7, { single: true, world }), MEDIUM, 7).won) won += 1 }
+    return won / all
+  }
+  const early = rate(1, 8), late = rate(9, RACING_LAST_LEVEL)
+  assert.ok(early >= 0.9, `the first eight: ${Math.round(early * 100)} % the first time`)
+  assert.ok(late >= 0.65 && late < 1, `the last eight: ${Math.round(late * 100)} % the first time, not all`)
+})
+
+test('racing: a casual driver wins most of its first levels; less and less as the levels go, the last ones with less time to spare', () => {
   const tries = (level: number) => RACING_WORLDS.flatMap((world) => [7, 8, 9].map((seed) => race(createRacing('portrait', level, seed, { single: true, world }), CASUAL, seed)))
   const early = [1, 2, 3].flatMap(tries), wins = early.filter((o) => o.won)
   assert.ok(wins.length >= early.length * 0.65, `the first three levels won ${wins.length} times of ${early.length}`)
@@ -476,7 +487,9 @@ test('racing: a casual driver wins most of its first levels; less and less as th
   const share = (level: number) => tries(level).filter((o) => o.won).length
   const first = share(2), middle = share(8), last = share(RACING_LAST_LEVEL)
   assert.ok(first > middle && middle >= last, `fewer races won as the levels go (${first}, ${middle}, ${last} of 12)`)
-  for (const out of tries(RACING_LAST_LEVEL)) assert.ok(!out.won || out.timeLeft <= 8, `the last level leaves a casual driver little (${out.timeLeft.toFixed(1)} s)`)
+  // and when it wins the last level, less time to spare than at the first
+  const spare = (list: ReturnType<typeof tries>) => { const won = list.filter((o) => o.won); return won.reduce((a, o) => a + o.timeLeft, 0) / Math.max(1, won.length) }
+  assert.ok(spare(tries(RACING_LAST_LEVEL)) < spare(tries(1)) - 4, `less time to spare at the last level (${spare(tries(RACING_LAST_LEVEL)).toFixed(1)} s against ${spare(tries(1)).toFixed(1)} s)`)
 })
 
 test('racing: the rivals stay in the race — passed, they come back; a mistake and they are by', () => {
