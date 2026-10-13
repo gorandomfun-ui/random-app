@@ -153,8 +153,8 @@ const SPIN_STEPS = 0.8 * SECOND
 /**
  * Every fourth level a duel: one rival only — no quicker than the others at
  * the fourth level, a little quicker at each next one, easing off less ahead
- * and moving across more often — to be beaten to the line, or the game is
- * over; beaten, its points.
+ * and moving across more often — to be beaten to the line, or the level is
+ * played again like any race lost; beaten, its points.
  */
 export const racingIsDuel = (level: number): boolean => level % 4 === 0
 export const RACING_DUEL_BONUS = 1500
@@ -314,15 +314,15 @@ export const racingLength = (level: number): number => 2800 + Math.min(RACING_LA
 /**
  * Every level a little faster than the one before — the car, the rivals, the
  * traffic, all of it: a share of the first level's speeds, the last level
- * nearly a third faster. The bends do not get easier for it: more of them
+ * near a quarter faster. The bends do not get easier for it: more of them
  * want braking as the levels go.
  */
 export const racingLevelPace = (level: number): number => 1 + (Math.max(1, Math.min(RACING_LAST_LEVEL, level)) - 1) * LEVEL_SPEEDUP
-const LEVEL_SPEEDUP = 0.02
+const LEVEL_SPEEDUP = 0.015
 /** How fast the rivals go on the straights, as a share of the top speed; in the bends they take a little less than the most the bend allows. */
 export const racingPace = (level: number): number => 0.84 + Math.min(RACING_LAST_LEVEL, level) * 0.005
 /** How much of what a bend allows a rival takes: more as the levels go. */
-const rivalBend = (level: number) => 0.915 + Math.min(RACING_LAST_LEVEL, level) * 0.001
+const rivalBend = (level: number) => 0.9 + Math.min(RACING_LAST_LEVEL, level) * 0.001
 /**
  * A rival left behind comes back: the further behind (up to `RIVAL_REACH`
  * stretches), the nearer it drives to its top speed — a hair under the
@@ -332,12 +332,14 @@ const rivalBend = (level: number) => 0.915 + Math.min(RACING_LAST_LEVEL, level) 
  * levels go — so the player can always come back on it.
  */
 const RIVAL_REACH = 30
+/** How near the player's own speed a rival far behind keeps. */
+const RIVAL_SHADOW = 0.985
 /** From the third level a rival left behind fires a turbo of its own now and then, on a straight: two seconds, then a while before the next (shorter as the levels go). */
 const RIVAL_TURBO = 2 * SECOND
 const RIVAL_COOL = 12 * SECOND
 const rivalCool = (level: number) => Math.round(RIVAL_COOL * (1.3 - Math.min(RACING_LAST_LEVEL, level) * 0.04))
-const rivalTop = (level: number) => RACING_TOP * (0.965 + Math.min(RACING_LAST_LEVEL, level) * 0.0028)
-const rivalEase = (level: number) => 0.15 - Math.min(RACING_LAST_LEVEL, level) * 0.004
+const rivalTop = (level: number) => RACING_TOP * (0.95 + Math.min(RACING_LAST_LEVEL, level) * 0.0015)
+const rivalEase = (level: number) => 0.26 - Math.min(RACING_LAST_LEVEL, level) * 0.006
 /** How fast a car can take a bend of `curve` and still hold it, steering all the way in: a share of the top speed. */
 export const bendLimit = (curve: number, level = 1): number => (Math.abs(curve) < 1e-6 ? 1 : Math.min(1, Math.sqrt(1 / (CENTRIFUGAL * grip(level) * Math.abs(curve)))))
 /** How fast a car with this top speed and this grip can take a bend, steering all the way in. */
@@ -1083,8 +1085,10 @@ export function stepRacing(s: RacingState, steer: -1 | 0 | 1 = 0, gas = false, b
       s.cheerLater = LINE_CHEER
       s.cheered = CHEER_STEPS
     } else if (s.duel && s.rivals[0].z >= s.finish) {
-      // the duel's rival over the line first: lost
-      s.duelLost = true; s.phase = 'timeup'; s.phaseTimer = 0
+      // the duel's rival over the line first: lost, and the level again like any race lost
+      s.duelLost = true; s.phase = 'lost'; s.phaseTimer = 0; s.turbo = 0
+      s.bonus = { time: 0, place: 0, rank: 2, duel: 0 }
+      s.heard.push('thud')
     } else if (s.time <= 0) { s.time = 0; s.phase = 'timeup'; s.phaseTimer = 0 }
   } else if (s.phase === 'goal' && s.phaseTimer >= GOAL_STEPS) {
     if (s.single || s.level >= RACING_LAST_LEVEL) s.phase = 'won'
@@ -1264,8 +1268,10 @@ function stepRivals(s: RacingState): void {
       const pull = Math.min(1, -gap / RIVAL_REACH)
       // far behind, harder still: never out of the race for long (a duel's rival no harder than its top: a clean race beats it)
       const chase = s.duel ? 1 : 1 + 0.03 * Math.min(1, Math.max(0, -gap - RIVAL_REACH) / 60)
-      want = Math.min(bend * Math.min(1, rivalBend(s.level) + 0.04), want + (rivalTop(s.level) * scale * chase - want) * pull)
-    } else if (gap > 10) want *= 1 - (s.duel ? duelEase(s.level) : rivalEase(s.level)) * Math.min(1, (gap - 10) / 80)
+      // far behind, it keeps up with the player: never losing more ground on a car at full speed, gaining on a mistake
+      const top = -gap > RIVAL_REACH ? Math.max(rivalTop(s.level) * scale * chase, s.speed * RIVAL_SHADOW) : rivalTop(s.level) * scale * chase
+      want = Math.min(bend * (-gap > RIVAL_REACH ? 0.97 : Math.min(1, rivalBend(s.level) + 0.04)), want + (top - want) * pull)
+    } else if (gap > 6) want *= 1 - (s.duel ? duelEase(s.level) : rivalEase(s.level)) * Math.min(1, (gap - 6) / 45)
     // its own turbo, behind the player on a clear straight
     if (r.cool > 0) r.cool -= 1
     if (r.turbo > 0) { r.turbo -= 1; want = Math.max(want, Math.min(bend, RACING_TOP * scale * TURBO_TOP * 0.95)) }
