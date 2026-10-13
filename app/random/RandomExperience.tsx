@@ -5315,7 +5315,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
   return (
     <main
-      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo || fullscreenWeb ? ' random-page--video-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}${arcade ? ' random-page--arcade' : ''}${arcade && arcadePlay === 'playing' ? ' random-page--arcade-playing' : ''}${arcade && arcadeFull ? ' random-page--arcade-full' : ''}`}
+      className={`random-page min-h-screen flex flex-col${effectsProfile === 'webkit-lite' ? ' random-page--lite-effects' : ''}${effectsTestMode ? ' random-page--effects-test' : ''}${progressionIntensity > 0 ? ' random-page--effects-progressing' : ''}${progressionIntensity > 1 ? ' random-page--effects-overdrive' : ''}${progressionIntensity > 2 ? ' random-page--effects-final' : ''}${pageGlitchActive ? ' random-page--glitching' : ''}${fullscreenVideo ? ' random-page--video-fullscreen' : ''}${fullscreenWeb ? ' random-page--web-fullscreen' : ''}${waveMode ? ' random-page--wave' : ''}${waveTransitionActive ? ' random-page--wave-transition' : ''}${arcade ? ' random-page--arcade' : ''}${arcade && arcadePlay === 'playing' ? ' random-page--arcade-playing' : ''}${arcade && arcadeFull ? ' random-page--arcade-full' : ''}`}
       style={mainStyle}
     >
       {curationMode && curationError ? <aside role="status" className="fixed bottom-2 left-2 z-50 rounded bg-black px-3 py-2 text-xs text-white">
@@ -6750,6 +6750,24 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
         }
         .random-page--video-fullscreen .random-footer-ad {
           opacity: 0;
+          pointer-events: none;
+        }
+        /*
+         * A site open inside Random: the page behind its frame is hidden. It used to take the full-screen video's layout, which
+         * lifts the content above everything — the site's card, its picture and its title, stayed over the site (13 October).
+         */
+        .random-page--web-fullscreen {
+          min-height: 100vh;
+          min-height: 100dvh;
+          overflow: hidden;
+          overscroll-behavior: contain;
+        }
+        .random-page--web-fullscreen .random-main-header,
+        .random-page--web-fullscreen .random-category-row,
+        .random-page--web-fullscreen .random-action-section,
+        .random-page--web-fullscreen .random-content-section,
+        .random-page--web-fullscreen .random-footer-ad {
+          visibility: hidden;
           pointer-events: none;
         }
         .random-page--video-fullscreen {
