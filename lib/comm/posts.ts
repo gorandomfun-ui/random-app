@@ -203,7 +203,8 @@ export async function usedBy(db: Db, queueItemIds: string[]): Promise<Record<str
   return out
 }
 
+/** A draft, a failed or an exported post can go; a published one stays, its link lives in an Instagram comment. */
 export async function deleteDraft(db: Db, id: string): Promise<boolean> {
   if (!ObjectId.isValid(id)) return false
-  return (await db.collection(COMM_POSTS).deleteOne({ _id: new ObjectId(id), status: { $in: ['draft', 'failed'] } })).deletedCount === 1
+  return (await db.collection(COMM_POSTS).deleteOne({ _id: new ObjectId(id), status: { $in: ['draft', 'failed', 'exported'] } })).deletedCount === 1
 }
