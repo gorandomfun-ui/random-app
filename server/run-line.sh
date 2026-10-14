@@ -52,7 +52,7 @@ egress_month_bytes() {
 }
 sent_gib=$(( $(egress_month_bytes || echo 0) / 1073741824 ))
 case "${LINE}" in
-  web-previews|web-embed|web-commoncrawl|web-search|drift|youtube-drift) heavy=1 ;;
+  web-previews|web-embed|web-commoncrawl|web-search|drift|youtube-drift|image-obsolete) heavy=1 ;;
   *) heavy=0 ;;
 esac
 if [ "${sent_gib}" -ge "${RANDOM_BRAKE_ALL_GIB:-18}" ] || { [ "${heavy}" = 1 ] && [ "${sent_gib}" -ge "${RANDOM_BRAKE_GIB:-15}" ]; }; then
@@ -135,6 +135,11 @@ case "${LINE}" in
     # The channels of the YouTube videos the base took, ten new uploads each, in the YouTube units the searches leave
     # (the owner, 11 October: the whole quota, for the ingestion). No model; it ends before the small model's next window.
     RANDOM_YT_DRIFT_MINUTES="${RANDOM_YT_DRIFT_MINUTES:-25}" run node --import tsx scripts/v3/youtube-drift-direct.ts
+    ;;
+  image-obsolete)
+    # The night's check of the pictures and GIFs: the reported ones, then thirty-five thousand of the stock in turn (each once a
+    # month), a HEAD each; the dead wait for the owner's button. About 20 MB sent: under the 2 € brake with the heavy lines.
+    RANDOM_IMAGE_OBSOLETE_MINUTES="${RANDOM_IMAGE_OBSOLETE_MINUTES:-30}" run node --import tsx scripts/v3/image-obsolete-direct.ts
     ;;
   obsolete)
     # The nightly check of the stored videos: the dead are marked and hidden, the owner deletes them from the page

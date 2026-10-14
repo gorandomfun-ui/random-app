@@ -60,7 +60,7 @@ export const LINE_LABELS: Record<string, string> = {
  */
 const MEASURING_LINES = new Set<string>(['like-pool', 'web-commoncrawl'])
 /** Lines that check rather than insert (the night's check of dead videos): judged by their last run, never "muette". */
-export const CHECK_LINES = new Set<string>(['obsolete'])
+export const CHECK_LINES = new Set<string>(['obsolete', 'image-obsolete'])
 
 export function shownStatus(run: Pick<JournalRun, 'status' | 'startedAt'>, now: number): ShownStatus {
   if (run.status !== 'running') return run.status

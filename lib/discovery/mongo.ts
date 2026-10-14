@@ -22,7 +22,9 @@ type Decoder<T> = (row: CatalogueRow) => T | null
  */
 export function base(type: Format, lang: string, now: number): Filter<Document> {
   const visual = type === 'video' || type === 'image'
-  return { type, isSuppressed: { $ne: true }, ...(type === 'web' ? { embeddable: true, webLinkDead: { $ne: true } } : {}), ...(type === 'video' ? {
+  return { type, isSuppressed: { $ne: true }, ...(type === 'web' ? { embeddable: true, webLinkDead: { $ne: true } } : {}),
+    // A picture the night's check found dead waits for the owner's deletion out of sight (14 October), as a dead video does.
+    ...(type === 'image' ? { obsoleteImageStatus: { $ne: 'obsolete' } } : {}), ...(type === 'video' ? {
     obsoleteVideoStatus: { $ne: 'obsolete' },
     $or: [{ obsoleteVideoRuntimeBlockedUntil: { $exists: false } }, { obsoleteVideoRuntimeBlockedUntil: null }, { obsoleteVideoRuntimeBlockedUntil: { $lte: new Date(now) } }],
   } : {}), ...(!visual && type !== 'web' ? { $or: [
