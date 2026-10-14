@@ -80,11 +80,11 @@ export function actionKey(buffer: PixelBuffer, cx: number, cy: number, r: number
   drawText7(buffer, label, Math.round(cx - w / 2), Math.round(cy - 3.5 * scale), ink, scale, true)
 }
 
-/** The cross of arrows of EATER and CATCHER: four round keys, up, down, left, right, `arm` apart from the middle. */
+/** The cross of arrows of EATER and CATCHER: four round keys, up, down, left, right, a little over `arm` from the middle, clear of one another. */
 export function arrowCross(buffer: PixelBuffer, cx: number, cy: number, arm: number, accent: string): void {
-  const r = arm * 0.62
-  arrowKey(buffer, cx, cy - arm, r, 'up', accent)
-  arrowKey(buffer, cx, cy + arm, r, 'down', accent)
-  arrowKey(buffer, cx - arm, cy, r, 'left', accent)
-  arrowKey(buffer, cx + arm, cy, r, 'right', accent)
+  const r = arm * 0.6, out = arm * 1.08
+  arrowKey(buffer, cx, cy - out, r, 'up', accent)
+  arrowKey(buffer, cx, cy + out, r, 'down', accent)
+  arrowKey(buffer, cx - out, cy, r, 'left', accent)
+  arrowKey(buffer, cx + out, cy, r, 'right', accent)
 }

@@ -246,7 +246,7 @@ type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay' | 'crui
  */
 export type RacingForkKind = 'bends' | 'fast' | 'tunnel'
 export const RACING_FORK_KINDS: readonly RacingForkKind[] = ['bends', 'fast', 'tunnel']
-export type RacingFork = { at: number; len: number; kinds: [RacingForkKind, RacingForkKind]; tracks: [RacingSegment[], RacingSegment[]]; items: [Array<Omit<RacingItem, 'taken'>>, Array<Omit<RacingItem, 'taken'>>] }
+export type RacingFork = { at: number; len: number; kinds: [RacingForkKind, RacingForkKind]; tracks: [RacingSegment[], RacingSegment[]]; items: [Array<Omit<RacingItem, 'taken'>>, Array<Omit<RacingItem, 'taken'>>]; apart: number[] }
 /**
  * Where the road divides (a share of the level), how much of it the two
  * roads run. The left-hand road comes out of this one before it, as an exit
@@ -263,6 +263,16 @@ export const FORK_GANTRY = 170
 /** How far the left-hand road's middle is from this one's while they run side by side, in half widths: joined, edge to edge. */
 export const FORK_BESIDE = 2
 /**
+ * As far as can be seen from where they part (more than the stretches drawn
+ * ahead), the two roads alike — the same ground, flat, nothing standing by
+ * them, nothing on them — but for a gentle S taking each away from the other
+ * (`FORK_S` stretches, as much each way): whichever the car takes, nothing in
+ * sight changes as it takes it.
+ */
+export const FORK_PART = 300
+const FORK_S = 240
+
+/**
  * Where the two roads meet again, as an entry onto a motorway: the other road
  * running joined to this one (`MERGE_ALONG` stretches), then its lanes
  * narrowing into this one's (`MERGE_TAPER`), slowly enough to steer across in
@@ -271,7 +281,8 @@ export const FORK_BESIDE = 2
 export const MERGE_ALONG = 60
 export const MERGE_TAPER = 120
 /** How far off the other road runs, for how long, and how far it goes as it leaves the view (or comes into it) and over how many stretches. */
-const OTHER_FAR = 12, OTHER_ALONG = 260, OTHER_GONE = 40, OTHER_FADE = 140
+export const OTHER_FAR = 12
+const OTHER_ALONG = 260, OTHER_GONE = 40, OTHER_FADE = 140
 /** The other road of the two at a stretch: how far its middle is from this one's, in half widths (on its side; 0 where out of sight), and whether it runs joined to this one there — one road, the car free to drive onto it. */
 export type RacingOtherRoad = { off: number; joined: boolean }
 const NO_ROAD: RacingOtherRoad = { off: 0, joined: false }
@@ -286,22 +297,23 @@ export function racingOtherRoad(s: RacingState, i: number): RacingOtherRoad {
   const f = s.fork
   if (!f) return NO_ROAD
   const k = i - f.at, home = f.len - k
-  if (s.forkPick < 0) {
-    if (k < -FORK_ALONGSIDE - FORK_TAPER) return NO_ROAD
-    if (k < -FORK_ALONGSIDE) return { off: -((k + FORK_ALONGSIDE + FORK_TAPER) / FORK_TAPER) * FORK_BESIDE, joined: true }
-    if (k < 0) return { off: -FORK_BESIDE, joined: true }
-  }
+  // (on the left-hand road once it is taken, the road it came out of on its right)
   const side = s.forkPick === 0 ? 1 : -1
-  if (k < 0) return NO_ROAD
+  if (k < 0) {
+    if (k < -FORK_ALONGSIDE - FORK_TAPER) return NO_ROAD
+    if (k < -FORK_ALONGSIDE) return { off: side * ((k + FORK_ALONGSIDE + FORK_TAPER) / FORK_TAPER) * FORK_BESIDE, joined: true }
+    return { off: side * FORK_BESIDE, joined: true }
+  }
   if (home <= 0) {
     const n = -home
     if (n < MERGE_ALONG) return { off: side * FORK_BESIDE, joined: true }
     if (n < MERGE_ALONG + MERGE_TAPER) return { off: side * FORK_BESIDE * (1 - (n - MERGE_ALONG) / MERGE_TAPER), joined: true }
     return NO_ROAD
   }
+  // going away, as far as the two roads' own bends take each from the other; coming back, closer and closer
   const near = (n: number) => FORK_BESIDE + (n / FORK_NEAR) ** 1.6 * (OTHER_FAR - FORK_BESIDE)
   const away = (n: number) => OTHER_FAR + ((n - FORK_NEAR) / OTHER_FADE) ** 2 * (OTHER_GONE - OTHER_FAR)
-  const off = k < FORK_NEAR ? near(k) : home < FORK_NEAR ? near(home) : k < FORK_NEAR + OTHER_ALONG ? OTHER_FAR : k < FORK_NEAR + OTHER_ALONG + OTHER_FADE ? away(k - OTHER_ALONG) : home < FORK_NEAR + OTHER_FADE ? away(home) : 0
+  const off = k <= FORK_PART ? FORK_BESIDE + f.apart[k] : home < FORK_NEAR ? near(home) : k < FORK_NEAR + OTHER_ALONG ? OTHER_FAR : k < FORK_NEAR + OTHER_ALONG + OTHER_FADE ? away(k - OTHER_ALONG) : home < FORK_NEAR + OTHER_FADE ? away(home) : 0
   return off ? { off: side * off, joined: false } : NO_ROAD
 }
 /** How much wider the road is on each side at a place, where the other road runs joined to it: the car free to drive onto it. */
@@ -309,8 +321,8 @@ function widened(s: RacingState, z: number): [number, number] {
   const o = racingOtherRoad(s, Math.floor(z))
   return !o.joined ? [0, 0] : o.off < 0 ? [-o.off, 0] : [0, o.off]
 }
-/** How far ahead or behind a car is still seen: those on the other road there are seen going their way. */
-const SEEN = 160
+/** How far ahead or behind a car is still seen: those on the other road there are seen going their way (as far as the two roads are alike, the whole view). */
+const SEEN = FORK_PART
 /**
  * The country each road of the two runs through, in each world: the bends
  * along the beach and the promenade, through the woods and the village, the
@@ -512,18 +524,18 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
     // the slower road gives back most of what it costs, in stopwatches along it, for whoever picks them up
     const par = (road: RacingSegment[]) => road.reduce((t, g) => t + 1 / usualSpeed(g.curve, lv), 0) / SECOND
     const slow = par(fork.tracks[0]) > par(fork.tracks[1]) ? 0 : 1, more = Math.round((Math.abs(par(fork.tracks[0]) - par(fork.tracks[1])) * GIVE_BACK) / 3)
-    for (let k = 0; k < more; k += 1) fork.items[slow].push({ kind: 'time', z: forkAt + Math.round(fork.len * (0.18 + (0.66 * (k + 0.5)) / more)), x: RACING_LANES[(k + lv) % 3] })
+    for (let k = 0; k < more; k += 1) fork.items[slow].push({ kind: 'time', z: forkAt + FORK_PART + Math.round((fork.len - FORK_PART) * (0.08 + (0.74 * (k + 0.5)) / more)), x: RACING_LANES[(k + lv) % 3] })
   }
   // where the other road is close by — coming out of this one, going away, coming back, narrowing into it — open ground
   const openFrom = forkAt - FORK_ALONGSIDE - FORK_TAPER - 10, openTo = forkAt + forkLen + MERGE_ALONG + MERGE_TAPER + 10
-  const open: Array<[number, number]> = fork ? [[openFrom, forkAt + FORK_NEAR], [forkAt + forkLen - FORK_NEAR - 40, openTo]] : []
-  dress(track, finish, lv, world, fork ? [openFrom, forkAt, forkAt + FORK_NEAR, forkAt + forkLen, openTo] : [], null, 0, open)
+  const open: Array<[number, number]> = fork ? [[openFrom, forkAt + FORK_PART], [forkAt + forkLen - FORK_NEAR - 40, openTo]] : []
+  dress(track, finish, lv, world, fork ? [openFrom, forkAt, forkAt + FORK_PART, forkAt + forkLen, openTo] : [], null, 0, open)
   // the road as it is with the left-hand road laid in
   const other = fork ? track.slice() : track
   if (fork) {
     for (let k = 0; k < fork.len; k += 1) other[forkAt + k] = fork.tracks[0][k]
     // what stands by it, dressed on its own
-    dress(other, finish, lv, world, [forkAt + FORK_NEAR, forkAt + forkLen], [forkAt, forkAt + forkLen], 1, open)
+    dress(other, finish, lv, world, [forkAt + FORK_PART, forkAt + forkLen], [forkAt, forkAt + forkLen], 1, open)
   }
   // the public at the start, at each checkpoint and all along the end, on both sides — by whichever road
   const cheer = (from: number, to: number, every: number) => { for (let i = Math.max(4, from); i < Math.min(track.length, to); i += every) for (const road of other === track ? [track] : [track, other]) if (road[i].zone !== 'tunnel' && (road === track || road[i] !== track[i])) for (const side of [-1, 1]) road[i].things.push({ kind: 'crowd', x: side * 2.08, flip: side < 0, look: i * 2 + (side < 0 ? 1 : 0) }) }
@@ -540,7 +552,7 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
   let items = placeItems(track, finish, lv, world)
   if (fork) {
     // on each road, what is on any road (cones, puddles, coins, stopwatches) as it falls on that road, and what that road offers
-    const on = (list: Array<Omit<RacingItem, 'taken'>>) => list.filter((it) => it.z >= fork.at + 50 && it.z < fork.at + fork.len - 30)
+    const on = (list: Array<Omit<RacingItem, 'taken'>>) => list.filter((it) => it.z >= fork.at + FORK_PART && it.z < fork.at + fork.len - 30)
     fork.items[0] = [...fork.items[0], ...on(placeItems(other, finish, lv, world))].sort((a, b) => a.z - b.z)
     fork.items[1] = [...fork.items[1], ...on(items)].sort((a, b) => a.z - b.z)
     items = [...items.filter((it) => it.z < fork.at || it.z >= fork.at + fork.len), ...fork.items[1]].sort((a, b) => a.z - b.z)
@@ -571,7 +583,7 @@ function forkRoads(at: number, len: number, track: RacingSegment[], lv: number, 
   const straighter = character === 'sprint', sharper = character === 'twisty' || character === 'hairpins'
   const two: [RacingForkKind, RacingForkKind] = rnd() < 0.5 ? [pair[0], pair[1]] : [pair[1], pair[0]]
   const y0 = track[at].y1, here = track[at].zone, back = track[at + len].zone
-  const road = (kind: RacingForkKind): RacingSegment[] => {
+  const road = (kind: RacingForkKind, side: -1 | 1): RacingSegment[] => {
     // a tunnel level's roads both through the rock now and then
     const out: RacingSegment[] = [], zones: readonly RacingZone[] = character === 'tunnel' && kind !== 'tunnel' ? [...FORK_ZONES[world][kind], 'tunnel'] : FORK_ZONES[world][kind]
     let zone: RacingZone = here
@@ -579,7 +591,8 @@ function forkRoads(at: number, len: number, track: RacingSegment[], lv: number, 
     const lastY = () => out[out.length - 1].y2
     // hills of its own, never far from the height it comes back to
     const hill = () => (zone === 'tunnel' || zone === 'lake' || zone === 'causeway' || zone === 'bridge' || lv < 3 ? 0 : Math.max(-ROAD_HILLS, Math.min(ROAD_HILLS, lastY() - y0 + (rnd() < 0.5 ? -1 : 1) * between(1, 3))) - (lastY() - y0))
-    add(0, 40, 0, 0, 0)
+    // as far as can be seen from where they part, the two roads alike, but for each one's gentle S away from the other
+    for (let j = 0; j < FORK_PART; j += 1) out.push({ curve: j < FORK_S ? side * S_CURVE * Math.sin((2 * Math.PI * j) / FORK_S) : 0, y1: y0, y2: y0, zone: here, things: [] })
     let next = 0, left = 0
     // its own way while the biggest piece and the way back still fit
     while (out.length < len - 520) {
@@ -619,14 +632,26 @@ function forkRoads(at: number, len: number, track: RacingSegment[], lv: number, 
   }
   const lane = () => RACING_LANES[Math.floor(rnd() * 3)]
   const offered = (kind: RacingForkKind): Array<Omit<RacingItem, 'taken'>> => {
-    const coins = (share: number) => { const x = lane(), z = at + Math.round(len * share); return Array.from({ length: 5 }, (_, k) => ({ kind: 'coin' as const, z: z + k * 7, x })) }
-    const watch = (share: number) => ({ kind: 'time' as const, z: at + Math.round(len * share), x: lane() })
-    if (kind === 'bends') return [...coins(0.12), ...coins(0.3), ...coins(0.55), ...coins(0.75), watch(0.42), watch(0.85)]
-    if (kind === 'fast') return [{ kind: 'turbo', z: at + Math.round(len * 0.12), x: lane() }, { kind: 'turbo', z: at + Math.round(len * 0.5), x: lane() }, { kind: 'turbo', z: at + Math.round(len * 0.82), x: lane() }]
+    // past where the two roads are alike
+    const along = (share: number) => at + FORK_PART + Math.round((len - FORK_PART) * share)
+    const coins = (share: number) => { const x = lane(), z = along(share); return Array.from({ length: 5 }, (_, k) => ({ kind: 'coin' as const, z: z + k * 7, x })) }
+    const watch = (share: number) => ({ kind: 'time' as const, z: along(share), x: lane() })
+    if (kind === 'bends') return [...coins(0.04), ...coins(0.2), ...coins(0.5), ...coins(0.72), watch(0.36), watch(0.84)]
+    if (kind === 'fast') return [{ kind: 'turbo', z: along(0.04), x: lane() }, { kind: 'turbo', z: along(0.45), x: lane() }, { kind: 'turbo', z: along(0.8), x: lane() }]
     return [watch(0.25), watch(0.6), ...coins(0.4), ...coins(0.78)]
   }
-  return { at, len, kinds: two, tracks: [road(two[0]), road(two[1])], items: [offered(two[0]), offered(two[1])] }
+  const tracks: [RacingSegment[], RacingSegment[]] = [road(two[0], -1), road(two[1], 1)]
+  // how far apart their middles are, stretch by stretch, as the road is drawn: each stretch's bend turning it a little more
+  const apart: number[] = []
+  for (let k = 0, gap = 0, turn = 0; k <= FORK_PART; k += 1) { apart.push(gap); gap += turn; if (k < FORK_PART) turn += (tracks[1][k].curve - tracks[0][k].curve) * RACING_BEND }
+  return { at, len, kinds: two, tracks, items: [offered(two[0]), offered(two[1])], apart }
 }
+/** Each road's S: as sharp as takes each half the way from beside the other to `OTHER_FAR` off. */
+const S_CURVE = (() => {
+  let x = 0, turn = 0
+  for (let j = 0; j < FORK_S; j += 1) { x += turn; turn += Math.sin((2 * Math.PI * j) / FORK_S) * RACING_BEND }
+  return (OTHER_FAR - FORK_BESIDE) / 2 / x
+})()
 /** How much of the slower road's extra time (as the clock reckons it: a driver loses about twice that in its bends) comes back in its stopwatches. */
 const GIVE_BACK = 1.4
 /** The two roads of a level of some characters: a sprint's both quick, a twisty level's and a hairpins level's bends, a tunnel level's run in the rock. */
