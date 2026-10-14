@@ -5,6 +5,7 @@
  * plays with.
  */
 
+import { arrowCross } from './flat-controls'
 import { dim, drawText, drawText7, glyph7, mix, PixelBuffer, text7Width, textWidth } from './pixels'
 import type { Palette, Sprite } from './pixels'
 import { BURGER_PALETTE, MINI_BURGER } from './sprites'
@@ -137,30 +138,7 @@ export function hud(buffer: PixelBuffer, accent: string, info: { level: number; 
   }
 }
 
-/** The cross of arrows under the board on a phone: a raised cross, each arm with its arrow, a dimple in the middle. */
+/** The cross of arrows under the board on a phone: four round keys in the theme's colour, flat (`flat-controls.ts`). */
 export function dpad(buffer: PixelBuffer, cx: number, cy: number, arm: number, accent: string): void {
-  const half = Math.floor(arm / 2)
-  const base = '#262a3c', light = '#3c4260', dark = '#161826'
-  const cross = (dx: number, dy: number, color: string) => {
-    buffer.rect(cx - half + dx, cy - half - arm + dy, arm, arm * 3, color)
-    buffer.rect(cx - half - arm + dx, cy - half + dy, arm * 3, arm, color)
-  }
-  cross(0, 3, INK)
-  cross(-1, -1, dark); cross(1, 1, dark)
-  cross(0, 0, base)
-  buffer.rect(cx - half, cy - half - arm, arm, 1, light)
-  buffer.rect(cx - half - arm, cy - half, arm, 1, light)
-  buffer.rect(cx + half + 1, cy - half, arm - 1, 1, light)
-  buffer.disc(cx + 0.5, cy + 0.5, arm * 0.28, dark)
-  buffer.disc(cx + 0.5, cy + 0.5, arm * 0.14, dim(accent, 0.45))
-  const tri = (ax: number, ay: number, dir: 'up' | 'down' | 'left' | 'right') => {
-    for (let i = 0; i < 5; i += 1) {
-      const len = 1 + i * 2
-      if (dir === 'up') buffer.rect(ax - i, ay - 2 + i, len, 1, CREAM)
-      if (dir === 'down') buffer.rect(ax - i, ay + 2 - i, len, 1, CREAM)
-      if (dir === 'left') buffer.rect(ax - 2 + i, ay - i, 1, len, CREAM)
-      if (dir === 'right') buffer.rect(ax + 2 - i, ay - i, 1, len, CREAM)
-    }
-  }
-  tri(cx, cy - arm, 'up'); tri(cx, cy + arm, 'down'); tri(cx - arm, cy, 'left'); tri(cx + arm, cy, 'right')
+  arrowCross(buffer, cx, cy, arm, accent)
 }

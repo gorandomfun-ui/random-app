@@ -308,8 +308,16 @@ export function skyAt(h: Tier, sinking: number): PixelBuffer | null {
 
 // ---------------------------------------------------------------- the ground
 
-/** A row of ground across the board: the road's middle and half width there, its stretch (even or odd), its kind, the haze step. */
-export type GroundRow = { c: number; h: number; band: number; zone: RacingZone; fog: number; wave: number; land: boolean; ghost?: number }
+/**
+ * A row of ground across the board: the road's middle and half width there,
+ * its stretch (even or odd), its kind, the haze step; the fork's other road
+ * there (`ghost` half widths off, on its side; `joined` to this one, or the
+ * striped triangle between them, `gore`: 1 where they part, -1 where they
+ * meet, its stripes slanting the other way), how far out the ground on its
+ * side lies past this road's kerb (`out`, half widths), and how far along the
+ * road the row is (`along`, half widths).
+ */
+export type GroundRow = { c: number; h: number; band: number; zone: RacingZone; fog: number; wave: number; land: boolean; ghost?: number; joined?: boolean; gore?: number; out?: number; along?: number }
 
 /** How far each side's bands reach, past the kerb, in half widths. */
 const BEACH = 1.0, WET = 0.16, FOAM = 0.07, VERGE = 0.55, PAVE = 0.85, LEDGE = 0.22
@@ -333,8 +341,9 @@ export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: Groun
   const { c, h, band, zone } = row
   const at = (name: Colour) => pal[colourIndex[name]]
   const base = y * W * 4
+  // from one edge to the other, whichever way round
   const span = (x0: number, x1: number, rgb: RGB) => {
-    const a = Math.max(0, Math.round(x0)), b = Math.min(W, Math.round(x1))
+    const a = Math.max(0, Math.round(Math.min(x0, x1))), b = Math.min(W, Math.round(Math.max(x0, x1)))
     for (let x = a, t = base + a * 4; x < b; x += 1, t += 4) { d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
   }
   const glint = at('glint'), s0 = at(row.wave ? 'sea0' : 'sea1'), s1 = at(row.wave ? 'sea2' : 'sea0'), cut = row.wave ? 0.7 : 0.75, shift = ((frame >> 3) & 63) * 7
@@ -343,11 +352,15 @@ export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: Groun
     for (let x = a, t = base + a * 4; x < b; x += 1, t += 4) { const g = grain(x, y + shift), rgb = g > 0.988 ? glint : g > cut ? s1 : s0; d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
   }
   const kerb = h * 1.12, L = c - kerb, R = c + kerb
+  // the ground on the other road's side laid from past it while it is near
+  const ghost = row.ghost ?? 0, out = (row.out ?? 0) * h, Lx = ghost < 0 ? L - out : L, Rx = ghost > 0 ? R + out : R
+  // no kerb between this road and the other where they are one, nor along the striped triangle
+  const kerbL = !(ghost < 0 && (row.joined || row.gore)), kerbR = !(ghost > 0 && (row.joined || row.gore))
   if (zone === 'tunnel') span(0, W, at('walk'))
   else if (zone !== 'beach' && zone !== 'promenade' && zone !== 'cliff' && zone !== 'causeway') {
     // the other worlds: each side from the kerb outward, by bands (half widths) — the last one reaching the screen's edge
     const lay = (side: -1 | 1, bands: Array<[number, RGB | 'water']>) => {
-      let from = side < 0 ? L : R
+      let from = side < 0 ? Lx : Rx
       bands.forEach(([w, rgb], k) => {
         const to = k === bands.length - 1 ? (side < 0 ? 0 : W) : from + side * w * h
         const a = Math.min(from, to), b = Math.max(from, to)
@@ -373,50 +386,79 @@ export function groundRow(d: Uint8ClampedArray, W: number, y: number, row: Groun
       }
     }
     lay(-1, sideOf(-1)); lay(1, sideOf(1))
+    // between the two roads, where the ground on that side lies past the other: the ground there
+    if (out && !row.joined && !row.gore) { const first = sideOf(ghost < 0 ? -1 : 1)[0][1]; if (first !== 'water') span(ghost < 0 ? L : R, c + ghost * h - Math.sign(ghost) * kerb, first) }
     const k = at(band ? 'kerb0' : 'kerb1')
-    span(L, c - h, k); span(c + h, R, k)
+    if (kerbL) span(L, c - h, k)
+    if (kerbR) span(c + h, R, k)
   } else {
     // the sea's side, from the screen's edge in to the kerb
     if (zone === 'beach') {
-      const sand = L - BEACH * h, wet = sand - WET * h, foam = wet - FOAM * h
+      const sand = Lx - BEACH * h, wet = sand - WET * h, foam = wet - FOAM * h
       sea(0, foam)
       const fa = Math.max(0, Math.round(foam)), fb = Math.min(W, Math.round(wet)), f = at('foam'), wt = at('wet')
       for (let x = fa, t = base + fa * 4; x < fb; x += 1, t += 4) { const rgb = (x + (frame >> 2)) % 7 < 5 ? f : wt; d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
       span(wet, sand, wt)
       span(sand, L, at(band ? 'sand0' : 'sand1'))
     } else if (zone === 'promenade') {
-      const pave = L - PAVE * h, wall = pave - 0.12 * h
+      const pave = Lx - PAVE * h, wall = pave - 0.12 * h
       sea(0, wall); span(wall, pave, at('wall')); span(pave, L, at(band ? 'pave0' : 'pave1'))
     } else if (zone === 'cliff') {
-      const ledge = L - LEDGE * h, drop = ledge - 0.08 * h
+      const ledge = Lx - LEDGE * h, drop = ledge - 0.08 * h
       span(0, drop, at('deep')); span(drop, ledge, at('rockDark')); span(ledge, L, at(band ? 'rock0' : 'rock1'))
     } else {
-      const ledge = L - LEDGE * h
+      const ledge = Lx - LEDGE * h
       sea(0, ledge); span(ledge, L, at(band ? 'stone0' : 'stone1'))
     }
     // the land's side, from the kerb out to the screen's edge
-    if (zone === 'beach') { const verge = R + VERGE * h; span(R, verge, at(band ? 'grass0' : 'grass1')); span(verge, W, at(band ? 'bush0' : 'bush1')) }
-    else if (zone === 'promenade') { const pave = R + PAVE * h, wall = pave + 0.1 * h; span(R, pave, at(band ? 'pave0' : 'pave1')); span(pave, wall, at('wall')); span(wall, W, at(band ? 'grass1' : 'bush1')) }
+    if (zone === 'beach') { const verge = Rx + VERGE * h; span(R, verge, at(band ? 'grass0' : 'grass1')); span(verge, W, at(band ? 'bush0' : 'bush1')) }
+    else if (zone === 'promenade') { const pave = Rx + PAVE * h, wall = pave + 0.1 * h; span(R, pave, at(band ? 'pave0' : 'pave1')); span(pave, wall, at('wall')); span(wall, W, at(band ? 'grass1' : 'bush1')) }
     else if (zone === 'cliff') span(R, W, at(band ? 'rock0' : 'rock1'))
-    else { const ledge = R + LEDGE * h; span(R, ledge, at(band ? 'stone0' : 'stone1')); sea(ledge, W) }
+    else { const ledge = Rx + LEDGE * h; span(R, ledge, at(band ? 'stone0' : 'stone1')); sea(ledge, W) }
     // the kerbs
     const k = at(band ? 'kerb0' : 'kerb1')
-    span(L, c - h, k); span(c + h, R, k)
+    if (kerbL) span(L, c - h, k)
+    if (kerbR) span(c + h, R, k)
   }
-  // the fork's other road going away beside this one, `ghost` half widths off: its kerbs, its tarmac, its edge lines
-  if (row.ghost) {
-    const g = c + row.ghost * h, k = at(band ? 'kerb0' : 'kerb1')
-    span(g - kerb, g + kerb, k)
-    span(g - h, g + h, at(band ? 'tar0' : 'tar1'))
-    const edge = Math.max(1, h * 0.028), line = at('line')
-    span(g - h + edge * 1.7, g - h + edge * 2.7, line); span(g + h - edge * 2.7, g + h - edge * 1.7, line)
+  const tar = at(band ? 'tar0' : 'tar1'), edge = Math.max(1, h * 0.028), line = at('line'), lane = Math.max(1, h * 0.022), dash = at('dash')
+  // the fork's other road beside this one, `ghost` half widths off: its kerbs, its tarmac, its edge lines, its lanes' dashes — joined to this one,
+  // one road: no kerb and no edge line between; where they part or meet, between this road's edge and the other's, the striped triangle
+  if (ghost) {
+    const g = c + ghost * h, side = ghost < 0 ? -1 : 1, k = at(band ? 'kerb0' : 'kerb1')
+    if (row.gore) {
+      const a = side < 0 ? g + h : c + h, b = side < 0 ? c - h : g - h
+      span(a, b, tar)
+      // its stripes slanting across it, where they can be told apart
+      if (h >= 10) {
+        const x0 = Math.max(0, Math.round(a)), x1 = Math.min(W, Math.round(b)), along = row.along ?? 0
+        for (let x = x0, t = base + x0 * 4; x < x1; x += 1, t += 4) {
+          const q = (along + (row.gore ?? 0) * Math.abs((x + 0.5 - c) / h)) / GORE_STRIPE
+          if (q - Math.floor(q) < 0.4) { d[t] = line[0]; d[t + 1] = line[1]; d[t + 2] = line[2] }
+        }
+      }
+    }
+    span(g + side * h, g + side * kerb, k)
+    if (!row.joined && !row.gore) span(g - side * h, g - side * kerb, k)
+    span(g - h, g + h, tar)
+    span(g + side * (h - edge * 1.7), g + side * (h - edge * 2.7), line)
+    if (!row.joined) span(g - side * (h - edge * 1.7), g - side * (h - edge * 2.7), line)
+    // its lanes' dashes once it is its whole width beside this one (edge to edge, two half widths off): none while it widens out of it or narrows into it
+    if (band && (!row.joined || Math.abs(ghost) >= 2 - 1e-6)) { span(g - h / 3 - lane / 2, g - h / 3 + lane / 2, dash); span(g + h / 3 - lane / 2, g + h / 3 + lane / 2, dash) }
   }
-  // the road, its edge lines, its lanes' dashes
-  span(c - h, c + h, at(band ? 'tar0' : 'tar1'))
-  const edge = Math.max(1, h * 0.028), line = at('line')
-  span(c - h + edge * 1.7, c - h + edge * 2.7, line); span(c + h - edge * 2.7, c + h - edge * 1.7, line)
-  if (band) { const lane = Math.max(1, h * 0.022), dash = at('dash'); span(c - h / 3 - lane / 2, c - h / 3 + lane / 2, dash); span(c + h / 3 - lane / 2, c + h / 3 + lane / 2, dash) }
+  // the road, its edge lines (where it is joined to the other, a line of dashes between the two instead), its lanes' dashes
+  span(c - h, c + h, tar)
+  const joinedL = ghost < 0 && row.joined, joinedR = ghost > 0 && row.joined
+  if (!joinedL) span(c - h + edge * 1.7, c - h + edge * 2.7, line)
+  if (!joinedR) span(c + h - edge * 2.7, c + h - edge * 1.7, line)
+  if (band) {
+    span(c - h / 3 - lane / 2, c - h / 3 + lane / 2, dash); span(c + h / 3 - lane / 2, c + h / 3 + lane / 2, dash)
+    const seam = Math.max(1, h * 0.03)
+    if (joinedL) span(c - h - seam / 2, c - h + seam / 2, dash)
+    if (joinedR) span(c + h - seam / 2, c + h + seam / 2, dash)
+  }
 }
+/** How far apart the striped triangle's stripes are, in half widths. */
+const GORE_STRIPE = 0.6
 
 /** Under the horizon where no road is drawn: the water (the coast's sea on its side of the road's far end, `split`; the lake on its side; the bay all round the bridge), the land elsewhere; in the tunnel, its dark. */
 export function farGround(d: Uint8ClampedArray, W: number, from: number, to: number, split: number, zone: RacingZone, tier: Tier, frame: number): void {
