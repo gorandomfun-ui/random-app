@@ -98,18 +98,20 @@ test("the drift's seeds: half from the taste, half from the wandering, one side 
   assert.equal(mixSeeds(taste.slice(0, 3), wander, Math.random, 40).length, 33)
 })
 
-test('a run: searches with the like\'s words, reads with the model, lets in only the look-alikes, with their fingerprint and their like', async () => {
+test('a run: searches with the like\'s words, reads with the model, lets in the look-alikes with their like, the near-but-not-enough outside the pool', async () => {
   const likeId = new ObjectId()
   const likeBits = seeded(11)
   const rows = new Map<string, Record<string, unknown>>([
     ['close', { id: 'xclose', title: 'Repairing a broken bowl with gold', description: '' }],
     ['far', { id: 'xfar', title: 'Football highlights of the week', description: '' }],
+    ['middle', { id: 'xmiddle', title: 'Golden joinery for cracked cups', description: '' }],
     ['copy', { id: 'xcopy', title: 'How to creatively repair broken pottery', description: '' }],
     ['known', { id: 'xknown', title: 'Kintsugi at home', description: '' }],
   ])
   const printsByTitle = new Map<string, Uint8Array>([
     ['Repairing a broken bowl with gold', near(likeBits, 300)],
     ['Football highlights of the week', near(likeBits, 190)],
+    ['Golden joinery for cracked cups', near(likeBits, 240)],
     ['How to creatively repair broken pottery', near(likeBits, 383)],
   ])
   const pages: string[] = []
@@ -160,22 +162,30 @@ test('a run: searches with the like\'s words, reads with the model, lets in only
   } as unknown as LineContext
   const likes = async () => [{ id: String(likeId), title: 'How to creatively repair broken pottery! ✨', provider: 'youtube', videoId: 'abc', bits: likeBits }]
   const result = await run(ctx, { likes, prints: async (texts) => texts.map((text) => [...printsByTitle.entries()].find(([title]) => text.startsWith(title))?.[1] ?? seeded(99)) })
-  assert.deepEqual([...new Set(admitted)], ['dailymotion:xclose'])
+  assert.deepEqual([...new Set(admitted)], ['dailymotion:xclose', 'dailymotion:xmiddle'], 'the far one (0.49) stays out; the middling one (0.63) comes in')
   assert.equal(result.counters.inserted, admitted.length)
   assert.ok(result.counters.rejected['pas assez proche d\'un like'] >= 1)
   assert.ok(result.counters.rejected['copie du like'] >= 1)
-  const write = writes[0] as { updateMany: { filter: { videoId: string }; update: { $set: Record<string, unknown> } } }
-  assert.equal(write.updateMany.filter.videoId, 'dailymotion:xclose')
+  const write = writes.find((entry) => (entry as { updateMany?: { filter: { videoId: string } } }).updateMany?.filter.videoId === 'dailymotion:xclose') as { updateMany: { filter: { videoId: string }; update: { $set: Record<string, unknown> } } }
+  assert.ok(write, 'the look-alike is written')
   assert.equal((write.updateMany.update.$set['v3.lookalike'] as { like: string }).like, String(likeId))
+  // The middling one: its fingerprint and its like, but not the pool's mark.
+  const farWrite = writes.find((entry) => (entry as { updateMany?: { filter: { videoId: string } } }).updateMany?.filter.videoId === 'dailymotion:xmiddle') as { updateMany: { update: { $set: Record<string, unknown> } } }
+  assert.ok(farWrite, 'the middling one is written')
+  assert.equal(farWrite.updateMany.update.$set['v3.lookalike'], undefined)
+  assert.equal((farWrite.updateMany.update.$set['v3.likeFar'] as { like: string; score: number }).like, String(likeId))
   assert.ok(saved && (saved as { next: number }).next === 0)
-  // By relevance, on the page the visit says (the fourth visit reads page 4); never the random, visited or recent sorts.
-  assert.ok(pages.length >= 2 && pages.every((page) => page === 'relevance:4'), pages.join(' '))
+  // By relevance, on the page the visit says (the fourth visit reads page 4), and the first searches by date, the newest; never the random or visited sorts.
+  assert.ok(pages.filter((page) => page === 'relevance:4').length >= 2, pages.join(' '))
+  assert.ok(pages.some((page) => page === 'recent:1'), pages.join(' '))
+  assert.ok(pages.every((page) => page === 'relevance:4' || page === 'recent:1'), pages.join(' '))
   assert.ok((saved as { visits: Record<string, number> }).visits[String(likeId)] === 4)
   assert.equal(likeQueries({ title: 'x' }).length, 0)
-  assert.ok(PAGES >= 4)
-  // The neighbours of the look-alike already found were read, and it is marked read.
+  assert.equal(PAGES, 20, 'Dailymotion serves twenty pages of fifty')
+  // The neighbours of the look-alike already found were read, and it is marked read; its title was a search, and it is marked asked.
   assert.deepEqual(related, ['xfound'])
-  assert.equal(spreadMarked.length, 1)
+  assert.equal(spreadMarked.length, 2)
+  assert.ok(spreadMarked.some((entry) => JSON.stringify(entry).includes('v3.lookalike.asked')))
   // The video the model judged these last weeks was not read again; the ones judged now and found nothing alike are remembered; the three-week clock is set.
   assert.ok(!remembered.includes('dailymotion:xjudged'))
   assert.ok(remembered.includes('dailymotion:xfar') && !remembered.includes('dailymotion:xclose'))

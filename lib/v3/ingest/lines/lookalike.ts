@@ -64,13 +64,20 @@ const SEARCH_RESULTS = 50
 export const QUERIES_PER_LIKE = 20
 const TAG_QUERIES = 8
 const NEAR_TITLE_QUERIES = 8
-/** Pages of each search, by relevance, one deeper at each visit; past the last, the first again — the known and the judged cost the model nothing then. */
-export const PAGES = 10
+/**
+ * Pages of each search, by relevance, one deeper at each visit; past the last, the first again — the known and the judged cost
+ * the model nothing then. Twenty since 14 October: Dailymotion serves a search's first thousand results, twenty pages of fifty,
+ * and at ten the visits of two days had read everything (208,567 "déjà jugée" on 14 October). The owner: "ça peut justement
+ * être très intéressant, la petite IA peut déterminer si c'est assez proche ou non".
+ */
+export const PAGES = 20
+/** Of a like's searches, the first ones are also asked by date, the newest first: what was put online since, every day. */
+const RECENT_QUERIES = 5
 const RELATED = 20
 /** Pages of a YouTube like's uploads read a visit, fifty videos each; the next visit goes on from the last page, and starts over past the end. */
 const YOUTUBE_PAGES = 2
-/** Look-alikes already found around a like whose neighbours a visit reads, each once. */
-const SPREAD_PER_VISIT = 5
+/** Look-alikes already found around a like whose neighbours a visit reads, each once (five until 14 October). */
+const SPREAD_PER_VISIT = 10
 /**
  * YouTube searches a run, with a like's words, judged by the model like Dailymotion's (the owner, 12 October: "pourquoi
  * pas plutôt pour chercher des vidéos proches des likes"): YouTube allows a hundred searches a day for all the lines, the
@@ -94,6 +101,13 @@ const OTHER_LIKE = NEAR_LIKE + 0.05
 const CJK_EXTRA = 0.02
 /** What one like may bring in a visit: the nearest first. */
 export const MAX_PER_LIKE = 30
+/**
+ * Not near enough for the pool of the likes, but near: kept in the base all the same, through the same doors, without the
+ * pool's mark (the owner, 14 October: "on garde mais on ne met pas dans le pool like, on peut la classer ailleurs") —
+ * `v3.likeFar` says which like and how near. Above chance by far (two unrelated videos read 0.50), under NEAR_LIKE.
+ */
+export const FAR_MIN = 0.6
+const MAX_FAR_PER_LIKE = 20
 /** Where the rotation through the likes stands, between runs. */
 const META = 'dig_meta_v4'
 const CURSOR_ID = 'lookalike'
@@ -147,9 +161,10 @@ export function likesOfRun(likes: readonly LikeRow[], next: number, count = LIKE
  * nearer to another like, in the same script either way — and a copy of none, with the like each resembles; and
  * how many were copies.
  */
-export function lookalikes(videos: readonly DigVideo[], prints: readonly Uint8Array[], likes: readonly LikeRow[], seed: number): { close: Array<{ video: DigVideo; bits: Uint8Array; likeness: Likeness }>; copies: number } {
+export function lookalikes(videos: readonly DigVideo[], prints: readonly Uint8Array[], likes: readonly LikeRow[], seed: number): { close: Array<{ video: DigVideo; bits: Uint8Array; likeness: Likeness }>; far: Array<{ video: DigVideo; bits: Uint8Array; likeness: Likeness }>; copies: number } {
   const likeBits = likes.map((like) => like.bits)
   const close: Array<{ video: DigVideo; bits: Uint8Array; likeness: Likeness }> = []
+  const far: Array<{ video: DigVideo; bits: Uint8Array; likeness: Likeness }> = []
   let copies = 0
   videos.forEach((video, index) => {
     const bits = prints[index]
@@ -160,8 +175,9 @@ export function lookalikes(videos: readonly DigVideo[], prints: readonly Uint8Ar
     const own = seed >= 0 && seed < likes.length && sameScript(video.title, likes[seed].title) ? alike(bits, likeBits[seed]) : 0
     if (own >= NEAR_LIKE + extra) close.push({ video, bits, likeness: { score: own, index: seed } })
     else if (nearest.score >= OTHER_LIKE + extra) close.push({ video, bits, likeness: nearest })
+    else if (Math.max(own, nearest.score) >= FAR_MIN) far.push({ video, bits, likeness: own >= nearest.score ? { score: own, index: seed } : nearest })
   })
-  return { close, copies }
+  return { close, far, copies }
 }
 
 /** The owner's liked videos that carry a fingerprint, with their tags and channel when the row holds them. */
@@ -247,13 +263,17 @@ export async function ensureSeenClock(ctx: LineContext): Promise<void> {
 }
 
 /** The base's look-alikes of one like, the nearest first: their titles for the searches, and up to `spread` Dailymotion ones whose neighbours are still to read. */
-async function foundAround(ctx: LineContext, like: LikeRow): Promise<{ titles: string[]; toSpread: Array<{ _id: ObjectId; videoId: string }>; youtubeToSpread: Array<{ _id: ObjectId; channelId: string }> }> {
+async function foundAround(ctx: LineContext, like: LikeRow): Promise<{ titles: string[]; asked: ObjectId[]; toSpread: Array<{ _id: ObjectId; videoId: string }>; youtubeToSpread: Array<{ _id: ObjectId; channelId: string }> }> {
   const items = ctx.db.collection('items')
-  const nearest = await items.find({ 'v3.lookalike.like': like.id } as Document, { projection: { title: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: NEAR_TITLE_QUERIES, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
+  // The look-alikes found are searches of their own, each once, the nearest first: their words lead elsewhere than the like's, a
+  // tree that grows (the owner, 14 October); when all have been asked, the nearest again.
+  const unasked = await items.find({ 'v3.lookalike.like': like.id, 'v3.lookalike.asked': { $exists: false } } as Document, { projection: { title: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: NEAR_TITLE_QUERIES, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
+  const nearest = unasked.length ? unasked : await items.find({ 'v3.lookalike.like': like.id } as Document, { projection: { title: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: NEAR_TITLE_QUERIES, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
   const toSpread = await items.find({ 'v3.lookalike.like': like.id, provider: 'dailymotion', 'v3.lookalike.spread': { $exists: false } } as Document, { projection: { videoId: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: SPREAD_PER_VISIT, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
   const youtubeToSpread = await items.find({ 'v3.lookalike.like': like.id, provider: 'youtube', 'v3.lookalike.spread': { $exists: false } } as Document, { projection: { channelId: 1 }, sort: { 'v3.lookalike.score': -1 }, limit: 2, hint: LIKE_INDEX, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
   return {
     titles: nearest.map((row) => String(row.title ?? '')),
+    asked: unasked.map((row) => row._id as ObjectId),
     toSpread: toSpread.flatMap((row) => (typeof row.videoId === 'string' ? [{ _id: row._id as ObjectId, videoId: row.videoId }] : [])),
     youtubeToSpread: youtubeToSpread.flatMap((row) => (typeof row.channelId === 'string' && uploadsOf(row.channelId) ? [{ _id: row._id as ObjectId, channelId: row.channelId }] : [])),
   }
@@ -306,7 +326,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
   let youtubeStopped = !key
   const visited = new Set<string>()
   const titles = new Set<string>()
-  let read = 0, fingerprinted = 0, near = 0, copies = 0, checks = 0, likesDone = 0, searches = 0, spread = 0, channels = 0, units = 0, youtubeSearches = 0, youtubeChannels = 0
+  let read = 0, fingerprinted = 0, near = 0, copies = 0, checks = 0, likesDone = 0, searches = 0, spread = 0, channels = 0, units = 0, youtubeSearches = 0, youtubeChannels = 0, farIn = 0
 
   const likes = await (deps.likes ?? loadLikes)(ctx).catch((error) => { errors.push(`likes : ${message(error)}`); return [] as LikeRow[] })
   const likeVideoIds = new Set(likes.map((like) => like.videoId).filter((id): id is string => Boolean(id)))
@@ -327,6 +347,13 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       try { found.push(...await searchDailymotion(query, 'relevance', http, undefined, SEARCH_RESULTS, undefined, page)); searches += 1 } catch (error) { errors.push(`recherche "${query}" : ${message(error)}`) }
       await wait(SPACING_MS)
     }
+    // The newest with the same words: what was put online since the last visit.
+    for (const query of queries.slice(0, RECENT_QUERIES)) {
+      if (ctx.timeLeft() < DEADLINE_MARGIN_MS) break
+      try { found.push(...await searchDailymotion(query, 'recent', http, undefined, SEARCH_RESULTS)); searches += 1 } catch (error) { errors.push(`récentes "${query}" : ${message(error)}`) }
+      await wait(SPACING_MS)
+    }
+    if (!ctx.dryRun && around.asked.length) await ctx.db.collection('items').updateMany({ _id: { $in: around.asked } }, { $set: { 'v3.lookalike.asked': true } }).catch((error) => { errors.push(`sosies cherchés : ${message(error)}`) })
     const neighbours = [...(like.provider === 'dailymotion' && like.videoId ? [like.videoId] : []), ...around.toSpread.map((row) => row.videoId)]
     for (const videoId of neighbours) {
       if (ctx.timeLeft() < DEADLINE_MARGIN_MS) break
@@ -403,7 +430,8 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
     copies += judgedHere.copies
     const nearIds = new Set(judgedHere.close.map((entry) => entry.video.videoId))
     await remember(ctx, door.kept.filter((video) => !nearIds.has(video.videoId)).map((video) => video.videoId))
-    const refused: Record<string, number> = { ...door.refused, 'pas assez proche d\'un like': door.kept.length - judgedHere.close.length - judgedHere.copies, ...(judgedHere.copies ? { 'copie du like': judgedHere.copies } : {}), ...(judgedHere.close.length > close.length ? { 'assez pour ce like': judgedHere.close.length - close.length } : {}) }
+    const farOnes = judgedHere.far.sort((left, right) => right.likeness.score - left.likeness.score).slice(0, MAX_FAR_PER_LIKE)
+    const refused: Record<string, number> = { ...door.refused, 'pas assez proche d\'un like': door.kept.length - judgedHere.close.length - judgedHere.copies - judgedHere.far.length, ...(judgedHere.copies ? { 'copie du like': judgedHere.copies } : {}), ...(judgedHere.close.length > close.length ? { 'assez pour ce like': judgedHere.close.length - close.length } : {}), ...(judgedHere.far.length > farOnes.length ? { 'un peu proche, assez pour ce like': judgedHere.far.length - farOnes.length } : {}) }
     // The common checks, provider by provider: the week's cap (the like's own channel counted like any other), the media windows,
     // Dailymotion's player's word (YouTube's details already left out what it will not play).
     const checked: DigVideo[] = []
@@ -428,6 +456,38 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       for (const [why, count] of Object.entries(admitted.rejected ?? {})) result.rejected[why] = (result.rejected[why] ?? 0) + count
       counters.byProvider = { ...(counters.byProvider ?? {}), [provider]: ((counters.byProvider ?? {})[provider] ?? 0) + admitted.inserted }
     }
+    // The near but not near enough: the same doors, Dailymotion's player asked first (never let in unchecked), no pool mark.
+    const checkedFar: DigVideo[] = []
+    for (const provider of ['dailymotion', 'youtube'] as const) {
+      const candidates = farOnes.filter((entry) => entry.video.provider === provider).map((entry) => entry.video)
+      if (!candidates.length || ctx.timeLeft() < DEADLINE_MARGIN_MS) continue
+      const weekly = await underWeeklyCap(ctx, guards, candidates, provider, new Set())
+      if (weekly.refused) refused['chaîne cette semaine'] = (refused['chaîne cette semaine'] ?? 0) + weekly.refused
+      const media = await withoutMedia(ctx, guards, provider === 'youtube' ? key : '', weekly.kept, provider, new Set())
+      if (media.refused) refused['média'] = (refused['média'] ?? 0) + media.refused
+      const playing: DigVideo[] = []
+      for (const video of media.kept) {
+        if (provider === 'youtube') { playing.push(video); continue }
+        if (checks >= MAX_PLAYABLE_CHECKS) break
+        checks += 1
+        if (await playable(video.videoId, http)) playing.push(video); else refused['ne se lit pas'] = (refused['ne se lit pas'] ?? 0) + 1
+      }
+      if (!playing.length) continue
+      const admitted = await ctx.admit({ subjectId: `lookalike-far:${like.id}`, videos: playing })
+      checkedFar.push(...playing)
+      farIn += admitted.inserted
+      result.inserted += admitted.inserted; result.duplicates += admitted.duplicates; result.insertedIds.push(...admitted.insertedIds)
+      for (const [why, count] of Object.entries(admitted.rejected ?? {})) result.rejected[why] = (result.rejected[why] ?? 0) + count
+      counters.byProvider = { ...(counters.byProvider ?? {}), [provider]: ((counters.byProvider ?? {})[provider] ?? 0) + admitted.inserted }
+    }
+    if (!ctx.dryRun && checkedFar.length) {
+      const byId = new Map(farOnes.map((entry) => [entry.video.videoId, entry]))
+      const writes: AnyBulkWriteOperation<Document>[] = checkedFar.flatMap((video) => {
+        const entry = byId.get(video.videoId)
+        return entry ? [{ updateMany: { filter: { videoId: video.videoId, type: 'video', vec: { $exists: false } }, update: { $set: { vec: toBinary(entry.bits), 'v3.likeFar': { like: likes[entry.likeness.index].id, score: Math.round(entry.likeness.score * 1000) / 1000 } } } } }] : []
+      })
+      if (writes.length) await ctx.db.collection('items').bulkWrite(writes, { ordered: false }).catch((error) => { errors.push(`empreintes écrites : ${message(error)}`) })
+    }
     addAdmission(counters, { ...result, rejected: { ...result.rejected, ...refused } })
     // What got in keeps the fingerprint the model just wrote, and the like it resembles: the pool's mark.
     if (!ctx.dryRun && checked.length) {
@@ -446,7 +506,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
 
   cursor.next %= Math.max(1, likes.length)
   if (!ctx.dryRun) await meta.updateOne({ _id: CURSOR_ID } as Document, { $set: { next: cursor.next, visits: cursor.visits, youtube: cursor.youtube, at: new Date() } }, { upsert: true }).catch((error) => { errors.push(`place : ${message(error)}`) })
-  cursor.note = `${likesDone} likes visités · ${searches} recherches · ${spread} voisinages de sosies · ${youtubeSearches} recherches YouTube · ${channels + youtubeChannels} chaînes YouTube (${units} unités) · ${read} vidéos lues · ${fingerprinted} lues par l'IA · ${near} ressemblent à un like${copies ? ` (${copies} copies écartées)` : ''} · ${counters.inserted} entrées${counters.byProvider?.youtube ? ` dont ${counters.byProvider.youtube} YouTube` : ''}`
+  cursor.note = `${likesDone} likes visités · ${searches} recherches · ${spread} voisinages de sosies · ${youtubeSearches} recherches YouTube · ${channels + youtubeChannels} chaînes YouTube (${units} unités) · ${read} vidéos lues · ${fingerprinted} lues par l'IA · ${near} ressemblent à un like${copies ? ` (${copies} copies écartées)` : ''} · ${counters.inserted} entrées${farIn ? ` dont ${farIn} un peu proches (hors pool)` : ''}${counters.byProvider?.youtube ? ` dont ${counters.byProvider.youtube} YouTube` : ''}`
   ctx.log(`sosies : ${cursor.note}`)
   return { counters, cursor, errors }
 }
