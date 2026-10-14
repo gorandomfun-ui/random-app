@@ -100,8 +100,9 @@ export async function recordMontage(input: MontageRunInput): Promise<MontageRunR
   draw(0)
   recorder.start(1000)
   const started = performance.now()
-  let finished = false, handle = 0
-  const finish = () => { if (finished) return; finished = true; video.pause(); if (handle) cancelAnimationFrame(handle); recorder.stop() }
+  let finished = false, handle = 0, clock = 0
+  const onEnded = () => finish()
+  const finish = () => { if (finished) return; finished = true; video.pause(); video.removeEventListener('ended', onEnded); if (handle) cancelAnimationFrame(handle); if (clock) window.clearInterval(clock); recorder.stop() }
   const tick = () => {
     const at = performance.now() - started
     draw(at)
@@ -109,8 +110,12 @@ export async function recordMontage(input: MontageRunInput): Promise<MontageRunR
     if (video.currentTime >= end - 0.04 || video.ended) { finish(); return }
     handle = (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }).requestVideoFrameCallback?.(tick) ?? requestAnimationFrame(tick)
   }
+  // The frames stop coming when the clip ends (or stalls), and with them the loop above: the clip's own end,
+  // and a clock beside it, close the recording on time instead of letting it run on with a frozen frame.
+  video.addEventListener('ended', onEnded)
   const guard = window.setTimeout(finish, (expectedSeconds(start, end) + 5) * 1000)
   try { await video.play() } catch { finish() }
+  clock = window.setInterval(() => { if (video.ended || video.currentTime >= end - 0.04 || performance.now() - started > (end - start) * 1000 + 400) finish() }, 100)
   tick()
   await stopped
   window.clearTimeout(guard)
