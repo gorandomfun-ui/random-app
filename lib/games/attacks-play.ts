@@ -12,6 +12,7 @@
  * blood and lightning. Each level opens on its number and what it brings.
  */
 
+import { actionKey, arrowKey } from './flat-controls'
 import { attacksArt } from './attacks-art'
 import { ATTACKS_MOTION } from './attacks-art-data'
 import { BOSS_KEY, BOSS_SIZE, bossPicture } from './attacks-boss'
@@ -241,32 +242,19 @@ export function attacksPadPart(x: number, y: number, pad: AttacksPad): 'left' | 
   return df < dl && df < dr ? 'fire' : dl <= dr ? 'left' : 'right'
 }
 
+/** An arrow of the pad: a round key in the theme's colour, in the middle of its square. */
 function arrowButton(buffer: PixelBuffer, h: Hit, dir: -1 | 1, pressed: boolean, accent: string): void {
-  const x = Math.round(h.x), y = Math.round(h.y), w = h.w, push = pressed ? 2 : 0
-  buffer.rect(x + 1, y + 4, w, w, INK)
-  buffer.rect(x, y + push, w, w - push, pressed ? dim(accent, 0.55) : '#262a3c')
-  buffer.rect(x, y + push, w, 1, pressed ? mix(accent, '#ffffff', 0.2) : '#3c4260')
-  buffer.rect(x, y + push, 1, w - push, pressed ? accent : '#343a54')
-  buffer.rect(x + w - 1, y + push, 1, w - push, '#161826')
-  buffer.rect(x, y + w - 1, w, 1, '#161826')
-  const cx = x + w / 2, cy = y + w / 2 + push, s = Math.round(w * 0.2)
-  for (let i = 0; i <= s; i += 1) buffer.rect(Math.round(cx - dir * (s / 2) + dir * i) - (dir < 0 ? 1 : 0), Math.round(cy - (s - i)), 2, (s - i) * 2 + 1, CREAM)
+  arrowKey(buffer, h.x + h.w / 2, h.y + h.h / 2, h.w / 2, dir < 0 ? 'left' : 'right', accent, pressed)
 }
-function fireButton(buffer: PixelBuffer, f: AttacksPad['fire'], pressed: boolean): void {
-  const push = pressed ? 2 : 0
-  buffer.disc(f.cx + 1, f.cy + 4, f.r, INK)
-  buffer.disc(f.cx, f.cy + push, f.r, '#7a120c')
-  buffer.disc(f.cx - 1, f.cy - 1 + push, f.r - 3, pressed ? '#ff4a30' : '#d8281c')
-  buffer.disc(f.cx - f.r * 0.3, f.cy - f.r * 0.35 + push, f.r * 0.32, pressed ? '#ff8a6a' : '#f05a40')
-  const scale = f.r >= 44 ? 2 : 1, label = 'FIRE', w = text7Width(label, scale, true)
-  drawText7(buffer, label, Math.round(f.cx - w / 2) + 1, Math.round(f.cy - 3.5 * scale) + push + 1, '#5a0a08', scale, true)
-  drawText7(buffer, label, Math.round(f.cx - w / 2), Math.round(f.cy - 3.5 * scale) + push, CREAM, scale, true)
+/** FIRE: a round cream key, its word in the theme's colour. */
+function fireButton(buffer: PixelBuffer, f: AttacksPad['fire'], pressed: boolean, accent: string): void {
+  actionKey(buffer, f.cx, f.cy, f.r, 'FIRE', accent, 'main', pressed)
 }
 /** The controls, the ones held pressed down. */
 function drawPad(buffer: PixelBuffer, pad: AttacksPad, accent: string, pressed: AttacksView['pressed'] = {}): void {
   arrowButton(buffer, pad.left, -1, !!pressed.left, accent)
   arrowButton(buffer, pad.right, 1, !!pressed.right, accent)
-  fireButton(buffer, pad.fire, !!pressed.fire)
+  fireButton(buffer, pad.fire, !!pressed.fire, accent)
 }
 
 // ---------------------------------------------------------------- the play screen

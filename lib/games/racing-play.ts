@@ -33,6 +33,7 @@ import {
   facadePiece, puddle, puff, quad, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
 } from './racing-scene'
 import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
+import { actionKey, arrowKey, flatRing } from './flat-controls'
 import { carSide } from './racing-sides'
 import { shop, SHOPS, TOWN_UNIT, type ShopKind } from './racing-town'
 import { TRAFFIC_WIDTH, trafficHigh } from './racing-traffic'
@@ -123,41 +124,23 @@ export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'r
   return parts.sort((a, b) => a[1] - b[1])[0][0]
 }
 
-function arrowButton(buffer: PixelBuffer, h: Hit, dir: -1 | 1, pressed: boolean, accent: string): void {
-  const x = Math.round(h.x), y = Math.round(h.y), w = h.w, push = pressed ? 2 : 0
-  buffer.rect(x + 1, y + 4, w, w, INK)
-  buffer.rect(x, y + push, w, w - push, pressed ? dim(accent, 0.55) : '#262a3c')
-  buffer.rect(x, y + push, w, 1, pressed ? mix(accent, '#ffffff', 0.2) : '#3c4260')
-  buffer.rect(x, y + push, 1, w - push, pressed ? accent : '#343a54')
-  buffer.rect(x + w - 1, y + push, 1, w - push, '#161826')
-  buffer.rect(x, y + w - 1, w, 1, '#161826')
-  const cx = x + w / 2, cy = y + w / 2 + push, s = Math.round(w * 0.2)
-  for (let i = 0; i <= s; i += 1) buffer.rect(Math.round(cx - dir * (s / 2) + dir * i) - (dir < 0 ? 1 : 0), Math.round(cy - (s - i)), 2, (s - i) * 2 + 1, CREAM)
-}
-function roundButton(buffer: PixelBuffer, b: { cx: number; cy: number; r: number }, label: string, color: string, pressed: boolean): void {
-  const push = pressed ? 2 : 0
-  buffer.disc(b.cx + 1, b.cy + 4, b.r, INK)
-  buffer.disc(b.cx, b.cy + push, b.r, dim(color, 0.5))
-  buffer.disc(b.cx - 1, b.cy - 1 + push, b.r - 3, pressed ? mix(color, '#ffffff', 0.25) : color)
-  buffer.disc(b.cx - b.r * 0.3, b.cy - b.r * 0.35 + push, b.r * 0.28, mix(color, '#ffffff', 0.45))
-  const scale = b.r >= 26 ? 2 : 1, w = text7Width(label, scale, true)
-  drawText7(buffer, label, Math.round(b.cx - w / 2) + 1, Math.round(b.cy - 3.5 * scale) + push + 1, INK, scale, true)
-  drawText7(buffer, label, Math.round(b.cx - w / 2), Math.round(b.cy - 3.5 * scale) + push, CREAM, scale, true)
-}
-/** The controls, the ones held pressed down; T, the turbo, lit as far as its gauge is full, dull below what lets it go. */
+/**
+ * The controls, flat (`flat-controls.ts`), the ones held lighter: the arrows
+ * round in the theme's colour; A, the gas, cream; B, the brake, a darker
+ * shade of the theme's colour; T, the turbo, cream once it can go (dull
+ * below), its gauge round it in the theme's colour, filling clockwise from
+ * the top.
+ */
 function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: RacingView['pressed'] = {}, boost = 0): void {
-  arrowButton(buffer, pad.left, -1, !!pressed.left, accent)
-  arrowButton(buffer, pad.right, 1, !!pressed.right, accent)
-  roundButton(buffer, pad.brake, 'B', '#3a7aff', !!pressed.brake)
-  roundButton(buffer, pad.gas, 'A', '#2ac05a', !!pressed.gas)
-  const n = pad.nitro, ready = boost >= 0.3
-  roundButton(buffer, n, 'T', ready ? '#ffb020' : '#6a5a3a', !!pressed.nitro)
-  // the gauge round it, filling clockwise from the top
-  for (let k = 0; k < 48; k += 1) {
-    if (k / 48 > boost) break
-    const a = -Math.PI / 2 + (k / 48) * Math.PI * 2
-    buffer.disc(n.cx + Math.cos(a) * (n.r + 4), n.cy + Math.sin(a) * (n.r + 4), 1.6, boost >= 1 ? '#fff3a0' : '#ffd02a')
-  }
+  const l = pad.left, r = pad.right
+  arrowKey(buffer, l.x + l.w / 2, l.y + l.h / 2, l.w / 2, 'left', accent, !!pressed.left)
+  arrowKey(buffer, r.x + r.w / 2, r.y + r.h / 2, r.w / 2, 'right', accent, !!pressed.right)
+  actionKey(buffer, pad.brake.cx, pad.brake.cy, pad.brake.r, 'B', accent, 'other', !!pressed.brake)
+  actionKey(buffer, pad.gas.cx, pad.gas.cy, pad.gas.r, 'A', accent, 'main', !!pressed.gas)
+  const n = pad.nitro
+  flatRing(buffer, n.cx, n.cy, n.r + 5, 3, '#34343c')
+  flatRing(buffer, n.cx, n.cy, n.r + 5, 3, boost >= 1 ? mix(accent, '#ffffff', 0.35) : accent, boost)
+  actionKey(buffer, n.cx, n.cy, n.r, 'T', accent, boost >= 0.3 ? 'main' : 'off', !!pressed.nitro)
 }
 
 // ---------------------------------------------------------------- the bar and the words
