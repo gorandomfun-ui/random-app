@@ -26,11 +26,11 @@ import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_SPIN_STEPS, RACING_CAR_WIDTH, RACING_CRASH_STEPS, RACING_LAST_LEVEL, racingLevelPace, RACING_SEGMENT, RACING_START_STEPS, statTop,
-  FORK_BESIDE, FORK_GANTRY, FORK_NAME, racingHour, racingOtherRoad, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
+  FORK_ALONGSIDE, FORK_BESIDE, FORK_GANTRY, FORK_NAME, FORK_PART, FORK_TAPER, OTHER_FAR, racingHour, racingOtherRoad, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
 import {
   blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
-  facadePiece, puddle, puff, quad, rail, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
+  facadePiece, puddle, puff, quad, rail, RAIL_STANDS, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
 } from './racing-scene'
 import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
 import { actionKey, arrowKey, flatRing } from './flat-controls'
@@ -84,7 +84,7 @@ const dustOf = (zone: RacingZone, x: number): string =>
     : zone === 'avenue' || zone === 'downtown' || zone === 'bridge' || zone === 'village' || zone === 'promenade' ? '#b8b4c8' : zone === 'lake' && x < 0 ? '#c8c0b0' : '#3a7a4a'
 
 /** A stretch on the screen: its near and far ends (middle, row, pixels to a half width), the row under which nearer ground hides it, its haze. */
-type Projected = { i: number; seg: RacingSegment; a: End; b: End; clip: number; behind: boolean; fog: number; zNear: number; other: Beside }
+type Projected = { i: number; seg: RacingSegment; a: End; b: End; clip: number; behind: boolean; fog: number; zNear: number; other: Beside; otherFar: Beside }
 
 // ---------------------------------------------------------------- the controls
 
@@ -96,7 +96,7 @@ export function racingPadGeometry(layout: Layout, pad: Pad): RacingPad | null {
   const board = RACING_BOARD[layout]
   if (pad === 'side') {
     const x = board.width, a = 56, r = 30
-    return { zone: { x, y: HUD_HEIGHT, w: width - x, h: height - HUD_HEIGHT }, left: { x: x + 14, y: height - 24 - a, w: a, h: a }, right: { x: x + 24 + a, y: height - 24 - a, w: a, h: a }, gas: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 70, r }, brake: { cx: x + (width - x) / 2 - 30, cy: HUD_HEIGHT + 150, r }, nitro: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 150, r: 22 } }
+    return { zone: { x, y: HUD_HEIGHT, w: width - x, h: height - HUD_HEIGHT }, left: { x: x + 14, y: height - 24 - a, w: a, h: a }, right: { x: x + 24 + a, y: height - 24 - a, w: a, h: a }, gas: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 70, r }, brake: { cx: x + (width - x) / 2 - 30, cy: HUD_HEIGHT + 150, r }, nitro: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 150, r: 17 } }
   }
   const y = HUD_HEIGHT + board.height, h = height - y
   const left = { x: 14, y: y + (h - (pad === 'big' ? 68 : 60)) / 2, w: pad === 'big' ? 68 : 60, h: pad === 'big' ? 68 : 60 }
@@ -107,7 +107,7 @@ export function racingPadGeometry(layout: Layout, pad: Pad): RacingPad | null {
     return { zone: { x: 0, y, w: width, h }, left, right, gas, brake, nitro: { cx: brake.cx - 8, cy: y + h * 0.22, r: 22 } }
   }
   const r = 27
-  return { zone: { x: 0, y, w: width, h }, left, right, gas: { cx: width - 14 - r, cy: y + h / 2 - r * 0.35, r }, brake: { cx: width - 14 - r * 3.3, cy: y + h / 2 + r * 0.35, r }, nitro: { cx: right.x + right.w + 22 + 2, cy: y + h / 2 - 4, r: 20 } }
+  return { zone: { x: 0, y, w: width, h }, left, right, gas: { cx: width - 14 - r, cy: y + h / 2 - r * 0.35, r }, brake: { cx: width - 14 - r * 3.2, cy: y + h / 2 + r * 0.35, r }, nitro: { cx: right.x + right.w + 22 + 2, cy: y + h / 2 - 4, r: 14 } }
 }
 /** Which control a finger at (`x`, `y`) means: anywhere in their band counts, the nearest wins. */
 export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'right' | 'gas' | 'brake' | 'nitro' | null {
@@ -133,8 +133,9 @@ export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'r
  */
 function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: RacingView['pressed'] = {}, boost = 0): void {
   const l = pad.left, r = pad.right
-  arrowKey(buffer, l.x + l.w / 2, l.y + l.h / 2, l.w / 2, 'left', accent, !!pressed.left)
-  arrowKey(buffer, r.x + r.w / 2, r.y + r.h / 2, r.w / 2, 'right', accent, !!pressed.right)
+  // (a little inside their squares, clear of the keys beside them)
+  arrowKey(buffer, l.x + l.w / 2, l.y + l.h / 2, l.w / 2 - 2, 'left', accent, !!pressed.left)
+  arrowKey(buffer, r.x + r.w / 2, r.y + r.h / 2, r.w / 2 - 2, 'right', accent, !!pressed.right)
   actionKey(buffer, pad.brake.cx, pad.brake.cy, pad.brake.r, 'B', accent, 'other', !!pressed.brake)
   actionKey(buffer, pad.gas.cx, pad.gas.cy, pad.gas.r, 'A', accent, 'main', !!pressed.gas)
   const n = pad.nitro
@@ -301,20 +302,22 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
     const i = b0 + n, g = seg(i)
     const z1 = Math.max(NEAR, (i - camZ) * RACING_SEGMENT), z2 = (i + 1 - camZ) * RACING_SEGMENT
     const a = project(z1, x, i < 0 ? 0 : g.y1), b = project(Math.max(NEAR, z2), x + dx, i < 0 ? 0 : g.y2)
-    // the other road, on its side, where it can be seen
-    const other = g.zone === 'tunnel' ? NOT_BESIDE : besideRoad(s, i)
-    const p: Projected = { i, seg: g, a, b, clip: maxY, behind: z2 <= NEAR, fog: fogStep(z1, FAR), zNear: z1, other }
+    // the other road, on its side, where it can be seen: where it is at this stretch's near end and at its far end
+    const other = g.zone === 'tunnel' ? NOT_BESIDE : besideRoad(s, i), otherFar = g.zone === 'tunnel' ? NOT_BESIDE : besideRoad(s, i + 1)
+    const p: Projected = { i, seg: g, a, b, clip: maxY, behind: z2 <= NEAR, fog: fogStep(z1, FAR), zNear: z1, other, otherFar }
     rows.push(p)
     x += dx
     dx += g.curve * RACING_BEND
     if (p.behind || b.y >= maxY || b.y >= a.y) continue
     const top = Math.max(0, Math.ceil(b.y - 0.5)), bottom = Math.min(maxY, Math.ceil(a.y - 0.5))
     const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1, wave = ((i >> 2) + (frame >> 4)) & 1
-    const { off: ghost, joined, gore, out } = other
-    // how far along the road each row is (in half widths): the striped triangle's stripes lie on the ground
-    pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y), h = b.u + (a.u - b.u) * t; groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h, band, zone: g.zone, fog: p.fog, wave, land: true, ghost, joined, gore, out, along: camZ * RACING_SEGMENT + K / h }, tier, frame) } })
+    const { joined, gore } = other
+    // row by row from one end of the stretch to the other, where it is seen at both; how far along the road each row is (in half widths): the striped triangle's stripes lie on the ground
+    const both = other.off && otherFar.off
+    pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y), h = b.u + (a.u - b.u) * t, ghost = both ? otherFar.off + (other.off - otherFar.off) * t : other.off, out = both ? otherFar.out + (other.out - otherFar.out) * t : other.out; groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h, band, zone: g.zone, fog: p.fog, wave, land: true, ghost, joined, gore, out, along: camZ * RACING_SEGMENT + K / h }, tier, frame) } })
     maxY = Math.min(maxY, top)
-    farX = b.x; farZone = g.zone
+    // (the left-hand of the two roads' far end, where there are two: the water on that side the same whichever road the car is on)
+    farX = Math.min(b.x, b.x + (otherFar.off || other.off) * b.u); farZone = g.zone
   }
   // under the horizon where no road reaches: the sea, the land on the land's side of the road's far end
   // the far view stands on the horizon — or, up a hill, on its crest: the landscape always behind the road's top, never sky alone
@@ -339,57 +342,74 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
   for (let n = rows.length - 1; n >= 0; n -= 1) {
     const p = rows[n]
     if (p.clip <= 0 || p.behind) continue
-    const { i, a, b, seg: g, clip, fog, other } = p
+    const { i, a, b, seg: g, clip, fog, other, otherFar } = p
     if (g.zone === 'tunnel') {
       tunnelPiece(board, a, b, i, clip, tier, fog)
     } else {
-      // the rails and the blocks
+      // the rails and the blocks; beside the other road, its own too: past its far edge (the only one on that side where the two are joined or
+      // the striped ground lies between them), then one halfway between the two while they are close, each road's own once they are further
+      // apart — the same rails in the same places whichever road the car is on
       const [left, right] = FENCES[g.zone]
-      // the other road joined to this one, or the striped ground between them: the rail on its side out at its far edge
-      const outL = other.off < 0 && (other.joined || other.gore) ? other.off : 0, outR = other.off > 0 && (other.joined || other.gore) ? other.off : 0
-      if (left) left(board, outL ? { ...a, x: a.x + outL * a.u } : a, outL ? { ...b, x: b.x + outL * b.u } : b, -1, i, clip, tier, fog)
-      if (right) right(board, outR ? { ...a, x: a.x + outR * a.u } : a, outR ? { ...b, x: b.x + outR * b.u } : b, 1, i, clip, tier, fog)
+      const railAt = (kind: typeof rail | null, xa: number, xb: number, face: -1 | 1) => { if (kind) kind(board, { ...a, x: a.x + (xa - face * RAIL_STANDS) * a.u }, { ...b, x: b.x + (xb - face * RAIL_STANDS) * b.u }, face, i, clip, tier, fog) }
+      if (!other.off) { railAt(left, -RAIL_STANDS, -RAIL_STANDS, -1); railAt(right, RAIL_STANDS, RAIL_STANDS, 1) }
+      else {
+        const side = other.off < 0 ? -1 : 1, near = side < 0 ? left : right, away = side < 0 ? right : left, far = otherFar.off || other.off
+        railAt(away, -side * RAIL_STANDS, -side * RAIL_STANDS, side < 0 ? 1 : -1)
+        railAt(near, other.off + side * RAIL_STANDS, far + side * RAIL_STANDS, side)
+        if (!other.joined && !other.gore) {
+          if (Math.abs(other.off) - FORK_BESIDE <= RAILS_SPLIT) railAt(left ?? right, other.off / 2, far / 2, 1)
+          else { railAt(near, side * RAIL_STANDS, side * RAIL_STANDS, side); railAt(away, other.off - side * RAIL_STANDS, far - side * RAIL_STANDS, side < 0 ? 1 : -1) }
+        }
+      }
       if (seg(i + 1).zone === 'tunnel' && i >= 0) tunnelMouth(board, b, clip, tier, fog)
     }
     // the shops along the road: their fronts going by, their sides at their near ends, what stands on their roofs, their lights after dark
-    if (g.shop && !(other.off > 0 && other.out > 0)) shopPiece(board, p, g.shop, i, lit, tier, 1, camH)
-    if (g.shopL && !(other.off < 0 && other.out > 0)) shopPiece(board, p, g.shopL, i, lit, tier, -1, camH)
-    // the world's own air over the road: the mountain's banks of mist, the city's steam out of the drains, the desert's dust blown across
-    if (world === 'mountain' && misty(g.zone, i) && i % 4 === 0 && a.u < 90) glow(board, a.x, a.y - a.u * 0.15, a.u * 2.6, mistOf(tier), 0.2, clip, 0.22)
-    if (world === 'city' && (g.zone === 'avenue' || g.zone === 'downtown') && i % STEAM_EVERY === 17) steam(board, place(p, i + 0.5, (((i * 7) % 3) - 1) * 0.64), i, frame, clip)
-    if (world === 'desert' && (g.zone === 'dunes' || g.zone === 'canyon' || g.zone === 'mesa') && i % GUST_EVERY === 46) gust(board, p, i, frame, clip)
+    // (none on the side of the other road while it is close)
+    const close = Math.abs(other.off) > 0 && Math.abs(other.off) - FORK_BESIDE < 6
+    if (g.shop && !(close && other.off > 0)) shopPiece(board, p, g.shop, i, lit, tier, 1, camH)
+    if (g.shopL && !(close && other.off < 0)) shopPiece(board, p, g.shopL, i, lit, tier, -1, camH)
+    // the world's own air over the road: the mountain's banks of mist, the city's steam out of the drains, the desert's dust blown across —
+    // none where the two roads run joined or alike, or taking one would move it onto the other
+    const alike = !!s.fork && i >= s.fork.at - FORK_ALONGSIDE - FORK_TAPER && i < s.fork.at + FORK_PART
+    if (world === 'mountain' && !alike && misty(g.zone, i) && i % 4 === 0 && a.u < 90) glow(board, a.x, a.y - a.u * 0.15, a.u * 2.6, mistOf(tier), 0.2, clip, 0.22)
+    if (world === 'city' && !alike && (g.zone === 'avenue' || g.zone === 'downtown') && i % STEAM_EVERY === 17) steam(board, place(p, i + 0.5, (((i * 7) % 3) - 1) * 0.64), i, frame, clip)
+    if (world === 'desert' && !alike && (g.zone === 'dunes' || g.zone === 'canyon' || g.zone === 'mesa') && i % GUST_EVERY === 46) gust(board, p, i, frame, clip)
     for (const it of cargo[n].items) {
-      const at = place(p, it.z, it.x)
+      // on the road the left-hand one came out of, once that one is taken: on that road
+      const at = place(p, it.z, s.fork && s.forkPick === 0 && it.z < s.fork.at ? it.x + racingOtherRoad(s, Math.floor(it.z)).off : it.x)
       if (it.kind === 'puddle') puddle(board, at.x, at.y, at.u, clip, tier, fog)
       else if (it.kind === 'cone') cone(board, at.x, at.y, at.u, clip, tier, fog)
       else if (it.kind === 'coin') coin(board, at.x, at.y, at.u, clip, frame, it.z)
       else if (it.kind === 'time') stopwatch(board, at.x, at.y, at.u, clip, frame)
       else bottle(board, at.x, at.y, at.u, clip, frame)
     }
-    for (const thing of g.things) {
-      if (onOther(other, thing.x)) continue
-      const cx = a.x + thing.x * a.u
-      if (thing.kind === 'chevron') chevron(board, cx, a.y, a.u, thing.flip, clip, tier, fog)
-      else if (thing.kind === 'bush') shrub(board, cx, a.y, a.u, thing.flip, clip, tier, fog)
-      else if (thing.kind === 'lamp') { if (lit && fog < 12) lampPool(board, a.x + thing.x * 0.8 * a.u, a.y, a.u, clip); lamp(board, cx, a.y, a.u, thing.flip ? -1 : 1, clip, tier, fog, lit) }
+    // what stands by the road, and by the other road where it is near — the same, whichever road the car is on
+    const stand = (thing: RacingThing, at: End) => {
+      const cx = at.x + thing.x * at.u
+      if (thing.kind === 'chevron') chevron(board, cx, at.y, at.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'bush') shrub(board, cx, at.y, at.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'lamp') { if (lit && fog < 12) lampPool(board, at.x + thing.x * 0.8 * at.u, at.y, at.u, clip); lamp(board, cx, at.y, at.u, thing.flip ? -1 : 1, clip, tier, fog, lit) }
       else if (thing.kind === 'palm') {
         const pic = racingArt('palm')
-        if (!pic) continue
-        const h = PALM_HIGH * a.u, w = (pic.width * h) / pic.height
-        if (h < 3) continue
+        if (!pic) return
+        const h = PALM_HIGH * at.u, w = (pic.width * h) / pic.height
+        if (h < 3) return
         const { rgb, by } = tintFor(tier, fog)
         // the crowns move in the wind, more in the storm
         const sway = Math.sin(frame * 0.035 + i * 0.7) * h * (tier >= 3 ? 0.07 : 0.025)
-        drawArt(board, pic, cx - w / 2, a.y - h, w, h, clip, thing.flip, rgb, by, sway)
-      } else if (thing.kind === 'globe') { if (fog < 9) lampPool(board, a.x + thing.x * 0.8 * a.u, a.y, a.u, clip); globeLamp(board, cx, a.y, a.u, clip, tier, fog, lit && fog < 13) }
-      else if (thing.kind === 'lights') trafficLights(board, a, clip, tier, fog, frame, thing.look)
-      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, a, clip, tier, fog, frame, lit)
-      else lively(board, thing.kind, thing.look, i, cx, a.y, a.u, thing.flip, clip, tier, fog, frame, lit)
+        drawArt(board, pic, cx - w / 2, at.y - h, w, h, clip, thing.flip, rgb, by, sway)
+      } else if (thing.kind === 'globe') { if (fog < 9) lampPool(board, at.x + thing.x * 0.8 * at.u, at.y, at.u, clip); globeLamp(board, cx, at.y, at.u, clip, tier, fog, lit && fog < 13) }
+      else if (thing.kind === 'lights') trafficLights(board, at, clip, tier, fog, frame, thing.look)
+      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, at, clip, tier, fog, frame, lit)
+      else lively(board, thing.kind, thing.look, i, cx, at.y, at.u, thing.flip, clip, tier, fog, frame, lit)
     }
+    for (const thing of g.things) if (!onOther(other, thing.x)) stand(thing, a)
+    const og = other.off && !other.joined && !other.gore && Math.abs(other.off) <= OTHER_SHOWN ? otherSegment(s, i) : null, ga = { ...a, x: a.x + other.off * a.u }
+    if (og) { const us = { ...other, off: -other.off }; for (const thing of og.things) if (!onOther(us, thing.x)) stand(thing, ga) }
     // where the road divides into the level's two roads: the same barrier up to it while the car decides, the gantry with what each road offers
     if (s.fork && i === s.fork.at - FORK_GANTRY) forkGantry(board, a, clip, s.fork.kinds.map((k) => FORK_SIGN[k]) as [Sign, Sign], tier, fog)
     if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
-    if (s.checks.includes(i)) gantry(board, a, clip, 'check', 0, accent, tier, fog)
+    if (s.checks.includes(i)) { gantry(board, a, clip, 'check', 0, accent, tier, fog); if (og) gantry(board, ga, clip, 'check', 0, accent, tier, fog) }
     if (i === s.finish) gantry(board, a, clip, 'finish', 0, accent, tier, fog)
     for (const c of cargo[n].cars.sort((m, k) => k.z - m.z)) {
       const at = place(p, c.z, c.x)
@@ -777,20 +797,36 @@ type Sign = { name: string; colour: string }
  */
 type Beside = { off: number; joined: boolean; gore: number; out: number }
 const NOT_BESIDE: Beside = { off: 0, joined: false, gore: 0, out: 0 }
-/** How wide the ground between the two roads is (in half widths) where the striped triangle ends; past it, over how much more the ground on that side comes back to its place. */
-const GORE = 1, GORE_BLEND = 4
+/**
+ * How wide the ground between the two roads is (in half widths) where the
+ * striped triangle ends; how far off the other road runs while the ground on
+ * its side lies past it (`OTHER_FAR`), and over how much further, as it goes
+ * off over the horizon, that ground comes back to its place.
+ */
+const GORE = 1, OTHER_BLEND = 16
 function besideRoad(s: RacingState, i: number): Beside {
   const { off, joined } = racingOtherRoad(s, i)
   if (!off) return NOT_BESIDE
   const gap = Math.abs(off) - FORK_BESIDE, gore = !joined && gap <= GORE ? (i - s.fork!.at < s.fork!.len / 2 ? 1 : -1) : 0
-  return { off, joined, gore, out: joined || gore ? Math.abs(off) : Math.max(0, (FORK_BESIDE + GORE) * (1 - (gap - GORE) / GORE_BLEND)) }
+  return { off, joined, gore, out: Math.abs(off) <= OTHER_FAR ? Math.abs(off) : Math.max(0, OTHER_FAR * (1 - (Math.abs(off) - OTHER_FAR) / OTHER_BLEND)) }
+}
+/** Between the two roads close, one rail halfway; past this much ground between them (half widths), each road's own. */
+const RAILS_SPLIT = 4
+/** How near the other road must be for what stands by it to be drawn (half widths). */
+const OTHER_SHOWN = 14
+/** The other road's own stretch at `i`, where the two roads are two: what stands by it. */
+function otherSegment(s: RacingState, i: number): RacingSegment | null {
+  const f = s.fork
+  if (!f || i < f.at || i >= f.at + f.len) return null
+  return f.tracks[s.forkPick < 0 ? 0 : 1 - s.forkPick][i - f.at]
 }
 /** Whether something standing `x` half widths from the road's middle would stand on the other road, or between the two where they are close. */
 function onOther(o: Beside, x: number): boolean {
   if (!o.off) return false
   const side = o.off < 0 ? -1 : 1
   if (side * x <= 1) return false
-  return o.joined || o.gore ? side * x < Math.abs(o.off) + 1.45 : Math.abs(x - o.off) < 1.45 || (o.out > 0 && side * x < Math.abs(o.off))
+  // (between the two, nothing while they are close)
+  return o.joined || o.gore ? side * x < Math.abs(o.off) + 1.45 : Math.abs(x - o.off) < 1.45 || (side * x < Math.abs(o.off) && Math.abs(o.off) - FORK_BESIDE < 3)
 }
 /** What each road of the fork says on its sign. */
 const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
