@@ -262,8 +262,53 @@ export const FORK_TAPER = 40
 export const FORK_GANTRY = 170
 /** How far the left-hand road's middle is from this one's while they run side by side, in half widths: joined, edge to edge. */
 export const FORK_BESIDE = 2
-/** Whether the left-hand road runs joined to this one at a place, the side not yet taken. */
-const alongside = (s: RacingState, z: number): boolean => !!s.fork && s.forkPick < 0 && z >= s.fork.at - FORK_ALONGSIDE && z < s.fork.at
+/**
+ * Where the two roads meet again, as an entry onto a motorway: the other road
+ * running joined to this one (`MERGE_ALONG` stretches), then its lanes
+ * narrowing into this one's (`MERGE_TAPER`), slowly enough to steer across in
+ * time.
+ */
+export const MERGE_ALONG = 60
+export const MERGE_TAPER = 120
+/** How far off the other road runs, for how long, and how far it goes as it leaves the view (or comes into it) and over how many stretches. */
+const OTHER_FAR = 12, OTHER_ALONG = 260, OTHER_GONE = 40, OTHER_FADE = 140
+/** The other road of the two at a stretch: how far its middle is from this one's, in half widths (on its side; 0 where out of sight), and whether it runs joined to this one there — one road, the car free to drive onto it. */
+export type RacingOtherRoad = { off: number; joined: boolean }
+const NO_ROAD: RacingOtherRoad = { off: 0, joined: false }
+/**
+ * The other road of the two at stretch `i`. Before the side is taken, the
+ * left-hand road coming out of this one's left edge, then running joined to
+ * it, edge to edge; past where they part, the road not taken going away,
+ * running far off for a while, gone over the horizon, then coming back and
+ * closer till it runs joined to this one again, and narrows into it.
+ */
+export function racingOtherRoad(s: RacingState, i: number): RacingOtherRoad {
+  const f = s.fork
+  if (!f) return NO_ROAD
+  const k = i - f.at, home = f.len - k
+  if (s.forkPick < 0) {
+    if (k < -FORK_ALONGSIDE - FORK_TAPER) return NO_ROAD
+    if (k < -FORK_ALONGSIDE) return { off: -((k + FORK_ALONGSIDE + FORK_TAPER) / FORK_TAPER) * FORK_BESIDE, joined: true }
+    if (k < 0) return { off: -FORK_BESIDE, joined: true }
+  }
+  const side = s.forkPick === 0 ? 1 : -1
+  if (k < 0) return NO_ROAD
+  if (home <= 0) {
+    const n = -home
+    if (n < MERGE_ALONG) return { off: side * FORK_BESIDE, joined: true }
+    if (n < MERGE_ALONG + MERGE_TAPER) return { off: side * FORK_BESIDE * (1 - (n - MERGE_ALONG) / MERGE_TAPER), joined: true }
+    return NO_ROAD
+  }
+  const near = (n: number) => FORK_BESIDE + (n / FORK_NEAR) ** 1.6 * (OTHER_FAR - FORK_BESIDE)
+  const away = (n: number) => OTHER_FAR + ((n - FORK_NEAR) / OTHER_FADE) ** 2 * (OTHER_GONE - OTHER_FAR)
+  const off = k < FORK_NEAR ? near(k) : home < FORK_NEAR ? near(home) : k < FORK_NEAR + OTHER_ALONG ? OTHER_FAR : k < FORK_NEAR + OTHER_ALONG + OTHER_FADE ? away(k - OTHER_ALONG) : home < FORK_NEAR + OTHER_FADE ? away(home) : 0
+  return off ? { off: side * off, joined: false } : NO_ROAD
+}
+/** How much wider the road is on each side at a place, where the other road runs joined to it: the car free to drive onto it. */
+function widened(s: RacingState, z: number): [number, number] {
+  const o = racingOtherRoad(s, Math.floor(z))
+  return !o.joined ? [0, 0] : o.off < 0 ? [-o.off, 0] : [0, o.off]
+}
 /** How far ahead or behind a car is still seen: those on the other road there are seen going their way. */
 const SEEN = 160
 /**
@@ -424,8 +469,8 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
     if (left <= 0) {
       // the next kind of road; the tunnel only out of the rock, and back into it — a tunnel level's long, twice
       const long = character === 'tunnel' && tunnels < 2
-      // never into the rock so near where the road divides that it would put the two roads off
-      const room = forkAt >= 0 || track.length + (long ? 640 : 240) + 40 < forkFrom
+      // never into the rock so near where the road divides, or where the two roads meet again, that it would hide where they join
+      const room = forkAt >= 0 ? track.length >= forkAt + forkLen + MERGE_ALONG + MERGE_TAPER + 40 : track.length + (long ? 640 : 240) + FORK_ALONGSIDE + FORK_TAPER + 40 < forkFrom
       if (zone === TUNNEL_FROM[world] && room && (long || (lv >= 6 && rnd() < 0.55))) { zone = 'tunnel'; left = long ? between(420, 640) : between(140, 240); tunnels += 1 }
       else if (zone === 'tunnel') { zone = TUNNEL_FROM[world]; left = between(160, 260) }
       else if (character === 'tunnel' && tunnels < 2) { zone = TUNNEL_FROM[world]; left = between(120, 200) }
@@ -469,9 +514,10 @@ export function racingCourse(level: number, world: RacingWorld = 'coast'): Racin
     const slow = par(fork.tracks[0]) > par(fork.tracks[1]) ? 0 : 1, more = Math.round((Math.abs(par(fork.tracks[0]) - par(fork.tracks[1])) * GIVE_BACK) / 3)
     for (let k = 0; k < more; k += 1) fork.items[slow].push({ kind: 'time', z: forkAt + Math.round(fork.len * (0.18 + (0.66 * (k + 0.5)) / more)), x: RACING_LANES[(k + lv) % 3] })
   }
-  // where the other road is close by — going away, coming back — open ground
-  const open: Array<[number, number]> = fork ? [[forkAt - 100, forkAt + FORK_NEAR], [forkAt + forkLen - FORK_NEAR - 40, forkAt + forkLen + 20]] : []
-  dress(track, finish, lv, world, fork ? [forkAt - 100, forkAt, forkAt + FORK_NEAR, forkAt + forkLen] : [], null, 0, open)
+  // where the other road is close by — coming out of this one, going away, coming back, narrowing into it — open ground
+  const openFrom = forkAt - FORK_ALONGSIDE - FORK_TAPER - 10, openTo = forkAt + forkLen + MERGE_ALONG + MERGE_TAPER + 10
+  const open: Array<[number, number]> = fork ? [[openFrom, forkAt + FORK_NEAR], [forkAt + forkLen - FORK_NEAR - 40, openTo]] : []
+  dress(track, finish, lv, world, fork ? [openFrom, forkAt, forkAt + FORK_NEAR, forkAt + forkLen, openTo] : [], null, 0, open)
   // the road as it is with the left-hand road laid in
   const other = fork ? track.slice() : track
   if (fork) {
@@ -1216,9 +1262,9 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
   else if (gas) s.speed += ACCEL * pace * statAccel(s.stats.accel) * (s.turbo > 0 ? 2.2 : 1) * (s.drafting ? 1.2 : 1) * (1 - 0.35 * Math.min(1, s.speed / own))
   else if (!crashing) s.speed -= COAST
   if (s.speed > top) s.speed = Math.max(top, s.speed - COAST * 3)
-  // the left-hand road joined to this one, before they part: the car may drive onto it
-  const beside = alongside(s, s.z) ? FORK_BESIDE : 0
-  s.offroad = s.x > RACING_KERB || s.x < -RACING_KERB - beside
+  // the other road joined to this one, before they part and where they meet again: the car may drive onto it
+  const [wideL, wideR] = widened(s, s.z)
+  s.offroad = s.x > RACING_KERB + wideR || s.x < -RACING_KERB - wideL
   if (s.offroad && s.speed > OFFROAD_TOP) s.speed -= OFFROAD
   s.speed = Math.max(0, s.speed)
   const share = s.speed / RACING_TOP
@@ -1238,12 +1284,12 @@ function drive(s: RacingState, steer: -1 | 0 | 1, gas: boolean, brake: boolean):
   if (Math.abs(seg.curve) < 0.5) s.view *= 0.997
   // the rails: a knock, the car thrown back a little
   const wall = RACING_RAIL - RACING_CAR_WIDTH / 2
-  if (s.x > wall || s.x < -wall - beside) {
+  if (s.x > wall + wideR || s.x < -wall - wideL) {
     if (s.speed > RACING_TOP * 0.25 && s.knock === 0) { s.heard.push('thud'); s.knock = 20 }
     // scraping along it: sparks
     if (s.speed > RACING_TOP * 0.2) { s.sparks = SPARK_STEPS; s.sparkSide = s.x > 0 ? 1 : -1 }
     s.speed = Math.min(s.speed, RACING_TOP * 0.5) * 0.92
-    s.x = s.x > 0 ? wall - 0.04 : -wall - beside + 0.04
+    s.x = s.x > 0 ? wall + wideR - 0.04 : -wall - wideL + 0.04
     s.skid = 0
   }
   s.z += s.speed
@@ -1311,13 +1357,22 @@ function stepRivals(s: RacingState): void {
   }
 }
 
-/** A car on the other road where the two meet again: on this one, coming in from its side, back to its lane. */
+/**
+ * A car on the other road where the two meet again: on this one now, on the
+ * other's lanes joined to it, moving across to a lane of this one; where those
+ * lanes narrow into this one, kept on what is left of them.
+ */
 function rejoin(s: RacingState, c: { z: number; x: number; lane: number; elsewhere?: boolean }): void {
   const f = s.fork
-  if (!c.elsewhere || !f || c.z < f.at + f.len) return
-  c.elsewhere = false
-  c.x += s.forkPick === 0 ? FORK_BESIDE : -FORK_BESIDE
-  c.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - c.x) < Math.abs(a - c.x) ? b : a))
+  if (!f || c.z < f.at + f.len) return
+  if (c.elsewhere) {
+    c.elsewhere = false
+    c.x += s.forkPick === 0 ? FORK_BESIDE : -FORK_BESIDE
+    c.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - c.x) < Math.abs(a - c.x) ? b : a))
+  }
+  const o = racingOtherRoad(s, Math.floor(c.z))
+  if (o.joined && o.off > 0) c.x = Math.min(c.x, o.off + RACING_LANES[2])
+  if (o.joined && o.off < 0) c.x = Math.max(c.x, o.off + RACING_LANES[0])
 }
 
 /** The traffic: each car at its speed, slower in the sharp bends; one that swerves moves into another lane as the player comes near. */

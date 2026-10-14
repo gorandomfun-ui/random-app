@@ -22,7 +22,7 @@ import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
 import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
-import { CAR_STATS, createRacing, FORK_ALONGSIDE, FORK_BESIDE, FORK_FROM, FORK_SHARE, FORK_ZONES, RACING_CARS, RACING_DUEL_BONUS, racingIsDuel, racingLevelPace, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
+import { CAR_STATS, createRacing, FORK_ALONGSIDE, FORK_BESIDE, FORK_FROM, FORK_NEAR, FORK_SHARE, FORK_TAPER, FORK_ZONES, MERGE_ALONG, MERGE_TAPER, racingOtherRoad, RACING_CARS, RACING_DUEL_BONUS, racingIsDuel, racingLevelPace, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
 import { FEATURED_ZONE, FINISH_ZONE, SHOP_ZONES, WORLD_SHOPS, WORLD_ZONES } from '@/lib/games/racing-worlds'
 import { TRAFFIC_MODELS, trafficPicture } from '@/lib/games/racing-traffic'
@@ -463,6 +463,73 @@ test('racing: before the road divides, the left-hand road runs joined to this on
   }
 })
 
+test('racing: where the roads part and meet again, the other road never jumps — widening out of this one, joined to it, away, back, joined again, narrowing into it', () => {
+  for (const pick of [-1, 0, 1] as const) {
+    const s = createRacing('landscape', 5, 2, { single: true, world: 'desert' })
+    const f = s.fork!
+    s.forkPick = pick
+    const from = pick < 0 ? f.at - FORK_ALONGSIDE - FORK_TAPER - 5 : f.at, to = pick < 0 ? f.at : f.at + f.len + MERGE_ALONG + MERGE_TAPER + 5
+    let last = racingOtherRoad(s, from).off
+    for (let i = from + 1; i < to; i += 1) {
+      const { off } = racingOtherRoad(s, i)
+      // near, a little at a time; far off, going over the horizon, faster; out of sight only far off or at nothing
+      if (off && last) assert.ok(Math.abs(off - last) < (Math.min(Math.abs(off), Math.abs(last)) < 6 ? 0.12 : 0.5), `${pick} at ${i - f.at}: ${last.toFixed(2)} to ${off.toFixed(2)}`)
+      else assert.ok(Math.abs(off || last) < 0.06 || Math.abs(off || last) > 30, `${pick} at ${i - f.at}: in or out of sight far off or at nothing`)
+      last = off
+    }
+    if (pick < 0) { assert.ok(racingOtherRoad(s, f.at - 1).joined); assert.equal(racingOtherRoad(s, f.at - 1).off, -FORK_BESIDE) }
+    else {
+      const side = pick === 0 ? 1 : -1
+      assert.ok(!racingOtherRoad(s, f.at + 5).joined, 'parted')
+      assert.deepEqual(racingOtherRoad(s, f.at + f.len + 1), { off: side * FORK_BESIDE, joined: true }, 'joined again, on its side')
+      assert.equal(racingOtherRoad(s, f.at + f.len + MERGE_ALONG + MERGE_TAPER).off, 0, 'gone into this one')
+    }
+  }
+})
+
+test('racing: where the roads meet again, the other road\'s lanes can be driven on till they narrow into this one; the cars on it come over onto this one', () => {
+  for (const pick of [0, 1] as const) {
+    const s = createRacing('landscape', 5, 2, { single: true, world: 'desert' })
+    const f = s.fork!
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+    s.rivals.forEach((r) => { r.z = -900 })
+    const model = s.traffic[0]
+    s.traffic = []
+    s.z = f.at - 3; s.x = pick === 0 ? -FORK_BESIDE : 0; s.speed = 0.7
+    for (let i = 0; i < 6; i += 1) stepRacing(s, 0, true)
+    assert.equal(s.forkPick, pick)
+    const side = pick === 0 ? 1 : -1
+    // a car on the other road just before they meet, in its far lane
+    s.traffic.push({ ...model, z: f.at + f.len - 4, x: side * 0.64, lane: side * 0.64, speed: 0.6, cruise: 0.6, swerve: false, swerved: false, spin: 0, spinWay: 1, elsewhere: true })
+    // the player over on the other road's lanes where they run joined
+    s.z = f.at + f.len + 5; s.x = side * FORK_BESIDE; s.speed = 0.6
+    stepRacing(s, 0, true)
+    assert.ok(!s.offroad, 'on tarmac on its lanes')
+    assert.equal(s.knock, 0, 'no rail between')
+    // the car on it now on this road, and on what is left of the lanes all the way in
+    const car = s.traffic[0]
+    s.z = car.z - 30; s.x = -side * 0.64
+    for (let i = 0; i < 600 && car.z < f.at + f.len + MERGE_ALONG + MERGE_TAPER + 20; i += 1) {
+      stepRacing(s, 0, false)
+      s.z = car.z - 30; s.speed = car.speed
+      // (the step after it gets there)
+      assert.ok(!car.elsewhere || car.z < f.at + f.len + car.speed + 1e-9, 'on this road once they meet')
+      const o = racingOtherRoad(s, Math.floor(car.z))
+      if (!car.elsewhere) assert.ok(side * car.x <= (o.joined ? Math.abs(o.off) : 0) + 0.64 + 1e-9, `on tarmac at ${Math.floor(car.z - f.at - f.len)}: ${car.x.toFixed(2)}`)
+    }
+    assert.ok(Math.abs(car.x) <= 0.64 + 1e-9, `in a lane of this road (${car.x.toFixed(2)})`)
+  }
+})
+
+test('racing: never in the rock where the road divides or where the two roads meet again', () => {
+  for (const world of RACING_WORLDS) for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) {
+    const c = racingCourse(level, world), f = c.fork!
+    const rock = (from: number, to: number) => c.track.slice(from, to).some((g) => g.zone === 'tunnel')
+    assert.ok(!rock(f.at - FORK_ALONGSIDE - FORK_TAPER - 10, f.at), `${world} ${level}: where they part`)
+    assert.ok(!rock(f.at + f.len - 60, f.at + f.len + MERGE_ALONG + MERGE_TAPER + 10), `${world} ${level}: where they meet`)
+  }
+})
+
 test('racing: a good driver finishes first in nearly every level of every world, with time to spare — every one of the first five', () => {
   // a race is won first over the line; behind a rival, it is lost (and played again): a good driver loses one now and then, late
   let lost = 0
@@ -584,7 +651,13 @@ test('racing: each world its own road — its kinds, its things, its shops on it
     const all = new Set([1, 6, 12, 16].flatMap((level) => racingCourse(level, world).track.flatMap((g) => g.things.map((t) => t.kind as string))))
     for (const kind of things[world]) assert.ok(all.has(kind), `${world}: ${kind}`)
     if (world === 'city' || world === 'mountain') assert.ok(racingCourse(1, world).track.some((g) => g.shopL), `${world}: shops on both sides`)
-    const share = (level: number, what: (g: Seg) => boolean) => { const c = racingCourse(level, world); return c.track.slice(0, c.finish).filter(what).length / c.finish }
+    // (by the road where something may stand: not the open ground where the two roads part and meet)
+    const share = (level: number, what: (g: Seg) => boolean) => {
+      const c = racingCourse(level, world), f = c.fork
+      const open = (i: number) => !!f && ((i >= f.at - FORK_ALONGSIDE - FORK_TAPER - 10 && i < f.at + FORK_NEAR) || (i >= f.at + f.len - FORK_NEAR - 40 && i < f.at + f.len + MERGE_ALONG + MERGE_TAPER + 10))
+      const where = c.track.slice(0, c.finish).filter((_, i) => !open(i))
+      return where.filter(what).length / where.length
+    }
     const crowd = (g: Seg) => g.things.some((t) => t.kind === 'crowd')
     assert.ok(share(16, crowd) > share(1, crowd), `${world}: more public later`)
   }
