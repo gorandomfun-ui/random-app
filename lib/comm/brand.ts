@@ -108,3 +108,14 @@ export async function iconDataUri(name: string, color: string): Promise<string |
 }
 
 export const ICON_RATIO = 22 / 24
+
+/** The platforms' marks, from public/icons/providers (simple-icons, CC0; the marks stay their owners'), 24 × 24, no fill of their own. */
+const PROVIDER_FILES: Record<string, string> = { youtube: 'youtube.svg', 'reddit-youtube': 'youtube.svg', dailymotion: 'dailymotion.svg', giphy: 'giphy.svg', pexels: 'pexels.svg', pixabay: 'pixabay.svg', unsplash: 'unsplash.svg', vimeo: 'vimeo.svg' }
+
+/** The platform's mark as an SVG file, or null when the platform has none here; recoloured by the renderer. */
+export async function providerMarkSvg(provider: string): Promise<string | null> {
+  const file = PROVIDER_FILES[provider.toLowerCase()]
+  if (!file) return null
+  const svg = await cached(`provider:${file}`, () => readFile(path.join(PUBLIC, 'icons', 'providers', file), 'utf8'))
+  return typeof svg === 'string' ? svg : null
+}

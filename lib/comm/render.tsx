@@ -20,6 +20,8 @@ export type RenderInput = {
   text: string
   credit: string
   source: string
+  /** The platform's mark, raw SVG, drawn before the source line in its colour. */
+  providerSvg?: string | null
   /** The picture as a data URI or a reachable URL; null for the overlay of a video or when it could not be fetched. */
   media: string | null
   mediaSize: { width: number; height: number } | null
@@ -178,14 +180,21 @@ export async function buildSlide(input: RenderInput): Promise<RenderOutput> {
         const place = input.sourcePlace
         const maxWidthPx = Math.round((place?.width ?? layer.maxWidth) * width)
         const size = Math.round((place ? place.size * (layer.type === 'credit' ? 1 : 0.87) : layer.size) * scale)
-        const fitted = fitText(value, { font: layer.font, size, maxWidthPx, lines: 1 })
+        // The platform's mark before the source line, as tall as the line, in its colour.
+        const ink = color(layer.color)
+        const markPx = layer.type === 'source' && input.providerSvg ? Math.round(size * 1.15) : 0
+        const mark = markPx ? `data:image/svg+xml;base64,${Buffer.from(input.providerSvg!.replace(/<\?xml[^>]*>\s*/, '').replace(/<svg\b/, `<svg fill="${ink}"`)).toString('base64')}` : null
+        const gap = markPx ? Math.round(markPx * 0.4) : 0
+        const fitted = fitText(value, { font: layer.font, size, maxWidthPx: maxWidthPx - markPx - gap, lines: 1 })
         // Placed by hand: the credit at the place, the source one line under it.
         const top = place ? Math.round(place.y * height + (layer.type === 'source' ? place.size * scale * 1.25 : 0)) : Math.round(layer.y * height)
         const left = place ? Math.round(place.x * width) : Math.round(layer.x * width)
         const align = place?.align ?? layer.align
         children.push(
-          <div key={key} style={{ ...abs(left, top, maxWidthPx), justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.type === 'credit' ? 700 : 400, fontSize: fitted.size, color: color(layer.color), whiteSpace: 'nowrap' }}>
-            {fitted.lines[0] ?? ''}
+          <div key={key} style={{ ...abs(left, top, maxWidthPx), alignItems: 'center', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', fontFamily: layer.font, fontWeight: layer.type === 'credit' ? 700 : 400, fontSize: fitted.size, color: ink, whiteSpace: 'nowrap' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- the platform's mark, drawn by Satori */}
+            {mark ? <img src={mark} alt="" width={markPx} height={markPx} style={{ width: markPx, height: markPx, marginRight: gap }} /> : null}
+            <span>{fitted.lines[0] ?? ''}</span>
           </div>,
         )
         break

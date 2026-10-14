@@ -56,11 +56,12 @@ export default function ConfigPage() {
                 <>
                   <p>{dot(false)}Non configuré : INSTAGRAM_ACCESS_TOKEN et INSTAGRAM_ACCOUNT_ID manquent.</p>
                   <ol className="list-decimal space-y-1 pl-5 text-gray-300">
-                    <li>Un compte Instagram <b>professionnel</b> (créateur ou entreprise).</li>
-                    <li>Sur developers.facebook.com, une application avec le produit « Instagram », API avec connexion Instagram ; ton compte ajouté comme <b>testeur Instagram</b> et l’invitation acceptée dans Instagram (Paramètres, Site web et applications).</li>
-                    <li>Permissions : instagram_business_basic, instagram_business_content_publish, instagram_business_manage_comments.</li>
-                    <li>Un jeton d’accès <b>longue durée</b> généré depuis le tableau de bord de l’application, et l’identifiant du compte (le champ user_id).</li>
-                    <li>Dans Vercel : INSTAGRAM_ACCESS_TOKEN et INSTAGRAM_ACCOUNT_ID, puis redéployer. Cette page dira alors « configuré ».</li>
+                    <li>Un compte Instagram <b>professionnel</b> : dans Instagram, Paramètres → Type de compte et outils → Passer à un compte professionnel (créateur ou entreprise).</li>
+                    <li>Sur <b>developers.facebook.com</b> (connexion avec le compte Facebook) : Mes applications → Créer une application → cas d’usage « Autres », type « Entreprise » → un nom (par exemple Random Comm).</li>
+                    <li>Dans l’application : Ajouter un produit → <b>Instagram</b> → « Configurer l’API avec la connexion Instagram » (API setup with Instagram login).</li>
+                    <li>Même page, « Ajouter ou supprimer des comptes Instagram » → ton compte ; puis dans Instagram, Paramètres → Site web et applications → Invitations de testeur → accepter.</li>
+                    <li>Même page, à côté de ton compte : « Générer un jeton » → connexion Instagram → autoriser (instagram_business_basic, instagram_business_content_publish, instagram_business_manage_comments). Copie le jeton (longue durée, 60 jours) et l’<b>identifiant Instagram</b> affiché à côté du compte.</li>
+                    <li>Dans Vercel : Settings → Environment Variables → INSTAGRAM_ACCESS_TOKEN et INSTAGRAM_ACCOUNT_ID (Production), puis Deployments → Redeploy. Cette page dira alors « configuré ». L’app reste en mode développement : elle publie sur ton compte, c’est tout ce qu’il faut.</li>
                   </ol>
                 </>
               )}
@@ -68,6 +69,7 @@ export default function ConfigPage() {
             <section className="space-y-1">
               <h2 className="font-bold">Destinations</h2>
               {config.destinations.map((d) => <p key={d.key}>{dot(d.direct, !d.direct)}{d.name} : {d.direct ? 'publication directe' : 'export de fichiers'} — <span className="text-gray-300">{d.note}</span></p>)}
+              <p className="text-gray-300">TikTok et X ne se lient pas : TikTok ne publie par l’API qu’après un audit de l’application, X ne le permet plus gratuitement. Pour les deux, le bouton Exporter donne le fichier et copie la légende ; tu publies depuis l’app. Les liens : seule la bio est cliquable sur Instagram et TikTok (mets-y gorandom.fun/liens) ; en story, le sticker Lien ; sur X, le lien de la légende.</p>
             </section>
           </>
         )}

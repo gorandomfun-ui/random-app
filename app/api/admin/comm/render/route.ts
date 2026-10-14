@@ -1,5 +1,5 @@
 import { commAllowed, commDb, json } from '@/lib/comm/auth'
-import { paletteOf } from '@/lib/comm/brand'
+import { providerMarkSvg, paletteOf } from '@/lib/comm/brand'
 import { templateByKey } from '@/lib/comm/templateStore'
 import { queueItemById } from '@/lib/comm/queue'
 import { pictureDataUri, renderSlidePng } from '@/lib/comm/png'
@@ -85,6 +85,7 @@ export async function GET(req: Request) {
       // A credit that only repeats the provider says nothing the source line does not: left out on the slide.
       credit: item ? (creditLineOf(item.snapshot, creditTyped) === item.snapshot.providerLabel ? '' : creditLineOf(item.snapshot, creditTyped)) : creditTyped,
       source: item ? sourceLineOf(item.snapshot) : '',
+      providerSvg: item ? await providerMarkSvg(item.snapshot.provider) : null,
       media: picture?.uri ?? null, mediaSize: picture?.size ?? null, mode, glitch, seed: params.get('seed') ?? key, fit, textPosition, textPlace, sourcePlace, scale, logoPlace, mediaPlace, glitchStyle, iconPlace,
     })
     return new Response(out.png, { status: 200, headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store', 'X-Comm-Truncated': out.truncated ? '1' : '0', 'X-Comm-Text-Size': String(out.textSize), 'X-Comm-Picture': picture ? '1' : '0' } })

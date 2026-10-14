@@ -28,6 +28,8 @@ const headers = { 'Content-Type': 'application/json' }
 const PALETTE_COLORS = ['#0FC55D', '#D90845', '#E5972B', '#FF978F', '#3D42CC', '#AF3BF2']
 const TEMPLATE_OF: Record<Family, string> = { '9:16': 'story-plein', '4:5': 'post-plein', '1:1': 'carre', '16:9': 'paysage' }
 const TEXT_SIZES = { S: 44, M: 64, L: 96 } as const
+/** The credit's size; the source line under it follows at 0.87. Readable on a phone from M. */
+const SOURCE_SIZES = { S: 30, M: 48, L: 72 } as const
 const LOGO_SIZE = 300
 const FONTS = [['Tomorrow', 900, 'Tomorrow'], ['Tomorrow', 700, 'Tomorrow fin'], ['InterTight', 700, 'Inter Tight']] as const
 const chip = 'rounded-full border border-white/40 px-3 py-1.5 text-sm disabled:opacity-40'
@@ -37,7 +39,7 @@ const secondary = 'rounded-full border border-white px-5 py-2.5 text-sm font-bol
 const section = 'rounded-xl border border-white/15 bg-[#191916] p-4'
 const title = 'mb-3 font-tomorrow text-xs font-black uppercase tracking-[0.18em] text-[#F8F5E6]'
 
-type MediaChoice = { key: string; label: string; itemId: string; mediaId: string | null; media: MediaDoc | null; thumb: string | null; video: boolean }
+type MediaChoice = { key: string; label: string; itemId: string; mediaId: string | null; media: MediaDoc | null; thumb: string | null; video: boolean; poster?: string | null; seconds?: number | null }
 type Tool = 'text' | 'style'
 
 function logoPlaceOf(corner: PostSlide['logoCorner'], family: Family): Placement | null {
@@ -62,7 +64,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [progress, setProgress] = useState<number | null>(null)
-  const [done, setDone] = useState<{ kind: 'exported' | 'published'; url?: string | null } | null>(null)
+  const [done, setDone] = useState<{ kind: 'exported' | 'exported-story' | 'published'; url?: string | null } | null>(null)
   const [customTag, setCustomTag] = useState('')
   const [clipDuration, setClipDuration] = useState<number | null>(null)
   const [lastFile, setLastFile] = useState<{ url: string; name: string } | null>(null)
@@ -125,7 +127,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const allMedia = useMemo(() => queue.flatMap((i) => i.media), [queue])
   const choices: MediaChoice[] = useMemo(() => queue.flatMap((item) => [
     ...item.media.filter((m) => ['capture', 'import', 'gif', 'image', 'screenshot', 'montage'].includes(m.kind)).filter((m) => (spec?.media === 'video' ? m.contentType.startsWith('video/') : spec?.media === 'image' ? m.contentType.startsWith('image/') : true))
-      .map((m) => ({ key: m._id, label: item.snapshot.title, itemId: item._id, mediaId: m._id, media: m, thumb: m.blobUrl, video: m.contentType.startsWith('video/') })),
+      .map((m) => ({ key: m._id, label: item.snapshot.title, itemId: item._id, mediaId: m._id, media: m, thumb: m.blobUrl, video: m.contentType.startsWith('video/'), poster: item.media.find((q) => q.kind === 'poster' && q.sourceMediaId === m._id)?.blobUrl ?? null, seconds: m.durationSec ?? null })),
     ...(item.snapshot.thumb && spec?.media !== 'video' && !item.media.some((m) => ['image', 'gif', 'screenshot'].includes(m.kind)) ? [{ key: `thumb:${item._id}`, label: `${item.snapshot.title} (miniature)`, itemId: item._id, mediaId: null, media: null, thumb: item.snapshot.thumb, video: false }] : []),
   ]), [queue, spec])
 
@@ -257,6 +259,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     return { blob, extension: 'jpg', video: false }
   }, [allMedia, canvas, maxSeconds, post, renderUrl, titleFont])
 
+  /** The source's address, from the first slide's item: the post's own copy only follows after a save. */
+  const sourceUrl = useMemo(() => { const item = queue.find((i) => i._id === post?.slides[0]?.itemId); return item?.snapshot.sourceUrl || item?.snapshot.url || post?.sourceUrl || '' }, [post, queue])
   const doExport = useCallback(async () => {
     if (!post || !ready || !caption) return
     const clips = activateClips()
@@ -269,12 +273,14 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
         setLastFile({ url: URL.createObjectURL(file.blob), name })
         downloadBlob(file.blob, name)
       }
-      try { await navigator.clipboard?.writeText(caption.text) } catch { /* the caption stays on screen */ }
+      // A story carries no caption: the source's address is what goes into Instagram's link sticker.
+      const story = post.format === 'story'
+      try { await navigator.clipboard?.writeText(story ? sourceUrl : caption.text) } catch { /* the text stays on screen */ }
       await fetch(`/api/admin/comm/posts/${post._id}/exported`, { method: 'POST', headers, body: JSON.stringify({}) })
-      setDone({ kind: 'exported' })
+      setDone({ kind: story ? 'exported-story' : 'exported' })
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Export impossible.') }
     setBusy(''); setProgress(null)
-  }, [activateClips, caption, fileOf, post, ready])
+  }, [activateClips, caption, fileOf, post, ready, sourceUrl])
 
   const doPublish = useCallback(async () => {
     if (!post || !ready || !caption || !instagramReady) return
@@ -299,7 +305,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   }, [activateClips, allMedia, caption, family, fileOf, instagramReady, post, ready])
 
   const textPlace = slide?.textPlace ?? { x: 0.06, y: 0.72, size: TEXT_SIZES.M, align: 'left' as const, width: 0.88 }
-  const sourcePlace = slide?.sourcePlace ?? { x: 0.06, y: family === '16:9' ? 0.86 : family === '9:16' ? 0.905 : 0.9, size: 30, align: 'left' as const, width: 0.88 }
+  const sourcePlace = slide?.sourcePlace ?? { x: 0.06, y: family === '16:9' ? 0.84 : family === '9:16' ? 0.89 : 0.88, size: SOURCE_SIZES.M, align: 'left' as const, width: 0.88 }
   const aspect = `${canvas.width} / ${canvas.height}`
   const textHeight = (textPlace.size * 2.4 / 1080) * (canvas.width / canvas.height)
   const sourceHeight = (sourcePlace.size * 2.6 / 1080) * (canvas.width / canvas.height)
@@ -335,7 +341,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
         </header>
         {busy ? <div className="rounded border border-white/20 p-2 text-sm"><span role="status">{busy}…</span>{progress != null ? <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-white/10"><div className="h-full bg-white" style={{ width: `${Math.round(progress * 100)}%` }} /></div> : null}</div> : null}
         {error ? <p role="alert" className="rounded border border-red-400/50 p-2 text-sm text-red-300">{error}</p> : null}
-        {done ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">{done.kind === 'published' ? <>Publié sur Instagram. {done.url ? <a href={done.url} target="_blank" rel="noreferrer" className="underline">Voir le post</a> : null}</> : <>Exporté : le fichier est téléchargé, la légende est copiée.{lastFile ? <> Pas de téléchargement ? <a href={lastFile.url} download={lastFile.name} className="underline">Télécharger {lastFile.name}</a>.</> : null}</>} La publication porte le n° {post.number}.</p> : null}
+        {done ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">{done.kind === 'published' ? <>Publié sur Instagram. {done.url ? <a href={done.url} target="_blank" rel="noreferrer" className="underline">Voir le post</a> : null}</> : <>{done.kind === 'exported-story' ? <>Exporté : le fichier est téléchargé, l’adresse de la source est copiée — dans Instagram, ajoute le <b>sticker Lien</b> à la story et colle-la ({sourceUrl}).</> : <>Exporté : le fichier est téléchargé, la légende est copiée.</>}{lastFile ? <> Pas de téléchargement ? <a href={lastFile.url} download={lastFile.name} className="underline">Télécharger {lastFile.name}</a>.</> : null}</>} La publication porte le n° {post.number}.</p> : null}
 
         <section className={section}>
           <h2 className={title}>Média{spec.slides.max > 1 ? ' · slides' : ''}</h2>
@@ -364,11 +370,11 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   setQueue((q) => q.map((i) => (i._id === c.itemId ? { ...i, media: [...i.media, media] } : i)))
                   updateSlide({ itemId: c.itemId, mediaId: media._id, trim: null })
                 }}>
-                  {c.video && c.media ? <video src={c.media.blobUrl} muted playsInline className="h-full w-full object-cover" /> : c.thumb ? (
-                    /* eslint-disable-next-line @next/next/no-img-element -- a thumbnail of the queue */
-                    <img src={c.thumb} alt="" className="h-full w-full object-cover" />
+                  {c.video && c.media && !c.poster ? <video src={c.media.blobUrl} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : (c.poster ?? c.thumb) ? (
+                    /* eslint-disable-next-line @next/next/no-img-element -- a clip's poster or a thumbnail of the queue */
+                    <img src={c.poster ?? c.thumb ?? ''} alt="" className="h-full w-full object-cover" />
                   ) : null}
-                  {c.video ? <span className="absolute right-1 top-1 rounded bg-black/70 px-1 text-[10px]">vidéo</span> : null}
+                  {c.video ? <span className="absolute right-1 top-1 rounded bg-black/70 px-1 text-[10px]">▶ {c.seconds ? `${Math.round(c.seconds)} s` : 'clip'}</span> : null}
                 </button>
               ) })}
           </div>
@@ -411,6 +417,10 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                     <select className="rounded border border-white/40 bg-black px-2 py-1 text-xs" value="" onChange={(e) => { if (e.target.value) updateSlide({ text: e.target.value }) }}><option value="">Phrase prête…</option>{phrases.filter((p) => p.text).map((p) => <option key={p._id ?? p.text} value={p.text}>{p.lang} · {p.text}</option>)}</select>
                     {(Object.keys(TEXT_SIZES) as Array<keyof typeof TEXT_SIZES>).map((k) => <button key={k} className={textPlace.size === TEXT_SIZES[k] ? chipOn : chip} onClick={() => updateSlide({ textPlace: { ...textPlace, size: TEXT_SIZES[k] } })}>{k}</button>)}
                     {(['left', 'center', 'right'] as const).map((a) => <button key={a} className={(textPlace.align ?? 'left') === a ? chipOn : chip} onClick={() => updateSlide({ textPlace: { ...textPlace, align: a } })}>{a === 'left' ? 'Gauche' : a === 'center' ? 'Centré' : 'Droite'}</button>)}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Source</span>
+                    {(Object.keys(SOURCE_SIZES) as Array<keyof typeof SOURCE_SIZES>).map((k) => <button key={k} className={sourcePlace.size === SOURCE_SIZES[k] ? chipOn : chip} onClick={() => updateSlide({ sourcePlace: { ...sourcePlace, size: SOURCE_SIZES[k] } })}>{k}</button>)}
+                    <span className="text-xs text-gray-500">la plateforme et le lien, avec la marque de la plateforme ; glisse-la sur l’image</span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Police</span>{FONTS.map(([font, weight, name]) => <button key={name} className={(textPlace.font ?? 'Tomorrow') === font && (textPlace.weight ?? 900) === weight ? chipOn : chip} onClick={() => updateSlide({ textPlace: { ...textPlace, font, weight } })}>{name}</button>)}</div>
                   <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Icône</span>
