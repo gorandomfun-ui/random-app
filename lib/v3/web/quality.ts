@@ -72,6 +72,29 @@ const CURIOUS_REASONS = new Set<BoringReason>(['page', 'article', 'listing'])
 export const CURIOUS = /\b(?:museum|musée|museo|archive|archives|archivo|collection|gallery|galerie|interactive|interactif|map|carte|mapa|atlas|game|jeu|juego|generator|simulator|virtual|explore|timeline|history of|histoire|curious|weird|strange|bizarre|oddities|vintage|retro|old|ancient|lost|forgotten|abandoned|secret|hidden|mystery|legend|folklore|museum of|library of|database of|every|world's|smallest|largest|oldest|longest|tiny|miniature|toy|toys|puppet|robot|machine|automaton|sound|radio|synth|music box|collection of)\b/i
 
 /**
+ * Universities, town halls and administrations: what Common Crawl's front pages of a country are full of, beside the
+ * shops and firms. Told by the address (.edu, .ac.xx, .gouv.xx…) or the name; a title that names something curious — a
+ * town's museum, a university's archive or its map of the sky — is not one of them. Refused at first (12 October), then
+ * kept to a share (13 October, the owner: "les sites d'université, mairie etc ça me va, mais comme toujours pas 90 % du
+ * pool"): scripts/v3/web-previews.ts.
+ */
+const UNIVERSITY_HOST = /(?:^|\.)(?:edu|ac)\.[a-z]{2}$|\.edu$/i
+const UNIVERSITY_TITLE = /\b(?:universi(?:ty|té|tà|tät|tat|teit|tet|dad|dade|ti)|hochschule|polytechnique|politecnico|politécnica|college|faculté|facultad|faculdade)\b/i
+const ADMINISTRATION_HOST = /(?:^|\.)(?:gov|gob|gouv|govt|gv|go|mil)\.[a-z]{2}$|\.(?:gov|mil)$/i
+const ADMINISTRATION_TITLE = /\b(?:mairie|hôtel de ville|(?:ville|commune) d(?:e|u|es|')|city of|town of|village of|municipalit(?:y|é|à|ies)|municipio|municipalidad|ayuntamiento|prefeitura|câmara municipal|comune di|gemeinde|stadtverwaltung|kommune|gmina|urząd|ministère|ministry of|ministerio|ministério|ministero|gouvernement|government of|préfecture|county council|city council|district council|borough council|town council|conseil (?:départemental|régional|municipal)|communauté (?:de communes|d'agglomération))/i
+
+export type InstitutionReason = 'university' | 'administration'
+
+export function institutionReason(url: string | null | undefined, title?: string | null): InstitutionReason | null {
+  const text = title ?? ''
+  if (CURIOUS.test(text)) return null
+  const host = parts(url ?? '')?.host ?? ''
+  if (UNIVERSITY_HOST.test(host) || UNIVERSITY_TITLE.test(text)) return 'university'
+  if (ADMINISTRATION_HOST.test(host) || ADMINISTRATION_TITLE.test(text)) return 'administration'
+  return null
+}
+
+/**
  * Platforms and big hosts: their front page is not a small site of someone's,
  * so a page found on them is not turned into one (see frontPageOf).
  */

@@ -13,6 +13,8 @@
 #   bash /opt/random-app/server/run-line.sh pools
 #   bash /opt/random-app/server/run-line.sh dig
 #   bash /opt/random-app/server/run-line.sh lookalike
+#   bash /opt/random-app/server/run-line.sh obsolete
+#   bash /opt/random-app/server/run-line.sh youtube-drift
 set -euo pipefail
 
 APP_DIR=/opt/random-app
@@ -29,6 +31,34 @@ set +a
 export RANDOM_INGEST_SERVER=1
 
 run() { echo "[$(date -u +%FT%TZ)] ${LINE}: $*"; "$@"; }
+
+# The 2 € brake (the owner, 8 and 11 October: never more than 2 € a month on Google Cloud). What the server sent this
+# month, counted on its own network card and kept across restarts in /home/random/egress/<month>: past 15 GiB (about
+# 1.50 € at Google's 0.1056 € a GiB after the first) the lines that send the most wait for the 1st of the next month;
+# past 18 GiB (about 1.80 €), every line does. A normal month sends about 15 GB (measured 11 October: ~0.5 GB a day).
+EGRESS_DIR=/home/random/egress
+mkdir -p "${EGRESS_DIR}"
+egress_month_bytes() {
+  local state tx
+  state="${EGRESS_DIR}/$(date -u +%Y-%m)"
+  tx=$(awk '$1 ~ /^(ens|eth)[0-9a-z]*:$/ { print $10; exit }' /proc/net/dev)
+  (
+    flock -w 10 9 || { echo 0; exit 0; }
+    if read -r last sum < "${state}" 2>/dev/null; then :; else last=${tx}; sum=0; fi
+    if [ "${tx}" -ge "${last}" ]; then sum=$(( sum + tx - last )); else sum=$(( sum + tx )); fi
+    echo "${tx} ${sum}" > "${state}"
+    echo "${sum}"
+  ) 9>"${EGRESS_DIR}/.lock"
+}
+sent_gib=$(( $(egress_month_bytes || echo 0) / 1073741824 ))
+case "${LINE}" in
+  web-previews|web-embed|web-commoncrawl|web-search|drift|youtube-drift|image-obsolete) heavy=1 ;;
+  *) heavy=0 ;;
+esac
+if [ "${sent_gib}" -ge "${RANDOM_BRAKE_ALL_GIB:-18}" ] || { [ "${heavy}" = 1 ] && [ "${sent_gib}" -ge "${RANDOM_BRAKE_GIB:-15}" ]; }; then
+  echo "[$(date -u +%FT%TZ)] ${LINE}: frein des 2 € : ${sent_gib} Go envoyés ce mois-ci, en pause jusqu'au 1er du mois"
+  exit 0
+fi
 
 case "${LINE}" in
   daily-auto-morning|daily-auto-evening)
@@ -93,11 +123,28 @@ case "${LINE}" in
     RANDOM_VEC_MINUTES="${RANDOM_VEC_MINUTES:-${vec_minutes}}" RANDOM_VEC_MAX="${RANDOM_VEC_MAX:-20000}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 900 /home/random/locks/web-previews.lock bash server/vec-window.sh
     ;;
   lookalike)
-    # The look-alikes of the likes in windows of their own, eight of thirty minutes a day (the owner, 6 October: 44 a day was the minutes
+    # The look-alikes of the likes in windows of their own, thirty minutes each (the owner, 6 October: 44 a day was the minutes
     # they had after the fingerprints, not the idea). The same 700 MB model, alone on the machine under the same locks as the fingerprints;
     # the dig's lock also keeps the two model lines apart. The fingerprints' window still lends its leftover minutes (server/vec-window.sh).
+    # Twelve windows since 7 October (the owner: more look-alikes, none of them junk — the model judges every one).
     # The previews' lock is waited for up to twenty-five minutes: their run lasts twenty at most, and the 07:15 window of 7 October gave up at fifteen.
-    RANDOM_LOOKALIKE_MINUTES="${RANDOM_LOOKALIKE_MINUTES:-30}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 1500 /home/random/locks/web-previews.lock node --import tsx scripts/v3/lookalike-direct.ts
+    # The night site check's too (the 03:50 window follows it): twenty minutes a night, seventy-five at most.
+    RANDOM_LOOKALIKE_MINUTES="${RANDOM_LOOKALIKE_MINUTES:-30}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 1500 /home/random/locks/web-previews.lock flock -w 1500 /home/random/locks/web-embed.lock node --import tsx scripts/v3/lookalike-direct.ts
+    ;;
+  youtube-drift)
+    # The channels of the YouTube videos the base took, ten new uploads each, in the YouTube units the searches leave
+    # (the owner, 11 October: the whole quota, for the ingestion). No model; it ends before the small model's next window.
+    RANDOM_YT_DRIFT_MINUTES="${RANDOM_YT_DRIFT_MINUTES:-25}" run node --import tsx scripts/v3/youtube-drift-direct.ts
+    ;;
+  image-obsolete)
+    # The night's check of the pictures and GIFs: the reported ones, then thirty-five thousand of the stock in turn (each once a
+    # month), a HEAD each; the dead wait for the owner's button. About 20 MB sent: under the 2 € brake with the heavy lines.
+    RANDOM_IMAGE_OBSOLETE_MINUTES="${RANDOM_IMAGE_OBSOLETE_MINUTES:-30}" run node --import tsx scripts/v3/image-obsolete-direct.ts
+    ;;
+  obsolete)
+    # The nightly check of the stored videos: the dead are marked and hidden, the owner deletes them from the page
+    # (public/erase-obsolete-videos.html). No model, little memory; it ends before the 06:35 look-alikes (35 minutes).
+    RANDOM_OBSOLETE_MINUTES="${RANDOM_OBSOLETE_MINUTES:-35}" run node --import tsx scripts/v3/obsolete-direct.ts
     ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.
@@ -120,15 +167,18 @@ case "${LINE}" in
     # The key goes through a private file, never through the journal (the run's echo logged it on 3 October).
     header_file="/home/random/.admin-header"
     (umask 077; printf 'x-admin-ingest-key: %s\n' "${ADMIN_INGEST_KEY:?}" > "${header_file}")
-    run curl -sS -m 280 -H "@${header_file}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,wikipedia&per=10&pages=3"
+    # Since 12 October also Neocities' gallery read as pages and two lists of handmade and toy sites ("lists"): onto the waiting list.
+    run curl -sS -m 280 -H "@${header_file}" "${RANDOM_INGEST_HOST:?}/api/ingest/web?providers=hn,curated,neocities,lists,wikipedia&per=10&pages=3"
     ;;
   web-commoncrawl)
     # One country a day from Common Crawl's public index: the live front pages under its domain, onto the waiting list (lib/v3/web/commoncrawl.ts). Free, no key.
     RANDOM_CC_CACHE="${RANDOM_CC_CACHE:-/home/random/cache/cc}" run node --import tsx scripts/v3/web-commoncrawl.ts
     ;;
   web-embed)
-    # Which stored sites can be framed inside Random: the new entries first, then the stale verdicts.
-    run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-2000}"
+    # Which stored sites can be framed inside Random: the never asked first, then the stale verdicts. Five thousand a night
+    # from 12 October (about 23 minutes at 217 a minute): the 46,428 never asked caught up in about ten nights, since only
+    # these are drawn; a new site is asked at its visit (scripts/v3/web-previews.ts).
+    run node --import tsx scripts/v3/check-web-links.ts --apply --fresh --max="${RANDOM_WEB_EMBED_MAX:-5000}"
     ;;
   *)
     echo "ligne inconnue : ${LINE}" >&2

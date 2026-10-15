@@ -14,7 +14,10 @@ Group=random
 WorkingDirectory=/opt/random-app
 Environment=NODE_ENV=production
 Environment=HOME=/home/random
-ExecStart=/usr/bin/flock -n /home/random/locks/%i.lock /bin/bash /opt/random-app/server/run-line.sh %i
+# A line whose lock is held — by its previous pass, or by the small model's window holding the captures' — skips its turn:
+# flock says so with 75, which is a skip, not a failure (the captures showed "failed" whenever the model ran, October).
+ExecStart=/usr/bin/flock -n -E 75 /home/random/locks/%i.lock /bin/bash /opt/random-app/server/run-line.sh %i
+SuccessExitStatus=75
 RuntimeMaxSec=3900
 Nice=10
 MemoryMax=700M

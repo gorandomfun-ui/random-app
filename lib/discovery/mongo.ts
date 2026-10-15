@@ -15,10 +15,16 @@ import type { Universe } from '../v3/types'
 const FAMILIES = ['music', 'sport', 'craft', 'food', 'art', 'advertising', 'cinema', 'science', 'gaming', 'technology', 'travel', 'everyday', 'unknown']
 const TYPES: Format[] = ['video', 'image', 'web', 'quote', 'joke', 'fact']
 type Decoder<T> = (row: CatalogueRow) => T | null
-/** What every draw of the live random starts from: never a suppressed content, never an obsolete or blocked video. */
+/**
+ * What every draw of the live random starts from: never a suppressed content, never an obsolete or blocked video, and
+ * a website only when it opens inside Random (the owner, 12 October: the sites "s'ouvrent toujours pas dans Random mais
+ * toujours à côté"; a site is asked at its entry and every night, lib/v3/web/embed.ts).
+ */
 export function base(type: Format, lang: string, now: number): Filter<Document> {
   const visual = type === 'video' || type === 'image'
-  return { type, isSuppressed: { $ne: true }, ...(type === 'video' ? {
+  return { type, isSuppressed: { $ne: true }, ...(type === 'web' ? { embeddable: true, webLinkDead: { $ne: true } } : {}),
+    // A picture the night's check found dead waits for the owner's deletion out of sight (14 October), as a dead video does.
+    ...(type === 'image' ? { obsoleteImageStatus: { $ne: 'obsolete' } } : {}), ...(type === 'video' ? {
     obsoleteVideoStatus: { $ne: 'obsolete' },
     $or: [{ obsoleteVideoRuntimeBlockedUntil: { $exists: false } }, { obsoleteVideoRuntimeBlockedUntil: null }, { obsoleteVideoRuntimeBlockedUntil: { $lte: new Date(now) } }],
   } : {}), ...(!visual && type !== 'web' ? { $or: [

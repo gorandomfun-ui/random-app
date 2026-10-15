@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM nightly check of the stored pictures and GIFs (00:20 Paris, thirty minutes, between the evening's last look-alikes and the night's first: the reported ones, then thirty-five thousand of the stock in turn; the dead wait for the owner's button)
+
+[Timer]
+OnCalendar=*-*-* 00:20:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

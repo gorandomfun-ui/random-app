@@ -141,16 +141,19 @@ async function fetchText(url: string, accept: string, timeoutMs: number, request
 
 /** Reads a site's tone: its page first, then its first stylesheets. Null when it declares nothing readable. */
 export async function readTone(url: string, options: { timeoutMs?: number; request?: typeof fetch } = {}): Promise<ToneReading> {
-  const timeoutMs = options.timeoutMs ?? 9000
-  const request = options.request ?? fetch
-  const page = await fetchText(url, 'text/html,*/*', timeoutMs, request)
+  const page = await fetchText(url, 'text/html,*/*', options.timeoutMs ?? 9000, options.request ?? fetch)
   if (!page) return { tone: null, evidence: null }
-  const own = toneFromHtml(page.text)
+  return toneOfPage(page.text, page.url, options)
+}
+
+/** The same from a page already read (the server's visit of a new site): its own words, then its first stylesheets. */
+export async function toneOfPage(html: string, pageUrl: string, options: { timeoutMs?: number; request?: typeof fetch } = {}): Promise<ToneReading> {
+  const own = toneFromHtml(html)
   if (own.tone) return own
   // A stylesheet's body rule is trusted for "light" only: a black body under a white wrapper is common
   // (Literary Hub says #000 and is white), and a wrong "dark" hides the logo; a wrong "light" is rare.
-  for (const sheet of stylesheetUrls(page.text, page.url)) {
-    const css = await fetchText(sheet, 'text/css,*/*', timeoutMs, request)
+  for (const sheet of stylesheetUrls(html, pageUrl)) {
+    const css = await fetchText(sheet, 'text/css,*/*', options.timeoutMs ?? 9000, options.request ?? fetch)
     if (!css) continue
     const reading = toneFromCss(css.text)
     if (reading.tone === 'light') return { tone: 'light', evidence: `stylesheet: ${reading.evidence}` }

@@ -12,7 +12,8 @@ test('a video is of another time by an old year in its title or the first lines 
   const now = new Date('2026-10-01T20:00:00Z')
   assert.ok(ofAnotherTime({ title: 'Jacques Brel - Ne me quitte pas (1966)' }, now))
   assert.ok(ofAnotherTime({ title: 'Jacques Brel - Ne me quitte pas', description: 'Diffusé le 12/03/1972 sur la première chaîne.' }, now))
-  assert.ok(ofAnotherTime({ title: 'Interview Vaudeville Patrick Timsit', publishedAt: new Date('2012-05-01') }, now))
+  assert.ok(ofAnotherTime({ title: 'Interview Vaudeville Patrick Timsit', publishedAt: new Date('2011-05-01') }, now))
+  assert.ok(!ofAnotherTime({ title: 'Interview Vaudeville Patrick Timsit', publishedAt: new Date('2017-05-01') }, now), 'uploaded seven years ago is not of another time (the owner, 8 October)')
   assert.ok(!ofAnotherTime({ title: 'Russell Crowe reveals his new film', description: 'Bang Showbiz 2026', publishedAt: new Date('2026-09-28') }, now))
   assert.ok(!ofAnotherTime({ title: 'Top 10 moments', description: `${'x'.repeat(400)} 1970`, publishedAt: '2025-01-01' }, now))
 })
@@ -40,7 +41,7 @@ test('on a channel of thousands each video gets its window; small channels and o
     video('Russell Crowe on the red carpet', 'showbiz', { channelVideos: 65_000, publishedAt: new Date('2026-04-20'), categoryId: 'people' }),
     video('Russell Crowe in 1999 at Cannes', 'showbiz', { channelVideos: 65_000, publishedAt: new Date('2026-09-20'), categoryId: 'people' }),
     video('Jacques Brel - Ne me quitte pas', 'ina', { channelVideos: 60_000, description: 'Diffusé le 12/03/1972', publishedAt: new Date('2016-01-01') }),
-    video('Interview Vaudeville Patrick Timsit', 'ina', { channelVideos: 60_000, publishedAt: new Date('2012-05-01') }),
+    video('Interview Vaudeville Patrick Timsit', 'ina', { channelVideos: 60_000, publishedAt: new Date('2011-05-01') }),
     video('My kitchen tour', 'vlogger', { channelVideos: 1_800, publishedAt: new Date('2026-09-01') }),
     video('Official music video', 'own', { channelVideos: 90_000, publishedAt: new Date('2026-09-01') }),
     video('A clip', 'unknown'),

@@ -1,78 +1,52 @@
 /**
  * RANDOM RACING in play: the road seen from behind the car, under the bar.
  *
- * The far view is the owner's picture's — the sky, the sun going down into
- * the sea, the mountains, the city — sliding a little as the road turns. In
- * front of it the road, drawn stretch by stretch as it comes: its bends and
- * its hills, its kerbs in the picture's salmon, its lanes, the beach and the
- * sea on the left, the bushes on the right, the rails along both sides, the
- * picture's palms and red chevrons by it; the start's gantry with its lights,
- * the finish line's chequered one. The rivals are the picture's cars, small
- * with the distance; the player's at the foot of the road, leaning as it
- * steers, bouncing, kicking up sand off the road. The bar on top — TIME,
- * SCORE, the level and how far along it, the place — the speed in a corner,
- * the lights and GO!, GOAL! and its points, TIME UP; on a touch screen the
- * arrows on the left, A (gas) and B (brake) on the right.
+ * The far view is the owner's picture's, at the level's hour — the sunset,
+ * the dusk, the night with its moon, the storm — sliding a little as the
+ * road turns, rising and sinking as the car climbs and dips. In front of it
+ * the road, drawn stretch by stretch as it comes, fading into the haze far
+ * off: its bends and its hills; the beach with its foam, the promenade and
+ * its lamps, the cliff's rock over the deep sea, the causeway, the tunnel;
+ * the concrete barriers, the picture's palms, the chevrons; the stopwatches,
+ * the mustard turbo and the coins over the road, the ketchup puddles and the
+ * roadworks' cones on it; the start's gantry with its lights, the
+ * checkpoints', the finish line's chequered one. The rivals and the traffic
+ * are the picture's cars, turning as they change lanes or take a bend, with
+ * their shadows; the player's at the foot of the road, turning as it
+ * steers, bouncing, kicking up sand off the road, flaming with the turbo.
+ * The bar on top — TIME, SCORE, the level and how far along it, the place —
+ * the speed in a corner, the lights and GO!, CHECKPOINT and the time it
+ * gives, GOAL! and its points, TIME UP; the rain and the lightning in the
+ * storm; on a touch screen the arrows on the left, A (gas) and B (brake) on
+ * the right.
  */
 
-import { racingArt, type RacingCarKind } from './racing-art'
+import { BONUS_PALETTE, MUSTARD } from './attacks-sprites'
+import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
+import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
-  createRacing, heightAt, RACING_BEND, RACING_CAR_WIDTH, RACING_KERB, RACING_LAST_LEVEL, RACING_RAIL, RACING_SEGMENT, RACING_START_STEPS,
-  racingKmh, segmentOf, stepRacing, type RacingLayout, type RacingSegment, type RacingState,
+  createRacing, heightAt, RACING_BEND, RACING_CAR_SPIN_STEPS, RACING_CAR_WIDTH, RACING_CRASH_STEPS, RACING_LAST_LEVEL, racingLevelPace, RACING_SEGMENT, RACING_START_STEPS, statTop,
+  FORK_ALONGSIDE, FORK_BESIDE, FORK_GANTRY, FORK_NAME, FORK_PART, FORK_TAPER, OTHER_FAR, racingHour, racingOtherRoad, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
+import {
+  blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
+  facadePiece, puddle, puff, quad, rail, RAIL_STANDS, shopSide, shrub, stopwatch, tintFor, trafficLights, tunnelMouth, tunnelPiece, type End, type RGB, type Tier,
+} from './racing-scene'
+import { fountainPicture, redRock, SCENERY_HIGH, shrubPicture, treePicture, tumbleweedPicture } from './racing-scenery'
+import { actionKey, arrowKey, flatRing } from './flat-controls'
+import { carSide } from './racing-sides'
+import { shop, SHOPS, TOWN_UNIT, type ShopKind } from './racing-town'
+import { TRAFFIC_WIDTH, trafficHigh } from './racing-traffic'
 import { dim, drawText, drawText7, mix, PixelBuffer, rgbOf, text7Width, textWidth } from './pixels'
 import { playCard, playSize, type Hit, type Pad } from './screens'
 import { arcadeText, CREAM, GREY, HUD_HEIGHT, INK } from './ui'
 
+export { drawArt, drawCar, puff } from './racing-scene'
+
 /** The start's gantry, over the road ahead of the grid. */
-const RACING_START_LINE = 40
+const START_LINE = 40
 
 type Layout = RacingLayout
-type RGB = readonly [number, number, number]
-
-// ---------------------------------------------------------------- the traced pictures
-
-/** A traced picture's pixels onto the buffer at `x`, `y`, leaving out its clear ones; drawn `w` × `h` (each pixel taken from the nearest), its own size if not given; no row at or under `clip`; mirrored if asked. */
-export function drawArt(buffer: PixelBuffer, pic: PixelBuffer, x: number, y: number, w = pic.width, h = pic.height, clip = buffer.height, flip = false): void {
-  const sx = pic.width / w, sy = pic.height / h, d = buffer.data, s = pic.data
-  const x0 = Math.round(x), y0 = Math.round(y), W = Math.round(w), H = Math.round(h)
-  const bottom = Math.min(buffer.height, clip)
-  for (let yy = 0; yy < H; yy += 1) {
-    const ty = y0 + yy
-    if (ty < 0) continue
-    if (ty >= bottom) break
-    const py = Math.min(pic.height - 1, Math.floor((yy + 0.5) * sy))
-    for (let xx = 0; xx < W; xx += 1) {
-      const tx = x0 + xx
-      if (tx < 0 || tx >= buffer.width) continue
-      const px = Math.min(pic.width - 1, Math.floor(((flip ? W - 1 - xx : xx) + 0.5) * sx))
-      const o = (py * pic.width + px) * 4
-      if (s[o + 3] < 128) continue
-      const t = (ty * buffer.width + tx) * 4
-      d[t] = s[o]; d[t + 1] = s[o + 1]; d[t + 2] = s[o + 2]; d[t + 3] = 255
-    }
-  }
-}
-
-/** A car seen from behind, its picture nearest the width asked for, drawn that wide, its foot at `foot` and its middle at `cx`; no row at or under `clip`. */
-export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, foot: number, width: number, clip = buffer.height): void {
-  const size = width > 112 ? 130 : width > 70 ? 104 : 60
-  const pic = racingArt(`car-${kind}-${size}`)
-  if (!pic || width < 2) return
-  const w = Math.max(2, Math.round(width * (kind === 'burger' ? 0.78 : 1))), h = Math.max(1, Math.round((pic.height * w) / pic.width))
-  drawArt(buffer, pic, Math.round(cx - w / 2), Math.round(foot - h), w, h, clip)
-}
-
-/** A puff from an exhaust, low by the road, swelling and thinning as it drifts out, one moment after another. */
-export function puff(buffer: PixelBuffer, x: number, y: number, dir: number, frame: number, seed: number, color = '#e8dcf0', strength = 0.38): void {
-  const age = (frame + seed) % 5, r = 2 + age * 1.6
-  for (let dy = -r; dy <= r; dy += 1) for (let dx = -r; dx <= r; dx += 1) {
-    const q = (dx * dx + dy * dy) / (r * r)
-    if (q <= 1) buffer.tint(Math.round(x + dir * age * 3 + dx), Math.round(y + age * 0.6 + dy * 0.6), color, strength * (1 - age / 5) * (1 - q * 0.5))
-  }
-}
-
-// ---------------------------------------------------------------- the view
 
 /** The boards under the bar: wide 448 × 320, tall 320 × 448, as the other games'. */
 export const RACING_BOARD: Record<Layout, { width: number; height: number }> = { landscape: { width: 448, height: 320 }, portrait: { width: 320, height: 448 } }
@@ -85,197 +59,100 @@ const VIEW: Record<Layout, { horizon: number; foot: number; half: number }> = {
   landscape: { horizon: 148, foot: 308, half: 200 },
   portrait: { horizon: 214, foot: 432, half: 150 },
 }
-/** How many stretches ahead are drawn; nearer than this (world units) nothing is. */
+/** How many stretches ahead are drawn; nearer than this (half widths) nothing is. */
 const DRAW = 260
 const NEAR = 0.25
-/** The beach's width past the kerbs before the sea, the rails' height and their bar's, a palm's height and a chevron's: in half widths. */
-const BEACH = 2.4
-const RAIL_HIGH = 0.32, RAIL_BAR = 0.07
-const PALM_HIGH = 2.6, CHEVRON_HIGH = 0.62
-/** The gantries' posts, out past the rails, and their height. */
-const GANTRY_X = 1.95, GANTRY_HIGH = 2
+const FAR = DRAW * RACING_SEGMENT
+/** A palm's height, in half widths. */
+const PALM_HIGH = 2.7
 
-/** The road's colours, taken from the picture. */
-const hex = (c: string): RGB => rgbOf(c)
-const C = {
-  tar: [hex('#252645'), hex('#2b2b4a')], line: hex('#d5bca5'),
-  kerb: [hex('#f99259'), hex('#d8744a')],
-  bush: [hex('#1f4a3a'), hex('#26573f')], sea: [hex('#0998b1'), hex('#047ba5'), hex('#13b0c4')], glint: hex('#d8faff'), sand: [hex('#f0a07a'), hex('#e08c6a')],
+const FLAT: RacingSegment = { curve: 0, y1: 0, y2: 0, zone: 'beach', things: [] }
+
+/** The traced pictures each world needs. */
+const WORLD_ART: Record<RacingWorld, RacingArtName[]> = { coast: ['playBack', 'palm', 'face-mountain'], mountain: ['far-mountain', 'pine', 'rock', 'face-mountain'], desert: ['far-desert', 'saguaro', 'butte', 'rock', 'face-desert'], city: ['far-city', 'palm'] }
+
+/** What runs along each side of each kind of road, left and right: the metal rail, the coast's concrete blocks, or nothing (the streets, the rock). */
+const FENCES: Record<RacingZone, [typeof rail | null, typeof rail | null]> = {
+  beach: [rail, rail], promenade: [blocks, blocks], causeway: [blocks, blocks], cliff: [rail, null], tunnel: [null, null],
+  forest: [rail, rail], village: [null, null], lake: [rail, rail], gorge: [rail, null],
+  dunes: [rail, rail], town: [null, null], canyon: [null, null], mesa: [rail, null],
+  avenue: [null, null], downtown: [null, null], park: [null, null], bridge: [rail, rail],
 }
-const RAIL = '#8c7b8b', RAIL_TOP = '#d5bca5', POST = '#1c2474'
-/** A number from 0 to 1 for a pixel, always the same. */
-const grain = (x: number, y: number) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
+/** What flies off the wheels off the road, by the kind of ground. */
+const dustOf = (zone: RacingZone, x: number): string =>
+  zone === 'beach' ? (x < 0 ? '#f0c09a' : '#3a7a4a') : zone === 'dunes' || zone === 'town' || zone === 'canyon' || zone === 'mesa' ? '#f0c08a'
+    : zone === 'avenue' || zone === 'downtown' || zone === 'bridge' || zone === 'village' || zone === 'promenade' ? '#b8b4c8' : zone === 'lake' && x < 0 ? '#c8c0b0' : '#3a7a4a'
 
-/** A stretch on the screen: its near and far ends' middles, half widths and rows, the scale at each, and the row under which nearer ground hides it. */
-type Projected = { i: number; x1: number; y1: number; w1: number; s1: number; x2: number; y2: number; w2: number; s2: number; clip: number; seg: RacingSegment; behind: boolean }
-
-const FLAT: RacingSegment = { curve: 0, y1: 0, y2: 0, things: [] }
-
-/** The far view, mirrored past its edges so it can slide either way. */
-function farView(buffer: PixelBuffer, back: PixelBuffer | null, W: number, horizon: number, slide: number): void {
-  if (!back) {
-    for (let y = 0; y < horizon; y += 1) buffer.rect(0, y, W, 1, mix('#1a0a34', '#ff7a5a', (y / horizon) ** 1.5))
-    return
-  }
-  const d = buffer.data, s = back.data, bw = back.width, top = horizon - back.height
-  const shift = Math.round((W - bw) / 2 + slide)
-  const column = (x: number) => { let u = (x - shift) % (bw * 2); if (u < 0) u += bw * 2; return u < bw ? u : bw * 2 - 1 - u }
-  for (let y = 0; y < horizon; y += 1) {
-    // over a tall board, the sky carried up from the picture's top, darkening
-    const py = Math.max(0, y - top), fade = y < top ? ((top - y) / Math.max(1, top)) ** 1.2 : 0
-    const [fr, fg, fb] = rgbOf('#1a0a34')
-    for (let x = 0; x < W; x += 1) {
-      const o = (py * bw + column(x)) * 4, t = (y * W + x) * 4
-      d[t] = s[o] + (fr - s[o]) * fade; d[t + 1] = s[o + 1] + (fg - s[o + 1]) * fade; d[t + 2] = s[o + 2] + (fb - s[o + 2]) * fade; d[t + 3] = 255
-    }
-  }
-}
-
-/** The road's ground on one row: the sea and the beach on the left, the kerbs, the road with its lanes, the bushes on the right. */
-function groundRow(d: Uint8ClampedArray, W: number, y: number, c: number, h: number, band: number, frame: number): void {
-  const kerb = h * RACING_KERB, shore = h * (RACING_KERB + BEACH)
-  const edge = Math.max(1, h * 0.028), lane = Math.max(1, h * 0.022)
-  const put = (x: number, rgb: RGB) => { const t = (y * W + x) * 4; d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255 }
-  for (let x = 0; x < W; x += 1) {
-    const dx = x + 0.5 - c, ad = Math.abs(dx)
-    if (ad < h) put(x, Math.abs(ad - (h - edge * 2.2)) < edge / 2 ? C.line : band && Math.abs(ad - h / 3) < lane / 2 ? C.line : C.tar[band])
-    else if (ad < kerb) put(x, C.kerb[band])
-    else if (dx < 0 && dx > -shore) put(x, C.sand[band])
-    else if (dx < 0) { const g = grain(x, y + ((frame >> 3) & 63) * 7); put(x, g > 0.986 ? C.glint : C.sea[y % 4 === 0 ? 1 : g > 0.72 ? 2 : 0]) }
-    else put(x, C.bush[band])
-  }
-}
-
-/** A piece of rail between two ends on the screen (its bar's top and bottom at each), no pixel at or under `clip`. */
-function railPiece(buffer: PixelBuffer, xa: number, ta: number, ba: number, xb: number, tb: number, bb: number, clip: number): void {
-  const from = Math.round(Math.min(xa, xb)), to = Math.round(Math.max(xa, xb))
-  for (let x = from; x <= to; x += 1) {
-    const t = to === from ? 0 : (x - xa) / (xb - xa)
-    const top = Math.round(ta + (tb - ta) * t), bot = Math.max(top + 1, Math.round(ba + (bb - ba) * t))
-    for (let y = top; y < Math.min(bot, clip); y += 1) buffer.set(x, y, y === top ? RAIL_TOP : RAIL)
-  }
-}
-
-/** A gantry across the road on the screen: two posts, a beam; the start's with its three lights, the finish's chequered. */
-function gantry(buffer: PixelBuffer, p: { x: number; y: number; s: number }, K: number, clip: number, finish: boolean, lit: number): void {
-  const u = p.s * K, xl = p.x - GANTRY_X * u, xr = p.x + GANTRY_X * u
-  const top = p.y - GANTRY_HIGH * u, beam = Math.max(2, Math.round(0.34 * u)), post = Math.max(1, Math.round(0.08 * u))
-  const bottom = Math.min(clip, buffer.height)
-  const fill = (x0: number, y0: number, w: number, h: number, color: string) => { for (let y = Math.max(0, Math.round(y0)); y < Math.min(bottom, Math.round(y0 + h)); y += 1) for (let x = Math.round(x0); x < Math.round(x0 + w); x += 1) buffer.set(x, y, color) }
-  fill(xl - post / 2, top, post, p.y - top, '#3a3450')
-  fill(xr - post / 2, top, post, p.y - top, '#3a3450')
-  if (finish) {
-    // the chequered banner
-    const sq = Math.max(1, Math.round(beam / 2))
-    for (let y = Math.round(top); y < Math.min(bottom, Math.round(top + beam)); y += 1) for (let x = Math.round(xl); x < Math.round(xr); x += 1) {
-      if (y < 0) continue
-      buffer.set(x, y, (Math.floor((x - xl) / sq) + Math.floor((y - top) / sq)) % 2 ? CREAM : '#1a1a22')
-    }
-  } else {
-    fill(xl, top, xr - xl, beam, '#1c1a2e')
-    // three lights: red one by one, then all green
-    const r = Math.max(1, beam * 0.32)
-    for (let k = 0; k < 3; k += 1) {
-      const cx = p.x + (k - 1) * beam * 1.2, cy = top + beam / 2
-      if (cy + r >= bottom) continue
-      buffer.disc(cx, cy, r, lit >= 3 ? '#3aff6a' : k <= lit ? '#ff3a2a' : '#4a2a2a')
-    }
-  }
-}
-
-/** A rival where it stands, small with the distance, bouncing a little. */
-function rival(board: PixelBuffer, rows: Projected[], b0: number, r: RacingState['rivals'][number], K: number, frame: number): void {
-  const at = placeOn(rows, b0, r.z, r.x, K)
-  if (!at) return
-  const bob = r.speed > 0.05 && (frame >> 2) % 2 ? 1 : 0
-  drawCar(board, r.kind, at.x, at.y - bob, RACING_CAR_WIDTH * at.s * K, at.clip)
-}
-
-/** Where a car or a thing at `z` (stretches) and `x` (half widths) stands on the screen, from the stretches drawn; null when out of sight. */
-function placeOn(rows: Projected[], b0: number, z: number, x: number, K: number): { x: number; y: number; s: number; clip: number } | null {
-  const n = Math.floor(z) - b0
-  const p = rows[n]
-  if (!p) return null
-  const t = z - Math.floor(z)
-  const s = p.s1 + (p.s2 - p.s1) * t
-  const cx = p.x1 + (p.x2 - p.x1) * t, cy = p.y1 + (p.y2 - p.y1) * t
-  return { x: cx + x * s * K, y: cy, s, clip: p.clip }
-}
+/** A stretch on the screen: its near and far ends (middle, row, pixels to a half width), the row under which nearer ground hides it, its haze. */
+type Projected = { i: number; seg: RacingSegment; a: End; b: End; clip: number; behind: boolean; fog: number; zNear: number; other: Beside; otherFar: Beside }
 
 // ---------------------------------------------------------------- the controls
 
-/** The controls under (or beside) the board on a touch screen: the arrows left and right, A (gas) and B (brake). */
-export type RacingPad = { zone: Hit; left: Hit; right: Hit; gas: { cx: number; cy: number; r: number }; brake: { cx: number; cy: number; r: number } }
+/** The controls under (or beside) the board on a touch screen: the arrows left and right, A (gas), B (brake) and T (the turbo). */
+export type RacingPad = { zone: Hit; left: Hit; right: Hit; gas: { cx: number; cy: number; r: number }; brake: { cx: number; cy: number; r: number }; nitro: { cx: number; cy: number; r: number } }
 export function racingPadGeometry(layout: Layout, pad: Pad): RacingPad | null {
   if (pad === 'none') return null
   const { width, height } = playSize(layout, pad)
   const board = RACING_BOARD[layout]
   if (pad === 'side') {
     const x = board.width, a = 56, r = 30
-    return { zone: { x, y: HUD_HEIGHT, w: width - x, h: height - HUD_HEIGHT }, left: { x: x + 14, y: height - 24 - a, w: a, h: a }, right: { x: x + 24 + a, y: height - 24 - a, w: a, h: a }, gas: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 70, r }, brake: { cx: x + (width - x) / 2 - 30, cy: HUD_HEIGHT + 150, r } }
+    return { zone: { x, y: HUD_HEIGHT, w: width - x, h: height - HUD_HEIGHT }, left: { x: x + 14, y: height - 24 - a, w: a, h: a }, right: { x: x + 24 + a, y: height - 24 - a, w: a, h: a }, gas: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 70, r }, brake: { cx: x + (width - x) / 2 - 30, cy: HUD_HEIGHT + 150, r }, nitro: { cx: x + (width - x) / 2 + 30, cy: HUD_HEIGHT + 150, r: 17 } }
   }
   const y = HUD_HEIGHT + board.height, h = height - y
   const left = { x: 14, y: y + (h - (pad === 'big' ? 68 : 60)) / 2, w: pad === 'big' ? 68 : 60, h: pad === 'big' ? 68 : 60 }
   const right = { ...left, x: left.x + left.w + 10 }
   // B a little lower and further in, A further out and higher, as a thumb rests; in the tall band, one over the other's shoulder
   if (pad === 'big') {
-    const r = 34, gas = { cx: width - 16 - r, cy: y + h * 0.33, r }
-    return { zone: { x: 0, y, w: width, h }, left, right, gas, brake: { cx: gas.cx - r * 2 - 4, cy: y + h * 0.68, r } }
+    const r = 34, gas = { cx: width - 16 - r, cy: y + h * 0.33, r }, brake = { cx: gas.cx - r * 2 - 4, cy: y + h * 0.68, r }
+    return { zone: { x: 0, y, w: width, h }, left, right, gas, brake, nitro: { cx: brake.cx - 8, cy: y + h * 0.22, r: 22 } }
   }
   const r = 27
-  return { zone: { x: 0, y, w: width, h }, left, right, gas: { cx: width - 14 - r, cy: y + h / 2 - r * 0.35, r }, brake: { cx: width - 14 - r * 3.3, cy: y + h / 2 + r * 0.35, r } }
+  return { zone: { x: 0, y, w: width, h }, left, right, gas: { cx: width - 14 - r, cy: y + h / 2 - r * 0.35, r }, brake: { cx: width - 14 - r * 3.2, cy: y + h / 2 + r * 0.35, r }, nitro: { cx: right.x + right.w + 22 + 2, cy: y + h / 2 - 4, r: 14 } }
 }
 /** Which control a finger at (`x`, `y`) means: anywhere in their band counts, the nearest wins. */
-export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'right' | 'gas' | 'brake' | null {
+export function racingPadPart(x: number, y: number, pad: RacingPad): 'left' | 'right' | 'gas' | 'brake' | 'nitro' | null {
   const { zone } = pad
   if (x < zone.x || y < zone.y || x >= zone.x + zone.w || y >= zone.y + zone.h) return null
   const d = (cx: number, cy: number) => Math.hypot(x - cx, y - cy)
-  const parts: Array<['left' | 'right' | 'gas' | 'brake', number]> = [
+  const parts: Array<['left' | 'right' | 'gas' | 'brake' | 'nitro', number]> = [
     ['left', d(pad.left.x + pad.left.w / 2, pad.left.y + pad.left.h / 2)],
     ['right', d(pad.right.x + pad.right.w / 2, pad.right.y + pad.right.h / 2)],
     ['gas', d(pad.gas.cx, pad.gas.cy) - pad.gas.r * 0.3],
     ['brake', d(pad.brake.cx, pad.brake.cy) - pad.brake.r * 0.3],
+    ['nitro', d(pad.nitro.cx, pad.nitro.cy) - pad.nitro.r * 0.3],
   ]
   return parts.sort((a, b) => a[1] - b[1])[0][0]
 }
 
-function arrowButton(buffer: PixelBuffer, h: Hit, dir: -1 | 1, pressed: boolean, accent: string): void {
-  const x = Math.round(h.x), y = Math.round(h.y), w = h.w, push = pressed ? 2 : 0
-  buffer.rect(x + 1, y + 4, w, w, INK)
-  buffer.rect(x, y + push, w, w - push, pressed ? dim(accent, 0.55) : '#262a3c')
-  buffer.rect(x, y + push, w, 1, pressed ? mix(accent, '#ffffff', 0.2) : '#3c4260')
-  buffer.rect(x, y + push, 1, w - push, pressed ? accent : '#343a54')
-  buffer.rect(x + w - 1, y + push, 1, w - push, '#161826')
-  buffer.rect(x, y + w - 1, w, 1, '#161826')
-  const cx = x + w / 2, cy = y + w / 2 + push, s = Math.round(w * 0.2)
-  for (let i = 0; i <= s; i += 1) buffer.rect(Math.round(cx - dir * (s / 2) + dir * i) - (dir < 0 ? 1 : 0), Math.round(cy - (s - i)), 2, (s - i) * 2 + 1, CREAM)
-}
-function roundButton(buffer: PixelBuffer, b: { cx: number; cy: number; r: number }, label: string, color: string, pressed: boolean): void {
-  const push = pressed ? 2 : 0
-  buffer.disc(b.cx + 1, b.cy + 4, b.r, INK)
-  buffer.disc(b.cx, b.cy + push, b.r, dim(color, 0.5))
-  buffer.disc(b.cx - 1, b.cy - 1 + push, b.r - 3, pressed ? mix(color, '#ffffff', 0.25) : color)
-  buffer.disc(b.cx - b.r * 0.3, b.cy - b.r * 0.35 + push, b.r * 0.28, mix(color, '#ffffff', 0.45))
-  const scale = b.r >= 26 ? 2 : 1, w = text7Width(label, scale, true)
-  drawText7(buffer, label, Math.round(b.cx - w / 2) + 1, Math.round(b.cy - 3.5 * scale) + push + 1, INK, scale, true)
-  drawText7(buffer, label, Math.round(b.cx - w / 2), Math.round(b.cy - 3.5 * scale) + push, CREAM, scale, true)
-}
-/** The controls, the ones held pressed down. */
-function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: RacingView['pressed'] = {}): void {
-  arrowButton(buffer, pad.left, -1, !!pressed.left, accent)
-  arrowButton(buffer, pad.right, 1, !!pressed.right, accent)
-  roundButton(buffer, pad.brake, 'B', '#3a7aff', !!pressed.brake)
-  roundButton(buffer, pad.gas, 'A', '#2ac05a', !!pressed.gas)
+/**
+ * The controls, flat (`flat-controls.ts`), the ones held lighter: the arrows
+ * round in the theme's colour; A, the gas, cream; B, the brake, a darker
+ * shade of the theme's colour; T, the turbo, cream once it can go (dull
+ * below), its gauge round it in the theme's colour, filling clockwise from
+ * the top.
+ */
+function drawPad(buffer: PixelBuffer, pad: RacingPad, accent: string, pressed: RacingView['pressed'] = {}, boost = 0): void {
+  const l = pad.left, r = pad.right
+  // (a little inside their squares, clear of the keys beside them)
+  arrowKey(buffer, l.x + l.w / 2, l.y + l.h / 2, l.w / 2 - 2, 'left', accent, !!pressed.left)
+  arrowKey(buffer, r.x + r.w / 2, r.y + r.h / 2, r.w / 2 - 2, 'right', accent, !!pressed.right)
+  actionKey(buffer, pad.brake.cx, pad.brake.cy, pad.brake.r, 'B', accent, 'other', !!pressed.brake)
+  actionKey(buffer, pad.gas.cx, pad.gas.cy, pad.gas.r, 'A', accent, 'main', !!pressed.gas)
+  const n = pad.nitro
+  flatRing(buffer, n.cx, n.cy, n.r + 5, 3, '#34343c')
+  flatRing(buffer, n.cx, n.cy, n.r + 5, 3, boost >= 1 ? mix(accent, '#ffffff', 0.35) : accent, boost)
+  actionKey(buffer, n.cx, n.cy, n.r, 'T', accent, boost >= 0.3 ? 'main' : 'off', !!pressed.nitro)
 }
 
 // ---------------------------------------------------------------- the bar and the words
 
 const ordinal = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`
 
-/** The bar on top: TIME counting down (red in its last ten seconds), SCORE, the level and how far along it, the place. */
+/** The bar on top: TIME counting down (red in its last ten seconds), SCORE, the level and how far along it (its checkpoints marked), the place. */
 function racingHud(buffer: PixelBuffer, accent: string, s: RacingState): void {
   const W = buffer.width
-  buffer.rect(0, 0, W, HUD_HEIGHT, '#07070e')
+  const [r, g, b] = rgbOf('#07070e'), d = buffer.data
+  for (let t = 0; t < W * HUD_HEIGHT * 4; t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
   buffer.rect(0, HUD_HEIGHT - 1, W, 1, dim(accent, 0.55))
   const secs = Math.ceil(s.time / 60), late = s.phase === 'play' && secs <= 10
   drawText(buffer, 'TIME', 8, 3, GREY)
@@ -284,11 +161,12 @@ function racingHud(buffer: PixelBuffer, accent: string, s: RacingState): void {
   const sx = Math.round(W * 0.2)
   drawText(buffer, 'SCORE', sx, 3, GREY)
   drawText7(buffer, score, sx, 11, CREAM, 1, true)
-  // the level: a line from the start to the finish, the car's dot on it
+  // the level: a line from the start to the finish, its checkpoints, the car's dot on it
   const bx = Math.round(W * 0.47), bw = Math.round(W * 0.28), progress = Math.max(0, Math.min(1, s.z / s.finish))
   drawText(buffer, `LEVEL ${String(s.level).padStart(2, '0')}`, bx, 3, GREY)
   buffer.rect(bx, 14, bw, 3, '#2a2a3a')
   buffer.rect(bx, 14, Math.round(bw * progress), 3, accent)
+  for (const c of s.checks) buffer.rect(bx + Math.round((bw * c) / s.finish), 12, 1, 7, GREY)
   buffer.rect(bx + bw - 2, 11, 3, 9, CREAM)
   buffer.disc(bx + bw * progress, 15.5, 2.5, CREAM)
   const pl = `${s.place}/${s.rivals.length + 1}`
@@ -308,7 +186,7 @@ function said(buffer: PixelBuffer, text: string, cx: number, y: number, color: s
 const surfaces = new Map<string, PixelBuffer>()
 
 /** What the play screen shows over the race: the pause card (RESUME 0, QUIT 1), or RESUME alone; where the controls go; which of them are held. */
-export type RacingView = { pause?: 0 | 1 | null; pad?: Pad; resumeOnly?: boolean; pressed?: { left?: boolean; right?: boolean; gas?: boolean; brake?: boolean } }
+export type RacingView = { pause?: 0 | 1 | null; pad?: Pad; resumeOnly?: boolean; pressed?: { left?: boolean; right?: boolean; gas?: boolean; brake?: boolean; nitro?: boolean } }
 
 export function renderRacingGame(s: RacingState, accent: string, view: RacingView = {}): PixelBuffer {
   const layout = s.layout
@@ -318,19 +196,39 @@ export function renderRacingGame(s: RacingState, accent: string, view: RacingVie
   let out = surfaces.get(key)
   if (!out) { out = new PixelBuffer(size.width, size.height, INK); surfaces.set(key, out) }
   const { width: W, height: H } = RACING_BOARD[layout]
-  const v = VIEW[layout], K = W / 2
   const board = boardSurface(layout)
-  drawRace(board, s, v, K)
-  // the board under the bar, the controls beside or under it
-  out.clear(INK)
-  for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width) * 4)
+  drawRace(board, s, VIEW[layout], W / 2, accent)
+  // the board under the bar, the controls beside or under it (their band cleared first)
+  for (let y = 0; y < H; y += 1) out.data.set(board.data.subarray(y * W * 4, (y + 1) * W * 4), ((HUD_HEIGHT + y) * out.width + 0) * 4)
   const controls = racingPadGeometry(layout, pad)
-  if (controls) drawPad(out, controls, accent, view.pressed)
+  if (controls) controlsOn(out, layout, pad, controls, accent, view.pressed ?? {}, W, H, s.boost)
   racingHud(out, accent, s)
   words(out, s, accent, W, H)
   if (s.phase === 'won' && s.single) playCard(out, layout, accent, 'LEVEL CLEAR', [])
   else if (view.pause != null) playCard(out, layout, accent, 'PAUSED', view.resumeOnly ? ['RESUME'] : ['RESUME', 'QUIT'], view.resumeOnly ? 0 : view.pause)
   return out
+}
+
+/** The controls' band as last drawn, kept while no button changes. */
+const bands = new Map<string, { key: string; rows: Array<[number, Uint8ClampedArray]> }>()
+/** The controls' band: cleared to ink and the buttons drawn, or as kept from before. */
+function controlsOn(out: PixelBuffer, layout: Layout, pad: Pad, controls: RacingPad, accent: string, pressed: NonNullable<RacingView['pressed']>, W: number, H: number, boost: number): void {
+  const area = out.width > W ? { x: W, y: HUD_HEIGHT, w: out.width - W, h: out.height - HUD_HEIGHT } : { x: 0, y: HUD_HEIGHT + H, w: out.width, h: out.height - HUD_HEIGHT - H }
+  const gauge = Math.floor(boost * 24) / 24
+  const key = `${accent}|${pressed.left ? 1 : 0}${pressed.right ? 1 : 0}${pressed.gas ? 1 : 0}${pressed.brake ? 1 : 0}${pressed.nitro ? 1 : 0}|${gauge}`, where = `${layout}|${pad}`
+  const kept = bands.get(where)
+  if (kept && kept.key === key) { for (const [o, row] of kept.rows) out.data.set(row, o); return }
+  inkOver(out, area.x, area.y, area.w, area.h)
+  drawPad(out, controls, accent, pressed, gauge)
+  const rows: Array<[number, Uint8ClampedArray]> = []
+  for (let y = area.y; y < area.y + area.h; y += 1) { const o = (y * out.width + area.x) * 4; rows.push([o, out.data.slice(o, o + area.w * 4)]) }
+  bands.set(where, { key, rows })
+}
+
+/** A rectangle of the screen filled with ink, a row at a time. */
+function inkOver(out: PixelBuffer, x: number, y: number, w: number, h: number): void {
+  const [r, g, b] = rgbOf(INK), d = out.data
+  for (let yy = y; yy < y + h; yy += 1) for (let xx = x, t = (yy * out.width + x) * 4; xx < x + w; xx += 1, t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
 }
 
 const boards = new Map<Layout, PixelBuffer>()
@@ -340,127 +238,1012 @@ function boardSurface(layout: Layout): PixelBuffer {
   return b
 }
 
-/** The race on the board: the far view, the road and what stands by it, the rivals, the player's car. */
-function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot: number; half: number }, K: number): void {
+/** The far view as last drawn on each board, kept while it has neither slid nor moved up or down, nor the hour changed. */
+const skies = new Map<number, { key: string; data: Uint8ClampedArray }>()
+/** The far view at the hour, its sun as low as the hour has it, its foot on the horizon, slid as the road has turned; over a tall board the sky carried up, darkening; mirrored past its edges. */
+function farView(board: PixelBuffer, tier: Tier, sinking: number, horizon: number, slide: number, world: RacingWorld): void {
+  const back = skyAt(tier, sinking), W = board.width, d = board.data
+  const rows = Math.max(0, Math.min(horizon, board.height))
+  if (!back) { for (let y = 0; y < rows; y += 1) board.rect(0, y, W, 1, mix('#1a0a34', '#ff7a5a', (y / horizon) ** 1.5)); return }
+  const bw = back.width, top = horizon - back.height
+  const shift = Math.round((W - bw) / 2 + slide)
+  const key = `${world}|${Math.round(tier * 8)}|${Math.round(sinking * 60)}|${shift}|${horizon}`, kept = skies.get(W)
+  if (kept && kept.key === key) { d.set(kept.data.subarray(0, rows * W * 4)); return }
+  const s = back.data, s0 = s
+  const column = new Int32Array(W)
+  for (let x = 0; x < W; x += 1) { let u = (x - shift) % (bw * 2); if (u < 0) u += bw * 2; column[x] = u < bw ? u : bw * 2 - 1 - u }
+  // the sky carried up: the coast's deep violet, the others' own sky deeper
+  let [fr, fg, fb] = rgbOf(tier >= 2 ? '#05050f' : '#1a0a34')
+  if (world !== 'coast') { let r = 0, g = 0, b = 0; for (let x = 0; x < bw; x += 1) { r += s0[x * 4]; g += s0[x * 4 + 1]; b += s0[x * 4 + 2] } fr = (r / bw) * 0.62; fg = (g / bw) * 0.62; fb = (b / bw) * 0.7 }
+  for (let y = 0; y < rows; y += 1) {
+    const py = Math.max(0, y - top), fade = y < top ? ((top - y) / Math.max(1, top)) ** 1.2 : 0
+    for (let x = 0; x < W; x += 1) {
+      const o = (py * bw + column[x]) * 4, t = (y * W + x) * 4
+      d[t] = s[o] + (fr - s[o]) * fade; d[t + 1] = s[o + 1] + (fg - s[o + 1]) * fade; d[t + 2] = s[o + 2] + (fb - s[o + 2]) * fade; d[t + 3] = 255
+    }
+  }
+  skies.set(W, { key, data: d.slice(0, rows * W * 4) })
+}
+
+/** The things to draw on each stretch ahead: what lies on the road, the rivals and the traffic ahead of the player. */
+type Cargo = { items: RacingItem[]; cars: Array<{ kind: RacingCarKind | RacingTrafficModel; traffic: boolean; z: number; x: number; turn: -1 | 0 | 1; look: number; speed: number; boost?: boolean; pose: number }> }
+
+/** Which way a car turns on the screen: toward the lane it is heading for, else with a sharp bend. */
+const turnOf = (lane: number, x: number, curve: number): -1 | 0 | 1 => (Math.abs(lane - x) > 0.04 ? (lane > x ? 1 : -1) : Math.abs(curve) > 2.5 ? (curve > 0 ? 1 : -1) : 0)
+
+/** The race on the board: the far view, the road and what stands by it and lies on it, the cars, the player's car, the weather. */
+function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot: number; half: number }, K: number, accent: string): void {
   const W = board.width, H = board.height, d = board.data, frame = s.steps
+  // the hour as the race goes on: the sun sinking, the dusk, the night; the storm
+  const world = s.world
+  sceneWorld(world)
+  // the next level's world's pictures asked for now, so they are in when it comes
+  const next = s.worlds[Math.min(s.worlds.length - 1, s.level)]
+  for (const name of WORLD_ART[next]) racingArt(name)
+  const tier: Tier = racingHour(s.level, s.z / Math.max(1, s.finish)), sinking = world === 'coast' ? racingSunset(tier) : 0
   const camH = (v.foot - v.horizon) / v.half
   const back = (K / v.half) / RACING_SEGMENT
   const camZ = s.z - back
   const camY = heightAt(s.track, Math.max(0, s.z)) + camH
-  farView(board, racingArt('playBack'), W, v.horizon, -s.view)
-  // under the horizon, the sea out to it, where no road is drawn
-  for (let y = v.horizon; y < H; y += 1) for (let x = 0; x < W; x += 1) {
-    const g = grain(x, y + ((frame >> 3) & 63) * 7), rgb = g > 0.99 ? C.glint : C.sea[y % 4 === 0 ? 1 : g > 0.72 ? 2 : 0]
-    const t = (y * W + x) * 4
-    d[t] = rgb[0]; d[t + 1] = rgb[1]; d[t + 2] = rgb[2]; d[t + 3] = 255
-  }
-  // the road, nearest first, each stretch only where nearer ground has not been drawn
+  // the eye follows the road's slope a little: up a hill the horizon sinks, down one it rises
+  const slope = (heightAt(s.track, s.z + 8) - heightAt(s.track, Math.max(0, s.z - 2))) / (10 * RACING_SEGMENT)
+  const horizon = Math.round(v.horizon + Math.max(-34, Math.min(34, slope * K * 0.3)))
+  const here = segmentOf(s.track, Math.max(0, s.z)).zone
+  // the stretches ahead, nearest first: each drawn only where nearer ground has not been
   const b0 = Math.floor(camZ)
-  const seg = (i: number) => (i < 0 ? FLAT : segmentOf(s.track, i))
-  const frac = camZ - b0
-  let x = 0, dx = -seg(b0).curve * RACING_BEND * frac
-  let maxY = H
+  const flat = FLAT.zone === s.track[0].zone ? FLAT : { ...FLAT, zone: s.track[0].zone }
+  const seg = (i: number) => (i < 0 ? flat : segmentOf(s.track, i))
+  let x = 0, dx = -seg(b0).curve * RACING_BEND * (camZ - b0)
+  let maxY = H, farX = W / 2, farZone: RacingZone = here
   const rows: Projected[] = []
+  const project = (zw: number, xw: number, yw: number): End => { const sc = 1 / zw; return { x: W / 2 + sc * (xw - s.x) * K, y: horizon + sc * (camY - yw) * K, u: sc * K } }
+  const pending: Array<() => void> = []
   for (let n = 0; n < DRAW; n += 1) {
     const i = b0 + n, g = seg(i)
     const z1 = Math.max(NEAR, (i - camZ) * RACING_SEGMENT), z2 = (i + 1 - camZ) * RACING_SEGMENT
-    const y1w = i < 0 ? 0 : g.y1, y2w = i < 0 ? 0 : g.y2
-    const s1 = 1 / z1, s2 = 1 / Math.max(NEAR, z2)
-    const p: Projected = {
-      i, seg: g, clip: maxY, behind: z2 <= NEAR,
-      x1: W / 2 + s1 * (x - s.x) * K, y1: v.horizon + s1 * (camY - y1w) * K, w1: s1 * K, s1,
-      x2: W / 2 + s2 * (x + dx - s.x) * K, y2: v.horizon + s2 * (camY - y2w) * K, w2: s2 * K, s2,
-    }
+    const a = project(z1, x, i < 0 ? 0 : g.y1), b = project(Math.max(NEAR, z2), x + dx, i < 0 ? 0 : g.y2)
+    // the other road, on its side, where it can be seen: where it is at this stretch's near end and at its far end
+    const other = g.zone === 'tunnel' ? NOT_BESIDE : besideRoad(s, i), otherFar = g.zone === 'tunnel' ? NOT_BESIDE : besideRoad(s, i + 1)
+    const p: Projected = { i, seg: g, a, b, clip: maxY, behind: z2 <= NEAR, fog: fogStep(z1, FAR), zNear: z1, other, otherFar }
     rows.push(p)
     x += dx
     dx += g.curve * RACING_BEND
-    if (p.behind || p.y2 >= maxY || p.y2 >= p.y1) continue
-    const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1
-    const top = Math.max(0, Math.ceil(p.y2 - 0.5)), bottom = Math.min(maxY, Math.ceil(p.y1 - 0.5))
-    for (let y = top; y < bottom; y += 1) {
-      const t = (y + 0.5 - p.y2) / (p.y1 - p.y2)
-      groundRow(d, W, y, p.x2 + (p.x1 - p.x2) * t, p.w2 + (p.w1 - p.w2) * t, band, frame)
-    }
+    if (p.behind || b.y >= maxY || b.y >= a.y) continue
+    const top = Math.max(0, Math.ceil(b.y - 0.5)), bottom = Math.min(maxY, Math.ceil(a.y - 0.5))
+    const band = Math.floor((i < 0 ? i - 2 : i) / 3) & 1, wave = ((i >> 2) + (frame >> 4)) & 1
+    const { joined, gore } = other
+    // row by row from one end of the stretch to the other, where it is seen at both; how far along the road each row is (in half widths): the striped triangle's stripes lie on the ground
+    const both = other.off && otherFar.off
+    pending.push(() => { for (let y = top; y < bottom; y += 1) { const t = (y + 0.5 - b.y) / (a.y - b.y), h = b.u + (a.u - b.u) * t, ghost = both ? otherFar.off + (other.off - otherFar.off) * t : other.off, out = both ? otherFar.out + (other.out - otherFar.out) * t : other.out; groundRow(d, W, y, { c: b.x + (a.x - b.x) * t, h, band, zone: g.zone, fog: p.fog, wave, land: true, ghost, joined, gore, out, along: camZ * RACING_SEGMENT + K / h }, tier, frame) } })
     maxY = Math.min(maxY, top)
+    // (the left-hand of the two roads' far end, where there are two: the water on that side the same whichever road the car is on)
+    farX = Math.min(b.x, b.x + (otherFar.off || other.off) * b.u); farZone = g.zone
   }
-  // what stands by the road and the rivals ahead of the player, furthest first, each hidden by the ground in front of it
-  const rivals = s.rivals.filter((r) => r.z >= s.z).sort((a, b) => b.z - a.z)
-  const close = s.rivals.filter((r) => r.z < s.z).sort((a, b) => b.z - a.z)
-  let ri = 0
+  // under the horizon where no road reaches: the sea, the land on the land's side of the road's far end
+  // the far view stands on the horizon — or, up a hill, on its crest: the landscape always behind the road's top, never sky alone
+  const backdrop = Math.max(8, Math.min(horizon, maxY + 2))
+  farView(board, tier, sinking, backdrop, -s.view, world)
+  sky(board, frame, backdrop, tier, accent, world)
+  farGround(d, W, Math.max(0, horizon), Math.max(0, Math.min(H, maxY)), Math.round(farX + 6), farZone, tier, frame)
+  for (const draw of pending) draw()
+  // in the tunnel, its dark
+  if (here === 'tunnel') for (let i = 0; i < d.length; i += 4) { d[i] *= 0.62; d[i + 1] *= 0.62; d[i + 2] *= 0.66 }
+  // what lies on each stretch and the cars on it, ahead of the player
+  const cargo: Cargo[] = rows.map(() => ({ items: [], cars: [] }))
+  for (const it of s.items) { if (it.taken) continue; const n = Math.floor(it.z) - b0; if (n >= 0 && n < rows.length) cargo[n].items.push(it) }
+  // a car on the other road of the two: on it, where it is seen (and not at all where it is not)
+  const across = (c: { z: number; x: number; elsewhere?: boolean }): number | null => { if (!c.elsewhere) return c.x; const off = racingOtherRoad(s, Math.floor(c.z)).off; return off ? c.x + off : null }
+  for (const r of s.rivals) { const n = Math.floor(r.z) - b0, x = across(r); if (x != null && n >= 0 && n < rows.length && r.z >= s.z) cargo[n].cars.push({ kind: r.kind, traffic: false, look: 0, z: r.z, x, speed: r.speed, boost: r.turbo > 0, turn: turnOf(r.lane, r.x, segmentOf(s.track, r.z).curve), pose: spinPose(r.spin, RACING_CAR_SPIN_STEPS, r.spinWay) }) }
+  for (const t of s.traffic) { const n = Math.floor(t.z) - b0, x = across(t); if (x != null && n >= 0 && n < rows.length && t.z >= s.z) cargo[n].cars.push({ kind: t.kind, traffic: true, z: t.z, x, speed: t.speed, look: t.look, turn: turnOf(t.lane, t.x, segmentOf(s.track, t.z).curve), pose: spinPose(t.spin, RACING_CAR_SPIN_STEPS, t.spinWay) }) }
+  // the lights on after sunset; in the city, always: it is lit up from the start
+  const lit = world === 'city' || tier >= 0.55
+  const night = world === 'city' || tier >= 1.4
+  // furthest first: the tunnel, the barriers, what lies on the road, what stands by it, the gantries, the cars
   for (let n = rows.length - 1; n >= 0; n -= 1) {
     const p = rows[n]
     if (p.clip <= 0 || p.behind) continue
-    const i = p.i
-    // the rails along both sides, a post every fourth stretch
-    for (const side of [-1, 1]) {
-      const xa = p.x1 + side * RACING_RAIL * p.w1, xb = p.x2 + side * RACING_RAIL * p.w2
-      const ta = p.y1 - RAIL_HIGH * p.w1, tb = p.y2 - RAIL_HIGH * p.w2
-      railPiece(board, xa, ta, ta + Math.max(1, RAIL_BAR * p.w1), xb, tb, tb + Math.max(1, RAIL_BAR * p.w2), p.clip)
-      if (i % 4 === 0) { const pw = Math.max(1, Math.round(0.05 * p.w1)); for (let y = Math.round(ta); y < Math.min(p.clip, Math.round(p.y1)); y += 1) for (let k = 0; k < pw; k += 1) board.set(Math.round(xa) + k, y, POST) }
+    const { i, a, b, seg: g, clip, fog, other, otherFar } = p
+    if (g.zone === 'tunnel') {
+      tunnelPiece(board, a, b, i, clip, tier, fog)
+    } else {
+      // the rails and the blocks; beside the other road, its own too: past its far edge (the only one on that side where the two are joined or
+      // the striped ground lies between them), then one halfway between the two while they are close, each road's own once they are further
+      // apart — the same rails in the same places whichever road the car is on
+      const [left, right] = FENCES[g.zone]
+      const railAt = (kind: typeof rail | null, xa: number, xb: number, face: -1 | 1) => { if (kind) kind(board, { ...a, x: a.x + (xa - face * RAIL_STANDS) * a.u }, { ...b, x: b.x + (xb - face * RAIL_STANDS) * b.u }, face, i, clip, tier, fog) }
+      if (!other.off) { railAt(left, -RAIL_STANDS, -RAIL_STANDS, -1); railAt(right, RAIL_STANDS, RAIL_STANDS, 1) }
+      else {
+        const side = other.off < 0 ? -1 : 1, near = side < 0 ? left : right, away = side < 0 ? right : left, far = otherFar.off || other.off
+        railAt(away, -side * RAIL_STANDS, -side * RAIL_STANDS, side < 0 ? 1 : -1)
+        railAt(near, other.off + side * RAIL_STANDS, far + side * RAIL_STANDS, side)
+        if (!other.joined && !other.gore) {
+          if (Math.abs(other.off) - FORK_BESIDE <= RAILS_SPLIT) railAt(left ?? right, other.off / 2, far / 2, 1)
+          else { railAt(near, side * RAIL_STANDS, side * RAIL_STANDS, side); railAt(away, other.off - side * RAIL_STANDS, far - side * RAIL_STANDS, side < 0 ? 1 : -1) }
+        }
+      }
+      if (seg(i + 1).zone === 'tunnel' && i >= 0) tunnelMouth(board, b, clip, tier, fog)
     }
-    for (const thing of p.seg.things) {
-      const u = p.w1, foot = p.y1, cx = p.x1 + thing.x * u
-      const pic = racingArt(thing.kind === 'palm' ? 'palm' : 'chevron')
-      if (!pic) continue
-      const h = (thing.kind === 'palm' ? PALM_HIGH : CHEVRON_HIGH) * u, w = (pic.width * h) / pic.height
-      if (h < 2) continue
-      drawArt(board, pic, cx - w / 2, foot - h, w, h, p.clip, thing.flip)
+    // the shops along the road: their fronts going by, their sides at their near ends, what stands on their roofs, their lights after dark
+    // (none on the side of the other road while it is close)
+    const close = Math.abs(other.off) > 0 && Math.abs(other.off) - FORK_BESIDE < 6
+    if (g.shop && !(close && other.off > 0)) shopPiece(board, p, g.shop, i, lit, tier, 1, camH)
+    if (g.shopL && !(close && other.off < 0)) shopPiece(board, p, g.shopL, i, lit, tier, -1, camH)
+    // the world's own air over the road: the mountain's banks of mist, the city's steam out of the drains, the desert's dust blown across —
+    // none where the two roads run joined or alike, or taking one would move it onto the other
+    const alike = !!s.fork && i >= s.fork.at - FORK_ALONGSIDE - FORK_TAPER && i < s.fork.at + FORK_PART
+    if (world === 'mountain' && !alike && misty(g.zone, i) && i % 4 === 0 && a.u < 90) glow(board, a.x, a.y - a.u * 0.15, a.u * 2.6, mistOf(tier), 0.2, clip, 0.22)
+    if (world === 'city' && !alike && (g.zone === 'avenue' || g.zone === 'downtown') && i % STEAM_EVERY === 17) steam(board, place(p, i + 0.5, (((i * 7) % 3) - 1) * 0.64), i, frame, clip)
+    if (world === 'desert' && !alike && (g.zone === 'dunes' || g.zone === 'canyon' || g.zone === 'mesa') && i % GUST_EVERY === 46) gust(board, p, i, frame, clip)
+    for (const it of cargo[n].items) {
+      // on the road the left-hand one came out of, once that one is taken: on that road
+      const at = place(p, it.z, s.fork && s.forkPick === 0 && it.z < s.fork.at ? it.x + racingOtherRoad(s, Math.floor(it.z)).off : it.x)
+      if (it.kind === 'puddle') puddle(board, at.x, at.y, at.u, clip, tier, fog)
+      else if (it.kind === 'cone') cone(board, at.x, at.y, at.u, clip, tier, fog)
+      else if (it.kind === 'coin') coin(board, at.x, at.y, at.u, clip, frame, it.z)
+      else if (it.kind === 'time') stopwatch(board, at.x, at.y, at.u, clip, frame)
+      else bottle(board, at.x, at.y, at.u, clip, frame)
     }
-    // the start's gantry and the finish line's
-    if (i === RACING_START_LINE) gantry(board, { x: p.x1, y: p.y1, s: p.s1 }, K, p.clip, false, s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3)
-    if (i === s.finish) gantry(board, { x: p.x1, y: p.y1, s: p.s1 }, K, p.clip, true, 0)
-    // the rivals on this stretch
-    while (ri < rivals.length && Math.floor(rivals[ri].z) > i) ri += 1
-    while (ri < rivals.length && Math.floor(rivals[ri].z) === i) {
-      const r = rivals[ri]
-      ri += 1
-      rival(board, rows, b0, r, K, frame + ri * 5)
+    // what stands by the road, and by the other road where it is near — the same, whichever road the car is on
+    const stand = (thing: RacingThing, at: End) => {
+      const cx = at.x + thing.x * at.u
+      if (thing.kind === 'chevron') chevron(board, cx, at.y, at.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'bush') shrub(board, cx, at.y, at.u, thing.flip, clip, tier, fog)
+      else if (thing.kind === 'lamp') { if (lit && fog < 12) lampPool(board, at.x + thing.x * 0.8 * at.u, at.y, at.u, clip); lamp(board, cx, at.y, at.u, thing.flip ? -1 : 1, clip, tier, fog, lit) }
+      else if (thing.kind === 'palm') {
+        const pic = racingArt('palm')
+        if (!pic) return
+        const h = PALM_HIGH * at.u, w = (pic.width * h) / pic.height
+        if (h < 3) return
+        const { rgb, by } = tintFor(tier, fog)
+        // the crowns move in the wind, more in the storm
+        const sway = Math.sin(frame * 0.035 + i * 0.7) * h * (tier >= 3 ? 0.07 : 0.025)
+        drawArt(board, pic, cx - w / 2, at.y - h, w, h, clip, thing.flip, rgb, by, sway)
+      } else if (thing.kind === 'globe') { if (fog < 9) lampPool(board, at.x + thing.x * 0.8 * at.u, at.y, at.u, clip); globeLamp(board, cx, at.y, at.u, clip, tier, fog, lit && fog < 13) }
+      else if (thing.kind === 'lights') trafficLights(board, at, clip, tier, fog, frame, thing.look)
+      else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, at, clip, tier, fog, frame, lit)
+      else lively(board, thing.kind, thing.look, i, cx, at.y, at.u, thing.flip, clip, tier, fog, frame, lit)
+    }
+    for (const thing of g.things) if (!onOther(other, thing.x)) stand(thing, a)
+    const og = other.off && !other.joined && !other.gore && Math.abs(other.off) <= OTHER_SHOWN ? otherSegment(s, i) : null, ga = { ...a, x: a.x + other.off * a.u }
+    if (og) { const us = { ...other, off: -other.off }; for (const thing of og.things) if (!onOther(us, thing.x)) stand(thing, ga) }
+    // where the road divides into the level's two roads: the same barrier up to it while the car decides, the gantry with what each road offers
+    if (s.fork && i === s.fork.at - FORK_GANTRY) forkGantry(board, a, clip, s.fork.kinds.map((k) => FORK_SIGN[k]) as [Sign, Sign], tier, fog)
+    if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
+    if (s.checks.includes(i)) { gantry(board, a, clip, 'check', 0, accent, tier, fog); if (og) gantry(board, ga, clip, 'check', 0, accent, tier, fog) }
+    if (i === s.finish) gantry(board, a, clip, 'finish', 0, accent, tier, fog)
+    for (const c of cargo[n].cars.sort((m, k) => k.z - m.z)) {
+      const at = place(p, c.z, c.x)
+      const bob = c.speed > 0.05 && ((frame + Math.round(c.z)) >> 2) % 2 ? 1 : 0
+      // a car spinning after a crash, in its smoke
+      if (c.pose) { posed(board, c, at.x, at.y, RACING_CAR_WIDTH * at.u, c.pose, frame, { clip, tier, fog, lights: night }); continue }
+      if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+      else {
+        drawCar(board, c.kind as RacingCarKind, at.x, at.y - bob, RACING_CAR_WIDTH * at.u, { turn: c.turn, clip, tier, fog, lights: night })
+        // a rival's own turbo: flames out of its exhausts
+        const w = RACING_CAR_WIDTH * at.u
+        if (c.boost && w > 6 && at.y < clip) for (const side of [-1, 1]) flames(board, at.x + side * w * 0.28, at.y - bob - 3, w * 0.14, frame + side)
+      }
     }
   }
-  // the player's car: leaning as it steers, bouncing at speed, shaken by a knock
+  // inside a bank of mist, the mountain's whole view whitened
+  if (world === 'mountain') { const inside = mistAround(s); if (inside > 0) whiten(board, Math.max(0, horizon - 30), inside, mistOf(tier)) }
+  // the player's car: turning as it steers, bouncing at speed, shaken by a knock; its lights on the road after dark
   const width = RACING_CAR_WIDTH * v.half
   const shake = s.knock > 0 ? ((s.knock >> 1) % 2 ? 2 : -2) : 0
   const bob = s.speed > 0.05 && (frame >> 2) % 2 ? 1 : 0
-  const cx = W / 2 + s.steer * 3 + shake
-  drawCar(board, s.car, cx, v.foot - bob, width)
-  // a rival just behind, nearer the eye than the player's car
-  close.forEach((r, k) => rival(board, rows, b0, r, K, frame + k * 7))
-  // off the road, sand or leaves flying from the wheels; slow, the exhausts' puffs
-  if (s.offroad && s.speed > 0.05) {
-    const color = s.x < 0 ? '#f0c09a' : '#3a7a4a'
+  const cx = W / 2 + shake
+  if (night) glow(board, cx, v.foot - width * 0.95, width * 1.3, '#fff6d8', 0.13, v.foot - width * 0.35, 0.22)
+  if (s.crash > 0) posed(board, { kind: s.car, traffic: false, look: 0 }, cx, v.foot, width, spinPose(s.crash, RACING_CRASH_STEPS, s.crashWay), frame, { tier: tier === 3 ? 2 : tier, fog: 0, lights: night })
+  else drawCar(board, s.car, cx, v.foot - bob, width, { turn: s.steer, tier: tier === 3 ? 2 : tier, fog: 0, lights: night })
+  // scraping a rail: sparks off the car's side
+  if (s.sparks > 0) sparks(board, cx + s.sparkSide * width * 0.5, v.foot - width * 0.12, s.sparkSide, frame, width)
+  if (s.crash > 0) { /* its smoke is drawn with it */ } else if (s.turbo > 0) for (const side of [-1, 1]) flames(board, cx + side * width * 0.28, v.foot - 6, width * 0.14, frame + side)
+  else if (s.offroad && s.speed > 0.05) {
+    const color = dustOf(here, s.x)
     puff(board, cx - width * 0.42, v.foot - 4, -1, frame, 0, color, 0.7)
     puff(board, cx + width * 0.42, v.foot - 4, 1, frame, 2, color, 0.7)
+    // in the desert's sand, a cloud of it behind
+    if (world === 'desert') for (let k = 0; k < 3; k += 1) { const age = ((frame + k * 9) % 27) / 27; glow(board, cx + (k - 1) * width * 0.4, v.foot - age * width * 0.3, width * (0.2 + age * 0.35), color, 0.55 * (1 - age), H, 0.6) }
   } else if (s.speed < 0.35 && s.phase !== 'over') {
     puff(board, cx - width * 0.28, v.foot - 6, -1, frame >> 1, 0)
     puff(board, cx + width * 0.28, v.foot - 6, 1, frame >> 1, 2)
   }
+  if (s.skid > 0) for (const side of [-1, 1]) glow(board, cx + side * width * 0.4, v.foot - 2, width * 0.18, '#c81a1a', 0.5)
+  // braking hard or skidding: the tyres smoke
+  if ((s.braking || s.skid > 0) && s.crash === 0) tyreSmoke(board, cx, v.foot, width, frame)
+  // after a crash, the car smokes a while
+  if (s.smoke > 0) for (let k = 0; k < 5; k += 1) {
+    const age = ((frame + k * 8) % 40) / 40, fade = Math.min(1, s.smoke / 60)
+    glow(board, cx + Math.sin(frame * 0.07 + k * 1.7) * width * 0.08 + age * width * 0.2, v.foot - width * 0.4 - age * width * 0.9, width * (0.1 + age * 0.3), '#8a8494', 0.7 * (1 - age) * fade)
+  }
+  // the wheels spinning after a start too early: smoke all round them
+  if (s.spin > 0) for (let k = 0; k < 3; k += 1) for (const side of [-1, 1]) puff(board, cx + side * width * (0.3 + k * 0.08), v.foot - 4, side, frame + k * 2, k, '#d8d4e0', 0.75)
+  // in a car's slipstream: the air rushing past, lines along the sides
+  if (s.drafting && s.phase === 'play') slipstream(board, frame, horizon)
+  // a rival close behind, out of sight: a mark at the foot of the screen, in its colour, on its side
+  for (const r of s.rivals) {
+    const behind = s.z - r.z
+    if (behind <= 2 || behind > 45 || r.z > camZ + 2) continue
+    const tx = W / 2 + (r.x - s.x) * v.half * 0.9, near = 1 - behind / 45, c = RIVAL_COLOUR[r.kind]
+    const size = 4 + Math.round(near * 4), ty = H - 3
+    if ((frame >> 3) % 2 || near > 0.6) for (let k = 0; k < size; k += 1) board.rect(Math.round(tx - k), ty - size + k, k * 2 + 1, 1, c)
+  }
+  // a car being passed, its back already behind the player's but still beside it, nearer the eye: its flank, then its back, until it goes out at the foot of the screen
+  const passing = [...s.rivals.map((r) => ({ kind: r.kind as RacingCarKind | RacingTrafficModel, traffic: false, z: r.z, x: across(r), look: 0, speed: r.speed, turn: turnOf(r.lane, r.x, 0), pose: spinPose(r.spin, RACING_CAR_SPIN_STEPS, r.spinWay) })), ...s.traffic.map((t) => ({ kind: t.kind as RacingCarKind | RacingTrafficModel, traffic: true, z: t.z, x: across(t), look: t.look, speed: t.speed, turn: turnOf(t.lane, t.x, 0), pose: spinPose(t.spin, RACING_CAR_SPIN_STEPS, t.spinWay) }))].filter((c): c is typeof c & { x: number } => c.x != null)
+  for (const c of passing.filter((c) => c.z < s.z && c.z > camZ + 2).sort((m, k) => k.z - m.z)) {
+    const p = rows[Math.floor(c.z) - b0]
+    if (!p) continue
+    const at = place(p, c.z, c.x)
+    if (at.y - RACING_CAR_WIDTH * at.u * 0.7 > H) continue
+    if (c.pose) { posed(board, c, at.x, at.y, RACING_CAR_WIDTH * at.u, c.pose, frame, { tier, fog: 0, lights: night }); continue }
+    if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
+    else drawCar(board, c.kind as RacingCarKind, at.x, at.y, RACING_CAR_WIDTH * at.u, { turn: c.turn, tier, fog: 0, lights: night })
+  }
+  if (tier === 3) { if (world === 'mountain') snow(board, frame); else if (world === 'desert') sandstorm(board, frame); else storm(board, frame, horizon) }
+  if (s.phase !== 'garage') minimap(board, s, accent)
+  if (s.goalAt >= 0) celebrate(board, s.steps - s.goalAt, s.level, horizon)
   // the speed, in a corner
   const kmh = String(racingKmh(s.speed)).padStart(3, ' ')
   const ky = H - 26
   drawText7(board, kmh, 11, ky + 1, INK, 2, true)
-  drawText7(board, kmh, 10, ky, CREAM, 2, true)
+  drawText7(board, kmh, 10, ky, s.turbo > 0 ? '#ffd02a' : CREAM, 2, true)
   drawText(board, 'KM/H', 10 + text7Width(kmh, 2, true) + 4, ky + 8, CREAM)
 }
 
-/** The words over the board: the level and the lights at the start, GO!, GOAL! and its points, TIME UP. */
+/**
+ * What brings the coast to life, where it stands: the public, waving; the
+ * promenade's buildings, lit after dark; the parasols and the lifeguard
+ * towers; out at sea the boats bobbing, the jet skis coming and going, a
+ * dolphin leaping now and then, the lighthouse and its beam after dark.
+ */
+function lively(board: PixelBuffer, kind: RacingThing['kind'], look: number, i: number, cx: number, y: number, u: number, flip: boolean, clip: number, tier: Tier, fog: number, frame: number, lit: boolean): void {
+  const { rgb, by } = tintFor(tier, fog)
+  if (kind === 'crowd') {
+    const pic = crowdPicture(look, ((frame >> 4) + look) & 1 ? 1 : 0)
+    const h = 0.72 * u, w = (pic.width * h) / pic.height
+    if (h >= 3) drawArt(board, pic, cx - w / 2, y - h, w, h, clip, flip, rgb, by * 0.85)
+    return
+  }
+  if (kind !== 'parasol' && kind !== 'tower' && kind !== 'sailboat' && kind !== 'yacht' && kind !== 'jetski' && kind !== 'windsurf' && kind !== 'buoy' && kind !== 'dolphin' && kind !== 'lighthouse') return
+  const pic = propPicture(kind, look)
+  let h = PROP_HIGH[kind] * u, x = cx, foot = y
+  if (h < 2) return
+  // the sea moves them: a bob, a jet ski's runs back and forth, a dolphin's leap
+  if (kind === 'sailboat' || kind === 'yacht' || kind === 'buoy' || kind === 'windsurf') foot += Math.sin(frame * 0.06 + i) * 0.03 * u
+  if (kind === 'jetski') x += Math.sin(frame * 0.012 + i) * 1.6 * u
+  if (kind === 'dolphin') {
+    const t = ((frame + i * 37) % 200) / 40
+    if (t > 1) return
+    foot -= Math.sin(t * Math.PI) * 0.6 * u
+    h *= 0.9
+  }
+  const w = (pic.width * h) / pic.height
+  drawArt(board, pic, x - w / 2, foot - h, w, h, clip, kind === 'jetski' ? Math.cos(frame * 0.012 + i) < 0 : flip, rgb, by)
+  if (kind === 'jetski') glow(board, x + (Math.cos(frame * 0.012 + i) < 0 ? 1 : -1) * w * 0.7, foot - 1, w * 0.5, '#f2fbff', 0.45, clip, 0.25)
+  if (kind === 'lighthouse' && lit) { glow(board, x, foot - h * 0.93, h * 0.25, '#fff2b0', 0.7, clip); const beam = Math.sin(frame * 0.05); glow(board, x + beam * h * 0.9, foot - h * 0.93, h * 0.5, '#fff2b0', 0.25, clip, 0.18) }
+}
+
+/** Where a shop's front stands, out from the road's middle, and how far back it goes. */
+const SHOP_FRONT = 2.25, SHOP_DEPTH = 1.9
+
+/**
+ * The part of a shop on stretch `i`, on the right (`side` 1) or the left
+ * (−1): its front from this stretch's near end to its far end — the
+ * picture's left at the shop's far end on the right, at its near end on the
+ * left, as it reads from the road — the shop's side if this is its near end,
+ * what stands on its roof and its lights where they are along it.
+ */
+function shopPiece(board: PixelBuffer, p: Projected, at: RacingShop, i: number, lit: boolean, tier: Tier, side: -1 | 1, eye: number): void {
+  const kind = SHOPS[at.kind % SHOPS.length], s = shop(kind, lit), { front } = s
+  const high = front.height * TOWN_UNIT, fog = p.fog, tint = tintFor(tier, fog), soft = lit ? { rgb: tint.rgb, by: tint.by * 0.55 } : tint
+  const col = (z: number) => (side > 0 ? 1 - (z - at.start) / at.len : (z - at.start) / at.len) * front.width
+  const along = (c: number) => at.start + (side > 0 ? 1 - c / front.width : c / front.width) * at.len
+  // its front, set back from the road if it is a big one
+  const face = SHOP_FRONT + (SHOP_BACK[kind] ?? 0)
+  const edge = wallEdge(front)[side > 0 ? 1 : 0], walled = edge.rows * TOWN_UNIT
+  // its flat roof, seen from above when it is lower than the eye: from the top of its front back to the back of the house, behind the front
+  if (!PITCHED.has(kind) && walled < eye - 0.05) {
+    const pt = (q: End, x: number): [number, number] => [q.x + x * q.u, q.y - walled * q.u]
+    quad(board, [pt(p.a, side * face), pt(p.a, side * (face + SHOP_DEPTH)), pt(p.b, side * (face + SHOP_DEPTH)), pt(p.b, side * face)], roofOf(s.wall, tint), p.clip)
+  }
+  facadePiece(board, p.a, p.b, side * face, high, p.clip, front, col(i), col(i + 1), soft)
+  // its side at its near end: where its wall stands in the picture (not the picture's edge), as tall as that wall (not its sign or its false front)
+  const z = along(side > 0 ? edge.col + 1 : edge.col)
+  if (Math.floor(z) === i) shopSide(board, place(p, z, 0), side * face, SHOP_DEPTH, walled, p.clip, s.wall, s.floors, lit, tint, PITCHED.has(kind) ? ridgeOf(front) : undefined)
+  // what stands out of its front toward the road: the roof's edge, an awning or a porch on its posts, a sign
+  relief(board, p, RELIEF[kind], i - at.start, at.len, side * face, high, lit, tint)
+  if (s.top) {
+    const z = along(s.top.x0 + s.top.pic.width / 2)
+    if (Math.floor(z) === i) {
+      const foot = place(p, z, side * (face + SHOP_DEPTH * 0.3)), roof = foot.y - high * foot.u
+      const h = s.top.pic.height * TOWN_UNIT * foot.u, w = s.top.pic.width * TOWN_UNIT * foot.u
+      if (h >= 2) drawArt(board, s.top.pic, foot.x - w / 2, roof - h, w, h, p.clip, false, soft.rgb, soft.by)
+      if (lit && fog < 13) for (const g of s.top.glows) glow(board, foot.x - w / 2 + g.x * TOWN_UNIT * foot.u, roof - h + g.y * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.35, p.clip)
+    }
+  }
+  if (lit && fog < 13) for (const g of s.frontGlows) {
+    const z = along(g.x)
+    if (Math.floor(z) !== i) continue
+    const foot = place(p, z, side * face)
+    glow(board, foot.x, foot.y - (front.height - g.y) * TOWN_UNIT * foot.u, Math.max(2, g.r * TOWN_UNIT * foot.u), g.colour, 0.3, p.clip)
+  }
+}
+
+/**
+ * What stands out of a shop's front, in half widths: an awning in its two colours of stripes, or a
+ * porch's roof on its posts (`awning`: how high it hangs from the front, how
+ * far out, how much lower its outer edge); a sign sticking out toward the
+ * road (`blade`: where along the front, how high its middle, how wide and
+ * tall, its colour), its bulbs lit after dark.
+ */
+type Relief = {
+  awning?: { at: number; out: number; drop: number; colours: [string, string]; posts?: string }
+  blade?: { along: number; at: number; w: number; h: number; colour: string }
+}
+const RELIEF: Record<ShopKind, Relief> = {
+  icecream: { awning: { at: 0.7, out: 0.32, drop: 0.12, colours: ['#ff9ac0', '#fff4f0'] } },
+  surf: { awning: { at: 0.8, out: 0.32, drop: 0.12, colours: ['#2ab0b0', '#f6f2e8'] }, blade: { along: 0.2, at: 1.05, w: 0.42, h: 0.4, colour: '#1a7a8a' } },
+  burger: { awning: { at: 0.62, out: 0.3, drop: 0.1, colours: ['#e83a2a', '#fff4e0'] } },
+  diner: { blade: { along: 0.85, at: 0.9, w: 0.36, h: 0.36, colour: '#e8402a' } },
+  motel: { awning: { at: 0.82, out: 0.42, drop: 0.05, colours: ['#c8a070', '#b89060'], posts: '#f4e2b8' } },
+  hotel: { blade: { along: 0.15, at: 1.45, w: 0.28, h: 1.1, colour: '#e8406a' } },
+  tiki: {},
+  station: {},
+  pizza: { awning: { at: 0.72, out: 0.3, drop: 0.1, colours: ['#2e9a48', '#fff4e0'] }, blade: { along: 0.85, at: 1.05, w: 0.38, h: 0.38, colour: '#c83a2a' } },
+  arcade: { blade: { along: 0.2, at: 1.0, w: 0.34, h: 0.7, colour: '#7a3ae0' } },
+  records: { awning: { at: 0.8, out: 0.3, drop: 0.1, colours: ['#8a5ae0', '#f0e8ff'] }, blade: { along: 0.8, at: 1.15, w: 0.4, h: 0.4, colour: '#2a2a3a' } },
+  chalet: {},
+  alphotel: { awning: { at: 0.85, out: 0.3, drop: 0.08, colours: ['#b8402a', '#f2e6c8'] } },
+  skishop: { awning: { at: 0.85, out: 0.32, drop: 0.12, colours: ['#2a5ab0', '#f2f2f8'] }, blade: { along: 0.2, at: 1.25, w: 0.4, h: 0.4, colour: '#2a5ab0' } },
+  cablecar: {},
+  cheese: { awning: { at: 0.8, out: 0.32, drop: 0.12, colours: ['#f2c43a', '#fff8e0'] }, blade: { along: 0.8, at: 1.1, w: 0.4, h: 0.34, colour: '#e8a020' } },
+  chapel: {},
+  adobe: { awning: { at: 0.85, out: 0.45, drop: 0.04, colours: ['#8a5a30', '#7a4a24'], posts: '#6a3a1a' } },
+  saloon: { awning: { at: 0.95, out: 0.5, drop: 0.04, colours: ['#8a5a30', '#7a4a24'], posts: '#5a3418' }, blade: { along: 0.5, at: 1.75, w: 0.55, h: 0.3, colour: '#7a4a24' } },
+  tradingpost: { awning: { at: 0.85, out: 0.45, drop: 0.04, colours: ['#9a7048', '#8a6038'], posts: '#5a3a20' } },
+  cinema: { awning: { at: 1.05, out: 0.48, drop: 0.06, colours: ['#f2d23a', '#e8402a'] } },
+  tower: {},
+  club: { blade: { along: 0.2, at: 1.2, w: 0.3, h: 1.0, colour: '#ff3aa0' } },
+  boutique: { awning: { at: 0.85, out: 0.3, drop: 0.1, colours: ['#1a1a22', '#f6f2ea'] } },
+  cafe: { awning: { at: 0.85, out: 0.32, drop: 0.1, colours: ['#1a6a42', '#f2e8c8'] }, blade: { along: 0.8, at: 1.05, w: 0.34, h: 0.34, colour: '#1a5a3a' } },
+}
+/** How much further back from the road a big shop stands (the filling station, its forecourt before it). */
+const SHOP_BACK: Partial<Record<ShopKind, number>> = { station: 1 }
+
+/** A flat roof's colour: the walls' darkened, through the hour and the haze. */
+function roofOf(wall: string, tint: { rgb: RGB; by: number }): string {
+  const [r, g, b] = rgbOf(mix(wall, '#2a2234', 0.45))
+  return `#${[r, g, b].map((v, n) => Math.round(v + (tint.rgb[n] - v) * tint.by).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** The shops under a pitched roof: their sides are gables. */
+const PITCHED: ReadonlySet<ShopKind> = new Set(['chalet', 'alphotel', 'skishop', 'cheese', 'chapel', 'tiki'])
+/** A pitched roof's ridge in a front picture — how high it is (a bell tower or a chimney left out) — and its colour. */
+const ridges = new WeakMap<PixelBuffer, { high: number; roof: string }>()
+function ridgeOf(front: PixelBuffer): { high: number; roof: string } {
+  const known = ridges.get(front)
+  if (known) return known
+  const W = front.width, H = front.height, solid = (x: number, y: number) => front.data[(y * W + x) * 4 + 3] > 0
+  const tops: number[] = []
+  for (let x = Math.floor(W * 0.15); x < W * 0.85; x += 1) { let y = 0; while (y < H - 1 && !solid(x, y)) y += 1; tops.push(y) }
+  tops.sort((m, n) => m - n)
+  const ridge = tops[Math.floor(tops.length * 0.6)], x = Math.floor(W * 0.3), o = (Math.min(H - 1, ridge + 3) * W + x) * 4
+  const roof = solid(x, Math.min(H - 1, ridge + 3)) ? `#${[0, 1, 2].map((k) => front.data[o + k].toString(16).padStart(2, '0')).join('')}` : '#5a3a2a'
+  const out = { high: (H - ridge) * TOWN_UNIT, roof }
+  ridges.set(front, out)
+  return out
+}
+
+/** Where a shop's walls end in its front picture, left and right: the last columns standing on the ground, and how many rows tall the wall is there. */
+const walls = new WeakMap<PixelBuffer, [{ col: number; rows: number }, { col: number; rows: number }]>()
+function wallEdge(front: PixelBuffer): [{ col: number; rows: number }, { col: number; rows: number }] {
+  const known = walls.get(front)
+  if (known) return known
+  const W = front.width, H = front.height, solid = (x: number, y: number) => front.data[(y * W + x) * 4 + 3] > 0
+  const top = (x: number) => { let y = 0; while (y < H - 1 && !solid(x, y)) y += 1; return y }
+  let l = 0, r = W - 1
+  while (l < W - 1 && !solid(l, H - 1)) l += 1
+  while (r > 0 && !solid(r, H - 1)) r -= 1
+  const out: [{ col: number; rows: number }, { col: number; rows: number }] = [{ col: l, rows: H - top(l) }, { col: r, rows: H - top(r) }]
+  walls.set(front, out)
+  return out
+}
+
+/** A shop's relief on stretch `k` of its `len` (from its near end), its front at `face` (negative on the left), `high` tall. */
+function relief(board: PixelBuffer, p: Projected, r: Relief, k: number, len: number, face: number, high: number, lit: boolean, tint: { rgb: RGB; by: number }): void {
+  const toward = -Math.sign(face), clip = p.clip
+  const paint = (c: string) => { const [cr, cg, cb] = rgbOf(c); return `#${[cr, cg, cb].map((v, n) => Math.round(v + (tint.rgb[n] - v) * tint.by).toString(16).padStart(2, '0')).join('')}` }
+  /** A point of the front's world on this stretch: `x` across, `y` up, at its near end (`e` 0) or its far end (1). */
+  const pt = (e: 0 | 1, x: number, y: number): [number, number] => { const q = e ? p.b : p.a; return [q.x + x * q.u, q.y - y * q.u] }
+  // a plane sticking out of the front: from height `top` at the front to `low` at `out` toward the road
+  const slab = (top: number, low: number, out: number, colour: string) => quad(board, [pt(0, face, top), pt(0, face + toward * out, low), pt(1, face + toward * out, low), pt(1, face, top)], paint(colour), clip)
+  if (r.awning) {
+    const a = r.awning, low = a.at - a.drop, edge = face + toward * a.out
+    // its stripes across, two stretches each
+    slab(a.at, low, a.out, a.colours[Math.floor(k / 2) % 2])
+    // the hanging edge
+    quad(board, [pt(0, edge, low), pt(0, edge, low - 0.08), pt(1, edge, low - 0.08), pt(1, edge, low)], paint(mix(a.colours[0], '#1a1424', 0.25)), clip)
+    // the posts, under a porch's edge
+    if (a.posts && k % 5 === 2) { const [x, y0] = pt(0, edge, 0), [, y1] = pt(0, edge, low), w = Math.max(1, p.a.u * 0.04); block(board, x - w / 2, y1, w, y0 - y1, paint(a.posts), clip) }
+  }
+  if (r.blade && k === Math.min(len - 1, Math.floor(len * r.blade.along))) {
+    const b = r.blade, [x0, yt] = pt(0, face, b.at + b.h / 2), [x1, yb] = pt(0, face + toward * b.w, b.at - b.h / 2)
+    const left = Math.min(x0, x1), w = Math.abs(x1 - x0), h = yb - yt
+    if (w >= 2) {
+      block(board, left, yt, w, h, paint('#1a1424'), clip)
+      block(board, left + 1, yt + 1, w - 2, h - 2, paint(b.colour), clip)
+      block(board, left + w * 0.2, yt + h * 0.25, w * 0.6, Math.max(1, h * 0.12), paint(mix(b.colour, '#ffffff', 0.55)), clip)
+      // its bracket to the front, and its bulbs
+      block(board, Math.min(x0, x1 + (x0 - x1) * 1.1), yt - Math.max(1, h * 0.06), w * 1.1, Math.max(1, h * 0.06), paint('#2a2a34'), clip)
+      for (let n = 0; n < 3; n += 1) { const bx = left + w * (0.25 + n * 0.25), by = yt + h * 0.7; block(board, bx - 0.5, by, Math.max(1, w * 0.06), Math.max(1, w * 0.06), lit ? '#fff2b0' : paint('#f2e8c8'), clip); if (lit) glow(board, bx, by, Math.max(2, w * 0.18), '#ffd890', 0.4, clip) }
+    }
+  }
+}
+
+
+// ---------------------------------------------------------------- the map in the corner
+
+/** Each stretch's place on a flat map of the level (`x`, `y`) and the way the road heads there, the bends turned into turns: worked out once a road. */
+const maps = new WeakMap<RacingSegment[], { x: Float32Array; y: Float32Array; h: Float32Array }>()
+/** How much a bend of the road turns it on the map, a stretch: a hairpin a good half turn, a long sweeper a wide curve. */
+const MAP_TURN = 0.0045
+function mapOf(track: RacingSegment[]): { x: Float32Array; y: Float32Array; h: Float32Array } {
+  const known = maps.get(track)
+  if (known) return known
+  const n = track.length + 1, x = new Float32Array(n), y = new Float32Array(n), h = new Float32Array(n)
+  for (let i = 0; i < track.length; i += 1) {
+    h[i + 1] = h[i] + track[i].curve * MAP_TURN
+    x[i + 1] = x[i] + Math.sin(h[i])
+    y[i + 1] = y[i] + Math.cos(h[i])
+  }
+  const out = { x, y, h }
+  maps.set(track, out)
+  return out
+}
+/**
+ * The other road of the two on the map: its own bends from where the roads
+ * divide, bowed out to its side and drawn in so it meets the road again
+ * where they are one.
+ */
+const otherMaps = new WeakMap<object, Map<number, { x: Float32Array; y: Float32Array }>>()
+function otherMapOf(f: NonNullable<RacingState['fork']>, k: 0 | 1, m: { x: Float32Array; y: Float32Array; h: Float32Array }): { x: Float32Array; y: Float32Array } {
+  let known = otherMaps.get(m)
+  if (!known) { known = new Map(); otherMaps.set(m, known) }
+  const had = known.get(k)
+  if (had) return had
+  const road = f.tracks[k], n = f.len + 1, x = new Float32Array(n), y = new Float32Array(n)
+  let h = m.h[f.at]
+  x[0] = m.x[f.at]; y[0] = m.y[f.at]
+  for (let i = 0; i < f.len; i += 1) { h += road[i].curve * MAP_TURN; x[i + 1] = x[i] + Math.sin(h); y[i + 1] = y[i] + Math.cos(h) }
+  // drawn in to meet the road at its end, bowed out to its side (left of the way the road heads, or right) on the way
+  const ex = m.x[f.at + f.len] - x[f.len], ey = m.y[f.at + f.len] - y[f.len], side = k === 0 ? -1 : 1, h0 = m.h[f.at]
+  for (let i = 0; i <= f.len; i += 1) {
+    const t = i / f.len, bow = Math.sin(Math.PI * t) ** 0.7 * MAP_BOW * side
+    x[i] += ex * t + Math.cos(h0) * bow; y[i] += ey * t - Math.sin(h0) * bow
+  }
+  const out = { x, y }
+  known.set(k, out)
+  return out
+}
+const MAP_BOW = 70
+
+/** The stretches the map shows, behind the car and ahead of it. */
+const MAP_BEHIND = 120
+const MAP_AHEAD = 380
+
+/**
+ * The map in the corner: the road around the car — a little behind, a good
+ * way ahead, its bends coming — turning as the car does, so ahead is always
+ * up; the rivals on it in their colours, the traffic in small grey dots, the
+ * checkpoints and the line; a rival out of the map at its edge, an arrow in
+ * its colour pointing where it is.
+ */
+function minimap(board: PixelBuffer, s: RacingState, accent: string): void {
+  const W = board.width, H = board.height, size = W >= 400 ? 78 : 66
+  const bx = W - size - 6, by = H - size - 6
+  board.shade(bx, by, size, size, 0.55)
+  board.rect(bx - 1, by - 1, size + 2, 1, dim(accent, 0.6)); board.rect(bx - 1, by + size, size + 2, 1, dim(accent, 0.6))
+  board.rect(bx - 1, by, 1, size, dim(accent, 0.6)); board.rect(bx + size, by, 1, size, dim(accent, 0.6))
+  const m = mapOf(s.track), last = s.track.length
+  const at = (z: number) => {
+    const i = Math.max(0, Math.min(last - 1, Math.floor(z))), t = Math.max(0, Math.min(1, z - i))
+    return { x: m.x[i] + (m.x[i + 1] - m.x[i]) * t, y: m.y[i] + (m.y[i + 1] - m.y[i]) * t, h: m.h[i] + (m.h[i + 1] - m.h[i]) * t }
+  }
+  const me = at(Math.max(0, s.z)), cos = Math.cos(me.h), sin = Math.sin(me.h)
+  const scale = (size * 0.72) / MAP_AHEAD, cx = bx + size / 2, cy = by + size * 0.78
+  /** A place of the road on the map, turned so the car heads up. */
+  const turned = (p: { x: number; y: number }) => { const dx = p.x - me.x, dy = p.y - me.y; return { x: cx + (dx * cos - dy * sin) * scale, y: cy - (dx * sin + dy * cos) * scale } }
+  const onMap = (z: number) => turned(at(z))
+  const inside = (p: { x: number; y: number }, r: number) => p.x >= bx + r && p.y >= by + r && p.x < bx + size - r && p.y < by + size - r
+  const dot = (p: { x: number; y: number }, r: number, c: string) => board.rect(Math.round(p.x - r / 2), Math.round(p.y - r / 2), r, r, c)
+  const from = Math.max(0, Math.floor(s.z) - MAP_BEHIND), to = Math.min(last, s.z + MAP_AHEAD)
+  // the other road of the two, dimmer, going its own way and coming back
+  if (s.fork) {
+    const f = s.fork, other = otherMapOf(f, s.forkPick === 0 ? 1 : 0, m)
+    for (let z = Math.max(from, f.at); z < Math.min(to, f.at + f.len); z += 2) { const p = turned({ x: other.x[z - f.at], y: other.y[z - f.at] }); if (inside(p, 2)) dot(p, 3, '#4a4a5c') }
+  }
+  // the road: its edge in ink, then the road, a dot every other stretch, darker in the tunnel
+  for (let z = from; z < to; z += 2) { const p = onMap(z); if (inside(p, 2)) dot(p, 5, '#0c0c14') }
+  for (let z = from; z < to; z += 2) { const p = onMap(z); if (inside(p, 2)) dot(p, 3, s.track[z].zone === 'tunnel' ? '#6a6a7a' : '#c8c8d8') }
+  // the checkpoints and the line, if they are on it
+  for (const c of s.checks) { const p = onMap(c); if (inside(p, 2)) { dot({ x: p.x - 2, y: p.y }, 2, '#3aff6a'); dot({ x: p.x + 2, y: p.y }, 2, '#3aff6a') } }
+  { const p = onMap(s.finish); if (inside(p, 3)) for (let k = 0; k < 4; k += 1) dot({ x: p.x - 3 + k * 2, y: p.y + (k % 2) }, 2, k % 2 ? '#1a1a22' : '#faf6ec') }
+  // the traffic, then the rivals: on the map, or at its edge pointing where they are
+  for (const t of s.traffic) { if (t.z < from || t.z > to) continue; const p = onMap(t.z); if (inside(p, 1)) dot(p, 3, '#5a5a6a') }
+  for (const r of s.rivals) {
+    // one on the other road of the two: on that road's line
+    const f = s.fork, there = f && r.elsewhere && r.z >= f.at && r.z < f.at + f.len ? otherMapOf(f, s.forkPick === 0 ? 1 : 0, m) : null
+    const p = there && f ? turned({ x: there.x[Math.floor(r.z) - f.at], y: there.y[Math.floor(r.z) - f.at] }) : onMap(r.z), c = RIVAL_COLOUR[r.kind]
+    if (r.z >= from && r.z <= to && inside(p, 3)) { dot(p, 6, '#0c0c14'); dot(p, 4, c); continue }
+    const ahead = r.z > s.z, ex = Math.max(bx + 3, Math.min(bx + size - 4, p.x)), ey = ahead ? by + 3 : by + size - 4
+    for (let k = 0; k < 3; k += 1) board.rect(Math.round(ex - k), ahead ? ey + k : ey - k, k * 2 + 1, 1, c)
+  }
+  // the player's car: an arrow pointing ahead, blinking
+  const me2 = (s.steps >> 3) % 2 ? '#ffffff' : mix(accent, '#ffffff', 0.4)
+  for (let k = 0; k < 6; k += 1) board.rect(Math.round(cx - k / 2 - 1), Math.round(cy - 3 + k), Math.round(k + 2), 1, '#0c0c14')
+  for (let k = 0; k < 5; k += 1) board.rect(Math.round(cx - k / 2 - 0.5), Math.round(cy - 2 + k), Math.max(1, Math.round(k + 1)), 1, me2)
+}
+
+/** The fork's call stops a little before the side is decided. */
+/** A sign over the road: its words and its colour. */
+type Sign = { name: string; colour: string }
+/**
+ * The other road of the two at a stretch, as drawn: where it is (`off`, in
+ * half widths, on its side), whether it runs joined to this one; where they
+ * part and where they meet, while the ground between is narrow, the striped
+ * triangle (`gore`: 1 where they part, -1 where they meet); and how far out
+ * the ground on its side lies (`out`): past the other road while it is that
+ * near, then back where it was, the other road going off over it.
+ */
+type Beside = { off: number; joined: boolean; gore: number; out: number }
+const NOT_BESIDE: Beside = { off: 0, joined: false, gore: 0, out: 0 }
+/**
+ * How wide the ground between the two roads is (in half widths) where the
+ * striped triangle ends; how far off the other road runs while the ground on
+ * its side lies past it (`OTHER_FAR`), and over how much further, as it goes
+ * off over the horizon, that ground comes back to its place.
+ */
+const GORE = 1, OTHER_BLEND = 16
+function besideRoad(s: RacingState, i: number): Beside {
+  const { off, joined } = racingOtherRoad(s, i)
+  if (!off) return NOT_BESIDE
+  const gap = Math.abs(off) - FORK_BESIDE, gore = !joined && gap <= GORE ? (i - s.fork!.at < s.fork!.len / 2 ? 1 : -1) : 0
+  return { off, joined, gore, out: Math.abs(off) <= OTHER_FAR ? Math.abs(off) : Math.max(0, OTHER_FAR * (1 - (Math.abs(off) - OTHER_FAR) / OTHER_BLEND)) }
+}
+/** Between the two roads close, one rail halfway; past this much ground between them (half widths), each road's own. */
+const RAILS_SPLIT = 4
+/** How near the other road must be for what stands by it to be drawn (half widths). */
+const OTHER_SHOWN = 14
+/** The other road's own stretch at `i`, where the two roads are two: what stands by it. */
+function otherSegment(s: RacingState, i: number): RacingSegment | null {
+  const f = s.fork
+  if (!f || i < f.at || i >= f.at + f.len) return null
+  return f.tracks[s.forkPick < 0 ? 0 : 1 - s.forkPick][i - f.at]
+}
+/** Whether something standing `x` half widths from the road's middle would stand on the other road, or between the two where they are close. */
+function onOther(o: Beside, x: number): boolean {
+  if (!o.off) return false
+  const side = o.off < 0 ? -1 : 1
+  if (side * x <= 1) return false
+  // (between the two, nothing while they are close)
+  return o.joined || o.gore ? side * x < Math.abs(o.off) + 1.45 : Math.abs(x - o.off) < 1.45 || (side * x < Math.abs(o.off) && Math.abs(o.off) - FORK_BESIDE < 3)
+}
+/** What each road of the fork says on its sign. */
+const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
+/** Each world as the start names it. */
+const WORLD_LABEL: Record<RacingWorld, string> = { coast: 'THE COAST', mountain: 'THE MOUNTAINS', desert: 'THE DESERT', city: 'THE CITY' }
+/** Each rival as the duel names it. */
+const DUEL_NAME: Record<RacingCarKind, string> = { rosso: 'RED CAR', giallo: 'YELLOW CAR', burger: 'BURGER' }
+/** Each rival's colour, for its mark when it is close behind. */
+const RIVAL_COLOUR: Record<RacingCarKind, string> = { rosso: '#ff3a2a', giallo: '#ffd23f', burger: '#ff9a3a' }
+
+/** Fills a rectangle of the board (fractions allowed), no row at or under `clip`. */
+function block(board: PixelBuffer, x: number, y: number, w: number, h: number, colour: string, clip: number): void {
+  const x0 = Math.max(0, Math.round(x)), x1 = Math.min(board.width, Math.max(Math.round(x + w), x0 + 1)), y0 = Math.max(0, Math.round(y)), y1 = Math.min(clip, board.height, Math.round(y + h))
+  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width
+  for (let yy = y0; yy < y1; yy += 1) for (let xx = x0, t = (yy * W + x0) * 4; xx < x1; xx += 1, t += 4) { d[t] = r; d[t + 1] = g; d[t + 2] = b; d[t + 3] = 255 }
+}
+
+
+/** The gantry over a fork: its posts, and over each half of the road a panel with where it leads (a world, what it offers) and an arrow. */
+function forkGantry(board: PixelBuffer, p: End, clip: number, signs: [Sign, Sign], tier: Tier, fog: number): void {
+  const u = p.u, top = p.y - 2.3 * u, panel = Math.max(3, 0.5 * u), post = Math.max(1, 0.08 * u)
+  const { rgb, by } = tintFor(tier, fog), paint = (c: string) => mix(c, `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`, by * 0.6)
+  for (const x of [-1.95, 0, 1.95]) block(board, p.x + x * u - post / 2, top, post, p.y - top, paint('#3a3a4a'), clip)
+  signs.forEach((sign, k) => {
+    const side = k === 0 ? -1 : 1, x0 = p.x + (side < 0 ? -1.9 : 0.1) * u, w = 1.8 * u
+    if (top + panel >= clip) return
+    block(board, x0 - 1, top - 1, w + 2, panel + 2, paint('#141420'), clip)
+    block(board, x0, top, w, panel, paint(sign.colour), clip)
+    const label = `${side < 0 ? '< ' : ''}${sign.name}${side > 0 ? ' >' : ''}`
+    const scale = text7Width(label, 2, true) < w - 6 && panel >= 18 ? 2 : 1
+    if (text7Width(label, scale, true) < w - 4 && panel >= 9 && top + panel < clip) drawText7(board, label, Math.round(x0 + (w - text7Width(label, scale, true)) / 2), Math.round(top + (panel - 7 * scale) / 2), '#faf6ec', scale, true)
+  })
+}
+
+/** The air rushing past in a slipstream: pale lines along both sides of the screen, flowing toward the viewer. */
+function slipstream(board: PixelBuffer, frame: number, horizon: number): void {
+  const W = board.width, H = board.height, d = board.data
+  for (let k = 0; k < 20; k += 1) {
+    const side = k % 2 ? 1 : -1, lane = (k >> 1) / 10
+    const t = ((frame * 0.06 + k * 0.37) % 1)
+    const x = W / 2 + side * W * (0.3 + lane * 0.2 + t * 0.25), y = horizon + (H - horizon) * (0.15 + t * 0.85)
+    const len = 6 + t * 18
+    for (let j = 0; j < len; j += 1) {
+      const px = Math.round(x + side * j * 0.8), py = Math.round(y + j * 0.5)
+      if (px < 0 || px >= W || py < 0 || py >= H) continue
+      const o = (py * W + px) * 4, f = 0.8 * (1 - j / len)
+      d[o] += (240 - d[o]) * f; d[o + 1] += (244 - d[o + 1]) * f; d[o + 2] += (255 - d[o + 2]) * f
+    }
+  }
+}
+
+/** The sky's own life over the far view: gulls crossing, flapping, over the sea (birds of prey over the mountains and the desert, two); now and then, by day, the little plane pulling its banner, RANDOM on it. */
+function sky(board: PixelBuffer, frame: number, horizon: number, tier: Tier, accent: string, world: RacingWorld): void {
+  const W = board.width, ink = tier >= 1.4 ? '#c8c8d8' : '#3a2a3a'
+  if (world === 'city') return
+  for (let k = 0; k < (world === 'coast' ? 4 : 2); k += 1) {
+    const x = W + 30 - ((frame * (0.35 + k * 0.08) + k * 131) % (W + 60)), y = Math.round(18 + k * 13 + Math.sin(frame * 0.02 + k) * 5)
+    if (y < horizon - 10) board.blit(GULL[((frame >> 3) + k) & 1], Math.round(x), y, { k: ink })
+  }
+  const pass = frame % 2400
+  if (pass < 900 && tier < 1.4) {
+    const x = W + 20 - pass * ((W + 260) / 900), y = 26
+    board.blit(PLANE, Math.round(x), y, PLANE_PALETTE)
+    board.line(Math.round(x + 13), y + 2, Math.round(x + 22), y + 3, '#5a4a5a')
+    const word = 'RANDOM', bw = text7Width(word, 1, true) + 8, bx = Math.round(x + 22), wave = (frame >> 2) % 2
+    board.rect(bx, y - 2 + wave, bw, 11, '#faf6ec')
+    drawText7(board, word, bx + 4, y + wave, accent, 1, true)
+  }
+}
+
+/**
+ * How far round a spinning car has turned, in degrees (its nose to the right
+ * for more than 0), `left` steps before its spin ends: round to its side and
+ * back, then a smaller swing the other way as it catches.
+ */
+function spinPose(left: number, total: number, way: -1 | 1): number {
+  if (left <= 0) return 0
+  const t = 1 - left / total
+  return way * (t < 0.7 ? 100 * Math.sin((Math.PI * t) / 0.7) : -28 * Math.sin((Math.PI * (t - 0.7)) / 0.3))
+}
+
+/**
+ * A car spinning after a crash, `width` wide at its back: from behind, turned
+ * (its turning picture), then side on (its side, as long as the car), by how
+ * far round it is; in the smoke of its tyres.
+ */
+function posed(board: PixelBuffer, c: { kind: RacingCarKind | RacingTrafficModel; traffic: boolean; look: number }, cx: number, foot: number, width: number, pose: number, frame: number, options: { clip?: number; tier: Tier; fog: number; lights: boolean }): void {
+  const clip = options.clip ?? board.height, turn: -1 | 1 = pose > 0 ? 1 : -1, round = Math.abs(pose)
+  const back = c.traffic ? width * TRAFFIC_WIDTH[c.kind as RacingTrafficModel] : width
+  if (round >= 62) {
+    const high = c.traffic ? trafficHigh(c.kind as RacingTrafficModel) : rivalHigh(c.kind as RacingCarKind)
+    const { pic } = carSide(c.traffic ? (c.kind as RacingTrafficModel) : (c.kind as RacingCarKind), c.look, true)
+    const w = back * SIDE_ON, h = back * high
+    glow(board, cx, foot - 1, w * 0.55, '#0a0814', 0.55, clip, 0.13)
+    const { rgb, by } = tintFor(options.tier, options.fog)
+    drawArt(board, pic, cx - w / 2, foot - h, w, h, clip, turn < 0, rgb, by)
+  } else {
+    const t = round >= 22 ? turn : 0
+    if (c.traffic) drawTraffic(board, c.kind as RacingTrafficModel, c.look, cx, foot, width, { turn: t, clip, tier: options.tier, fog: options.fog, lights: options.lights })
+    else drawCar(board, c.kind as RacingCarKind, cx, foot, width, { turn: t, clip, tier: options.tier, fog: options.fog, lights: options.lights })
+  }
+  // the tyres' smoke, rolling up round the wheels and drifting back
+  if (back > 4) for (let k = 0; k < 6; k += 1) {
+    const age = ((frame + k * 5) % 26) / 26, r = back * (0.18 + age * 0.4)
+    glow(board, cx + (k - 2.5) * back * 0.24 + Math.sin(frame * 0.2 + k) * back * 0.05, foot - back * 0.04 - age * back * 0.26, r, '#ece8f2', 0.7 * (1 - age * 0.8), clip, 0.7)
+  }
+}
+/** How long a car side on is, for its back's width. */
+const SIDE_ON = 1.75
+
+/** The tyres smoking at the car's back wheels, braking hard or skidding, drifting back and out. */
+function tyreSmoke(board: PixelBuffer, cx: number, foot: number, width: number, frame: number): void {
+  for (let k = 0; k < 3; k += 1) for (const side of [-1, 1]) {
+    const age = ((frame + k * 5 + (side > 0 ? 2 : 0)) % 15) / 15
+    glow(board, cx + side * width * (0.36 + age * 0.12), foot - 2 + age * width * 0.08, width * (0.08 + age * 0.16), '#e6e2ec', 0.5 * (1 - age), board.height, 0.7)
+  }
+}
+
+/** The mountain's mist: banks of it over the road, one in every few hundred stretches, in the woods, by the lake and in the gorge; its colour by the hour. */
+const MIST_EVERY = 420, MIST_LEN = 70
+const misty = (zone: RacingZone, i: number): boolean => (zone === 'forest' || zone === 'lake' || zone === 'gorge') && i > 60 && i % MIST_EVERY < MIST_LEN
+const MIST_HOURS = ['#eef2f6', '#f0e4e0', '#c8c2da', '#9a9ab8']
+const mistOf = (tier: Tier): string => { const k = Math.max(0, Math.min(3, tier)), lo = Math.floor(k); return mix(MIST_HOURS[lo], MIST_HOURS[Math.min(3, lo + 1)], k - lo) }
+/** How deep in a bank of mist the eye is, 0 to 1: thickening as it goes in, thinning as it comes out. */
+function mistAround(s: RacingState): number {
+  let n = 0, inside = 0
+  for (let k = -10; k <= 40; k += 5) { const i = Math.floor(s.z) + k; n += 1; if (i >= 0 && misty(segmentOf(s.track, i).zone, i)) inside += 1 }
+  return inside / n
+}
+/** The view whitened from `top` down, thicker toward the far end, `by` 0 to 1. */
+function whiten(board: PixelBuffer, top: number, by: number, colour: string): void {
+  const [r, g, b] = rgbOf(colour), d = board.data, W = board.width, H = board.height
+  for (let y = top; y < H; y += 1) {
+    const k = by * 0.42 * (1 - ((y - top) / (H - top)) * 0.55) * Math.min(1, (y - top) / 40)
+    for (let x = 0, o = y * W * 4; x < W; x += 1, o += 4) { d[o] += (r - d[o]) * k; d[o + 1] += (g - d[o + 1]) * k; d[o + 2] += (b - d[o + 2]) * k }
+  }
+}
+
+/** The city's steam: out of a drain in the road, one in every so many stretches, rising and drifting, its grate dark under it. */
+const STEAM_EVERY = 41
+function steam(board: PixelBuffer, at: { x: number; y: number; u: number }, i: number, frame: number, clip: number): void {
+  if (at.u < 3 || at.u > 160) return
+  glow(board, at.x, at.y, at.u * 0.14, '#16141e', 0.7, clip, 0.3)
+  for (let k = 0; k < 6; k += 1) {
+    const age = ((frame + k * 9 + i * 3) % 54) / 54
+    glow(board, at.x + Math.sin(age * 3 + i) * at.u * 0.15 + age * at.u * 0.3, at.y - age * at.u * 2, at.u * (0.18 + age * 0.55), '#e6e8f2', 0.5 * (1 - age * 0.85), clip, 0.85)
+  }
+}
+
+/** The desert's dust: a cloud of it blown across the road, one in every so many stretches, going over and over. */
+const GUST_EVERY = 130
+function gust(board: PixelBuffer, p: Projected, i: number, frame: number, clip: number): void {
+  const t = (frame * 0.004 + i * 0.37) % 1, at = place(p, i + 0.5, -2.6 + t * 5.2)
+  // gone by once it is right before the eye
+  if (at.u < 2 || at.u > 120) return
+  const fade = Math.min(1, Math.sin(Math.PI * t) * 1.6)
+  for (let k = 0; k < 4; k += 1) {
+    const swirl = frame * 0.05 + k * 1.6
+    glow(board, at.x + Math.cos(swirl) * at.u * 0.45, at.y - at.u * (0.25 + k * 0.22), at.u * (0.75 - k * 0.1), k % 2 ? '#f6e2c0' : '#ecc898', 0.55 * fade, clip, 0.7)
+  }
+}
+
+/** Sparks off a rail scraped, from the car's side at `x`, `y`, flying back and out (`side` the rail's), white then yellow then orange. */
+function sparks(board: PixelBuffer, x: number, y: number, side: -1 | 1, frame: number, size: number): void {
+  for (let k = 0; k < 14; k += 1) {
+    const n = (frame * 13 + k * 29) % 37, len = size * (0.08 + (n % 5) * 0.04), dx = side * (0.25 + (n % 7) * 0.13), dy = (n % 4) * 0.3 - 0.45
+    const x0 = x + side * (n % 4), y0 = y - (n % 8), colour = k % 3 === 0 ? '#fffbe0' : k % 3 === 1 ? '#ffd23a' : '#ff8a1e'
+    for (let j = 0; j < len; j += 1) board.set(Math.round(x0 + dx * j), Math.round(y0 + dy * j), colour)
+  }
+  glow(board, x, y, size * 0.18, '#ffcf5a', 0.7)
+}
+/** A racing car's height as a share of its width, from its picture. */
+function rivalHigh(kind: RacingCarKind): number {
+  const pic = racingArt(`car-${kind}-104`)
+  return pic ? pic.height / pic.width : 0.55
+}
+
+/** Where a point of the road at `z`, `x` stands on the screen, inside its stretch. */
+function place(p: Projected, z: number, x: number): { x: number; y: number; u: number } {
+  const t = Math.max(0, Math.min(1, z - Math.floor(z)))
+  const u = p.a.u + (p.b.u - p.a.u) * t
+  return { x: p.a.x + (p.b.x - p.a.x) * t + x * u, y: p.a.y + (p.b.y - p.a.y) * t, u }
+}
+
+/** A number from 0 to 1, always the same for `n`. */
+const hash = (n: number) => { let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
+const PARTY = ['#ffd23f', '#ff4ab0', '#3af0ff', '#7aff6a', '#ff7a3a', '#ffffff', '#8a5aff']
+
+/**
+ * The finish line crossed: fireworks bursting over the road and confetti
+ * raining down, `t` steps on — more bursts at once and thicker confetti as
+ * the levels go.
+ */
+function celebrate(board: PixelBuffer, t: number, level: number, horizon: number): void {
+  const W = board.width, H = board.height, d = board.data
+  const put = (x: number, y: number, c: string, size = 1) => { for (let dy = 0; dy < size; dy += 1) for (let dx = 0; dx < size; dx += 1) { const X = Math.round(x) + dx, Y = Math.round(y) + dy; if (X >= 0 && Y >= 0 && X < W && Y < H) { const [r, g, b] = rgbOf(c), o = (Y * W + X) * 4; d[o] = r; d[o + 1] = g; d[o + 2] = b } } }
+  // the fireworks: a rocket climbing, then a ring of sparks opening, falling and fading
+  const every = Math.max(7, 24 - level * 1.1)
+  for (let k = Math.max(0, Math.floor((t - 70) / every)); k * every <= t; k += 1) {
+    const at = t - k * every, x = W * (0.12 + hash(k * 7 + 1) * 0.76), top = Math.max(16, horizon * (0.25 + hash(k * 7 + 2) * 0.45)), colour = PARTY[Math.floor(hash(k * 7 + 3) * PARTY.length)]
+    if (at < 16) { const y = H * 0.75 - (H * 0.75 - top) * (at / 16); put(x, y, '#fff2c0'); put(x, y + 2, '#ffb050'); continue }
+    const age = at - 16
+    if (age > 56) continue
+    const r = Math.min(1, (age / 16) ** 0.6) * (26 + level * 1.5), sparks = 18 + Math.min(14, level), fall = age * age * 0.014
+    if (age < 8) glow(board, x, top, r + 14, colour, 0.6 - age * 0.06)
+    for (let n = 0; n < sparks; n += 1) {
+      const a = (n / sparks) * Math.PI * 2 + hash(k) * 3
+      if ((age + n) % 3 === 0 && age > 38) continue
+      const big = age < 14 ? 3 : age < 32 ? 2 : 1
+      // each spark and its trail back toward the middle
+      for (const [share, size, c] of [[1, big, n % 4 === 0 ? '#ffffff' : colour], [0.8, Math.max(1, big - 1), colour], [0.62, 1, colour]] as const) put(x + Math.cos(a) * r * share - size / 2, top + Math.sin(a) * r * share * 0.85 + fall - size / 2, c, size)
+    }
+  }
+  // the confetti: falling, swaying, turning
+  const many = 150 + level * 20
+  for (let n = 0; n < many; n += 1) {
+    const start = hash(n * 3 + 11) * 100, age = t - start
+    if (age < 0) continue
+    const y = -6 + age * (1.1 + hash(n * 3 + 12) * 1.3)
+    if (y > H) continue
+    // a piece of paper: wide, then narrow, as it turns
+    const x = hash(n * 3 + 13) * W + Math.sin(age * 0.09 + n) * 10, c = PARTY[n % PARTY.length], turn = (age + n) % 12
+    if (turn < 4) { put(x, y, c, 2); put(x + 2, y, c, 2); put(x + 1, y + 2, c, 2) } else if (turn < 8) { put(x, y, c, 2); put(x, y + 2, c, 2) } else { put(x, y, c, 2); put(x, y + 2, c); put(x, y + 3, c) }
+  }
+}
+
+/**
+ * What stands by the other worlds' roads, where it stands: the pines (moving
+ * a little in the snow's wind), the rocks, the saguaros, the desert's shrubs
+ * and its red rocks, the park's trees and its fountain playing, and the
+ * tumbleweed rolling across the road and back, hopping.
+ */
+function scenery(board: PixelBuffer, thing: RacingThing, i: number, a: End, clip: number, tier: Tier, fog: number, frame: number, lit: boolean): void {
+  const kind = thing.kind as keyof typeof SCENERY_HIGH
+  let pic: PixelBuffer | null
+  if (kind === 'pine' || kind === 'saguaro' || kind === 'rock' || kind === 'butte') pic = racingArt(kind)
+  else if (kind === 'redrock') { const rock = racingArt('rock'); pic = rock ? redRock(rock) : null }
+  else if (kind === 'crag') { const rock = racingArt('rock'); pic = rock ? coastRock(rock) : null }
+  else if (kind === 'shrub') pic = shrubPicture()
+  else if (kind === 'tree') pic = treePicture(thing.look)
+  else if (kind === 'fountain') pic = fountainPicture(frame >> 3, lit)
+  else pic = tumbleweedPicture(frame >> 2)
+  if (!pic) return
+  // the rocks of all sizes (`look`), the bigger further back
+  const rocky = kind === 'rock' || kind === 'redrock' || kind === 'crag' || kind === 'butte'
+  const h = SCENERY_HIGH[kind] * a.u * (rocky ? (0.7 + thing.look * 0.2) * (Math.abs(thing.x) > 3 && kind !== 'butte' ? 1.8 : 1) : 1)
+  // too small to see, or so close it would fill the screen with its pixels: left out
+  if (h < 2 || (rocky && h > board.height * 1.1)) return
+  const w = (pic.width * h) / pic.height
+  let x = a.x + thing.x * a.u, foot = a.y
+  if (kind === 'tumbleweed') {
+    // across the road and back, from one verge to the other, hopping
+    const t = ((frame + thing.look * 97) % 600) / 600, across = Math.sin(t * Math.PI * 2) * 3.2
+    x = a.x + across * a.u
+    foot -= Math.abs(Math.sin(frame * 0.09 + i)) * 0.25 * a.u
+  }
+  const { rgb, by } = tintFor(tier, fog)
+  const sway = kind === 'pine' && tier >= 3 ? Math.sin(frame * 0.04 + i * 0.7) * h * 0.03 : 0
+  drawArt(board, pic, x - w / 2, foot - h, w, h, clip, thing.flip && kind !== 'fountain', rgb, kind === 'fountain' && lit ? by * 0.5 : by, sway)
+  if (kind === 'fountain' && lit && fog < 12) glow(board, x, foot - h * 0.55, w * 0.6, '#7af0ff', 0.3, clip)
+}
+
+/** The mountains' storm: the snow falling, drifting with the wind, the nearer flakes bigger. */
+function snow(board: PixelBuffer, frame: number): void {
+  const W = board.width, H = board.height, d = board.data
+  for (let k = 0; k < 150; k += 1) {
+    const near = k % 5 === 0, speed = near ? 2.2 : 1.1
+    const x = Math.floor((((k * 7919) % 997) / 997) * W + frame * 0.8 + Math.sin(frame * 0.03 + k) * 6) % W, y = Math.floor((((k * 104729) % 991) / 991) * H + frame * speed) % H
+    const size = near ? 2 : 1
+    for (let dy = 0; dy < size; dy += 1) for (let dx = 0; dx < size; dx += 1) { const px = x + dx, py = y + dy; if (px >= 0 && px < W && py < H) { const o = (py * W + px) * 4; d[o] += (245 - d[o]) * 0.75; d[o + 1] += (248 - d[o + 1]) * 0.75; d[o + 2] += (255 - d[o + 2]) * 0.75 } }
+  }
+}
+
+/** The desert's storm: sand blowing across in long streaks. */
+function sandstorm(board: PixelBuffer, frame: number): void {
+  const W = board.width, H = board.height, d = board.data
+  for (let k = 0; k < 90; k += 1) {
+    const len = 8 + (k % 4) * 4
+    const x = Math.floor((((k * 7919) % 997) / 997) * (W + len) - frame * (5 + (k % 3) * 2)) % (W + len), y = Math.floor((((k * 104729) % 991) / 991) * H + Math.sin(frame * 0.05 + k) * 3)
+    const X = x < 0 ? x + W + len : x
+    for (let j = 0; j < len; j += 1) { const px = X - j; if (px >= 0 && px < W && y >= 0 && y < H) { const o = (y * W + px) * 4, f = 0.4 * (1 - j / len); d[o] += (232 - d[o]) * f; d[o + 1] += (184 - d[o + 1]) * f; d[o + 2] += (120 - d[o + 2]) * f } }
+  }
+}
+
+/** The storm: rain slanting across, now and then lightning lighting everything up, its bolt over the sea. */
+function storm(board: PixelBuffer, frame: number, horizon: number): void {
+  const W = board.width, H = board.height, d = board.data
+  const flash = frame % 431 < 4 || frame % 677 < 3
+  if (flash) {
+    for (let i = 0; i < d.length; i += 4) { d[i] += (220 - d[i]) * 0.45; d[i + 1] += (226 - d[i + 1]) * 0.45; d[i + 2] += (255 - d[i + 2]) * 0.45 }
+    let bx = 60 + ((frame * 37) % (W - 120)), by = 0
+    while (by < horizon - 20) { const nx = bx + (((by * 13 + frame) % 7) - 3) * 3; board.line(bx, by, nx, by + 8, '#ffffff'); bx = nx; by += 8 }
+  }
+  for (let k = 0; k < 110; k += 1) {
+    const x = Math.floor((((k * 7919) % 997) / 997) * W + frame * 2.5) % W, y = Math.floor((((k * 104729) % 991) / 991) * H + frame * 11) % H
+    for (let j = 0; j < 7; j += 1) { const px = x - (j >> 1), py = y + j; if (px >= 0 && py < H) { const o = (py * W + px) * 4; d[o] += (190 - d[o]) * 0.4; d[o + 1] += (200 - d[o + 1]) * 0.4; d[o + 2] += (230 - d[o + 2]) * 0.4 } }
+  }
+}
+
+/** The words over the board: the level and the lights at the start, GO!, a checkpoint, the stopwatch or the turbo just taken, GOAL! and its points, TIME UP. */
 function words(out: PixelBuffer, s: RacingState, accent: string, W: number, H: number): void {
   const top = HUD_HEIGHT, mid = top + Math.round(H * 0.36)
-  // the level, then the count over the start's gantry
+  if (s.phase === 'garage') { garageCard(out, s, accent, W, H); return }
   if (s.phase === 'start') {
     arcadeText(out, `LEVEL ${String(s.level).padStart(2, '0')}`, W / 2, top + 12, 3, accent)
+    // where, how fast this level goes (faster every level), and which try it is
+    said(out, `${WORLD_LABEL[s.world]}  TOP ${racingKmh(statTop(s.stats.speed) * racingLevelPace(s.level))} KM/H${s.tries ? `  TRY ${s.tries + 1}` : ''}`, W / 2, top + 84, '#faf6ec', 1)
     if (s.phaseTimer >= 20) said(out, String(3 - Math.floor(s.phaseTimer / 60)), W / 2, top + 46, CREAM, 5)
-  } else if (s.phase === 'play' && s.phaseTimer < 50 && s.z < 60) said(out, 'GO!', W / 2, top + 46, '#3aff6a', 5)
+    // a duel: who to beat
+    if (s.duel) { said(out, 'DUEL!', W / 2, top + 96, RIVAL_COLOUR[s.duel], 3); said(out, `BEAT THE ${DUEL_NAME[s.duel]} TO THE LINE`, W / 2, top + 124, CREAM, 1) }
+    // how to start well, over the first levels
+    else if (s.level <= 3 && s.phaseTimer >= 20) said(out, 'PRESS A ON 1: TURBO START', W / 2, top + 96, '#ffd23f', 1)
+    gauge(out, s, top)
+    return
+  }
+  if (s.phase === 'play' && s.phaseTimer < 50 && s.z < 60 && s.launch === 'none') said(out, 'GO!', W / 2, top + 46, '#3aff6a', 5)
   else if (s.phase === 'goal') {
     arcadeText(out, 'GOAL!', W / 2, mid - 6, 4, accent)
     if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE +${s.bonus.place}`, W / 2, mid + 36, s.bonus.rank === 1 ? '#ffd23f' : CREAM, 2)
     if (s.phaseTimer > 70 && s.bonus) said(out, `TIME +${s.bonus.time}`, W / 2, mid + 56, CREAM, 2)
-  } else if (s.phase === 'timeup' || s.phase === 'over') arcadeText(out, 'TIME UP', W / 2, mid, 4, '#ff5a4a')
+    if (s.phaseTimer > 100 && s.bonus?.duel) said(out, `DUEL WON +${s.bonus.duel}`, W / 2, mid + 76, '#ffd23f', 2)
+    return
+  } else if (s.phase === 'lost') {
+    // over the line behind a rival: the level again
+    arcadeText(out, s.duelLost ? 'DUEL LOST' : 'RACE LOST', W / 2, mid - 6, 4, '#ff5a4a')
+    if (s.phaseTimer > 30 && s.bonus) said(out, `${ordinal(s.bonus.rank)} PLACE`, W / 2, mid + 36, CREAM, 2)
+    if (s.phaseTimer > 60) said(out, s.single ? 'BEAT THEM ALL TO THE LINE' : 'FINISH FIRST: TRY AGAIN', W / 2, mid + 58, '#ffd23f', 1)
+    return
+  } else if (s.phase === 'timeup' || s.phase === 'over') { arcadeText(out, s.duelLost ? 'DUEL LOST' : 'TIME UP', W / 2, mid, 4, '#ff5a4a'); return }
+  // in a duel, where the rival is: ahead or behind, in its colour
+  if (s.duel && s.phase === 'play' && s.phaseTimer >= 50 && !(s.news && s.news.steps > 0)) said(out, s.place === 1 ? 'DUEL: AHEAD' : `DUEL: ${DUEL_NAME[s.duel]} AHEAD`, W / 2, top + 44, s.place === 1 ? '#3aff6a' : RIVAL_COLOUR[s.duel], 1)
+  if (s.news && (s.news.steps > 20 || (s.news.steps >> 2) % 2 === 0)) said(out, s.news.text, W / 2, top + 40, s.news.text.startsWith('CHECK') ? '#3aff6a' : '#ffd23f', W >= 400 ? 3 : 2)
+  // the fork coming: what each road offers, on its side, the side the car is on lit
+  if (s.fork && s.forkPick < 0 && s.z > s.fork.at - FORK_GANTRY - 170 && s.z < s.fork.at) {
+    const [left, right] = s.fork.kinds.map((k) => FORK_SIGN[k]), on = s.x < -FORK_BESIDE / 2 ? 0 : 1, blink = (s.steps >> 3) % 2
+    said(out, 'PICK YOUR ROAD', W / 2, top + 64, '#faf6ec', 1)
+    said(out, `< ${left.name}`, W * 0.26, top + 76, on === 0 && blink ? '#ffffff' : mix(left.colour, '#ffffff', 0.35), 1)
+    said(out, `${right.name} >`, W * 0.74, top + 76, on === 1 && blink ? '#ffffff' : mix(right.colour, '#ffffff', 0.35), 1)
+  }
+  gauge(out, s, top)
+  // the brushes, the overtakes, the turbo ready: small, over the car, the latest lowest, rising as they fade
+  s.pops.forEach((p, k) => {
+    const rise = Math.round((70 - p.steps) * 0.25), y = top + Math.round(H * 0.6) - (s.pops.length - 1 - k) * 12 - rise
+    if (p.steps > 12 || (p.steps >> 1) % 2 === 0) said(out, p.text, W / 2, y, p.colour, 1)
+  })
+}
+
+/** The turbo's gauge under the bar: the mustard bottle, dull until the turbo can be let go, and the gauge — or, while the turbo runs, what is left of it. */
+function gauge(out: PixelBuffer, s: RacingState, top: number): void {
+  const full = s.boost >= 1, ready = s.boost >= 0.3
+  out.blit(MUSTARD, 10, top + 6, ready ? BONUS_PALETTE : { ...BONUS_PALETTE, r: '#6a5a3a', R: '#4a3e2a', P: '#8a7a5a' }, { scale: 2 })
+  out.rect(28, top + 13, 42, 6, '#14141c')
+  out.rect(29, top + 14, 40, 4, '#2a2a3a')
+  if (s.turbo > 0) out.rect(29, top + 14, Math.max(1, Math.min(40, Math.round((40 * s.turbo) / 240))), 4, (s.steps >> 2) % 2 ? '#ff7a1a' : '#ffd02a')
+  else if (s.boost > 0) out.rect(29, top + 14, Math.max(1, Math.round(40 * s.boost)), 4, full && (s.steps >> 3) % 2 ? '#fff3a0' : ready ? '#ffd02a' : '#a08a3a')
+  // the threshold that lets it go
+  out.rect(29 + 12, top + 12, 1, 8, '#faf6ec')
+}
+
+/** Each improvement's name and colour, in the garage and on the title. */
+export const STAT_LOOK: Record<RacingStat, { name: string; colour: string }> = {
+  speed: { name: 'SPEED', colour: '#ff5a4a' }, accel: { name: 'ACCEL', colour: '#3aff6a' }, grip: { name: 'GRIP', colour: '#3af0ff' }, turbo: { name: 'TURBO', colour: '#ffd02a' },
+}
+
+/** Where the garage's three improvements stand on the screen (the bar included), for drawing them and for a finger. */
+function garageBoxes(layout: Layout, n: number): Hit[] {
+  const { width: W, height: H } = RACING_BOARD[layout]
+  const bw = Math.min(118, Math.floor((W - 24 - (n - 1) * 8) / n)), bh = 64, y = HUD_HEIGHT + Math.round(H * 0.3)
+  const x0 = Math.round((W - (n * bw + (n - 1) * 8)) / 2)
+  return Array.from({ length: n }, (_, k) => ({ x: x0 + k * (bw + 8), y, w: bw, h: bh }))
+}
+/** Which of the garage's improvements a finger at (`x`, `y`) is on, if any. */
+export function racingGarageAt(layout: Layout, x: number, y: number, n = 3): number | null {
+  const k = garageBoxes(layout, n).findIndex((b) => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h)
+  return k < 0 ? null : k
+}
+
+/** One of the car's points as a row of pips: those it has, the one an improvement would add blinking. */
+function pips(out: PixelBuffer, x: number, y: number, have: number, colour: string, adding: boolean, frame: number): void {
+  for (let k = 0; k < STAT_MAX; k += 1) {
+    const on = k < have, next = adding && k === have
+    out.rect(x + k * 9, y, 7, 6, on ? colour : next && (frame >> 3) % 2 ? mix(colour, '#ffffff', 0.4) : '#2a2a3a')
+  }
+}
+
+/** The garage between two levels: three improvements of the car to pick from, the one pointed at lit, the car's points under them. */
+function garageCard(out: PixelBuffer, s: RacingState, accent: string, W: number, H: number): void {
+  const g = s.garage
+  if (!g) return
+  out.shade(0, HUD_HEIGHT, W, H, 0.6)
+  const top = HUD_HEIGHT
+  arcadeText(out, 'PIT STOP', W / 2, top + 14, 3, accent)
+  said(out, 'PICK AN UPGRADE', W / 2, top + 44, CREAM, 1)
+  garageBoxes(s.layout, g.options.length).forEach((b, k) => {
+    const stat = g.options[k], look = STAT_LOOK[stat], on = k === g.pick
+    out.rect(b.x - 2, b.y - 2 - (on ? 3 : 0), b.w + 4, b.h + 4, on ? accent : '#3a3a4a')
+    out.rect(b.x, b.y - (on ? 3 : 0), b.w, b.h, on ? '#1c1c2c' : '#14141e')
+    const y = b.y - (on ? 3 : 0)
+    said(out, look.name, b.x + b.w / 2, y + 10, on ? look.colour : dim(look.colour, 0.65), 2)
+    said(out, '+1', b.x + b.w / 2, y + 36, on ? CREAM : GREY, 2)
+  })
+  // the car's points, the one pointed at about to grow
+  const rows = RACING_STATS.length, y0 = top + Math.round(H * 0.3) + 80, x0 = Math.round(W / 2 - (44 + STAT_MAX * 9) / 2)
+  RACING_STATS.forEach((stat, k) => {
+    const look = STAT_LOOK[stat], y = y0 + k * 14
+    drawText(out, look.name, x0, y, look.colour)
+    pips(out, x0 + 44, y, s.stats[stat], look.colour, g.options[g.pick] === stat, s.steps)
+  })
+  if (y0 + rows * 14 + 12 < top + H) said(out, '< >  CHOOSE    A  TAKE', W / 2, y0 + rows * 14 + 6, GREY, 1)
 }
 
 // ---------------------------------------------------------------- a moment of play, for the gallery
 
 /** A driver for the gallery's moment of play: gas held, toward its lane, lifting before the sharp bends. */
 function demoMove(s: RacingState): { steer: -1 | 0 | 1; gas: boolean } {
+  // the lights: A on the third, a perfect start
+  if (s.phase === 'start') return { steer: 0, gas: s.phaseTimer >= 125 }
   let worst = 0
   for (let k = 0; k < 40; k += 1) worst = Math.max(worst, Math.abs(segmentOf(s.track, s.z + k).curve))
   const limit = worst < 1e-6 ? 1 : Math.min(1, Math.sqrt(1 / (0.3 * worst)))

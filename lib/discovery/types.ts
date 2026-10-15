@@ -57,6 +57,8 @@ export type Candidate<T = unknown> = {
   declaredLang?: string
   /** A news video, by its universe or its title: one in ten at most. */
   news?: boolean
+  /** Brazil, South or Southeast Asia, by the declared language, the script or a title clearly not English (lib/v3/ingest/mix.ts): two in ten, never two in a row. */
+  place?: string
   type: Format
   provider: string
   profile: Profile

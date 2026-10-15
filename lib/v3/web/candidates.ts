@@ -13,7 +13,8 @@ import type { Db } from 'mongodb'
 
 export const CANDIDATES = 'web_candidates_v1'
 
-export type CandidateStatus = 'new' | 'done' | 'dead' | 'dull' | 'noimage' | 'failed'
+/** `noframe`: alive, but refuses to open inside Random (its X-Frame-Options or its CSP): never drawn, so not taken in. */
+export type CandidateStatus = 'new' | 'done' | 'dead' | 'dull' | 'noimage' | 'failed' | 'noframe'
 
 export type CandidateInput = {
   url: string
@@ -24,6 +25,8 @@ export type CandidateInput = {
   tags?: string[]
   sourceName?: string
   sourceUrl?: string
+  /** A picture standing for the site, given by its source (Neocities' screenshot of it): no capture needed when it is good. */
+  image?: string
 }
 
 export type Candidate = CandidateInput & {
@@ -156,7 +159,7 @@ export async function settleCandidates(db: Db, visits: Array<{ candidate: Candid
 }
 
 export async function candidateCounts(db: Db): Promise<Record<CandidateStatus, number>> {
-  const counts = { new: 0, done: 0, dead: 0, dull: 0, noimage: 0, failed: 0 } as Record<CandidateStatus, number>
+  const counts = { new: 0, done: 0, dead: 0, dull: 0, noimage: 0, failed: 0, noframe: 0 } as Record<CandidateStatus, number>
   for (const row of await db.collection(CANDIDATES).aggregate<{ _id: CandidateStatus; n: number }>([{ $group: { _id: '$status', n: { $sum: 1 } } }]).toArray()) {
     counts[row._id] = row.n
   }

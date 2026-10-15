@@ -23,13 +23,18 @@ export type SoundName =
   | 'bite' | 'fries' | 'shake' | 'donut' | 'gold' | 'crash'
   | 'item' | 'sauce' | 'slip' | 'coin' | 'note' | 'bundle' | 'card' | 'caught'
   | 'squirt' | 'pop' | 'clink' | 'power' | 'hurt' | 'rip' | 'whoosh' | 'thud' | 'boom'
-  | 'beep' | 'go'
+  | 'beep' | 'go' | 'engine' | 'smash' | 'cheer'
   | 'level' | 'over' | 'winner'
-export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'beep', 'go', 'level', 'over', 'winner']
+export const SOUND_NAMES: readonly SoundName[] = ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'squirt', 'pop', 'clink', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'beep', 'go', 'engine', 'smash', 'cheer', 'level', 'over', 'winner']
 
-/** A diner's shuffle for EATER, a convenience store's bossa for CATCHER, a fifties film from space for ATTACKS, a drive down the coast at sunset for RACING. */
-export type TuneName = 'diner' | 'store' | 'mars' | 'coast'
-export const TUNE_NAMES: readonly TuneName[] = ['diner', 'store', 'mars', 'coast']
+/**
+ * A diner's shuffle for EATER, a convenience store's bossa for CATCHER, a
+ * fifties film from space for ATTACKS; for RACING, one for each world: a
+ * drive down the coast at sunset, a mountain dance, a ride across the
+ * desert, the city at night.
+ */
+export type TuneName = 'diner' | 'store' | 'mars' | 'coast' | 'peaks' | 'mesa' | 'neon'
+export const TUNE_NAMES: readonly TuneName[] = ['diner', 'store', 'mars', 'coast', 'peaks', 'mesa', 'neon']
 
 /** How loud, at the top: the tunes low, the sounds light, the jingles a little more. */
 const TUNE_PEAK = 0.2
@@ -318,6 +323,24 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
     m.tone({ at: 0, dur: 0.7, freq: 110, to: 32, wave: 'pulse', duty: 0.5, gain: 0.5, decay: 0.3 })
     m.tone({ at: 0.18, dur: 0.5, freq: 2000, wave: 'noise', gain: 0.35, decay: 0.2, lowpass: 600, seed: 192 })
   } },
+  // RACING: a crash at speed: the crunch, the thump, the tyres screaming as the car spins
+  smash: { seconds: 0.9, peak: SOUND_PEAK, build: (m) => {
+    m.tone({ at: 0, dur: 0.18, freq: 4000, wave: 'noise', gain: 0.55, decay: 0.08, lowpass: 2600, seed: 211 })
+    m.tone({ at: 0, dur: 0.26, freq: 140, to: 48, wave: 'pulse', duty: 0.5, gain: 0.45, decay: 0.12 })
+    m.tone({ at: 0.08, dur: 0.66, freq: 1180, to: 820, wave: 'pulse', duty: 0.25, gain: 0.16, attack: 0.04, release: 0.12, vibrato: { rate: 23, depth: 0.7 } })
+    m.tone({ at: 0.08, dur: 0.66, freq: 6000, wave: 'noise', gain: 0.12, attack: 0.05, decay: 0.4, highpass: 2500, seed: 212 })
+  } },
+  // RACING: the public as the car goes by it, and at the line: a crowd's voices rising together — each its own pitch, starting a little apart, wavering — over their roar, hands clapping, a whistle
+  cheer: { seconds: 1.95, peak: SOUND_PEAK, build: (m) => {
+    for (let k = 0; k < 16; k += 1) {
+      const h = ((k * 7919) % 97) / 97, g = ((k * 104729) % 89) / 89, f = 170 + h * 260
+      m.tone({ at: 0.02 + g * 0.22, dur: 0.85 + h * 0.5, freq: f * 0.92, to: f * 1.18, wave: 'pulse', duty: 0.22 + g * 0.2, gain: 0.075, attack: 0.07, release: 0.35, vibrato: { rate: 5 + h * 3, depth: 0.45, after: 0.12 }, lowpass: 1700, highpass: 220 })
+    }
+    m.tone({ at: 0, dur: 1.4, freq: 3000, wave: 'noise', gain: 0.2, attack: 0.15, decay: 0.8, lowpass: 2200, highpass: 400, tremolo: { rate: 9, depth: 0.25 }, seed: 221 })
+    for (let k = 0; k < 14; k += 1) m.tone({ at: 0.15 + ((k * 37) % 23) / 20, dur: 0.02, freq: 6000, wave: 'noise', gain: 0.2, decay: 0.012, highpass: 1500, seed: 223 + k })
+    m.tone({ at: 0.35, dur: 0.22, freq: 1800, to: 2600, wave: 'sine', gain: 0.1, attack: 0.03, release: 0.03 })
+    m.tone({ at: 0.62, dur: 0.3, freq: 2600, to: 1500, wave: 'sine', gain: 0.1, attack: 0.02, release: 0.06 })
+  } },
   // RACING: a red light of the start, and the last seconds on the clock: a short square beep
   beep: { seconds: 0.22, peak: SOUND_PEAK, build: (m) => {
     m.tone({ at: 0, dur: 0.15, freq: hz('A5'), wave: 'pulse', duty: 0.5, gain: 0.4, release: 0.02 })
@@ -327,6 +350,13 @@ const SOUNDS: Record<SoundName, { seconds: number; peak: number; build: Build }>
   go: { seconds: 0.62, peak: JINGLE_PEAK, build: (m) => {
     m.tone({ at: 0, dur: 0.48, freq: hz('A6'), wave: 'pulse', duty: 0.5, gain: 0.38, release: 0.08 })
     m.tone({ at: 0, dur: 0.48, freq: hz('A5'), wave: 'triangle', gain: 0.3, release: 0.08 })
+  } },
+  // RACING's engine: a buzzing growl to be looped and played faster as the car goes — half a second of a 60 Hz pulse, its octave and a low rumble,
+  // whole periods of each so the loop has no seam (rendered a second long, the second half kept, once the filters have settled)
+  engine: { seconds: 1, peak: SOUND_PEAK * 0.42, build: (m) => {
+    m.tone({ at: 0, dur: 1, freq: 60, wave: 'pulse', duty: 0.3, gain: 0.4, attack: 0, release: 0, lowpass: 1100 })
+    m.tone({ at: 0, dur: 1, freq: 120, wave: 'pulse', duty: 0.5, gain: 0.18, attack: 0, release: 0, lowpass: 900 })
+    m.tone({ at: 0, dur: 1, freq: 30, wave: 'triangle', gain: 0.35, attack: 0, release: 0 })
   } },
   // a level won: up the chord
   level: { seconds: 0.75, peak: JINGLE_PEAK, build: (m) => {
@@ -360,7 +390,9 @@ export function renderSound(name: SoundName): Float32Array {
   const spec = SOUNDS[name]
   const mix = new Mix(spec.seconds)
   spec.build(mix)
-  return mix.finish(spec.peak)
+  const out = mix.finish(spec.peak)
+  // the engine's loop: its second half, steady
+  return name === 'engine' ? out.slice(out.length / 2) : out
 }
 
 // ——— the tunes ———
@@ -463,6 +495,58 @@ const TUNES: Record<TuneName, Tune> = {
       t.mix.tone({ at, dur: 0.05, freq: 200, wave: 'triangle', gain: 0.16, decay: 0.04 })
     })
     t.each(8, () => [0, 1, 2, 3, 4, 5, 6, 7], (at, _bar, e) => t.mix.tone({ at, dur: 0.012, freq: 11000, wave: 'noise', gain: e % 2 ? 0.05 : 0.03, decay: 0.012, highpass: 6000, seed: 17 }))
+  } },
+  // RACING, the mountain: a dance in the high pastures — a lilting lead over G, C and D, the bass and the chords oom-pah, a light step
+  peaks: { bpm: 132, swing: 0.58, bars: 8, build: (t) => {
+    const lead = ['D5 - G5 - B5 - A5 G5', 'E5 - G5 - C6 - B5 A5', 'F#5 - A5 - D6 - C6 A5', 'G5 - - - D5 - . .', 'E5 - G5 - B5 - G5 E5', 'C5 - E5 - G5 - E5 C5', 'D5 - F#5 - A5 - C6 A5', 'G5 - B5 - G5 - . .']
+    // a little organ of reeds: a square wavering, a whistle an octave over it
+    t.part(lead, (freq, at, dur) => {
+      t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.5, gain: 0.08, tremolo: { rate: 6, depth: 0.2 }, release: 0.03, lowpass: 3000 })
+      t.mix.tone({ at, dur, freq: freq * 2, wave: 'sine', gain: 0.05, vibrato: { rate: 5.5, depth: 0.1, after: 0.1 }, release: 0.03 })
+    }, 0.88)
+    const roots = ['G2', 'C3', 'D3', 'G2', 'E2', 'C3', 'D3', 'G2'], fifths = ['D3', 'G2', 'A2', 'D3', 'B2', 'G2', 'A2', 'D3']
+    t.part(roots.map((r, i) => `${r} - ${fifths[i]} - ${r} - ${fifths[i]} -`), (freq, at, dur) => {
+      t.mix.tone({ at, dur, freq, wave: 'triangle', gain: 0.3, decay: 0.25 })
+      t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.5, gain: 0.04, decay: 0.12, lowpass: 900 })
+    }, 0.6)
+    const chords = [['B3', 'D4', 'G4'], ['C4', 'E4', 'G4'], ['A3', 'D4', 'F#4'], ['B3', 'D4', 'G4'], ['B3', 'E4', 'G4'], ['C4', 'E4', 'G4'], ['A3', 'C4', 'F#4'], ['B3', 'D4', 'G4']]
+    t.each(8, () => [2, 6], (at, bar) => { for (const n of chords[bar]) t.mix.tone({ at, dur: 0.1, freq: hz(n), wave: 'triangle', gain: 0.07, decay: 0.12 }) })
+    t.each(8, () => [0, 4], (at) => t.mix.tone({ at, dur: 0.1, freq: 140, to: 50, wave: 'sine', gain: 0.32, decay: 0.06 }))
+    t.each(8, () => [2, 6], (at) => t.mix.tone({ at, dur: 0.03, freq: 1300, wave: 'pulse', duty: 0.5, gain: 0.05, decay: 0.02 }))
+    t.each(8, () => [1, 3, 5, 7], (at) => t.mix.tone({ at, dur: 0.012, freq: 11000, wave: 'noise', gain: 0.03, decay: 0.012, highpass: 6000, seed: 19 }))
+  } },
+  // RACING, the desert: a ride across it — a whistled tune over E minor, D, C and B, a galloping bass, strummed chords, a shaker
+  mesa: { bpm: 112, swing: 0.62, bars: 8, build: (t) => {
+    const lead = ['E5 - - G5 B5 - - A5', 'G5 - F#5 - D5 - . .', 'C5 - E5 - G5 - F#5 E5', 'D#5 - - - B4 - . .', 'E5 - G5 - B5 - E6 -', 'D6 - B5 - A5 - F#5 -', 'G5 - E5 - C5 - E5 -', 'D#5 - F#5 - E5 - . .']
+    // the whistle: a sine sliding into its notes, wavering
+    t.part(lead, (freq, at, dur) => t.mix.tone({ at, dur, freq: freq * 0.97, to: freq, wave: 'sine', gain: 0.2, attack: 0.03, vibrato: { rate: 5.5, depth: 0.25, after: 0.12 }, release: 0.07 }), 0.95)
+    const roots = ['E2', 'D2', 'C2', 'B1', 'E2', 'D2', 'C2', 'B1'], fifths = ['B2', 'A2', 'G2', 'F#2', 'B2', 'A2', 'G2', 'F#2']
+    t.part(roots.map((r, i) => `${r} . ${r} ${r} ${fifths[i]} . ${fifths[i]} ${fifths[i]}`), (freq, at, dur) => {
+      t.mix.tone({ at, dur, freq, wave: 'triangle', gain: 0.3, decay: 0.15 })
+      t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.5, gain: 0.045, decay: 0.08, lowpass: 800 })
+    }, 0.75)
+    // the guitar strummed: the chord's notes one after another, quick, twanging
+    const chords = [['E3', 'G3', 'B3', 'E4'], ['D3', 'F#3', 'A3', 'D4'], ['C3', 'E3', 'G3', 'C4'], ['B2', 'D#3', 'A3', 'B3'], ['E3', 'G3', 'B3', 'E4'], ['D3', 'F#3', 'A3', 'D4'], ['C3', 'E3', 'G3', 'C4'], ['B2', 'D#3', 'F#3', 'B3']]
+    t.each(8, () => [0, 4], (at, bar) => chords[bar].forEach((n, k) => t.mix.tone({ at: at + k * 0.012, dur: 0.3, freq: hz(n), wave: 'pulse', duty: 0.125, gain: 0.035, decay: 0.22, lowpass: 2500 })))
+    t.each(8, () => [0, 4], (at) => t.mix.tone({ at, dur: 0.12, freq: 120, to: 45, wave: 'sine', gain: 0.3, decay: 0.07 }))
+    t.each(8, () => [2, 6], (at) => t.mix.tone({ at, dur: 0.12, freq: 9000, wave: 'noise', gain: 0.09, attack: 0.02, decay: 0.06, lowpass: 4000, seed: 23 }))
+    t.each(8, () => [0, 1, 2, 3, 4, 5, 6, 7], (at, _bar, e) => t.mix.tone({ at, dur: 0.04, freq: 11000, wave: 'noise', gain: e % 2 ? 0.04 : 0.025, attack: 0.015, decay: 0.025, highpass: 5000, seed: 29 }))
+  } },
+  // RACING, the city at night: long notes of a lead over A minor, F, C and G, the chords running up in eighths, a bass pulsing, the beat on every quarter
+  neon: { bpm: 118, swing: 0.5, bars: 8, build: (t) => {
+    const lead = ['E5 - - - A5 - G5 E5', 'F5 - - - C5 - . .', 'E5 - G5 - C6 - B5 G5', 'D5 - - - G5 - . .', 'E5 - - - A5 - C6 -', 'B5 - A5 - F5 - A5 -', 'G5 - E5 - C5 - E5 G5', 'B4 - D5 - E5 - . .']
+    t.part(lead, (freq, at, dur) => t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.25, gain: 0.1, attack: 0.02, vibrato: { rate: 5, depth: 0.12, after: 0.2 }, release: 0.12, lowpass: 3500 }), 0.95)
+    t.part(lead.map((line) => { const s = line.split(' '); return ['.', '.', ...s.slice(0, 6)].join(' ') }), (freq, at, dur) => t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.125, gain: 0.035, release: 0.1, lowpass: 2500 }), 0.95)
+    const chords = [['A3', 'C4', 'E4'], ['F3', 'A3', 'C4'], ['C4', 'E4', 'G4'], ['G3', 'B3', 'D4'], ['A3', 'C4', 'E4'], ['F3', 'A3', 'C4'], ['C4', 'E4', 'G4'], ['E3', 'G#3', 'B3']]
+    t.each(8, () => [0, 1, 2, 3, 4, 5, 6, 7], (at, bar, e) => t.mix.tone({ at, dur: 0.1, freq: hz(chords[bar][e % 3]) * (e >= 4 ? 2 : 1), wave: 'pulse', duty: 0.125, gain: 0.03, decay: 0.08 }))
+    const roots = ['A2', 'F2', 'C3', 'G2', 'A2', 'F2', 'C3', 'E2']
+    t.part(roots.map((r) => `${r} - . ${r} - . ${r} -`), (freq, at, dur) => {
+      t.mix.tone({ at, dur, freq, wave: 'triangle', gain: 0.28, decay: 0.3 })
+      t.mix.tone({ at, dur, freq, wave: 'pulse', duty: 0.5, gain: 0.05, decay: 0.15, lowpass: 700 })
+    }, 0.85)
+    t.each(8, () => [0, 2, 4, 6], (at) => t.mix.tone({ at, dur: 0.12, freq: 150, to: 42, wave: 'sine', gain: 0.36, decay: 0.07 }))
+    t.each(8, () => [2, 6], (at) => t.mix.tone({ at, dur: 0.12, freq: 9000, wave: 'noise', gain: 0.13, decay: 0.06, lowpass: 5000, highpass: 900, seed: 31 }))
+    t.each(8, () => [1, 3, 5, 7], (at) => t.mix.tone({ at, dur: 0.08, freq: 11000, wave: 'noise', gain: 0.04, decay: 0.05, highpass: 6000, seed: 37 }))
   } },
   // ATTACKS: a fifties film from space — a theremin over A minor, F, C and E, a walking bass, brushes
   mars: { bpm: 132, swing: 0.6, bars: 8, build: (t) => {

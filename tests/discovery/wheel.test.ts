@@ -7,7 +7,7 @@ import { candidateFromRow } from '../../lib/discovery/catalog'
 import { appendExposure } from '../../lib/discovery/diversity'
 import { newSession, planDraw, type Session } from '../../lib/discovery/pool'
 import { countServed } from '../../lib/discovery/served'
-import { BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, UNIVERSE_WINDOW, WHEEL, withSignals } from '../../lib/discovery/wheel'
+import { BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, slotOrdinal, UNIVERSE_WINDOW, WHEEL, withSignals } from '../../lib/discovery/wheel'
 
 test('the wheel: a session opens on the buzz, a round deals every card, never the same card twice in a row', () => {
   for (const seed of [1, 7, 4242, 987654321]) {
@@ -142,6 +142,37 @@ test('three titles of one language in the last ten: the next one in that languag
   assert.equal(choose(rows, 'joker', context(db, state))?.title, 'A quiet walk through the old streets of Edinburgh at night')
   assert.equal(sessionRules(state).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), 'language')
   assert.equal(sessionRules(newSession(21)).refuses(withSignals(candidateFromRow(rows[0], {}, Date.now()))), null)
+})
+
+test('Brazil, South and Southeast Asia: two in ten at most, never two in a row; read on the declared language, never on an English title', () => {
+  const placed = (title: string, lang: string, universe: string) => ({ ...video(title, { universe }), lang })
+  const candidate = withSignals(candidateFromRow(placed('Pembalap muda Indonesia juara dunia untuk pertama kalinya', 'id', 'sport'), {}, Date.now()))
+  assert.equal(candidate.place, 'ID')
+  // Never two in a row.
+  assert.equal(sessionRules(remembered(31, [placed('Uma tarde no parque com os amigos', 'pt', 'food')])).refuses(candidate), 'place')
+  // Two in the last ten: a third waits.
+  const two = remembered(32, [placed('Uma tarde no parque com os amigos', 'pt', 'food'), video('A quiet walk through Edinburgh', { universe: 'travel' }), placed('Kuliner malam di Jakarta yang ramai', 'id', 'music'), video('A chess board that castles itself', { universe: 'tech' })])
+  assert.equal(sessionRules(two).refuses(candidate), 'place')
+  // One, and not the one just before: it passes. Nothing is removed, only put further.
+  const one = remembered(33, [placed('Uma tarde no parque com os amigos', 'pt', 'food'), video('A quiet walk through Edinburgh', { universe: 'travel' })])
+  assert.equal(sessionRules(one).refuses(candidate), null)
+  // An English video declared English is never one of them.
+  const english = withSignals(candidateFromRow(placed('Blade Runner 2099 - NYCC Trailer | Prime Video', 'en', 'cinema-tv'), {}, Date.now()))
+  assert.equal(english.place, undefined)
+  assert.equal(sessionRules(remembered(34, [placed('Uma tarde no parque com os amigos', 'pt', 'food')])).refuses(english), null)
+})
+
+test('a card counted along the session: the buzz and the long, the third, the sixth… of each', () => {
+  for (const seed of [1, 7, 4242, 987654321]) {
+    for (const slot of ['buzz', 'long'] as const) {
+      let count = 0
+      for (let index = 0; index < 60; index += 1) {
+        assert.equal(slotOrdinal(seed, index, slot), count, `${seed} ${slot} ${index}`)
+        if (slotAt(seed, index) === slot) count += 1
+      }
+    }
+  }
+  assert.equal(slotOrdinal(9, 0, 'buzz'), 0, 'the session opens on the buzz: the first buzz is the day\'s list, never the news')
 })
 
 test('one news video in ten: a second one waits, by its universe or its title', () => {

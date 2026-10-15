@@ -17,6 +17,7 @@ import { playNowOrNever, returnSoundPlayer, spareSoundPlayer } from '@/lib/sound
 import { gameSoundContext, getMuted, soundByFiles } from '@/utils/sound'
 
 import { renderSound, renderTuneSoftly, SOUND_RATE, type SoundName, type TuneName } from './chiptune'
+import type { RacingWorld } from './racing-worlds'
 import type { GameName } from './scores'
 
 /** Each game's tune and the sounds it can make. */
@@ -24,8 +25,10 @@ export const GAME_SOUNDS: Record<GameName, { tune: TuneName; sounds: readonly So
   eater: { tune: 'diner', sounds: ['bite', 'fries', 'shake', 'donut', 'gold', 'crash', 'level', 'over', 'winner'] },
   catcher: { tune: 'store', sounds: ['item', 'sauce', 'slip', 'coin', 'note', 'bundle', 'card', 'caught', 'level', 'over', 'winner'] },
   attacks: { tune: 'mars', sounds: ['squirt', 'pop', 'clink', 'gold', 'power', 'hurt', 'rip', 'whoosh', 'thud', 'boom', 'crash', 'level', 'over', 'winner'] },
-  racing: { tune: 'coast', sounds: ['beep', 'go', 'thud', 'whoosh', 'level', 'over', 'winner'] },
+  racing: { tune: 'coast', sounds: ['beep', 'go', 'thud', 'smash', 'cheer', 'whoosh', 'gold', 'note', 'power', 'coin', 'slip', 'clink', 'level', 'over', 'winner'] },
 }
+/** RACING's tune in each of its worlds. */
+export const RACING_TUNES: Record<RacingWorld, TuneName> = { coast: 'coast', mountain: 'peaks', desert: 'mesa', city: 'neon' }
 /** Sounds that can follow one another closely get two players. */
 const TWICE: ReadonlySet<SoundName> = new Set(['bite', 'item', 'coin', 'squirt', 'pop', 'clink', 'thud'])
 
@@ -33,6 +36,10 @@ export type GameSounds = {
   play: (name: SoundName) => void
   /** Whether the tune should be heard now: said at every frame, acted on only when it changes. */
   tune: (on: boolean) => void
+  /** Which tune, for a game with more than one (RACING's, a world each): said at every frame, acted on only when it changes. */
+  music: (name: TuneName) => void
+  /** RACING's engine: how fast its loop plays (its pitch), or null for silence; said at every frame. */
+  engine: (rate: number | null) => void
   /** To be called during a touch or a key: an iPhone lets a player start only after one. */
   touch: () => void
   dispose: () => void
@@ -63,7 +70,8 @@ export function gameSounds(game: GameName): GameSounds {
 
 /** A computer, an Android phone: Random's engine plays the samples. */
 function livePlayers(game: GameName): GameSounds {
-  const { tune, sounds } = GAME_SOUNDS[game]
+  const { tune: first, sounds } = GAME_SOUNDS[game]
+  let tune = first
   const buffers = new Map<string, AudioBuffer>()
   let alive = true, want = false, tried = 0
   let loop: Float32Array | null = null
@@ -122,6 +130,18 @@ function livePlayers(game: GameName): GameSounds {
   }
   let timer = window.setTimeout(warm, 300)
 
+  // the engine: a loop played faster or slower as the car goes
+  let motor: AudioBufferSourceNode | null = null
+  let motorLevel: GainNode | null = null
+  const quiet = () => {
+    if (!motor || !motorLevel) return
+    const context = motorLevel.context
+    motorLevel.gain.setTargetAtTime(0, context.currentTime, 0.04)
+    motor.stop(context.currentTime + 0.2)
+    motor = null
+    motorLevel = null
+  }
+
   return {
     play(name) {
       if (silent()) return
@@ -137,14 +157,42 @@ function livePlayers(game: GameName): GameSounds {
       if (!want) { stop(); return }
       if (!source && performance.now() - tried > 1000) start()
     },
+    music(name) {
+      if (name === tune) return
+      // another tune: this one stopped, the other made (if it is not yet) and started from its beginning
+      tune = name
+      stop()
+      offset = 0
+      loop = null
+      void tuneSamples(name).then((data) => { if (tune !== name || !alive) return; loop = data; start() })
+    },
+    engine(rate) {
+      if (rate == null || silent() || !alive) { quiet(); return }
+      const context = gameSoundContext()
+      if (!context) return
+      if (!motor) {
+        const gain = context.createGain()
+        gain.gain.setValueAtTime(0, context.currentTime)
+        gain.gain.setTargetAtTime(1, context.currentTime, 0.08)
+        const node = context.createBufferSource()
+        node.buffer = bufferOf(context, 'engine', soundSamples('engine'))
+        node.loop = true
+        node.connect(gain).connect(context.destination)
+        node.start()
+        motor = node
+        motorLevel = gain
+      }
+      motor.playbackRate.setTargetAtTime(rate, context.currentTime, 0.03)
+    },
     touch() { tried = 0 },
-    dispose() { alive = false; want = false; window.clearTimeout(timer); stop() },
+    dispose() { alive = false; want = false; window.clearTimeout(timer); stop(); quiet() },
   }
 }
 
 /** An iPhone, an iPad: the same sounds as files, each on a player of its own. */
 function filePlayers(game: GameName): GameSounds {
-  const { tune, sounds } = GAME_SOUNDS[game]
+  const { tune: first, sounds } = GAME_SOUNDS[game]
+  let tune = first
   const all: HTMLAudioElement[] = []
   const take = (src: string) => {
     const audio = spareSoundPlayer()
@@ -157,6 +205,10 @@ function filePlayers(game: GameName): GameSounds {
   for (const name of sounds) players.set(name, Array.from({ length: TWICE.has(name) ? 2 : 1 }, () => take(soundFile(name))))
   const music = take(tuneFile(tune))
   music.loop = true
+  // RACING's engine, a loop played faster or slower, its pitch with it
+  const motor = game === 'racing' ? take(soundFile('engine')) : null
+  if (motor) { motor.loop = true; const m = motor as HTMLAudioElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean }; m.preservesPitch = false; m.webkitPreservesPitch = false }
+  let motorRate = 1, motorTried = 0
   const met = new Set<HTMLAudioElement>()
   let want = false, tried = 0
 
@@ -178,12 +230,30 @@ function filePlayers(game: GameName): GameSounds {
       if (!want) { if (!music.paused) music.pause(); return }
       if (music.paused && performance.now() - tried > 1000) start()
     },
+    music(name) {
+      if (name === tune) return
+      // another tune on the same player: a phone lets a player it has met play any file
+      tune = name
+      music.pause()
+      music.src = tuneFile(name)
+      music.loop = true
+      if (want) start()
+    },
+    engine(rate) {
+      if (!motor) return
+      if (rate == null || silent()) { if (!motor.paused) motor.pause(); return }
+      const next = Math.max(0.5, Math.min(2, rate))
+      // the rate changed by a little or more: a phone does not like being told every frame
+      if (Math.abs(next - motorRate) > 0.02) { motorRate = next; motor.playbackRate = next }
+      if (motor.paused && performance.now() - motorTried > 1000) { motorTried = performance.now(); void motor.play().catch(() => undefined) }
+    },
     touch() {
       // every player this game has not met yet is started and stopped at once, silently, during the touch
       for (const audio of all) {
         if (met.has(audio)) continue
         met.add(audio)
         if (audio === music && want) { start(); continue }
+        if (audio === motor) { motorTried = 0 }
         audio.muted = true
         audio.play().then(
           () => { if (!(audio === music && want)) { audio.pause(); audio.currentTime = 0 } audio.muted = false },

@@ -12,6 +12,7 @@ import { finalizeVideoIngest, type RawVideo } from '@/lib/ingest/videos'
 import { quotaDay } from '@/lib/discovery/exploration'
 import { detectAngle } from '../tagging/angle'
 import { closeRun, judge, openRun, recordSearch, type JournalLine, type RunStatus } from './journal'
+import { Mix } from './mix'
 import type { AdmissionBatch, AdmissionResult, LineContext, LineResult, SearchInput } from './context'
 import type { Line } from '../types'
 
@@ -45,6 +46,11 @@ export type DirectOptions = {
   youtubeBucket?: string
   log?: (message: string) => void
   http?: typeof fetch
+  /**
+   * A line that checks what the base holds and admits nothing (the nightly check of dead videos): judged on what it
+   * read, like a dry run — its zero insertions are its nature, not a failure (it was journaled "failed" every night).
+   */
+  checkOnly?: boolean
 }
 
 export type DirectRun = {
@@ -88,8 +94,18 @@ export function trendQuota(db: Db, dailyUnits: number, dryRun: boolean, bucket: 
 }
 
 /** The provisional admission: the current video and image insertion paths, with the line, plus the angle rule of the trend. */
+/** A video's length in seconds: the finders' own count, else YouTube's ISO duration. */
+function secondsOf(video: RawVideo & { seconds?: number }): number | undefined {
+  if (typeof video.seconds === 'number') return video.seconds
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(String(video.duration ?? ''))
+  return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : undefined
+}
+
 export function provisionalAdmit(db: Db, line: Line, dryRun: boolean) {
   const saturation = new Map<string, number>()
+  // The run's mix (the owner, 12 and 13 October: "limiter n'est pas exclure", "vas-y pour tout"): of what it lets in, Shorts
+  // 15 % at most and each of Brazil and South and Southeast Asia 6 % (lib/v3/ingest/mix.ts); the rest is never refused here.
+  const mix = new Mix()
   const countSaturated = async (subjectId: string): Promise<number> => {
     const known = saturation.get(subjectId)
     if (known !== undefined) return known
@@ -111,6 +127,10 @@ export function provisionalAdmit(db: Db, line: Line, dryRun: boolean) {
         if (!batch.keepAngles && (SATURATED_ANGLES as readonly string[]).includes(angle)) {
           if (saturated >= ANGLE_SATURATION) { result.rejected['angle-saturated'] = (result.rejected['angle-saturated'] ?? 0) + 1; continue }
           saturated += 1
+        }
+        if (!mix.accepts({ title: video.title, seconds: secondsOf(video), lang: video.lang ?? video.declaredLang })) {
+          result.rejected['au-delà de sa part (Shorts ou pays)'] = (result.rejected['au-delà de sa part (Shorts ou pays)'] ?? 0) + 1
+          continue
         }
         admitted.push(video)
       }
@@ -170,9 +190,11 @@ export async function directContext(db: Db, options: DirectOptions): Promise<Dir
       const finishedAt = new Date()
       const hitDeadline = finishedAt.getTime() >= deadline
       // A dry run inserts nothing by design: it is judged on what it read, not on what it wrote.
-      const status: RunStatus = options.dryRun
-        ? (result.errors.length ? 'partial' : result.counters.scanned ? 'ok' : 'skipped')
-        : judge(result.counters, result.errors, hitDeadline)
+      const status: RunStatus = options.checkOnly
+        ? (!result.counters.scanned ? (result.errors.length ? 'failed' : 'skipped') : result.errors.length || hitDeadline ? 'partial' : 'ok')
+        : options.dryRun
+          ? (result.errors.length ? 'partial' : result.counters.scanned ? 'ok' : 'skipped')
+          : judge(result.counters, result.errors, hitDeadline)
       if (runId) await closeRun(db, runId, { finishedAt, status, counters: result.counters, errors: result.errors, ...(note ? { note } : {}) }).catch(() => log('journal indisponible ; le passage lui-même n_est pas affecté'))
       await db.collection(LOCKS_COLLECTION).updateOne({ _id: options.journalLine } as Document, { $set: { until: new Date(0) } }).catch(() => undefined)
       return { status, hitDeadline }

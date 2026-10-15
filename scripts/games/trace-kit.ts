@@ -151,6 +151,65 @@ export function biggest(mask: Uint8Array, w: number, h: number): Uint8Array {
   return mask.map((v, i) => (v && piece[i] === best ? 1 : 0))
 }
 
+/** A cut-out (its picture and which pixels are in) turned left to right. */
+export function mirrored(pic: Pic, alpha: Uint8Array): { pic: Pic; alpha: Uint8Array } {
+  const out = blank(pic.w, pic.h), a = new Uint8Array(alpha.length)
+  for (let y = 0; y < pic.h; y += 1) for (let x = 0; x < pic.w; x += 1) {
+    const sx = pic.w - 1 - x
+    if (alpha[y * pic.w + sx]) { put(out, x, y, get(pic, sx, y)); a[y * pic.w + x] = 1 }
+  }
+  return { pic: out, alpha: a }
+}
+
+/** A cut-out made even about `axis` (a column, may fall between two): the half on the `keep` side, and its mirror on the other. */
+export function evened(pic: Pic, alpha: Uint8Array, axis: number, keep: 'left' | 'right'): { pic: Pic; alpha: Uint8Array } {
+  const half = Math.round(keep === 'left' ? axis : pic.w - axis), w = half * 2
+  const out = blank(w, pic.h), a = new Uint8Array(w * pic.h)
+  for (let y = 0; y < pic.h; y += 1) for (let x = 0; x < w; x += 1) {
+    // the kept half, read outward from the axis
+    const d = x < half ? half - 1 - x : x - half
+    const sx = keep === 'left' ? Math.round(axis) - 1 - d : Math.round(axis) + d
+    if (sx < 0 || sx >= pic.w || !alpha[y * pic.w + sx]) continue
+    put(out, x, y, get(pic, sx, y)); a[y * w + x] = 1
+  }
+  return { pic: out, alpha: a }
+}
+
+/** A cut-out made even row by row, about an axis that may move from row to row (`axisAt`): on each row the half on the `keep` side and its mirror, the rows centred on one another. */
+export function evenedRows(pic: Pic, alpha: Uint8Array, axisAt: (y: number) => number, keep: 'left' | 'right'): { pic: Pic; alpha: Uint8Array } {
+  const halves = Array.from({ length: pic.h }, (_, y) => Math.max(0, Math.round(keep === 'left' ? axisAt(y) : pic.w - axisAt(y))))
+  const half = Math.max(...halves), w = half * 2
+  const out = blank(w, pic.h), a = new Uint8Array(w * pic.h)
+  for (let y = 0; y < pic.h; y += 1) {
+    const axis = Math.round(axisAt(y))
+    for (let d = 0; d < half; d += 1) {
+      const sx = keep === 'left' ? axis - 1 - d : axis + d
+      if (sx < 0 || sx >= pic.w || !alpha[y * pic.w + sx]) continue
+      const c = get(pic, sx, y)
+      put(out, half - 1 - d, y, c); a[y * w + half - 1 - d] = 1
+      put(out, half + d, y, c); a[y * w + half + d] = 1
+    }
+  }
+  // the clear columns at its sides cut away, as many on each side
+  let edge = 0
+  while (edge < half && ![...Array(pic.h).keys()].some((y) => a[y * w + edge])) edge += 1
+  if (!edge) return { pic: out, alpha: a }
+  const cw = w - edge * 2, cut = blank(cw, pic.h), ca = new Uint8Array(cw * pic.h)
+  for (let y = 0; y < pic.h; y += 1) for (let x = 0; x < cw; x += 1) if (a[y * w + x + edge]) { put(cut, x, y, get(out, x + edge, y)); ca[y * cw + x] = 1 }
+  return { pic: cut, alpha: ca }
+}
+
+/** A cut-out leaning: each row pushed right by up to `by` pixels at the top, none at `foot` and below. */
+export function leaning(pic: Pic, alpha: Uint8Array, by: number, foot: number): { pic: Pic; alpha: Uint8Array } {
+  const w = pic.w + Math.ceil(by)
+  const out = blank(w, pic.h), a = new Uint8Array(w * pic.h)
+  for (let y = 0; y < pic.h; y += 1) {
+    const shift = y >= foot ? 0 : Math.round(by * (1 - y / foot))
+    for (let x = 0; x < pic.w; x += 1) if (alpha[y * pic.w + x]) { put(out, x + shift, y, get(pic, x, y)); a[y * w + x + shift] = 1 }
+  }
+  return { pic: out, alpha: a }
+}
+
 export function inPolygon(x: number, y: number, poly: ReadonlyArray<readonly [number, number]>): boolean {
   let inside = false
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
@@ -272,4 +331,18 @@ export function quantizeAreas(p: Pic, areas: ReadonlyArray<{ mask: Uint8Array | 
     }
   })
   return { palette, index: tidy(index, p.w, p.h, 6, 2) }
+}
+
+/** A cut-out traced at `width` pixels wide: each cell the average of the figure's pixels in it, clear where less than `share` of it is the figure (less for thin things, a palm's fronds). */
+export function cutOut(pic: Pic, mask: Uint8Array, box: readonly [number, number, number, number], width: number, share = 0.5): { pic: Pic; alpha: Uint8Array } {
+  const [x0, y0, x1, y1] = box
+  const f = (x1 - x0) / width, height = Math.round((y1 - y0) / f)
+  const out = blank(width, height), alpha = new Uint8Array(width * height)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const sx0 = Math.floor(x0 + x * f), sx1 = Math.max(sx0 + 1, Math.floor(x0 + (x + 1) * f)), sy0 = Math.floor(y0 + y * f), sy1 = Math.max(sy0 + 1, Math.floor(y0 + (y + 1) * f))
+    let r = 0, g = 0, b = 0, n = 0, all = 0
+    for (let yy = sy0; yy < sy1; yy += 1) for (let xx = sx0; xx < sx1; xx += 1) { all += 1; if (!mask[yy * pic.w + xx]) continue; const c = get(pic, xx, yy); r += c[0]; g += c[1]; b += c[2]; n += 1 }
+    if (n >= all * share && n > 0) { put(out, x, y, [r / n, g / n, b / n]); alpha[y * width + x] = 1 }
+  }
+  return { pic: out, alpha }
 }

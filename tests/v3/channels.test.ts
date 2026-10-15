@@ -6,8 +6,9 @@ import type { Db, Document } from 'mongodb'
 import { CHANNELS_PER_RUN, queueMetChannels, SMALL_CHANNEL } from '../../lib/v3/dig/channels'
 import { DEFAULT_TICKETS, ticketOrder } from '../../lib/v3/dig/queue'
 
-test('the snowball has its tickets, in turn with the bases', () => {
-  assert.equal(DEFAULT_TICKETS.filter((base) => base === 'snowball').length, 2)
+test('the snowball has its ticket, in turn with the bases; the news three since 13 October', () => {
+  assert.equal(DEFAULT_TICKETS.filter((base) => base === 'snowball').length, 1)
+  assert.equal(DEFAULT_TICKETS.filter((base) => base === 'trends').length, 3)
   const order = ticketOrder(DEFAULT_TICKETS)
   assert.equal(order[4], 'snowball')
 })

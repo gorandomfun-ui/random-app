@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { boringWebReason, frontPageOf } from '../../lib/v3/web/quality'
+import { boringWebReason, frontPageOf, institutionReason } from '../../lib/v3/web/quality'
 
 // Taken from what was stored, 27 September.
 const BORING: Array<[string, string, string]> = [
@@ -81,4 +81,21 @@ test("a page on someone's own site gives its front page; a platform, a newspaper
   assert.equal(frontPageOf('https://www.waze.com/live-map/directions/x'), null)
   assert.equal(frontPageOf('https://www.gelateria-jazzin.it/menu'), 'https://www.gelateria-jazzin.it/')
   assert.equal(frontPageOf('https://www.goudenleeuw.nl/menu'), 'https://www.goudenleeuw.nl/', 'a restaurant called the Golden Lion is not a directory')
+})
+
+test("Common Crawl's universities, town halls and administrations: told by the address or the name; a curious title still goes in", () => {
+  const cases: Array<[string, string, string | null]> = [
+    ['https://ueh.edu.ht/', "Université d'État d'Haïti - UEH", 'university'],
+    ['https://www.example.edu/', 'Welcome', 'university'],
+    ['https://ipes.ht/', 'IPES Business College', 'university'],
+    ['https://mef.gouv.ht/', "Ministère de l'Économie et des Finances", 'administration'],
+    ['https://bouctouche.ca/', 'La ville de Bouctouche', 'administration'],
+    ['https://www.assevent.fr/', "Site officiel de la Ville d'Assevent", 'administration'],
+    ['https://elrose.ca/', 'Town of Elrose & RM of Monet No. 257', 'administration'],
+    ['https://museum.bouctouche.ca/', 'Musée de la ville de Bouctouche', null],
+    ['https://maps.example.edu/', 'An atlas of the night sky', null],
+    ['https://plomberie-ngando.cm/', 'Plomberie Ngando & Fils', null],
+    ['https://www.camping-landes-loupk2.fr/', 'Accueil - Camping Lou Pk2', null],
+  ]
+  assert.deepEqual(cases.filter(([url, title, reason]) => institutionReason(url, title) !== reason).map(([url, title]) => `${url} → ${institutionReason(url, title)}`), [])
 })

@@ -8,7 +8,8 @@
  *
  * An envelope only: the line is `lib/v3/ingest/lines/lookalike.ts`. It loads
  * the small model (700 MB), so it runs alone on the machine, as the
- * fingerprints do; no YouTube unit, Dailymotion is free.
+ * fingerprints do; Dailymotion is free, the likes' YouTube channels cost a
+ * few hundred units a day (RANDOM_LOOKALIKE_YOUTUBE_UNITS).
  */
 
 import { disposeModel, fingerprints } from '@/lib/v3/ai/fingerprint'
@@ -18,6 +19,12 @@ import { emptyCounters, journalHost } from '@/lib/v3/ingest/journal'
 import { run, type LookalikeCursor } from '@/lib/v3/ingest/lines/lookalike'
 
 const MAX_MINUTES = Number(process.env.RANDOM_LOOKALIKE_MINUTES ?? 15)
+/**
+ * YouTube units a day for the likes: thirty-six searches with their words (a hundred units each in our count), the
+ * channels of the likes and of the YouTube look-alikes (one unit a page, one per fifty details). The owner, 12 October:
+ * YouTube for videos near the likes rather than for the channels of anything.
+ */
+const YOUTUBE_UNITS = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_UNITS ?? 5000)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')
@@ -30,7 +37,7 @@ async function main(): Promise<void> {
   const db = await getDb()
   let direct
   try {
-    direct = await directContext(db, { line: 'lookalike', journalLine: 'lookalike', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: 0, youtubeBucket: 'lookalike' })
+    direct = await directContext(db, { line: 'lookalike', journalLine: 'lookalike', minutes: MAX_MINUTES, dryRun, host: journalHost(), youtubeDailyUnits: YOUTUBE_UNITS, youtubeBucket: 'lookalike' })
   } catch (error) {
     if (error instanceof LineLocked) { console.log(JSON.stringify({ lookalike: 'skipped', reason: 'locked' })); process.exit(0) }
     throw error

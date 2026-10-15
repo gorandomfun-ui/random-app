@@ -131,10 +131,11 @@ async function admitPass(ctx: LineContext, run: Pass, counters: LineResult['coun
     const level: DigLevel = levelOf(video.viewCount, lang)
     levels[level] = (levels[level] ?? 0) + 1
     const dig: DigTags = { subjectId: subject._id, base: subject.base, level, pass, ...(lang ? { lang } : {}) }
-    const { seconds: _seconds, live: _live, declaredLang, channelVideos: _size, ...raw } = video
+    const { seconds: _seconds, live: _live, channelVideos: _size, ...raw } = video
     void _seconds; void _live; void _size
-    // The language the platform declared, kept on the row: the draw's language rule counts it even when the title is too short to read.
-    if (declaredLang && /^[a-z]{2,3}$/i.test(declaredLang)) (raw as { lang?: string }).lang = declaredLang.toLowerCase().slice(0, 2)
+    // The language the platform declared goes with the row, kept as `lang` (lib/ingest/videoDocument.ts): the draw's language rule
+    // counts it even when the title is too short to read. Until 13 October it was set here and dropped at the writing, and
+    // "en-US" or "es-419" were not taken at all.
     if (moment.has(video.videoId)) raw.trendObservedAt = new Date()
     // A probe's universe is its list's, not necessarily the video's ("South Korea" in the street foods): the tagger reads the video itself.
     return { ...raw, digHint: dig, ...(subject.universe && !subject.probe ? { universeHint: subject.universe } : {}), contextQueries: [`dig:${subject.base}:${subject._id}`, run.query], source: { name: `dig:${subject.base}` } }
@@ -252,6 +253,7 @@ async function runChannel(runner: Runner, subject: QueuedSubject): Promise<void>
 }
 
 /** The Dailymotion queries of a subject, one per pass: the name, then the archives, the rare, the live; a theme goes amateur, archive, vintage. */
+const DAILYMOTION_QUERIES = 4
 function dailymotionQuery(subject: QueuedSubject, done: number): string {
   const fr = subject.lang === 'fr'
   const words = subject.kind === 'topic'
@@ -263,8 +265,10 @@ function dailymotionQuery(subject: QueuedSubject, done: number): string {
 async function runDailymotion(runner: Runner, subject: QueuedSubject): Promise<void> {
   const done = (subject.passes.dailymotion ?? []).length
   const query = dailymotionQuery(subject, done)
+  // Past the four queries, the same ones a page further: the news subjects dig six to nine passes deep (lib/v3/dig/queue.ts, planOf).
+  const page = Math.floor(done / DAILYMOTION_QUERIES) + 1
   let videos: DigVideo[] = []
-  try { videos = await searchDailymotion(query, done === 0 ? 'visited' : 'relevance', runner.http) } catch (error) { runner.errors.push(`dailymotion "${query}" : ${message(error)}`) }
+  try { videos = await searchDailymotion(query, done === 0 ? 'visited' : 'relevance', runner.http, undefined, 100, undefined, page) } catch (error) { runner.errors.push(`dailymotion "${query}" : ${message(error)}`) }
   // The player refuses one in eight of what the API lists: asked before the video is stored, never after.
   const checked: DigVideo[] = []
   for (const video of subjectDoor(videos, doorSubject(subject), 'dailymotion').kept) if (await playable(video.videoId, runner.http)) checked.push(video)

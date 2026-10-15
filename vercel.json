@@ -1,1 +1,3 @@
-{}
+{
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)server' ':(exclude)scripts' ':(exclude)tests' ':(exclude)docs' ':(exclude)lib/v3/ingest/lines'"
+}

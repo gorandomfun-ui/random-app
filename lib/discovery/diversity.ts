@@ -16,6 +16,8 @@ export type Exposure = {
   lang?: string
   /** A news video: one in ten at most. */
   news?: boolean
+  /** Brazil, South or Southeast Asia: two in ten at most, never two in a row (the owner, 13 October). */
+  place?: string
 }
 export const LONG_SECONDS = 15 * 60
 /** The alphabet, not a list: any letter outside the Latin scripts (lib/v3/cool/clean.ts reads the same ranges server-side). */
@@ -38,6 +40,7 @@ export function exposureOf(candidate: Candidate): Exposure | null {
     ...(candidate.universe ? { universe: candidate.universe } : {}),
     ...(candidate.lang ? { lang: candidate.lang } : {}),
     ...(candidate.news ? { news: true } : {}),
+    ...(candidate.place ? { place: candidate.place } : {}),
     ...(year != null && Number.isFinite(year) ? { publicationYear: year } : {}),
     ...(candidate.authorKey ? { author: hash(candidate.authorKey) } : {}),
     ...(candidate.seriesKey ? { series: hash(candidate.seriesKey) } : {}),

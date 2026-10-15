@@ -22,7 +22,7 @@ import { dirname } from 'node:path'
 
 import { MongoClient, type Document } from 'mongodb'
 
-import { MOMENT_DAYS, OLD_UPLOAD_YEARS, OUTLET_VIDEOS, TRAILER_DAYS } from '@/lib/v3/dig/outlet'
+import { MOMENT_DAYS, OLD_UPLOAD_BEFORE, OUTLET_VIDEOS, TRAILER_DAYS } from '@/lib/v3/dig/outlet'
 import { channelCounts } from '@/lib/v3/dig/youtube'
 import { SWEEPS_COLLECTION } from '@/lib/v3/pools/recap'
 
@@ -30,7 +30,7 @@ const REPORT = 'docs/reports/outlet-sweep.md'
 const SAMPLE = 60_000
 const MIN_IN_SAMPLE = 5
 const OLD_TITLE = /\b(19[0-9]{2}|200[0-5])\b/
-const UPLOAD_CUTOFF = new Date(Date.now() - OLD_UPLOAD_YEARS * 365.25 * 86_400_000)
+const UPLOAD_CUTOFF = new Date(Date.UTC(OLD_UPLOAD_BEFORE, 0, 1))
 /** The week's clips of an outlet: uploaded within the last years, no old year in the title. */
 const recentOf = (key: string): Document => ({ 'v3.channelKey': key, isSuppressed: { $ne: true }, publishedAt: { $gte: UPLOAD_CUTOFF }, title: { $not: { $regex: OLD_TITLE.source } } })
 const apply = process.argv.includes('--apply')
@@ -110,8 +110,8 @@ async function main(): Promise<void> {
   const toSetAside = outlets.reduce((sum, c) => sum + (c.recent ?? 0), 0)
   const lines = [
     `# Médias dans le catalogue — ${new Date().toISOString().slice(0, 16)}Z`, '',
-    `Échantillon de ${SAMPLE} vidéos ; ${candidates.length} chaînes pesantes ; **${big.length} chaînes à ${OUTLET_VIDEOS.toLocaleString('fr-FR')} vidéos publiées ou plus**, dont ${outlets.length} avec des clips de ces ${OLD_UPLOAD_YEARS} dernières années sans année d'époque dans le titre.`, '',
-    `À mettre de côté : **${toSetAside.toLocaleString('fr-FR')} vidéos** — ce qui est d'époque (titre daté, ou mis en ligne il y a plus de ${OLD_UPLOAD_YEARS} ans) reste, INA entière.`, '',
+    `Échantillon de ${SAMPLE} vidéos ; ${candidates.length} chaînes pesantes ; **${big.length} chaînes à ${OUTLET_VIDEOS.toLocaleString('fr-FR')} vidéos publiées ou plus**, dont ${outlets.length} avec des clips mis en ligne depuis ${OLD_UPLOAD_BEFORE} sans année d'époque dans le titre.`, '',
+    `À mettre de côté : **${toSetAside.toLocaleString('fr-FR')} vidéos** — ce qui est d'époque (titre daté, ou mis en ligne avant ${OLD_UPLOAD_BEFORE}) reste, INA entière.`, '',
     '| Chaîne | Source | Publiées | En stock | De ces dernières années | Reste |', '|---|---|---|---|---|---|',
     ...big.map((c) => `| ${c.title.slice(0, 40)} | ${c.provider} | ${(c.size ?? 0).toLocaleString('fr-FR')} | ${(c.stock ?? 0).toLocaleString('fr-FR')} | ${(c.recent ?? 0).toLocaleString('fr-FR')} | ${((c.stock ?? 0) - (c.recent ?? 0)).toLocaleString('fr-FR')} |`),
   ]

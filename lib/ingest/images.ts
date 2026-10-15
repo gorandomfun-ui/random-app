@@ -127,6 +127,8 @@ type IngestImagesOptions = {
   dryRun?: boolean;
   sampleSize?: number;
   insertOnly?: boolean;
+  /** Giphy pages per query (fifty a page, up to five hundred a word): deeper than the first results. */
+  pages?: number;
 };
 
 type ProviderCounts = Record<string, number>;
@@ -158,9 +160,10 @@ type IngestResult = {
   existingSkipped?: number;
 };
 
-type Fetcher = (query: string, per: number) => Promise<ImageSource[]>;
+type Fetcher = (query: string, per: number, offset?: number) => Promise<ImageSource[]>;
 
-const DEFAULT_PROVIDERS: ImageProvider[] = [...IMAGE_PROVIDERS];
+/** Tenor's search API was closed by Google (every call: 403 "Tenor API is discontinued", seen 8 October; the last Tenor GIF entered on 6 July). Its GIFs already in the base still load. */
+const DEFAULT_PROVIDERS: ImageProvider[] = IMAGE_PROVIDERS.filter((provider) => provider !== 'tenor');
 
 const STOP_TAGS = new Set(['pixabay', 'pexels', 'giphy', 'tenor', 'image', 'photo', 'gif']);
 const PIXABAY_CDN_HOST = 'cdn.pixabay.com';
@@ -210,13 +213,14 @@ async function fetchPixabay(query: string, per: number): Promise<ImageSource[]> 
   });
 }
 
-async function fetchGiphy(query: string, per: number): Promise<ImageSource[]> {
+async function fetchGiphy(query: string, per: number, offset = 0): Promise<ImageSource[]> {
   const key = process.env.GIPHY_API_KEY;
   if (!key) return [];
   const search = new URL('https://api.giphy.com/v1/gifs/search');
   search.searchParams.set('api_key', key);
   search.searchParams.set('q', query);
   search.searchParams.set('limit', String(per));
+  if (offset > 0) search.searchParams.set('offset', String(offset));
   search.searchParams.set('rating', 'pg-13');
   const res = await fetch(search, { cache: 'no-store' });
   if (!res.ok) throw new ImageProviderError('giphy', res.status);
@@ -245,6 +249,8 @@ async function fetchGiphy(query: string, per: number): Promise<ImageSource[]> {
 }
 
 async function fetchTenor(query: string, per: number): Promise<ImageSource[]> {
+  // Closed by Google: refused without a call, so the page says why instead of showing a silent 0.
+  if (process.env.RANDOM_TENOR_OPEN !== '1') throw new ImageProviderError('tenor', 410);
   const key = process.env.TENOR_API_KEY;
   if (!key) return [];
   const search = new URL('https://tenor.googleapis.com/v2/search');
@@ -506,6 +512,7 @@ export async function ingestImages({
   dryRun = false,
   sampleSize = 6,
   insertOnly = false,
+  pages = 1,
 }: IngestImagesOptions): Promise<IngestResult> {
   if (!queries.length) {
     return { scanned: 0, unique: 0, inserted: 0, updated: 0 };
@@ -528,7 +535,18 @@ export async function ingestImages({
       .map((provider) => {
         const fetcher = fetchers[provider];
         if (!fetcher) return null;
-        return fetcher(trimmed, perQuery)
+        // Giphy goes deeper, page after page, while a page comes back full; the others give their first page.
+        const read = async (): Promise<ImageSource[]> => {
+          if (provider !== 'giphy' || pages <= 1) return fetcher(trimmed, perQuery)
+          const all: ImageSource[] = []
+          for (let page = 0; page < pages; page += 1) {
+            const got = await fetcher(trimmed, perQuery, page * perQuery)
+            all.push(...got)
+            if (got.length < perQuery) break
+          }
+          return all
+        }
+        return read()
           .then((results) => ({ provider, results }))
           .catch((error) => {
             if (error instanceof ImageProviderError) {

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import { ObjectId, type Db } from 'mongodb'
 import { getDbSafe } from '@/lib/random/data'
+import { checkImages, DEAD_IMAGES_INDEX, ensureDeadImagesIndex, imageOutcomeUpdate, imageStatus } from '@/lib/v3/obsolete/images'
 
 type ImageDoc = {
   _id: ObjectId
@@ -709,6 +710,19 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl
+  if (url.searchParams.get('mode') === 'nightly') {
+    // The night's check (lib/v3/ingest/lines/image-obsolete.ts) and the dead waiting for the owner's deletion.
+    await ensureDeadImagesIndex(db as never)
+    const [lastRun, pending] = await Promise.all([
+      db.collection('ingest_runs_v3').find({ line: 'image-obsolete', dryRun: { $ne: true } }, { projection: { startedAt: 1, finishedAt: 1, status: 1, note: 1, counters: 1 }, sort: { startedAt: -1 }, limit: 1, maxTimeMS: 10_000 }).next().catch(() => null),
+      db.collection('items').aggregate([{ $match: { type: 'image', obsoleteImageStatus: 'obsolete' } }, { $group: { _id: '$provider', n: { $sum: 1 } } }], { hint: DEAD_IMAGES_INDEX, maxTimeMS: 30_000 }).toArray().catch(() => [] as Array<{ _id: string; n: number }>),
+    ])
+    const providers = Object.fromEntries(pending.map((row) => [String(row._id ?? 'unknown'), Number(row.n) || 0]))
+    return NextResponse.json({
+      lastRun: lastRun ? { startedAt: lastRun.startedAt, finishedAt: lastRun.finishedAt ?? null, status: lastRun.status, note: lastRun.note ?? null, checked: lastRun.counters?.scanned ?? 0 } : null,
+      pending: { total: Object.values(providers).reduce((sum, n) => sum + n, 0), providers },
+    }, { headers: { 'Cache-Control': 'no-store' } })
+  }
   const fullScan =
     url.searchParams.get('full') === '1' ||
     url.searchParams.get('full') === 'true' ||
@@ -983,6 +997,25 @@ export async function DELETE(req: NextRequest) {
     payload = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  if (payload && typeof payload === 'object' && (payload as { confirmed?: unknown }).confirmed === true) {
+    // The dead found by the night's check, a hundred at a time, the oldest verdicts first: each is asked once more right now,
+    // and only what is still dead is deleted; the others get their new status (14 October, the owner's button).
+    await ensureDeadImagesIndex(db as never)
+    const docs = await db.collection('items').find({ type: 'image', obsoleteImageStatus: 'obsolete' }, { projection: { _id: 1, url: 1, provider: 1 }, hint: DEAD_IMAGES_INDEX, sort: { obsoleteImageCheckedAt: 1 }, limit: 100, maxTimeMS: 30_000 }).toArray()
+    if (!docs.length) return NextResponse.json({ deleted: 0, checked: 0, revived: 0, remaining: 0, done: true })
+    const outcomes = await checkImages(docs as Array<{ _id: ObjectId; url?: unknown }>, { concurrency: 12 })
+    const stillDead = docs.filter((doc) => { const outcome = outcomes.get(String(doc._id)); return outcome ? imageStatus(outcome) === 'obsolete' : false })
+    const deadIds = new Set(stillDead.map((doc) => String(doc._id)))
+    const others = docs.filter((doc) => !deadIds.has(String(doc._id)))
+    const at = new Date()
+    if (others.length) {
+      await db.collection('items').bulkWrite(others.map((doc) => ({ updateOne: { filter: { _id: doc._id, type: 'image' }, update: imageOutcomeUpdate(outcomes.get(String(doc._id)) ?? { obsolete: false, reason: 'no-answer', kind: 'ambiguous' }, at) } })), { ordered: false }).catch(() => undefined)
+    }
+    const deletion = stillDead.length ? await db.collection('items').deleteMany({ _id: { $in: stillDead.map((doc) => doc._id) }, type: 'image', obsoleteImageStatus: 'obsolete' }) : { deletedCount: 0 }
+    const remaining = await db.collection('items').countDocuments({ type: 'image', obsoleteImageStatus: 'obsolete' }, { hint: DEAD_IMAGES_INDEX, maxTimeMS: 30_000 }).catch(() => -1)
+    return NextResponse.json({ deleted: deletion.deletedCount ?? 0, checked: docs.length, revived: others.length, remaining, done: remaining === 0 })
   }
 
   const ids = Array.isArray((payload as { ids?: unknown })?.ids)

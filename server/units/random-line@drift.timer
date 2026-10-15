@@ -1,8 +1,10 @@
 [Unit]
-Description=RANDOM drift (four runs a day, Paris: Dailymotion's related videos and small uploaders, from the likes and the weird themes; no YouTube unit)
+Description=RANDOM drift (six runs a day, Paris — two added on 11 October, the owner: the volume the week's cap took back found elsewhere — Dailymotion's related videos and small uploaders, from the likes and the weird themes; no YouTube unit; each clear of the small model's windows)
 
 [Timer]
+OnCalendar=*-*-* 05:35:00 Europe/Paris
 OnCalendar=*-*-* 10:40:00 Europe/Paris
+OnCalendar=*-*-* 13:07:00 Europe/Paris
 OnCalendar=*-*-* 14:40:00 Europe/Paris
 OnCalendar=*-*-* 19:40:00 Europe/Paris
 OnCalendar=*-*-* 23:10:00 Europe/Paris

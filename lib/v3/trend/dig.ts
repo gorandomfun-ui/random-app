@@ -76,7 +76,7 @@ export async function searchDailymotion(spec: DailymotionSearch, request: typeof
     limit: String(RESULTS_PER_SEARCH), page: String(Math.max(1, Math.floor(spec.page ?? 1))), sort: spec.sort,
     ...(spec.query ? { search: spec.query } : {}), ...(spec.country ? { country: spec.country.toLowerCase() } : {}),
     created_after: String(Math.floor(new Date(spec.after).getTime() / 1000)), created_before: String(Math.floor(new Date(spec.before).getTime() / 1000)),
-    fields: 'id,title,description,url,thumbnail_url,duration,aspect_ratio,channel.id,owner.id,owner.screenname,created_time,views_total,private',
+    fields: 'id,title,description,url,thumbnail_url,duration,aspect_ratio,channel.id,owner.id,owner.screenname,created_time,views_total,private,language',
   })
   const response = await request(`https://api.dailymotion.com/videos?${params}`, { headers: { 'User-Agent': USER_AGENT }, signal })
   if (!response.ok) throw new Error(`Dailymotion search: HTTP ${response.status}`)
@@ -91,6 +91,7 @@ export async function searchDailymotion(spec: DailymotionSearch, request: typeof
       aspectRatio: typeof row.aspect_ratio === 'number' ? row.aspect_ratio : undefined,
       publishedAt: typeof row.created_time === 'number' ? new Date(row.created_time * 1000) : undefined,
       viewCount: typeof row.views_total === 'number' ? row.views_total : undefined, statsObservedAt: new Date(), contextQueries: [spec.query],
+      lang: text('language'),
     }]
   })
 }

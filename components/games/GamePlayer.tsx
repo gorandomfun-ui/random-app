@@ -26,13 +26,13 @@ import { attacksOverHits, attacksPadGeometry, attacksPadPart, renderAttacksGame,
 import { ATTACKS_BOARD, ATTACKS_LAST_LEVEL, createAttacks, stepAttacks, type AttacksState } from '@/lib/games/attacks-rules'
 import { createCatcher, nextLevel, stepCatcher, type CatcherState } from '@/lib/games/catcher'
 import { createEater, stepEater, turnEater, type EaterState } from '@/lib/games/eater'
-import { nextCar, racingCarAt, racingOverHits, racingPadGeometry, racingPadPart, racingWinnerHits, renderRacingGame, renderRacingOver, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
-import { createRacing, RACING_CARS, RACING_LAST_LEVEL, stepRacing, type RacingCarKind, type RacingState } from '@/lib/games/racing-rules'
+import { nextCar, racingCarAt, racingGarageAt, racingOverHits, racingPadGeometry, racingPadPart, racingWinnerHits, renderRacingGame, renderRacingOver, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
+import { createRacing, RACING_CARS, RACING_LAST_LEVEL, racingEngine, racingGaragePick, stepRacing, type RacingCarKind, type RacingState, type RacingWorld } from '@/lib/games/racing-rules'
 import { crossDirection, FixedClock, isDaytime, keyDirection, swipeDirection } from '@/lib/games/engine'
 import type { PixelBuffer } from '@/lib/games/pixels'
 import { addScore, bestScore, lastName, NAME_MAX, qualifies, type GameName } from '@/lib/games/scores'
 import { dpadGeometry, gameOverHits, pauseHits, playSize, renderCatcherGame, renderEaterGame, renderGameOver, renderTitle, renderWinner, winnerHits, type Hit, type Layout, type Pad } from '@/lib/games/screens'
-import { gameSounds } from '@/lib/games/sound'
+import { GAME_SOUNDS, gameSounds, RACING_TUNES } from '@/lib/games/sound'
 import type { Direction } from '@/lib/games/sprites'
 import { HUD_HEIGHT } from '@/lib/games/ui'
 import { wakeSound } from '@/utils/sound'
@@ -159,6 +159,7 @@ export default function GamePlayer({
   onNamed,
   big = false,
   startLevel = 1,
+  startWorld,
 }: {
   game: GameName
   accent: string
@@ -178,6 +179,8 @@ export default function GamePlayer({
   big?: boolean
   /** The level a whole game starts at: 1, or another on a test page. */
   startLevel?: number
+  /** RACING's one world for every level, on its test page; drawn at random otherwise. */
+  startWorld?: RacingWorld
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -268,7 +271,7 @@ export default function GamePlayer({
       s.catcher = game === 'catcher' ? createCatcher(s.layout, r?.level ?? 1, s.seed, r ? { score: r.score, lives: 3 } : undefined) : null
       s.eater = game === 'eater' ? createEater(s.layout, r?.level ?? 1, s.seed, r ? { single: true, score: r.score } : {}) : null
       s.attacks = game === 'attacks' ? createAttacks(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, lives: 3 } : {}) : null
-      s.racing = game === 'racing' ? createRacing(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, car: s.car } : { car: s.car }) : null
+      s.racing = game === 'racing' ? createRacing(s.layout, r?.level ?? startLevel, s.seed, r ? { single: true, score: r.score, car: s.car } : { car: s.car, world: startWorld }) : null
       release()
       s.mode = 'play'
       s.pause = null
@@ -354,7 +357,7 @@ export default function GamePlayer({
       } else if (s.racing) {
         const g = s.racing
         const passed = g.passed
-        stepRacing(g, walk(), gassing(), braking())
+        stepRacing(g, walk(), gassing(), braking(), nitroing())
         for (const heard of g.heard) sounds.play(heard)
         if (g.passed > passed) callbacks.current.onLevelCleared?.(g.level - 1)
         // TIME UP has had its two seconds; half a second on the line before WINNER
@@ -371,9 +374,9 @@ export default function GamePlayer({
     // ATTACKS: the cook walks while a way is held — the last arrow key pressed and still down, else the arrow under a finger — and squirts while
     // fire is held: a fire key, the FIRE button, a finger on the sky; a quick press counts for a tenth of a second, so no tap is lost between two steps
     // RACING: the same for steering; the gas held as fire is (a key, the A button), the brake as its own (down, the B button)
-    type Finger = 'left' | 'right' | 'fire' | 'sky' | 'gas' | 'brake'
-    const held: { keys: Array<-1 | 1>; fire: Set<string>; brake: Set<string>; latch: number; fingers: Map<number, Finger> } = { keys: [], fire: new Set(), brake: new Set(), latch: 0, fingers: new Map() }
-    const release = () => { held.keys = []; held.fire.clear(); held.brake.clear(); held.latch = 0; held.fingers.clear() }
+    type Finger = 'left' | 'right' | 'fire' | 'sky' | 'gas' | 'brake' | 'nitro'
+    const held: { keys: Array<-1 | 1>; fire: Set<string>; brake: Set<string>; nitro: Set<string>; latch: number; fingers: Map<number, Finger> } = { keys: [], fire: new Set(), brake: new Set(), nitro: new Set(), latch: 0, fingers: new Map() }
+    const release = () => { held.keys = []; held.fire.clear(); held.brake.clear(); held.nitro.clear(); held.latch = 0; held.fingers.clear() }
     const fingers = () => [...held.fingers.values()]
     const walk = (): -1 | 0 | 1 => {
       if (held.keys.length) return held.keys[held.keys.length - 1]
@@ -383,7 +386,8 @@ export default function GamePlayer({
     const firing = () => held.fire.size > 0 || held.latch > 0 || fingers().some((f) => f === 'fire' || f === 'sky')
     const gassing = () => held.fire.size > 0 || fingers().includes('gas')
     const braking = () => held.brake.size > 0 || fingers().includes('brake')
-    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire'), gas: f.includes('gas'), brake: f.includes('brake') } }
+    const nitroing = () => held.nitro.size > 0 || fingers().includes('nitro')
+    const pressed = () => { const f = fingers(); return { left: f.includes('left'), right: f.includes('right'), fire: f.includes('fire'), gas: f.includes('gas'), brake: f.includes('brake'), nitro: f.includes('nitro') } }
     /** Where a finger falls in play: an arrow, FIRE, the sky over the board (ATTACKS), A or B (RACING), or none of them. */
     const partAt = (e: PointerEvent): Finger | null => {
       const p = toBuffer(e)
@@ -435,8 +439,11 @@ export default function GamePlayer({
       }
       if (s.dirty) { s.dirty = false; paint() }
       report()
-      // the tune on the title and under the play; paused, over, or between screens, quiet
+      // the tune on the title and under the play (RACING's, the world's it is in); paused, over, or between screens, quiet
+      sounds.music(s.racing && s.mode !== 'title' ? RACING_TUNES[s.racing.world] : GAME_SOUNDS[game].tune)
       sounds.tune(s.mode === 'title' || (s.mode === 'play' && s.pause == null))
+      // RACING's engine, its pitch with the speed
+      sounds.engine(s.racing && s.mode === 'play' && s.pause == null ? racingEngine(s.racing) : null)
     }
     raf = requestAnimationFrame(loop)
 
@@ -473,6 +480,8 @@ export default function GamePlayer({
         else if (game === 'attacks' && (e.key === ' ' || dir === 'up')) { if (!e.repeat) { held.fire.add(e.key); held.latch = 6 } }
         else if (game === 'racing' && (e.key === ' ' || dir === 'up')) held.fire.add(e.key)
         else if (game === 'racing' && dir === 'down') held.brake.add(e.key)
+        // RACING's turbo: shift, X or N
+        else if (game === 'racing' && (e.key === 'Shift' || e.key === 'x' || e.key === 'X' || e.key === 'n' || e.key === 'N')) held.nitro.add(e.key)
         else if (dir) steer(dir)
         else if (pauseKey) pause()
         // the space bar does nothing in play, but must not scroll the page
@@ -489,6 +498,7 @@ export default function GamePlayer({
       const w = way(keyDirection(e.key))
       if (w) held.keys = held.keys.filter((k) => k !== w)
       held.brake.delete(e.key)
+      held.nitro.delete(e.key)
       if (held.fire.delete(e.key) && e.key === ' ' && s.mode === 'play') e.preventDefault()
     }
 
@@ -543,6 +553,8 @@ export default function GamePlayer({
       if (dir) { steer(dir); touch.x = e.clientX; touch.y = e.clientY }
     }
     const onUp = (e: PointerEvent) => {
+      // a finger lifted is the moment an iPhone lets a sound start (not the moment it comes down)
+      if (e.pointerType !== 'mouse') touched()
       if (held.fingers.delete(e.pointerId)) { s.dirty = true; return }
       if (thumb && thumb.id === e.pointerId) { thumb = null; return }
       if (!touch || touch.id !== e.pointerId) return
@@ -563,6 +575,10 @@ export default function GamePlayer({
         const hits = s.mode === 'winner' ? (game === 'racing' ? racingWinnerHits(s.layout) : winnerHits(s.layout)) : game === 'attacks' ? attacksOverHits(s.layout) : game === 'racing' ? racingOverHits(s.layout) : gameOverHits(game, s.layout)
         if (within(hits.yes, p.x, p.y)) start()
         else if (within(hits.no, p.x, p.y)) toTitle()
+      } else if (s.mode === 'play' && s.pause == null && s.racing?.phase === 'garage') {
+        // RACING's garage between levels: a tap on an improvement takes it
+        const pick = racingGarageAt(s.layout, p.x, p.y)
+        if (pick != null && racingGaragePick(s.racing, pick)) { sounds.play('gold'); s.dirty = true }
       } else if (s.mode === 'play' && s.pause != null) {
         const hits = pauseHits(s.layout)
         if (within(hits.resume, p.x, p.y)) resume()
@@ -570,7 +586,11 @@ export default function GamePlayer({
       }
     }
     const onCancel = (e: PointerEvent) => { touch = null; thumb = null; held.fingers.delete(e.pointerId) }
-    const onHidden = () => { if (document.hidden) pause() }
+    // Safari's own moment for sound: the end of a touch
+    const onTouchEnd = () => touched()
+    // out of focus or out of sight: paused, and quiet at once — the frames that would quiet it do not come while the page is hidden
+    const hush = () => { pause(); sounds.tune(false); sounds.engine(null) }
+    const onHidden = () => { if (document.hidden) hush() }
     const watch = new ResizeObserver(() => {
       box.width = frameBox.clientWidth
       box.height = frameBox.clientHeight
@@ -581,12 +601,13 @@ export default function GamePlayer({
     tell({ kind: 'title' })
     window.addEventListener('keydown', onKey)
     window.addEventListener('keyup', onKeyUp)
-    window.addEventListener('blur', pause)
+    window.addEventListener('blur', hush)
     document.addEventListener('visibilitychange', onHidden)
     frameBox.addEventListener('pointerdown', onDown)
     frameBox.addEventListener('pointermove', onMove)
     frameBox.addEventListener('pointerup', onUp)
     frameBox.addEventListener('pointercancel', onCancel)
+    frameBox.addEventListener('touchend', onTouchEnd, { passive: true })
     return () => {
       if (control) { control.togglePause = undefined; control.pause = undefined; control.resume = undefined; control.start = undefined; control.retry = undefined; control.finishRound = undefined; control.touch = undefined }
       cancelAnimationFrame(raf)
@@ -594,14 +615,15 @@ export default function GamePlayer({
       watch.disconnect()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('blur', pause)
+      window.removeEventListener('blur', hush)
       document.removeEventListener('visibilitychange', onHidden)
       frameBox.removeEventListener('pointerdown', onDown)
       frameBox.removeEventListener('pointermove', onMove)
       frameBox.removeEventListener('pointerup', onUp)
       frameBox.removeEventListener('pointercancel', onCancel)
+      frameBox.removeEventListener('touchend', onTouchEnd)
     }
-  }, [game, accent, control, startLevel])
+  }, [game, accent, control, startLevel, startWorld])
 
   const submitName = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

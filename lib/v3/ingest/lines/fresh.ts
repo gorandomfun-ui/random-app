@@ -14,9 +14,10 @@ import { fetchYouTubeChart, fetchYouTubeViewCounts } from '@/lib/ingest/videos'
 import { junkKind } from '@/lib/ingest/junk'
 import { miniSeriesVerdict } from '@/lib/ingest/miniSeries'
 import { isNewsTitle } from '../../cool/themes'
-import { capForeignSketches, capUniverses, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
+import { capForeignSketches, capShares, capUniverses, isoSeconds, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
+import { placeOf } from '../mix'
 import { emptyCounters } from '../journal'
 import { isStillAlbum } from '../../dig/door'
 
@@ -125,7 +126,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   for (let start = 0; start < ids.length; start += 500) {
     const chunk = await ctx.db.collection('items').find(
       { type: 'video', videoId: { $in: ids.slice(start, start + 500) } } as Document,
-      { projection: { videoId: 1, title: 1, channelTitle: 1, viewCount: 1, statsObservedAt: 1, isSuppressed: 1, editorialRoutine: 1, obsoleteVideoStatus: 1, channelId: 1, aspectRatio: 1, duration: 1, 'v3.universe': 1, 'v3.nearFamily': 1 }, hint: 'video_id_lookup' },
+      { projection: { videoId: 1, title: 1, channelTitle: 1, viewCount: 1, statsObservedAt: 1, isSuppressed: 1, editorialRoutine: 1, obsoleteVideoStatus: 1, channelId: 1, aspectRatio: 1, duration: 1, lang: 1, 'v3.universe': 1, 'v3.nearFamily': 1 }, hint: 'video_id_lookup' },
     ).toArray().catch(() => [] as Document[])
     for (const row of chunk) rows.set(String(row.videoId), row)
   }
@@ -174,6 +175,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
       views: entry.daily, channel: row.channelId ? String(row.channelId) : undefined,
       family: row.v3?.nearFamily ? String(row.v3.nearFamily) : undefined,
       universe: row.v3?.universe ? String(row.v3.universe) : undefined,
+      seconds: isoSeconds(row.duration),
+      place: placeOf({ title, lang: typeof row.lang === 'string' ? row.lang : undefined }) ?? undefined,
       ...(row.editorialRoutine === true || row.v3?.universe === 'news-society' || isNewsTitle(title) ? { news: true } : {}),
     } as FreshEntry & { news?: boolean }])
   }
@@ -190,8 +193,8 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     })
     picked.set(plan.bucket, pickBucket(pool, plan, taken))
   }
-  // Music and gaming kept to their share of the whole list, then the zones take turns.
-  const capped = capForeignSketches(capUniverses(picked))
+  // Music and gaming kept to their share of the whole list, then the places, then the Shorts on what is left; the zones take turns.
+  const capped = capShares(capForeignSketches(capUniverses(picked)))
   const order = interleave(capped)
   const buckets = Object.fromEntries([...capped].map(([bucket, list]) => [bucket, list.length])) as Partial<Record<FreshBucket, number>>
   const label: Record<FreshBucket, string> = { world: 'monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l_Est', oceania: 'Océanie', music: 'musique', fun: 'fun',

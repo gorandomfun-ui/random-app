@@ -52,6 +52,12 @@ export type RawVideo = {
   universeHint?: Universe;
   /** What the dig knew when it found the video: its subject, base, level and pass; written on the v3 block, never as a field. */
   digHint?: DigTags;
+  /**
+   * The language the platform declared — YouTube's default audio language, Dailymotion's language — as it gave it ("en-US",
+   * "pt-BR"…): kept as `lang` (13 October: read since the dig began, lost at the writing until then).
+   */
+  lang?: string;
+  declaredLang?: string;
 };
 
 export type VideoDocument = Partial<DiscoveryVideoFields> & {
@@ -81,6 +87,8 @@ export type VideoDocument = Partial<DiscoveryVideoFields> & {
   toneSignals?: string[];
   rand?: number;
   enrichedAt?: Date;
+  /** The language the platform declared, two or three letters ("en", "pt", "fil"). */
+  lang?: string;
 };
 
 type IngestVideosOptions = {
@@ -173,6 +181,8 @@ type YoutubeThumbnails = {
 };
 
 type YoutubeSnippet = {
+  defaultAudioLanguage?: string;
+  defaultLanguage?: string;
   publishedAt?: string;
   title?: string;
   description?: string;
@@ -1449,6 +1459,7 @@ export async function fetchYouTubeChart(
       duration: item?.contentDetails?.duration,
       categoryId: snippet.categoryId,
       liveBroadcastContent: snippet.liveBroadcastContent,
+      lang: snippet.defaultAudioLanguage ?? snippet.defaultLanguage,
       source: { name: snippet.channelTitle || 'YouTube', url: watchUrl },
       contextQueries: [`youtube:trending:${region.toLowerCase()}${options.category ? `:${options.category}` : ''}`],
     });

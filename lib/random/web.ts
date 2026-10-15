@@ -53,8 +53,9 @@ function computeKeywords(text: string, limit = 10): string[] {
 }
 
 /**
- * A website is only worth showing if it still has a preview image and has not
- * been found dead.
+ * A website is only worth showing if it still has a preview image, has not
+ * been found dead, and opens inside Random (12 October, as the live draw:
+ * lib/discovery/mongo.ts, base).
  *
  * The ingest already refuses a site without an og:image, but nothing checked
  * that again at draw time, so anything ingested before that rule — or whose
@@ -64,6 +65,7 @@ const SERVABLE_WEB: Filter<Record<string, unknown>> = {
   ogImage: { $exists: true, $nin: [null, ''] },
   webLinkDead: { $ne: true },
   isSuppressed: { $ne: true },
+  embeddable: true,
 }
 
 async function pickFromDb(

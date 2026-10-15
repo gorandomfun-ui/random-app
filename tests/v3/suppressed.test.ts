@@ -17,6 +17,10 @@ test('le random normal : le filtre de base refuse un contenu supprimé, pour cha
     assert.deepEqual(base(type, 'en', Date.now()).isSuppressed, { $ne: true }, type)
   }
   assert.deepEqual(base('video', 'en', Date.now()).obsoleteVideoStatus, { $ne: 'obsolete' })
+  assert.equal(base('web', 'en', Date.now()).embeddable, true, 'a site is drawn only when it opens inside Random')
+  assert.deepEqual(base('web', 'en', Date.now()).webLinkDead, { $ne: true })
+  assert.equal(base('video', 'en', Date.now()).embeddable, undefined, 'the rule is the sites\' only')
+  assert.deepEqual(base('image', 'en', Date.now()).obsoleteImageStatus, { $ne: 'obsolete' }, 'a picture found dead waits for its deletion out of sight')
 })
 
 test('le random normal : un contenu supprimé lu quand même n_est jamais éligible', () => {

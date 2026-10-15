@@ -3,13 +3,14 @@
 /**
  * The Random menu, on a game's page: the same burger at the top left and
  * the same panel in the theme's colour — Home, Random, Likes, the language,
- * the legal pages, Add, the site's points. No sound switch: the games make
- * no sound. The panel is put on the page's body, so it stands over the
+ * the legal pages, Add, the site's points, and Random's sound switch, the
+ * same one (kept in the same place, so turned off on one page it is off on
+ * the other). The panel is put on the page's body, so it stands over the
  * game's frame and not only over the header it opens from.
  */
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import MonoIcon from '@/components/MonoIcon'
@@ -17,8 +18,13 @@ import { PUBLIC_APP_PATHS } from '@/lib/navigation/appPaths'
 import type { Theme } from '@/lib/theme'
 import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
+import { setMuted, wakeSound } from '@/utils/sound'
 
 type Lang = 'en' | 'fr' | 'de' | 'jp' | 'es'
+
+/** Where Random keeps its sound switch: the games' page reads and writes the same. */
+const SOUND_STORAGE_KEY = 'randomapp-sound-muted'
+const readMuted = () => { try { return localStorage.getItem(SOUND_STORAGE_KEY) === 'true' } catch { return false } }
 
 /** The language chosen, told to the rest of the site the way the Random page tells it. */
 function applyLangOut(next: Lang) {
@@ -51,6 +57,29 @@ export default function ArcadeMenu({ theme, onOpen }: { theme: Theme; onOpen?: (
   const langs = (Array.isArray(locales) && locales.length ? locales : ['en', 'fr', 'de', 'jp', 'es']) as Lang[]
   const close = () => setOpen(false)
   const paths = PUBLIC_APP_PATHS
+  // the sound switch as Random left it, and as another tab changes it
+  const [soundMuted, setSoundMuted] = useState(false)
+  useEffect(() => {
+    const initial = readMuted()
+    setSoundMuted(initial)
+    setMuted(initial)
+    const handler = (event: StorageEvent) => {
+      if (event.key !== SOUND_STORAGE_KEY || event.newValue == null) return
+      const next = event.newValue === 'true'
+      setSoundMuted(next)
+      setMuted(next)
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+  const toggleSound = () => {
+    const next = !soundMuted
+    setSoundMuted(next)
+    setMuted(next)
+    // turned back on during this tap: the players warmed now, while a phone allows it
+    if (!next) wakeSound()
+    try { localStorage.setItem(SOUND_STORAGE_KEY, String(next)) } catch { /* ignore */ }
+  }
 
   return (
     <>
@@ -103,6 +132,15 @@ export default function ArcadeMenu({ theme, onOpen }: { theme: Theme; onOpen?: (
                 <MonoIcon src="/icons/plus.svg" color={theme.cream} size={18} />
               </Link>
               <span className="text-lg font-semibold uppercase" style={{ color: '#191916' }}>{points} PTS</span>
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="mt-2 w-full rounded-xl border border-white/25 px-3 py-2 text-sm font-semibold uppercase tracking-[0.15em]"
+                style={{ color: theme.cream }}
+                aria-pressed={!soundMuted}
+              >
+                Sound FX: {soundMuted ? 'Off' : 'On'}
+              </button>
             </nav>
           </div>
         </div>,
