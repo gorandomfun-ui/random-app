@@ -13,22 +13,22 @@
 import { INK_LINE, Painter, tone } from './racing-paint'
 import type { PixelBuffer } from './pixels'
 
-export type TrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream'
-export const TRAFFIC_MODELS: readonly TrafficModel[] = ['hatch', 'saloon', 'camper', 'pickup', 'estate', 'beetle', 'icecream']
+export type TrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream' | 'truck'
+export const TRAFFIC_MODELS: readonly TrafficModel[] = ['hatch', 'saloon', 'camper', 'pickup', 'estate', 'beetle', 'icecream', 'truck']
 /** Everyday colours: white, silver, blue, red, beige, mint, navy, yellow, pink. */
 export const TRAFFIC_COLOURS = ['#e8e4dc', '#b8bcc8', '#5a8ad8', '#d84a3a', '#e0c890', '#6ac0a0', '#2a3a6a', '#f0c040', '#e88ab0'] as const
 /** How wide each car is against a racing car (as the road sees it). */
-export const TRAFFIC_WIDTH: Record<TrafficModel, number> = { hatch: 0.9, saloon: 0.98, camper: 0.98, pickup: 1, estate: 0.98, beetle: 0.84, icecream: 1.02 }
+export const TRAFFIC_WIDTH: Record<TrafficModel, number> = { hatch: 0.9, saloon: 0.98, camper: 0.98, pickup: 1, estate: 0.98, beetle: 0.84, icecream: 1.02, truck: 1.12 }
 /** How much lower than drawn the tall ones stand on the road, beside the low racing cars. */
-export const TRAFFIC_SQUASH: Partial<Record<TrafficModel, number>> = { camper: 0.88, icecream: 0.86, pickup: 0.94 }
+export const TRAFFIC_SQUASH: Partial<Record<TrafficModel, number>> = { camper: 0.88, icecream: 0.86, pickup: 0.94, truck: 0.9 }
 /** Each car's height in steps of its hundred across. */
-const HEIGHT: Record<TrafficModel, number> = { hatch: 62, saloon: 56, camper: 98, pickup: 74, estate: 68, beetle: 60, icecream: 108 }
+const HEIGHT: Record<TrafficModel, number> = { hatch: 62, saloon: 56, camper: 98, pickup: 74, estate: 68, beetle: 60, icecream: 108, truck: 124 }
 /** How tall each car stands on the road, as a share of its width (the tall ones lowered as drawn). */
 export const trafficHigh = (model: TrafficModel): number => (HEIGHT[model] / 100) * (TRAFFIC_SQUASH[model] ?? 1)
 /** Where its rear lights are, as shares of its width and height, to glow after dark. */
 export const TRAFFIC_LIGHTS: Record<TrafficModel, Array<[number, number]>> = {
   hatch: [[0.13, 0.58], [0.87, 0.58]], saloon: [[0.18, 0.6], [0.82, 0.6]], camper: [[0.09, 0.79], [0.91, 0.79]], pickup: [[0.07, 0.65], [0.93, 0.65]],
-  estate: [[0.12, 0.6], [0.88, 0.6]], beetle: [[0.12, 0.73], [0.88, 0.73]], icecream: [[0.08, 0.8], [0.92, 0.8]],
+  estate: [[0.12, 0.6], [0.88, 0.6]], beetle: [[0.12, 0.73], [0.88, 0.73]], icecream: [[0.08, 0.8], [0.92, 0.8]], truck: [[0.07, 0.85], [0.93, 0.85]],
 }
 
 const TYRE = '#1a1a24', RIM = '#8a8a98', GLASS = '#2a3a5c', GLINT = '#6a84bc', BUMPER = '#8a8a96', PLATE = '#f2efe6', RED = '#d8302a', RED_LIT = '#ff8a78', CREAM = '#f4ecd8'
@@ -118,6 +118,19 @@ function paint(model: TrafficModel, c: string, s: number, turn: boolean): PixelB
     for (let k = 0; k < 4; k += 1) rect(38, 30 + k * 3, 24, 1, dark)
     p.disc(P(12), P(H - 16), P(4), RED); p.disc(P(88), P(H - 16), P(4), RED)
     plate(H - 22); rect(4, H - 9, 92, 3, BUMPER)
+  } else if (model === 'truck') {
+    // the truck: its tall box, two doors with their bars and handles, the stripes of its bumper, its mud flaps, twin wheels under it
+    round(2, H - 15, 22, 14, 2, TYRE); round(76, H - 15, 22, 14, 2, TYRE)
+    sideOf(98, 4, H - 10)
+    round(2, 2, 96, H - 22, 3, tone(c, 1.05)); rect(2, 2, 96, 4, lit); rect(2, H - 24, 96, 4, dark)
+    rect(49, 6, 2, H - 30, dark)
+    for (const x of [20, 30, 70, 80]) rect(x, 8, 2, H - 34, side)
+    rect(42, 60, 5, 3, '#4a4a56'); rect(53, 60, 5, 3, '#4a4a56')
+    for (let k = 0; k < 8; k += 1) rect(4 + k * 12, H - 20, 6, 4, k % 2 ? PLATE : RED)
+    rect(4, H - 16, 92, 3, BUMPER)
+    round(6, H - 12, 12, 10, 1, '#20202a'); round(82, H - 12, 12, 10, 1, '#20202a')
+    round(4, H - 30, 8, 6, 2, RED); round(88, H - 30, 8, 6, 2, RED); rect(5, H - 29, 3, 2, RED_LIT); rect(89, H - 29, 3, 2, RED_LIT)
+    plate(H - 13)
   } else {
     // the ice-cream van: its cone on the roof, stripes, small windows, two doors
     wheels(H - 12, 11)

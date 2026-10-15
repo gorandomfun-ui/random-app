@@ -923,7 +923,7 @@ export function drawCar(buffer: PixelBuffer, kind: RacingCarKind, cx: number, fo
 }
 
 /** An everyday car of the traffic, `width` wide on the screen (with its share of a racing car's width), as `drawCar` draws the racing ones. */
-export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean } = {}): void {
+export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: number, cx: number, foot: number, width: number, options: { turn?: -1 | 0 | 1; clip?: number; tier?: Tier; fog?: number; lights?: boolean; blink?: -1 | 1 } = {}): void {
   const turn = options.turn ?? 0, clip = options.clip ?? buffer.height
   const back = width * TRAFFIC_WIDTH[model]
   if (back < 2) return
@@ -934,6 +934,12 @@ export function drawTraffic(buffer: PixelBuffer, model: TrafficModel, colour: nu
   const { rgb, by } = tintFor(options.tier ?? 0, options.fog ?? 0)
   drawArt(buffer, pic, x0, Math.round(foot - h), w, h, clip, turn < 0, rgb, by)
   if (options.lights && back > 8) for (const [fx, fy] of TRAFFIC_LIGHTS[model]) glow(buffer, cx + (fx - 0.5) * back, foot - h + fy * h, Math.max(2, back * 0.12), '#ff2a2a', 0.5, clip)
+  // its indicator, on: an orange light at the corner it is moving to, and its glow
+  if (options.blink) {
+    const [fx, fy] = TRAFFIC_LIGHTS[model][options.blink < 0 ? 0 : 1], lx = cx + (fx - 0.5) * back, ly = foot - h + fy * h, r = Math.max(1, back * 0.07)
+    glow(buffer, lx, ly, Math.max(3, back * 0.22), '#ffb020', 0.6, clip)
+    for (let y = Math.round(ly - r); y <= Math.round(ly + r); y += 1) for (let x = Math.round(lx - r); x <= Math.round(lx + r); x += 1) if (y < clip) buffer.set(x, y, '#ffc040')
+  }
 }
 
 /** A puff from an exhaust, low by the road, swelling and thinning as it drifts out, one moment after another. */
