@@ -1134,7 +1134,7 @@ const isQuizFactItem = (item: RandomContentItem): item is FactItem =>
 const isTextFactItem = (item: RandomContentItem): item is FactItem =>
   item.type === 'fact' && (item as FactItem).variant !== 'quiz'
 
-function SourceLine({ item }: { item: DisplayItem }) {
+function SourceLine({ item, onOpenWeb }: { item: DisplayItem; onOpenWeb?: (item: WebContentItem) => void }) {
   if (item.type === 'encourage') return null
   if (item.type === 'minigame') return null
   if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
@@ -1174,7 +1174,28 @@ function SourceLine({ item }: { item: DisplayItem }) {
 
   const parts: ReactNode[] = []
 
-  if (fallbackSource?.url) {
+  if (item.type === 'web' && item.embeddable && onOpenWeb) {
+    // A site opens inside Random from its address under the card too, as from its title (the owner, 15 October, from the
+    // curation: "il s'est ouvert à côté"). The address is the site's own: the source of most is where they were found,
+    // Common Crawl's front page.
+    let host = item.host || ''
+    if (!host) {
+      try { host = new URL(item.url).host.replace(/^www\./, '') } catch { host = item.url }
+    }
+    parts.push(
+      <span key="source-link">
+        {fallbackSource?.name ? `${fallbackSource.name} · ` : ''}
+        <button
+          type="button"
+          onClick={() => onOpenWeb(item)}
+          className="underline"
+          style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
+        >
+          {host}
+        </button>
+      </span>
+    )
+  } else if (fallbackSource?.url) {
     try {
       const host = new URL(fallbackSource.url).host.replace(/^www\./, '')
       parts.push(
@@ -5632,7 +5653,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         {!arcade && viewItem && viewItem.type !== 'encourage' ? (
           <div ref={sourceLineRef} className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
-            <SourceLine item={viewItem} />
+            <SourceLine item={viewItem} onOpenWeb={openWebInRandom} />
           </div>
         ) : null}
       </section>
