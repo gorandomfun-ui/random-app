@@ -475,7 +475,8 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
     let bits: Uint8Array[] = []
     try { bits = await prints(door.kept.map((video) => textOf({ title: video.title, description: video.description }))) } catch (error) { errors.push(`empreintes : ${message(error)}`); break }
     fingerprinted += bits.length
-    const judgedHere = lookalikes(door.kept, bits, likes, likes.indexOf(like))
+    // Judged against the models only: a like whose title says nothing drew anything near it ("suara hantu pagi hari || #shorts", 15 October).
+    const judgedHere = lookalikes(door.kept, bits, models, models.indexOf(like))
     const close = judgedHere.close.sort((left, right) => right.likeness.score - left.likeness.score).slice(0, MAX_PER_LIKE)
     near += close.length
     copies += judgedHere.copies
@@ -536,7 +537,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       const byId = new Map(farOnes.map((entry) => [entry.video.videoId, entry]))
       const writes: AnyBulkWriteOperation<Document>[] = checkedFar.flatMap((video) => {
         const entry = byId.get(video.videoId)
-        return entry ? [{ updateMany: { filter: { videoId: video.videoId, type: 'video', vec: { $exists: false } }, update: { $set: { vec: toBinary(entry.bits), 'v3.likeFar': { like: likes[entry.likeness.index].id, score: Math.round(entry.likeness.score * 1000) / 1000 } } } } }] : []
+        return entry ? [{ updateMany: { filter: { videoId: video.videoId, type: 'video', vec: { $exists: false } }, update: { $set: { vec: toBinary(entry.bits), 'v3.likeFar': { like: models[entry.likeness.index].id, score: Math.round(entry.likeness.score * 1000) / 1000 } } } } }] : []
       })
       if (writes.length) await ctx.db.collection('items').bulkWrite(writes, { ordered: false }).catch((error) => { errors.push(`empreintes écrites : ${message(error)}`) })
     }
@@ -546,7 +547,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       const byId = new Map(close.map((entry) => [entry.video.videoId, entry]))
       const writes: AnyBulkWriteOperation<Document>[] = checked.flatMap((video) => {
         const entry = byId.get(video.videoId)
-        return entry ? [{ updateMany: { filter: { videoId: video.videoId, type: 'video', vec: { $exists: false } }, update: { $set: { vec: toBinary(entry.bits), 'v3.lookalike': { like: likes[entry.likeness.index].id, score: Math.round(entry.likeness.score * 1000) / 1000 } } } } }] : []
+        return entry ? [{ updateMany: { filter: { videoId: video.videoId, type: 'video', vec: { $exists: false } }, update: { $set: { vec: toBinary(entry.bits), 'v3.lookalike': { like: models[entry.likeness.index].id, score: Math.round(entry.likeness.score * 1000) / 1000 } } } } }] : []
       })
       if (writes.length) await ctx.db.collection('items').bulkWrite(writes, { ordered: false }).catch((error) => { errors.push(`empreintes écrites : ${message(error)}`) })
     }
