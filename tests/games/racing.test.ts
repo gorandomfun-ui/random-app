@@ -156,7 +156,7 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
   // a slow car ahead in the next lane: passed close, at speed
   s.z = 300; s.speed = 0.95; s.x = 0
-  s.traffic = [{ kind: 'hatch', look: 0, z: 330, x: 0.7, lane: 0.7, speed: 0.4, swerve: false, swerved: false, spin: 0, spinWay: 1 as const }, { kind: 'saloon', look: 1, z: 345, x: -0.7, lane: -0.7, speed: 0.4, swerve: false, swerved: false, spin: 0, spinWay: 1 as const }]
+  s.traffic = [{ kind: 'hatch', look: 0, z: 330, x: 0.7, lane: 0.7, speed: 0.4, style: 'steady' as const, cut: false, signal: 0, toward: 0, wait: 0, spin: 0, spinWay: 1 as const }, { kind: 'saloon', look: 1, z: 345, x: -0.7, lane: -0.7, speed: 0.4, style: 'steady' as const, cut: false, signal: 0, toward: 0, wait: 0, spin: 0, spinWay: 1 as const }]
   const score = s.score
   for (let i = 0; i < 120; i += 1) stepRacing(s, 0, true)
   assert.equal(s.combo, 2, 'two brushes in a row')
@@ -165,7 +165,7 @@ test('racing: the turbo earned by risks — a car brushed past, a combo, the sli
   assert.ok(s.pops.some((p) => p.text.startsWith('NEAR MISS x2')))
   // riding behind a car fills it too
   const drafted = s.boost
-  s.traffic = [{ kind: 'hatch', look: 0, z: s.z + 8, x: 0, lane: 0, speed: 0.95, swerve: false, swerved: false, spin: 0, spinWay: 1 as const }]
+  s.traffic = [{ kind: 'hatch', look: 0, z: s.z + 8, x: 0, lane: 0, speed: 0.95, style: 'steady' as const, cut: false, signal: 0, toward: 0, wait: 0, spin: 0, spinWay: 1 as const }]
   for (let i = 0; i < 30; i += 1) { s.traffic[0].z = s.z + 8; stepRacing(s, 0, true) }
   assert.ok(s.drafting && s.boost > drafted, 'the slipstream')
   // let go: faster than the car's own top speed for a while, the gauge emptied
@@ -325,7 +325,7 @@ test('racing: running into a car much slower is a crash — both spin, the playe
     s.track = s.track.map((g) => ({ ...g, curve: 0, y1: 0, y2: 0 }))
     s.items = []; s.rivals.forEach((r) => { r.z = -500 })
     s.z = 300; s.x = 0.1; s.speed = speed
-    s.traffic = [{ kind: 'saloon', look: 0, z: speed > 0.7 ? 320 : 308, x: 0, lane: 0, speed: 0.45, swerve: false, swerved: false, spin: 0, spinWay: 1 }]
+    s.traffic = [{ kind: 'saloon', look: 0, z: speed > 0.7 ? 320 : 308, x: 0, lane: 0, speed: 0.45, style: 'steady' as const, cut: false, signal: 0, toward: 0, wait: 0, spin: 0, spinWay: 1 }]
     const heard: string[] = []
     for (let i = 0; i < 150 && !heard.includes('smash') && !heard.includes('thud'); i += 1) { stepRacing(s, 0, speed > 0.7, false); heard.push(...s.heard) }
     return { s, heard }
@@ -505,7 +505,7 @@ test('racing: where the roads meet again, the other road\'s lanes can be driven 
     assert.equal(s.forkPick, pick)
     const side = pick === 0 ? 1 : -1
     // a car on the other road just before they meet, in its far lane
-    s.traffic.push({ ...model, z: f.at + f.len - 4, x: side * 0.64, lane: side * 0.64, speed: 0.6, cruise: 0.6, swerve: false, swerved: false, spin: 0, spinWay: 1, elsewhere: true })
+    s.traffic.push({ ...model, z: f.at + f.len - 4, x: side * 0.64, lane: side * 0.64, speed: 0.6, cruise: 0.6, style: 'steady' as const, cut: false, signal: 0, toward: 0, wait: 0, spin: 0, spinWay: 1, elsewhere: true })
     // the player over on the other road's lanes where they run joined
     s.z = f.at + f.len + 5; s.x = side * FORK_BESIDE; s.speed = 0.6
     stepRacing(s, 0, true)
@@ -585,18 +585,20 @@ test('racing: a good driver finishes first in nearly every level of every world,
     assert.ok(out.timeLeft >= 2.5, `${world} ${level}: ${out.timeLeft.toFixed(1)} s left`)
     assert.ok(out.score <= racingLevelMax(level), `${world} ${level}: score within its most`)
   }
-  assert.ok(lost <= 2, `${lost} of 64 lost the first time`)
+  assert.ok(lost <= 4, `${lost} of 64 lost the first time`)
 })
 
-test('racing: an everyday player wins nearly every one of the first eight levels the first time, and most of the others — playing one again now and then', () => {
+test('racing: an everyday player wins nearly every one of the first four levels the first time, most to the eighth, and from there often plays one again', () => {
+  // (as the owner chose, 15 October: a medium difficulty)
   const rate = (from: number, to: number) => {
     let won = 0, all = 0
     for (const world of RACING_WORLDS) for (let level = from; level <= to; level += 1) { all += 1; if (race(createRacing('portrait', level, 7, { single: true, world }), MEDIUM, 7).won) won += 1 }
     return won / all
   }
-  const early = rate(1, 8), late = rate(9, RACING_LAST_LEVEL)
-  assert.ok(early >= 0.9, `the first eight: ${Math.round(early * 100)} % the first time`)
-  assert.ok(late >= 0.65 && late < 1, `the last eight: ${Math.round(late * 100)} % the first time, not all`)
+  const first = rate(1, 4), middle = rate(5, 8), late = rate(9, RACING_LAST_LEVEL)
+  assert.ok(first >= 0.9, `the first four: ${Math.round(first * 100)} % the first time`)
+  assert.ok(middle >= 0.6 && middle < 1, `the next four: ${Math.round(middle * 100)} % the first time, not all`)
+  assert.ok(late >= 0.3 && late <= 0.75, `the last eight: ${Math.round(late * 100)} % the first time`)
 })
 
 test('racing: a casual driver wins most of its first levels; less and less as the levels go, the last ones with less time to spare', () => {
@@ -651,12 +653,18 @@ test('racing: each level harder than the one before — more traffic, more on th
   const count = (level: number, kind: string) => RACING_WORLDS.reduce((a, w) => a + racingCourse(level, w).items.filter((it) => it.kind === kind).length, 0)
   const traffic = (level: number) => RACING_WORLDS.reduce((a, w) => a + racingCourse(level, w).traffic.length, 0)
   for (let level = 4; level <= RACING_LAST_LEVEL; level += 4) {
-    assert.ok(traffic(level) > traffic(level - 3), `more traffic at ${level}`)
+    // (more traffic to the twelfth, as much after)
+    assert.ok(level <= 12 ? traffic(level) > traffic(level - 3) : traffic(level) >= traffic(12), `more traffic at ${level}`)
     // more puddles, and more on the road all told (a roadworks ten cones; a twisty level has fewer, its bends leaving few places for them)
     const all = (lv: number) => count(lv, 'puddle') + count(lv, 'cone') / 10
     assert.ok(count(level, 'puddle') > count(level - 3, 'puddle') && all(level) > all(level - 3), `more on the road at ${level}`)
   }
-  assert.ok(RACING_WORLDS.every((w) => racingCourse(4, w).traffic.some((t) => t.swerve) || racingCourse(5, w).traffic.some((t) => t.swerve)), 'cars that swerve from the fourth level')
+  // the traffic as the old road games had it: cars cutting across from the second level, weaving ones, trucks from the third; more of them as the levels go
+  const styled = (level: number, style: string) => RACING_WORLDS.reduce((a, w) => a + racingCourse(level, w).traffic.filter((t) => t.style === style).length, 0)
+  assert.equal(styled(1, 'cut') + styled(1, 'truck') + styled(2, 'truck'), 0, 'none cutting across at the first level, no truck before the third')
+  assert.ok(styled(2, 'cut') > 0 && styled(3, 'truck') > 0 && styled(1, 'weave') + styled(2, 'weave') > 0, 'cutting across from the second level, trucks from the third, weaving from the first')
+  assert.ok(styled(14, 'cut') + styled(14, 'weave') > styled(4, 'cut') + styled(4, 'weave'), 'more of them later')
+  assert.ok(RACING_WORLDS.every((w) => racingCourse(3, w).traffic.filter((t) => t.style === 'truck').every((t) => t.kind === 'truck')), 'a truck a truck')
   // never roadworks in a sharp bend
   for (const world of RACING_WORLDS) for (let level = 1; level <= RACING_LAST_LEVEL; level += 1) { const c = racingCourse(level, world); for (const it of c.items) if (it.kind === 'cone') assert.ok(Math.abs(c.track[it.z].curve) <= 3, `${world} ${level}: cones at ${it.z} out of the bends`) }
 })

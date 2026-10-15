@@ -230,12 +230,24 @@ export const RACING_SHOP_LENGTHS = SHOP_LENGTHS
 /** What lies on the road: a stopwatch, the turbo, a coin; a ketchup puddle, a cone of the roadworks. */
 export type RacingItemKind = 'time' | 'turbo' | 'coin' | 'puddle' | 'cone'
 export type RacingItem = { kind: RacingItemKind; z: number; x: number; taken: boolean }
-/** The everyday cars of the traffic. */
-export type RacingTrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream'
-/** A slow car of the traffic: the model and its colour (`look`), its lane, its speed; whether it swerves into another lane when the player comes. */
-export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; swerve: boolean; swerved: boolean; spin: number; spinWay: -1 | 1; cruise?: number; elsewhere?: boolean }
-/** What a level's traffic starts as: not swerved, not spinning (its own pace, `cruise`, the speed it starts at). */
-type TrafficAtStart = Omit<RacingTraffic, 'swerved' | 'spin' | 'spinWay' | 'cruise' | 'elsewhere'>
+/** The everyday cars of the traffic, and the trucks. */
+export type RacingTrafficModel = 'hatch' | 'saloon' | 'camper' | 'pickup' | 'estate' | 'beetle' | 'icecream' | 'truck'
+/**
+ * How a car of the traffic drives, as the old road games had it: on in its
+ * lane (`steady`); across into the player's way once, as the player comes up
+ * behind (`cut`); from lane to lane now and then, whoever is there
+ * (`weave`); a truck, slow and on in its lane, not to be run into.
+ */
+export type RacingTrafficStyle = 'steady' | 'cut' | 'weave' | 'truck'
+/**
+ * A slow car of the traffic: the model and its colour (`look`), its lane,
+ * its speed, how it drives; whether it has cut across already, the steps
+ * its indicator still blinks before it moves and the lane it moves to
+ * (`toward`), the steps till a weaving one moves again (`wait`).
+ */
+export type RacingTraffic = { kind: RacingTrafficModel; look: number; z: number; x: number; lane: number; speed: number; style: RacingTrafficStyle; cut: boolean; signal: number; toward: number; wait: number; spin: number; spinWay: -1 | 1; cruise?: number; elsewhere?: boolean }
+/** What a level's traffic starts as: not cut across, not signalling, not spinning (its own pace, `cruise`, the speed it starts at). */
+type TrafficAtStart = Omit<RacingTraffic, 'cut' | 'signal' | 'toward' | 'wait' | 'spin' | 'spinWay' | 'cruise' | 'elsewhere'>
 
 /**
  * The two roads of a level, from where the road divides, after its first
@@ -384,24 +396,30 @@ const LEVEL_SPEEDUP = 0.015
 /** How fast the rivals go on the straights, as a share of the top speed; in the bends they take a little less than the most the bend allows. */
 export const racingPace = (level: number): number => 0.84 + Math.min(RACING_LAST_LEVEL, level) * 0.005
 /** How much of what a bend allows a rival takes: more as the levels go. */
-const rivalBend = (level: number) => 0.9 + Math.min(RACING_LAST_LEVEL, level) * 0.001
+const rivalBend = (level: number) => 0.92 + Math.min(RACING_LAST_LEVEL, level) * 0.003
 /**
  * A rival left behind comes back: the further behind (up to `RIVAL_REACH`
  * stretches), the nearer it drives to its top speed — a hair under the
  * player's at the first level, a little over it at the last — so it stays in
  * the mirror and a knock, a skid or a lift too many lets it by; never faster
- * than the bends allow. Ahead, it eases off the further it gets — less as the
- * levels go — so the player can always come back on it.
+ * than the bends allow. Ahead, it races on: only well ahead does it ease off
+ * a little — less, and from further ahead, as the levels go, as the
+ * open-source racers' harder drivers do.
  */
 const RIVAL_REACH = 30
+/** The most of what a bend allows a rival close behind takes. */
+const CHASE_BENDS = 0.975
 /** How near the player's own speed a rival far behind keeps. */
 const RIVAL_SHADOW = 0.985
 /** From the third level a rival left behind fires a turbo of its own now and then, on a straight: two seconds, then a while before the next (shorter as the levels go). */
 const RIVAL_TURBO = 2 * SECOND
 const RIVAL_COOL = 12 * SECOND
 const rivalCool = (level: number) => Math.round(RIVAL_COOL * (1.3 - Math.min(RACING_LAST_LEVEL, level) * 0.04))
-const rivalTop = (level: number) => RACING_TOP * (0.95 + Math.min(RACING_LAST_LEVEL, level) * 0.0015)
-const rivalEase = (level: number) => 0.26 - Math.min(RACING_LAST_LEVEL, level) * 0.006
+const rivalTop = (level: number) => RACING_TOP * (0.965 + Math.min(RACING_LAST_LEVEL, level) * 0.0022)
+const rivalEase = (level: number) => Math.max(0.06, 0.22 - Math.min(RACING_LAST_LEVEL, level) * 0.022)
+const easeFrom = (level: number) => Math.min(48, 8 + Math.min(RACING_LAST_LEVEL, level) * 4)
+/** How often a rival with the player close behind and coming moves across into its way: from the second level, more often as the levels go. */
+const blockChance = (level: number) => Math.min(0.4, 0.05 + Math.min(RACING_LAST_LEVEL, level) * 0.025)
 /** How fast a car can take a bend of `curve` and still hold it, steering all the way in: a share of the top speed. */
 export const bendLimit = (curve: number, level = 1): number => (Math.abs(curve) < 1e-6 ? 1 : Math.min(1, Math.sqrt(1 / (CENTRIFUGAL * grip(level) * Math.abs(curve)))))
 /** How fast a car with this top speed and this grip can take a bend, steering all the way in. */
@@ -817,17 +835,26 @@ function placeItems(track: RacingSegment[], finish: number, lv: number, world: R
   return items.sort((a, b) => a.z - b.z)
 }
 
-/** The traffic: the world's everyday cars spread along the road, two at the first level and more as the levels go; from the fourth, some swerve when the player comes, more of them as the levels go. */
+/**
+ * The traffic: the world's everyday cars spread along the road, three at the
+ * first level, about twice as many as before as the levels go, to the twelfth — most on in their lanes, some
+ * cutting across into the player's way (from the second level), some weaving
+ * from lane to lane, trucks (from the third), more of the last three as the
+ * levels go.
+ */
 function placeTraffic(finish: number, lv: number, world: RacingWorld): TrafficAtStart[] {
   const rnd = seeded(53 + lv * 613 + RACING_WORLDS.indexOf(world) * 3001)
   const MODELS: readonly RacingTrafficModel[] = WORLD_TRAFFIC[world]
-  const n = Math.round(1.5 + lv * 0.75)
+  const n = Math.round(1.5 + Math.min(lv, 12) * 1.55)
   return Array.from({ length: n }, (_, k) => {
-    const lane = Math.floor(rnd() * 3)
+    const lane = Math.floor(rnd() * 3), r = rnd()
+    // trucks from the third level, cars cutting across from the second, weaving ones from the first; more of them as the levels go
+    const truck = lv >= 3 ? TRUCKS : 0, cut = lv >= 2 ? Math.min(0.3, 0.08 + lv * 0.02) : 0, weave = Math.min(0.22, 0.06 + lv * 0.012)
+    const style: RacingTrafficStyle = r < truck ? 'truck' : r < truck + cut ? 'cut' : r < truck + cut + weave ? 'weave' : 'steady'
     return {
-      kind: MODELS[Math.floor(rnd() * MODELS.length)], look: Math.floor(rnd() * 9),
+      kind: style === 'truck' ? 'truck' : MODELS[Math.floor(rnd() * MODELS.length)], look: Math.floor(rnd() * 9),
       z: Math.round(260 + ((k + rnd() * 0.8) / n) * (finish * 0.55)), x: RACING_LANES[lane], lane: RACING_LANES[lane],
-      speed: RACING_TOP * racingLevelPace(lv) * (0.46 + rnd() * 0.16), swerve: lv >= 4 && (k % 4 === 1 || rnd() < Math.min(0.15, (lv - 4) * 0.015)),
+      speed: RACING_TOP * racingLevelPace(lv) * (style === 'truck' ? 0.4 + rnd() * 0.1 : 0.46 + rnd() * 0.16), style,
     }
   })
 }
@@ -1001,7 +1028,7 @@ function freshLevel(s: RacingState): void {
   s.checks = course.checks
   s.check = 0
   s.items = course.items.map((it) => ({ ...it, taken: false }))
-  s.traffic = course.traffic.map((t) => ({ ...t, swerved: false, spin: 0, spinWay: 1 }))
+  s.traffic = course.traffic.map((t) => ({ ...t, cut: false, signal: 0, toward: t.lane, wait: WEAVE_WAIT + Math.floor(s.rnd() * WEAVE_WAIT), spin: 0, spinWay: 1 }))
   s.z = 0
   s.x = 0
   s.speed = 0
@@ -1220,7 +1247,7 @@ function takeFork(s: RacingState, pick: 0 | 1): void {
     for (let k = 0; k < f.len; k += 1) s.track[f.at + k] = f.tracks[0][k]
     s.items = [...s.items.filter((it) => it.z < f.at || it.z >= f.at + f.len), ...f.items[0].map((it) => ({ ...it, taken: false }))].sort((a, b) => a.z - b.z)
   }
-  if (f.kinds[pick] === 'fast') for (let k = 0; k < 3; k += 1) { const lane = RACING_LANES[Math.floor(s.rnd() * 3)]; s.traffic.push({ kind: (['hatch', 'saloon', 'estate'] as const)[k], look: Math.floor(s.rnd() * 9), z: f.at + 70 + Math.round(((k + 0.5) / 3) * (f.len - 160)), x: lane, lane, speed: RACING_TOP * racingLevelPace(s.level) * (0.45 + s.rnd() * 0.1), swerve: false, swerved: false, spin: 0, spinWay: 1 }) }
+  if (f.kinds[pick] === 'fast') for (let k = 0; k < 3; k += 1) { const lane = RACING_LANES[Math.floor(s.rnd() * 3)]; s.traffic.push({ kind: (['hatch', 'saloon', 'estate'] as const)[k], look: Math.floor(s.rnd() * 9), z: f.at + 70 + Math.round(((k + 0.5) / 3) * (f.len - 160)), x: lane, lane, speed: RACING_TOP * racingLevelPace(s.level) * (0.45 + s.rnd() * 0.1), style: 'steady', cut: false, signal: 0, toward: lane, wait: 0, spin: 0, spinWay: 1 }) }
   pop(s, FORK_NAME[f.kinds[pick]], '#faf6ec')
 }
 /** Each road of the fork as its sign says it. */
@@ -1338,7 +1365,9 @@ function stepRivals(s: RacingState): void {
     for (let k = 5; k <= 35; k += 5) sharpest = Math.max(sharpest, Math.abs(segmentOf(s.track, r.z + k).curve))
     // the rivals drive the car the level is built for: as improved as the player's should be by then
     const scale = (statTop(usualPoints(s.level)) * racingLevelPace(s.level)) / RACING_TOP, bend = usualSpeed(sharpest, s.level)
-    let want = Math.min(r.pace * scale, bend * rivalBend(s.level))
+    // (a duel's rival, quicker on the straights, a little less in the bends: a clean race beats it)
+    const inBends = rivalBend(s.level) - (s.duel ? 0.03 : 0)
+    let want = Math.min(r.pace * scale, bend * inBends)
     // behind the player it comes back, the bends taken a little harder; well ahead, it eases a little: the race stays a race
     const gap = r.z - s.z
     if (gap < 0 && s.phase === 'play') {
@@ -1347,12 +1376,14 @@ function stepRivals(s: RacingState): void {
       const chase = s.duel ? 1 : 1 + 0.03 * Math.min(1, Math.max(0, -gap - RIVAL_REACH) / 60)
       // far behind, it keeps up with the player: never losing more ground on a car at full speed, gaining on a mistake
       const top = -gap > RIVAL_REACH ? Math.max(rivalTop(s.level) * scale * chase, s.speed * RIVAL_SHADOW) : rivalTop(s.level) * scale * chase
-      want = Math.min(bend * (-gap > RIVAL_REACH ? 0.97 : Math.min(1, rivalBend(s.level) + 0.04)), want + (top - want) * pull)
-    } else if (gap > 6) want *= 1 - (s.duel ? duelEase(s.level) : rivalEase(s.level)) * Math.min(1, (gap - 6) / 45)
+      // (never into the bends harder than a good driver can take them)
+      want = Math.min(bend * (-gap > RIVAL_REACH ? 0.97 : Math.min(CHASE_BENDS, inBends + 0.04)), want + (top - want) * pull)
+    } else if (s.duel ? gap > 6 : gap > easeFrom(s.level)) want *= 1 - (s.duel ? duelEase(s.level) * Math.min(1, (gap - 6) / 45) : rivalEase(s.level) * Math.min(1, (gap - easeFrom(s.level)) / 45))
     // its own turbo, behind the player on a clear straight
     if (r.cool > 0) r.cool -= 1
     if (r.turbo > 0) { r.turbo -= 1; want = Math.max(want, Math.min(bend, RACING_TOP * scale * TURBO_TOP * 0.95)) }
-    else if (s.level >= 3 && s.phase === 'play' && r.cool === 0 && gap < -12 && sharpest < 1.5) { r.turbo = RIVAL_TURBO; r.cool = rivalCool(s.level) + Math.floor(s.rnd() * 4 * SECOND) }
+    // (from the fifth level, as soon as the player has gone by: to come back past it)
+    else if (s.level >= 3 && s.phase === 'play' && r.cool === 0 && gap < (s.level >= 5 ? -6 : -12) && sharpest < 1.5) { r.turbo = RIVAL_TURBO; r.cool = rivalCool(s.level) + Math.floor(s.rnd() * 4 * SECOND) }
     if (s.phase === 'timeup') want = Math.min(want, r.speed)
     // off the line no quicker than the player's car: a good start beats them
     r.speed += r.speed < want ? ACCEL * racingLevelPace(s.level) * 1.15 * (r.turbo > 0 ? 2.2 : 1) : -Math.min(BRAKE * 0.4, r.speed - want)
@@ -1368,11 +1399,12 @@ function stepRivals(s: RacingState): void {
     const slow = blocking(r.z, r.x, others)
     if (slow != null) r.speed = Math.min(r.speed, slow)
     if (s.steps >= r.next) {
-      r.next = s.steps + 3 * SECOND + Math.floor(s.rnd() * 4 * SECOND)
-      const behind = s.z - r.z
-      // the player close behind and coming: from the third level, now and then (more often as the levels go), it moves across
-      if (s.level >= 3 && behind < -4 && behind > -40 && s.speed > r.speed && s.rnd() < Math.min(0.3, (s.level - 2) * 0.03) * (s.duel ? 2 : 1)) r.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
-      else {
+      const behind = s.z - r.z, coming = behind < -4 && behind > -40 && s.speed > r.speed
+      // with the player close behind and coming it looks in its mirror more often
+      r.next = s.steps + (coming ? SECOND + Math.floor(s.rnd() * 1.5 * SECOND) : 3 * SECOND + Math.floor(s.rnd() * 4 * SECOND))
+      // and from the second level, now and then (more often as the levels go), moves across into its way; else it keeps its lane, the door shut
+      if (coming && s.level >= 2 && s.rnd() < blockChance(s.level) * (s.duel ? 1.5 : 1)) r.lane = RACING_LANES.reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
+      else if (!coming) {
         const free = RACING_LANES.filter((l) => l !== r.lane && !ahead(l, 30) && !s.rivals.some((o) => o !== r && Math.abs(o.z - r.z) < 30 && Math.abs(o.lane - l) < 0.1))
         if (free.length) r.lane = free[Math.floor(s.rnd() * free.length)]
       }
@@ -1400,8 +1432,17 @@ function rejoin(s: RacingState, c: { z: number; x: number; lane: number; elsewhe
   if (o.joined && o.off < 0) c.x = Math.max(c.x, o.off + RACING_LANES[0])
 }
 
-/** The traffic: each car at its speed, slower in the sharp bends; one that swerves moves into another lane as the player comes near. */
+/**
+ * The traffic: each car at its speed, slower in the sharp bends, keeping
+ * behind a slower one in its lane; one cutting across moves into the
+ * player's way as the player comes up behind, a weaving one into another
+ * free lane now and then — on the first levels its indicator blinking first,
+ * for less long as the levels go, and from the tenth not at all; quicker
+ * across as the levels go.
+ */
 function stepTraffic(s: RacingState): void {
+  const free = (t: RacingTraffic, lane: number) => !s.traffic.some((o) => o !== t && !o.elsewhere === !t.elsewhere && Math.abs(o.z - t.z) < 12 && (Math.abs(o.x - lane) < RACING_CAR_WIDTH || Math.abs(o.lane - lane) < 0.1))
+  const across = (t: RacingTraffic, lane: number) => { const warn = signalSteps(s.level); if (warn > 0) { t.signal = warn; t.toward = lane } else { t.lane = lane; t.toward = lane } }
   for (const t of s.traffic) {
     rejoin(s, t)
     if (spinning(t)) { t.z += t.speed; continue }
@@ -1409,16 +1450,35 @@ function stepTraffic(s: RacingState): void {
     t.cruise ??= t.speed
     t.speed += Math.max(-ACCEL, Math.min(ACCEL * 0.6, t.cruise - t.speed))
     const seg = segmentOf(s.track, t.z + 15)
-    const speed = Math.min(t.speed, RACING_TOP * bendLimit(seg.curve, s.level) * 0.85)
-    if (t.swerve && !t.swerved && t.z - s.z < 32 && t.z > s.z) {
-      t.swerved = true
-      const near = RACING_LANES.filter((l) => l !== t.lane).sort((a, b) => Math.abs(a - s.x) - Math.abs(b - s.x))
-      t.lane = near[0]
+    let speed = Math.min(t.speed, RACING_TOP * bendLimit(seg.curve, s.level) * 0.85)
+    // behind a slower car of the traffic in its lane: it keeps behind it
+    const slow = blocking(t.z, t.x, s.traffic.filter((o) => o !== t && !o.elsewhere === !t.elsewhere), FOLLOW)
+    if (slow != null) speed = Math.min(speed, slow)
+    // its indicator blinking: then across
+    if (t.signal > 0) { t.signal -= 1; if (t.signal === 0) t.lane = t.toward }
+    else if (t.style === 'cut' && !t.cut && !t.elsewhere && t.z > s.z && t.z - s.z < CUT_REACH && Math.abs(s.x - t.x) > 0.3) {
+      // into the lane the player is in (or the nearest to it), if no other car is there
+      t.cut = true
+      const lane = RACING_LANES.filter((l) => l !== t.lane).reduce((a, b) => (Math.abs(b - s.x) < Math.abs(a - s.x) ? b : a))
+      if (free(t, lane)) across(t, lane)
+    } else if (t.style === 'weave' && (t.wait -= 1) <= 0) {
+      t.wait = WEAVE_WAIT + Math.floor(s.rnd() * WEAVE_WAIT)
+      const lanes = RACING_LANES.filter((l) => Math.abs(l - t.lane) > 0.1 && Math.abs(l - t.lane) < 0.7 && free(t, l))
+      if (lanes.length) across(t, lanes[Math.floor(s.rnd() * lanes.length)])
     }
-    t.x += Math.max(-0.01, Math.min(0.01, t.lane - t.x))
+    const shift = 0.016 + Math.min(RACING_LAST_LEVEL, s.level) * 0.001
+    t.x += Math.max(-shift, Math.min(shift, t.lane - t.x))
     t.z += speed
   }
 }
+/** How long a car's indicator blinks before it moves across: on the first five levels, a little while; to the ninth, less; from the tenth, not at all. */
+const signalSteps = (level: number) => (level <= 5 ? 45 : level <= 9 ? 22 : 0)
+/** How close behind the player comes before a car cuts across into its way, in stretches; how long a weaving car keeps its lane, at least. */
+const CUT_REACH = 28
+const WEAVE_WAIT = 90
+/** The share of the traffic that is trucks, from the third level; how much quicker than a truck running into its back is a crash. */
+const TRUCKS = 0.12
+const TRUCK_CLOSING = RACING_TOP * 0.05
 
 /**
  * The player's car against the other cars, where their pictures meet. Nose
@@ -1429,7 +1489,9 @@ function stepTraffic(s: RacingState): void {
  * steering into it, the other car sent spinning.
  */
 function touchCars(s: RacingState): void {
-  const touch = (c: { z: number; x: number; speed: number; spin: number; spinWay: -1 | 1 }) => {
+  const touch = (c: { z: number; x: number; speed: number; spin: number; spinWay: -1 | 1; style?: RacingTrafficStyle }) => {
+    // a truck: not to be run into — any knock into its back a crash, and it does not budge
+    const heavy = c.style === 'truck'
     const dz = c.z - s.z, dx = c.x - s.x
     if (Math.abs(dz) >= TOUCH_LENGTH || Math.abs(dx) >= TOUCH_WIDTH) return
     // which way the player's car is pushed across: away from the other
@@ -1440,14 +1502,14 @@ function touchCars(s: RacingState): void {
         const closing = s.speed - c.speed
         s.z = c.z - TOUCH_LENGTH
         if (closing <= 0) return
-        if (s.crash === 0 && closing >= CRASH_CLOSING) {
+        if (s.crash === 0 && (closing >= CRASH_CLOSING || (heavy && closing > TRUCK_CLOSING))) {
           s.crash = RACING_CRASH_STEPS
           s.crashWay = away
           s.smoke = SMOKE_STEPS
           s.knock = 20
           s.speed = c.speed * 0.7
           s.heard.push('smash')
-          spinOut(c, away === 1 ? -1 : 1)
+          if (!heavy) spinOut(c, away === 1 ? -1 : 1)
         } else {
           if (s.knock === 0) { s.heard.push('thud'); s.knock = 14 }
           s.speed = c.speed - closing * 0.2
@@ -1469,12 +1531,12 @@ function touchCars(s: RacingState): void {
     }
     // side by side: apart, scraping — a little slower at the first touch, not all the while they rub
     const into = TOUCH_WIDTH - Math.abs(dx) + 0.01
-    s.x += away * into * 0.6
-    c.x -= away * into * 0.4
-    if (s.knock === 0) { s.speed *= 0.97; c.speed *= 0.97 }
+    s.x += away * into * (heavy ? 1 : 0.6)
+    if (!heavy) c.x -= away * into * 0.4
+    if (s.knock === 0) { s.speed *= heavy ? 0.9 : 0.97; if (!heavy) c.speed *= 0.97 }
     s.sparks = SPARK_STEPS
     s.sparkSide = away === 1 ? -1 : 1
-    if (s.speed > RACING_TOP * 0.7 && s.steer === -away && c.spin === 0 && into > TOUCH_WIDTH * 0.2) { spinOut(c, away === 1 ? -1 : 1); s.heard.push('smash'); s.knock = 14 }
+    if (!heavy && s.speed > RACING_TOP * 0.7 && s.steer === -away && c.spin === 0 && into > TOUCH_WIDTH * 0.2) { spinOut(c, away === 1 ? -1 : 1); s.heard.push('smash'); s.knock = 14 }
     else if (s.knock === 0) { s.heard.push('thud'); s.knock = 12 }
   }
   for (const c of [...s.rivals, ...s.traffic]) if (!c.elsewhere) touch(c)
