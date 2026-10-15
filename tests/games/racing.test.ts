@@ -20,7 +20,7 @@ import test from 'node:test'
 
 import { PixelBuffer } from '@/lib/games/pixels'
 import { maxScore } from '@/lib/games/plausible'
-import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
+import { nextCar, racingCarAt, racingPadGeometry, racingPadPart, racingStandingBy, renderRacingGame, renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { CAR_SIZES, provideRacingArt, racingArtFile, type RacingArtName } from '@/lib/games/racing-art'
 import { CAR_STATS, createRacing, FORK_ALONGSIDE, FORK_BESIDE, FORK_FROM, FORK_NEAR, FORK_PART, FORK_SHARE, FORK_TAPER, FORK_ZONES, MERGE_ALONG, MERGE_TAPER, racingOtherRoad, RACING_CARS, RACING_DUEL_BONUS, racingIsDuel, racingLevelPace, RACING_LAST_LEVEL, RACING_SEGMENT, RACING_SHOP_LENGTHS, RACING_START_STEPS, RACING_STATS, RACING_WORLDS, racingBendSpeed, racingCharacter, racingCourse, racingEngine, racingGaragePick, racingHour, racingLevelMax, racingSunset, racingTime, racingWorldOrder, rivalsOf, stepRacing } from '@/lib/games/racing-rules'
 import { shop, SHOP_WIDTHS, SHOPS, TOWN_UNIT } from '@/lib/games/racing-town'
@@ -541,6 +541,27 @@ test('racing: taking the left-hand road where they part changes nothing in sight
     let moved = 0, all = 0
     for (let y = Math.round(H * 0.2); y < Math.round(H * 0.75); y += 1) for (let x = 0; x < Math.round(W * 0.3); x += 1) { const o = (y * W + x) * 4; all += 1; if (Math.abs(was[o] - after[o]) + Math.abs(was[o + 1] - after[o + 1]) + Math.abs(was[o + 2] - after[o + 2]) > 30) moved += 1 }
     assert.ok(moved / all < 0.005, `${world} ${level}: ${((100 * moved) / all).toFixed(2)} % changed`)
+  }
+})
+
+test('racing: nothing standing by one of the two roads stands on the other — the rocks, the buttes, the trees as wide as they are drawn', () => {
+  for (const world of RACING_WORLDS) for (let level = 2; level <= RACING_LAST_LEVEL; level += 1) for (const pick of [0, 1] as const) {
+    const s = createRacing('portrait', level, 2, { single: true, world })
+    const f = s.fork!
+    for (let i = 0; i < RACING_START_STEPS; i += 1) stepRacing(s)
+    s.z = f.at - 3; s.x = pick === 0 ? -FORK_BESIDE : 0; s.speed = 0.8
+    for (let i = 0; i < 6; i += 1) stepRacing(s, 0, true)
+    assert.equal(s.forkPick, pick)
+    for (let i = f.at; i < f.at + f.len + MERGE_ALONG + MERGE_TAPER; i += 1) {
+      const { off, joined, things } = racingStandingBy(s, i)
+      if (!off || joined) continue
+      for (const t of things) {
+        if (t.kind === 'tumbleweed') continue
+        // what stands by one road, clear of the other's kerbs
+        const gap = t.theirs ? Math.abs(t.x) - t.reach : Math.abs(t.x - off) - t.reach
+        assert.ok(gap >= 1.12 - 1e-9, `${world} ${level} ${pick} at ${i - f.at}: ${t.theirs ? 'its' : 'our'} ${t.kind} at ${t.x.toFixed(1)} (${t.reach.toFixed(1)} each way) on the ${t.theirs ? 'road taken' : 'other road'}, ${off.toFixed(1)} off`)
+      }
+    }
   }
 })
 

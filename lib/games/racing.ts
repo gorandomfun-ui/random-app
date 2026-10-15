@@ -317,7 +317,7 @@ export function renderRacingTitle(layout: Layout, accent: string, lettering: Rac
 // ---------------------------------------------------------------- the play
 
 export {
-  drawArt, drawCar, racingGarageAt, racingPadGeometry, racingPadPart, RACING_BOARD, renderRacingGame, renderRacingPlay, STAT_LOOK,
+  drawArt, drawCar, racingGarageAt, racingPadGeometry, racingPadPart, racingStandingBy, RACING_BOARD, renderRacingGame, renderRacingPlay, STAT_LOOK,
   type RacingPad, type RacingPlayOptions, type RacingView,
 } from './racing-play'
 
