@@ -37,6 +37,9 @@ type Assets = { logo: HTMLImageElement; logoVertical: HTMLImageElement; logoDark
 
 export default function PromoPage() {
   const [accent, setAccent] = useState(0)
+  /** Two secondary colours, or none (-1). */
+  const [second, setSecond] = useState(-1)
+  const [third, setThird] = useState(-1)
   const [intensity, setIntensity] = useState(0.7)
   const [seconds, setSeconds] = useState(8)
   const [seed, setSeed] = useState(0)
@@ -85,7 +88,7 @@ export default function PromoPage() {
 
   const textInput = useMemo<PromoText | null>(() => text.trim() ? { value: text, size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place.x, y: place.y, width: place.width } : null, [text, size, align, fontIndex, fonts, place])
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
-  const input = useMemo(() => assets ? { seconds, intensity, seed, accent: COLORS[accent][0], palette: COLORS.map((c) => c[0]), bursts, brandMode, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, seconds, intensity, seed, accent, bursts, brandMode, withStock, fonts, textInput, iconInput])
+  const input = useMemo(() => assets ? { seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), bursts, brandMode, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, seconds, intensity, seed, accent, second, third, bursts, brandMode, withStock, fonts, textInput, iconInput])
 
   // The film plays live at half size, over and over, until the export takes the canvas.
   useEffect(() => {
@@ -101,7 +104,7 @@ export default function PromoPage() {
       const at = (performance.now() - started) % (input.seconds * 1000)
       promo.frame(ctx, at, frameNo)
       // With ?debug the scene's name and the moment, to read what the film is doing.
-      if (debug) { const st = promo.stateAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 28, canvas.width, 28); ctx.fillStyle = '#fff'; ctx.font = '15px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${st.kind}${st.kind === 'burst' ? ':' + st.burst + (st.sustained ? '+' : '') : ''} ${st.brandOn ? st.treat + '/' + st.deform : 'nobrand'}${st.hud ? ' hud' : ''}${st.line ? ' line' : ''}${st.icon ? ' icon' : ''} ${(at / 1000).toFixed(2)}s`, 8, canvas.height - 14) }
+      if (debug) { const st = promo.stateAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 28, canvas.width, 28); ctx.fillStyle = '#fff'; ctx.font = '15px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${st.kind}${st.kind === 'burst' ? ':' + st.burst + (st.sustained ? '+' : '') : ''} ${st.brandOn ? st.treat + '/' + st.deform : 'nobrand'} ${st.enter}>${st.exit}${st.hud ? ' hud' : ''} ${(at / 1000).toFixed(2)}s`, 8, canvas.height - 14) }
       frameNo += 1; handle = requestAnimationFrame(tick)
     }
     tick()
@@ -141,7 +144,8 @@ export default function PromoPage() {
           <div className="space-y-4 text-sm">
             <section className="rounded border border-white/15 p-3">
               <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Film</h2>
-              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Couleur</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={name} className={`h-8 w-8 rounded-full border-2 ${accent === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => setAccent(i)} />)}</div>
+              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Couleur 1</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} principale`} className={`h-8 w-8 rounded-full border-2 ${accent === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => setAccent(i)} />)}<span className="text-xs text-gray-500">la dominante</span></div>
+              {([['Couleur 2', second, setSecond], ['Couleur 3', third, setThird]] as const).map(([label, value, set]) => <div key={label} className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">{label}</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} ${label}`} disabled={i === accent} className={`h-7 w-7 rounded-full border-2 disabled:opacity-20 ${value === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => set(value === i ? -1 : i)} />)}<span className="text-xs text-gray-500">{value < 0 ? 'aucune' : 'secondaire'}</span></div>)}
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Force</span><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs">{Math.round(intensity * 100)} %</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Durée</span>{[5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => setSeconds(s)}>{s} s</button>)}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Rafales</span>{BURSTS.map((b) => <button key={b.key} title={b.hint} className={bursts.includes(b.key) ? chipOn : chip} onClick={() => setBursts(bursts.includes(b.key) ? bursts.filter((x) => x !== b.key) : [...bursts, b.key])}>{b.name}</button>)}</div>
