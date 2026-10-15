@@ -129,7 +129,33 @@ case "${LINE}" in
     # Twelve windows since 7 October (the owner: more look-alikes, none of them junk — the model judges every one).
     # The previews' lock is waited for up to twenty-five minutes: their run lasts twenty at most, and the 07:15 window of 7 October gave up at fifteen.
     # The night site check's too (the 03:50 window follows it): twenty minutes a night, seventy-five at most.
-    RANDOM_LOOKALIKE_MINUTES="${RANDOM_LOOKALIKE_MINUTES:-30}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 1500 /home/random/locks/web-previews.lock flock -w 1500 /home/random/locks/web-embed.lock node --import tsx scripts/v3/lookalike-direct.ts
+    # Since 15 October each window ends at a set time, before the next line that needs the same locks or the memory — a dig, a
+    # drift, the night's site check, the images' check, the YouTube drift, the day's list: a line whose own lock is held does not
+    # run at all. Waiting for a lock shortens the window instead. They fill the machine's free time, 549 minutes a day instead
+    # of 360: the likes made since 2 October had never been visited, and there are twice as many likes to visit. The two after
+    # the morning's and the evening's dig spend no YouTube unit: the hundred searches a day are taken (the dig about
+    # fifty-five, the other windows three each).
+    until=""
+    case "$(TZ=Europe/Paris date +%H%M)" in
+      23[3-5]?) until="tomorrow 00:15" ;;
+      01[3-5]?) until="today 02:30" ;;
+      02[3-5]?) until="today 03:15" ;;
+      03[4-5]?) until="today 04:30" ;;
+      04[3-5]?) until="today 05:03" ;;
+      06[3-5]?) until="today 07:30" ;;
+      07[3-5]?) until="today 08:30" ;;
+      08[3-5]?) until="today 09:03" ;;
+      10[0-2]?) until="today 10:37"; export YOUTUBE_API_KEY="" ;;
+      12[3-5]?) until="today 13:25" ;;
+      16[3-5]?) until="today 17:30" ;;
+      17[3-5]?) until="today 18:03" ;;
+      19[0-2]?) until="today 19:37"; export YOUTUBE_API_KEY="" ;;
+      22[3-5]?) until="today 23:05" ;;
+    esac
+    end=""
+    minutes="${RANDOM_LOOKALIKE_MINUTES:-30}"
+    if [ -n "${until}" ]; then end=$(TZ=Europe/Paris date -d "${until}" +%s); minutes="${RANDOM_LOOKALIKE_MINUTES:-60}"; fi
+    RANDOM_LOOKALIKE_END="${end}" RANDOM_LOOKALIKE_MINUTES="${minutes}" RANDOM_MODELS_DIR="${RANDOM_MODELS_DIR:-/home/random/models}" run flock -w 900 /home/random/locks/dig.lock flock -w 600 /home/random/locks/drift.lock flock -w 1500 /home/random/locks/web-previews.lock flock -w 1500 /home/random/locks/web-embed.lock node --import tsx scripts/v3/lookalike-direct.ts
     ;;
   youtube-drift)
     # The channels of the YouTube videos the base took, ten new uploads each, in the YouTube units the searches leave

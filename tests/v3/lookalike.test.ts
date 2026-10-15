@@ -3,11 +3,12 @@ import test from 'node:test'
 
 import { ObjectId } from 'mongodb'
 
-import { BYTES } from '../../lib/v3/ai/bits'
-import { LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, resemblesLike, scriptOf } from '../../lib/v3/ai/likeness'
+import { BYTES, fromRow, toBinary } from '../../lib/v3/ai/bits'
+import { gifText, LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, resemblesLike, scriptOf } from '../../lib/v3/ai/likeness'
+import { modelLikes } from '../../lib/v3/ai/pool'
 import type { LineContext } from '../../lib/v3/ingest/context'
 import { mixSeeds } from '../../lib/v3/ingest/lines/drift'
-import { likeQueries, likesOfRun, lookalikes, mostlyCjk, PAGES, QUERIES_PER_LIKE, run, saysEnough, SEEN, uploadsOf, type LikeRow } from '../../lib/v3/ingest/lines/lookalike'
+import { isModel, likeQueries, likesOfRun, loadLikes, lookalikes, mostlyCjk, PAGES, QUERIES_PER_LIKE, run, saysEnough, SEEN, uploadsOf, type LikeRow } from '../../lib/v3/ingest/lines/lookalike'
 import type { DigVideo } from '../../lib/v3/dig/video'
 
 /** A fingerprint that shares `same` of its 384 bits with `base` (the rest flipped). */
@@ -54,11 +55,76 @@ test("a like's searches: what its title says it is, its telling words, its first
   assert.ok(QUERIES_PER_LIKE >= 1 + 8 + 1 + 8)
 })
 
-test('the likes of a run turn in a fixed order and wrap around', () => {
+test('the likes of a run: the never visited first, then the others turn in a fixed order and wrap around', () => {
   const likes = ['c', 'a', 'b'].map((id) => ({ id, title: id, bits: seeded(id.charCodeAt(0)) })) as LikeRow[]
-  assert.deepEqual(likesOfRun(likes, 0, 2).map((like) => like.id), ['a', 'b'])
-  assert.deepEqual(likesOfRun(likes, 2, 2).map((like) => like.id), ['c', 'a'])
+  const visited = { a: 4, b: 2, c: 7 }
+  assert.deepEqual(likesOfRun(likes, 0, 2, visited).map((like) => like.id), ['a', 'b'])
+  assert.deepEqual(likesOfRun(likes, 2, 2, visited).map((like) => like.id), ['c', 'a'])
   assert.deepEqual(likesOfRun([], 0, 2), [])
+  // Liked today, never visited: before the turn, whatever its place (the 110 likes of 2 to 15 October waited for nothing else).
+  const more = [...likes, ...['e', 'd'].map((id) => ({ id, title: id, bits: seeded(id.charCodeAt(0)) }))] as LikeRow[]
+  assert.deepEqual(likesOfRun(more, 2, 4, visited).map((like) => like.id), ['d', 'e', 'c', 'a'])
+  assert.deepEqual(likesOfRun(more, 0, 5).map((like) => like.id), ['a', 'b', 'c', 'd', 'e'], 'none visited yet: all by id')
+})
+
+test("a liked GIF reads as words: Giphy's \"GIF\" and \"GIF by\" left out, a model when its title as stored says enough", () => {
+  assert.equal(gifText('Happy Jim Carrey GIF by Laff'), 'Happy Jim Carrey Laff')
+  assert.equal(gifText('sexy kate upton GIF'), 'sexy kate upton')
+  assert.equal(gifText('Toy Story Dance GIF'), 'Toy Story Dance')
+  assert.equal(gifText('a woman singing into a microphone with a disco ball in the background'), 'a woman singing into a microphone with a disco ball in the background')
+  assert.equal(gifText('Giffard the GIFted'), 'Giffard the GIFted', 'only the word GIF')
+  assert.ok(isModel({ id: 'g', title: gifText('sexy kate upton GIF'), bits: seeded(1), kind: 'image' }), 'a name, as stored with its GIF')
+  assert.ok(!isModel({ id: 'v', title: 'COSMOS', bits: seeded(1) }), 'a video titled with one word is no model')
+})
+
+test('the likes come from the curation, the GIFs included: printed from their words the first time, the print kept on the GIF', async () => {
+  const video = new ObjectId(), gif = new ObjectId(), kitten = new ObjectId(), printed = new ObjectId()
+  const writes: Array<{ updateOne: { filter: { _id: ObjectId }; update: { $set: { vec: unknown } } } }> = []
+  const asked: string[] = []
+  const collection = (name: string) => ({
+    find: (filter: Record<string, unknown>) => ({
+      toArray: async () => {
+        if (name === 'discovery_owner_references_v2') { assert.equal(filter.active, true); return [video, gif, kitten, printed].map((id) => ({ itemId: String(id) })) }
+        if (name === 'items') return [
+          { _id: video, type: 'video', title: 'Frosted Mini-Wheats (Kellogg\'s) TV Commercial - 1982', provider: 'youtube', videoId: 'abc', vec: toBinary(seeded(1)), channelTitle: 'Retro Ads', channelId: 'UCabc' },
+          { _id: gif, type: 'image', title: 'Happy Jim Carrey GIF by Laff', provider: 'giphy', tags: ['tone-positive', 'yzfznrkvungjiqcuo6'] },
+          { _id: kitten, type: 'image', title: 'Cat Kitten GIF', provider: 'giphy' },
+          { _id: printed, type: 'image', title: 'cindy crawford 80s GIF', provider: 'giphy', vec: toBinary(seeded(3)) },
+        ]
+        return []
+      },
+    }),
+    bulkWrite: async (operations: typeof writes) => { writes.push(...operations); return {} },
+  })
+  const ctx = { db: { collection } as unknown as LineContext['db'], dryRun: false } as unknown as LineContext
+  const likes = await loadLikes(ctx, async (texts) => { asked.push(...texts); return texts.map(() => seeded(2)) })
+  assert.deepEqual(asked, ['Happy Jim Carrey Laff.'], 'only the GIF without a print is read, as words')
+  assert.deepEqual(likes.map((like) => [like.title, like.kind ?? 'video']), [
+    ['Frosted Mini-Wheats (Kellogg\'s) TV Commercial - 1982', 'video'],
+    ['Happy Jim Carrey Laff', 'image'],
+    ['cindy crawford 80s', 'image'],
+  ], 'a GIF whose title says too little is no model; its tags are never words')
+  assert.equal(likes[0].channel, 'Retro Ads')
+  assert.equal(likes[1].tags, undefined)
+  assert.equal(writes.length, 1)
+  assert.equal(String(writes[0].updateOne.filter._id), String(gif))
+  assert.deepEqual(fromRow(writes[0].updateOne.update.$set.vec), seeded(2))
+})
+
+test("the stock's marking reads the curation's likes too, the GIFs as words", async () => {
+  const collection = (name: string) => ({
+    find: () => ({
+      toArray: async () => name === 'discovery_owner_references_v2'
+        ? [{ itemId: String(new ObjectId()) }]
+        : [
+          { _id: new ObjectId(), type: 'video', title: 'Building Steam Locomotives - 1930s Trains & Railways Educational Film', vec: toBinary(seeded(5)) },
+          { _id: new ObjectId(), type: 'image', title: 'Roman Reigns Wwe GIF by NETFLIX', vec: toBinary(seeded(6)) },
+          { _id: new ObjectId(), type: 'video', title: 'COSMOS', vec: toBinary(seeded(7)) },
+        ],
+    }),
+  })
+  const models = await modelLikes({ collection } as unknown as Parameters<typeof modelLikes>[0])
+  assert.deepEqual(models.map((like) => like.title), ['Building Steam Locomotives - 1930s Trains & Railways Educational Film', 'Roman Reigns Wwe NETFLIX'])
 })
 
 test('only what resembles a like goes on, the copies counted apart', () => {

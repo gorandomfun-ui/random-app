@@ -38,14 +38,18 @@
  * week's cap per channel holds, so a channel gives twenty a week at most.
  * About two hundred and fifty units a day over the owner's sixty-one YouTube
  * likes (7 October), out of the two thousand six hundred the day leaves.
+ *
+ * The likes are read where the curation page writes them, the GIFs included
+ * (15 October). Until then the line read the like pool's list, whose hourly
+ * job had stopped on 2 October: the 110 likes made since were never visited.
+ * A like never visited goes before the turn.
  */
 
 import { ObjectId, type AnyBulkWriteOperation, type Document } from 'mongodb'
 
 import { alike, fromRow, textOf, toBinary } from '../../ai/bits'
-import { LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, sameScript, saysEnough, mostlyCjk, type Likeness } from '../../ai/likeness'
-import { LIKE_INDEX } from '../../ai/pool'
-import { loadLikePool } from '../../cool/likePool'
+import { gifText, LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, sameScript, saysEnough, mostlyCjk, type Likeness } from '../../ai/likeness'
+import { LIKE_INDEX, likedItemIds } from '../../ai/pool'
 import { playable, relatedDailymotion, searchDailymotion } from '../../dig/dailymotion'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, SEARCH_UNITS, searchPage, videoDetails } from '../../dig/youtube'
 import { newGuardState, underWeeklyCap, withoutMedia } from '../../dig/guards'
@@ -134,7 +138,8 @@ function shuffle<T>(list: readonly T[]): T[] {
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 export type LookalikeCursor = { next: number; visits: Record<string, number>; youtube: Record<string, string | null>; note: string }
-export type LikeRow = { id: string; title: string; provider?: string; videoId?: string; bits: Uint8Array; tags?: string[]; channel?: string; channelId?: string }
+/** A like as a model; a GIF's title is its words (`gifText`), and it says enough as stored. */
+export type LikeRow = { id: string; title: string; provider?: string; videoId?: string; bits: Uint8Array; tags?: string[]; channel?: string; channelId?: string; kind?: 'image' }
 export type Prints = (texts: string[]) => Promise<Uint8Array[]>
 
 const cleanTitle = (title: string): string => title.replace(/[#@][\p{L}\p{N}_]+/gu, ' ').replace(/[\[\](){}|•·:;!?¡¿"“”«»]+/g, ' ').replace(/\s+/g, ' ').trim()
@@ -164,11 +169,19 @@ export function likeQueries(like: { title: string; tags?: string[]; channel?: st
   return out.slice(0, QUERIES_PER_LIKE)
 }
 
-/** The likes of a run, in a fixed order by id, from where the last run stopped. */
-export function likesOfRun(likes: readonly LikeRow[], next: number, count = LIKES_PER_RUN): LikeRow[] {
-  if (!likes.length) return []
-  const sorted = [...likes].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
-  return Array.from({ length: Math.min(count, sorted.length) }, (_, index) => sorted[(next + index) % sorted.length])
+/** A like the visits can use: a title that says enough (a GIF's as stored). */
+export const isModel = (like: LikeRow): boolean => like.kind === 'image' || saysEnough(like.title)
+
+/**
+ * The likes of a run: the ones never visited first — a like made today at the next window (from 2 to 15 October, 110
+ * waited) — then the others in a fixed order by id, from where the last run stopped (`next` counts in that turn only).
+ */
+export function likesOfRun(likes: readonly LikeRow[], next: number, count = LIKES_PER_RUN, visits: Readonly<Record<string, number>> = {}): LikeRow[] {
+  const byId = (left: LikeRow, right: LikeRow) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+  const fresh = likes.filter((like) => !visits[like.id]).sort(byId)
+  const turning = likes.filter((like) => visits[like.id]).sort(byId)
+  const turn = Array.from({ length: turning.length }, (_, index) => turning[(next + index) % turning.length])
+  return [...fresh, ...turn].slice(0, count)
 }
 
 /**
@@ -195,18 +208,37 @@ export function lookalikes(videos: readonly DigVideo[], prints: readonly Uint8Ar
   return { close, far, copies }
 }
 
-/** The owner's liked videos that carry a fingerprint, with their tags and channel when the row holds them. */
-async function loadLikes(ctx: LineContext): Promise<LikeRow[]> {
-  const pool = await loadLikePool(ctx.db).catch(() => ({ zones: [], likeIds: [] as string[] }))
-  const ids = pool.likeIds.filter((id) => ObjectId.isValid(id)).slice(0, 400).map((id) => new ObjectId(id))
+/**
+ * The owner's likes as models, read where the curation page writes them (lib/v3/ai/pool.ts, likedItemIds): the videos
+ * that carry a fingerprint, with their tags and channel when the row holds them; and since 15 October the GIFs (the
+ * owner: "on peut chercher des vidéos autour de ces GIF aussi"), their title read as words — never their tags, half of
+ * them Giphy's codes and our own tone marks — and printed the first time they are met, then kept on the GIF.
+ */
+export async function loadLikes(ctx: LineContext, prints: Prints): Promise<LikeRow[]> {
+  const ids = await likedItemIds(ctx.db)
   if (!ids.length) return []
-  const rows = await ctx.db.collection('items').find({ _id: { $in: ids }, type: 'video', vec: { $exists: true } } as Document, { projection: { title: 1, provider: 1, videoId: 1, vec: 1, apiTags: 1, channelTitle: 1, channelId: 1 }, maxTimeMS: 4000 }).toArray()
-  return rows.flatMap((row) => {
+  const rows = await ctx.db.collection('items').find({ _id: { $in: ids }, type: { $in: ['video', 'image'] } } as Document, { projection: { type: 1, title: 1, provider: 1, videoId: 1, vec: 1, apiTags: 1, channelTitle: 1, channelId: 1 }, maxTimeMS: 4000 }).toArray()
+  const unprinted = rows.filter((row) => row.type === 'image' && !fromRow(row.vec) && saysEnough(String(row.title ?? '')))
+  if (unprinted.length) {
+    const bits = await prints(unprinted.map((row) => textOf({ title: gifText(String(row.title ?? '')) })))
+    const writes: AnyBulkWriteOperation<Document>[] = []
+    unprinted.forEach((row, index) => {
+      if (!bits[index]) return
+      row.vec = toBinary(bits[index])
+      writes.push({ updateOne: { filter: { _id: row._id, type: 'image' }, update: { $set: { vec: row.vec } } } })
+    })
+    if (!ctx.dryRun && writes.length) await ctx.db.collection('items').bulkWrite(writes, { ordered: false }).catch(() => undefined)
+  }
+  return rows.flatMap((row): LikeRow[] => {
     const bits = fromRow(row.vec)
-    return bits ? [{
-      id: String(row._id), title: String(row.title ?? ''), provider: typeof row.provider === 'string' ? row.provider : undefined, videoId: typeof row.videoId === 'string' ? row.videoId : undefined, bits,
+    if (!bits) return []
+    const id = String(row._id)
+    const provider = typeof row.provider === 'string' ? row.provider : undefined
+    if (row.type === 'image') return saysEnough(String(row.title ?? '')) ? [{ id, title: gifText(String(row.title ?? '')), provider, bits, kind: 'image' }] : []
+    return [{
+      id, title: String(row.title ?? ''), provider, videoId: typeof row.videoId === 'string' ? row.videoId : undefined, bits,
       ...(Array.isArray(row.apiTags) ? { tags: row.apiTags.map(String) } : {}), ...(typeof row.channelTitle === 'string' ? { channel: row.channelTitle } : {}), ...(typeof row.channelId === 'string' ? { channelId: row.channelId } : {}),
-    }] : []
+    }]
   })
 }
 
@@ -327,7 +359,7 @@ async function youtubeChannelUploads(ctx: LineContext, channelId: string, skip: 
   return { videos: await videoDetails(key, wanted.slice(0, PAGE_SIZE), http), units, stopped: false, known: held.size }
 }
 
-/** `prints`: the model (lib/v3/ai/fingerprint.ts); `likes`: the owner's printed likes, read from the like pool unless a test gives them. */
+/** `prints`: the model (lib/v3/ai/fingerprint.ts); `likes`: the owner's printed likes, read from the curation's likes unless a test gives them. */
 export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx: LineContext) => Promise<LikeRow[]> }): Promise<LineResult> {
   const prints = deps.prints
   const http = ctx.http ?? fetch
@@ -343,16 +375,19 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
   const titles = new Set<string>()
   let read = 0, fingerprinted = 0, near = 0, copies = 0, checks = 0, likesDone = 0, searches = 0, spread = 0, channels = 0, units = 0, youtubeSearches = 0, youtubeChannels = 0, farIn = 0
 
-  const likes = await (deps.likes ?? loadLikes)(ctx).catch((error) => { errors.push(`likes : ${message(error)}`); return [] as LikeRow[] })
+  const likes = await (deps.likes ?? ((context: LineContext) => loadLikes(context, prints)))(ctx).catch((error) => { errors.push(`likes : ${message(error)}`); return [] as LikeRow[] })
   const likeVideoIds = new Set(likes.map((like) => like.videoId).filter((id): id is string => Boolean(id)))
   if (!likes.length) { cursor.note = 'aucun like avec empreinte'; return { counters, cursor, errors } }
   await ensureSeenClock(ctx)
 
-  for (const like of likesOfRun(likes, cursor.next)) {
+  // A like whose title says nothing ("ANIMATION vidéo", "#tgiks") would only search for noise: never visited.
+  const models = likes.filter(isModel)
+  const turning = models.filter((like) => cursor.visits[like.id]).length
+  for (const like of likesOfRun(models, cursor.next, LIKES_PER_RUN, cursor.visits)) {
     if (ctx.timeLeft() < DEADLINE_MARGIN_MS) { errors.push('échéance atteinte'); break }
-    // A like whose title says nothing ("ANIMATION vidéo", "#tgiks") would only search for noise.
-    if (!saysEnough(like.title)) { cursor.next += 1; continue }
     const visit = cursor.visits[like.id] ?? 0
+    // A like visited before moves the turn on; a first visit is taken before the turn.
+    const turn = visit ? 1 : 0
     const page = (visit % PAGES) + 1
     const around = await foundAround(ctx, like)
     const queries = likeQueries(like, around.titles)
@@ -435,7 +470,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
     const door = driftDoor(shuffle(readable).slice(0, MAX_READ_PER_LIKE))
     door.refused['titre trop court ou répété'] = unknown.length - readable.length
     if (seen.size) door.refused['déjà jugée'] = seen.size
-    if (!door.kept.length || ctx.timeLeft() < DEADLINE_MARGIN_MS) { cursor.visits[like.id] = visit + 1; cursor.next += 1; likesDone += 1; continue }
+    if (!door.kept.length || ctx.timeLeft() < DEADLINE_MARGIN_MS) { cursor.visits[like.id] = visit + 1; cursor.next += turn; likesDone += 1; continue }
     // The model reads them all at once; then only what resembles a like goes on.
     let bits: Uint8Array[] = []
     try { bits = await prints(door.kept.map((video) => textOf({ title: video.title, description: video.description }))) } catch (error) { errors.push(`empreintes : ${message(error)}`); break }
@@ -517,11 +552,11 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
     }
     await ctx.search({ provider: youtubeUnits ? 'youtube' : 'dailymotion', query: `sosies de « ${like.title.slice(0, 60)} » (${queries.length} recherches, page ${page}, ${neighbours.length} voisinages${youtubeUnits ? `, sa chaîne YouTube` : ''})`, scanned: fresh.length, kept: checked.length, inserted: result.inserted, duplicates: result.duplicates, rejected: refused, quotaUnits: youtubeUnits, insertedIds: result.insertedIds }).catch(() => undefined)
     cursor.visits[like.id] = visit + 1
-    cursor.next += 1
+    cursor.next += turn
     likesDone += 1
   }
 
-  cursor.next %= Math.max(1, likes.length)
+  cursor.next %= Math.max(1, turning)
   if (!ctx.dryRun) await meta.updateOne({ _id: CURSOR_ID } as Document, { $set: { next: cursor.next, visits: cursor.visits, youtube: cursor.youtube, at: new Date() } }, { upsert: true }).catch((error) => { errors.push(`place : ${message(error)}`) })
   cursor.note = `${likesDone} likes visités · ${searches} recherches · ${spread} voisinages de sosies · ${youtubeSearches} recherches YouTube · ${channels + youtubeChannels} chaînes YouTube (${units} unités) · ${read} vidéos lues · ${fingerprinted} lues par l'IA · ${near} ressemblent à un like${copies ? ` (${copies} copies écartées)` : ''} · ${counters.inserted} entrées${farIn ? ` dont ${farIn} un peu proches (hors pool)` : ''}${counters.byProvider?.youtube ? ` dont ${counters.byProvider.youtube} YouTube` : ''}`
   ctx.log(`sosies : ${cursor.note}`)

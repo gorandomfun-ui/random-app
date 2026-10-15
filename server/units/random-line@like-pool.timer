@@ -1,8 +1,8 @@
 [Unit]
-Description=RANDOM like pool, counted every hour (the zones around the likes and their sizes)
+Description=RANDOM like pool, counted twelve times a day (the zones around the likes and their sizes, for the draw, the taste card and the drift; stopped by mistake with the old lines on 2 October, back on 15 October at the hours the small model leaves the machine's memory — every hour it would run beside a 700 MB model on a 969 MB machine)
 
 [Timer]
-OnCalendar=*-*-* *:20:00 Europe/Paris
+OnCalendar=*-*-* 00,05,06,09,11,12,14,16,18,21,22,23:20:00 Europe/Paris
 Persistent=false
 RandomizedDelaySec=60
 

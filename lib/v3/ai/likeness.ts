@@ -100,3 +100,9 @@ export function saysEnough(title: string): boolean {
   const words = bare.split(/\s+/).filter((word) => /\p{L}{2,}/u.test(word))
   return words.length >= MIN_TITLE_WORDS && letters >= MIN_TITLE_LETTERS
 }
+/**
+ * A liked GIF read as a like (the owner, 15 October: "on peut chercher des vidéos autour de ces GIF aussi"): its title
+ * without Giphy's "GIF" and "GIF by" — "Happy Jim Carrey GIF by Laff" reads "Happy Jim Carrey Laff" — searched and read
+ * as a video's title is. Whether it says enough is judged on the title as stored ("sexy kate upton GIF": a name).
+ */
+export const gifText = (title: string): string => title.replace(/\bGIFs?\b(?:\s+by\b)?/gi, ' ').replace(/\s+/g, ' ').trim()

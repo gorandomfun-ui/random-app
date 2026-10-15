@@ -1,9 +1,10 @@
 /**
  * The look-alikes of the likes, run on the ingestion server in windows of its
- * own (server/run-line.sh, lookalike: eight of thirty minutes a day) and in
- * the minutes the fingerprints leave (server/vec-window.sh).
+ * own (server/run-line.sh, lookalike: fourteen a day, each to a set time) and
+ * in the minutes the fingerprints leave (server/vec-window.sh).
  *
  *   RANDOM_LOOKALIKE_MINUTES=30 node --import tsx scripts/v3/lookalike-direct.ts
+ *   RANDOM_LOOKALIKE_END=<seconds since 1970> …   the window ends then, whatever the wait for the locks
  *   node --import tsx scripts/v3/lookalike-direct.ts --dry
  *
  * An envelope only: the line is `lib/v3/ingest/lines/lookalike.ts`. It loads
@@ -18,7 +19,16 @@ import { directContext, LineLocked } from '@/lib/v3/ingest/direct'
 import { emptyCounters, journalHost } from '@/lib/v3/ingest/journal'
 import { run, type LookalikeCursor } from '@/lib/v3/ingest/lines/lookalike'
 
-const MAX_MINUTES = Number(process.env.RANDOM_LOOKALIKE_MINUTES ?? 15)
+/**
+ * The window's end when the runner sets one (server/run-line.sh): the minutes spent waiting for the other lines' locks
+ * shorten the window, never push it into the start of the next line that needs them (a dig, a drift, the night's site check).
+ */
+const END_MS = Number(process.env.RANDOM_LOOKALIKE_END || 0) * 1000
+const MAX_MINUTES = END_MS
+  ? Math.min(Number(process.env.RANDOM_LOOKALIKE_MINUTES ?? 60), Math.floor((END_MS - Date.now()) / 60_000))
+  : Number(process.env.RANDOM_LOOKALIKE_MINUTES ?? 15)
+/** Below this, a window is not worth the model's loading. */
+const MIN_MINUTES = 4
 /**
  * YouTube units a day for the likes: thirty-six searches with their words (a hundred units each in our count), the
  * channels of the likes and of the YouTube look-alikes (one unit a page, one per fifty details). The owner, 12 October:
@@ -28,6 +38,7 @@ const YOUTUBE_UNITS = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_UNITS ?? 5000)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')
+  if (MAX_MINUTES < MIN_MINUTES) { console.log(JSON.stringify({ lookalike: 'skipped', reason: `${MAX_MINUTES} min left in the window` })); process.exit(0) }
   setTimeout(() => {
     console.error(`Look-alikes stopped at their ${MAX_MINUTES}-minute deadline; the journal shows the run as interrupted.`)
     process.exit(1)
