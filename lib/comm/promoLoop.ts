@@ -2,13 +2,20 @@
  * The promo loops: short films that speak of Random itself, built from the
  * site's own things — the wordmark, the brand block, the icons — and from
  * stock pictures under a permissive licence, never from a creator's work.
- * A run of scenes cut by breaks, drawn by a seed: the seven animations of
- * the composer on those things; the wordmark or the brand block enormous,
- * overflowing; the icons swarming, enlarged, glitched; ectoplasms over the
- * logo; a camera's interface; a codec's blocks; a video game's pixels; a
- * GIF's stutter and dither. The curator's own words on top, with the
- * composer's tools. Theme colours only: no gradient, no blur, no RGB.
- * Every number comes from a hash, so a seed gives the same film twice.
+ *
+ * Not a run of poses but three layers alive at once, changed on a beat:
+ *   the ground   one of the composer's animations, chosen by the curator, over a source that
+ *                moves — the stock pictures passing like a feed, the icons drifting, the brand
+ *                block — and the pictures never shown as they are: darkened, dithered, torn,
+ *                a support for the glitch and nothing more;
+ *   the brand    giant letters (RANDOM, the brand block, the curator's words) open on the
+ *                ground, or the wordmark enormous stepping bigger, or the icons swarming;
+ *   the dressing the screen's own artefacts, as in the references: a phone's status bar,
+ *                counters, timecode, brackets, REC; a codec's macroblocks; scanlines and
+ *                tearing; a game's score and pixels; a GIF's stutter and dither.
+ * Breaks on the beat: black, a flash, the frame before in slices or blocks.
+ * Theme colours only: no gradient, no blur, no RGB. Every number comes from a
+ * hash, so a seed gives the same film twice.
  */
 
 import { burstSchedule, createDrawer, GLITCH_STYLES, type GlitchStyle } from './montageDraw'
@@ -24,6 +31,11 @@ function mix(a: string, b: string, t: number): string {
   return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')}`
 }
 
+export type BrandLayer = 'letters' | 'huge' | 'icons'
+export type Dressing = 'cam' | 'codec' | 'screen' | 'game' | 'gif'
+export const BRAND_LAYERS: Array<{ key: BrandLayer; name: string }> = [{ key: 'letters', name: 'Lettres' }, { key: 'huge', name: 'Logo énorme' }, { key: 'icons', name: 'Icônes' }]
+export const DRESSINGS: Array<{ key: Dressing; name: string }> = [{ key: 'cam', name: 'Caméra' }, { key: 'codec', name: 'Codec' }, { key: 'screen', name: 'Écran' }, { key: 'game', name: 'Jeu vidéo' }, { key: 'gif', name: 'GIF' }]
+
 export type PromoText = { value: string; size: number; align: 'left' | 'center' | 'right'; font: string; weight: number; x: number; y: number; width: number }
 export type PromoIcon = { image: HTMLImageElement; x: number; y: number; size: number }
 export type PromoInput = {
@@ -31,6 +43,10 @@ export type PromoInput = {
   intensity: number
   seed: number
   accent: string
+  /** The animations the ground may use, the brand layers, the dressings: the curator's choice. */
+  styles: GlitchStyle[]
+  brands: BrandLayer[]
+  dressings: Dressing[]
   /** The wordmark across, and the letters stacked, cream; and the same in deep, for the accent grounds. */
   logo: HTMLImageElement
   logoVertical: HTMLImageElement
@@ -46,36 +62,39 @@ export type PromoInput = {
   icon?: PromoIcon | null
 }
 
-type Kind = 'anim' | 'huge' | 'icons' | 'ecto' | 'cam' | 'codec' | 'game' | 'gif'
-type Source = 'brand' | 'stock' | 'icons'
-type Transition = 'cut' | 'black' | 'flash' | 'slices' | 'blocks'
-export type Cut = { from: number; to: number; kind: Kind; seed: number; transition: Transition; style: GlitchStyle; source: Source; pick: number }
+/** A moment of the film: what each layer is doing, decided on the beats. */
+export type Beat = { from: number; to: number; style: GlitchStyle; brand: BrandLayer | null; brandMode: 'text' | 'wordmark' | 'block'; dressing: Dressing[]; break: 'none' | 'black' | 'flash' | 'slices' | 'blocks'; picture: number; seed: number }
 
-const KINDS: Array<[Kind, number]> = [['anim', 3], ['huge', 2], ['icons', 2], ['ecto', 1], ['cam', 1], ['codec', 1.5], ['game', 1], ['gif', 1]]
-
-/** The run of cuts: shorter and wilder as the force rises, never the same kind twice in a row, the brand first. */
-export function planPromo(seconds: number, intensity: number, seed: number, stock: number): Cut[] {
-  const out: Cut[] = []
-  const total = seconds * 1000
-  let at = 0, i = 0, last: Kind | null = null
-  const weight = KINDS.reduce((a, [, w]) => a + w, 0)
+/** The beats: short and wild as the force rises; each layer keeps or changes on its own; the pictures pass. */
+export function planBeats(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'styles' | 'brands' | 'dressings'>, pictures: number): Beat[] {
+  const k = Math.min(1, Math.max(0, input.intensity))
+  const styles = input.styles.length ? input.styles : GLITCH_STYLES.map((g) => g.key)
+  const brands = input.brands
+  const dressings = input.dressings
+  const out: Beat[] = []
+  const total = input.seconds * 1000
+  const period = Math.round(760 - k * 400)
+  let at = 0, i = 0
+  let style = styles[Math.floor(hash(input.seed, 1) * styles.length)]
+  let brand: BrandLayer | null = brands.length ? brands[Math.floor(hash(input.seed, 2) * brands.length)] : null
+  let brandMode: Beat['brandMode'] = 'wordmark'
+  let dressing: Dressing[] = dressings.length ? [dressings[Math.floor(hash(input.seed, 3) * dressings.length)]] : []
+  let picture = 0
   while (at < total) {
-    let kind: Kind = 'huge'
+    const s = input.seed * 13 + i * 97
+    const length = Math.round(period * (0.7 + hash(s, 4) * 0.6))
     if (i > 0) {
-      for (let tries = 0; tries < 6; tries += 1) {
-        let q = hash(seed, i, tries, 1) * weight
-        for (const [k, w] of KINDS) { q -= w; if (q <= 0) { kind = k; break } }
-        if (kind !== last) break
-      }
+      if (hash(s, 5) < 0.3 + k * 0.2 && styles.length > 1) { const others = styles.filter((x) => x !== style); style = others[Math.floor(hash(s, 6) * others.length)] }
+      if (hash(s, 7) < 0.35 && brands.length) { const pool: Array<BrandLayer | null> = [...brands, null]; brand = pool[Math.floor(hash(s, 8) * pool.length)] }
+      if (hash(s, 9) < 0.4 && dressings.length) { const n = hash(s, 10) < k * 0.6 ? 2 : 1; dressing = []; for (let j = 0; j < n; j += 1) { const d = dressings[Math.floor(hash(s, 11, j) * dressings.length)]; if (!dressing.includes(d)) dressing.push(d) } }
+      if (hash(s, 12) < 0.5 + k * 0.3 && pictures > 1) picture = (picture + 1 + Math.floor(hash(s, 13) * (pictures - 1))) % pictures
     }
-    const quick = hash(seed, i, 2) < intensity * 0.6
-    const length = Math.round((quick ? 280 + hash(seed, i, 3) * 420 : 600 + hash(seed, i, 3) * 900) * (1.3 - intensity * 0.5))
-    const qs = hash(seed, i, 4)
-    const source: Source = kind === 'icons' ? 'icons' : stock && qs < (kind === 'anim' ? 0.4 : 0.6) ? 'stock' : kind === 'anim' && qs > 0.8 ? 'icons' : 'brand'
-    const qt = hash(seed, i, 5)
-    const transition: Transition = i === 0 ? 'cut' : qt < 0.3 ? 'cut' : qt < 0.45 ? 'black' : qt < 0.6 ? 'flash' : qt < 0.85 ? 'slices' : 'blocks'
-    out.push({ from: at, to: Math.min(total, at + length), kind, seed: seed * 7 + i * 131, transition, style: GLITCH_STYLES[Math.floor(hash(seed, i, 6) * GLITCH_STYLES.length)].key, source, pick: Math.floor(hash(seed, i, 7) * 1000) })
-    at += length; i += 1; last = kind
+    const qm = hash(s, 14)
+    brandMode = qm < 0.4 ? 'wordmark' : qm < 0.7 ? 'block' : 'text'
+    const qb = hash(s, 15)
+    const brk: Beat['break'] = i === 0 ? 'none' : qb > 0.35 + k * 0.35 ? 'none' : qb < 0.08 ? 'black' : qb < 0.2 ? 'flash' : qb < 0.5 ? 'slices' : 'blocks'
+    out.push({ from: at, to: Math.min(total, at + length), style, brand, brandMode, dressing: [...dressing], break: brk, picture, seed: s })
+    at += length; i += 1
   }
   return out
 }
@@ -88,19 +107,9 @@ function cover(ctx: CanvasRenderingContext2D, src: CanvasImageSource, x: number,
   ctx.drawImage(src, Math.max(0, Math.min(sw - cw, (sw - cw) * fx)), Math.max(0, Math.min(sh - ch, (sh - ch) * fy)), cw, ch, x, y, w, h)
 }
 
-/** An organic blob path — the ectoplasm — breathing with time. */
-function blobPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, seed: number, t: number) {
-  const n = 7 + Math.floor(hash(seed, 1) * 3)
-  const pts: Array<[number, number]> = []
-  for (let i = 0; i < n; i += 1) { const a = (i / n) * Math.PI * 2; const rr = r * (0.7 + hash(seed, i, 2) * 0.5 + Math.sin(t * 2.1 + i * 1.7 + seed) * 0.12); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * (0.75 + hash(seed, 3) * 0.5)]) }
-  ctx.beginPath()
-  for (let i = 0; i < n; i += 1) { const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % n], [x2, y2] = pts[(i + 2) % n]; if (i === 0) ctx.moveTo((x0 + x1) / 2, (y0 + y1) / 2); ctx.quadraticCurveTo(x1, y1, (x1 + x2) / 2, (y1 + y2) / 2) }
-  ctx.closePath()
-}
+export type Promo = { beats: Beat[]; frame: (ctx: CanvasRenderingContext2D, atMs: number, frameNo: number) => void; beatAt: (atMs: number) => Beat }
 
-export type Promo = { cuts: Cut[]; frame: (ctx: CanvasRenderingContext2D, atMs: number, frameNo: number) => void; cutAt: (atMs: number) => Cut }
-
-/** The film at one size: its cuts, and one function drawing any moment of it. The live preview and the recording share it. */
+/** The film at one size: its beats, and one function drawing any moment of it. The live preview and the recording share it. */
 export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const accent = input.accent
   const TONES = [accent, CREAM, DEEP, mix(accent, DEEP, 0.45), mix(accent, CREAM, 0.5)]
@@ -109,34 +118,16 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const u = W / 1080
   const px = Math.max(1, Math.round(u))
   const font = input.titleFont
-  const cuts = planPromo(input.seconds, k, input.seed, input.stock.length)
-  const make = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c }
-  const prev = make(), scratch = make(), tiny = make()
-  const pv = prev.getContext('2d')!, sx = scratch.getContext('2d')!
-
-  // ----- the sources: the brand block, the icon field, the stock pictures, each as a frame-sized picture.
-  const brandCard = (() => {
-    const c = make(); const g = c.getContext('2d')!
-    g.fillStyle = DEEP; g.fillRect(0, 0, W, H)
-    const lw = Math.round(W * 0.72), lh = Math.round(lw * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth))
-    g.drawImage(input.logo, Math.round((W - lw) / 2), Math.round(H * 0.44 - lh / 2), lw, lh)
-    g.fillStyle = CREAM; g.font = `700 ${Math.round(W * 0.05)}px ${font}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(SITE, W / 2, Math.round(H * 0.44 + lh / 2 + W * 0.06))
-    for (let i = 0; i < 6; i += 1) { g.fillStyle = tone(hash(i, 8)); g.globalAlpha = 0.5; g.fillRect(hash(i, 9) * W * 0.6, hash(i, 10) * H, W * (0.1 + hash(i, 11) * 0.5), px) }
-    return c
-  })()
-  const iconField = (() => {
-    const c = make(); const g = c.getContext('2d')!
-    g.fillStyle = DEEP; g.fillRect(0, 0, W, H)
-    const icons = input.icons
-    for (let i = 0; i < 18 && icons.length; i += 1) { const img = icons[Math.floor(hash(i, 12) * icons.length)]; const s = Math.round(W * (0.08 + hash(i, 13) * 0.22)); g.globalAlpha = 0.6 + hash(i, 14) * 0.4; g.drawImage(img, hash(i, 15) * (W - s), hash(i, 16) * (H - s), s, s) }
-    return c
-  })()
-  const stockCards = input.stock.map((img) => { const c = make(); cover(c.getContext('2d')!, img, 0, 0, W, H); return c })
-  const sourceOf = (cut: Cut): HTMLCanvasElement => cut.source === 'stock' && stockCards.length ? stockCards[cut.pick % stockCards.length] : cut.source === 'icons' ? iconField : brandCard
+  const beats = planBeats(input, Math.max(1, input.stock.length))
+  const make = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c }
+  const prev = make(), source = make(), scratch = make(), scratch2 = make(), tiny = make(Math.round(W / 14), Math.round(H / 14))
+  const pv = prev.getContext('2d')!, sg = source.getContext('2d')!, sx = scratch.getContext('2d')!, s2 = scratch2.getContext('2d')!, tg = tiny.getContext('2d')!
+  const dither = (() => { const c = make(4 * px, 4 * px); const g = c.getContext('2d')!; g.fillStyle = DEEP; g.fillRect(0, 0, 2 * px, 2 * px); g.fillRect(2 * px, 2 * px, 2 * px, 2 * px); return c })()
+  const scan = (() => { const c = make(1, 3 * px); const g = c.getContext('2d')!; g.fillStyle = DEEP; g.fillRect(0, 0, 1, px); return c })()
 
   // ----- pieces
-  const slices = (ctx: CanvasRenderingContext2D, seed: number, n: number, reach: number) => {
-    for (let i = 0; i < n; i += 1) { const sh = Math.max(2, Math.round(H * (0.004 + hash(seed, i, 20) * 0.05))), y = Math.round(hash(seed, i, 21) * (H - sh)); ctx.drawImage(ctx.canvas, 0, y, W, sh, Math.round((hash(seed, i, 22) - 0.5) * W * reach), y, W, sh); if (hash(seed, i, 23) < 0.4) { ctx.fillStyle = hash(seed, i, 24) < 0.5 ? accent : CREAM; ctx.globalAlpha = 0.7; ctx.fillRect(0, y, W, px); ctx.globalAlpha = 1 } }
+  const slices = (ctx: CanvasRenderingContext2D, seed: number, n: number, reach: number, thick = 0.05) => {
+    for (let i = 0; i < n; i += 1) { const sh = Math.max(2, Math.round(H * (0.004 + hash(seed, i, 20) * thick))), y = Math.round(hash(seed, i, 21) * (H - sh)); ctx.drawImage(ctx.canvas, 0, y, W, sh, Math.round((hash(seed, i, 22) - 0.5) * W * reach), y, W, sh); if (hash(seed, i, 23) < 0.4) { ctx.fillStyle = hash(seed, i, 24) < 0.5 ? accent : CREAM; ctx.globalAlpha = 0.7; ctx.fillRect(0, y, W, px); ctx.globalAlpha = 1 } }
   }
   const hairlines = (ctx: CanvasRenderingContext2D, seed: number, n: number) => {
     for (let i = 0; i < n; i += 1) { ctx.fillStyle = tone(hash(seed, i, 25)); ctx.globalAlpha = 0.4 + hash(seed, i, 26) * 0.5; const vertical = hash(seed, i, 27) < 0.3; const len = (vertical ? H : W) * (0.1 + hash(seed, i, 28) * 0.6); if (vertical) ctx.fillRect(hash(seed, i, 29) * W, hash(seed, i, 30) * (H - len), px, len); else ctx.fillRect(hash(seed, i, 29) * (W - len), hash(seed, i, 30) * H, len, px) }
@@ -147,161 +138,186 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     sx.globalCompositeOperation = 'source-in'; sx.fillStyle = colour; sx.fillRect(0, 0, w, h); sx.globalCompositeOperation = 'source-over'
     return scratch
   }
-  const cam = (ctx: CanvasRenderingContext2D, frame: number, at: number) => {
-    ctx.save(); ctx.fillStyle = CREAM; ctx.font = `${Math.round(W * 0.022)}px ${font}`; ctx.textBaseline = 'top'
+  const logoSize = (img: HTMLImageElement, w: number) => ({ w: Math.round(w), h: Math.round(w * img.naturalHeight / Math.max(1, img.naturalWidth)) })
+
+  // ----- the ground's source: never a picture as it is. The stock pictures pass with a drift, darkened and dithered, torn in rows;
+  // without them, the brand block. The icons drift across either way.
+  const drawSource = (beat: Beat, at: number, frame: number) => {
+    sg.globalCompositeOperation = 'source-over'; sg.globalAlpha = 1
+    const local = (at - beat.from) / Math.max(1, beat.to - beat.from)
+    if (input.stock.length) {
+      const img = input.stock[beat.picture % input.stock.length]
+      cover(sg, img, 0, 0, W, H, 1.05 + local * 0.12, 0.3 + hash(beat.seed, 40) * 0.4 + local * 0.08 * (hash(beat.seed, 41) < 0.5 ? 1 : -1), 0.5)
+      // Darkened, tinted a little toward the accent, dithered: a support, not a photograph.
+      sg.fillStyle = DEEP; sg.globalAlpha = 0.42 + k * 0.1; sg.fillRect(0, 0, W, H)
+      sg.fillStyle = accent; sg.globalAlpha = 0.12; sg.fillRect(0, 0, W, H)
+      sg.globalAlpha = 0.3; sg.fillStyle = sg.createPattern(dither, 'repeat')!; sg.fillRect(0, 0, W, H); sg.globalAlpha = 1
+      // Rows torn, always; a column displaced now and then.
+      const rows = Math.round(4 + k * 14)
+      for (let i = 0; i < rows; i += 1) { const sh = Math.max(2, Math.round(H * (0.004 + hash(beat.seed, frame, i, 42) * 0.03))), y = Math.round(hash(beat.seed, frame, i, 43) * (H - sh)); sg.drawImage(source, 0, y, W, sh, Math.round((hash(beat.seed, frame, i, 44) - 0.5) * W * (0.08 + k * 0.25)), y, W, sh) }
+      if (hash(beat.seed, Math.floor(at / 120), 45) < k * 0.5) { const cw = Math.round(W * (0.05 + hash(beat.seed, 46) * 0.2)), cx = Math.round(hash(beat.seed, Math.floor(at / 120), 47) * (W - cw)); sg.drawImage(source, cx, 0, cw, H, cx, Math.round((hash(beat.seed, 48) - 0.5) * H * 0.2 * k), cw, H) }
+    } else {
+      sg.fillStyle = DEEP; sg.fillRect(0, 0, W, H)
+      const { w: lw, h: lh } = logoSize(input.logo, W * 0.7)
+      sg.drawImage(input.logo, Math.round((W - lw) / 2), Math.round(H * 0.44 - lh / 2), lw, lh)
+      sg.fillStyle = CREAM; sg.font = `700 ${Math.round(W * 0.05)}px ${font}`; sg.textAlign = 'center'; sg.textBaseline = 'middle'; sg.fillText(SITE, W / 2, Math.round(H * 0.44 + lh / 2 + W * 0.06))
+    }
+    const icons = input.icons
+    if (icons.length) {
+      const n = 4 + Math.round(k * 6)
+      for (let i = 0; i < n; i += 1) { const img = icons[Math.floor(hash(beat.seed, i, 49) * icons.length)]; const s = Math.round(W * (0.08 + hash(beat.seed, i, 50) * 0.18)); const x = ((hash(beat.seed, i, 51) * (W + s) + at * (0.02 + hash(beat.seed, i, 52) * 0.08) * (hash(beat.seed, i, 53) < 0.5 ? 1 : -1)) % (W + s) + W + s) % (W + s) - s; const y = hash(beat.seed, i, 54) * (H - s) + Math.sin(at / 700 + i) * H * 0.02; sg.globalAlpha = 0.35 + hash(beat.seed, i, 55) * 0.4; sg.drawImage(img, Math.round(x), Math.round(y), s, s) }
+      sg.globalAlpha = 1
+    }
+  }
+
+  // ----- the ground: the composer's animations, one drawer per style, over the source.
+  const drawers = new Map<GlitchStyle, { draw: ReturnType<typeof createDrawer>; schedule: ReturnType<typeof burstSchedule> }>()
+  const groundOf = (style: GlitchStyle) => {
+    let d = drawers.get(style)
+    if (!d) {
+      d = { draw: createDrawer({ width: W, height: H, background: DEEP, rect: { x: 0, y: 0, w: W, h: H }, overlays: [], intensity: Math.max(0.45, k), style, accent, text: 'RANDOM', titleFont: font, logo: input.logo, letterAlpha: 0.8 }), schedule: burstSchedule(input.seconds * 1000, Math.max(0.45, k), 2) }
+      drawers.set(style, d)
+    }
+    return d
+  }
+
+  // ----- the brand layer
+  /** One stamp of giant letters on the scratch: the words, the wordmark, or the brand block; returns its bounds. */
+  const stamp = (mode: Beat['brandMode'], scale: number, cy: number, align: 'left' | 'center' | 'right') => {
+    sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'
+    const maxW = W * 0.96 * scale
+    const anchorX = align === 'left' ? W * 0.03 : align === 'right' ? W * 0.97 : W / 2
+    const left = (w: number) => align === 'left' ? anchorX : align === 'right' ? anchorX - w : anchorX - w / 2
+    if (mode === 'text') {
+      const words = (input.text?.value.trim() || 'RANDOM').toUpperCase().split(/\s+/).slice(0, 3)
+      sx.font = `900 100px ${font}`
+      const widest = Math.max(...words.map((w) => sx.measureText(w).width), 1)
+      const size = Math.round(Math.min(100 * maxW / widest, H * 0.22 * scale))
+      sx.font = `900 ${size}px ${font}`; sx.textAlign = align; sx.textBaseline = 'middle'; sx.fillStyle = CREAM
+      const top = cy - (words.length - 1) * size * 0.55
+      words.forEach((word, wi) => sx.fillText(word, anchorX, top + wi * size * 1.1))
+      return { x: left(maxW), y: top - size * 0.6, w: maxW, h: words.length * size * 1.1 }
+    }
+    const { w: lw, h: lh } = logoSize(input.logo, maxW * (mode === 'block' ? 0.8 : 1))
+    sx.drawImage(input.logo, left(lw), cy - lh / 2 - (mode === 'block' ? lh * 0.35 : 0), lw, lh)
+    if (mode === 'block') { sx.font = `700 ${Math.round(lh * 0.42)}px ${font}`; sx.textAlign = align; sx.textBaseline = 'middle'; sx.fillStyle = CREAM; sx.fillText(SITE, anchorX, cy + lh * 0.45); return { x: left(lw), y: cy - lh * 0.95, w: lw, h: lh * 1.8 } }
+    return { x: left(lw), y: cy - lh / 2, w: lw, h: lh }
+  }
+  const brandLayer = (ctx: CanvasRenderingContext2D, beat: Beat, at: number, frame: number) => {
+    const s = beat.seed, local = (at - beat.from) / Math.max(1, beat.to - beat.from)
+    if (beat.brand === 'letters') {
+      // Giant letters open on the ground: a deep silhouette behind, the shapes in cream, the ground through windows cut in them.
+      const zone = hash(s, 60), qa = hash(s, 61)
+      const cy = H * (zone < 0.5 ? 0.42 : zone < 0.75 ? 0.24 : 0.58)
+      const align = qa < 0.5 ? 'center' : qa < 0.75 ? 'left' : 'right'
+      const jump = Math.floor(at / 110)
+      const dx = hash(jump, s, 62) < k * 0.4 ? Math.round((hash(jump, s, 63) - 0.5) * W * 0.25) : 0
+      const bounds = stamp(beat.brandMode, 1, cy, align)
+      s2.clearRect(0, 0, W, H); s2.globalCompositeOperation = 'source-over'; s2.drawImage(scratch, Math.round(W * 0.012), Math.round(H * 0.006)); s2.globalCompositeOperation = 'source-in'; s2.fillStyle = DEEP; s2.fillRect(0, 0, W, H); s2.globalCompositeOperation = 'source-over'
+      ctx.drawImage(scratch2, dx, 0)
+      ctx.drawImage(scratch, dx, 0)
+      // Windows: the ground, lighter, through parts of the letters.
+      sx.globalCompositeOperation = 'source-in'; sx.drawImage(source, 0, 0); sx.fillStyle = CREAM; sx.globalAlpha = 0.25; sx.fillRect(0, 0, W, H); sx.globalAlpha = 1; sx.globalCompositeOperation = 'source-over'
+      for (let i = 0; i < 2 + Math.round(k * 4); i += 1) { const w = Math.round(bounds.w * (0.15 + hash(jump, i, 64) * 0.5)), h = Math.round(bounds.h * (0.3 + hash(jump, i, 65) * 0.7)); const x = Math.round(bounds.x + hash(jump, i, 66) * Math.max(0, bounds.w - w)), y = Math.round(bounds.y + hash(jump, i, 67) * Math.max(0, bounds.h - h)); ctx.drawImage(scratch, x, y, w, h, x + dx, y, w, h) }
+      if (hash(frame, s, 68) < k * 0.3) slices(ctx, s + frame, Math.round(3 + k * 6), 0.35)
+    } else if (beat.brand === 'huge') {
+      // The wordmark or the stacked letters, enormous, stepping bigger, over a panel of the accent now and then.
+      const panel = hash(s, 70) < 0.35
+      if (panel) { ctx.fillStyle = accent; ctx.globalAlpha = 0.85; ctx.fillRect(0, Math.round(H * (0.1 + hash(s, 71) * 0.4)), W, Math.round(H * (0.25 + hash(s, 72) * 0.3))); ctx.globalAlpha = 1 }
+      const across = hash(s, 73) < 0.6
+      const img = across ? (panel ? input.logoDark : input.logo) : panel ? input.logoVerticalDark : input.logoVertical
+      const step = Math.floor(local * (3 + k * 4) + hash(s, 74) * 3)
+      const scale = 1.1 + (step % 5) * (0.35 + k * 0.25)
+      const { w: lw, h: lh } = logoSize(img, W * 0.74 * scale)
+      const ox = Math.round((hash(s, step, 75) - 0.5) * W * 0.22 * (scale - 1)), oy = Math.round((hash(s, step, 76) - 0.5) * H * 0.18 * (scale - 1))
+      ctx.drawImage(img, Math.round((W - lw) / 2 + ox), Math.round((H - lh) / 2 + oy), lw, lh)
+      if (hash(frame, s, 77) < 0.15 + k * 0.3) slices(ctx, s + frame, Math.round(3 + k * 8), 0.3)
+    } else if (beat.brand === 'icons') {
+      // The icons swarming: some enormous and faint, most jumping every few frames, a few in the accent or deep.
+      const icons = input.icons
+      if (!icons.length) return
+      const jump = Math.floor(at / 90)
+      const n = 6 + Math.round(k * 14)
+      for (let i = 0; i < n; i += 1) {
+        const img = icons[Math.floor(hash(s, i, 80) * icons.length)]
+        const huge = hash(s, i, 81) < 0.15
+        const size = Math.round(W * (huge ? 0.6 + hash(s, i, 82) * 0.6 : 0.07 + hash(s, i, 82) * 0.2))
+        const x = Math.round(hash(s, i, 83) * (W + size) - size + (hash(jump, i, 84) - 0.5) * W * 0.06 * k), y = Math.round(hash(s, i, 85) * (H + size) - size + (hash(jump, i, 86) - 0.5) * H * 0.04 * k)
+        const colour = hash(s, i, 87) < 0.3 ? accent : hash(s, i, 87) < 0.4 ? DEEP : CREAM
+        ctx.globalAlpha = huge ? 0.3 : 0.9
+        if (colour === CREAM) ctx.drawImage(img, x, y, size, size); else ctx.drawImage(tinted(img, colour, size, size), 0, 0, size, size, x, y, size, size)
+      }
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // ----- the dressing: the screen's artefacts
+  const dressCam = (ctx: CanvasRenderingContext2D, frame: number, at: number) => {
+    ctx.save(); ctx.fillStyle = CREAM; ctx.font = `${Math.round(W * 0.022)}px ${font}`; ctx.textBaseline = 'top'; ctx.textAlign = 'left'
     const t = Math.floor(at / 1000)
     ctx.fillText(`17:${String(13 + t).padStart(2, '0')}`, Math.round(W * 0.04), Math.round(H * 0.025))
     ctx.fillText(`${String(140 + (frame % 30)).padStart(3, '0')}  F R N`, Math.round(W * 0.76), Math.round(H * 0.025))
     for (let i = 0; i < 4; i += 1) ctx.fillRect(Math.round(W * 0.6) + i * 7 * px, Math.round(H * 0.025) + (3 - i) * 3 * px, 4 * px, (i + 1) * 3 * px)
     ctx.strokeStyle = CREAM; ctx.lineWidth = px; ctx.strokeRect(Math.round(W * 0.66), Math.round(H * 0.027), 22 * px, 10 * px); ctx.fillRect(Math.round(W * 0.66) + 2 * px, Math.round(H * 0.027) + 2 * px, 14 * px, 6 * px)
-    if (Math.floor(at / 500) % 2 === 0) { ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(Math.round(W * 0.04) + 6 * px, Math.round(H * 0.075), 6 * px, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = CREAM; ctx.fillText('REC', Math.round(W * 0.04) + 16 * px, Math.round(H * 0.075) - 10 * px) }
+    // The timecode, and REC blinking.
+    ctx.font = `${Math.round(W * 0.03)}px ${font}`; ctx.fillText(`00:00:${String(t).padStart(2, '0')}:${String(frame % 30).padStart(2, '0')}`, Math.round(W * 0.04), Math.round(H * 0.93))
+    if (Math.floor(at / 500) % 2 === 0) { ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(Math.round(W * 0.04) + 6 * px, Math.round(H * 0.075), 6 * px, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = CREAM; ctx.font = `${Math.round(W * 0.022)}px ${font}`; ctx.fillText('REC', Math.round(W * 0.04) + 16 * px, Math.round(H * 0.075) - 10 * px) }
     ctx.strokeStyle = hash(frame, 31) < 0.5 ? accent : CREAM; ctx.lineWidth = Math.max(1, Math.round(W * 0.002))
     const m = Math.round(W * 0.035), l = Math.round(W * 0.05)
     for (const [cx, cy, dx, dy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]] as const) { ctx.beginPath(); ctx.moveTo(cx, cy + dy * l); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * l, cy); ctx.stroke() }
+    // The focus square in the middle, drifting.
+    const fs = Math.round(W * 0.18), fx = Math.round(W / 2 - fs / 2 + Math.sin(at / 900) * W * 0.05), fy = Math.round(H * 0.45 - fs / 2 + Math.cos(at / 1300) * H * 0.03)
+    ctx.strokeStyle = CREAM; ctx.lineWidth = px; ctx.globalAlpha = 0.8
+    for (const [cx, cy, dx, dy] of [[fx, fy, 1, 1], [fx + fs, fy, -1, 1], [fx, fy + fs, 1, -1], [fx + fs, fy + fs, -1, -1]] as const) { ctx.beginPath(); ctx.moveTo(cx, cy + dy * fs * 0.25); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * fs * 0.25, cy); ctx.stroke() }
     ctx.restore()
   }
-  const grain = (ctx: CanvasRenderingContext2D, seed: number, n: number) => { ctx.fillStyle = CREAM; for (let i = 0; i < n; i += 1) { ctx.globalAlpha = 0.1 + hash(seed, i, 32) * 0.4; ctx.fillRect(hash(seed, i, 33) * W, hash(seed, i, 34) * H, px * (1 + hash(seed, i, 35) * 2), px * (1 + hash(seed, i, 36) * 2)) } ctx.globalAlpha = 1 }
-  const dither = (() => { const c = document.createElement('canvas'); c.width = 4 * px; c.height = 4 * px; const g = c.getContext('2d')!; g.fillStyle = DEEP; g.fillRect(0, 0, 2 * px, 2 * px); g.fillRect(2 * px, 2 * px, 2 * px, 2 * px); return c })()
-
-  // The composer's animations, one drawer per cut, over the cut's source.
-  const drawers = new Map<number, { draw: ReturnType<typeof createDrawer>; schedule: ReturnType<typeof burstSchedule> }>()
-  const animOf = (cut: Cut, index: number) => {
-    let d = drawers.get(index)
-    if (!d) {
-      d = { draw: createDrawer({ width: W, height: H, background: DEEP, rect: { x: 0, y: 0, w: W, h: H }, overlays: [], intensity: Math.max(0.35, k), style: cut.style, accent, text: hash(cut.seed, 37) < 0.5 ? 'RANDOM' : SITE, titleFont: font, logo: input.logo, letterAlpha: 0.85 }), schedule: burstSchedule(cut.to - cut.from, Math.max(0.35, k), 2) }
-      drawers.set(index, d)
+  const dressCodec = (ctx: CanvasRenderingContext2D, beat: Beat, at: number) => {
+    // Macroblocks: some copied from elsewhere, some shifted, some tinted; a row or two sliding; the stream's figures.
+    const B = Math.round(W / 15), cols = Math.ceil(W / B), rows = Math.ceil(H / B)
+    const step = Math.floor(at / 110)
+    pv.drawImage(ctx.canvas, 0, 0)
+    const p = 0.06 + k * 0.28
+    for (let by = 0; by < rows; by += 1) for (let bx = 0; bx < cols; bx += 1) {
+      const q = hash(beat.seed, step, bx, by)
+      if (q < p * 0.45) { const ox = Math.floor(hash(beat.seed, step, bx, by, 90) * cols), oy = Math.max(0, Math.min(rows - 1, by + Math.round((hash(beat.seed, step, bx, by, 91) - 0.5) * 4))); ctx.drawImage(prev, ox * B, oy * B, B, B, bx * B, by * B, B, B) }
+      else if (q < p * 0.75) { const d = Math.round((hash(beat.seed, step, bx, by, 92) - 0.5) * 4) * B; ctx.drawImage(prev, bx * B, by * B, B, B, bx * B + d, by * B, B, B) }
+      else if (q < p) { ctx.fillStyle = tone(hash(beat.seed, step, bx, by, 93)); ctx.globalAlpha = 0.5; ctx.fillRect(bx * B, by * B, B, B); ctx.globalAlpha = 1 }
     }
-    return d
+    for (let i = 0; i < Math.round(k * 3); i += 1) { const ry = Math.floor(hash(beat.seed, step, i, 94) * rows) * B; ctx.drawImage(ctx.canvas, 0, ry, W, B, Math.round((hash(beat.seed, step, i, 95) - 0.5) * W * 0.4), ry, W, B) }
+    ctx.fillStyle = CREAM; ctx.font = `${Math.round(W * 0.022)}px ${font}`; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText(`${Math.round(8 + hash(step, 96) * 40)} Mbps  I P B P B  ${String(step % 300).padStart(3, '0')}`, Math.round(W * 0.96), Math.round(H * 0.95))
+  }
+  const dressScreen = (ctx: CanvasRenderingContext2D, beat: Beat, at: number, frame: number) => {
+    // Scanlines over everything, a bar rolling down, tearing lines, a flicker.
+    ctx.globalAlpha = 0.18; ctx.fillStyle = ctx.createPattern(scan, 'repeat')!; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1
+    const bar = Math.round(((at * 0.25) % (H * 1.3)) - H * 0.15), bh = Math.round(H * 0.08)
+    ctx.fillStyle = CREAM; ctx.globalAlpha = 0.07; ctx.fillRect(0, bar, W, bh); ctx.globalAlpha = 1
+    for (let i = 0; i < Math.round(1 + k * 4); i += 1) { const y = Math.round(hash(beat.seed, Math.floor(at / 80), i, 97) * H), sh = Math.round(H * (0.002 + hash(beat.seed, i, 98) * 0.02)); ctx.drawImage(ctx.canvas, 0, y, W, sh, Math.round((hash(beat.seed, frame, i, 99) - 0.5) * W * 0.12), y, W, sh) }
+    if (hash(frame, 100) < k * 0.08) { ctx.fillStyle = CREAM; ctx.globalAlpha = 0.12; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
+    hairlines(ctx, beat.seed + Math.floor(at / 160), Math.round(1 + k * 3))
+  }
+  const dressGame = (ctx: CanvasRenderingContext2D, beat: Beat, at: number) => {
+    // Fat pixels over a band of the frame on some moments, a score climbing, lives, a bar of blocks.
+    if (hash(beat.seed, Math.floor(at / 200), 101) < 0.5 + k * 0.4) {
+      const bandY = Math.round(hash(beat.seed, Math.floor(at / 200), 102) * H * 0.6), bandH = Math.round(H * (0.15 + hash(beat.seed, 103) * 0.35))
+      const th = Math.max(1, Math.round(tiny.width * bandH / W))
+      tg.drawImage(ctx.canvas, 0, bandY, W, bandH, 0, 0, tiny.width, th)
+      ctx.imageSmoothingEnabled = false; ctx.drawImage(tiny, 0, 0, tiny.width, th, 0, bandY, W, bandH); ctx.imageSmoothingEnabled = true
+    }
+    ctx.fillStyle = DEEP; ctx.fillRect(0, Math.round(H * 0.9), W, Math.round(H * 0.1))
+    ctx.fillStyle = CREAM; ctx.font = `900 ${Math.round(W * 0.045)}px ${font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+    ctx.fillText(`SCORE ${String(Math.floor(hash(beat.seed, 104) * 9000 + at * (0.4 + k))).padStart(6, '0')}`, Math.round(W * 0.05), Math.round(H * 0.935))
+    ctx.fillStyle = accent; for (let i = 0; i < 3; i += 1) ctx.fillRect(Math.round(W * 0.72) + i * Math.round(W * 0.07), Math.round(H * 0.92), Math.round(W * 0.045), Math.round(W * 0.045))
+    const blocks = 12, bw = Math.round(W * 0.9 / blocks), lit = Math.round(blocks * ((at / 1000) % 1.5) / 1.5)
+    for (let i = 0; i < blocks; i += 1) { ctx.fillStyle = i < lit ? accent : mix(accent, DEEP, 0.7); ctx.fillRect(Math.round(W * 0.05) + i * bw, Math.round(H * 0.975), bw - 3 * px, Math.round(H * 0.012)) }
+  }
+  const dressGif = (ctx: CanvasRenderingContext2D, at: number) => {
+    // Dithered, a badge, the looping arrow; the stutter is the frame held in the loop below.
+    ctx.globalAlpha = 0.25; ctx.fillStyle = ctx.createPattern(dither, 'repeat')!; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1
+    ctx.fillStyle = CREAM; ctx.font = `900 ${Math.round(W * 0.12)}px ${font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('GIF', Math.round(W * 0.05), Math.round(H * 0.05))
+    ctx.font = `700 ${Math.round(W * 0.05)}px ${font}`; ctx.fillText(Math.floor(at / 140) % 2 === 0 ? '↻' : '↺', Math.round(W * 0.05), Math.round(H * 0.16))
   }
 
-  // ----- the scenes
-  const scene = (ctx: CanvasRenderingContext2D, cut: Cut, index: number, local: number, frame: number, at: number) => {
-    const s = cut.seed, head = at - cut.from
-    switch (cut.kind) {
-      case 'anim': { const d = animOf(cut, index); d.draw(ctx, sourceOf(cut), head, d.schedule, frame); break }
-      case 'huge': {
-        // The wordmark or the stacked letters, enormous, stepping bigger, overflowing; the address small in a corner.
-        const onAccent = hash(s, 40) < 0.5
-        ctx.fillStyle = onAccent ? accent : DEEP; ctx.fillRect(0, 0, W, H)
-        const across = hash(s, 41) < 0.6
-        const dark = onAccent && hash(s, 45) < 0.5
-        const img = across ? (dark ? input.logoDark : input.logo) : dark ? input.logoVerticalDark : input.logoVertical
-        const step = Math.floor(local * (3 + k * 4) + hash(s, 42) * 3)
-        // Bigger by steps, up to about three times the width; the letters always leave something in the frame.
-        const scale = 1.1 + (step % 5) * (0.35 + k * 0.25)
-        const lw = Math.round(W * 0.74 * scale), lh = Math.round(lw * img.naturalHeight / Math.max(1, img.naturalWidth))
-        const ox = Math.round((hash(s, step, 43) - 0.5) * W * 0.22 * (scale - 1)), oy = Math.round((hash(s, step, 44) - 0.5) * H * 0.18 * (scale - 1))
-        const x = Math.round((W - lw) / 2 + ox), y = Math.round((H - lh) / 2 + oy)
-        ctx.drawImage(img, x, y, lw, lh)
-        ctx.fillStyle = onAccent ? DEEP : CREAM; ctx.font = `700 ${Math.round(W * 0.04)}px ${font}`; ctx.textAlign = hash(s, 46) < 0.5 ? 'left' : 'right'; ctx.textBaseline = 'alphabetic'; ctx.fillText(SITE, hash(s, 46) < 0.5 ? Math.round(W * 0.05) : Math.round(W * 0.95), Math.round(H * (0.12 + hash(s, 47) * 0.8)))
-        if (hash(frame, s, 48) < 0.15 + k * 0.3) slices(ctx, s + frame, Math.round(3 + k * 8), 0.3)
-        break
-      }
-      case 'icons': {
-        // The icons swarm: many, some enormous, jumping every few frames, a few in the accent, slices through them.
-        ctx.fillStyle = hash(s, 50) < 0.3 ? accent : DEEP; ctx.fillRect(0, 0, W, H)
-        const icons = input.icons
-        if (!icons.length) break
-        const jump = Math.floor(at / 90)
-        const n = 8 + Math.round(k * 18)
-        for (let i = 0; i < n; i += 1) {
-          const img = icons[Math.floor(hash(s, i, 51) * icons.length)]
-          const huge = hash(s, i, 52) < 0.12
-          const size = Math.round(W * (huge ? 0.6 + hash(s, i, 53) * 0.6 : 0.06 + hash(s, i, 53) * 0.22))
-          const x = Math.round(hash(s, i, 54) * (W + size) - size + (hash(jump, i, 55) - 0.5) * W * 0.06 * k), y = Math.round(hash(s, i, 56) * (H + size) - size + (hash(jump, i, 57) - 0.5) * H * 0.04 * k)
-          const colour = hash(s, i, 58) < 0.3 ? accent : hash(s, i, 58) < 0.4 ? DEEP : CREAM
-          ctx.globalAlpha = huge ? 0.35 : 1
-          if (colour === CREAM) ctx.drawImage(img, x, y, size, size); else ctx.drawImage(tinted(img, colour, size, size), 0, 0, size, size, x, y, size, size)
-        }
-        ctx.globalAlpha = 1
-        if (hash(frame, s, 59) < 0.2 + k * 0.4) slices(ctx, s + frame, Math.round(4 + k * 10), 0.25)
-        hairlines(ctx, s + jump, Math.round(k * 6))
-        break
-      }
-      case 'ecto': {
-        // The stacked letters, and ectoplasms drifting over them: through each, the frame displaced or mirrored, a fine outline around.
-        ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H)
-        const img = input.logoVertical
-        const lw = Math.round(W * 0.62), lh = Math.round(lw * img.naturalHeight / Math.max(1, img.naturalWidth))
-        ctx.drawImage(img, Math.round((W - lw) / 2), Math.round((H - lh) / 2), lw, lh)
-        pv.drawImage(ctx.canvas, 0, 0)
-        const blobs = 2 + Math.round(k * 3)
-        for (let i = 0; i < blobs; i += 1) {
-          const cx = W * (0.2 + hash(s, i, 60) * 0.6) + Math.sin(at / 900 + i) * W * 0.08, cy = H * (0.25 + hash(s, i, 61) * 0.5) + Math.cos(at / 1100 + i * 2) * H * 0.05
-          const r = W * (0.1 + hash(s, i, 62) * 0.2)
-          ctx.save(); blobPath(ctx, cx, cy, r, s + i, at / 1000); ctx.clip()
-          ctx.fillStyle = hash(s, i, 63) < 0.4 ? accent : tone(hash(s, i, 64)); ctx.fillRect(0, 0, W, H)
-          if (hash(s, i, 65) < 0.5) { ctx.translate(W, 0); ctx.scale(-1, 1); ctx.drawImage(prev, Math.round((hash(s, i, 66) - 0.5) * W * 0.3), 0) } else ctx.drawImage(prev, Math.round((hash(s, i, 66) - 0.5) * W * 0.3), Math.round((hash(s, i, 67) - 0.5) * H * 0.1))
-          ctx.restore()
-          ctx.save(); blobPath(ctx, cx, cy, r, s + i, at / 1000); ctx.strokeStyle = hash(s, i, 68) < 0.6 ? CREAM : accent; ctx.lineWidth = 1.5 * px; ctx.stroke(); ctx.restore()
-        }
-        grain(ctx, s + frame, 120)
-        break
-      }
-      case 'cam': {
-        // A picture under a camera's interface, the frame creeping in, grain, a hairline or two.
-        cover(ctx, sourceOf(cut), 0, 0, W, H, 1 + local * 0.08, 0.5 + (hash(s, 70) - 0.5) * 0.3, 0.5)
-        if (hash(frame, s, 71) < k * 0.2) ctx.drawImage(ctx.canvas, Math.round((hash(frame, 72) - 0.5) * W * 0.03), 0)
-        hairlines(ctx, s + Math.floor(at / 200), Math.round(1 + k * 4))
-        grain(ctx, s + frame, 160)
-        cam(ctx, frame, at)
-        break
-      }
-      case 'codec': {
-        // A codec losing its way: the picture in blocks, some copied from elsewhere, some shifted, some tinted; rows that slide.
-        cover(ctx, sourceOf(cut), 0, 0, W, H)
-        const B = Math.round(W / 15), cols = Math.ceil(W / B), rows = Math.ceil(H / B)
-        const step = Math.floor(at / 110)
-        pv.drawImage(ctx.canvas, 0, 0)
-        const p = 0.08 + k * 0.3
-        for (let by = 0; by < rows; by += 1) for (let bx = 0; bx < cols; bx += 1) {
-          const q = hash(s, step, bx, by)
-          if (q < p * 0.45) { const ox = Math.floor(hash(s, step, bx, by, 73) * cols), oy = Math.max(0, Math.min(rows - 1, by + Math.round((hash(s, step, bx, by, 74) - 0.5) * 4))); ctx.drawImage(prev, ox * B, oy * B, B, B, bx * B, by * B, B, B) }
-          else if (q < p * 0.75) { const d = Math.round((hash(s, step, bx, by, 75) - 0.5) * 4) * B; ctx.drawImage(prev, bx * B, by * B, B, B, bx * B + d, by * B, B, B) }
-          else if (q < p) { ctx.fillStyle = tone(hash(s, step, bx, by, 76)); ctx.globalAlpha = 0.55; ctx.fillRect(bx * B, by * B, B, B); ctx.globalAlpha = 1 }
-        }
-        for (let i = 0; i < Math.round(k * 3); i += 1) { const ry = Math.floor(hash(s, step, i, 77) * rows) * B; ctx.drawImage(ctx.canvas, 0, ry, W, B, Math.round((hash(s, step, i, 78) - 0.5) * W * 0.4), ry, W, B) }
-        ctx.fillStyle = CREAM; ctx.font = `${Math.round(W * 0.022)}px ${font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(`${Math.round(8 + hash(step, 79) * 40)} Mbps  I P B P B  ${String(step % 300).padStart(3, '0')}`, Math.round(W * 0.04), Math.round(H * 0.95))
-        break
-      }
-      case 'game': {
-        // A video game: the picture in fat pixels, a score that climbs, lives, a bar of blocks, the wordmark in pixels too.
-        const f = 14
-        const tw = Math.round(W / f), th = Math.round(H / f)
-        tiny.width = tw; tiny.height = th
-        const tg = tiny.getContext('2d')!
-        cover(tg, sourceOf(cut), 0, 0, tw, th)
-        const lw = Math.round(tw * 0.7), lh = Math.round(lw * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth))
-        tg.drawImage(input.logo, Math.round((tw - lw) / 2), Math.round(th * 0.12), lw, lh)
-        ctx.imageSmoothingEnabled = false
-        ctx.drawImage(tiny, 0, 0, tw, th, 0, 0, W, H)
-        ctx.imageSmoothingEnabled = true
-        ctx.fillStyle = DEEP; ctx.fillRect(0, Math.round(H * 0.86), W, Math.round(H * 0.14))
-        ctx.fillStyle = CREAM; ctx.font = `900 ${Math.round(W * 0.05)}px ${font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
-        ctx.fillText(`SCORE ${String(Math.floor(hash(s, 80) * 9000 + at * (0.4 + k))).padStart(6, '0')}`, Math.round(W * 0.05), Math.round(H * 0.91))
-        ctx.fillStyle = accent; for (let i = 0; i < 3; i += 1) ctx.fillRect(Math.round(W * 0.72) + i * Math.round(W * 0.07), Math.round(H * 0.895), Math.round(W * 0.045), Math.round(W * 0.045))
-        const blocks = 12, bw = Math.round(W * 0.9 / blocks), lit = Math.round(blocks * ((at / 1000) % 1.5) / 1.5)
-        for (let i = 0; i < blocks; i += 1) { ctx.fillStyle = i < lit ? accent : mix(accent, DEEP, 0.7); ctx.fillRect(Math.round(W * 0.05) + i * bw, Math.round(H * 0.955), bw - 3 * px, Math.round(H * 0.018)) }
-        if (hash(frame, s, 81) < k * 0.25) slices(ctx, s + frame, 4, 0.2)
-        break
-      }
-      case 'gif': {
-        // A GIF: the frame held and let go in jerks, dithered, with its badge and its looping arrow.
-        const hold = Math.floor(at / 140)
-        if (hold !== Math.floor((at - 34) / 140) || head < 40) {
-          cover(ctx, sourceOf(cut), 0, 0, W, H, 1 + (hold % 3) * 0.06, 0.5 + (hash(s, hold, 82) - 0.5) * 0.1, 0.5)
-          ctx.globalAlpha = 0.22; ctx.fillStyle = ctx.createPattern(dither, 'repeat')!; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1
-          if (hash(s, hold, 83) < 0.3) { ctx.fillStyle = accent; ctx.globalAlpha = 0.25; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
-          pv.drawImage(ctx.canvas, 0, 0)
-        } else ctx.drawImage(prev, 0, 0)
-        ctx.fillStyle = CREAM; ctx.font = `900 ${Math.round(W * 0.14)}px ${font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('GIF', Math.round(W * 0.05), Math.round(H * 0.06))
-        ctx.font = `700 ${Math.round(W * 0.06)}px ${font}`; ctx.fillText(Math.floor(at / 140) % 2 === 0 ? '↻' : '↺', Math.round(W * 0.05), Math.round(H * 0.19))
-        break
-      }
-    }
-  }
-
-  // ----- the curator's words and icon, last, crisp: cream with a deep outline, readable over the cream letters as over a picture.
+  // ----- the curator's words and icon, last, crisp: cream with a deep outline, readable over anything.
   const words = (ctx: CanvasRenderingContext2D) => {
     const t = input.text
     if (t && t.value.trim()) {
@@ -318,28 +334,44 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     if (ic) ctx.drawImage(ic.image, Math.round(ic.x * W), Math.round(ic.y * H), Math.round(ic.size * u), Math.round(ic.size * u))
   }
 
+  const beatAt = (at: number) => { const index = beats.findIndex((b) => at < b.to); return beats[index === -1 ? beats.length - 1 : index] }
+  let held = -1
   const frame = (ctx: CanvasRenderingContext2D, at: number, frameNo: number) => {
-    const index = Math.max(0, cuts.findIndex((c) => at < c.to))
-    const cut = cuts[index === -1 ? cuts.length - 1 : index] ?? cuts[cuts.length - 1]
-    const local = Math.min(1, (at - cut.from) / Math.max(1, cut.to - cut.from))
+    const beat = beatAt(at)
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true
-    scene(ctx, cut, index, local, frameNo, at)
-    // The break at the head of a cut: a few frames of black, a flash, the frame before in slices or in blocks.
-    const head = at - cut.from
-    if (head < 130 && cut.transition !== 'cut') {
-      if (cut.transition === 'black') { ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H) }
-      else if (cut.transition === 'flash') { ctx.fillStyle = hash(cut.seed, 90) < 0.5 ? CREAM : accent; ctx.globalAlpha = 1 - head / 130; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
-      else if (cut.transition === 'slices') for (let i = 0; i < 16; i += 1) { const y = Math.round(hash(cut.seed, frameNo, i, 91) * H), h = Math.round(H * (0.01 + hash(cut.seed, frameNo, i, 92) * 0.06)); ctx.drawImage(prev, 0, y, W, h, Math.round((hash(cut.seed, frameNo, i, 93) - 0.5) * W * 0.5), y, W, h) }
-      else { const B = Math.round(W / 6); for (let by = 0; by < H / B; by += 1) for (let bx = 0; bx < 6; bx += 1) if (hash(cut.seed, frameNo, bx, by, 94) < 0.45) ctx.drawImage(prev, bx * B, by * B, B, B, bx * B + Math.round((hash(cut.seed, bx, by, 95) - 0.5) * B), by * B, B, B) }
+    // A GIF's stutter: the frame held, let go every 140 ms.
+    const hold = Math.floor(at / 140)
+    if (beat.dressing.includes('gif') && hold === held && at - beat.from > 60) { ctx.drawImage(prev, 0, 0); words(ctx); return }
+    held = hold
+    // The ground: the moving source, through the chosen animation.
+    drawSource(beat, at, frameNo)
+    const g = groundOf(beat.style)
+    g.draw(ctx, source, at, g.schedule, frameNo)
+    // The brand over it.
+    brandLayer(ctx, beat, at, frameNo)
+    // The break at the head of a beat: black, a flash, the frame before in slices or blocks.
+    const head = at - beat.from
+    if (head < 120 && beat.break !== 'none') {
+      if (beat.break === 'black') { ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H) }
+      else if (beat.break === 'flash') { ctx.fillStyle = hash(beat.seed, 110) < 0.5 ? CREAM : accent; ctx.globalAlpha = 1 - head / 120; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
+      else if (beat.break === 'slices') for (let i = 0; i < 16; i += 1) { const y = Math.round(hash(beat.seed, frameNo, i, 111) * H), h = Math.round(H * (0.01 + hash(beat.seed, frameNo, i, 112) * 0.06)); ctx.drawImage(prev, 0, y, W, h, Math.round((hash(beat.seed, frameNo, i, 113) - 0.5) * W * 0.5), y, W, h) }
+      else { const B = Math.round(W / 6); for (let by = 0; by < H / B; by += 1) for (let bx = 0; bx < 6; bx += 1) if (hash(beat.seed, frameNo, bx, by, 114) < 0.45) ctx.drawImage(prev, bx * B, by * B, B, B, bx * B + Math.round((hash(beat.seed, bx, by, 115) - 0.5) * B), by * B, B, B) }
+    }
+    // The dressing: the screen's artefacts, one or two at a time.
+    for (const d of beat.dressing) {
+      if (d === 'codec') dressCodec(ctx, beat, at)
+      else if (d === 'screen') dressScreen(ctx, beat, at, frameNo)
+      else if (d === 'game') dressGame(ctx, beat, at)
+      else if (d === 'gif') dressGif(ctx, at)
+      else if (d === 'cam') dressCam(ctx, frameNo, at)
     }
     // Now and then the whole frame jumps; the wilder, the more often.
-    if (hash(frameNo, 96) < k * 0.1) { ctx.drawImage(ctx.canvas, Math.round((hash(frameNo, 97) - 0.5) * W * 0.05), 0); slices(ctx, frameNo, 3, 0.2) }
-    // The frame kept for the next break is taken before the words, so no break ever tears them.
+    if (hash(frameNo, 116) < k * 0.1) { ctx.drawImage(ctx.canvas, Math.round((hash(frameNo, 117) - 0.5) * W * 0.05), 0); slices(ctx, frameNo, 3, 0.2) }
+    // The frame kept for the next break and the GIF's hold is taken before the words, so nothing ever tears them.
     pv.drawImage(ctx.canvas, 0, 0)
     words(ctx)
   }
-  const cutAt = (at: number) => { const index = cuts.findIndex((c) => at < c.to); return cuts[index === -1 ? cuts.length - 1 : index] }
-  return { cuts, frame, cutAt }
+  return { beats, frame, beatAt }
 }
 
 /** The film recorded as an MP4 (Chrome, Edge) at 1080 × 1920, drawn live into the preview as it goes. */
