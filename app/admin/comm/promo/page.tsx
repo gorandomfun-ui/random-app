@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { downloadBlob } from '@/lib/comm/montageRun'
-import { BURSTS, createPromo, recordPromo, type BurstKind, type PromoIcon, type PromoText } from '@/lib/comm/promoLoop'
+import { BRAND_MODES, BURSTS, createPromo, recordPromo, type BrandMode, type BurstKind, type PromoIcon, type PromoText } from '@/lib/comm/promoLoop'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
 const TEXT_SIZES = { S: 44, M: 64, L: 96 } as const
@@ -48,6 +48,7 @@ export default function PromoPage() {
   const [withStock, setWithStock] = useState(true)
   /** The bursts the film may use. */
   const [bursts, setBursts] = useState<BurstKind[]>(BURSTS.map((b) => b.key))
+  const [brandMode, setBrandMode] = useState<BrandMode>('random')
   const [text, setText] = useState('')
   const [size, setSize] = useState<keyof typeof TEXT_SIZES>('M')
   const [align, setAlign] = useState<'left' | 'center' | 'right'>('left')
@@ -84,7 +85,7 @@ export default function PromoPage() {
 
   const textInput = useMemo<PromoText | null>(() => text.trim() ? { value: text, size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place.x, y: place.y, width: place.width } : null, [text, size, align, fontIndex, fonts, place])
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
-  const input = useMemo(() => assets ? { seconds, intensity, seed, accent: COLORS[accent][0], bursts, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, seconds, intensity, seed, accent, bursts, withStock, fonts, textInput, iconInput])
+  const input = useMemo(() => assets ? { seconds, intensity, seed, accent: COLORS[accent][0], palette: COLORS.map((c) => c[0]), bursts, brandMode, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, seconds, intensity, seed, accent, bursts, brandMode, withStock, fonts, textInput, iconInput])
 
   // The film plays live at half size, over and over, until the export takes the canvas.
   useEffect(() => {
@@ -100,7 +101,7 @@ export default function PromoPage() {
       const at = (performance.now() - started) % (input.seconds * 1000)
       promo.frame(ctx, at, frameNo)
       // With ?debug the scene's name and the moment, to read what the film is doing.
-      if (debug) { const st = promo.stateAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 28, canvas.width, 28); ctx.fillStyle = '#fff'; ctx.font = '15px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${st.kind}${st.kind === 'burst' ? ':' + st.burst : ''} ${st.treat} ${st.stacked ? 'stacked' : 'across'}${st.hud ? ' hud' : ''}${st.line ? ' line' : ''}${st.icon ? ' icon' : ''} ${(at / 1000).toFixed(2)}s`, 8, canvas.height - 14) }
+      if (debug) { const st = promo.stateAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 28, canvas.width, 28); ctx.fillStyle = '#fff'; ctx.font = '15px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${st.kind}${st.kind === 'burst' ? ':' + st.burst + (st.sustained ? '+' : '') : ''} ${st.brandOn ? st.treat + '/' + st.deform : 'nobrand'}${st.hud ? ' hud' : ''}${st.line ? ' line' : ''}${st.icon ? ' icon' : ''} ${(at / 1000).toFixed(2)}s`, 8, canvas.height - 14) }
       frameNo += 1; handle = requestAnimationFrame(tick)
     }
     tick()
@@ -144,7 +145,8 @@ export default function PromoPage() {
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Force</span><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs">{Math.round(intensity * 100)} %</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Durée</span>{[5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => setSeconds(s)}>{s} s</button>)}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Rafales</span>{BURSTS.map((b) => <button key={b.key} title={b.hint} className={bursts.includes(b.key) ? chipOn : chip} onClick={() => setBursts(bursts.includes(b.key) ? bursts.filter((x) => x !== b.key) : [...bursts, b.key])}>{b.name}</button>)}</div>
-              <p className="mt-1 text-[11px] text-gray-500">Allume ou éteins les rafales que le film peut tirer.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Marque</span>{BRAND_MODES.map((m) => <button key={m.key} title={m.hint} className={brandMode === m.key ? chipOn : chip} onClick={() => setBrandMode(m.key)}>{m.name}</button>)}</div>
+              <p className="mt-1 text-[11px] text-gray-500">Allume ou éteins les rafales que le film peut tirer ; la marque au centre toujours, ou là où le tirage la met (parfois absente), déformée, ou éclatée.</p>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Images</span><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres au hasard</label><button className={chip} disabled={busy} onClick={() => void load()}>D’autres images</button></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Tirage</span><button className={chip} disabled={busy} onClick={() => setSeed(Math.floor(Math.random() * 100000))}>Autre tirage (n° {seed})</button></div>
               {assets?.stockInfo.length ? <p className="mt-2 text-[11px] text-gray-500">Images : {assets.stockInfo.map((p, i) => <span key={p.id}>{i ? ' · ' : ''}<a href={p.page} target="_blank" rel="noreferrer" className="underline">{p.provider}</a></span>)}</p> : null}
