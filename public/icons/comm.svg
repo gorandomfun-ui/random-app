@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 22">
+  <defs>
+    <style>
+      .st0 {
+        fill: #fefbe8;
+      }
+    </style>
+  </defs>
+  <!-- A phone's screen, drawn like the other icons: a 1.4 outline, rounded, the home dot at the bottom. -->
+  <path class="st0" fill-rule="evenodd" d="M9,1h6c1.105,0,2,.895,2,2v16c0,1.105-.895,2-2,2h-6c-1.105,0-2-.895-2-2V3c0-1.105.895-2,2-2ZM8.4,3.2v14.4h7.2V3.2h-7.2ZM12,18.9c.442,0,.8.358.8.8s-.358.8-.8.8-.8-.358-.8-.8.358-.8.8-.8Z"/>
+</svg>
