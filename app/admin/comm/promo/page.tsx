@@ -9,9 +9,8 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { GLITCH_STYLES, type GlitchStyle } from '@/lib/comm/montageDraw'
 import { downloadBlob } from '@/lib/comm/montageRun'
-import { BRAND_LAYERS, DRESSINGS, createPromo, recordPromo, type BrandLayer, type Dressing, type PromoIcon, type PromoText } from '@/lib/comm/promoLoop'
+import { BURSTS, createPromo, recordPromo, type BurstKind, type PromoIcon, type PromoText } from '@/lib/comm/promoLoop'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
 const TEXT_SIZES = { S: 44, M: 64, L: 96 } as const
@@ -47,11 +46,8 @@ export default function PromoPage() {
   const [result, setResult] = useState<{ url: string; name: string } | null>(null)
   const [assets, setAssets] = useState<Assets | null>(null)
   const [withStock, setWithStock] = useState(true)
-  /** What the film may use: the ground's animations, the brand layers, the dressings. */
-  const [styles, setStyles] = useState<GlitchStyle[]>(GLITCH_STYLES.map((g) => g.key))
-  const [brands, setBrands] = useState<BrandLayer[]>(BRAND_LAYERS.map((b) => b.key))
-  const [dressings, setDressings] = useState<Dressing[]>(DRESSINGS.map((d) => d.key))
-  const toggle = <T,>(list: T[], set: (next: T[]) => void, key: T) => set(list.includes(key) ? list.filter((x) => x !== key) : [...list, key])
+  /** The bursts the film may use. */
+  const [bursts, setBursts] = useState<BurstKind[]>(BURSTS.map((b) => b.key))
   const [text, setText] = useState('')
   const [size, setSize] = useState<keyof typeof TEXT_SIZES>('M')
   const [align, setAlign] = useState<'left' | 'center' | 'right'>('left')
@@ -88,7 +84,7 @@ export default function PromoPage() {
 
   const textInput = useMemo<PromoText | null>(() => text.trim() ? { value: text, size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place.x, y: place.y, width: place.width } : null, [text, size, align, fontIndex, fonts, place])
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
-  const input = useMemo(() => assets ? { seconds, intensity, seed, accent: COLORS[accent][0], styles, brands, dressings, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, seconds, intensity, seed, accent, styles, brands, dressings, withStock, fonts, textInput, iconInput])
+  const input = useMemo(() => assets ? { seconds, intensity, seed, accent: COLORS[accent][0], bursts, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, seconds, intensity, seed, accent, bursts, withStock, fonts, textInput, iconInput])
 
   // The film plays live at half size, over and over, until the export takes the canvas.
   useEffect(() => {
@@ -104,7 +100,7 @@ export default function PromoPage() {
       const at = (performance.now() - started) % (input.seconds * 1000)
       promo.frame(ctx, at, frameNo)
       // With ?debug the scene's name and the moment, to read what the film is doing.
-      if (debug) { const b = promo.beatAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 28, canvas.width, 28); ctx.fillStyle = '#fff'; ctx.font = '15px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${b.style} ${b.brand ?? '-'}:${b.brandMode} ${b.dressing.join('+') || '-'} ${b.break} ${(at / 1000).toFixed(2)}s`, 8, canvas.height - 14) }
+      if (debug) { const st = promo.stateAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 28, canvas.width, 28); ctx.fillStyle = '#fff'; ctx.font = '15px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${st.kind}${st.kind === 'burst' ? ':' + st.burst : ''} ${st.treat} ${st.stacked ? 'stacked' : 'across'}${st.hud ? ' hud' : ''}${st.line ? ' line' : ''}${st.icon ? ' icon' : ''} ${(at / 1000).toFixed(2)}s`, 8, canvas.height - 14) }
       frameNo += 1; handle = requestAnimationFrame(tick)
     }
     tick()
@@ -131,7 +127,7 @@ export default function PromoPage() {
           <h1 className="text-2xl font-bold">Promo</h1>
           <button className="rounded-full border border-white bg-white px-5 py-2.5 text-sm font-bold uppercase text-black disabled:opacity-40" disabled={busy || !input} onClick={generate}>{busy ? `Export ${Math.round(progress * 100)} %` : 'Exporter'}</button>
         </div>
-        <p className="text-sm text-gray-300">Un court film sur Random : trois couches vivantes en même temps, changées sur un battement — en fond, une animation du composeur sur des images qui passent (le logo, les icônes, des images libres Pexels / Pixabay jamais montrées telles quelles) ; par-dessus, les lettres géantes, le logo énorme ou les icônes ; et l’habillage d’écran des refs — caméra, codec, lignes, jeu vidéo, GIF. Des breaks entre les battements. Chrome ou Edge sur ordinateur pour l’export.</p>
+        <p className="text-sm text-gray-300">Un court film sur Random, à la grammaire des refs : la marque propre, dans un traitement qui change (crème, couleur, panneau, tramée, contour, fendue) ; des rafales courtes où tout l’écran devient de la matière cassée — l’image libre (Pexels / Pixabay, jamais montrée telle quelle) et les lettres ensemble ; des résidus entre deux (une lettre remplie d’image, des blocs qui restent) ; une interface caméra minuscule, parfois ; une icône au plus, déchirée avec le reste. À forte intensité, un champ de fragments au lieu du noir. Chrome ou Edge sur ordinateur pour l’export.</p>
         {error ? <p role="alert" className="text-red-300">{error}</p> : null}
         {result ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">Exporté : {result.name} est téléchargé. <a href={result.url} download={result.name} className="underline">Télécharger à nouveau</a>.</p> : null}
         <div className="grid gap-6 md:grid-cols-[auto_1fr]">
@@ -147,10 +143,8 @@ export default function PromoPage() {
               <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Couleur</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={name} className={`h-8 w-8 rounded-full border-2 ${accent === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => setAccent(i)} />)}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Force</span><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs">{Math.round(intensity * 100)} %</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Durée</span>{[5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => setSeconds(s)}>{s} s</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Fond</span>{GLITCH_STYLES.map((g) => <button key={g.key} title={g.hint} className={styles.includes(g.key) ? chipOn : chip} onClick={() => toggle(styles, setStyles, g.key)}>{g.name}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Marque</span>{BRAND_LAYERS.map((b) => <button key={b.key} className={brands.includes(b.key) ? chipOn : chip} onClick={() => toggle(brands, setBrands, b.key)}>{b.name}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Habillage</span>{DRESSINGS.map((d) => <button key={d.key} className={dressings.includes(d.key) ? chipOn : chip} onClick={() => toggle(dressings, setDressings, d.key)}>{d.name}</button>)}</div>
-              <p className="mt-1 text-[11px] text-gray-500">Allume ou éteins ce que le film peut utiliser ; il tire parmi ce qui est allumé.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Rafales</span>{BURSTS.map((b) => <button key={b.key} title={b.hint} className={bursts.includes(b.key) ? chipOn : chip} onClick={() => setBursts(bursts.includes(b.key) ? bursts.filter((x) => x !== b.key) : [...bursts, b.key])}>{b.name}</button>)}</div>
+              <p className="mt-1 text-[11px] text-gray-500">Allume ou éteins les rafales que le film peut tirer.</p>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Images</span><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres au hasard</label><button className={chip} disabled={busy} onClick={() => void load()}>D’autres images</button></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Tirage</span><button className={chip} disabled={busy} onClick={() => setSeed(Math.floor(Math.random() * 100000))}>Autre tirage (n° {seed})</button></div>
               {assets?.stockInfo.length ? <p className="mt-2 text-[11px] text-gray-500">Images : {assets.stockInfo.map((p, i) => <span key={p.id}>{i ? ' · ' : ''}<a href={p.page} target="_blank" rel="noreferrer" className="underline">{p.provider}</a></span>)}</p> : null}
