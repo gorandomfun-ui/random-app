@@ -155,7 +155,7 @@ test('a run: searches with the like\'s words, reads with the model, lets in the 
   })
   const ctx = {
     db: { collection } as unknown as LineContext['db'],
-    line: 'lookalike', deadline: Date.now() + 60_000, timeLeft: () => 60_000, dryRun: false, cursor: null,
+    line: 'lookalike', deadline: Date.now() + 600_000, timeLeft: () => 600_000, dryRun: false, cursor: null,
     quota: { reserve: async () => false } as unknown as LineContext['quota'],
     admit: async (batch: { videos?: Array<{ videoId: string }> }) => { admitted.push(...(batch.videos ?? []).map((video) => video.videoId)); return { scanned: batch.videos?.length ?? 0, inserted: batch.videos?.length ?? 0, duplicates: 0, rejected: {}, insertedIds: [] } },
     search: async () => undefined, log: () => undefined, http,
@@ -234,7 +234,7 @@ test("a YouTube like gives its channel: two pages of uploads a visit, details on
   })
   const ctx = {
     db: { collection } as unknown as LineContext['db'],
-    line: 'lookalike', deadline: Date.now() + 60_000, timeLeft: () => 60_000, dryRun: false, cursor: null,
+    line: 'lookalike', deadline: Date.now() + 600_000, timeLeft: () => 600_000, dryRun: false, cursor: null,
     quota: { reserve: async (units: number) => { reserved.push(units); return true } } as unknown as LineContext['quota'],
     admit: async (batch: { videos?: Array<{ videoId: string; provider: string }> }) => { admitted.push(...(batch.videos ?? [])); return { scanned: batch.videos?.length ?? 0, inserted: batch.videos?.length ?? 0, duplicates: 0, rejected: {}, insertedIds: [] } },
     search: async () => undefined, log: () => undefined, http,

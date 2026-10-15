@@ -87,7 +87,13 @@ export const YOUTUBE_SEARCHES_PER_RUN = Number(process.env.RANDOM_LOOKALIKE_YOUT
 /** YouTube look-alikes already found whose channels a run reads, each once: the latest uploads, judged by the model. */
 export const YOUTUBE_CHANNELS_PER_RUN = Number(process.env.RANDOM_LOOKALIKE_YOUTUBE_CHANNELS ?? 10)
 const MAX_PLAYABLE_CHECKS = 600
-const DEADLINE_MARGIN_MS = 45_000
+/**
+ * A like's visit needs this much of the window left. Two minutes since 15 October: with twenty pages and the newest, a visit
+ * reads twice as much, and two windows of eleven ran past their end and were stopped before writing their journal.
+ */
+const DEADLINE_MARGIN_MS = 120_000
+/** What the model reads for one like in a visit at most, the sources mixed: the rest comes back at the next visits. */
+const MAX_READ_PER_LIKE = 300
 const SPACING_MS = 250
 /**
  * Another like than the one searched for must be this much nearer: in the first trial (5 October) a Japanese
@@ -116,6 +122,15 @@ export const SEEN = 'lookalike_seen_v4'
 const SEEN_DAYS = 21
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function shuffle<T>(list: readonly T[]): T[] {
+  const out = [...list]
+  for (let index = out.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(Math.random() * (index + 1))
+    ;[out[index], out[other]] = [out[other], out[index]]
+  }
+  return out
+}
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 export type LookalikeCursor = { next: number; visits: Record<string, number>; youtube: Record<string, string | null>; note: string }
@@ -416,7 +431,8 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       titles.add(key)
       return true
     })
-    const door = driftDoor(readable)
+    // The sources mixed — the deep pages, the newest, the neighbours, YouTube — then the model's share of this visit.
+    const door = driftDoor(shuffle(readable).slice(0, MAX_READ_PER_LIKE))
     door.refused['titre trop court ou répété'] = unknown.length - readable.length
     if (seen.size) door.refused['déjà jugée'] = seen.size
     if (!door.kept.length || ctx.timeLeft() < DEADLINE_MARGIN_MS) { cursor.visits[like.id] = visit + 1; cursor.next += 1; likesDone += 1; continue }
@@ -456,7 +472,8 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       for (const [why, count] of Object.entries(admitted.rejected ?? {})) result.rejected[why] = (result.rejected[why] ?? 0) + count
       counters.byProvider = { ...(counters.byProvider ?? {}), [provider]: ((counters.byProvider ?? {})[provider] ?? 0) + admitted.inserted }
     }
-    // The near but not near enough: the same doors, Dailymotion's player asked first (never let in unchecked), no pool mark.
+    // The near but not near enough: the same doors, Dailymotion's player asked first (never let in unchecked), no pool mark;
+    // only while the window has its margin left.
     const checkedFar: DigVideo[] = []
     for (const provider of ['dailymotion', 'youtube'] as const) {
       const candidates = farOnes.filter((entry) => entry.video.provider === provider).map((entry) => entry.video)
@@ -468,7 +485,7 @@ export async function run(ctx: LineContext, deps: { prints: Prints; likes?: (ctx
       const playing: DigVideo[] = []
       for (const video of media.kept) {
         if (provider === 'youtube') { playing.push(video); continue }
-        if (checks >= MAX_PLAYABLE_CHECKS) break
+        if (checks >= MAX_PLAYABLE_CHECKS || ctx.timeLeft() < DEADLINE_MARGIN_MS / 2) break
         checks += 1
         if (await playable(video.videoId, http)) playing.push(video); else refused['ne se lit pas'] = (refused['ne se lit pas'] ?? 0) + 1
       }
