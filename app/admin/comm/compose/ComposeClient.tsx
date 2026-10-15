@@ -201,8 +201,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     // With sound when the browser allows it (the curator has clicked around); muted otherwise, and the button says so.
     video.muted = !sound
     video.play().catch(() => { if (!video.muted) { setSound(false); video.muted = true; void video.play().catch(() => undefined) } })
-    // At the cut's end the clip returns to its start; before the start it plays on, so the curator can look around the cut.
-    const onTime = () => { setPosition(video.currentTime); const t = slide?.trim; if (t && !scrubbing.current && video.currentTime >= t.endSec) video.currentTime = t.startSec }
+    // The clip stays inside the cut: at its end, or outside it, back to its start.
+    const onTime = () => { setPosition(video.currentTime); const t = slide?.trim; if (t && !scrubbing.current && (video.currentTime >= t.endSec || video.currentTime < t.startSec - 0.5)) video.currentTime = t.startSec }
     video.addEventListener('loadedmetadata', onMeta); video.addEventListener('timeupdate', onTime)
     if (video.readyState >= 1) onMeta()
     return () => { video.removeEventListener('loadedmetadata', onMeta); video.removeEventListener('timeupdate', onTime) }
@@ -432,13 +432,14 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
               </div>
               {isVideo ? (
                 <div className="mx-auto mt-3 w-full max-w-sm">
+                  {/* The position runs over the cut only: what the curator sees here is the clip being made. */}
                   <div className="flex items-center gap-2 text-xs text-gray-300"><span>Position</span>
-                    <input type="range" min={0} max={clipDuration ?? maxSeconds} step={0.1} value={Math.min(position, clipDuration ?? maxSeconds)} className="flex-1" aria-label="Position dans le clip"
+                    <input type="range" min={trim.startSec} max={trim.endSec} step={0.1} value={Math.max(trim.startSec, Math.min(position, trim.endSec))} className="flex-1" aria-label="Position dans le clip"
                       onPointerDown={() => { scrubbing.current = true; videoRef.current?.pause() }}
                       onChange={(e) => { const v = videoRef.current; const t = Number(e.target.value); setPosition(t); if (v) v.currentTime = t }}
                       onPointerUp={() => { scrubbing.current = false; void videoRef.current?.play().catch(() => undefined) }}
                       onKeyUp={() => { scrubbing.current = false; void videoRef.current?.play().catch(() => undefined) }} />
-                    <span className="w-12 text-right">{position.toFixed(1)} s</span>
+                    <span className="w-24 text-right">{Math.max(0, Math.min(position - trim.startSec, trim.endSec - trim.startSec)).toFixed(1)} / {(trim.endSec - trim.startSec).toFixed(1)} s</span>
                   </div>
                   <div className="mt-1 flex items-center justify-between text-xs text-gray-300"><span>Couper</span><span>{trim.startSec.toFixed(1)} s → {trim.endSec.toFixed(1)} s · {(trim.endSec - trim.startSec).toFixed(1)} s{clipDuration ? ` sur ${clipDuration.toFixed(1)}` : ''}</span></div>
                   <input type="range" min={0} max={clipDuration ?? maxSeconds} step={0.1} value={trim.startSec} onChange={(e) => setTrim(Number(e.target.value), Math.max(Number(e.target.value) + 0.5, trim.endSec))} className="w-full" aria-label="Début" />
