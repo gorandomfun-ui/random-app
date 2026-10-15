@@ -26,7 +26,7 @@ import { racingArt, type RacingArtName, type RacingCarKind } from './racing-art'
 import { crowdPicture, GULL, PLANE, PLANE_PALETTE, PROP_HIGH, propPicture } from './racing-props'
 import {
   createRacing, heightAt, RACING_BEND, RACING_CAR_SPIN_STEPS, RACING_CAR_WIDTH, RACING_CRASH_STEPS, RACING_LAST_LEVEL, racingLevelPace, RACING_SEGMENT, RACING_START_STEPS, statTop,
-  FORK_ALONGSIDE, FORK_BESIDE, FORK_GANTRY, FORK_NAME, FORK_PART, FORK_TAPER, OTHER_FAR, racingHour, racingOtherRoad, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
+  FORK_ALONGSIDE, FORK_BESIDE, FORK_GANTRY, FORK_NAME, FORK_PART, FORK_TAPER, OTHER_FAR, RACING_KERB, racingHour, racingOtherRoad, racingKmh, racingSunset, RACING_STATS, segmentOf, STAT_MAX, stepRacing, type RacingItem, type RacingLayout, type RacingSegment, type RacingShop, type RacingStat, type RacingState, type RacingThing, type RacingTrafficModel, type RacingWorld, type RacingZone,
 } from './racing-rules'
 import {
   blocks, bottle, chevron, coastRock, coin, cone, drawArt, drawCar, drawTraffic, farGround, flames, fogStep, gantry, globeLamp, glow, groundRow, lamp, lampPool, sceneWorld, skyAt,
@@ -403,9 +403,9 @@ function drawRace(board: PixelBuffer, s: RacingState, v: { horizon: number; foot
       else if (thing.kind === 'pine' || thing.kind === 'saguaro' || thing.kind === 'butte' || thing.kind === 'rock' || thing.kind === 'redrock' || thing.kind === 'crag' || thing.kind === 'shrub' || thing.kind === 'tree' || thing.kind === 'fountain' || thing.kind === 'tumbleweed') scenery(board, thing, i, at, clip, tier, fog, frame, lit)
       else lively(board, thing.kind, thing.look, i, cx, at.y, at.u, thing.flip, clip, tier, fog, frame, lit)
     }
-    for (const thing of g.things) if (!onOther(other, thing.x)) stand(thing, a)
-    const og = other.off && !other.joined && !other.gore && Math.abs(other.off) <= OTHER_SHOWN ? otherSegment(s, i) : null, ga = { ...a, x: a.x + other.off * a.u }
-    if (og) { const us = { ...other, off: -other.off }; for (const thing of og.things) if (!onOther(us, thing.x)) stand(thing, ga) }
+    const ga = { ...a, x: a.x + other.off * a.u }
+    for (const { thing, theirs } of standing(s, i, other, g.things)) stand(thing, theirs ? ga : a)
+    const og = other.off && !other.joined && !other.gore && Math.abs(other.off) <= OTHER_SHOWN ? otherSegment(s, i) : null
     // where the road divides into the level's two roads: the same barrier up to it while the car decides, the gantry with what each road offers
     if (s.fork && i === s.fork.at - FORK_GANTRY) forkGantry(board, a, clip, s.fork.kinds.map((k) => FORK_SIGN[k]) as [Sign, Sign], tier, fog)
     if (i === START_LINE) gantry(board, a, clip, 'start', s.phase === 'start' ? Math.floor(s.phaseTimer / 60) : 3, accent, tier, fog)
@@ -820,13 +820,31 @@ function otherSegment(s: RacingState, i: number): RacingSegment | null {
   if (!f || i < f.at || i >= f.at + f.len) return null
   return f.tracks[s.forkPick < 0 ? 0 : 1 - s.forkPick][i - f.at]
 }
+/**
+ * What stands by the road at stretch `i`, as drawn: its own things, and,
+ * where the other road is near, the other road's own (`theirs`, standing
+ * from that road's middle) — none on either road, as wide as its picture.
+ */
+function standing(s: RacingState, i: number, other: Beside, own: readonly RacingThing[]): Array<{ thing: RacingThing; theirs: boolean }> {
+  const out: Array<{ thing: RacingThing; theirs: boolean }> = []
+  for (const thing of own) if (!onOther(other, thing.x, reachOf(thing))) out.push({ thing, theirs: false })
+  const og = other.off && !other.joined && !other.gore && Math.abs(other.off) <= OTHER_SHOWN ? otherSegment(s, i) : null
+  if (og) { const us = { ...other, off: -other.off }; for (const thing of og.things) if (!onOther(us, thing.x, reachOf(thing))) out.push({ thing, theirs: true }) }
+  return out
+}
+/** What stands by the road at stretch `i` as drawn (`standing`), each where it stands from this road's middle and how far it reaches either side, with where the other road is: for the tests. */
+export function racingStandingBy(s: RacingState, i: number): { off: number; joined: boolean; things: Array<{ kind: string; x: number; reach: number; theirs: boolean }> } {
+  const other = segmentOf(s.track, i).zone === 'tunnel' ? NOT_BESIDE : besideRoad(s, i)
+  return { off: other.off, joined: other.joined || !!other.gore, things: standing(s, i, other, segmentOf(s.track, i).things).map(({ thing, theirs }) => ({ kind: thing.kind, x: theirs ? thing.x + other.off : thing.x, reach: reachOf(thing), theirs })) }
+}
 /** Whether something standing `x` half widths from the road's middle would stand on the other road, or between the two where they are close. */
-function onOther(o: Beside, x: number): boolean {
+function onOther(o: Beside, x: number, reach: number): boolean {
   if (!o.off) return false
   const side = o.off < 0 ? -1 : 1
-  if (side * x <= 1) return false
-  // (between the two, nothing while they are close)
-  return o.joined || o.gore ? side * x < Math.abs(o.off) + 1.45 : Math.abs(x - o.off) < 1.45 || (side * x < Math.abs(o.off) && Math.abs(o.off) - FORK_BESIDE < 3)
+  if (side * x + reach <= 1) return false
+  // as wide as its picture is, out to the other road's kerbs (and between the two, nothing while they are close)
+  const clear = RACING_KERB + Math.max(reach, 0.33)
+  return o.joined || o.gore ? side * x < Math.abs(o.off) + clear : Math.abs(x - o.off) < clear || (side * x < Math.abs(o.off) && Math.abs(o.off) - FORK_BESIDE < 3)
 }
 /** What each road of the fork says on its sign. */
 const FORK_SIGN: Record<'bends' | 'fast' | 'tunnel', Sign> = { bends: { name: FORK_NAME.bends, colour: '#2e8a48' }, fast: { name: FORK_NAME.fast, colour: '#d0702e' }, tunnel: { name: FORK_NAME.tunnel, colour: '#5a4ab0' } }
@@ -1061,18 +1079,10 @@ function celebrate(board: PixelBuffer, t: number, level: number, horizon: number
  */
 function scenery(board: PixelBuffer, thing: RacingThing, i: number, a: End, clip: number, tier: Tier, fog: number, frame: number, lit: boolean): void {
   const kind = thing.kind as keyof typeof SCENERY_HIGH
-  let pic: PixelBuffer | null
-  if (kind === 'pine' || kind === 'saguaro' || kind === 'rock' || kind === 'butte') pic = racingArt(kind)
-  else if (kind === 'redrock') { const rock = racingArt('rock'); pic = rock ? redRock(rock) : null }
-  else if (kind === 'crag') { const rock = racingArt('rock'); pic = rock ? coastRock(rock) : null }
-  else if (kind === 'shrub') pic = shrubPicture()
-  else if (kind === 'tree') pic = treePicture(thing.look)
-  else if (kind === 'fountain') pic = fountainPicture(frame >> 3, lit)
-  else pic = tumbleweedPicture(frame >> 2)
+  const pic = sceneryPicture(thing, frame, lit)
   if (!pic) return
-  // the rocks of all sizes (`look`), the bigger further back
   const rocky = kind === 'rock' || kind === 'redrock' || kind === 'crag' || kind === 'butte'
-  const h = SCENERY_HIGH[kind] * a.u * (rocky ? (0.7 + thing.look * 0.2) * (Math.abs(thing.x) > 3 && kind !== 'butte' ? 1.8 : 1) : 1)
+  const h = sceneryHigh(thing) * a.u
   // too small to see, or so close it would fill the screen with its pixels: left out
   if (h < 2 || (rocky && h > board.height * 1.1)) return
   const w = (pic.width * h) / pic.height
@@ -1087,6 +1097,31 @@ function scenery(board: PixelBuffer, thing: RacingThing, i: number, a: End, clip
   const sway = kind === 'pine' && tier >= 3 ? Math.sin(frame * 0.04 + i * 0.7) * h * 0.03 : 0
   drawArt(board, pic, x - w / 2, foot - h, w, h, clip, thing.flip && kind !== 'fountain', rgb, kind === 'fountain' && lit ? by * 0.5 : by, sway)
   if (kind === 'fountain' && lit && fog < 12) glow(board, x, foot - h * 0.55, w * 0.6, '#7af0ff', 0.3, clip)
+}
+
+/** A thing of the scenery's picture. */
+function sceneryPicture(thing: RacingThing, frame: number, lit: boolean): PixelBuffer | null {
+  const kind = thing.kind
+  if (kind === 'pine' || kind === 'saguaro' || kind === 'rock' || kind === 'butte') return racingArt(kind)
+  if (kind === 'redrock') { const rock = racingArt('rock'); return rock ? redRock(rock) : null }
+  if (kind === 'crag') { const rock = racingArt('rock'); return rock ? coastRock(rock) : null }
+  if (kind === 'shrub') return shrubPicture()
+  if (kind === 'tree') return treePicture(thing.look)
+  if (kind === 'fountain') return fountainPicture(frame >> 3, lit)
+  return tumbleweedPicture(frame >> 2)
+}
+/** How tall a thing of the scenery stands, in half widths: the rocks of all sizes (`look`), the bigger further back. */
+function sceneryHigh(thing: RacingThing): number {
+  const kind = thing.kind as keyof typeof SCENERY_HIGH
+  const rocky = kind === 'rock' || kind === 'redrock' || kind === 'crag' || kind === 'butte'
+  return SCENERY_HIGH[kind] * (rocky ? (0.7 + thing.look * 0.2) * (Math.abs(thing.x) > 3 && kind !== 'butte' ? 1.8 : 1) : 1)
+}
+/** How far a thing standing by the road reaches either side of where it stands, in half widths: the scenery as wide as its picture is drawn (the tumbleweed across the road), the rest a little. */
+function reachOf(thing: RacingThing): number {
+  if (thing.kind === 'tumbleweed') return 3.2
+  if (!(thing.kind in SCENERY_HIGH)) return 0
+  const pic = sceneryPicture(thing, 0, false)
+  return pic ? (pic.width / pic.height) * sceneryHigh(thing) / 2 : 0
 }
 
 /** The mountains' storm: the snow falling, drifting with the wind, the nearer flakes bigger. */
