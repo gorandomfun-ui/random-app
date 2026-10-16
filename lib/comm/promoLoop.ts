@@ -103,6 +103,8 @@ export type Shot = {
   treat: Treatment; stacked: boolean; pill: boolean; hud: boolean
   bx: number; by: number; bw: number; deform: Deform; enter: Enter; exit: Exit
   transition: Transition
+  /** True on the shot that follows a tear: its first beat keeps the letters filled and the blocks. */
+  afterTear: boolean
   p: { a: number; b: number; c: number; d: number; e: number; f: number }
 }
 
@@ -151,17 +153,17 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     const bw = mode === 'center' ? 0.55 + hash(s, 14) * 0.2 : 0.4 + hash(s, 14) * 0.45
     const bx = mode === 'center' ? 0.42 + hash(s, 15) * 0.16 : 0.2 + hash(s, 15) * 0.6
     const by = mode === 'center' ? 0.4 + hash(s, 16) * 0.2 : 0.2 + hash(s, 16) * 0.6
-    const deform: Deform = mode === 'deformed' ? (['none', 'stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, 17) * 4)] : 'none'
+    const deform: Deform = mode === 'deformed' || (mode === 'random' && hash(s, 17) < 0.5) ? (['stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, 17) * 3)] : 'none'
     const enters: Enter[] = ['none', 'slide', 'grow', 'assemble', 'flicker'], exits: Exit[] = ['none', 'explode', 'slide', 'dissolve']
     const enter: Enter = mode === 'exploded' ? 'assemble' : i === 0 ? enters[1 + Math.floor(hash(s, 18) * 4)] : hash(s, 18) < 0.45 ? 'none' : enters[Math.floor(hash(s, 19) * 5)]
     const exit: Exit = mode === 'exploded' ? 'explode' : hash(s, 20) < 0.5 ? 'none' : exits[Math.floor(hash(s, 21) * 4)]
     const transition: Transition = i === 0 ? 'cut' : e > 0.7 && hash(s, 22) < 0.35 ? 'flash' : e > 0.6 && hash(s, 22) < 0.6 ? 'tear' : e > 0.45 && hash(s, 22) < 0.8 ? 'slam' : 'cut'
-    out.push({ kind, from: at, to: Math.min(total - closing, at + len), seed: s, energy: e, video, picture, card: card - 1, treat, stacked, pill: hash(s, 23) < 0.6, hud: e < 0.5 && hash(s, 24) < 0.35, bx, by, bw, deform, enter, exit, transition, p: { a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) } })
+    out.push({ kind, from: at, to: Math.min(total - closing, at + len), seed: s, energy: e, video, picture, card: card - 1, treat, stacked, pill: hash(s, 23) < 0.6, hud: hash(s, 24) < 0.45, bx, by, bw, deform, enter, exit, transition, afterTear: last === 'tear' || last === 'vomit', p: { a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) } })
     at += len; i += 1; last = kind
   }
   if (closing) {
     const s = input.seed * 23 + 9999
-    out.push({ kind: 'block', from: total - closing, to: total, seed: s, energy: 0.2, video, picture, card: -1, treat: 'cream', stacked: hash(s, 4) < 0.6, pill: true, hud: false, bx: 0.5, by: 0.5, bw: 0.6, deform: 'none', enter: hash(s, 18) < 0.5 ? 'assemble' : 'grow', exit: 'none', transition: hash(s, 22) < 0.5 ? 'slam' : 'cut', p: { a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) } })
+    out.push({ kind: 'block', from: total - closing, to: total, seed: s, energy: 0.25, video, picture, card: -1, treat: 'cream', stacked: hash(s, 4) < 0.6, pill: true, hud: false, bx: 0.5, by: 0.5, bw: 0.6, deform: 'none', enter: hash(s, 18) < 0.5 ? 'assemble' : 'grow', exit: 'none', transition: hash(s, 22) < 0.5 ? 'slam' : 'cut', afterTear: false, p: { a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) } })
   }
   return { shots: out, beat }
 }
@@ -270,7 +272,11 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const drawBrandShape = (ctx: CanvasRenderingContext2D, source: CanvasImageSource, shot: Shot, x: number, y: number, w: number, h: number, sw: number, sh: number, at: number, spread: number) => {
     const s = shot.seed
     if (spread > 0.001) { drawPieces(ctx, source, x, y, w, h, sw, sh, s, spread, at); return }
-    switch (shot.deform) {
+    // On the beat the shape jumps a size up for a few frames; in the deformed mode the deformation itself changes on the beat.
+    const beatIndex = Math.floor((at - shot.from) / beat), beatPhase = ((at - shot.from) % beat) / beat
+    if (beatPhase < 0.1 && strengthOf(shot) > 0.3) { const f = 1 + 0.06 * strengthOf(shot); const nw = Math.round(w * f), nh = Math.round(h * f); x = Math.round(x + w / 2 - nw / 2); y = Math.round(y + h / 2 - nh / 2); w = nw; h = nh }
+    const deform: Deform = shot.deform === 'none' ? 'none' : (['none', 'stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, beatIndex, 340) * 4)]
+    switch (deform) {
       case 'stretch': { const fx = 1.15 + hash(s, 210) * 0.8 + Math.sin(at / 900) * 0.1, fy = 0.6 + hash(s, 211) * 0.4; const nw = Math.round(w * fx), nh = Math.round(h * fy); ctx.drawImage(source, 0, 0, sw, sh, Math.round(x + w / 2 - nw / 2), Math.round(y + h / 2 - nh / 2), nw, nh); break }
       case 'skew': { const sk = (hash(s, 212) - 0.5) * 0.9 + Math.sin(at / 700) * 0.15; ctx.save(); ctx.transform(1, 0, sk, 1, 0, 0); ctx.drawImage(source, 0, 0, sw, sh, x - Math.round(sk * (y + h / 2)), y, w, h); ctx.restore(); break }
       case 'mirror': { ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(source, 0, 0, sw, sh, 0, y, w, h); ctx.restore(); ctx.globalAlpha = 0.5; ctx.drawImage(source, 0, 0, sw, sh, x + Math.round(w * 0.05 * (1 + Math.sin(at / 500))), y, w, h); ctx.globalAlpha = 1; break }
@@ -278,6 +284,64 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     }
   }
   /** The brand in its treatment with its hard shadow, with the shot's entrance and exit. */
+  /** How hard the glitch hits at a moment: the shot's energy, scaled by the force. */
+  const strengthOf = (shot: Shot) => clamp01(0.22 + shot.energy * (0.45 + clamp01(input.intensity) * 0.8))
+  /** The letters torn, fringed in the theme's colours, partly filled with the video, jumping on the beat: the brand is never still. */
+  const glitchBrand = (ctx: CanvasRenderingContext2D, shot: Shot, r: { x: number; y: number; w: number; h: number }, at: number, frame: number, boost = 0) => {
+    const g = clamp01(strengthOf(shot) + boost)
+    if (g <= 0.02) return
+    const s = shot.seed
+    const beatPhase = ((at - shot.from) % beat) / beat
+    const x0 = Math.max(0, r.x - Math.round(W * 0.05)), y0 = Math.max(0, r.y - Math.round(H * 0.02)), w0 = Math.min(W - x0, r.w + Math.round(W * 0.1)), h0 = Math.min(H - y0, r.h + Math.round(H * 0.04))
+    if (w0 <= 0 || h0 <= 0) return
+    // Fringes in the theme's colours on the beat: the shape offset left and right, tinted, under itself.
+    if (beatPhase < 0.3 && g > 0.25) {
+      const off = Math.round(u * (3 + g * 10))
+      sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0, w0, h0)
+      sx.globalCompositeOperation = 'source-in'; sx.fillStyle = accent; sx.fillRect(x0, y0, w0, h0); sx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = 0.6; ctx.drawImage(scratch, x0, y0, w0, h0, x0 - off, y0, w0, h0)
+      sx.globalCompositeOperation = 'source-in'; sx.fillStyle = secondOf(s); sx.fillRect(x0, y0, w0, h0); sx.globalCompositeOperation = 'source-over'
+      ctx.drawImage(scratch, x0, y0, w0, h0, x0 + off, y0, w0, h0); ctx.globalAlpha = 1
+    }
+    // Slices of the shape thrown sideways, every frame at a high strength, on the beat otherwise.
+    if (g > 0.6 || beatPhase < 0.2 || hash(frame, s, 300) < g * 0.3) {
+      const n = Math.round(2 + g * 9)
+      for (let i = 0; i < n; i += 1) { const sh = Math.max(2, Math.round(h0 * (0.02 + hash(s, frame, i, 301) * 0.12))), sy = y0 + Math.round(hash(s, frame, i, 302) * (h0 - sh)); ctx.drawImage(ctx.canvas, x0, sy, w0, sh, x0 + Math.round((hash(s, frame, i, 303) - 0.5) * w0 * (0.1 + g * 0.5)), sy, w0, sh) }
+    }
+    // Windows: parts of the letters filled with the video, on some frames; always in the beat after a tear.
+    const src = sourceOf(shot)
+    if (src && (boost > 0 || hash(Math.floor(at / 160), s, 304) < g * 0.45)) {
+      const img = shot.stacked ? input.logoVertical : input.logo
+      sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(img, r.x, r.y, r.w, r.h)
+      sx.globalCompositeOperation = 'source-in'; cover(sx, src, r.x - Math.round(W * 0.1), r.y, r.w + Math.round(W * 0.2), r.h, 1.6, hash(s, 305), hash(s, 306)); sx.globalCompositeOperation = 'source-over'
+      for (let i = 0; i < 1 + Math.round(g * 3); i += 1) { const fw = Math.round(r.w * (0.2 + hash(s, Math.floor(at / 160), i, 307) * 0.5)), fh = Math.round(r.h * (0.3 + hash(s, Math.floor(at / 160), i, 308) * 0.7)); const fx = Math.round(r.x + hash(s, Math.floor(at / 160), i, 309) * (r.w - fw)), fy = Math.round(r.y + hash(s, Math.floor(at / 160), i, 310) * (r.h - fh)); ctx.drawImage(scratch, fx, fy, fw, fh, fx, fy, fw, fh) }
+    }
+  }
+  /** The whole frame treated: band tears, columns shifted, codec blocks, scanlines, the frame fringed on the beat, a thin interface. Never a naked picture. */
+  const glitchFrame = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number) => {
+    const g = strengthOf(shot)
+    const s = shot.seed, p = shot.p
+    const beatIndex = Math.floor((at - shot.from) / beat), beatPhase = ((at - shot.from) % beat) / beat
+    const src = sourceOf(shot)
+    // A few rows torn every frame, more with the strength; a wider tear on the beat.
+    const rows = Math.round(1 + g * 7)
+    for (let i = 0; i < rows; i += 1) { const sh = Math.max(2, Math.round(H * (0.003 + hash(s, frame, i, 320) * 0.03))), sy = Math.round(hash(s, frame, i, 321) * (H - sh)); ctx.drawImage(ctx.canvas, 0, sy, W, sh, Math.round((hash(s, frame, i, 322) - 0.5) * W * (0.06 + g * 0.3)), sy, W, sh) }
+    if (beatPhase < 0.12 && g > 0.3) tearBands(ctx, src, prev, s + beatIndex, frame, 0.15 + g * 0.5, 0.01 + p.b * 0.03, 0.2 + g * 0.4)
+    // Columns shifted up or down, now and then.
+    if (hash(Math.floor(at / 90), s, 323) < g * 0.6) for (let i = 0; i < 1 + Math.round(g * 3); i += 1) { const cw = Math.round(W * (0.01 + hash(s, frame, i, 324) * 0.08)), cx = Math.round(hash(s, Math.floor(at / 90), i, 325) * (W - cw)); ctx.drawImage(ctx.canvas, cx, 0, cw, H, cx, Math.round((hash(s, frame, i, 326) - 0.5) * H * 0.2 * g), cw, H) }
+    // Codec blocks: on some beats, blocks copied from elsewhere or shifted, in the picture's own colours.
+    if (p.c < 0.5 && beatIndex % 2 === 0 && g > 0.4) {
+      const B = Math.round(Math.min(W, H) / 14), cols = Math.ceil(W / B), rowsN = Math.ceil(H / B), step = Math.floor(at / 110)
+      pv.drawImage(ctx.canvas, 0, 0)
+      for (let by = 0; by < rowsN; by += 1) for (let bx = 0; bx < cols; bx += 1) { const q = hash(s, step, bx, by, 327); if (q < g * 0.12) ctx.drawImage(prev, Math.floor(hash(s, step, bx, by, 328) * cols) * B, Math.max(0, Math.min(rowsN - 1, by + Math.round((hash(s, step, bx, by, 329) - 0.5) * 4))) * B, B, B, bx * B, by * B, B, B); else if (q < g * 0.2) ctx.drawImage(prev, bx * B, by * B, B, B, bx * B + Math.round((hash(s, step, bx, by, 330) - 0.5) * 4) * B, by * B, B, B) }
+    }
+    // Scanlines and a rolling bar on some shots; the frame fringed in the theme's colours on the beat.
+    if (p.d < 0.4 && g > 0.3) { ctx.fillStyle = DEEP; ctx.globalAlpha = 0.15; for (let y = 0; y < H; y += 3 * px) ctx.fillRect(0, y, W, px); ctx.globalAlpha = 0.06; ctx.fillStyle = CREAM; ctx.fillRect(0, Math.round(((at * 0.3) % (H * 1.2)) - H * 0.1), W, Math.round(H * 0.06)); ctx.globalAlpha = 1 }
+    if (beatPhase < 0.1 && g > 0.5) { const off = Math.round(u * (2 + g * 6)); ctx.globalAlpha = 0.35; ctx.drawImage(ctx.canvas, -off, 0); ctx.globalAlpha = 1 }
+    // Hairlines in the palette, now and then; the thin interface on the shots that carry it.
+    if (hash(Math.floor(at / 200), s, 331) < g * 0.5) hairline(ctx, s + Math.floor(at / 200), colourAt(hash(s, Math.floor(at / 200), 332)))
+    if (shot.hud) hud(ctx, frame, at)
+  }
   const drawBrand = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number, scale = 1, forcePlace?: { x: number; y: number; w: number; h: number }) => {
     const progress = clamp01((at - shot.from) / Math.max(1, shot.to - shot.from))
     const r = forcePlace ?? brandRect(shot, progress)
@@ -317,6 +381,7 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     }
     ctx.globalAlpha = 1
     if (shot.pill && spread < 0.2 && alpha > 0.5 && !forcePlace) pillAt(ctx, ex + ew / 2, Math.round(ey + eh + H * 0.025), Math.max(S.w * 0.35, ew * 0.7), alpha)
+    if (spread < 0.2 && alpha > 0.3) glitchBrand(ctx, shot, { x: ex, y: ey, w: ew, h: eh }, at, frame, shot.afterTear ? 0.4 : 0)
   }
   /** The curator's words: one card's line, big, in the safe area or where the curator put them. */
   const drawCard = (ctx: CanvasRenderingContext2D, shot: Shot, at: number) => {
@@ -351,7 +416,7 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     switch (shot.kind) {
       case 'block': {
         // The brand alone, over deep, or over the video dimmed when the energy allows.
-        if (src && shot.energy > 0.3 && p.a < 0.6) { ctx.globalAlpha = 0.3; cover(ctx, src, 0, 0, W, H, 1 + progress * 0.06); ctx.globalAlpha = 1 }
+        if (src && p.a < 0.7) { ctx.globalAlpha = 0.2 + shot.energy * 0.3; cover(ctx, src, 0, 0, W, H, 1 + progress * 0.06); ctx.globalAlpha = 1 }
         drawBrand(ctx, shot, at, frame)
         if (p.b < 0.4 && beatPhase < 0.08) hairline(ctx, s + beatIndex, colourAt(p.c))
         break
@@ -377,8 +442,9 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
         if (src) cover(ctx, src, 0, 0, W, H, 1 + progress * 0.08, 0.5 + (p.a - 0.5) * 0.3 * progress, 0.5)
         if (p.b < 0.35) { ctx.fillStyle = colourAt(p.c); ctx.globalAlpha = 0.14; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
         if (beatPhase < 0.1 && shot.energy > 0.35) tearBands(ctx, src, prev, s + beatIndex, frame, 0.25 + shot.energy * 0.5, 0.02, 0.15 + shot.energy * 0.3)
-        if (p.d < 0.6) { const corner = Math.floor(p.e * 4); const { w, h } = logoSize(input.logo, S.w * 0.3); const x = corner % 2 ? S.x + S.w - w : S.x, y = corner < 2 ? S.y : S.y + S.h - h; drawBrand(ctx, { ...shot, bw: 0.3, pill: false, enter: 'none', exit: 'none', deform: 'none' }, at, frame, 1, { x, y, w, h }) }
-        if (shot.hud) hud(ctx, frame, at)
+        // The brand over it, never absent: in a corner of the safe area, or where the shot puts it.
+        if (p.d < 0.5) { const corner = Math.floor(p.e * 4); const { w, h } = logoSize(input.logo, S.w * 0.5); const x = corner % 2 ? S.x + S.w - w : S.x, y = corner < 2 ? S.y : S.y + S.h - h; drawBrand(ctx, { ...shot, bw: 0.5, pill: false, enter: 'none', exit: 'none' }, at, frame, 1, { x, y, w, h }) }
+        else drawBrand(ctx, { ...shot, enter: 'none' }, at, frame)
         break
       }
       case 'tear': {
@@ -477,6 +543,8 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
         break
       }
     }
+    // The frame treated whatever the shot: nothing leaves naked.
+    if (shot.kind !== 'tear') glitchFrame(ctx, shot, at, frame)
     // The join at the head of the shot: a slam of colour, a tear of the frame before, a flash.
     const head = at - shot.from
     if (head < beat * 0.18 && shot.transition !== 'cut') {

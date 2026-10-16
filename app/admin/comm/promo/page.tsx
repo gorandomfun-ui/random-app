@@ -61,7 +61,7 @@ export default function PromoPage() {
   const [withStock, setWithStock] = useState(true)
   const [withVideos, setWithVideos] = useState(true)
   const [shots, setShots] = useState<ShotKind[]>(SHOTS.map((s) => s.key))
-  const [brandMode, setBrandMode] = useState<BrandMode>('random')
+  const [brandMode, setBrandMode] = useState<BrandMode>('deformed')
   const [guide, setGuide] = useState(true)
   const [text, setText] = useState('')
   const [size, setSize] = useState<keyof typeof TEXT_SIZES>('M')
