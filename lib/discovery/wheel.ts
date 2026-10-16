@@ -82,8 +82,8 @@ export const UNIVERSE_WINDOW = 6
 export const SPACING = 10
 /**
  * Brazil, South and Southeast Asia: two in ten videos at most, never two in a row (the owner, 13 October: "souvent ils se
- * suivent"). Told by the declared language, the script, or a title clearly not English (lib/v3/ingest/mix.ts); a video is
- * never removed, only put further in the session.
+ * suivent"); Turkey and the Arab world with them since 16 October. Told by the declared language, the script, or a title
+ * clearly not English (lib/v3/ingest/mix.ts); a video is never removed, only put further in the session.
  */
 export const PLACES_IN_TEN = 2
 /**
@@ -113,12 +113,28 @@ const UNIVERSE_INDEX = 'v3_universe_type_rand'
 const ERA_INDEX = 'v3_era_type_rand'
 const LINE_INDEX = 'v3_line_type_rand'
 const REGISTER_INDEX = 'v3_register_type_rand'
+/** The videos by declared language (every video carries `languageScope: null`, the index's second key). */
+const LANG_INDEX = 'discovery_lang_rand_v2'
 const ANY_INDEX = 'type_rand_lookup'
 /** The videos the little AI has read (lib/v3/ai/fingerprint.ts): a partial index on the fingerprint's presence, so the taste card reads six hundred of them at once however few they are in the stock. */
 const VEC_INDEX = 'vec_type_rand'
 /** Rows read for a card: more when the card is rare in a universe (long, retro, the world). */
 const ROWS = 48
 const SIFTED_ROWS = 96
+/**
+ * The world card: a language at random, then a window of its videos (the owner, 16 October: "pas US, pas UK, pas Suède ?").
+ * It read the titles written in another alphabet and the dig's personalities in proportion to what the base holds, where
+ * Turkish and Arabic weigh what Dailymotion holds of them: one video in six of the card, one in twenty-one of the base.
+ * Every language of the base but French and English, from a few hundred videos (counted on 16 October: Finnish 344 the
+ * least), each as likely as another; the places kept to a share count as one each and keep the session's rule.
+ */
+export const WORLD_LANGUAGES: ReadonlyArray<readonly string[]> = [
+  ['es'], ['de'], ['it'], ['ja'], ['ko'], ['zh'], ['ru'], ['pl'], ['nl'], ['ro'], ['el'], ['sv'], ['no', 'nb'], ['da'], ['fi'],
+  ['hu'], ['cs'], ['sr'], ['hr'], ['bg'], ['uk'],
+  ['pt'], ['tr'], ['ar'], ['th'], ['vi'], ['id', 'ms'], ['hi', 'bn', 'ta', 'te', 'mr', 'ml', 'kn', 'gu', 'pa', 'ur', 'ne'],
+]
+/** Languages one world card tries before the old pool answers: the session's rules may refuse a whole window. */
+const WORLD_TRIES = 3
 
 /**
  * The card of the session's `index`-th video. Round after round, each shuffled
@@ -512,7 +528,13 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return dug ? { item: dug, from: 'dig:likes' } : null
     }
     case 'world': {
-      // Elsewhere: the register the whole stock carries, and the people the dig found round the world — one pool, the least served first.
+      // A language at random, each as likely as another, then a window of its videos, the least served first.
+      for (const languages of shuffled(WORLD_LANGUAGES, random).slice(0, WORLD_TRIES)) {
+        const lang = languages.length > 1 ? { $in: [...languages] } : languages[0]
+        const picked = choose(await seek(db, { type: 'video', languageScope: null, lang, ...SERVABLE }, LANG_INDEX, random, SIFTED_ROWS), slot, context)
+        if (picked) return { item: picked, from: `world:${languages[0]}` }
+      }
+      // Every language tried refused by the session: the old pool — the register of the titles in another alphabet, and the people the dig found round the world.
       const [elsewhere, people] = await Promise.all([seek(db, { 'v3.registers': 'elsewhere', type: 'video', ...SERVABLE }, REGISTER_INDEX, random, SIFTED_ROWS), seekDig(db, 'people', random)])
       const picked = choose([...elsewhere, ...people], slot, context)
       return picked ? { item: picked, from: (picked as Candidate & { line?: string }).line === 'dig' ? 'dig:people' : 'register:elsewhere' } : null

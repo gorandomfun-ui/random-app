@@ -162,6 +162,31 @@ test('Brazil, South and Southeast Asia: two in ten at most, never two in a row; 
   assert.equal(sessionRules(remembered(34, [placed('Uma tarde no parque com os amigos', 'pt', 'food')])).refuses(english), null)
 })
 
+test('the world card (16 October): a language at random, each as likely as another whatever its stock, never French nor English; a place the session refuses gives way to another language', async () => {
+  const spoken = (lang: string, count: number) => Array.from({ length: count }, (_, index) => ({ ...video(`A ${lang} video, number ${index}, about the town`, { universe: 'travel' }), lang, languageScope: null }))
+  // Spanish holds fifty times what Swedish holds: the card does not follow the stock.
+  const db = fakeDb([...spoken('es', 100), ...spoken('sv', 2), ...spoken('tr', 30), ...spoken('en', 100), ...spoken('fr', 100)])
+  // mulberry32: a small seed still gives a first draw anywhere in [0, 1).
+  const seeded = (seed: number) => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }
+  const counts: Record<string, number> = {}
+  for (let draw = 0; draw < 400; draw += 1) {
+    const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), random: seeded(draw) })
+    if (filled) counts[filled.from] = (counts[filled.from] ?? 0) + 1
+  }
+  assert.ok(!counts['world:en'] && !counts['world:fr'], JSON.stringify(counts))
+  for (const lang of ['es', 'sv', 'tr']) assert.ok((counts[`world:${lang}`] ?? 0) > 10, JSON.stringify(counts))
+  assert.ok((counts['world:sv'] ?? 0) * 2 > (counts['world:es'] ?? 0), `Swedish about as often as Spanish: ${JSON.stringify(counts)}`)
+  // The session's last video was Brazilian: a Turkish one waits — Turkey keeps a share since 16 October — and another language answers.
+  const afterBrazil = remembered(41, [{ ...video('Uma tarde no parque com os amigos', { universe: 'food' }), lang: 'pt' }])
+  let answered = 0
+  for (let draw = 0; draw < 120; draw += 1) {
+    const filled = await fillSlot(db, 'world', { ...context(db, afterBrazil), random: seeded(1000 + draw) })
+    assert.notEqual(filled?.from, 'world:tr')
+    if (filled) answered += 1
+  }
+  assert.ok(answered > 10, `${answered}`)
+})
+
 test('a card counted along the session: the buzz and the long, the third, the sixth… of each', () => {
   for (const seed of [1, 7, 4242, 987654321]) {
     for (const slot of ['buzz', 'long'] as const) {

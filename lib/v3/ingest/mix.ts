@@ -1,8 +1,10 @@
 /**
  * A good mix, not exclusions (the owner, 12 October: "limiter n'est pas exclure… pas d'extrême, mais avoir un bon
  * mélange c'est ça le truc"). Two kinds of video he asked "pas trop" of keep a share of what a line lets in: the Shorts
- * (under a minute, some very good) and the little videos of Brazil and South and Southeast Asia. On 13 October, on
- * every server line ("vas-y pour tout"), through the admission (lib/v3/ingest/direct.ts).
+ * (under a minute, some very good) and the little videos of Brazil and South and Southeast Asia — and since 16 October
+ * those of Turkey and the Arab world, which took the room the others left (the dig's personalities of the world, 9 % Turkish
+ * and 5 % Arabic; the owner: "c'est sympa mais c'est toujours la même règle, de la variété"). On 13 October, on every
+ * server line ("vas-y pour tout"), through the admission (lib/v3/ingest/direct.ts).
  *
  * Where a video is from is read, in order, from the language its platform declared (YouTube's default audio language,
  * Dailymotion's language: kept on the row since 13 October), from the title's script (Thai, Devanagari… cannot be
@@ -31,7 +33,14 @@ const PLACE_OF_LANGUAGE: Readonly<Record<string, string>> = {
   tl: 'PH', tgl: 'PH', fil: 'PH', ceb: 'PH', ilo: 'PH',
   th: 'TH', tha: 'TH',
   vi: 'VN', vie: 'VN',
+  tr: 'TR', tur: 'TR',
+  ar: 'AR', arb: 'AR', ara: 'AR',
 }
+/**
+ * Arabic letters with no declared language: the Arab world — the detector reads Arabic titles as Persian (16 October:
+ * "واخيرا بعد 5 سنوات…" read as Persian), so only Urdu, India's share, is told apart. Declared, Persian and Urdu say so.
+ */
+const ARABIC_SCRIPT = /\p{Script=Arabic}/u
 const SCRIPT_PLACE: ReadonlyArray<[RegExp, string]> = [
   [/\p{Script=Devanagari}|\p{Script=Bengali}|\p{Script=Tamil}|\p{Script=Telugu}|\p{Script=Malayalam}|\p{Script=Kannada}|\p{Script=Gujarati}|\p{Script=Gurmukhi}/u, 'IN'],
   [/\p{Script=Thai}/u, 'TH'],
@@ -46,6 +55,7 @@ export function placeOf(video: { title?: string | null; lang?: string | null }):
   // As the platform gave it ("pt-BR", "en-US") or as stored ("pt"): its language is what counts.
   const declared = typeof video.lang === 'string' ? video.lang.trim().toLowerCase().split(/[-_]/)[0] : ''
   if (declared) return PLACE_OF_LANGUAGE[declared] ?? null
+  if (ARABIC_SCRIPT.test(title)) return titleLanguage(title) === 'urd' ? 'IN' : 'AR'
   const read = titleLanguage(title)
   const place = read ? PLACE_OF_LANGUAGE[read] ?? null : null
   if (!place) return null
