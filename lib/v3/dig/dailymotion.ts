@@ -56,6 +56,14 @@ export function relatedDailymotion(videoId: string, request: typeof fetch = fetc
   return list(`https://api.dailymotion.com/video/${encodeURIComponent(id)}/related?${new URLSearchParams({ fields: FIELDS, limit: String(Math.max(1, Math.min(100, limit))) })}`, request, signal)
 }
 
+/**
+ * The videos their uploaders declare in one language, the most watched or the newest (16 October: the world card draws a
+ * language at random, and the base held little of the languages written in Latin letters but English and French). Free.
+ */
+export function languageDailymotion(language: string, sort: 'visited' | 'recent', request: typeof fetch = fetch, page = 1, signal?: AbortSignal, limit = 100): Promise<DigVideo[]> {
+  return list(`https://api.dailymotion.com/videos?${new URLSearchParams({ languages: language, sort, fields: FIELDS, limit: String(Math.max(1, Math.min(100, limit))), ...(page > 1 ? { page: String(Math.floor(page)) } : {}) })}`, request, signal)
+}
+
 /** The videos of one uploader, at random among them. Free. */
 export function uploaderVideos(ownerId: string, request: typeof fetch = fetch, signal?: AbortSignal, limit = 100): Promise<DigVideo[]> {
   return list(`https://api.dailymotion.com/videos?${new URLSearchParams({ owners: ownerId, sort: 'random', fields: FIELDS, limit: String(Math.max(1, Math.min(100, limit))) })}`, request, signal)

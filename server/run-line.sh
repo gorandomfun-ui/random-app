@@ -176,6 +176,11 @@ case "${LINE}" in
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.
     run node --import tsx scripts/v3/drift-direct.ts
     ;;
+  languages)
+    # Dailymotion asked language by language for the world card (16 October): the scarce languages of Europe, in Latin
+    # letters, Cyrillic or Greek, a declaration the title contradicts refused. Free, no YouTube unit, no model; a few MB a run.
+    RANDOM_LANGUAGES_MINUTES="${RANDOM_LANGUAGES_MINUTES:-15}" run node --import tsx scripts/v3/languages-direct.ts
+    ;;
   music-live)
     # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.
     run node --import tsx scripts/v3/music-live-direct.ts

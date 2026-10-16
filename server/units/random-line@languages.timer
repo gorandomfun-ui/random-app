@@ -1,0 +1,11 @@
+[Unit]
+Description=RANDOM languages of the world from Dailymotion (16 October: the world card's variety — the scarce languages of Europe; twice a day, at hours without the small model nor the dig: after the YouTube drift, before the fingerprints and the evening's dig)
+
+[Timer]
+OnCalendar=*-*-* 14:30:00 Europe/Paris
+OnCalendar=*-*-* 21:05:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
