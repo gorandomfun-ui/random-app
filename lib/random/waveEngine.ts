@@ -1,6 +1,7 @@
 import type { Collection, Document, Filter, ObjectId } from 'mongodb'
 
 import { getDbSafe } from './data'
+import { shownSourceName } from './sourceName'
 import type { RandomContentItem } from './clientTypes'
 import type { ItemType, RandomSelectOptions } from './types'
 import {
@@ -112,7 +113,7 @@ function strings(value: unknown): string[] {
 }
 
 function source(doc: WaveDocument, fallback: string, url?: string) {
-  const name = trim(doc.source?.name) || fallback
+  const name = shownSourceName(trim(doc.source?.name), fallback)
   const sourceUrl = trim(doc.source?.url) || url || undefined
   return { name, ...(sourceUrl ? { url: sourceUrl } : {}) }
 }
