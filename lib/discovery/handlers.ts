@@ -17,6 +17,7 @@ import { isAdminRequest } from '../auth/adminAuth'
 import { themeAt, themeDeckSwitchedOn } from '../v3/cool/themes'
 import { digDrawSwitchedOn, selectDig } from './digDraw'
 import { selectWheel, wheelSwitchedOn } from './wheel'
+import { BILIBILI_FOR_EVERYONE, onComputer } from '../v3/bilibili'
 import { countServed, servedCountOn } from './served'
 import { parseKept, recordKept } from './kept'
 import { spokenLanguage } from './spoken'
@@ -76,8 +77,10 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       const seen = parseSeen(body.seen)
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
       // Fresh of the day first: the session's first ten videos, at random among the day's list, none this device already saw today.
+      // Bilibili in the world card, for a computer only (lib/v3/bilibili.ts): the curator's first, while he tests it.
+      const bilibili = onComputer(req.headers.get('user-agent')) ? (curatorRequestAllowed(req) ? 'test' as const : BILIBILI_FOR_EVERYONE ? 'all' as const : undefined) : undefined
       const wheel = wheelOn && ticket.type === 'video'
-        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals), parseSeenSubjects(body.seenSubjects)).catch(() => null) : null
+        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals), parseSeenSubjects(body.seenSubjects), bilibili ? { bilibili } : {}).catch(() => null) : null
       const fresh = !wheel && freshEnabled() && ticket.type === 'video'
         ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now(), Math.random, theme).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.

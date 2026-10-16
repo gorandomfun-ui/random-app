@@ -1764,6 +1764,10 @@ function VideoEmbedAllowed({
       onVideoSoundUnlocked={onVideoSoundUnlocked}
       onError={(playerCode) => onPlaybackIssue?.(item, { reason: 'youtube-player-error', playerCode })} />
   }
+  // Bilibili, on a computer only: the draw never sends it to a phone (lib/v3/bilibili.ts).
+  if (provider === 'bilibili' || /bilibili\.com\/video\//.test(url)) {
+    return <BilibiliEmbed item={item} frameHeight={frameHeight} onPlaybackIssue={onPlaybackIssue} />
+  }
   const looksYouTube = provider.includes('youtube') || /youtu\.?be/.test(url)
   const looksDailymotion = !looksYouTube && (provider.includes('dailymotion') || /dailymotion\.com|dai\.ly/.test(url))
 
@@ -1812,6 +1816,32 @@ function VideoEmbedAllowed({
       onVideoSoundUnlocked={onVideoSoundUnlocked}
       onPlaybackIssue={onPlaybackIssue}
     />
+  )
+}
+
+/**
+ * Bilibili's own player, on a computer (the draw never sends it to a phone, where it plays nothing outside China: 16
+ * October). Its controls, its sound and its full screen are its own; the comments flying over the video, off. No picture
+ * behind it: Bilibili's refuse to show on another site.
+ */
+function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoContentItem; frameHeight: string; onPlaybackIssue?: PlaybackIssueHandler }) {
+  const bvid = useMemo(() => /\/video\/(BV\w{10})/.exec(item.url)?.[1] ?? '', [item.url])
+  const embedUrl = bvid ? `https://player.bilibili.com/player.html?bvid=${bvid}&autoplay=1&danmaku=0&high_quality=1` : ''
+  const { markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
+  if (!embedUrl) return null
+  return (
+    <div className="video-embed-player w-full h-full" style={{ position: 'relative', overflow: 'hidden', height: frameHeight, background: '#000' }}>
+      <iframe
+        key={`${embedUrl}-${reloadNonce}`}
+        src={embedUrl}
+        onLoad={markLoaded}
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+        title={item.text || 'Video'}
+        style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}
+      />
+    </div>
   )
 }
 

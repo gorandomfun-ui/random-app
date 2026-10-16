@@ -181,6 +181,11 @@ case "${LINE}" in
     # letters, Cyrillic or Greek, a declaration the title contradicts refused. Free, no YouTube unit, no model; a few MB a run.
     RANDOM_LANGUAGES_MINUTES="${RANDOM_LANGUAGES_MINUTES:-15}" run node --import tsx scripts/v3/languages-direct.ts
     ;;
+  bilibili)
+    # Bilibili's videos for a computer (16 October): its player plays nothing on a phone outside China, so they go to a
+    # collection no card reads but the world card, for a computer. Free, no YouTube unit, no model; a few MB a run.
+    RANDOM_BILIBILI_MINUTES="${RANDOM_BILIBILI_MINUTES:-10}" run node --import tsx scripts/v3/bilibili-direct.ts
+    ;;
   music-live)
     # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.
     run node --import tsx scripts/v3/music-live-direct.ts

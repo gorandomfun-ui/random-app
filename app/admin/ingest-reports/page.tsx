@@ -58,6 +58,7 @@ const LINE_LABEL: Record<string, string> = {
   obsolete: 'Vérification de nuit des vidéos mortes',
   'image-obsolete': 'Vérification de nuit des images et GIF morts',
   languages: 'Les langues du monde (Dailymotion)',
+  bilibili: 'Bilibili, pour ordinateur (carte Monde)',
   'youtube-drift': 'La dérive YouTube (chaînes)',
   'web-previews': 'Sites : visites et aperçus',
   'web-commoncrawl': 'Sites : Common Crawl (un pays par jour, mis en attente)',

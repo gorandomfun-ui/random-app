@@ -1,0 +1,11 @@
+[Unit]
+Description=RANDOM Bilibili's videos for a computer (16 October: a collection of their own, read only by the world card for a computer; twice a day, right after the languages, at hours without the small model nor a dig)
+
+[Timer]
+OnCalendar=*-*-* 14:47:00 Europe/Paris
+OnCalendar=*-*-* 21:22:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

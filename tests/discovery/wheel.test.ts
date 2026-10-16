@@ -21,7 +21,7 @@ test('the wheel: a session opens on the buzz, a round deals every card, never th
 })
 
 /** The items collection, enough for a seek: nested paths, ranges, `$ne`, sort by rand, limit; and the served count's write. */
-function fakeDb(items: Document[], writes: Document[] = [], sweeps: Document[] = []): Db {
+function fakeDb(items: Document[], writes: Document[] = [], sweeps: Document[] = [], bilibili: Document[] = []): Db {
   const read = (row: Document, path: string) => path.split('.').reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], row)
   const holds = (value: unknown, wanted: unknown) => (Array.isArray(value) ? value.includes(wanted) : value === wanted)
   const matches = (row: Document, filter: Filter<Document>) => Object.entries(filter).every(([key, condition]) => {
@@ -41,7 +41,7 @@ function fakeDb(items: Document[], writes: Document[] = [], sweeps: Document[] =
   const collection = (name = 'items') => ({
     find: (filter: Filter<Document>, options?: { limit?: number; sort?: Record<string, number> }) => ({
       toArray: async () => {
-        let rows = (name === 'mini_series_sweeps_v3' ? sweeps : items).filter((row) => matches(row, filter))
+        let rows = (name === 'mini_series_sweeps_v3' ? sweeps : name === 'bilibili_videos' ? bilibili : items).filter((row) => matches(row, filter))
         if (options?.sort?.rand) rows = [...rows].sort((a, b) => (a.rand as number) - (b.rand as number))
         return options?.limit ? rows.slice(0, options.limit) : rows
       },
@@ -185,6 +185,27 @@ test('the world card (16 October): a language at random, each as likely as anoth
     if (filled) answered += 1
   }
   assert.ok(answered > 10, `${answered}`)
+})
+
+test("Bilibili in the world card (16 October): every world card while the curator tests it on a computer, one language among the others for everyone after, never without the switch", async () => {
+  const spoken = (lang: string, count: number) => Array.from({ length: count }, (_, index) => ({ ...video(`A ${lang} video, number ${index}, about the town`, { universe: 'travel' }), lang, languageScope: null }))
+  const bilibili = Array.from({ length: 20 }, (_, index) => ({ ...video(`哔哩哔哩 的视频 第 ${index} 个`, { universe: 'travel' }), provider: 'bilibili', url: `https://www.bilibili.com/video/BV1q3pS6tE${String(index).padStart(2, '0')}`, lang: 'zh', v3: { line: 'bilibili', desktopOnly: true } }))
+  const db = fakeDb([...spoken('es', 30), ...spoken('sv', 30)], [], [], bilibili)
+  const from = async (bilibiliMode: 'test' | 'all' | undefined, draws: number) => {
+    const counts: Record<string, number> = {}
+    for (let draw = 0; draw < draws; draw += 1) {
+      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), ...(bilibiliMode ? { bilibili: bilibiliMode } : {}) })
+      if (filled) counts[filled.from] = (counts[filled.from] ?? 0) + 1
+    }
+    return counts
+  }
+  const testing = await from('test', 30)
+  assert.equal(testing['world:bilibili'], 30, JSON.stringify(testing))
+  const none = await from(undefined, 200)
+  assert.equal(none['world:bilibili'] ?? 0, 0, JSON.stringify(none))
+  const everyone = await from('all', 400)
+  assert.ok((everyone['world:bilibili'] ?? 0) > 5, JSON.stringify(everyone))
+  assert.ok((everyone['world:bilibili'] ?? 0) < 100, `one language among the others: ${JSON.stringify(everyone)}`)
 })
 
 test('a card counted along the session: the buzz and the long, the third, the sixth… of each', () => {
