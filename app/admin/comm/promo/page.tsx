@@ -13,7 +13,7 @@ import { downloadBlob } from '@/lib/comm/montageRun'
 import { BRAND_MODES, FORMATS, SHOTS, createPromo, formatOf, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind } from '@/lib/comm/promoLoop'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
-const TEXT_SIZES = { S: 44, M: 64, L: 96 } as const
+const TEXT_SIZES = { S: 60, M: 90, L: 140 } as const
 const FONTS = [['Tomorrow', 900, 'Tomorrow'], ['Tomorrow', 700, 'Tomorrow fin'], ['InterTight', 700, 'Inter Tight']] as const
 const ICONS: Array<[string, string]> = [['heart', 'Heart.svg'], ['shuffle', 'Shuffle.svg'], ['video', 'Video.svg'], ['image', 'image.svg'], ['web', 'web.svg'], ['wave', 'wave.svg'], ['quote', 'quote.svg'], ['joke', 'joke.svg'], ['fact', 'fact.svg'], ['share', 'share.svg'], ['social', 'social.svg'], ['plus', 'plus.svg'], ['info', 'info.svg'], ['comm', 'comm.svg']]
 const chip = 'rounded-full border border-white/40 px-3 py-1.5 text-sm disabled:opacity-40'
@@ -172,7 +172,7 @@ export default function PromoPage() {
           <div>
             <div className="relative mx-auto" style={{ width: Math.round(fmt.w * previewScale), height: Math.round(fmt.h * previewScale) }}>
               <canvas ref={preview} width={pw} height={ph} className="h-full w-full rounded border border-white/20 bg-[#191916]" aria-label="Aperçu" />
-              {guide ? <div className="pointer-events-none absolute border border-dashed border-amber-300/80" style={{ left: `${safe.l * 100}%`, top: `${safe.t * 100}%`, right: `${safe.r * 100}%`, bottom: `${safe.b * 100}%`, borderRadius: fmt.round ? '50%' : 0 }} aria-label="Zone sûre" /> : null}
+              {guide ? <div className="pointer-events-none absolute border border-dashed border-amber-200/40" style={{ left: `${safe.l * 100}%`, top: `${safe.t * 100}%`, right: `${safe.r * 100}%`, bottom: `${safe.b * 100}%`, borderRadius: fmt.round ? '50%' : 0 }} aria-label="Zone sûre" /> : null}
               {textInput && place ? <DragBox rect={{ x: place.x, y: place.y, w: place.width, h: 0.12 }} label="texte" onMove={(x, y) => setPlace((p) => ({ ...(p ?? { width: 0.88 }), x, y }))} /> : null}
               {iconInput ? <DragBox rect={{ x: iconPlace.x, y: iconPlace.y, w: iconPlace.size / fmt.w, h: iconPlace.size / fmt.h }} label="icône" onMove={(x, y) => setIconPlace((p) => ({ ...p, x, y }))} /> : null}
               {!assets ? <p className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">Chargement…</p> : null}
@@ -183,7 +183,7 @@ export default function PromoPage() {
               <span className="w-10 text-right">{((hold ?? 0) / 1000).toFixed(1)} s</span>
               <button className={chip} onClick={() => setHold(null)} disabled={hold === null}>Lire</button>
             </div>
-            <p className="mx-auto mt-1 text-[11px] text-gray-500" style={{ width: Math.round(fmt.w * previewScale) }}>Tire la glissière pour tenir un moment (pour l’image fixe) ; Lire relance le film. Le pointillé est la zone que l’interface ne cache pas : {fmt.note}. Il n’est jamais exporté.</p>
+            <p className="mx-auto mt-1 text-[11px] text-gray-500" style={{ width: Math.round(fmt.w * previewScale) }}>Tire la glissière pour tenir un moment (pour l’image fixe) ; Lire relance le film. Le cadre jaune en pointillé est la zone sûre, celle que l’interface ne cache pas ({fmt.note}) : un repère, jamais exporté.</p>
           </div>
           <div className="space-y-4 text-sm">
             <section className="rounded border border-white/15 p-3">
