@@ -161,3 +161,12 @@ test("Brazil and South and Southeast Asia keep a small share each of the day's l
   assert.ok(served.filter((item) => item.region === 'BR').length / served.length <= 0.06, `Brazil six per cent at most of it (${served.filter((item) => item.region === 'BR').length} of ${served.length})`)
   assert.deepEqual(kept.filter((item) => item.region === 'BR').map((item) => item.id), ['br0', 'br1'], 'the best placed keep their place')
 })
+
+test("the base's tops (16 October): more countries for the world card, never Asia, the Arab world, Turkey or Israel; about a hundred units", async () => {
+  const { BASE_TOPS, FRESH_HEAVY_REGIONS } = await import('../../lib/v3/fresh/plan')
+  const excluded = new Set(['JP', 'KR', 'CN', 'TW', 'HK', 'SG', 'MY', 'IN', 'PK', 'BD', 'ID', 'PH', 'TH', 'VN', 'LK', 'NP', 'KH', 'LA', 'TR', 'IL', 'EG', 'MA', 'DZ', 'TN', 'LY', 'SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'YE', 'JO', 'LB', 'IQ', 'BR', ...FRESH_HEAVY_REGIONS])
+  for (const { region } of BASE_TOPS) assert.ok(!excluded.has(region), region)
+  assert.equal(new Set(BASE_TOPS.map((top) => top.region)).size, BASE_TOPS.length, 'each country once')
+  const units = BASE_TOPS.reduce((sum, top) => sum + top.pages, 0)
+  assert.ok(units <= 120, `${units} units`)
+})

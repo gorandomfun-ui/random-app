@@ -48,14 +48,29 @@ export const COUNTRIES: Record<string, { qid: string; lang: string; label: strin
   NZ: { qid: 'Q664', lang: 'en', label: 'Nouvelle-Zélande' },
   TH: { qid: 'Q869', lang: 'th', label: 'Thaïlande' },
   VN: { qid: 'Q881', lang: 'vi', label: 'Vietnam' },
+  // 16 October: the world card's variety, without more Asia, the Arab world or Turkey (the owner: "augmente au moins les autres pays").
+  NO: { qid: 'Q20', lang: 'nb', label: 'Norvège' },
+  DK: { qid: 'Q35', lang: 'da', label: 'Danemark' },
+  FI: { qid: 'Q33', lang: 'fi', label: 'Finlande' },
+  NL: { qid: 'Q55', lang: 'nl', label: 'Pays-Bas' },
+  PT: { qid: 'Q45', lang: 'pt', label: 'Portugal' },
+  GR: { qid: 'Q41', lang: 'el', label: 'Grèce' },
+  CZ: { qid: 'Q213', lang: 'cs', label: 'Tchéquie' },
+  HU: { qid: 'Q28', lang: 'hu', label: 'Hongrie' },
+  RO: { qid: 'Q218', lang: 'ro', label: 'Roumanie' },
+  IE: { qid: 'Q27', lang: 'en', label: 'Irlande' },
+  CL: { qid: 'Q298', lang: 'es', label: 'Chili' },
+  PE: { qid: 'Q419', lang: 'es', label: 'Pérou' },
+  CM: { qid: 'Q1009', lang: 'fr', label: 'Cameroun' },
 }
 
 /** Where a country sits, for the turn-taking: one of each part of the world before a second of any. */
 export const REGION_OF: Record<string, string> = {
   FR: 'europe', BE: 'europe', GB: 'europe', DE: 'europe', ES: 'europe', IT: 'europe', CH: 'europe', SE: 'europe', PL: 'europe', RU: 'europe',
+  NO: 'europe', DK: 'europe', FI: 'europe', NL: 'europe', PT: 'europe', GR: 'europe', CZ: 'europe', HU: 'europe', RO: 'europe', IE: 'europe',
   US: 'north-america', CA: 'north-america', MX: 'north-america',
-  BR: 'south-america', AR: 'south-america', CO: 'south-america',
-  GH: 'africa', NG: 'africa', ZA: 'africa', EG: 'africa', KE: 'africa', SN: 'africa', CI: 'africa',
+  BR: 'south-america', AR: 'south-america', CO: 'south-america', CL: 'south-america', PE: 'south-america',
+  GH: 'africa', NG: 'africa', ZA: 'africa', EG: 'africa', KE: 'africa', SN: 'africa', CI: 'africa', CM: 'africa',
   JP: 'asia', KR: 'asia', IN: 'asia', CN: 'asia', TR: 'asia', ID: 'asia', PH: 'asia', TH: 'asia', VN: 'asia',
   AU: 'oceania', NZ: 'oceania',
 }

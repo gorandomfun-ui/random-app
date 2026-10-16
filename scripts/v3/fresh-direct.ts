@@ -15,7 +15,8 @@ import { emptyCounters, journalHost } from '@/lib/v3/ingest/journal'
 import { run, type FreshCursorNote } from '@/lib/v3/ingest/lines/fresh'
 
 const MAX_MINUTES = Number(process.env.RANDOM_FRESH_MINUTES ?? 30)
-const UNITS = Number(process.env.RANDOM_FRESH_UNITS ?? 300)
+/** The day's list (about 210 units) and, since 16 October, the base's tops of more countries (104): lib/v3/fresh/plan.ts. */
+const UNITS = Number(process.env.RANDOM_FRESH_UNITS ?? 450)
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry')

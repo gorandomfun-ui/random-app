@@ -114,6 +114,28 @@ export function isForeignSketch(entry: Pick<FreshEntry, 'bucket' | 'region' | 'u
  * trop". Each keeps its share of the day's list, whatever the universe; the others are not touched. Six per cent each,
  * not three (the owner, 12 October: "3 % c'est peu… pas d'extrême, un bon mélange").
  */
+/**
+ * Tops read for the base only, never for the day's list (the owner, 16 October: "c'est plus la carte monde globale qu'il faut
+ * réussir à varier", without more Asia, the Arab world or Turkey): Latin America, the countries of Europe the list does not
+ * read and the small languages it reads one page of, Africa but the Arab world, Canada. A page is fifty videos and one unit:
+ * 104 units a day, out of the 1,200 the day left unused (15 October: 8,775 of 10,000).
+ */
+export const BASE_TOPS: ReadonlyArray<{ region: string; pages: number }> = [
+  { region: 'AR', pages: 2 }, { region: 'CL', pages: 2 }, { region: 'PE', pages: 2 }, { region: 'VE', pages: 1 }, { region: 'EC', pages: 1 },
+  { region: 'UY', pages: 1 }, { region: 'PY', pages: 1 }, { region: 'BO', pages: 1 }, { region: 'CR', pages: 1 }, { region: 'PA', pages: 1 },
+  { region: 'GT', pages: 1 }, { region: 'HN', pages: 1 }, { region: 'SV', pages: 1 }, { region: 'NI', pages: 1 }, { region: 'DO', pages: 1 },
+  { region: 'PR', pages: 1 }, { region: 'JM', pages: 1 },
+  { region: 'SE', pages: 4 }, { region: 'NO', pages: 4 }, { region: 'DK', pages: 4 }, { region: 'FI', pages: 4 }, { region: 'IS', pages: 2 },
+  { region: 'NL', pages: 3 }, { region: 'GR', pages: 3 }, { region: 'CY', pages: 1 }, { region: 'PL', pages: 3 }, { region: 'CZ', pages: 3 },
+  { region: 'SK', pages: 2 }, { region: 'HU', pages: 3 }, { region: 'RO', pages: 3 }, { region: 'BG', pages: 2 }, { region: 'HR', pages: 2 },
+  { region: 'SI', pages: 2 }, { region: 'RS', pages: 2 }, { region: 'BA', pages: 1 }, { region: 'ME', pages: 1 }, { region: 'MK', pages: 1 },
+  { region: 'UA', pages: 2 }, { region: 'LT', pages: 2 }, { region: 'LV', pages: 2 }, { region: 'EE', pages: 2 }, { region: 'IT', pages: 3 },
+  { region: 'DE', pages: 3 }, { region: 'ES', pages: 3 }, { region: 'PT', pages: 2 }, { region: 'AT', pages: 1 }, { region: 'CH', pages: 1 },
+  { region: 'BE', pages: 1 }, { region: 'LU', pages: 1 }, { region: 'IE', pages: 1 }, { region: 'MT', pages: 1 },
+  { region: 'NG', pages: 1 }, { region: 'KE', pages: 1 }, { region: 'GH', pages: 1 }, { region: 'UG', pages: 1 }, { region: 'TZ', pages: 1 },
+  { region: 'ZW', pages: 1 }, { region: 'SN', pages: 1 }, { region: 'ZA', pages: 1 }, { region: 'CA', pages: 1 },
+]
+
 export const FRESH_HEAVY_REGIONS = new Set(['BR', 'IN', 'ID', 'PH', 'PK', 'BD', 'TH', 'VN', 'MY'])
 export const FRESH_HEAVY_REGION_SHARE = 0.06
 

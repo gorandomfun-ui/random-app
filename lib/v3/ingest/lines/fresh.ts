@@ -10,11 +10,12 @@
 
 import type { Document } from 'mongodb'
 
-import { fetchYouTubeChart, fetchYouTubeViewCounts } from '@/lib/ingest/videos'
+import { fetchYouTubeChart, fetchYouTubeViewCounts, type RawVideo } from '@/lib/ingest/videos'
+import { declaredLanguage } from '@/lib/ingest/videoDocument'
 import { junkKind } from '@/lib/ingest/junk'
 import { miniSeriesVerdict } from '@/lib/ingest/miniSeries'
 import { isNewsTitle } from '../../cool/themes'
-import { capForeignSketches, capShares, capUniverses, isoSeconds, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
+import { BASE_TOPS, capForeignSketches, capShares, capUniverses, isoSeconds, dailyViews, FRESH_MEMORY_DAYS, FRESH_NEWS_MAX, FRESH_PLAN, interleave, isAiMade, isFreshFormat, observedFound, pickBucket, rankByDaily, type FreshBucket, type FreshEntry, type FreshFound, type ViewSample } from '../../fresh/plan'
 import { searchDailymotion } from '../../trend/dig'
 import { addAdmission, type LineContext, type LineResult } from '../context'
 import { placeOf } from '../mix'
@@ -34,6 +35,8 @@ export const FRESH_VIEWS = 'fresh_views_v1'
 const REMEASURE_WINDOW_MS = 48 * 3_600_000
 /** Fewer measured candidates than this, and the charts' own order still decides (the very first days). */
 const ENOUGH_MEASURED = 300
+/** The base's tops stop while this much of the run is left: the day's list is written before them, never after. */
+const TOPS_MARGIN_MS = 4 * 60_000
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const parisDay = (date: Date) =>
@@ -199,7 +202,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   const buckets = Object.fromEntries([...capped].map(([bucket, list]) => [bucket, list.length])) as Partial<Record<FreshBucket, number>>
   const label: Record<FreshBucket, string> = { world: 'monde', usa: 'USA', europe: 'Europe', asia: 'Asie', africa: 'Afrique', 'east-europe': 'Europe de l_Est', oceania: 'Océanie', music: 'musique', fun: 'fun',
     sport: 'sport', animals: 'animaux', science: 'sciences', howto: 'pratique', people: 'gens', autos: 'autos', film: 'films et animation' }
-  const note = `frais du jour ${day} : ${order.length} vidéos (${FRESH_PLAN.map((plan) => `${label[plan.bucket]} ${buckets[plan.bucket] ?? 0}`).join(' · ')})${youtubeStopped ? ' · budget YouTube atteint' : ''}`
+  let note = `frais du jour ${day} : ${order.length} vidéos (${FRESH_PLAN.map((plan) => `${label[plan.bucket]} ${buckets[plan.bucket] ?? 0}`).join(' · ')})${youtubeStopped ? ' · budget YouTube atteint' : ''}`
   ctx.log(note)
 
   // A day's list is never replaced by a smaller one: a late run with little to go on keeps the morning's.
@@ -232,6 +235,46 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     }))
     for (let start = 0; start < operations.length; start += 500) await views.bulkWrite(operations.slice(start, start + 500), { ordered: false }).catch((error) => errors.push(`relevés de vues : ${message(error)}`))
   }
+
+  // The tops of more countries, for the base only, once the day's list is written (lib/v3/fresh/plan.ts, BASE_TOPS): the
+  // world card's languages, so only what its platform declares in another language than English or French — the Swedish
+  // top was 78 % English on 16 October. What a chart repeats from another, or from the list's own read, is asked once.
+  const asked = new Set(found.map((entry) => entry.raw.videoId))
+  const worldLanguage = (raw: RawVideo) => { const lang = declaredLanguage(raw.lang ?? raw.declaredLang); return Boolean(lang && lang !== 'en' && lang !== 'fr') }
+  let topsRead = 0, topsIn = 0
+  for (const { region, pages } of BASE_TOPS) {
+    if (youtubeStopped || ctx.timeLeft() < TOPS_MARGIN_MS) break
+    const batch: RawVideo[] = []
+    let token: string | undefined
+    for (let page = 0; page < pages; page += 1) {
+      if (!(await ctx.quota.reserve(1))) { youtubeStopped = true; break }
+      try {
+        const { rows: chart, next } = await fetchYouTubeChart(region, { pageToken: token, limit: 50 }, warnings)
+        for (const raw of chart) if (!asked.has(raw.videoId) && worldLanguage(raw)) { asked.add(raw.videoId); batch.push(raw) }
+        token = next
+        if (!token) break
+      } catch (error) {
+        errors.push(`tops ${region} : ${message(error)}`)
+        break
+      }
+    }
+    topsRead += batch.length
+    for (let start = 0; start < batch.length; start += ADMIT_CHUNK) {
+      const chunk = batch.slice(start, start + ADMIT_CHUNK)
+      try {
+        const result = await ctx.admit({ subjectId: 'fresh-world', videos: chunk, keepAngles: true })
+        addAdmission(counters, { ...result, scanned: chunk.length })
+        topsIn += result.inserted
+      } catch (error) {
+        errors.push(`admission des tops : ${message(error)}`)
+      }
+    }
+  }
+  if (topsRead) {
+    note += ` · tops pour la base : ${topsIn} entrées sur ${topsRead} lues`
+    ctx.log(`tops pour la base : ${topsIn} entrées sur ${topsRead} lues${youtubeStopped ? ' (budget YouTube atteint)' : ''}`)
+  }
+
   if (warnings.length) ctx.log(`avertissements : ${warnings.slice(0, 5).map((warning) => warning.message).join(' | ')}`)
   return { counters, errors, cursor: { day, total: order.length, buckets, note } satisfies FreshCursorNote }
 }
