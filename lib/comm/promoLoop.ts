@@ -287,7 +287,8 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     const s = shot.seed
     let ex = r.x, ey = r.y, ew = Math.round(r.w * scale), eh = Math.round(r.h * scale), spread = 0, visible = true, alpha = 1
     if (scale !== 1) { ex = Math.round(r.x + r.w / 2 - ew / 2); ey = Math.round(r.y + r.h / 2 - eh / 2) }
-    const enterLen = 0.25, exitLen = 0.22
+    // The entrance takes a fifth of the shot, the exit an eighth: the frame is never left empty for long.
+    const enterLen = 0.2, exitLen = 0.12
     if (shot.enter !== 'none' && progress < enterLen) {
       const t = easeOut(progress / enterLen)
       if (shot.enter === 'slide') ex = Math.round(ex + (hash(s, 80) < 0.5 ? -1 : 1) * (1 - t) * W * 1.2)
