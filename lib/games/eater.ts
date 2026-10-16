@@ -1,11 +1,14 @@
 /**
  * The rules of RANDOM EATER, apart from any screen: the eater crawls on
  * across the diner's floor, head first, and grows a piece longer with
- * every burger. Walls, furniture or his own body stop him for good. Each
- * level wants a few more burgers; reached, LEVEL UP shows over the play
- * and it goes on, a little faster, the eater digesting back to the length
- * the next level starts at — longer each level — while the diner fills up
- * with its next islands of furniture. Level 16 cleared, he has won.
+ * every burger, and never shorter: as in the old game, his own body is
+ * what gets in his way, more and more. Walls, furniture or his own body
+ * stop him for good. Each level wants a few more burgers; reached, LEVEL UP
+ * shows over the play and it goes on, faster — from six moves a second to
+ * twelve, the old game's pace — while the diner fills up with its next
+ * islands of furniture. Level 16 cleared, he has won. A game started at a
+ * later level (the flow's one-level rounds) starts as long as he would be
+ * on reaching it.
  * Now and then a bonus comes for a few seconds, for points: fries, a
  * milkshake, a donut, and rarely a burger all in gold.
  *
@@ -45,8 +48,6 @@ export type EaterState = {
   dir: Direction
   queue: Direction[]
   grow: number
-  /** Pieces still to digest after a LEVEL UP: one comes off the tail at each move. */
-  shrink: number
   eaten: number
   target: number
   food: Cell | null
@@ -68,11 +69,15 @@ export type EaterState = {
   random: () => number
 }
 
-/** How fast a level goes, how many burgers it wants, how long the eater is when it starts. */
+/** How many burgers a level wants. */
+const targetOf = (level: number) => 5 + Math.floor((Math.min(level, EATER_LAST_LEVEL) - 1) / 2)
+/** How fast a level goes, how many burgers it wants, how long the eater is when it starts: three pieces and one for every burger of the levels before. */
 export function eaterParams(level: number) {
   const l = Math.min(level, EATER_LAST_LEVEL)
-  const movesPerSecond = 3.5 + 0.3 * (l - 1)
-  return { interval: SECOND / movesPerSecond, target: 5 + Math.floor((l - 1) / 2), length: 3 + 2 * (l - 1) }
+  const movesPerSecond = 6 + 0.4 * (l - 1)
+  let length = 3
+  for (let k = 1; k < l; k += 1) length += targetOf(k)
+  return { interval: SECOND / movesPerSecond, target: targetOf(l), length }
 }
 
 /** The furniture of a level, in the board's own grid: turned over on a tall board. */
@@ -101,7 +106,7 @@ export function createEater(layout: Layout, level = 1, seed = 1, options: { sing
   const params = eaterParams(level)
   const s: EaterState = {
     layout, cols, rows, level, score: options.score ?? 0, phase: 'play',
-    body: startBody(layout, params.length, layout === 'landscape' ? cols : rows), dir: layout === 'landscape' ? 'right' : 'down', queue: [], grow: 0, shrink: 0,
+    body: startBody(layout, params.length, layout === 'landscape' ? cols : rows), dir: layout === 'landscape' ? 'right' : 'down', queue: [], grow: 0,
     eaten: 0, target: params.target, food: null, bonus: null, bonusTimer: 12 * SECOND,
     tick: params.interval, interval: params.interval, levelUp: 0,
     islands: islandsFor(layout, level).map((island) => ({ island, solid: false })), solid: new Set(),
@@ -181,15 +186,13 @@ export function stepEater(s: EaterState, want?: Direction | null): void {
   if (s.queue.length) s.dir = s.queue.shift()!
   const head = s.body[0]
   const next = { x: head.x + DELTA[s.dir][0], y: head.y + DELTA[s.dir][1] }
-  // the tail moves off its cell this very move unless the eater is growing, and one more piece while he digests: those cells are free to enter
-  const leaving = (s.grow === 0 ? 1 : 0) + (s.shrink > 0 && s.body.length > 3 ? 1 : 0)
+  // the tail moves off its cell this very move unless the eater is growing: that cell is free to enter
+  const leaving = s.grow === 0 ? 1 : 0
   const bodyHit = s.body.some((c, i) => c.x === next.x && c.y === next.y && i < s.body.length - leaving)
   if (!inside(s, next.x, next.y) || s.solid.has(key(next.x, next.y)) || bodyHit) { s.phase = 'over'; s.heard.push('crash'); return }
   s.body.unshift(next)
   if (s.grow > 0) s.grow -= 1
   else s.body.pop()
-  // digesting after a LEVEL UP: one more piece off the tail
-  if (s.shrink > 0 && s.body.length > 3) { s.body.pop(); s.shrink -= 1 }
   s.moves += 1
   if (s.food && next.x === s.food.x && next.y === s.food.y) {
     s.grow += 1
@@ -204,7 +207,7 @@ export function stepEater(s: EaterState, want?: Direction | null): void {
   settleIslands(s)
 }
 
-/** LEVEL UP: shown over the play, the pace rises, he digests back to the next level's length, its furniture comes in as soon as there is room. The last level won, the game is. */
+/** LEVEL UP: shown over the play, the pace rises, he keeps all his length, the next level's furniture comes in as soon as there is room. The last level won, the game is. */
 function levelUp(s: EaterState): void {
   s.score += 50 * s.level
   s.passed += 1
@@ -218,8 +221,6 @@ function levelUp(s: EaterState): void {
   s.target = params.target
   s.interval = params.interval
   s.levelUp = Math.round(1.4 * SECOND)
-  s.grow = 0
-  s.shrink = Math.max(0, s.body.length - params.length)
   const fresh = islandsFor(s.layout, s.level)
   const same = (a: Island, b: Island) => JSON.stringify(a) === JSON.stringify(b)
   // islands already standing stay; new ones wait for room

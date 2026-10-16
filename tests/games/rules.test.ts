@@ -187,12 +187,14 @@ test('les meilleurs scores de l_appareil : dix, du meilleur au moins bon, un nom
 
 // ---------------------------------------------------------------- sixteen levels, bonuses, WINNER
 
-test('EATER : 16 niveaux, 3,5 cases par seconde au début, 8 au niveau 16, plus long à chaque niveau', () => {
+test('EATER : 16 niveaux, 6 cases par seconde au début, 12 au niveau 16 (la vitesse du vieux jeu) ; un niveau commencé plus loin, aussi long qu_en y arrivant', () => {
   const p1 = eaterParams(1), p16 = eaterParams(16)
-  assert.ok(Math.abs(60 / p1.interval - 3.5) < 1e-9 && Math.abs(60 / p16.interval - 8) < 1e-9)
+  assert.ok(Math.abs(60 / p1.interval - 6) < 1e-9 && Math.abs(60 / p16.interval - 12) < 1e-9)
   for (let l = 2; l <= 16; l += 1) {
     assert.ok(eaterParams(l).interval < eaterParams(l - 1).interval, `niveau ${l} plus rapide`)
-    assert.ok(eaterParams(l).length > eaterParams(l - 1).length && eaterParams(l).target >= eaterParams(l - 1).target)
+    assert.ok(eaterParams(l).target >= eaterParams(l - 1).target)
+    // a piece for every burger of the levels before
+    assert.equal(eaterParams(l).length, eaterParams(l - 1).length + eaterParams(l - 1).target, `niveau ${l} : sa longueur en y arrivant`)
   }
   assert.equal(EATER_LAST_LEVEL, 16)
   for (const layout of ['landscape', 'portrait'] as const) {
@@ -202,20 +204,18 @@ test('EATER : 16 niveaux, 3,5 cases par seconde au début, 8 au niveau 16, plus 
   }
 })
 
-test('EATER : au LEVEL UP il digère jusqu_à la longueur du niveau suivant, on le voit raccourcir ; le niveau 16 fini, WINNER', () => {
+test('EATER : au LEVEL UP il garde toute sa longueur, comme dans le vieux jeu — il ne raccourcit jamais ; le niveau 16 fini, WINNER', () => {
   const s = createEater('landscape', 1, 5)
   s.bonusTimer = 1e9
   s.body = [{ x: 12, y: 5 }, { x: 11, y: 5 }, { x: 10, y: 5 }, { x: 9, y: 5 }, { x: 8, y: 5 }, { x: 7, y: 5 }, { x: 6, y: 5 }, { x: 5, y: 5 }]
   s.dir = 'right'; s.eaten = s.target - 1; s.food = { x: 13, y: 5 }
   tick(s)
   assert.equal(s.level, 2)
-  assert.equal(s.shrink, s.body.length - eaterParams(2).length, 'il reste à digérer')
   const before = s.body.length
   s.food = null
-  tick(s)
-  assert.equal(s.body.length, before - 1, 'un morceau de moins à chaque pas')
   for (let i = 0; i < 10; i += 1) tick(s)
-  assert.equal(s.body.length, eaterParams(2).length)
+  // the last burger's piece grown on, nothing digested
+  assert.equal(s.body.length, before + 1, 'il ne raccourcit pas')
   const w = createEater('landscape', 16, 5)
   w.bonusTimer = 1e9; w.eaten = w.target - 1; w.food = eaterAhead(w)
   tick(w)
@@ -244,47 +244,61 @@ test('EATER : les bonus — frites, milkshake, donut, et le burger doré à part
   assert.equal(s.bonus, null)
 })
 
-/** A careful player: never into a wall, furniture or itself, never into a pocket smaller than its body, the shortest way to the burger otherwise. */
-function robotTurn(s: EaterState): void {
-  const key = (x: number, y: number) => `${x},${y}`
-  const blocked = new Set<string>(s.solid)
-  for (const e of s.islands) if (!e.solid) for (const f of e.island) for (let y = f.y; y < f.y + f.h; y += 1) for (let x = f.x; x < f.x + f.w; x += 1) blocked.add(key(x, y))
-  for (const c of s.body.slice(0, -1)) blocked.add(key(c.x, c.y))
-  const free = (x: number, y: number) => x >= 1 && y >= 1 && x < s.cols - 1 && y < s.rows - 1 && !blocked.has(key(x, y))
-  const flood = (x: number, y: number, target: { x: number; y: number } | null) => {
-    const seen = new Map<string, number>([[key(x, y), 0]]), queue: Array<[number, number]> = [[x, y]]
-    let found = Infinity
-    while (queue.length) {
-      const [cx, cy] = queue.shift()!
-      const d = seen.get(key(cx, cy))!
-      if (target && cx === target.x && cy === target.y && found === Infinity) found = d
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (free(nx, ny) && !seen.has(key(nx, ny))) { seen.set(key(nx, ny), d + 1); queue.push([nx, ny]) } }
+type C = { x: number; y: number }
+const DIRS = [['up', 0, -1], ['down', 0, 1], ['left', -1, 0], ['right', 1, 0]] as const
+const REV = { up: 'down', down: 'up', left: 'right', right: 'left' } as const
+/** A player who knows the old game: to the burger only by a way after which its tail can still be reached, else after its own tail, else into the most room. */
+function expertTurn(s: EaterState): void {
+  const k = (x: number, y: number) => x * 64 + y
+  const wall = new Set<number>()
+  for (const c of s.solid) { const [x, y] = c.split(',').map(Number); wall.add(k(x, y)) }
+  for (const e of s.islands) if (!e.solid) for (const f of e.island) for (let y = f.y; y < f.y + f.h; y += 1) for (let x = f.x; x < f.x + f.w; x += 1) wall.add(k(x, y))
+  const open = (x: number, y: number) => x >= 1 && y >= 1 && x < s.cols - 1 && y < s.rows - 1 && !wall.has(k(x, y))
+  // shortest ways from a cell over a body (all of it in the way but its tail, which moves on)
+  const bfs = (from: C, body: C[], to: C | null, growing = 0) => {
+    const busy = new Set((growing > 0 ? body : body.slice(0, -1)).map((c) => k(c.x, c.y)))
+    const prev = new Map<number, number>([[k(from.x, from.y), -1]]), q: C[] = [from]
+    while (q.length) {
+      const c = q.shift()!
+      if (to && c.x === to.x && c.y === to.y) { const path: C[] = []; let at = k(c.x, c.y); while (at !== k(from.x, from.y)) { path.unshift({ x: Math.floor(at / 64), y: at % 64 }); at = prev.get(at)! } return { path, seen: prev.size } }
+      for (const [, dx, dy] of DIRS) { const nx = c.x + dx, ny = c.y + dy, nk = k(nx, ny); if (open(nx, ny) && !busy.has(nk) && !prev.has(nk)) { prev.set(nk, k(c.x, c.y)); q.push({ x: nx, y: ny }) } }
     }
-    return { area: seen.size, food: found }
+    return { path: null as C[] | null, seen: prev.size }
   }
-  const head = s.body[0]
-  const options = (['up', 'down', 'left', 'right'] as const).filter((d) => d !== ({ up: 'down', down: 'up', left: 'right', right: 'left' } as const)[s.dir]).map((d) => {
-    const [dx, dy] = d === 'up' ? [0, -1] : d === 'down' ? [0, 1] : d === 'left' ? [-1, 0] : [1, 0]
-    const nx = head.x + dx, ny = head.y + dy
-    if (!free(nx, ny)) return null
-    blocked.add(key(nx, ny))
-    const { area, food } = flood(nx, ny, s.food)
-    blocked.delete(key(nx, ny))
-    return { d, area, food }
-  }).filter((o): o is { d: 'up' | 'down' | 'left' | 'right'; area: number; food: number } => o !== null)
-  if (!options.length) return
-  const need = s.body.length + 2
-  const safe = options.filter((o) => o.area >= need)
-  const pick = safe.length ? safe.sort((a, b) => a.food - b.food || b.area - a.area)[0] : options.sort((a, b) => b.area - a.area)[0]
-  s.queue = pick.d === s.dir ? [] : [pick.d]
+  const move = (body: C[], path: C[], grow: number) => { const next = [...[...path].reverse(), ...body]; return next.slice(0, body.length + grow) }
+  const tailReach = (body: C[]) => body.length < 3 || bfs(body[0], body, body[body.length - 1]).path !== null
+  const head = s.body[0], pending = s.grow
+  const go = (d: typeof DIRS[number][0]) => { s.queue = d === s.dir ? [] : [d] }
+  const dirTo = (c: C) => DIRS.find(([, dx, dy]) => head.x + dx === c.x && head.y + dy === c.y)![0]
+  // to the burger, if the tail can be reached once there
+  if (s.food) {
+    const way = bfs(head, s.body, s.food, pending).path
+    if (way && way.length && dirTo(way[0]) !== REV[s.dir]) {
+      const after = move(s.body, way, Math.min(way.length, pending) + 1)
+      if (tailReach(after)) { go(dirTo(way[0])); return }
+    }
+  }
+  // else after its tail, the long way round
+  let best: { d: typeof DIRS[number][0]; score: number } | null = null
+  for (const [d, dx, dy] of DIRS) {
+    if (d === REV[s.dir]) continue
+    const c = { x: head.x + dx, y: head.y + dy }
+    if (!open(c.x, c.y) || s.body.slice(0, pending > 0 ? s.body.length : -1).some((b) => b.x === c.x && b.y === c.y)) continue
+    const after = move(s.body, [c], pending > 0 ? 1 : 0)
+    const toTail = after.length >= 3 ? bfs(after[0], after, after[after.length - 1]).path : []
+    const room = bfs(after[0], after, null).seen
+    const score = (toTail ? 10000 + toTail.length : 0) + room
+    if (!best || score > best.score) best = { d, score }
+  }
+  if (best) go(best.d)
 }
 
-test('EATER : un joueur prudent va du niveau 1 à WINNER, en paysage et en portrait — le niveau 16 est dur mais faisable', () => {
+test('EATER : un joueur qui connaît le vieux jeu va du niveau 1 à WINNER, en paysage et en portrait, sans jamais raccourcir — le niveau 16 est dur mais faisable', () => {
   let wins = 0, games = 0
   for (const layout of ['landscape', 'portrait'] as const) for (let seed = 1; seed <= 4; seed += 1) {
     const s = createEater(layout, 1, seed)
     games += 1
-    for (let i = 0; i < 400000 && s.phase === 'play'; i += 1) { if (s.tick <= 1) robotTurn(s); stepEater(s) }
+    for (let i = 0; i < 2000000 && s.phase === 'play'; i += 1) { if (s.tick <= 1) expertTurn(s); stepEater(s) }
     if (s.phase === 'won') wins += 1
     else assert.ok(s.level >= 12, `${layout} graine ${seed} : arrêté trop tôt, au niveau ${s.level}`)
   }
