@@ -50,9 +50,10 @@ export const COUNTRIES: Record<string, { qid: string; lang: string; label: strin
   VN: { qid: 'Q881', lang: 'vi', label: 'Vietnam' },
   // 16 October: the world card's variety, without more Asia, the Arab world or Turkey (the owner: "augmente au moins les autres pays").
   NO: { qid: 'Q20', lang: 'nb', label: 'Norvège' },
-  DK: { qid: 'Q35', lang: 'da', label: 'Danemark' },
+  // Wikidata gives the citizenship of the Danes and the Dutch as the Kingdoms, not the countries: none under Q35 nor Q55 (17 October).
+  DK: { qid: 'Q756617', lang: 'da', label: 'Danemark' },
   FI: { qid: 'Q33', lang: 'fi', label: 'Finlande' },
-  NL: { qid: 'Q55', lang: 'nl', label: 'Pays-Bas' },
+  NL: { qid: 'Q29999', lang: 'nl', label: 'Pays-Bas' },
   PT: { qid: 'Q45', lang: 'pt', label: 'Portugal' },
   GR: { qid: 'Q41', lang: 'el', label: 'Grèce' },
   CZ: { qid: 'Q213', lang: 'cs', label: 'Tchéquie' },
