@@ -1,21 +1,22 @@
 /**
  * The promo: short films and stills that speak of Random itself, after the
- * owner's three references, built from the site's own things — the wordmark,
- * the brand block, the icons — and from stock videos and pictures under a
- * permissive licence, kept in their own colours.
+ * owner's three references and the site's own glitch, built from the wordmark,
+ * the brand block, the icons, and from stock videos and pictures under a
+ * permissive licence that never read as a background: ultra-zoomed into an
+ * abstract texture, or cut into small framed pieces, or shown through letters.
  *
- * A film is a SEQUENCE OF COMPOSED SHOTS, not a machine throwing parameters:
- *   a tempo (beats per minute) and an energy curve — calm, build, climax, outro — decide
- *   which shots may come when, how long they last (in beats) and how they are joined;
- *   each shot is one idea with two or three elements at most: the brand clean; the letters as
- *   windows on the moving video; the video itself with a tear on the beat; a one-beat tear of
- *   bands; rows sliding that cut the letters; cards rushing; a line revealing the next shot; the
- *   wordmark zooming through; a text card; the vomit;
- *   the video and the pictures keep their colours — the palette (one main colour and up to two
- *   secondaries) is for the brand, the panels, the lines and the pill.
- * Every placement is relative to the format's SAFE AREA, so the same seed gives the same
- * composition in another format. One frame can be taken as a still at any moment.
- * Every number comes from a hash, so a seed gives the same film twice.
+ * The language, kept fine:
+ *   nothing changes every frame — the glitch moves by STEPS of 90 to 260 ms, slower when
+ *   the moment is calm, so it never flickers; no flash, no white frame;
+ *   the range is compressed — a calm moment still has fine lines, a few small pieces of the
+ *   picture and the brand breathing; a strong moment is dense but never the whole frame torn;
+ *   nothing stands behind the letters — no shadow, no offset shape, no panel; an outline is a
+ *   real outline; depth comes from the planes (fine pieces behind, the brand, pieces in front);
+ *   the letters open on the picture by DISPLACEMENT — the same zoomed picture, shifted a little
+ *   inside the letters — or as an outline, or filled; the giant text the same way.
+ * A film is a sequence of composed shots on a tempo with an energy curve; every placement is
+ * relative to the format's safe area, so a change of format keeps the composition; a still can
+ * be taken at any moment. Every number comes from a hash, so a seed gives the same film twice.
  */
 
 import { recorderChoice } from './montage'
@@ -49,24 +50,24 @@ export const formatOf = (key: FormatKey) => FORMATS.find((f) => f.key === key) ?
 // ----- the shots
 export type ShotKind = 'block' | 'windows' | 'video' | 'tear' | 'rows' | 'feed' | 'sweep' | 'zoom' | 'card' | 'vomit' | 'textbig'
 export const SHOTS: Array<{ key: ShotKind; name: string; hint: string; energy: [number, number]; beats: [number, number] }> = [
-  { key: 'block', name: 'Bloc', hint: 'la marque propre, qui respire, entre et sort', energy: [0, 0.55], beats: [2, 4] },
-  { key: 'windows', name: 'Lettres-fenêtres', hint: 'les lettres ouvertes sur la vidéo qui bouge', energy: [0.2, 0.8], beats: [2, 4] },
-  { key: 'video', name: 'Vidéo', hint: 'la vidéo dans ses couleurs, une déchirure sur le temps, la marque petite ou absente', energy: [0.25, 0.9], beats: [2, 4] },
-  { key: 'tear', name: 'Déchirure', hint: 'un battement de bandes cassées faites de la vidéo et du plan d’avant', energy: [0.55, 1], beats: [1, 1] },
-  { key: 'rows', name: 'Rangées', hint: 'la vidéo par rangées qui glissent, les lettres coupées avec', energy: [0.5, 1], beats: [2, 4] },
-  { key: 'feed', name: 'Défilé', hint: 'des cartes de la vidéo qui filent, la carte de la marque parmi elles', energy: [0.4, 0.9], beats: [2, 4] },
-  { key: 'sweep', name: 'Balayage', hint: 'une ligne qui révèle le plan suivant', energy: [0.3, 0.85], beats: [1, 2] },
-  { key: 'zoom', name: 'Zoom', hint: 'le logo qui traverse en grossissant', energy: [0.45, 1], beats: [1, 2] },
-  { key: 'card', name: 'Carton', hint: 'un carton de ton texte, un par ligne, dans l’ordre', energy: [0, 0.65], beats: [2, 4] },
-  { key: 'vomit', name: 'Vomi', hint: 'un amas de fragments qui déborde et coule', energy: [0.65, 1], beats: [2, 4] },
-  { key: 'textbig', name: 'Texte géant', hint: 'ton texte en géant, maltraité en fond — ouvert sur la vidéo, répété, coupé — pendant qu’il reste net devant', energy: [0.2, 0.9], beats: [2, 4] },
+  { key: 'block', name: 'Bloc', hint: 'la marque, qui respire, entre et sort, avec les fines pièces de la Home autour', energy: [0, 0.6], beats: [2, 4] },
+  { key: 'windows', name: 'Lettres-fenêtres', hint: 'l’image ultra-zoomée, et la même image décalée dans les lettres ; ou un contour seul ; ou les lettres remplies', energy: [0.15, 0.85], beats: [2, 4] },
+  { key: 'video', name: 'Vidéo', hint: 'la vidéo zoomée jusqu’à l’abstrait, qui dérive, la marque dessus', energy: [0.2, 0.9], beats: [2, 4] },
+  { key: 'tear', name: 'Déchirure', hint: 'un battement de bandes fines sur une part de l’image, par pas, jamais tout l’écran', energy: [0.55, 1], beats: [1, 1] },
+  { key: 'rows', name: 'Rangées', hint: 'quelques rangées qui glissent lentement, les lettres coupées avec', energy: [0.45, 1], beats: [2, 4] },
+  { key: 'feed', name: 'Défilé', hint: 'de petites cartes de l’image qui passent, pas vite, la carte de la marque parmi elles', energy: [0.35, 0.9], beats: [2, 4] },
+  { key: 'sweep', name: 'Balayage', hint: 'une ligne fine révèle le plan suivant', energy: [0.3, 0.85], beats: [1, 2] },
+  { key: 'zoom', name: 'Zoom', hint: 'le logo grandit à travers le cadre', energy: [0.4, 1], beats: [1, 2] },
+  { key: 'card', name: 'Carton', hint: 'un carton de ton texte, une ligne par carton, dans l’ordre', energy: [0, 0.7], beats: [2, 4] },
+  { key: 'vomit', name: 'Vomi', hint: 'de petits fragments qui s’accumulent depuis un point et coulent, lentement', energy: [0.6, 1], beats: [2, 4] },
+  { key: 'textbig', name: 'Texte géant', hint: 'ton texte en géant au fond, par décalage de l’image ou en contour, coupé par quelques rangées, pendant qu’il reste net devant', energy: [0.2, 0.9], beats: [2, 4] },
 ]
 export type BrandMode = 'center' | 'random' | 'deformed' | 'exploded'
 export const BRAND_MODES: Array<{ key: BrandMode; name: string; hint: string }> = [
   { key: 'center', name: 'Centre', hint: 'la marque près du centre de la zone sûre' },
   { key: 'random', name: 'Aléatoire', hint: 'là où le tirage la met dans la zone sûre' },
-  { key: 'deformed', name: 'Déformée', hint: 'étirée, cisaillée, en miroir, en mouvement' },
-  { key: 'exploded', name: 'Éclatée', hint: 'elle s’assemble en arrivant et explose en partant' },
+  { key: 'deformed', name: 'Déformée', hint: 'étirée, cisaillée, en miroir, doucement en mouvement' },
+  { key: 'exploded', name: 'Éclatée', hint: 'elle s’assemble en arrivant, se disperse un instant sur les temps forts, explose en partant' },
 ]
 
 export type PromoText = { lines: string[]; size: number; align: 'left' | 'center' | 'right'; font: string; weight: number; x: number | null; y: number | null; width: number }
@@ -86,63 +87,60 @@ export type PromoInput = {
   logoVerticalDark: HTMLImageElement
   icons: HTMLImageElement[]
   stock: HTMLImageElement[]
-  /** Stock videos, playing, muted; drawn as they are. */
   videos: HTMLVideoElement[]
   titleFont: string
   text?: PromoText | null
   icon?: PromoIcon | null
 }
 
-type Treatment = 'cream' | 'accent' | 'second' | 'panel' | 'outline' | 'hollow' | 'filled'
+type Treatment = 'cream' | 'accent' | 'second' | 'filled' | 'stroke'
 type Deform = 'none' | 'stretch' | 'skew' | 'mirror'
 type Enter = 'none' | 'slide' | 'grow' | 'assemble' | 'flicker'
 type Exit = 'none' | 'explode' | 'slide' | 'dissolve'
-type Transition = 'cut' | 'slam' | 'tear' | 'flash'
+type Transition = 'cut' | 'slam' | 'tear'
+type Ground = 'deep' | 'zoomed' | 'panel'
 export type Shot = {
   kind: ShotKind; from: number; to: number; seed: number; energy: number
   video: number; picture: number; card: number
-  treat: Treatment; stacked: boolean; pill: boolean; hud: boolean
+  treat: Treatment; stacked: boolean; pill: boolean; ground: Ground; dressing: number
   bx: number; by: number; bw: number; deform: Deform; enter: Enter; exit: Exit
   transition: Transition
-  /** True on the shot that follows a tear: its first beat keeps the letters filled and the blocks. */
-  afterTear: boolean
   p: { a: number; b: number; c: number; d: number; e: number; f: number }
 }
 
-/** The energy along the film: calm, build, climax, outro; a bumper of three seconds goes straight up. */
+/** The energy along the film, compressed: never nothing, never everything. Three shapes by seed; a bumper goes straight up. */
 export function energyAt(t: number, seconds: number, intensity: number, shape = 0): number {
   const k = clamp01(intensity)
   let base: number
-  if (seconds <= 3) base = 0.45 + t * 0.5
-  else if (shape === 1) base = t < 0.3 ? 0.3 + t * 2 : t < 0.5 ? 0.9 - (t - 0.3) * 3 : t < 0.8 ? 0.3 + (t - 0.5) * 2.2 : 0.96 - (t - 0.8) * 3 // two peaks
-  else if (shape === 2) base = t < 0.6 ? 0.12 + t * 0.5 : t < 0.9 ? 0.42 + (t - 0.6) * 1.9 : 0.99 - (t - 0.9) * 4 // a late climax
-  else base = t < 0.25 ? 0.12 + t * 0.6 : t < 0.5 ? 0.27 + (t - 0.25) * 1.8 : t < 0.8 ? 0.72 + (t - 0.5) * 0.9 : 0.95 - (t - 0.8) * 3.5
-  return clamp01(base * (0.45 + k * 0.75))
+  if (seconds <= 3) base = 0.4 + t * 0.5
+  else if (shape === 1) base = t < 0.3 ? 0.3 + t * 1.8 : t < 0.5 ? 0.84 - (t - 0.3) * 2.5 : t < 0.8 ? 0.34 + (t - 0.5) * 2 : 0.94 - (t - 0.8) * 2.8
+  else if (shape === 2) base = t < 0.6 ? 0.18 + t * 0.6 : t < 0.9 ? 0.54 + (t - 0.6) * 1.4 : 0.96 - (t - 0.9) * 3.5
+  else base = t < 0.25 ? 0.18 + t * 0.8 : t < 0.5 ? 0.38 + (t - 0.25) * 1.6 : t < 0.8 ? 0.78 + (t - 0.5) * 0.5 : 0.93 - (t - 0.8) * 3
+  return clamp01(base * (0.5 + k * 0.5))
 }
 
-/** The sequence: shots chosen by the energy of the moment, joined on the beat, the text cards in order, the brand to close. */
+/** The sequence: shots chosen by the energy of the moment and the draw's taste, joined on the beat; the cards in order; the brand to close. */
 export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'shots' | 'brandMode' | 'text'>, videos: number, pictures: number): { shots: Shot[]; beat: number } {
+  const k = clamp01(input.intensity)
   const allowed = input.shots.length ? input.shots : SHOTS.map((s) => s.key)
   const cards = (input.text?.lines ?? []).filter((l) => l.trim()).length
-  const k = clamp01(input.intensity)
-  // Slower at a low force, quicker as it rises; the seed sets the rest.
-  const bpm = 78 + k * 48 + hash(input.seed, 1) * 24
+  const bpm = 76 + k * 40 + hash(input.seed, 1) * 20
   const beat = 60000 / bpm
   const total = input.seconds * 1000
   const out: Shot[] = []
   let at = 0, i = 0, card = 0, last: ShotKind | null = null, video = Math.floor(hash(input.seed, 2) * Math.max(1, videos)), picture = Math.floor(hash(input.seed, 3) * Math.max(1, pictures))
   const shape = Math.floor(hash(input.seed, 5) * 3)
-  // Each draw favours some shots over others.
   const favour = new Map<ShotKind, number>(SHOTS.map((sh) => [sh.key, 0.4 + hash(input.seed, sh.key.length, 6) * 1.2]))
-  const openers: ShotKind[] = ['block', 'windows', 'textbig', 'video', 'zoom', 'sweep'].filter((o) => allowed.includes(o as ShotKind)) as ShotKind[]
-  const treatments: Treatment[] = ['cream', 'cream', 'accent', 'second', 'panel', 'outline', 'hollow', 'filled']
+  const openers = (['block', 'windows', 'textbig', 'video', 'zoom', 'sweep'] as ShotKind[]).filter((o) => allowed.includes(o))
+  const treatments: Treatment[] = ['cream', 'cream', 'accent', 'second', 'filled', 'stroke']
+  const mode = input.brandMode
   let stacked = hash(input.seed, 4) < 0.6
   const closing = input.seconds >= 5 ? Math.round(beat * 2.5) : 0
+  const params = (s: number) => ({ a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) })
   while (at < total - closing) {
     const s = input.seed * 23 + i * 131
     const t = at / total
     const e = energyAt(t, input.seconds, input.intensity, shape)
-    // A pending card takes its turn when the energy is low enough, now and then.
     let kind: ShotKind
     const left = total - closing - at
     const mustCard = card < cards && left < (cards - card + 1) * beat * 3
@@ -152,37 +150,36 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
       const pool = SHOTS.filter((sh) => allowed.includes(sh.key) && sh.key !== last && sh.key !== 'card' && e >= sh.energy[0] - 0.12 && e <= sh.energy[1] + 0.12)
       const fallback = SHOTS.filter((sh) => allowed.includes(sh.key) && sh.key !== 'card')
       const from = pool.length ? pool : fallback.length ? fallback : SHOTS
-      // Weighted by the draw's taste.
-      const total = from.reduce((a, sh) => a + (favour.get(sh.key) ?? 1), 0)
-      let q = hash(s, 6) * total
+      const sum = from.reduce((a, sh) => a + (favour.get(sh.key) ?? 1), 0)
+      let q = hash(s, 6) * sum
       kind = from[from.length - 1].key
       for (const sh of from) { q -= favour.get(sh.key) ?? 1; if (q <= 0) { kind = sh.key; break } }
     }
     const spec = SHOTS.find((sh) => sh.key === kind)!
-    // Shorter at a high energy; a one-beat tear stays one beat.
-    const beatsN = spec.beats[0] + Math.round(hash(s, 7) * (spec.beats[1] - spec.beats[0]) * (1 - e * 0.5)) + (k < 0.4 && spec.key !== 'tear' ? 1 : 0)
+    const beatsN = spec.beats[0] + Math.round(hash(s, 7) * (spec.beats[1] - spec.beats[0]) * (1 - e * 0.4)) + (k < 0.4 && spec.key !== 'tear' ? 1 : 0)
     const len = Math.round(beat * beatsN)
     if (kind === 'card') card += 1
     if (hash(s, 8) < 0.5 && videos > 1) video = (video + 1 + Math.floor(hash(s, 9) * (videos - 1))) % videos
     if (hash(s, 10) < 0.5 && pictures > 1) picture = (picture + 1 + Math.floor(hash(s, 11) * (pictures - 1))) % pictures
     if (hash(s, 12) < 0.3) stacked = !stacked
-    let treat = treatments[Math.floor(hash(s, 13) * treatments.length)]
-    const mode = input.brandMode
+    const treat = treatments[Math.floor(hash(s, 13) * treatments.length)]
     const bw = mode === 'center' ? 0.55 + hash(s, 14) * 0.2 : 0.35 + hash(s, 14) * 0.55
     const bx = mode === 'center' ? 0.42 + hash(s, 15) * 0.16 : 0.2 + hash(s, 15) * 0.6
     const by = mode === 'center' ? 0.4 + hash(s, 16) * 0.2 : 0.2 + hash(s, 16) * 0.6
-    const deform: Deform = mode === 'deformed' || (mode === 'random' && hash(s, 17) < 0.5) ? (['stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, 17) * 3)] : 'none'
+    const deform: Deform = mode === 'deformed' || (mode === 'random' && hash(s, 17) < 0.4) ? (['stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, 17) * 3)] : 'none'
     const enters: Enter[] = ['none', 'slide', 'grow', 'assemble', 'flicker'], exits: Exit[] = ['none', 'explode', 'slide', 'dissolve']
     const enter: Enter = mode === 'exploded' ? 'assemble' : i === 0 ? enters[1 + Math.floor(hash(s, 18) * 4)] : hash(s, 18) < 0.45 ? 'none' : enters[Math.floor(hash(s, 19) * 5)]
     const exit: Exit = mode === 'exploded' ? 'explode' : hash(s, 20) < 0.5 ? 'none' : exits[Math.floor(hash(s, 21) * 4)]
-    if (mode === 'exploded' && treat === 'panel') treat = 'cream'
-    const transition: Transition = i === 0 ? 'cut' : k > 0.6 && e > 0.75 && hash(s, 22) < 0.3 ? 'flash' : k > 0.3 && e > 0.55 && hash(s, 22) < 0.55 ? 'tear' : k > 0.4 && e > 0.45 && hash(s, 22) < 0.75 ? 'slam' : 'cut'
-    out.push({ kind, from: at, to: Math.min(total - closing, at + len), seed: s, energy: e, video, picture, card: card - 1, treat, stacked, pill: hash(s, 23) < 0.6, hud: hash(s, 24) < 0.45, bx, by, bw, deform, enter, exit, transition, afterTear: last === 'tear' || last === 'vomit', p: { a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) } })
+    // The joins: a cut mostly; a light tear or a slam of colour only when the moment and the force allow.
+    const transition: Transition = i === 0 ? 'cut' : k > 0.5 && e > 0.6 && hash(s, 22) < 0.3 ? 'slam' : k > 0.3 && e > 0.5 && hash(s, 22) < 0.55 ? 'tear' : 'cut'
+    const qg = hash(s, 23)
+    const ground: Ground = kind === 'card' ? (qg < 0.55 ? 'panel' : 'deep') : qg < 0.45 ? 'deep' : 'zoomed'
+    out.push({ kind, from: at, to: Math.min(total - closing, at + len), seed: s, energy: e, video, picture, card: card - 1, treat, stacked, pill: hash(s, 24) < 0.6, ground, dressing: Math.floor(hash(s, 25) * 5), bx, by, bw, deform, enter, exit, transition, p: params(s) })
     at += len; i += 1; last = kind
   }
   if (closing) {
     const s = input.seed * 23 + 9999
-    out.push({ kind: 'block', from: total - closing, to: total, seed: s, energy: 0.25, video, picture, card: -1, treat: 'cream', stacked: hash(s, 4) < 0.6, pill: true, hud: false, bx: 0.5, by: 0.5, bw: 0.6, deform: 'none', enter: hash(s, 18) < 0.5 ? 'assemble' : 'grow', exit: 'none', transition: hash(s, 22) < 0.5 ? 'slam' : 'cut', afterTear: false, p: { a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) } })
+    out.push({ kind: 'block', from: total - closing, to: total, seed: s, energy: 0.25, video, picture, card: -1, treat: 'cream', stacked: hash(s, 4) < 0.6, pill: true, ground: 'deep', dressing: 4, bx: 0.5, by: 0.5, bw: 0.6, deform: 'none', enter: hash(s, 18) < 0.5 ? 'assemble' : 'grow', exit: 'none', transition: 'cut', p: params(s) })
   }
   return { shots: out, beat }
 }
@@ -206,24 +203,83 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const seconds = input.palette.filter((c) => c && c.toLowerCase() !== accent.toLowerCase())
   const colourAt = (q: number) => q < 0.45 ? accent : q < 0.6 ? CREAM : seconds.length ? seconds[Math.floor(hash(q * 1000, 200) * seconds.length)] : accent
   const secondOf = (seed: number) => seconds.length ? seconds[Math.floor(hash(seed, 203) * seconds.length)] : accent
+  const force = clamp01(input.intensity)
   const u = Math.min(W, H) / 1080
   const px = Math.max(1, Math.round(u))
   const font = input.titleFont
   const { shots, beat } = planShots(input, input.videos.length, input.stock.length)
   const make = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c }
-  const scene = make(), scratch = make(), prev = make(), held = make(), pile = make()
-  const sc = scene.getContext('2d')!, sx = scratch.getContext('2d')!, pv = prev.getContext('2d')!, hc = held.getContext('2d')!, pc = pile.getContext('2d')!
+  const scene = make(), scratch = make(), scratch2 = make(), prev = make(), held = make(), pile = make()
+  const sc = scene.getContext('2d')!, sx = scratch.getContext('2d')!, s2 = scratch2.getContext('2d')!, pv = prev.getContext('2d')!, hc = held.getContext('2d')!, pc = pile.getContext('2d')!
   let heldFor = -1, pileFor = -1
 
-  // ----- sources, in their own colours
+  // ----- the moment's strength and its step clock: the glitch moves by steps, never by frames.
+  const strengthOf = (shot: Shot) => clamp01((0.12 + shot.energy * 0.6) * (0.45 + force * 0.65))
+  const stepOf = (shot: Shot, at: number, scale = 1) => Math.floor(at / ((260 - strengthOf(shot) * 170) * scale))
+  const beatIndexOf = (shot: Shot, at: number) => Math.floor((at - shot.from) / beat)
+  const beatPhaseOf = (shot: Shot, at: number) => ((at - shot.from) % beat) / beat
+
+  // ----- sources
   const videoOf = (shot: Shot) => { const v = input.videos[shot.video % Math.max(1, input.videos.length)]; return v && v.readyState >= 2 ? v : null }
   const pictureOf = (shot: Shot) => input.stock[shot.picture % Math.max(1, input.stock.length)] ?? null
   const sourceOf = (shot: Shot): CanvasImageSource | null => videoOf(shot) ?? pictureOf(shot)
   const logoSize = (img: HTMLImageElement, w: number) => ({ w: Math.round(w), h: Math.round(w * img.naturalHeight / Math.max(1, img.naturalWidth)) })
-  const tinted = (img: CanvasImageSource, colour: string, w: number, h: number) => {
-    sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(img, 0, 0, w, h)
-    sx.globalCompositeOperation = 'source-in'; sx.fillStyle = colour; sx.fillRect(0, 0, w, h); sx.globalCompositeOperation = 'source-over'
-    return scratch
+  const tinted = (img: CanvasImageSource, colour: string, w: number, h: number, target = sx) => {
+    const c = target === sx ? scratch : scratch2
+    target.clearRect(0, 0, W, H); target.globalCompositeOperation = 'source-over'; target.drawImage(img, 0, 0, w, h)
+    target.globalCompositeOperation = 'source-in'; target.fillStyle = colour; target.fillRect(0, 0, w, h); target.globalCompositeOperation = 'source-over'
+    return c
+  }
+
+  // ----- the fine layer, after the site's own glitch: small pieces of the picture thinly framed, hairlines in the palette, drifting slowly.
+  const pieces = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, n: number, big = false) => {
+    const src = sourceOf(shot)
+    const s = shot.seed, step = stepOf(shot, at, 2)
+    for (let i = 0; i < n; i += 1) {
+      const pw = Math.round(W * (big ? 0.1 + hash(s, i, 334) * 0.18 : 0.035 + hash(s, i, 334) * 0.09)), ph = Math.round(pw * (0.4 + hash(s, i, 335) * 0.9))
+      const x = Math.round(hash(s, i, 336) * (W - pw) + Math.sin(at / 1100 + i * 1.7) * W * 0.015 + (hash(step, i, 337) - 0.5) * W * 0.01), y = Math.round(hash(s, i, 338) * (H - ph) + (at - shot.from) * (hash(s, i, 339) - 0.5) * 0.02)
+      if (src) cover(ctx, src, x, y, pw, ph, 2 + hash(s, i, 340) * 4, hash(s, i, 341), hash(s, i, 342)); else { ctx.fillStyle = colourAt(hash(s, i, 343)); ctx.fillRect(x, y, pw, ph) }
+      if (hash(s, i, 344) < 0.3) { ctx.fillStyle = colourAt(hash(s, i, 345)); ctx.globalAlpha = 0.35; ctx.fillRect(x, y, pw, ph); ctx.globalAlpha = 1 }
+      ctx.strokeStyle = hash(s, i, 346) < 0.5 ? CREAM : colourAt(hash(s, i, 347)); ctx.lineWidth = px; ctx.strokeRect(x + 0.5, y + 0.5, pw - 1, ph - 1)
+    }
+  }
+  const hairlines = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, n: number) => {
+    const s = shot.seed
+    for (let i = 0; i < n; i += 1) {
+      const vertical = hash(s, i, 350) < 0.35
+      const drift = (at - shot.from) * (hash(s, i, 351) - 0.5) * 0.04
+      const pos = Math.round(hash(s, i, 352) * (vertical ? W : H) + drift), len = Math.round((vertical ? H : W) * (0.15 + hash(s, i, 353) * 0.6)), start = Math.round(hash(s, i, 354) * ((vertical ? H : W) - len))
+      ctx.fillStyle = colourAt(hash(s, i, 355)); ctx.globalAlpha = 0.5 + hash(s, i, 356) * 0.4
+      if (vertical) ctx.fillRect(pos, start, px, len); else ctx.fillRect(start, pos, len, px)
+    }
+    ctx.globalAlpha = 1
+  }
+  /** The picture zoomed until abstract — a corner of it, eight to fourteen times closer, laid in coarse pixels, drifting slowly, tinted a little: matter, never the picture. */
+  const tiny = make(Math.max(8, Math.round(W / 72)), Math.max(8, Math.round(H / 72)))
+  const tc = tiny.getContext('2d')!
+  const zoomed = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, alpha: number, dx = 0, dy = 0, zoomMul = 1) => {
+    const src = sourceOf(shot)
+    if (!src) { ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H); return }
+    const s = shot.seed
+    const zoom = (8 + hash(s, 360) * 6) * zoomMul
+    const local = (at - shot.from) / 1000
+    tc.imageSmoothingEnabled = true
+    cover(tc, src, 0, 0, tiny.width, tiny.height, zoom, clamp01(hash(s, 361) + local * 0.01 * (hash(s, 362) < 0.5 ? 1 : -1)), clamp01(hash(s, 363) + local * 0.005))
+    ctx.globalAlpha = alpha
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(tiny, 0, 0, tiny.width, tiny.height, dx, dy, W, H)
+    ctx.imageSmoothingEnabled = true
+    ctx.fillStyle = hash(s, 364) < 0.5 ? accent : DEEP; ctx.globalAlpha = alpha * 0.2; ctx.fillRect(0, 0, W, H)
+    ctx.globalAlpha = 1
+  }
+  /** The shot's ground: deep with fine pieces, the zoomed texture, or a flat panel in the palette. */
+  const ground = (ctx: CanvasRenderingContext2D, shot: Shot, at: number) => {
+    const g = strengthOf(shot)
+    ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H)
+    if (shot.ground === 'panel') { ctx.fillStyle = hash(shot.seed, 204) < 0.6 ? accent : secondOf(shot.seed); ctx.fillRect(0, 0, W, H) }
+    else if (shot.ground === 'zoomed') zoomed(ctx, shot, at, 0.55 + g * 0.3)
+    pieces(ctx, shot, at, 2 + Math.round(g * 4), shot.ground === 'deep' && shot.p.f < 0.4)
+    hairlines(ctx, shot, at, 1 + Math.round(g * 3))
   }
   const pillAt = (ctx: CanvasRenderingContext2D, cx: number, y: number, width: number, alpha = 1) => {
     const w = Math.round(width), h = Math.round(w * 0.14), x = Math.round(cx - w / 2), r = h / 2
@@ -232,65 +288,43 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     ctx.fillStyle = CREAM; ctx.font = `700 ${Math.round(h * 0.5)}px ${font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(SITE, cx, y + h / 2)
     ctx.globalAlpha = 1
   }
-  /** A camera's interface, thin: status line, timecode, REC blinking, brackets, a drifting focus square. */
+  /** A camera's interface, thin and faint. */
   const camUi = (ctx: CanvasRenderingContext2D, frame: number, at: number) => {
-    ctx.save(); ctx.globalAlpha = 0.75; ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 22)}px ${font}`; ctx.textBaseline = 'top'; ctx.textAlign = 'left'
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 20)}px ${font}`; ctx.textBaseline = 'top'; ctx.textAlign = 'left'
     const t = Math.floor(at / 1000)
     ctx.fillText(`17:${String(13 + t).padStart(2, '0')}`, S.x, S.y)
     ctx.textAlign = 'right'; ctx.fillText(`${String(140 + (frame % 30)).padStart(3, '0')}  F R N`, S.x + S.w, S.y)
-    for (let i = 0; i < 4; i += 1) ctx.fillRect(S.x + S.w - Math.round(u * 150) + i * 6 * px, S.y + (3 - i) * 3 * px, 3 * px, (i + 1) * 3 * px)
-    ctx.textAlign = 'left'; ctx.font = `${Math.round(u * 28)}px ${font}`; ctx.fillText(`00:00:${String(t).padStart(2, '0')}:${String(frame % 30).padStart(2, '0')}`, S.x, S.y + S.h - Math.round(u * 30))
-    if (Math.floor(at / 500) % 2 === 0) { ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(S.x + 6 * px, S.y + Math.round(u * 50), 6 * px, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 22)}px ${font}`; ctx.fillText('REC', S.x + 16 * px, S.y + Math.round(u * 40)) }
-    ctx.strokeStyle = hash(frame, 31) < 0.5 ? accent : CREAM; ctx.lineWidth = px
-    const l = Math.round(u * 40)
+    ctx.textAlign = 'left'; ctx.font = `${Math.round(u * 24)}px ${font}`; ctx.fillText(`00:00:${String(t).padStart(2, '0')}:${String(frame % 30).padStart(2, '0')}`, S.x, S.y + S.h - Math.round(u * 26))
+    if (Math.floor(at / 500) % 2 === 0) { ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(S.x + 5 * px, S.y + Math.round(u * 46), 5 * px, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 20)}px ${font}`; ctx.fillText('REC', S.x + 14 * px, S.y + Math.round(u * 36)) }
+    ctx.strokeStyle = CREAM; ctx.lineWidth = px
+    const l = Math.round(u * 36)
     for (const [cx, cy, dx, dy] of [[S.x, S.y, 1, 1], [S.x + S.w, S.y, -1, 1], [S.x, S.y + S.h, 1, -1], [S.x + S.w, S.y + S.h, -1, -1]] as const) { ctx.beginPath(); ctx.moveTo(cx, cy + dy * l); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * l, cy); ctx.stroke() }
-    const fs = Math.round(Math.min(W, H) * 0.18), fx = Math.round(W / 2 - fs / 2 + Math.sin(at / 900) * W * 0.05), fy = Math.round(H * 0.45 - fs / 2 + Math.cos(at / 1300) * H * 0.03)
-    ctx.strokeStyle = CREAM
+    const fs = Math.round(Math.min(W, H) * 0.16), fx = Math.round(W / 2 - fs / 2 + Math.sin(at / 1100) * W * 0.04), fy = Math.round(H * 0.45 - fs / 2 + Math.cos(at / 1500) * H * 0.03)
     for (const [cx, cy, dx, dy] of [[fx, fy, 1, 1], [fx + fs, fy, -1, 1], [fx, fy + fs, 1, -1], [fx + fs, fy + fs, -1, -1]] as const) { ctx.beginPath(); ctx.moveTo(cx, cy + dy * fs * 0.25); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * fs * 0.25, cy); ctx.stroke() }
     ctx.restore()
   }
-  const hud = (ctx: CanvasRenderingContext2D, frame: number, at: number) => {
-    ctx.save(); ctx.globalAlpha = 0.45; ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 20)}px ${font}`; ctx.textBaseline = 'top'; ctx.textAlign = 'left'
-    ctx.fillText(`17:${String(13 + Math.floor(at / 1000)).padStart(2, '0')}  ${String(140 + (frame % 30)).padStart(3, '0')}`, S.x, S.y)
-    ctx.textAlign = 'right'; ['F', 'R', 'N'].forEach((l, i) => ctx.fillText(l, S.x + S.w, S.y + Math.round(u * 40 * (1 + i))))
-    ctx.strokeStyle = CREAM; ctx.lineWidth = px
-    const l = Math.round(u * 40)
-    for (const [cx, cy, dx, dy] of [[S.x, S.y, 1, 1], [S.x + S.w, S.y, -1, 1], [S.x, S.y + S.h, 1, -1], [S.x + S.w, S.y + S.h, -1, -1]] as const) { ctx.beginPath(); ctx.moveTo(cx, cy + dy * l); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * l, cy); ctx.stroke() }
-    ctx.restore()
-  }
-  const hairline = (ctx: CanvasRenderingContext2D, seed: number, colour: string) => { ctx.fillStyle = colour; ctx.globalAlpha = 0.8; if (hash(seed, 106) < 0.5) ctx.fillRect(Math.round(hash(seed, 107) * W), 0, px, H); else ctx.fillRect(0, Math.round(hash(seed, 107) * H), W, px); ctx.globalAlpha = 1 }
-  /** A band tear over a canvas: rows of the source and of the frame before, shifted; coverage and thickness given. */
-  const tearBands = (ctx: CanvasRenderingContext2D, src: CanvasImageSource | null, before: HTMLCanvasElement, seed: number, step: number, coverage: number, thick: number, shift: number) => {
+  /** Thin bands over a share of the frame, from the source and the frame before, shifted a little; changes by step, not by frame. */
+  const bands = (ctx: CanvasRenderingContext2D, src: CanvasImageSource | null, before: HTMLCanvasElement, seed: number, step: number, coverage: number, shift: number) => {
     const top = Math.round(hash(seed, step, 69) * H * (1 - coverage)), bottom = Math.min(H, top + Math.round(H * coverage))
     let y = top, i = 0
     while (y < bottom) {
-      const bh = Math.max(2 * px, Math.round(H * (0.003 + hash(seed, step, i, 70) * thick)))
+      const bh = Math.max(px, Math.round(H * (0.001 + hash(seed, step, i, 70) * 0.012)))
+      const gap = Math.round(H * hash(seed, step, i, 71) * 0.02)
       const q = hash(seed, step, i, 72), dx = Math.round((hash(seed, step, i, 73) - 0.5) * W * shift)
-      const stretch = 1 + hash(seed, step, i, 74) * (hash(seed, i, 75) < 0.3 ? 2.5 : 0.3)
-      if (q < 0.4 && src) { const sw = (src as HTMLVideoElement).videoWidth || (src as HTMLImageElement).naturalWidth || W, sh = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight || H; const sy = hash(seed, i, 76) * (sh - sh * bh / H); ctx.drawImage(src, 0, sy, sw / stretch, Math.max(1, sh * bh / H), dx, y, W, bh) }
-      else if (q < 0.75) ctx.drawImage(before, 0, y, Math.round(W / stretch), bh, dx, y, W, bh)
-      else if (q < 0.88) ctx.drawImage(ctx.canvas, 0, y, Math.round(W / stretch), bh, dx, y, W, bh)
-      else { ctx.fillStyle = DEEP; ctx.fillRect(0, y, W, bh) }
-      if (hash(seed, step, i, 78) < 0.12) { ctx.fillStyle = colourAt(hash(seed, i, 79)); ctx.fillRect(Math.round(hash(seed, i, 80) * W * 0.6), y, Math.round(W * (0.1 + hash(seed, i, 81) * 0.5)), Math.max(px, Math.round(bh * 0.3))) }
-      y += bh; i += 1
+      if (q < 0.35 && src) { const sw = (src as HTMLVideoElement).videoWidth || (src as HTMLImageElement).naturalWidth || W, sh = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight || H; ctx.drawImage(src, 0, hash(seed, i, 76) * (sh - 2), sw, Math.max(1, sh * bh / H), dx, y, W, bh) }
+      else if (q < 0.7) ctx.drawImage(before, 0, y, W, bh, dx, y, W, bh)
+      else if (q < 0.85) ctx.drawImage(ctx.canvas, 0, y, W, bh, dx, y, W, bh)
+      else { ctx.fillStyle = colourAt(hash(seed, i, 79)); ctx.globalAlpha = 0.7; ctx.fillRect(Math.round(hash(seed, i, 80) * W * 0.5), y, Math.round(W * (0.1 + hash(seed, i, 81) * 0.5)), px); ctx.globalAlpha = 1 }
+      y += bh + gap; i += 1
     }
   }
-  const fragment = (ctx: CanvasRenderingContext2D, shot: Shot, seed: number, x: number, y: number, w: number, h: number, alpha = 1) => {
-    const src = sourceOf(shot)
-    if (!src) { ctx.fillStyle = colourAt(hash(seed, 41)); ctx.globalAlpha = alpha * 0.6; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; return }
-    ctx.globalAlpha = alpha
-    cover(ctx, src, x, y, w, h, 1.2 + hash(seed, 37) * 2.5, hash(seed, 38), hash(seed, 39))
-    if (hash(seed, 40) < 0.25) { ctx.fillStyle = colourAt(hash(seed, 41)); ctx.globalAlpha = alpha * 0.35; ctx.fillRect(x, y, w, h) }
-    ctx.globalAlpha = 1
-  }
 
-  // ----- the brand: placed in the safe area, breathing, entering and leaving, deformed or in pieces
+  // ----- the brand
   const brandRect = (shot: Shot, progress: number) => {
     const img = shot.stacked ? input.logoVertical : input.logo
-    const maxW = S.w * shot.bw * (shot.stacked ? 0.9 : 1.2)
-    let { w, h } = logoSize(img, Math.min(maxW, S.w * 0.96))
+    let { w, h } = logoSize(img, Math.min(S.w * shot.bw * (shot.stacked ? 0.9 : 1.2), S.w * 0.96))
     if (h > S.h * 0.8) { const f = S.h * 0.8 / h; w = Math.round(w * f); h = Math.round(h * f) }
-    const breathe = 1 + Math.sin(progress * Math.PI * 2 * (0.5 + hash(shot.seed, 60))) * 0.02
+    const breathe = 1 + Math.sin(progress * Math.PI * 2 * (0.5 + hash(shot.seed, 60))) * 0.015
     const cx = S.x + shot.bx * S.w, cy = S.y + shot.by * S.h
     const x = Math.round(Math.max(S.x, Math.min(S.x + S.w - w, cx - w / 2))), y = Math.round(Math.max(S.y, Math.min(S.y + S.h - h, cy - h / 2)))
     return { img, x: Math.round(x - w * (breathe - 1) / 2), y: Math.round(y - h * (breathe - 1) / 2), w: Math.round(w * breathe), h: Math.round(h * breathe) }
@@ -305,104 +339,42 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
       ctx.drawImage(source, c * pw * sw / w, r * ph * sh / h, pw * sw / w, ph * sh / h, -pw / 2, -ph / 2, pw, ph); ctx.restore()
     }
   }
-  const drawBrandShape = (ctx: CanvasRenderingContext2D, source: CanvasImageSource, shot: Shot, x: number, y: number, w: number, h: number, sw: number, sh: number, at: number, spread: number) => {
+  /** The shape drawn with its deformation, gently in motion; in the exploded mode the pieces part for a step on strong beats. */
+  const drawShape = (ctx: CanvasRenderingContext2D, source: CanvasImageSource, shot: Shot, x: number, y: number, w: number, h: number, sw: number, sh: number, at: number, spread: number) => {
     const s = shot.seed
     if (spread > 0.001) { drawPieces(ctx, source, x, y, w, h, sw, sh, s, spread, at); return }
-    // In the exploded mode the pieces scatter for a few frames on strong beats and come back whole.
-    if (input.brandMode === 'exploded') { const bi = Math.floor((at - shot.from) / beat), bp = ((at - shot.from) % beat) / beat, g = strengthOf(shot); if (bp < 0.2 && g > 0.45 && hash(s, bi, 341) < 0.7) { drawPieces(ctx, source, x, y, w, h, sw, sh, s + bi, 0.2 + g * 0.3, at); return } }
-    // On the beat the shape jumps a size up for a few frames; in the deformed mode the deformation itself changes on the beat.
-    const beatIndex = Math.floor((at - shot.from) / beat), beatPhase = ((at - shot.from) % beat) / beat
-    if (beatPhase < 0.1 && strengthOf(shot) > 0.3) { const f = 1 + 0.06 * strengthOf(shot); const nw = Math.round(w * f), nh = Math.round(h * f); x = Math.round(x + w / 2 - nw / 2); y = Math.round(y + h / 2 - nh / 2); w = nw; h = nh }
-    const deform: Deform = shot.deform === 'none' ? 'none' : (['none', 'stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, beatIndex, 340) * 4)]
+    if (input.brandMode === 'exploded') { const bi = beatIndexOf(shot, at), bp = beatPhaseOf(shot, at), g = strengthOf(shot); if (bp < 0.18 && g > 0.4 && hash(s, bi, 341) < 0.6) { drawPieces(ctx, source, x, y, w, h, sw, sh, s + bi, 0.12 + g * 0.2, at); return } }
+    const bi = beatIndexOf(shot, at)
+    const deform: Deform = shot.deform === 'none' ? 'none' : (['none', 'stretch', 'skew', 'mirror'] as Deform[])[Math.floor(hash(s, Math.floor(bi / 2), 340) * 4)]
     switch (deform) {
-      case 'stretch': { const fx = 1.15 + hash(s, 210) * 0.8 + Math.sin(at / 900) * 0.1, fy = 0.6 + hash(s, 211) * 0.4; const nw = Math.round(w * fx), nh = Math.round(h * fy); ctx.drawImage(source, 0, 0, sw, sh, Math.round(x + w / 2 - nw / 2), Math.round(y + h / 2 - nh / 2), nw, nh); break }
-      case 'skew': { const sk = (hash(s, 212) - 0.5) * 0.9 + Math.sin(at / 700) * 0.15; ctx.save(); ctx.transform(1, 0, sk, 1, 0, 0); ctx.drawImage(source, 0, 0, sw, sh, x - Math.round(sk * (y + h / 2)), y, w, h); ctx.restore(); break }
-      case 'mirror': { ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(source, 0, 0, sw, sh, 0, y, w, h); ctx.restore(); ctx.globalAlpha = 0.5; ctx.drawImage(source, 0, 0, sw, sh, x + Math.round(w * 0.05 * (1 + Math.sin(at / 500))), y, w, h); ctx.globalAlpha = 1; break }
+      case 'stretch': { const fx = 1.1 + hash(s, 210) * 0.5 + Math.sin(at / 1100) * 0.06, fy = 0.7 + hash(s, 211) * 0.3; const nw = Math.round(w * fx), nh = Math.round(h * fy); ctx.drawImage(source, 0, 0, sw, sh, Math.round(x + w / 2 - nw / 2), Math.round(y + h / 2 - nh / 2), nw, nh); break }
+      case 'skew': { const sk = (hash(s, 212) - 0.5) * 0.7 + Math.sin(at / 900) * 0.1; ctx.save(); ctx.transform(1, 0, sk, 1, 0, 0); ctx.drawImage(source, 0, 0, sw, sh, x - Math.round(sk * (y + h / 2)), y, w, h); ctx.restore(); break }
+      case 'mirror': { ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); ctx.drawImage(source, 0, 0, sw, sh, 0, y, w, h); ctx.restore(); break }
       default: ctx.drawImage(source, 0, 0, sw, sh, x, y, w, h)
     }
   }
-  /** The brand in its treatment with its hard shadow, with the shot's entrance and exit. */
-  /** How hard the glitch hits at a moment: the shot's energy, scaled by the force. */
-  const force = clamp01(input.intensity)
-  const strengthOf = (shot: Shot) => clamp01(shot.energy * (0.3 + force * 0.95))
-  /** The letters torn, fringed in the theme's colours, partly filled with the video, jumping on the beat: the brand is never still. */
-  const glitchBrand = (ctx: CanvasRenderingContext2D, shot: Shot, r: { x: number; y: number; w: number; h: number }, at: number, frame: number, boost = 0) => {
-    const g = clamp01(strengthOf(shot) + boost)
-    if (g <= 0.02) return
-    const s = shot.seed
-    const beatPhase = ((at - shot.from) % beat) / beat
-    const x0 = Math.max(0, r.x - Math.round(W * 0.05)), y0 = Math.max(0, r.y - Math.round(H * 0.02)), w0 = Math.min(W - x0, r.w + Math.round(W * 0.1)), h0 = Math.min(H - y0, r.h + Math.round(H * 0.04))
-    if (w0 <= 0 || h0 <= 0) return
-    // Fringes in the theme's colours on the beat: the shape offset left and right, tinted, under itself.
-    if (beatPhase < 0.3 && g > 0.25) {
-      const off = Math.round(u * (3 + g * 10))
-      sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0, w0, h0)
-      sx.globalCompositeOperation = 'source-in'; sx.fillStyle = accent; sx.fillRect(x0, y0, w0, h0); sx.globalCompositeOperation = 'source-over'
-      ctx.globalAlpha = 0.6; ctx.drawImage(scratch, x0, y0, w0, h0, x0 - off, y0, w0, h0)
-      sx.globalCompositeOperation = 'source-in'; sx.fillStyle = secondOf(s); sx.fillRect(x0, y0, w0, h0); sx.globalCompositeOperation = 'source-over'
-      ctx.drawImage(scratch, x0, y0, w0, h0, x0 + off, y0, w0, h0); ctx.globalAlpha = 1
-    }
-    // Slices of the shape thrown sideways, every frame at a high strength, on the beat otherwise.
-    if (g > 0.6 || beatPhase < 0.2 || hash(frame, s, 300) < g * 0.3) {
-      const n = Math.round(2 + g * 9)
-      for (let i = 0; i < n; i += 1) { const sh = Math.max(2, Math.round(h0 * (0.02 + hash(s, frame, i, 301) * 0.12))), sy = y0 + Math.round(hash(s, frame, i, 302) * (h0 - sh)); ctx.drawImage(ctx.canvas, x0, sy, w0, sh, x0 + Math.round((hash(s, frame, i, 303) - 0.5) * w0 * (0.1 + g * 0.5)), sy, w0, sh) }
-    }
-    // Mistreatments on the beat: a mirror flip, two faint repeats above and below, bands erased, a stretch pulse.
-    const bi = Math.floor((at - shot.from) / beat)
-    const mis = hash(s, bi, 311)
-    if (beatPhase < 0.35 && g > 0.35) {
-      if (mis < 0.2) { ctx.save(); ctx.translate(x0 + w0, 0); ctx.scale(-1, 1); ctx.drawImage(ctx.canvas, x0, y0, w0, h0, 0, y0, w0, h0); ctx.restore() }
-      else if (mis < 0.4) { ctx.globalAlpha = 0.35; ctx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0 - Math.round(h0 * 0.5), w0, h0); ctx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0 + Math.round(h0 * 0.5), w0, h0); ctx.globalAlpha = 1 }
-      else if (mis < 0.6) { ctx.fillStyle = DEEP; for (let i = 0; i < 2 + Math.round(g * 4); i += 1) ctx.fillRect(x0, y0 + Math.round(hash(s, bi, i, 312) * h0), w0, Math.round(h0 * (0.02 + hash(s, bi, i, 313) * 0.08))) }
-      else if (mis < 0.75) { const f = 1 + (0.15 + g * 0.3) * (1 - beatPhase / 0.35); const nw = Math.round(w0 * f); ctx.drawImage(ctx.canvas, x0, y0, w0, h0, Math.round(x0 + w0 / 2 - nw / 2), y0, nw, h0) }
-    }
-    // Windows: parts of the letters filled with the video, on some frames; always in the beat after a tear.
-    const src = sourceOf(shot)
-    if (src && (boost > 0 || hash(Math.floor(at / 160), s, 304) < g * 0.45)) {
-      const img = shot.stacked ? input.logoVertical : input.logo
-      sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(img, r.x, r.y, r.w, r.h)
-      sx.globalCompositeOperation = 'source-in'; cover(sx, src, r.x - Math.round(W * 0.1), r.y, r.w + Math.round(W * 0.2), r.h, 1.6, hash(s, 305), hash(s, 306)); sx.globalCompositeOperation = 'source-over'
-      for (let i = 0; i < 1 + Math.round(g * 3); i += 1) { const fw = Math.round(r.w * (0.2 + hash(s, Math.floor(at / 160), i, 307) * 0.5)), fh = Math.round(r.h * (0.3 + hash(s, Math.floor(at / 160), i, 308) * 0.7)); const fx = Math.round(r.x + hash(s, Math.floor(at / 160), i, 309) * (r.w - fw)), fy = Math.round(r.y + hash(s, Math.floor(at / 160), i, 310) * (r.h - fh)); ctx.drawImage(scratch, fx, fy, fw, fh, fx, fy, fw, fh) }
-    }
+  /** A real outline of the shape: the tinted shape laid in eight directions, the deep shape over it. On deep the inside vanishes: an outline alone. */
+  const strokeShape = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, dark: HTMLImageElement, colour: string, x: number, y: number, w: number, h: number) => {
+    const o = Math.max(2, Math.round(u * 4))
+    const tint = tinted(img, colour, w, h)
+    for (const [dx, dy] of [[-o, 0], [o, 0], [0, -o], [0, o], [-o, -o], [o, -o], [-o, o], [o, o]]) ctx.drawImage(tint, 0, 0, w, h, x + dx, y + dy, w, h)
+    ctx.drawImage(dark, x, y, w, h)
   }
-  /** The whole frame treated: band tears, columns shifted, codec blocks, scanlines, the frame fringed on the beat, a thin interface. Never a naked picture. */
-  const glitchFrame = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number) => {
+  /** The brand mistreated by step, by the strength: a few thin slices, a mirror, a faint repeat, bands erased, a stretch pulse; nothing every frame. */
+  const mistreat = (ctx: CanvasRenderingContext2D, shot: Shot, r: { x: number; y: number; w: number; h: number }, at: number) => {
     const g = strengthOf(shot)
-    const s = shot.seed, p = shot.p
-    const beatIndex = Math.floor((at - shot.from) / beat), beatPhase = ((at - shot.from) % beat) / beat
-    const src = sourceOf(shot)
-    // Fine rows torn — thin, a few, more and wider with the strength; a tear on the beat only when it is strong.
-    const rows = Math.round(g * 6)
-    for (let i = 0; i < rows; i += 1) { const sh = Math.max(px, Math.round(H * (0.001 + hash(s, frame, i, 320) * (0.004 + g * 0.02)))), sy = Math.round(hash(s, frame, i, 321) * (H - sh)); ctx.drawImage(ctx.canvas, 0, sy, W, sh, Math.round((hash(s, frame, i, 322) - 0.5) * W * (0.04 + g * 0.3)), sy, W, sh) }
-    if (beatPhase < 0.12 && g > 0.45) tearBands(ctx, src, prev, s + beatIndex, frame, 0.1 + g * 0.5, 0.01 + p.b * 0.03, 0.2 + g * 0.4)
-    // Small pieces of the picture, as on the site's own glitch: a few, thinly framed in the palette, drifting.
-    if (src && hash(s, 333) < 0.7) {
-      const n = 2 + Math.round(g * 4)
-      for (let i = 0; i < n; i += 1) { const pw = Math.round(W * (0.04 + hash(s, i, 334) * 0.1)), ph = Math.round(pw * (0.5 + hash(s, i, 335))); const x = Math.round(hash(s, i, 336) * (W - pw) + Math.sin(at / 900 + i) * W * 0.02), y = Math.round(hash(s, i, 337) * (H - ph) + (at - shot.from) * (hash(s, i, 338) - 0.5) * 0.03); cover(ctx, src, x, y, pw, ph, 2 + hash(s, i, 339) * 3, hash(s, i, 340), hash(s, i, 341)); ctx.strokeStyle = colourAt(hash(s, i, 342)); ctx.lineWidth = px; ctx.strokeRect(x + 0.5, y + 0.5, pw - 1, ph - 1) }
-    }
-    // Columns shifted up or down, now and then.
-    if (g > 0.3 && hash(Math.floor(at / 90), s, 323) < g * 0.5) for (let i = 0; i < 1 + Math.round(g * 3); i += 1) { const cw = Math.round(W * (0.005 + hash(s, frame, i, 324) * 0.05)), cx = Math.round(hash(s, Math.floor(at / 90), i, 325) * (W - cw)); ctx.drawImage(ctx.canvas, cx, 0, cw, H, cx, Math.round((hash(s, frame, i, 326) - 0.5) * H * 0.2 * g), cw, H) }
-    // A rare slant: the whole frame tilted a degree or two for a beat.
-    if (g > 0.4 && hash(s, beatIndex, 343) < 0.12) { const a = (hash(s, beatIndex, 344) - 0.5) * 0.06; ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(a); ctx.drawImage(ctx.canvas, -W / 2, -H / 2); ctx.restore() }
-    // An icon, now and then, for a beat, torn by the same bands.
-    if (input.icons.length && g > 0.25 && hash(s, beatIndex, 345) < 0.1 + g * 0.2) { const ic = input.icons[Math.floor(hash(s, beatIndex, 346) * input.icons.length)]; const size = Math.round(Math.min(W, H) * (0.18 + hash(s, beatIndex, 347) * 0.3)); const ix = Math.round(S.x + hash(s, beatIndex, 348) * (S.w - size)), iy = Math.round(S.y + hash(s, beatIndex, 349) * (S.h - size)); ctx.drawImage(ic, ix, iy, size, size); for (let b = 0; b < 4; b += 1) { const by = iy + Math.round(hash(s, b, 350) * size), bh = Math.round(size * (0.03 + hash(s, b, 351) * 0.1)); ctx.drawImage(ctx.canvas, ix, by, size, bh, ix + Math.round((hash(s, b, frame, 352) - 0.5) * size * 0.5), by, size, bh) } }
-    // The screen's own artefacts, one kind per shot by the draw: a camera's interface, a codec's blocks, a screen's scanlines.
-    const dressing = Math.floor(hash(s, 390) * 5)
-    if (dressing === 0 && g > 0.15) camUi(ctx, frame, at)
-    if (dressing === 1 && g > 0.3) { ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 20)}px ${font}`; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.globalAlpha = 0.6; ctx.fillText(`${Math.round(8 + hash(beatIndex, 391) * 40)} Mbps  I P B P B  ${String(beatIndex % 300).padStart(3, '0')}`, S.x + S.w, S.y + S.h - Math.round(u * 24)); ctx.globalAlpha = 1 }
-    if ((dressing === 1 && g > 0.35) || (p.c < 0.5 && beatIndex % 2 === 0 && g > 0.5)) {
-      const B = Math.round(Math.min(W, H) / 14), cols = Math.ceil(W / B), rowsN = Math.ceil(H / B), step = Math.floor(at / 110)
-      pv.drawImage(ctx.canvas, 0, 0)
-      for (let by = 0; by < rowsN; by += 1) for (let bx = 0; bx < cols; bx += 1) { const q = hash(s, step, bx, by, 327); if (q < g * 0.12) ctx.drawImage(prev, Math.floor(hash(s, step, bx, by, 328) * cols) * B, Math.max(0, Math.min(rowsN - 1, by + Math.round((hash(s, step, bx, by, 329) - 0.5) * 4))) * B, B, B, bx * B, by * B, B, B); else if (q < g * 0.2) ctx.drawImage(prev, bx * B, by * B, B, B, bx * B + Math.round((hash(s, step, bx, by, 330) - 0.5) * 4) * B, by * B, B, B) }
-    }
-    // Scanlines and a rolling bar on some shots; the frame fringed in the theme's colours on the beat.
-    if (dressing === 2 && g > 0.25) { ctx.fillStyle = DEEP; ctx.globalAlpha = 0.15; for (let y = 0; y < H; y += 3 * px) ctx.fillRect(0, y, W, px); ctx.globalAlpha = 0.06; ctx.fillStyle = CREAM; ctx.fillRect(0, Math.round(((at * 0.3) % (H * 1.2)) - H * 0.1), W, Math.round(H * 0.06)); ctx.globalAlpha = 1 }
-    if (beatPhase < 0.1 && g > 0.65) { const off = Math.round(u * (2 + g * 6)); ctx.globalAlpha = 0.35; ctx.drawImage(ctx.canvas, -off, 0); ctx.globalAlpha = 1 }
-    // Hairlines in the palette, now and then; the thin interface on the shots that carry it.
-    if (hash(Math.floor(at / 200), s, 331) < g * 0.5) hairline(ctx, s + Math.floor(at / 200), colourAt(hash(s, Math.floor(at / 200), 332)))
-    if (shot.hud) hud(ctx, frame, at)
+    if (g < 0.1) return
+    const s = shot.seed, step = stepOf(shot, at)
+    const x0 = Math.max(0, r.x - Math.round(W * 0.04)), y0 = Math.max(0, r.y - Math.round(H * 0.015)), w0 = Math.min(W - x0, r.w + Math.round(W * 0.08)), h0 = Math.min(H - y0, r.h + Math.round(H * 0.03))
+    if (w0 <= 0 || h0 <= 0) return
+    if (hash(s, step, 300) < g * 0.6) { const n = 1 + Math.round(g * 4); for (let i = 0; i < n; i += 1) { const sh = Math.max(px, Math.round(h0 * (0.01 + hash(s, step, i, 301) * 0.06))), sy = y0 + Math.round(hash(s, step, i, 302) * (h0 - sh)); ctx.drawImage(ctx.canvas, x0, sy, w0, sh, x0 + Math.round((hash(s, step, i, 303) - 0.5) * w0 * (0.05 + g * 0.3)), sy, w0, sh) } }
+    const mis = hash(s, step, 311)
+    if (mis < g * 0.12) { ctx.save(); ctx.translate(x0 + w0, 0); ctx.scale(-1, 1); ctx.drawImage(ctx.canvas, x0, y0, w0, h0, 0, y0, w0, h0); ctx.restore() }
+    else if (mis < g * 0.24) { ctx.globalAlpha = 0.25; ctx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0 - Math.round(h0 * 0.3), w0, h0); ctx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0 + Math.round(h0 * 0.3), w0, h0); ctx.globalAlpha = 1 }
+    else if (mis < g * 0.36) { ctx.fillStyle = DEEP; for (let i = 0; i < 1 + Math.round(g * 3); i += 1) ctx.fillRect(x0, y0 + Math.round(hash(s, step, i, 312) * h0), w0, Math.round(h0 * (0.01 + hash(s, step, i, 313) * 0.05))) }
+    else if (mis < g * 0.46) { const f = 1 + 0.08 + g * 0.15; const nw = Math.round(w0 * f); ctx.drawImage(ctx.canvas, x0, y0, w0, h0, Math.round(x0 + w0 / 2 - nw / 2), y0, nw, h0) }
   }
-  const drawBrand = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number, scale = 1, forcePlace?: { x: number; y: number; w: number; h: number }) => {
+  const drawBrand = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, scale = 1, forcePlace?: { x: number; y: number; w: number; h: number }) => {
     const progress = clamp01((at - shot.from) / Math.max(1, shot.to - shot.from))
     const r = forcePlace ?? brandRect(shot, progress)
     const img = (r as { img?: HTMLImageElement }).img ?? (shot.stacked ? input.logoVertical : input.logo)
@@ -411,18 +383,17 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     const s = shot.seed
     let ex = r.x, ey = r.y, ew = Math.round(r.w * scale), eh = Math.round(r.h * scale), spread = 0, visible = true, alpha = 1
     if (scale !== 1) { ex = Math.round(r.x + r.w / 2 - ew / 2); ey = Math.round(r.y + r.h / 2 - eh / 2) }
-    // The entrance takes a fifth of the shot, the exit an eighth: the frame is never left empty for long.
     const enterLen = 0.2, exitLen = 0.12
     if (shot.enter !== 'none' && progress < enterLen) {
       const t = easeOut(progress / enterLen)
       if (shot.enter === 'slide') ex = Math.round(ex + (hash(s, 80) < 0.5 ? -1 : 1) * (1 - t) * W * 1.2)
-      else if (shot.enter === 'grow') { const f = 2.6 - 1.6 * t; const nw = Math.round(ew * f), nh = Math.round(eh * f); ex = Math.round(ex + ew / 2 - nw / 2); ey = Math.round(ey + eh / 2 - nh / 2); ew = nw; eh = nh }
+      else if (shot.enter === 'grow') { const f = 2.2 - 1.2 * t; const nw = Math.round(ew * f), nh = Math.round(eh * f); ex = Math.round(ex + ew / 2 - nw / 2); ey = Math.round(ey + eh / 2 - nh / 2); ew = nw; eh = nh }
       else if (shot.enter === 'assemble') spread = 1 - t
-      else if (shot.enter === 'flicker') visible = hash(frame, s, 81) < 0.3 + t * 0.7
+      else if (shot.enter === 'flicker') visible = hash(Math.floor(at / 70), s, 81) < 0.35 + t * 0.65
     }
     if (shot.exit !== 'none' && progress > 1 - exitLen) {
       const t = easeIn((progress - (1 - exitLen)) / exitLen)
-      if (shot.exit === 'explode') spread = t * 1.4
+      if (shot.exit === 'explode') spread = t * 1.3
       else if (shot.exit === 'slide') ex = Math.round(ex + (hash(s, 82) < 0.5 ? -1 : 1) * t * W * 1.2)
       else if (shot.exit === 'dissolve') alpha = 1 - t
     }
@@ -430,68 +401,20 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     const second = secondOf(s)
     ctx.globalAlpha = alpha
     switch (shot.treat) {
-      case 'accent': drawBrandShape(ctx, tinted(img, accent, ew, eh), shot, ex, ey, ew, eh, ew, eh, at, spread); break
-      case 'second': drawBrandShape(ctx, tinted(img, second, ew, eh), shot, ex, ey, ew, eh, ew, eh, at, spread); break
-      case 'panel': { ctx.fillStyle = hash(s, 204) < 0.6 ? accent : second; ctx.fillRect(0, Math.round(ey - H * 0.03), W, Math.round(eh + H * 0.06)); drawBrandShape(ctx, dark, shot, ex, ey, ew, eh, sw, sh, at, spread); break }
-      case 'outline': { ctx.drawImage(tinted(img, hash(s, 205) < 0.6 ? accent : second, ew, eh), 0, 0, ew, eh, ex - 2 * px, ey - 2 * px, ew + 4 * px, eh + 4 * px); ctx.drawImage(dark, ex, ey, ew, eh); break }
-      case 'hollow': { const o = Math.max(2, Math.round(u * 4)); ctx.drawImage(tinted(img, hash(s, 206) < 0.5 ? CREAM : accent, ew + 2 * o, eh + 2 * o), 0, 0, ew + 2 * o, eh + 2 * o, ex - o, ey - o, ew + 2 * o, eh + 2 * o); ctx.drawImage(dark, ex, ey, ew, eh); break }
-      case 'filled': { const src = sourceOf(shot); sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(img, ex, ey, ew, eh); sx.globalCompositeOperation = 'source-in'; if (src) cover(sx, src, ex, ey, ew, eh, 1.4, hash(s, 207), hash(s, 208)); else { sx.fillStyle = accent; sx.fillRect(0, 0, W, H) } sx.globalCompositeOperation = 'source-over'; ctx.drawImage(scratch, 0, 0); break }
-      default: drawBrandShape(ctx, img, shot, ex, ey, ew, eh, sw, sh, at, spread)
+      case 'accent': drawShape(ctx, tinted(img, accent, ew, eh), shot, ex, ey, ew, eh, ew, eh, at, spread); break
+      case 'second': drawShape(ctx, tinted(img, second, ew, eh), shot, ex, ey, ew, eh, ew, eh, at, spread); break
+      case 'stroke': if (spread > 0.001) drawShape(ctx, tinted(img, hash(s, 206) < 0.6 ? CREAM : accent, ew, eh), shot, ex, ey, ew, eh, ew, eh, at, spread); else strokeShape(ctx, img, dark, hash(s, 206) < 0.6 ? CREAM : accent, ex, ey, ew, eh); break
+      case 'filled': { const src = sourceOf(shot); sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(img, ex, ey, ew, eh); sx.globalCompositeOperation = 'source-in'; if (src) cover(sx, src, ex, ey, ew, eh, 1.2 + hash(s, 207), hash(s, 208), hash(s, 209)); else { sx.fillStyle = accent; sx.fillRect(0, 0, W, H) } sx.globalCompositeOperation = 'source-over'; ctx.drawImage(scratch, 0, 0); break }
+      default: drawShape(ctx, img, shot, ex, ey, ew, eh, sw, sh, at, spread)
     }
     ctx.globalAlpha = 1
     if (shot.pill && spread < 0.2 && alpha > 0.5 && !forcePlace) pillAt(ctx, ex + ew / 2, Math.round(ey + eh + H * 0.025), Math.max(S.w * 0.35, ew * 0.7), alpha)
-    if (spread < 0.2 && alpha > 0.3) glitchBrand(ctx, shot, { x: ex, y: ey, w: ew, h: eh }, at, frame, shot.afterTear ? 0.4 : 0)
-  }
-  /** The curator's words: one card's line, big, in the safe area or where the curator put them. */
-  const drawCard = (ctx: CanvasRenderingContext2D, shot: Shot, at: number) => {
-    const t = input.text
-    const line = t?.lines[shot.card]?.trim()
-    if (!t || !line) return
-    const size = Math.round(t.size * u * 1.25)
-    ctx.font = `${t.weight} ${size}px ${t.font}`; ctx.textBaseline = 'top'; ctx.textAlign = t.align
-    const maxW = (t.x === null ? S.w : t.width * W)
-    const lines: string[] = []
-    let cur = ''
-    for (const w of line.split(/\s+/)) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { lines.push(cur); cur = w } else cur = next }
-    lines.push(cur)
-    const blockH = lines.length * size * 1.1
-    const left = t.x === null ? S.x : t.x * W, top = t.y === null ? Math.round(S.y + S.h / 2 - blockH / 2) : Math.round(t.y * H)
-    const x = Math.round(left + (t.align === 'center' ? maxW / 2 : t.align === 'right' ? maxW : 0))
-    // The letters come one after another over the first beat.
-    const shown = Math.ceil(line.length * Math.min(1, (at - shot.from) / beat))
-    let count = 0
-    ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, Math.round(size * 0.12)); ctx.strokeStyle = DEEP
-    lines.forEach((l, i) => { const part = l.slice(0, Math.max(0, shown - count)); count += l.length + 1; const y = top + i * Math.round(size * 1.1); ctx.strokeText(part, x, y); ctx.fillStyle = CREAM; ctx.fillText(part, x, y) })
+    if (spread < 0.2 && alpha > 0.3) mistreat(ctx, shot, { x: ex, y: ey, w: ew, h: eh }, at)
   }
 
-  /** The back plane: deep, with large dark fragments of the video drifting — the picture as matter, never as a quiet ground. */
-  const backPlane = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, density: number) => {
-    const src = sourceOf(shot)
-    ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H)
-    if (!src) return
-    const s = shot.seed, g = strengthOf(shot)
-    const n = Math.round((2 + g * 8) * density)
-    for (let i = 0; i < n; i += 1) {
-      const fw = Math.round(W * (0.12 + hash(s, i, 71) * 0.45)), fh = Math.round(H * (0.015 + hash(s, i, 72) * 0.1))
-      const vx = (hash(s, i, 73) - 0.5) * W * 0.0002 * (1 + g), vy = (hash(s, i, 74) - 0.5) * H * 0.00005
-      const fx = Math.round(hash(s, i, 75) * (W - fw) + vx * (at - shot.from)), fy = Math.round(hash(s, i, 76) * (H - fh) + vy * (at - shot.from))
-      ctx.globalAlpha = 0.3 + g * 0.35
-      cover(ctx, src, fx, fy, fw, fh, 1.5 + hash(s, i, 77) * 2, hash(s, i, 78), hash(s, i, 79))
-      if (hash(s, i, 80) < 0.3) { ctx.fillStyle = colourAt(hash(s, i, 81)); ctx.globalAlpha = 0.25; ctx.fillRect(fx, fy, fw, fh) }
-    }
-    ctx.globalAlpha = 1
-  }
-  /** The video torn to pieces over deep: bands with gaps, blocks — visible only as corruption. */
-  const tornVideo = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number) => {
-    const src = sourceOf(shot)
-    const s = shot.seed, g = strengthOf(shot), p = shot.p
-    backPlane(ctx, shot, at, 0.5)
-    if (!src) return
-    const step = Math.floor(at / (50 + p.f * 80))
-    for (let i = 0; i < 2 + Math.round(g * 4); i += 1) { const bw = Math.round(W * (0.25 + hash(s, step, i, 90) * 0.5)), bh = Math.round(H * (0.08 + hash(s, step, i, 91) * 0.25)); fragment(ctx, shot, s * 17 + step * 3 + i, Math.round(hash(s, step, i, 92) * (W - bw)), Math.round(hash(s, step, i, 93) * (H - bh)), bw, bh, 0.9) }
-    tearBands(ctx, src, prev, s + step, frame, 0.35 + g * 0.5, 0.012 + p.b * 0.04, 0.25 + g * 0.4)
-  }
-  /** The constant line of words: cream with a deep outline, at the curator's place or at the foot of the safe area, jumping on strong beats. */
+  // ----- the words
+  const wrap = (ctx: CanvasRenderingContext2D, line: string, maxW: number) => { const lines: string[] = []; let cur = ''; for (const w of line.split(/\s+/)) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { lines.push(cur); cur = w } else cur = next } lines.push(cur); return lines }
+  /** The constant line, cream with a deep outline, in a zone drawn per seed (and clear of the brand), or where the curator put it; it jumps a little on strong steps. */
   const drawWords = (ctx: CanvasRenderingContext2D, shot: Shot, at: number) => {
     const t = input.text
     const line = t?.lines[0]?.trim()
@@ -499,205 +422,217 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     const size = Math.round(t.size * u)
     ctx.font = `${t.weight} ${size}px ${t.font}`; ctx.textBaseline = 'top'; ctx.textAlign = t.align
     const maxW = t.x === null ? S.w : t.width * W
-    const lines: string[] = []
-    let cur = ''
-    for (const w of line.split(/\s+/)) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { lines.push(cur); cur = w } else cur = next }
-    lines.push(cur)
+    const lines = wrap(ctx, line, maxW)
     const blockH = lines.length * size * 1.1
-    // The zone, by the draw: top, middle or foot of the safe area, when the curator has not placed the words.
-    let zone = Math.floor(hash(input.seed, 360) * 3)
-    // When the brand stands in the words' zone, the words take the far end of the safe area.
-    if (t.y === null && shot.kind !== 'textbig' && shot.kind !== 'card') { const bz = shot.by < 0.38 ? 0 : shot.by > 0.62 ? 2 : 1; if (bz === zone) zone = zone === 2 ? 0 : 2 }
-    const left = t.x === null ? S.x : t.x * W, top = t.y === null ? Math.round(zone === 0 ? S.y : zone === 1 ? S.y + S.h / 2 - blockH / 2 : S.y + S.h - blockH) : Math.round(t.y * H)
+    const preferred = Math.floor(hash(input.seed, 360) * 3)
+    const topOf = (zone: number) => Math.round(zone === 0 ? S.y : zone === 1 ? S.y + S.h / 2 - blockH / 2 : S.y + S.h - blockH)
+    let zone = preferred
+    if (t.y === null && shot.kind !== 'textbig' && shot.kind !== 'card') {
+      // The first zone, the preferred one first, whose block does not cross the brand's rectangle.
+      const b = brandRect(shot, clamp01((at - shot.from) / Math.max(1, shot.to - shot.from)))
+      const free = (z: number) => { const y0 = topOf(z), y1 = y0 + blockH; return y1 < b.y - H * 0.01 || y0 > b.y + b.h + H * 0.01 }
+      const order = [preferred, ...[0, 2, 1].filter((z) => z !== preferred)]
+      zone = order.find(free) ?? preferred
+    }
+    const left = t.x === null ? S.x : t.x * W, top = t.y === null ? topOf(zone) : Math.round(t.y * H)
     const x = Math.round(left + (t.align === 'center' ? maxW / 2 : t.align === 'right' ? maxW : 0))
-    const g = strengthOf(shot), beatPhase = ((at - shot.from) % beat) / beat
-    const jx = beatPhase < 0.1 && g > 0.5 ? Math.round((hash(Math.floor(at / 40), 350) - 0.5) * W * 0.04) : 0
+    const g = strengthOf(shot), step = stepOf(shot, at)
+    const jx = g > 0.45 && hash(step, 350) < g * 0.3 ? Math.round((hash(step, 351) - 0.5) * W * 0.03) : 0
     ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, Math.round(size * 0.12)); ctx.strokeStyle = DEEP
     lines.forEach((l, i) => { const y = top + i * Math.round(size * 1.1); ctx.strokeText(l, x + jx, y); ctx.fillStyle = CREAM; ctx.fillText(l, x + jx, y) })
+  }
+  /** A card's line, letter by letter over one beat. */
+  const drawCard = (ctx: CanvasRenderingContext2D, shot: Shot, at: number) => {
+    const t = input.text
+    const line = t?.lines[shot.card]?.trim()
+    if (!t || !line) return
+    const size = Math.round(t.size * u * 1.25)
+    ctx.font = `${t.weight} ${size}px ${t.font}`; ctx.textBaseline = 'top'; ctx.textAlign = t.align
+    const maxW = t.x === null ? S.w : t.width * W
+    const lines = wrap(ctx, line, maxW)
+    const blockH = lines.length * size * 1.1
+    const left = t.x === null ? S.x : t.x * W, top = t.y === null ? Math.round(S.y + S.h / 2 - blockH / 2) : Math.round(t.y * H)
+    const x = Math.round(left + (t.align === 'center' ? maxW / 2 : t.align === 'right' ? maxW : 0))
+    const shown = Math.ceil(line.length * Math.min(1, (at - shot.from) / beat))
+    let count = 0
+    ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, Math.round(size * 0.12)); ctx.strokeStyle = DEEP
+    lines.forEach((l, i) => { const part = l.slice(0, Math.max(0, shown - count)); count += l.length + 1; const y = top + i * Math.round(size * 1.1); ctx.strokeText(part, x, y); ctx.fillStyle = CREAM; ctx.fillText(part, x, y) })
+  }
+  /** The giant words on the scratch canvas, as a mask. Returns their bounds. */
+  const giantMask = (target: CanvasRenderingContext2D, at: number, shot: Shot) => {
+    const line = (input.text?.lines[0] ?? 'RANDOM').trim().toUpperCase() || 'RANDOM'
+    const words = line.split(/\s+/).slice(0, 4)
+    target.clearRect(0, 0, W, H); target.globalCompositeOperation = 'source-over'
+    target.font = `900 100px ${input.text?.font ?? font}`
+    const widest = Math.max(...words.map((w) => target.measureText(w).width), 1)
+    const size = Math.round(Math.min(100 * S.w * 1.1 / widest, S.h * 0.9 / Math.max(1, words.length) / 1.05))
+    target.font = `900 ${size}px ${input.text?.font ?? font}`; target.textAlign = 'center'; target.textBaseline = 'middle'; target.fillStyle = CREAM
+    const cy0 = S.y + S.h / 2 - (words.length - 1) * size * 0.525
+    words.forEach((w, i) => target.fillText(w, S.x + S.w / 2 + Math.round((hash(shot.seed, i, 370) - 0.5) * S.w * 0.15 * Math.sin(at / 900 + i)), cy0 + i * size * 1.05))
+    return { x: S.x, y: Math.round(cy0 - size * 0.6), w: S.w, h: Math.round(words.length * size * 1.05 + size * 0.2) }
+  }
+  /** The letters by displacement: the same zoomed picture, shifted a little inside the mask, over the zoomed ground — the letters appear subtly. */
+  const displaced = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, mask: () => void, amount: number) => {
+    zoomed(ctx, shot, at, 0.85)
+    mask()
+    sx.globalCompositeOperation = 'source-in'
+    const s = shot.seed
+    zoomed(sx, shot, at, 1, Math.round((hash(s, 380) - 0.5) * W * amount), Math.round((hash(s, 381) - 0.5) * H * amount * 0.6), 1 + (hash(s, 382) - 0.5) * 0.3)
+    sx.globalCompositeOperation = 'source-over'
+    ctx.drawImage(scratch, 0, 0)
+  }
+
+  // ----- the frame treated, by step and by strength: thin rows, a column now and then, the dressing, an icon, a rare slant.
+  const treatFrame = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number) => {
+    const g = strengthOf(shot)
+    const s = shot.seed, step = stepOf(shot, at), bi = beatIndexOf(shot, at), bp = beatPhaseOf(shot, at)
+    const src = sourceOf(shot)
+    if (hash(s, step, 320) < 0.3 + g * 0.5) { const n = Math.round(g * 3); for (let i = 0; i < n; i += 1) { const sh = Math.max(px, Math.round(H * (0.001 + hash(s, step, i, 321) * (0.003 + g * 0.01)))), sy = Math.round(hash(s, step, i, 322) * (H - sh)); ctx.drawImage(ctx.canvas, 0, sy, W, sh, Math.round((hash(s, step, i, 323) - 0.5) * W * (0.03 + g * 0.12)), sy, W, sh) } }
+    if (bp < 0.1 && g > 0.5 && hash(s, bi, 324) < 0.5) bands(ctx, src, prev, s + bi, step, 0.08 + g * 0.25, 0.15 + g * 0.25)
+    if (g > 0.3 && hash(s, step, 325) < g * 0.2) { const cw = Math.round(W * (0.004 + hash(s, step, 326) * 0.03)), cx = Math.round(hash(s, step, 327) * (W - cw)); ctx.drawImage(ctx.canvas, cx, 0, cw, H, cx, Math.round((hash(s, step, 328) - 0.5) * H * 0.08 * g), cw, H) }
+    if (shot.dressing === 0 && g > 0.12) camUi(ctx, frame, at)
+    if (shot.dressing === 1 && g > 0.3) { ctx.fillStyle = CREAM; ctx.font = `${Math.round(u * 18)}px ${font}`; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.globalAlpha = 0.5; ctx.fillText(`${Math.round(8 + hash(bi, 391) * 40)} Mbps  I P B P B  ${String(bi % 300).padStart(3, '0')}`, S.x + S.w, S.y + S.h - Math.round(u * 22)); ctx.globalAlpha = 1 }
+    if (shot.dressing === 1 && g > 0.5 && hash(s, step, 392) < 0.5) { const B = Math.round(Math.min(W, H) / 24), cols = Math.ceil(W / B), rows = Math.ceil(H / B); pv.drawImage(ctx.canvas, 0, 0); for (let i = 0; i < Math.round(g * 14); i += 1) { const bx = Math.floor(hash(s, step, i, 393) * cols), by = Math.floor(hash(s, step, i, 394) * rows); ctx.drawImage(prev, Math.floor(hash(s, step, i, 395) * cols) * B, Math.max(0, Math.min(rows - 1, by + Math.round((hash(s, step, i, 396) - 0.5) * 3))) * B, B, B, bx * B, by * B, B, B) } }
+    if (shot.dressing === 2 && g > 0.2) { ctx.fillStyle = DEEP; ctx.globalAlpha = 0.1; for (let y = 0; y < H; y += 3 * px) ctx.fillRect(0, y, W, px); ctx.globalAlpha = 0.05; ctx.fillStyle = CREAM; ctx.fillRect(0, Math.round(((at * 0.2) % (H * 1.2)) - H * 0.1), W, Math.round(H * 0.05)); ctx.globalAlpha = 1 }
+    if (input.icons.length && g > 0.2 && hash(s, bi, 345) < 0.05 + g * 0.1) { const ic = input.icons[Math.floor(hash(s, bi, 346) * input.icons.length)]; const size = Math.round(Math.min(W, H) * (0.12 + hash(s, bi, 347) * 0.2)); const ix = Math.round(S.x + hash(s, bi, 348) * (S.w - size)), iy = Math.round(S.y + hash(s, bi, 349) * (S.h - size)); ctx.drawImage(ic, ix, iy, size, size); for (let b = 0; b < 3; b += 1) { const by = iy + Math.round(hash(s, b, 350) * size), bh = Math.round(size * (0.02 + hash(s, b, 351) * 0.08)); ctx.drawImage(ctx.canvas, ix, by, size, bh, ix + Math.round((hash(s, b, step, 352) - 0.5) * size * 0.4), by, size, bh) } }
+    if (g > 0.5 && hash(s, bi, 343) < 0.05) { const a = (hash(s, bi, 344) - 0.5) * 0.04; ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(a); ctx.drawImage(ctx.canvas, -W / 2, -H / 2); ctx.restore() }
+    pieces(ctx, shot, at, 1 + Math.round(g * 2))
   }
 
   // ----- the shots
   const drawShot = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, frame: number) => {
-    const s = shot.seed, p = shot.p
+    const s = shot.seed, p = shot.p, g = strengthOf(shot)
     const progress = clamp01((at - shot.from) / Math.max(1, shot.to - shot.from))
     const src = sourceOf(shot)
-    const beatIndex = Math.floor((at - shot.from) / beat), beatPhase = ((at - shot.from) % beat) / beat
-    ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H)
+    const step = stepOf(shot, at)
     switch (shot.kind) {
-      case 'block': {
-        // The brand alone, over deep, or over the video dimmed when the energy allows.
-        backPlane(ctx, shot, at, p.a < 0.6 ? 1 : 0.3)
-        drawBrand(ctx, shot, at, frame)
-        if (p.b < 0.4 && beatPhase < 0.08) hairline(ctx, s + beatIndex, colourAt(p.c))
-        break
-      }
+      case 'block': { ground(ctx, shot, at); drawBrand(ctx, shot, at); break }
       case 'windows': {
-        // The letters open on the moving video; a faint outline of them around; the video dim behind at a high energy.
-        backPlane(ctx, shot, at, 0.4)
-        const r = brandRect(shot, progress)
-        sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(r.img, r.x, r.y, r.w, r.h)
-        sx.globalCompositeOperation = 'source-in'
-        if (src) cover(sx, src, r.x - Math.round(W * 0.2 * progress * (p.a - 0.5)), r.y, r.w + Math.round(W * 0.2), r.h, 1.3 + p.b); else { sx.fillStyle = accent; sx.fillRect(0, 0, W, H) }
-        sx.globalCompositeOperation = 'source-over'
-        // The letters open on the video, the way the draw says: full windows; an outline alone; an outline with windows in part; or the video in bands through the letters.
+        // The letters open on the picture: by displacement of the same zoomed picture, as an outline alone, as an outline with some windows, or filled on deep.
         const way = Math.floor(p.c * 4)
-        sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(r.img, r.x, r.y, r.w, r.h); sx.globalCompositeOperation = 'source-in'
-        if (src) cover(sx, src, r.x - Math.round(W * 0.2 * progress * (p.a - 0.5)), r.y, r.w + Math.round(W * 0.2), r.h, 1.3 + p.b); else { sx.fillStyle = accent; sx.fillRect(0, 0, W, H) }
-        sx.globalCompositeOperation = 'source-over'
-        if (way === 1 || way === 2) {
-          // The outline: the shape in the accent, the shape in deep a hair smaller inside it.
-          const o = Math.max(2, Math.round(u * 5))
-          ctx.drawImage(tinted(r.img, hash(s, 380) < 0.6 ? accent : secondOf(s), r.w + 2 * o, r.h + 2 * o), 0, 0, r.w + 2 * o, r.h + 2 * o, r.x - o, r.y - o, r.w + 2 * o, r.h + 2 * o)
-          ctx.drawImage(tinted(r.img, DEEP, r.w, r.h), 0, 0, r.w, r.h, r.x, r.y, r.w, r.h)
-          // The fill is undone by the tint above: rebuild the windows for the parts that get them.
-          sx.clearRect(0, 0, W, H); sx.drawImage(r.img, r.x, r.y, r.w, r.h); sx.globalCompositeOperation = 'source-in'
-          if (src) cover(sx, src, r.x - Math.round(W * 0.2 * progress * (p.a - 0.5)), r.y, r.w + Math.round(W * 0.2), r.h, 1.3 + p.b); else { sx.fillStyle = accent; sx.fillRect(0, 0, W, H) }
-          sx.globalCompositeOperation = 'source-over'
-        }
-        if (way === 0) ctx.drawImage(scratch, 0, 0)
-        else if (way === 2) { const bi = Math.floor((at - shot.from) / beat); for (let i = 0; i < 2 + Math.round(strengthOf(shot) * 3); i += 1) { const fw = Math.round(r.w * (0.2 + hash(s, bi, i, 381) * 0.5)), fh = Math.round(r.h * (0.3 + hash(s, bi, i, 382) * 0.7)); const fx = Math.round(r.x + hash(s, bi, i, 383) * (r.w - fw)), fy = Math.round(r.y + hash(s, bi, i, 384) * (r.h - fh)); ctx.drawImage(scratch, fx, fy, fw, fh, fx, fy, fw, fh) } }
-        else if (way === 3) { const step = Math.floor(at / 70); for (let i = 0; i < 6 + Math.round(strengthOf(shot) * 10); i += 1) { const bh = Math.round(r.h * (0.02 + hash(s, step, i, 385) * 0.08)), by = Math.round(r.y + hash(s, step, i, 386) * (r.h - bh)); ctx.drawImage(scratch, r.x, by, r.w, bh, r.x + Math.round((hash(s, step, i, 387) - 0.5) * r.w * 0.3), by, r.w, bh) } }
+        const r = brandRect(shot, progress)
+        const dark = shot.stacked ? input.logoVerticalDark : input.logoDark
+        const mask = () => { sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(r.img, r.x, r.y, r.w, r.h) }
+        if (way === 0) displaced(ctx, shot, at, mask, 0.03 + g * 0.05)
+        else if (way === 1) { ground(ctx, shot, at); strokeShape(ctx, r.img, dark, hash(s, 206) < 0.6 ? CREAM : accent, r.x, r.y, r.w, r.h) }
+        else if (way === 2) { displaced(ctx, shot, at, mask, 0.02 + g * 0.04); strokeShape(ctx, r.img, dark, CREAM, r.x, r.y, r.w, r.h); mask(); sx.globalCompositeOperation = 'source-in'; zoomed(sx, shot, at, 1, Math.round((hash(s, 380) - 0.5) * W * 0.05), 0, 1.1); sx.globalCompositeOperation = 'source-over'; for (let i = 0; i < 2 + Math.round(g * 3); i += 1) { const fw = Math.round(r.w * (0.2 + hash(s, step, i, 381) * 0.4)), fh = Math.round(r.h * (0.3 + hash(s, step, i, 382) * 0.6)); const fx = Math.round(r.x + hash(s, step, i, 383) * (r.w - fw)), fy = Math.round(r.y + hash(s, step, i, 384) * (r.h - fh)); ctx.drawImage(scratch, fx, fy, fw, fh, fx, fy, fw, fh) } }
+        else { ground(ctx, { ...shot, ground: 'deep' }, at); mask(); sx.globalCompositeOperation = 'source-in'; if (src) cover(sx, src, r.x, r.y, r.w, r.h, 1.3 + p.b, hash(s, 385), hash(s, 386)); else { sx.fillStyle = accent; sx.fillRect(0, 0, W, H) } sx.globalCompositeOperation = 'source-over'; ctx.drawImage(scratch, 0, 0) }
         if (shot.pill) pillAt(ctx, r.x + r.w / 2, Math.round(r.y + r.h + H * 0.025), Math.max(S.w * 0.35, r.w * 0.7))
+        mistreat(ctx, shot, r, at)
         break
       }
       case 'video': {
-        // The video only as corruption: blocks and bands over deep, flickering; the brand over it.
-        tornVideo(ctx, shot, at, frame)
-        void beatIndex
-        // The brand over it, never absent: in a corner of the safe area, or where the shot puts it.
-        if (p.d < 0.5) { const corner = Math.floor(p.e * 4); const { w, h } = logoSize(input.logo, S.w * 0.5); const x = corner % 2 ? S.x + S.w - w : S.x, y = corner < 2 ? S.y : S.y + S.h - h; drawBrand(ctx, { ...shot, bw: 0.5, pill: false, enter: 'none', exit: 'none' }, at, frame, 1, { x, y, w, h }) }
-        else drawBrand(ctx, { ...shot, enter: 'none' }, at, frame)
+        // The picture zoomed to a texture, the brand over it, small or large by the draw.
+        zoomed(ctx, shot, at, 0.7 + g * 0.2)
+        pieces(ctx, shot, at, 2 + Math.round(g * 3))
+        hairlines(ctx, shot, at, 1 + Math.round(g * 2))
+        if (p.d < 0.5) { const corner = Math.floor(p.e * 4); const { w, h } = logoSize(input.logo, S.w * 0.45); const x = corner % 2 ? S.x + S.w - w : S.x, y = corner < 2 ? S.y : S.y + S.h - h; drawBrand(ctx, { ...shot, bw: 0.45, pill: false, enter: 'none', exit: 'none' }, at, 1, { x, y, w, h }) }
+        else drawBrand(ctx, { ...shot, enter: 'none' }, at)
         break
       }
       case 'tear': {
-        // One beat of bands made of the video and of the frame before, the whole frame or a part by the energy, flickering.
+        // One beat: the frame before, with thin bands over a share of it, changing by step.
         ctx.drawImage(held, 0, 0)
-        tearBands(ctx, src, held, s, frame, 0.5 + shot.energy * 0.5 * p.a, 0.012 + p.b * 0.04, 0.3 + shot.energy * 0.5)
+        bands(ctx, src, held, s, step, 0.15 + g * 0.3 * p.a, 0.2 + g * 0.3)
         break
       }
       case 'rows': {
-        // The scene (video dim + brand) cut in rows that slide at their own speeds; pieces of the video ride along.
-        backPlane(ctx, shot, at, 0.6)
-        drawBrand(ctx, { ...shot, enter: 'none', exit: 'none' }, at, frame)
+        // The scene cut in a few rows sliding slowly, each its own way; a small piece or two riding along.
+        ground(ctx, shot, at)
+        drawBrand(ctx, { ...shot, enter: 'none', exit: 'none' }, at)
         sc.drawImage(ctx.canvas, 0, 0)
         ctx.fillStyle = DEEP; ctx.fillRect(0, 0, W, H)
-        const rows = 4 + Math.round(p.a * 5), rh = Math.ceil(H / rows), local = at - shot.from
+        const rows = 3 + Math.round(p.a * 3), rh = Math.ceil(H / rows), local = at - shot.from
         for (let r = 0; r < rows; r += 1) {
           const y = r * rh
-          const speed = (hash(s, r, 83) - 0.5) * W * (0.25 + shot.energy * 0.9) / 1000
-          const base = Math.round(hash(s, r, 84) * W + speed * local)
-          const rowShift = ((base % W) + W) % W - Math.round(W * 0.5)
-          ctx.drawImage(scene, 0, y, W, rh, rowShift, y, W, rh)
-          const pieces = Math.round(hash(s, r, 85) * (1 + shot.energy * 2))
-          for (let q = 0; q < pieces; q += 1) {
-            const pw = Math.round(W * (0.1 + hash(s, r, q, 86) * 0.3)), ph = Math.round(rh * (0.5 + hash(s, r, q, 87) * 0.5))
-            const px0 = (((base + Math.round(hash(s, r, q, 88) * W)) % (W + pw)) + W + pw) % (W + pw) - pw
-            fragment(ctx, shot, s * 11 + r * 13 + q, px0, y + Math.round(hash(s, r, q, 89) * (rh - ph)), pw, ph)
-            if (hash(s, r, q, 95) < 0.5) { ctx.strokeStyle = hash(s, r, q, 96) < 0.5 ? CREAM : DEEP; ctx.lineWidth = px; ctx.strokeRect(px0 + 0.5, y + 0.5, pw - 1, ph - 1) }
-          }
-          if (hash(s, r, 97) < 0.3) { ctx.fillStyle = colourAt(hash(s, r, 98)); ctx.fillRect(0, y + rh - px, W, px) }
+          const speed = (hash(s, r, 83) - 0.5) * W * (0.08 + g * 0.25) / 1000
+          const shift = Math.round(speed * local + (hash(s, r, 84) - 0.5) * W * 0.1)
+          ctx.drawImage(scene, 0, y, W, rh, shift, y, W, rh)
+          if (hash(s, r, 85) < 0.4 && src) { const pw = Math.round(W * (0.08 + hash(s, r, 86) * 0.14)), ph = Math.round(rh * 0.5); const px0 = (((Math.round(hash(s, r, 88) * W + speed * 2 * local) % (W + pw)) + W + pw) % (W + pw)) - pw; cover(ctx, src, px0, y + Math.round(rh * 0.25), pw, ph, 2 + hash(s, r, 89) * 3, hash(s, r, 90), hash(s, r, 91)); ctx.strokeStyle = CREAM; ctx.lineWidth = px; ctx.strokeRect(px0 + 0.5, y + Math.round(rh * 0.25) + 0.5, pw - 1, ph - 1) }
+          if (hash(s, r, 97) < 0.35) { ctx.fillStyle = colourAt(hash(s, r, 98)); ctx.globalAlpha = 0.7; ctx.fillRect(0, y + rh - px, W, px); ctx.globalAlpha = 1 }
         }
         break
       }
       case 'feed': {
-        // Cards of the video rushing up or down, the brand's card among them; the trail of the speed.
+        // Small cards of the picture passing, not fast, the brand's card among them.
+        ground(ctx, { ...shot, ground: 'deep' }, at)
         const local = at - shot.from
-        const cw = Math.round(Math.min(W, H) * (0.4 + p.a * 0.3)), ch = Math.round(cw * (0.8 + p.b * 0.6)), gap = Math.round(H * 0.03)
-        const cx = Math.round((W - cw) / 2 + (p.c - 0.5) * W * 0.3)
+        const cw = Math.round(Math.min(W, H) * (0.28 + p.a * 0.2)), ch = Math.round(cw * (0.8 + p.b * 0.6)), gap = Math.round(H * 0.04)
+        const cx = Math.round((W - cw) / 2 + (p.c - 0.5) * W * 0.35)
         const dir = p.d < 0.6 ? 1 : -1
-        const speed = H * (0.9 + shot.energy * 1.8) / 1000
+        const speed = H * (0.35 + g * 0.7) / 1000
         const offset = (local * speed) % (ch + gap)
         for (let i = -1; i < Math.ceil(H / (ch + gap)) + 1; i += 1) {
           const y = Math.round(dir > 0 ? i * (ch + gap) - offset : H - (i + 1) * (ch + gap) + offset)
-          if (hash(s, i, 103) < 0.3) { ctx.fillStyle = DEEP; ctx.fillRect(cx, y, cw, ch); const { w, h } = logoSize(input.logo, cw * 0.8); drawBrand(ctx, { ...shot, pill: false, enter: 'none', exit: 'none', deform: 'none' }, at, frame, 1, { x: cx + Math.round(cw * 0.1), y: y + Math.round(ch / 2 - h / 2), w, h }) }
-          else fragment(ctx, shot, s * 7 + i, cx, y, cw, ch)
+          if (hash(s, i, 103) < 0.3) { ctx.fillStyle = DEEP; ctx.fillRect(cx, y, cw, ch); const { w, h } = logoSize(input.logo, cw * 0.8); drawBrand(ctx, { ...shot, pill: false, enter: 'none', exit: 'none', deform: 'none' }, at, 1, { x: cx + Math.round(cw * 0.1), y: y + Math.round(ch / 2 - h / 2), w, h }) }
+          else if (src) cover(ctx, src, cx, y, cw, ch, 1.5 + hash(s, i, 104) * 2.5, hash(s, i, 105), hash(s, i, 106))
           ctx.strokeStyle = CREAM; ctx.lineWidth = px; ctx.strokeRect(cx - 2 * px + 0.5, y - 2 * px + 0.5, cw + 4 * px, ch + 4 * px)
           ctx.strokeStyle = colourAt(hash(s, i, 107)); ctx.strokeRect(cx + 2 * px + 0.5, y + 2 * px + 0.5, cw - 4 * px, ch - 4 * px)
         }
-        ctx.globalAlpha = 0.3; ctx.drawImage(ctx.canvas, 0, -dir * Math.round(ch * 0.12)); ctx.globalAlpha = 1
         break
       }
       case 'sweep': {
-        // A line crosses; behind it the video (or the brand over it), ahead of it the frame before; columns near it shifted.
-        tornVideo(ctx, shot, at, frame)
-        if (p.a < 0.5) drawBrand(ctx, { ...shot, enter: 'none', exit: 'none' }, at, frame)
+        // A fine line crosses; ahead of it the frame before, behind it this shot's ground and brand; a few thin columns shifted near it.
+        ground(ctx, shot, at)
+        if (p.a < 0.6) drawBrand(ctx, { ...shot, enter: 'none', exit: 'none' }, at)
         const lx = Math.round((p.b < 0.5 ? progress : 1 - progress) * W)
         ctx.save(); ctx.beginPath(); if (p.b < 0.5) ctx.rect(lx, 0, W - lx, H); else ctx.rect(0, 0, lx, H); ctx.clip(); ctx.drawImage(held, 0, 0); ctx.restore()
-        for (let i = 0; i < Math.round(3 + shot.energy * 8); i += 1) { const cw = Math.round(W * (0.004 + hash(s, frame, i, 111) * 0.025)), cx = Math.round(lx - W * 0.1 + hash(s, frame, i, 112) * W * 0.2); const dy = Math.round((hash(s, frame, i, 113) - 0.5) * H * 0.25 * shot.energy); if (cx + cw > 0 && cx < W) ctx.drawImage(ctx.canvas, cx, 0, cw, H, cx, dy, cw, H) }
-        ctx.fillStyle = hash(s, 118) < 0.7 ? CREAM : colourAt(p.c); ctx.fillRect(lx, 0, 2 * px, H); ctx.globalAlpha = 0.4; ctx.fillRect(lx - 6 * px, 0, px, H); ctx.globalAlpha = 1
+        for (let i = 0; i < 2 + Math.round(g * 4); i += 1) { const cw = Math.round(W * (0.003 + hash(s, step, i, 111) * 0.015)), cx = Math.round(lx - W * 0.06 + hash(s, step, i, 112) * W * 0.12); const dy = Math.round((hash(s, step, i, 113) - 0.5) * H * 0.12 * g); if (cx + cw > 0 && cx < W) ctx.drawImage(ctx.canvas, cx, 0, cw, H, cx, dy, cw, H) }
+        ctx.fillStyle = hash(s, 118) < 0.7 ? CREAM : colourAt(p.c); ctx.fillRect(lx, 0, px, H)
         break
       }
       case 'zoom': {
-        // The wordmark grows through the frame, from small to past its edges, over the video dim.
-        backPlane(ctx, shot, at, 0.7)
-        const f = 0.25 + easeIn(progress) * 4
-        drawBrand(ctx, { ...shot, pill: false, enter: 'none', exit: 'none', deform: 'none', bx: 0.5, by: 0.5 }, at, frame, f)
-        if (progress > 0.7) tearBands(ctx, src, prev, s + frame, frame, 0.3, 0.02, 0.3)
+        ground(ctx, shot, at)
+        const f = 0.3 + easeIn(progress) * 2.4
+        drawBrand(ctx, { ...shot, pill: false, enter: 'none', exit: 'none', deform: 'none', bx: 0.5, by: 0.5 }, at, f)
         break
       }
       case 'card': {
-        // A panel in a palette colour, or the video dim; the card's line, letter by letter; the brand small if room.
-        if (p.a < 0.55) { ctx.fillStyle = hash(s, 204) < 0.6 ? accent : secondOf(s); ctx.fillRect(0, 0, W, H) }
-        else backPlane(ctx, shot, at, 0.8)
+        ground(ctx, shot, at)
         drawCard(ctx, shot, at)
-        if (p.b < 0.5) { const { w, h } = logoSize(input.logo, S.w * 0.28); drawBrand(ctx, { ...shot, treat: p.a < 0.55 ? 'cream' : shot.treat, pill: false, enter: 'none', exit: 'none', deform: 'none' }, at, frame, 1, { x: S.x + S.w - w, y: S.y + S.h - h, w, h }) }
-        break
-      }
-      case 'textbig': {
-        // The text giant in the back: the letters open on the torn video, repeated and cut by rows, mirrored on a beat; the clean words stay in front.
-        backPlane(ctx, shot, at, 0.5)
-        const line = (input.text?.lines[0] ?? 'RANDOM').trim().toUpperCase() || 'RANDOM'
-        const words = line.split(/\s+/).slice(0, 4)
-        sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'
-        sx.font = `900 100px ${input.text?.font ?? font}`
-        const widest = Math.max(...words.map((w) => sx.measureText(w).width), 1)
-        const size = Math.round(Math.min(100 * S.w * 1.1 / widest, S.h * 0.9 / Math.max(1, words.length) / 1.05))
-        sx.font = `900 ${size}px ${input.text?.font ?? font}`; sx.textAlign = 'center'; sx.textBaseline = 'middle'; sx.fillStyle = CREAM
-        const cy0 = S.y + S.h / 2 - (words.length - 1) * size * 0.525
-        words.forEach((w, i) => sx.fillText(w, S.x + S.w / 2 + Math.round((hash(s, i, 370) - 0.5) * S.w * 0.2 * Math.sin(at / 700 + i)), cy0 + i * size * 1.05))
-        // Open on the video, or plain cream, by the draw; then rows of it slid on the beat.
-        if (src && p.a < 0.7) { sx.globalCompositeOperation = 'source-in'; cover(sx, src, 0, 0, W, H, 1.3, 0.5 + (p.b - 0.5) * 0.3, 0.5); sx.globalCompositeOperation = 'source-over' }
-        ctx.drawImage(scratch, 0, 0)
-        const rowsN = 4 + Math.round(p.c * 6), rh = Math.ceil(H / rowsN)
-        const g2 = strengthOf(shot)
-        for (let r = 0; r < rowsN; r += 1) if (hash(s, r, beatIndex, 371) < g2 * 0.7) ctx.drawImage(ctx.canvas, 0, r * rh, W, rh, Math.round((hash(s, r, beatIndex, 372) - 0.5) * W * (0.1 + g2 * 0.4)), r * rh, W, rh)
-        if (beatPhase < 0.25 && p.d < 0.5) { ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1); ctx.globalAlpha = 0.5; ctx.drawImage(ctx.canvas, 0, 0); ctx.restore() }
-        if (p.e < 0.5) drawBrand(ctx, { ...shot, bw: 0.3, pill: false, enter: 'none', exit: 'none' }, at, frame, 1, { x: S.x + S.w - Math.round(S.w * 0.3), y: S.y, w: Math.round(S.w * 0.3), h: Math.round(S.w * 0.3 * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)) })
+        if (p.b < 0.5) { const { w, h } = logoSize(input.logo, S.w * 0.28); drawBrand(ctx, { ...shot, treat: shot.ground === 'panel' ? 'cream' : shot.treat, pill: false, enter: 'none', exit: 'none', deform: 'none' }, at, 1, { x: S.x + S.w - w, y: S.y + S.h - h, w, h }) }
         break
       }
       case 'vomit': {
-        // The pile growing from a point, pouring in its direction, over the video dim and the brand; it drips and tears.
-        backPlane(ctx, shot, at, 0.5)
-        drawBrand(ctx, { ...shot, enter: 'none', exit: 'none' }, at, frame)
+        // Small fragments gathering from a point and pouring, by step, slowly; the brand under them.
+        ground(ctx, shot, at)
+        drawBrand(ctx, { ...shot, enter: 'none', exit: 'none' }, at)
         if (pileFor !== s) { pileFor = s; pc.clearRect(0, 0, W, H) }
-        const ox = W * (0.15 + p.a * 0.7), oy = H * (0.1 + p.b * 0.6)
+        const ox = W * (0.2 + p.a * 0.6), oy = H * (0.15 + p.b * 0.5)
         const ang = p.c < 0.6 ? Math.PI / 2 : p.c < 0.75 ? -Math.PI / 2 : p.c < 0.88 ? 0 : Math.PI
-        const pace = 0.5 + p.d
-        const n = Math.round((4 + shot.energy * 12) * (0.5 + p.e))
-        for (let i = 0; i < n; i += 1) {
-          const spread = (0.1 + progress * 0.9) * pace
-          const fw = Math.round(W * (0.03 + hash(s, frame, i, 132) * 0.2)), fh = Math.round(H * (0.004 + hash(s, frame, i, 133) * 0.05))
-          const along = hash(s, frame, i, 135) * spread, across = (hash(s, frame, i, 134) - 0.5) * spread * 0.7
-          fragment(pc, shot, s * 13 + frame * 7 + i, Math.round(ox + Math.cos(ang) * along * H * 0.9 - Math.sin(ang) * across * W - fw / 2), Math.round(oy + Math.sin(ang) * along * H * 0.9 + Math.cos(ang) * across * W - fh / 2), fw, fh)
+        const n = 1 + Math.round(g * 3)
+        if (src) for (let i = 0; i < n; i += 1) {
+          const spread = 0.1 + progress * 0.7
+          const fw = Math.round(W * (0.02 + hash(s, step, i, 132) * 0.08)), fh = Math.round(H * (0.003 + hash(s, step, i, 133) * 0.025))
+          const along = hash(s, step, i, 135) * spread, across = (hash(s, step, i, 134) - 0.5) * spread * 0.5
+          const fx = Math.round(ox + Math.cos(ang) * along * H * 0.8 - Math.sin(ang) * across * W - fw / 2), fy = Math.round(oy + Math.sin(ang) * along * H * 0.8 + Math.cos(ang) * across * W - fh / 2)
+          cover(pc, src, fx, fy, fw, fh, 2 + hash(s, step, i, 136) * 3, hash(s, step, i, 137), hash(s, step, i, 138))
+          if (hash(s, step, i, 139) < 0.3) { pc.fillStyle = colourAt(hash(s, step, i, 140)); pc.globalAlpha = 0.4; pc.fillRect(fx, fy, fw, fh); pc.globalAlpha = 1 }
         }
-        const drip = Math.round((2 + shot.energy * 5) * pace) * px
-        pc.globalAlpha = 0.6; pc.drawImage(pile, Math.round(Math.cos(ang) * drip), Math.round(Math.sin(ang) * drip)); pc.globalAlpha = 1
-        for (let i = 0; i < Math.round(1 + shot.energy * 4); i += 1) { const sy = Math.round(hash(s, frame, i, 143) * H), sh2 = Math.round(H * (0.004 + hash(s, frame, i, 144) * 0.03)); pc.drawImage(pile, 0, sy, W, sh2, Math.round((hash(s, frame, i, 145) - 0.5) * W * 0.3), sy, W, sh2) }
+        const drip = Math.round((1 + g * 2) * px)
+        pc.globalAlpha = 0.5; pc.drawImage(pile, Math.round(Math.cos(ang) * drip), Math.round(Math.sin(ang) * drip)); pc.globalAlpha = 1
         ctx.drawImage(pile, 0, 0)
         break
       }
+      case 'textbig': {
+        // The text giant in the back — by displacement of the zoomed picture, or as a cream outline over the ground — a few rows slid on the step; the clean words stay in front.
+        const rect = { x: 0, y: 0, w: 0, h: 0 }
+        if (p.a < 0.55) displaced(ctx, shot, at, () => { Object.assign(rect, giantMask(sx, at, shot)) }, 0.03 + g * 0.05)
+        else { ground(ctx, shot, at); Object.assign(rect, giantMask(sx, at, shot)); const colour = hash(s, 206) < 0.6 ? CREAM : accent; const o = Math.max(2, Math.round(u * 4)); const tint = tinted(scratch, colour, W, H, s2); for (const [dx, dy] of [[-o, 0], [o, 0], [0, -o], [0, o]]) ctx.drawImage(tint, dx, dy); tinted(scratch, DEEP, W, H, s2); ctx.drawImage(scratch2, 0, 0) }
+        const rowsN = 3 + Math.round(p.c * 4), rh = Math.ceil(rect.h / rowsN)
+        for (let r = 0; r < rowsN; r += 1) if (hash(s, r, step, 371) < g * 0.5) ctx.drawImage(ctx.canvas, 0, rect.y + r * rh, W, rh, Math.round((hash(s, r, step, 372) - 0.5) * W * (0.04 + g * 0.2)), rect.y + r * rh, W, rh)
+        if (p.e < 0.5) { const { w, h } = logoSize(input.logo, S.w * 0.3); drawBrand(ctx, { ...shot, bw: 0.3, pill: false, enter: 'none', exit: 'none' }, at, 1, { x: S.x + S.w - w, y: S.y, w, h }) }
+        break
+      }
     }
-    // The frame treated whatever the shot: nothing leaves naked.
-    if (shot.kind !== 'tear') glitchFrame(ctx, shot, at, frame)
-    // The join at the head of the shot: a slam of colour, a tear of the frame before, a flash.
+    if (shot.kind !== 'tear') treatFrame(ctx, shot, at, frame)
+    // The join at the head of the shot: a light tear of the frame before, or a slam of colour for a breath — never a flash.
     const head = at - shot.from
-    if (head < beat * 0.18 && shot.transition !== 'cut') {
-      const t = head / (beat * 0.18)
-      if (shot.transition === 'slam') { ctx.fillStyle = hash(s, 150) < 0.5 ? accent : secondOf(s); ctx.globalAlpha = 1 - t; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
-      else if (shot.transition === 'tear') tearBands(ctx, src, held, s + 1, frame, 0.6 * (1 - t), 0.03, 0.4)
-      else { ctx.fillStyle = CREAM; ctx.globalAlpha = (1 - t) * 0.8; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
+    if (head < beat * 0.15 && shot.transition !== 'cut') {
+      const t = head / (beat * 0.15)
+      if (shot.transition === 'slam') { ctx.fillStyle = hash(s, 150) < 0.5 ? accent : secondOf(s); ctx.globalAlpha = (1 - t) * 0.6; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1 }
+      else bands(ctx, src, held, s + 1, step, 0.25 * (1 - t), 0.2)
     }
-    // One line of words stays on the whole film, where the curator put it or at the foot of the safe area; several lines come as cards.
     if (input.text && input.text.lines.length === 1 && shot.kind !== 'card') drawWords(ctx, shot, at)
     if (input.icon) ctx.drawImage(input.icon.image, Math.round(input.icon.x * W), Math.round(input.icon.y * H), Math.round(input.icon.size * u), Math.round(input.icon.size * u))
   }
@@ -705,7 +640,6 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const shotAt = (at: number) => { const index = shots.findIndex((s) => at < s.to); return shots[index === -1 ? shots.length - 1 : index] }
   const frame = (ctx: CanvasRenderingContext2D, at: number, frameNo: number) => {
     const shot = shotAt(at)
-    // The frame before this shot began, kept for the tears and the sweep.
     if (heldFor !== shot.seed) { heldFor = shot.seed; hc.drawImage(prev, 0, 0) }
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true
     drawShot(ctx, shot, at, frameNo)
@@ -758,7 +692,6 @@ export async function renderStill(input: PromoInput, atMs: number): Promise<Blob
   const work = document.createElement('canvas'); work.width = format.w; work.height = format.h
   const ctx = work.getContext('2d')!
   const promo = createPromo(input, format.w, format.h)
-  // The frames before are drawn too, so the tears and the sweep have something to hold.
   for (let t = Math.max(0, atMs - 400); t < atMs; t += 40) promo.frame(ctx, t, Math.floor(t / 33))
   promo.frame(ctx, atMs, Math.floor(atMs / 33))
   const blob = await new Promise<Blob | null>((resolve) => work.toBlob(resolve, 'image/png'))
