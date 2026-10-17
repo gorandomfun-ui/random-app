@@ -13,7 +13,7 @@ import { downloadBlob } from '@/lib/comm/montageRun'
 import { BRAND_MODES, FORMATS, SHOTS, createPromo, formatOf, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind } from '@/lib/comm/promoLoop'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
-const TEXT_SIZES = { S: 60, M: 90, L: 140 } as const
+const TEXT_SIZES = { S: 60, M: 90, L: 140, XL: 210 } as const
 const FONTS = [['Tomorrow', 900, 'Tomorrow'], ['Tomorrow', 700, 'Tomorrow fin'], ['InterTight', 700, 'Inter Tight']] as const
 const ICONS: Array<[string, string]> = [['heart', 'Heart.svg'], ['shuffle', 'Shuffle.svg'], ['video', 'Video.svg'], ['image', 'image.svg'], ['web', 'web.svg'], ['wave', 'wave.svg'], ['quote', 'quote.svg'], ['joke', 'joke.svg'], ['fact', 'fact.svg'], ['share', 'share.svg'], ['social', 'social.svg'], ['plus', 'plus.svg'], ['info', 'info.svg'], ['comm', 'comm.svg']]
 const chip = 'rounded-full border border-white/40 px-3 py-1.5 text-sm disabled:opacity-40'
