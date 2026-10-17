@@ -204,6 +204,8 @@ test("Bilibili in the world card's mix (17 October): one language among the othe
   const computer = await from(true, 400)
   assert.ok((computer['world:bilibili'] ?? 0) > 5, JSON.stringify(computer))
   assert.ok((computer['world:bilibili'] ?? 0) < 100, `one language among the others: ${JSON.stringify(computer)}`)
+  // The curator's test link (?bilibili=1): every world card is Bilibili.
+  for (let draw = 0; draw < 20; draw += 1) assert.equal((await fillSlot(db, 'world', { ...context(db, newSession(draw)), bilibiliTest: true }))?.from, 'world:bilibili')
 })
 
 test('a card counted along the session: the buzz and the long, the third, the sixth… of each', () => {

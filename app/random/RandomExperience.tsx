@@ -1850,7 +1850,7 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
           alt=""
           aria-hidden="true"
           referrerPolicy="no-referrer"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(14px) brightness(0.7)', transform: 'scale(1.12)' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(6px) brightness(0.9)', transform: 'scale(1.06)' }}
         />
       ) : null}
       <iframe
