@@ -8,12 +8,12 @@
  * What is read: the list of the moment's popular videos, a page deeper each run, and the videos Bilibili relates to a
  * few of them. Never the licensed programmes (blocked outside China), nor what is not a video of one piece; the title
  * through the common checks; three a run at most from one uploader. Its pictures refuse to show on another site (403
- * with our address as the referrer): none is kept. Free, no YouTube unit; 250 a run, twice a day.
+ * with our address as the referrer): the page shows them with no referrer. Free, no YouTube unit; 250 a run, twice a day.
  */
 
 import type { Document } from 'mongodb'
 
-import { BILIBILI } from '../../bilibili'
+import { BILIBILI, bilibiliPicture } from '../../bilibili'
 import { isCleanTitle } from '../../cool/clean'
 import { isAiMarked } from '../../cool/themes'
 import type { LineContext, LineResult } from '../context'
@@ -37,7 +37,7 @@ const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/
 
 /** One video as Bilibili's lists give it. */
 export type BilibiliRow = {
-  bvid?: string; aid?: number; cid?: number; title?: string; desc?: string; duration?: number; pubdate?: number; tname?: string; copyright?: number; is_ogv?: boolean
+  bvid?: string; aid?: number; cid?: number; pic?: string; title?: string; desc?: string; duration?: number; pubdate?: number; tname?: string; copyright?: number; is_ogv?: boolean
   owner?: { mid?: number; name?: string }; stat?: { view?: number }; rights?: { pay?: number; arc_pay?: number; ugc_pay?: number }; videos?: number
 }
 
@@ -61,6 +61,8 @@ export function bilibiliDocument(row: BilibiliRow, now: Date): { doc: Document }
       ...(mid ? { channelId: `bilibili:${mid}` } : {}), ...(row.owner?.name ? { channelTitle: row.owner.name } : {}),
       ...(typeof row.stat?.view === 'number' ? { viewCount: row.stat.view } : {}),
       ...(row.pubdate ? { publishedAt: new Date(row.pubdate * 1000) } : {}),
+      // Its picture, which the page shows with no referrer (lib/v3/bilibili.ts): 403 otherwise.
+      ...(bilibiliPicture(row.pic) ? { thumb: bilibiliPicture(row.pic) } : {}),
       lang: 'zh', rand: Math.random(), createdAt: now,
       v3: { line: 'bilibili', desktopOnly: true, ...(row.tname ? { category: row.tname } : {}) },
     },

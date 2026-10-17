@@ -12,17 +12,23 @@ export const BILIBILI = 'bilibili_videos'
 export const BILIBILI_FOR_EVERYONE = true
 
 /**
- * Whether phones get Bilibili in the world card's mix too, or only the curator's while he tests it in the app (17 October:
- * its phone player plays a whole video given the video's two numbers, `aid` and `cid`, and the owner wants to see it in Random).
+ * Whether every phone gets Bilibili in the world card's mix, or only the curator's (17 October: its phone player plays a
+ * whole video given the video's two numbers, `aid` and `cid`, after a touch on its play button; the owner tests it in the
+ * app, in the mix — "tu remets pas que Bilibili").
  */
 export const BILIBILI_ON_PHONES = false
 
-/** What the world card does with Bilibili for one visitor: in the mix, every world card while the curator tests it on a phone, or nothing. */
-export function bilibiliMode(computer: boolean, curator: boolean): 'mix' | 'test' | undefined {
-  if (computer) return BILIBILI_FOR_EVERYONE || curator ? 'mix' : undefined
-  if (BILIBILI_ON_PHONES) return 'mix'
-  return curator ? 'test' : undefined
+/** Whether the world card has Bilibili among its languages for one visitor: every computer; a phone, the curator's until phones are switched on. */
+export function bilibiliInMix(computer: boolean, curator: boolean): boolean {
+  if (computer) return BILIBILI_FOR_EVERYONE || curator
+  return BILIBILI_ON_PHONES || curator
 }
+
+/**
+ * A Bilibili picture shows only when it does not know the page asking for it: 403 with our address as the referrer, 200
+ * without (16 October). Kept https; the page shows it with no referrer.
+ */
+export const bilibiliPicture = (url: unknown): string | undefined => (typeof url === 'string' && /^(https?:)?\/\/[\w.-]+\.hdslb\.com\//.test(url) ? url.replace(/^(https?:)?\/\//, 'https://') : undefined)
 
 /** A computer, as far as the address bar's browser says: never a phone nor an Android tablet (an iPad says it is a Mac). */
 export function onComputer(userAgent: string | null | undefined): boolean {

@@ -8,6 +8,7 @@ import { buildProfile } from '@/lib/discovery/profile'
 import { saveOwnerReference } from '@/lib/discovery/ownerStore'
 import { refreshTopLikesForItem } from '@/lib/likes/top'
 import { planCurationLikeMutation } from '@/lib/discovery/curationLike'
+import { BILIBILI } from '@/lib/v3/bilibili'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
@@ -59,8 +60,15 @@ export async function POST(req: Request) {
     if (!body || typeof body.itemId !== 'string' || !/^[a-f\d]{24}$/i.test(body.itemId) || typeof body.active !== 'boolean') return json({ error: 'Invalid request' }, 400)
     const db = await getDb()
     const objectId = new ObjectId(body.itemId)
-    const items = db.collection('items')
-    const row = await items.findOne({ _id: objectId }, { maxTimeMS: 700 })
+    // A Bilibili video lives in a collection of its own, read by the world card alone (lib/v3/bilibili.ts): liked like any
+    // other (the owner, 17 October: "on doit pouvoir liker les vidéos Bilibili"), its count kept on it.
+    let items = db.collection('items')
+    let row = await items.findOne({ _id: objectId }, { maxTimeMS: 700 })
+    if (!row) {
+      items = db.collection(BILIBILI)
+      row = await items.findOne({ _id: objectId }, { maxTimeMS: 700 })
+    }
+    const ownCollection = items.collectionName === BILIBILI
     if (!row || !['video', 'image'].includes(String(row.type))) return json({ error: 'Visual content required' }, 400)
     const profile = buildProfile(legacySourceSnapshot(row))
     const candidate = candidateFromRow({ ...row, discoveryVersion: 2, discoveryProfile: profile }, null, Date.now())
@@ -90,7 +98,7 @@ export async function POST(req: Request) {
           [{ $set: { likeCount: { $max: [0, { $subtract: [{ $ifNull: ['$likeCount', 0] }, 1] }] }, updatedAt: '$$NOW' } }],
         )
       }
-      if (likeDelta !== 0) await refreshTopLikesForItem(objectId)
+      if (likeDelta !== 0 && !ownCollection) await refreshTopLikesForItem(objectId)
     }
 
     try {
@@ -106,7 +114,7 @@ export async function POST(req: Request) {
       } else if (likeDelta < 0) {
         await items.updateOne({ _id: objectId }, { $inc: { likeCount: 1 }, $set: { updatedAt: new Date() } }).catch(() => undefined)
       }
-      if (likeDelta !== 0) await refreshTopLikesForItem(objectId).catch(() => undefined)
+      if (likeDelta !== 0 && !ownCollection) await refreshTopLikesForItem(objectId).catch(() => undefined)
       throw error
     }
     // The worker explores active references by subject. A like does not crawl the uploader's entire channel.

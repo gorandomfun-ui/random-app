@@ -319,3 +319,34 @@ test("a YouTube like gives its channel: two pages of uploads a visit, details on
   assert.equal(uploadsOf('x1abc'), null)
   delete process.env.YOUTUBE_API_KEY
 })
+
+test('a liked Bilibili video is a model twice: its Chinese title, and its title and category put into English, both kept on it (17 October)', async () => {
+  const liked = new ObjectId()
+  const updates: Array<{ $set: Record<string, unknown> }> = []
+  const asked: string[] = []
+  const collection = (name: string) => ({
+    find: () => ({
+      toArray: async () => {
+        if (name === 'discovery_owner_references_v2') return [{ itemId: String(liked) }]
+        if (name === 'bilibili_videos') return [{ _id: liked, title: '假如地球online有幕后玩家2', v3: { category: '手机游戏' } }]
+        return []
+      },
+    }),
+    updateOne: async (_filter: unknown, update: { $set: Record<string, unknown> }) => { updates.push(update); return {} },
+    bulkWrite: async () => ({}),
+  })
+  const translations: Record<string, string> = { '假如地球online有幕后玩家2': 'If Earth Online had a Behind the Scenes Player 2', 手机游戏: 'Mobile games' }
+  const http = (async (input: string | URL) => {
+    const q = new URL(String(input)).searchParams.get('q') ?? ''
+    return new Response(JSON.stringify({ responseStatus: 200, responseData: { translatedText: translations[q] ?? q } }), { status: 200 })
+  }) as typeof fetch
+  const ctx = { db: { collection } as unknown as LineContext['db'], dryRun: false, http } as unknown as LineContext
+  const likes = await loadLikes(ctx, async (texts) => { asked.push(...texts); return texts.map((_, index) => seeded(40 + index)) })
+  assert.deepEqual(likes.map((like) => like.title), ['假如地球online有幕后玩家2', 'If Earth Online had a Behind the Scenes Player 2 · Mobile games'])
+  assert.ok(likes.every((like) => like.id === String(liked) && like.provider === 'bilibili'))
+  assert.deepEqual(asked, ['假如地球online有幕后玩家2.', 'If Earth Online had a Behind the Scenes Player 2 · Mobile games.'])
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].$set.titleEn, 'If Earth Online had a Behind the Scenes Player 2')
+  assert.equal(updates[0].$set.categoryEn, 'Mobile games')
+  assert.ok(updates[0].$set.vec && updates[0].$set.vecEn, 'both prints kept on the video')
+})

@@ -594,9 +594,11 @@ function getImmersiveBackgroundImage(item: DisplayItem | null, viewportWidth?: n
     return getSafeBackgroundImage(item.thumbUrl, viewportWidth) || getSafeBackgroundImage(item.url, viewportWidth)
   }
   if (item.type === 'video') {
+    const provider = (item.provider || '').toLowerCase()
+    // Bilibili's pictures refuse a page that names itself (403): its player shows them itself, with no referrer.
+    if (provider === 'bilibili') return null
     const safeThumb = getSafeBackgroundImage(item.thumbUrl, viewportWidth)
     if (safeThumb) return safeThumb
-    const provider = (item.provider || '').toLowerCase()
     const youtubeId = provider.includes('youtube') || /youtu\.?be|youtube\.com/.test(item.url)
       ? extractYouTubeIdForThumb(item.url)
       : null
@@ -1820,9 +1822,10 @@ function VideoEmbedAllowed({
 }
 
 /**
- * Bilibili's own player (lib/v3/bilibili.ts: on a computer in the mix; on a phone, the curator's test while it is tried).
- * Its controls, its sound and its full screen are its own; the comments flying over the video, off. No picture behind it:
- * Bilibili's refuse to show on another site.
+ * Bilibili's own player (lib/v3/bilibili.ts: among the world card's languages). Its controls, its sound and its full
+ * screen are its own; the comments flying over the video, off. On a phone it waits for a touch on its play button and
+ * stays black until then: the video's picture, blurred, fills the frame around it (the owner, 17 October: "on a
+ * l'impression que c'est rien"), asked with no referrer — Bilibili's pictures refuse a page that names itself.
  */
 function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoContentItem; frameHeight: string; onPlaybackIssue?: PlaybackIssueHandler }) {
   // The video's two numbers, kept in the address's fragment (lib/v3/ingest/lines/bilibili.ts): with them its phone player
@@ -1837,8 +1840,19 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
   }, [item.url])
   const { markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   if (!embedUrl) return null
+  const picture = item.thumbUrl && /^https:\/\/[\w.-]+\.hdslb\.com\//.test(item.thumbUrl) ? item.thumbUrl : null
   return (
     <div className="video-embed-player w-full h-full" style={{ position: 'relative', overflow: 'hidden', height: frameHeight, background: '#000' }}>
+      {picture ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={picture}
+          alt=""
+          aria-hidden="true"
+          referrerPolicy="no-referrer"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(14px) brightness(0.7)', transform: 'scale(1.12)' }}
+        />
+      ) : null}
       <iframe
         key={`${embedUrl}-${reloadNonce}`}
         src={embedUrl}
@@ -1847,7 +1861,8 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
         title={item.text || 'Video'}
-        style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}
+        // The player at the video's own shape, in the middle: the picture shows above and below it on a phone.
+        style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', border: 'none', width: '100%', aspectRatio: '16 / 9', maxHeight: '100%' }}
       />
     </div>
   )

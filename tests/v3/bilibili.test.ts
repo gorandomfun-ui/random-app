@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { BILIBILI_FOR_EVERYONE, BILIBILI_ON_PHONES, bilibiliMode, onComputer } from '../../lib/v3/bilibili'
+import { BILIBILI_FOR_EVERYONE, BILIBILI_ON_PHONES, bilibiliInMix, bilibiliPicture, onComputer } from '../../lib/v3/bilibili'
 import { bilibiliDocument } from '../../lib/v3/ingest/lines/bilibili'
 
 const row = { bvid: 'BV1q3pS6tE4J', aid: 117444337341937, cid: 42764600522, title: '以善为饵，比恶更恶', desc: '一个故事', duration: 261, pubdate: 1792023600, tname: '音乐综合', owner: { mid: 42, name: '我爱吃派大星' }, stat: { view: 109000 }, rights: { pay: 0, arc_pay: 0, ugc_pay: 0 }, videos: 1 }
@@ -17,7 +17,7 @@ test("a Bilibili video for a computer: its player's address, its uploader, Chine
   assert.equal(doc.channelId, 'bilibili:42')
   assert.equal(doc.lang, 'zh')
   assert.equal((doc.v3 as { desktopOnly?: boolean }).desktopOnly, true)
-  assert.equal(doc.thumb, undefined, "Bilibili's pictures refuse to show on another site")
+  assert.equal(doc.thumb, undefined, 'no picture given, none kept')
 })
 
 test('never a licensed or paid programme, a video in several parts, a very long one, nor a short one', () => {
@@ -39,10 +39,18 @@ test('a computer as its browser says it, never a phone nor an Android tablet; ev
   assert.equal(BILIBILI_FOR_EVERYONE, true)
 })
 
-test('who gets Bilibili: every computer in the mix; on a phone, the curator\'s test until phones are switched on', () => {
+test('who gets Bilibili among the world card\'s languages: every computer; a phone, the curator\'s until phones are switched on — never Bilibili alone', () => {
   assert.equal(BILIBILI_ON_PHONES, false)
-  assert.equal(bilibiliMode(true, false), 'mix')
-  assert.equal(bilibiliMode(true, true), 'mix', 'the curator on a computer: the mix too')
-  assert.equal(bilibiliMode(false, true), 'test')
-  assert.equal(bilibiliMode(false, false), undefined)
+  assert.equal(bilibiliInMix(true, false), true)
+  assert.equal(bilibiliInMix(true, true), true)
+  assert.equal(bilibiliInMix(false, true), true)
+  assert.equal(bilibiliInMix(false, false), false)
+})
+
+test("a Bilibili picture is kept https, and only Bilibili's own", () => {
+  assert.equal(bilibiliPicture('http://i1.hdslb.com/bfs/archive/a644f0aece0bf5ddac7a059b743784e55db8413c.jpg'), 'https://i1.hdslb.com/bfs/archive/a644f0aece0bf5ddac7a059b743784e55db8413c.jpg')
+  assert.equal(bilibiliPicture('//i2.hdslb.com/bfs/archive/x.jpg'), 'https://i2.hdslb.com/bfs/archive/x.jpg')
+  assert.equal(bilibiliPicture('https://example.com/x.jpg'), undefined)
+  const built = bilibiliDocument({ ...row, pic: 'http://i1.hdslb.com/bfs/archive/a.jpg' }, new Date()) as { doc: Record<string, unknown> }
+  assert.equal(built.doc.thumb, 'https://i1.hdslb.com/bfs/archive/a.jpg')
 })

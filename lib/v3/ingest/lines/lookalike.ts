@@ -50,6 +50,8 @@ import { ObjectId, type AnyBulkWriteOperation, type Document } from 'mongodb'
 import { alike, fromRow, textOf, toBinary } from '../../ai/bits'
 import { gifText, LIKE_COPY, NEAR_LIKE, nearestLike, nearestLikeInScript, sameScript, saysEnough, mostlyCjk, type Likeness } from '../../ai/likeness'
 import { LIKE_INDEX, likedItemIds } from '../../ai/pool'
+import { BILIBILI } from '../../bilibili'
+import { toEnglish } from '../../translate'
 import { playable, relatedDailymotion, searchDailymotion } from '../../dig/dailymotion'
 import { LIST_UNITS, PAGE_SIZE, playlistPage, SEARCH_UNITS, searchPage, videoDetails } from '../../dig/youtube'
 import { newGuardState, underWeeklyCap, withoutMedia } from '../../dig/guards'
@@ -229,7 +231,7 @@ export async function loadLikes(ctx: LineContext, prints: Prints): Promise<LikeR
     })
     if (!ctx.dryRun && writes.length) await ctx.db.collection('items').bulkWrite(writes, { ordered: false }).catch(() => undefined)
   }
-  return rows.flatMap((row): LikeRow[] => {
+  const likes = rows.flatMap((row): LikeRow[] => {
     const bits = fromRow(row.vec)
     if (!bits) return []
     const id = String(row._id)
@@ -240,6 +242,43 @@ export async function loadLikes(ctx: LineContext, prints: Prints): Promise<LikeR
       ...(Array.isArray(row.apiTags) ? { tags: row.apiTags.map(String) } : {}), ...(typeof row.channelTitle === 'string' ? { channel: row.channelTitle } : {}), ...(typeof row.channelId === 'string' ? { channelId: row.channelId } : {}),
     }]
   })
+  return [...likes, ...await bilibiliLikes(ctx, ids, prints)]
+}
+
+/**
+ * The Bilibili videos the owner likes, in their own collection (lib/v3/bilibili.ts): twice a model (the owner, 17 October:
+ * "traduire le thème et le nom de la vidéo et chercher similaire à la traduction aussi"). Its Chinese title, for what is
+ * written in Chinese; its title and category put into English (lib/v3/translate.ts), for the rest — each judged against
+ * the model written in its own script. Printed and translated once, then kept on the video.
+ */
+async function bilibiliLikes(ctx: LineContext, ids: readonly ObjectId[], prints: Prints): Promise<LikeRow[]> {
+  const store = ctx.db.collection(BILIBILI)
+  const rows = await store.find({ _id: { $in: [...ids] } } as Document, { projection: { title: 1, vec: 1, vecEn: 1, titleEn: 1, categoryEn: 1, 'v3.category': 1 }, maxTimeMS: 4000 }).toArray().catch(() => [] as Document[])
+  const out: LikeRow[] = []
+  for (const row of rows) {
+    const title = String(row.title ?? '')
+    if (!title) continue
+    const update: Document = {}
+    let titleEn = typeof row.titleEn === 'string' ? row.titleEn : null
+    let categoryEn = typeof row.categoryEn === 'string' ? row.categoryEn : null
+    if (titleEn === null) { titleEn = await toEnglish(title, 'zh-CN', ctx.http ?? fetch); if (titleEn) update.titleEn = titleEn }
+    const category = typeof row.v3?.category === 'string' ? row.v3.category : ''
+    if (categoryEn === null && category) { categoryEn = await toEnglish(category, 'zh-CN', ctx.http ?? fetch); if (categoryEn) update.categoryEn = categoryEn }
+    const english = [titleEn, categoryEn].filter(Boolean).join(' · ')
+    let bits = fromRow(row.vec)
+    let bitsEn = fromRow(row.vecEn)
+    const texts = [...(bits ? [] : [textOf({ title })]), ...(bitsEn || !english ? [] : [textOf({ title: english })])]
+    if (texts.length) {
+      const printed = await prints(texts)
+      if (!bits) { bits = printed.shift() ?? null; if (bits) update.vec = toBinary(bits) }
+      if (!bitsEn && english) { bitsEn = printed.shift() ?? null; if (bitsEn) update.vecEn = toBinary(bitsEn) }
+    }
+    if (!ctx.dryRun && Object.keys(update).length) await store.updateOne({ _id: row._id }, { $set: update }).catch(() => undefined)
+    const id = String(row._id)
+    if (bits) out.push({ id, title, provider: 'bilibili', bits })
+    if (bitsEn && english) out.push({ id, title: english, provider: 'bilibili', bits: bitsEn })
+  }
+  return out
 }
 
 /** The video ids among these the base already holds: not worth the model's time. */
