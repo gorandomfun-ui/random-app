@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Essai Niconico</title>
+  <!--
+    Niconico inside a page, as Random would place it (17 October): opened alone on an iPhone, its player sends to its
+    phone site, closed outside Japan; inside a page, it kept its own player on a phone-sized screen. This page is the
+    owner's test on his iPhone before anything is built.
+  -->
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 16px; background: #000; color: #f4f1e8; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    p { margin: 0 0 16px; color: #cfcab9; }
+    .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #111; border-radius: 10px; overflow: hidden; margin: 0 0 8px; }
+    .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .label { font-size: 14px; color: #9c968a; margin: 0 0 24px; }
+  </style>
+</head>
+<body>
+  <h1>Essai Niconico</h1>
+  <p>Appuie sur play dans chaque cadre. Si la vidéo joue en entier, Niconico marche dans une page sur ton iPhone, comme il marcherait dans Random.</p>
+
+  <div class="frame">
+    <iframe src="https://embed.nicovideo.jp/watch/sm11126185" title="Niconico : le chat qui parle" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+  </div>
+  <p class="label">1. Un chat qui « parle », 55 secondes.</p>
+
+  <div class="frame">
+    <iframe src="https://embed.nicovideo.jp/watch/sm9" title="Niconico : la toute première vidéo" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+  </div>
+  <p class="label">2. La toute première vidéo de Niconico (2007), 5 minutes 20.</p>
+</body>
+</html>
