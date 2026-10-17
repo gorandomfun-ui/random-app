@@ -61,7 +61,7 @@ export default function PromoPage() {
   const [withStock, setWithStock] = useState(true)
   const [withVideos, setWithVideos] = useState(true)
   const [shots, setShots] = useState<ShotKind[]>(SHOTS.map((s) => s.key))
-  const [brandMode, setBrandMode] = useState<BrandMode>('deformed')
+  const [brandMode, setBrandMode] = useState<BrandMode>('center')
   const [guide, setGuide] = useState(true)
   const [text, setText] = useState('')
   const [size, setSize] = useState<keyof typeof TEXT_SIZES>('M')
@@ -122,7 +122,7 @@ export default function PromoPage() {
       if (stopped) return
       const at = hold ?? (performance.now() - started) % (input.seconds * 1000)
       promo.frame(ctx, at, frameNo)
-      if (debug) { const sh = promo.shotAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 26, canvas.width, 26); ctx.fillStyle = '#fff'; ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${sh.kind} e=${sh.energy.toFixed(2)} ${sh.treat} ${sh.enter}>${sh.exit} ${sh.transition} ${(at / 1000).toFixed(2)}s`, 6, canvas.height - 13) }
+      if (debug) { const sh = promo.shotAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 26, canvas.width, 26); ctx.fillStyle = '#fff'; ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${sh.phase}:${sh.kind} g=${sh.g.toFixed(2)} ${sh.treat}${sh.huge ? ' huge' : ''} ${sh.residue.join('+')} ${(at / 1000).toFixed(2)}s`, 6, canvas.height - 13) }
       frameNo += 1; handle = requestAnimationFrame(tick)
     }
     tick()
@@ -165,7 +165,7 @@ export default function PromoPage() {
             {fmt.kind === 'video' ? <button className="rounded-full border border-white bg-white px-5 py-2.5 text-sm font-bold uppercase text-black disabled:opacity-40" disabled={busy || !input} onClick={exportFilm}>{busy ? `Export ${Math.round(progress * 100)} %` : 'Exporter la vidéo'}</button> : null}
           </div>
         </div>
-        <p className="text-sm text-gray-300">Un film sur Random, par plans composés sur un tempo : la marque propre, les lettres-fenêtres sur la vidéo, la vidéo dans ses couleurs, une déchirure d’un battement, des rangées, un défilé, un balayage, un zoom, tes cartons, un vomi — l’énergie monte puis retombe. Les vidéos viennent de Pexels, les images de Pexels et Pixabay, jamais d’un créateur. Change de format : la composition suit sa zone sûre. Chrome ou Edge sur ordinateur pour l’export vidéo.</p>
+        <p className="text-sm text-gray-300">Un film sur Random, à la forme des refs : la marque propre, une amorce, une rafale, puis une longue retombée où des résidus restent — barres de couleur, un bloc, des confettis — et la marque bouge à peine. En continu, le lit de la Home : des centaines de lignes fines, des déchirures et des blocs où l’image passe très zoomée, qui sautent par pas. Les images Pexels et Pixabay ne sont jamais montrées telles quelles : posterisées dans ta palette, en gros pixels. Change de format : la composition suit sa zone sûre. Chrome ou Edge sur ordinateur pour l’export vidéo.</p>
         {error ? <p role="alert" className="text-red-300">{error}</p> : null}
         {result ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">Exporté : {result.name} est téléchargé. <a href={result.url} download={result.name} className="underline">Télécharger à nouveau</a>.</p> : null}
         <div className="grid gap-6 md:grid-cols-[auto_1fr]">
@@ -197,7 +197,7 @@ export default function PromoPage() {
               {([['Couleur 2', second, setSecond], ['Couleur 3', third, setThird]] as const).map(([label, value, set]) => <div key={label} className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">{label}</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} ${label}`} disabled={i === accent} className={`h-7 w-7 rounded-full border-2 disabled:opacity-20 ${value === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => set(value === i ? -1 : i)} />)}<span className="text-xs text-gray-500">{value < 0 ? 'aucune' : 'secondaire'}</span></div>)}
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Force</span><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs">{Math.round(intensity * 100)} %</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Durée</span>{[3, 5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => { setSeconds(s); setHold(null) }}>{s === 3 ? 'Bumper 3 s' : `${s} s`}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Plans</span>{SHOTS.map((s) => <button key={s.key} title={s.hint} className={shots.includes(s.key) ? chipOn : chip} onClick={() => setShots(shots.includes(s.key) ? shots.filter((x) => x !== s.key) : [...shots, s.key])}>{s.name}</button>)}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Moments</span>{SHOTS.map((s) => <button key={s.key} title={s.hint} className={shots.includes(s.key) ? chipOn : chip} onClick={() => setShots(shots.includes(s.key) ? shots.filter((x) => x !== s.key) : [...shots, s.key])}>{s.name}</button>)}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Marque</span>{BRAND_MODES.map((m) => <button key={m.key} title={m.hint} className={brandMode === m.key ? chipOn : chip} onClick={() => setBrandMode(m.key)}>{m.name}</button>)}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Sources</span><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withVideos} onChange={(e) => setWithVideos(e.target.checked)} />vidéos libres</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres</label><button className={chip} disabled={busy} onClick={() => void load(orientation)}>D’autres</button></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Tirage</span><button className={chip} disabled={busy} onClick={() => { setSeed(Math.floor(Math.random() * 100000)); setHold(null) }}>Autre tirage (n° {seed})</button></div>
