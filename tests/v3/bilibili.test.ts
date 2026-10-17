@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { BILIBILI_FOR_EVERYONE, onComputer } from '../../lib/v3/bilibili'
+import { BILIBILI_FOR_EVERYONE, BILIBILI_ON_PHONES, bilibiliMode, onComputer } from '../../lib/v3/bilibili'
 import { bilibiliDocument } from '../../lib/v3/ingest/lines/bilibili'
 
-const row = { bvid: 'BV1q3pS6tE4J', title: '以善为饵，比恶更恶', desc: '一个故事', duration: 261, pubdate: 1792023600, tname: '音乐综合', owner: { mid: 42, name: '我爱吃派大星' }, stat: { view: 109000 }, rights: { pay: 0, arc_pay: 0, ugc_pay: 0 }, videos: 1 }
+const row = { bvid: 'BV1q3pS6tE4J', aid: 117444337341937, cid: 42764600522, title: '以善为饵，比恶更恶', desc: '一个故事', duration: 261, pubdate: 1792023600, tname: '音乐综合', owner: { mid: 42, name: '我爱吃派大星' }, stat: { view: 109000 }, rights: { pay: 0, arc_pay: 0, ugc_pay: 0 }, videos: 1 }
 
 test("a Bilibili video for a computer: its player's address, its uploader, Chinese, marked for a computer only, no picture", () => {
   const built = bilibiliDocument(row, new Date('2026-10-17T00:00:00Z'))
@@ -12,7 +12,7 @@ test("a Bilibili video for a computer: its player's address, its uploader, Chine
   const { doc } = built as { doc: Record<string, unknown> }
   assert.equal(doc.provider, 'bilibili')
   assert.equal(doc.videoId, 'bilibili:BV1q3pS6tE4J')
-  assert.equal(doc.url, 'https://www.bilibili.com/video/BV1q3pS6tE4J')
+  assert.equal(doc.url, 'https://www.bilibili.com/video/BV1q3pS6tE4J#aid=117444337341937&cid=42764600522', 'the two numbers its phone player needs')
   assert.equal(doc.duration, 'PT4M21S')
   assert.equal(doc.channelId, 'bilibili:42')
   assert.equal(doc.lang, 'zh')
@@ -37,4 +37,12 @@ test('a computer as its browser says it, never a phone nor an Android tablet; ev
   assert.equal(onComputer('Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36'), false)
   assert.equal(onComputer(''), false)
   assert.equal(BILIBILI_FOR_EVERYONE, true)
+})
+
+test('who gets Bilibili: every computer in the mix; on a phone, the curator\'s test until phones are switched on', () => {
+  assert.equal(BILIBILI_ON_PHONES, false)
+  assert.equal(bilibiliMode(true, false), 'mix')
+  assert.equal(bilibiliMode(true, true), 'mix', 'the curator on a computer: the mix too')
+  assert.equal(bilibiliMode(false, true), 'test')
+  assert.equal(bilibiliMode(false, false), undefined)
 })

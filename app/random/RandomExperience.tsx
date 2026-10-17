@@ -1764,7 +1764,7 @@ function VideoEmbedAllowed({
       onVideoSoundUnlocked={onVideoSoundUnlocked}
       onError={(playerCode) => onPlaybackIssue?.(item, { reason: 'youtube-player-error', playerCode })} />
   }
-  // Bilibili, on a computer only: the draw never sends it to a phone (lib/v3/bilibili.ts).
+  // Bilibili: the draw decides who gets it (lib/v3/bilibili.ts).
   if (provider === 'bilibili' || /bilibili\.com\/video\//.test(url)) {
     return <BilibiliEmbed item={item} frameHeight={frameHeight} onPlaybackIssue={onPlaybackIssue} />
   }
@@ -1820,13 +1820,21 @@ function VideoEmbedAllowed({
 }
 
 /**
- * Bilibili's own player, on a computer (the draw never sends it to a phone, where it plays nothing outside China: 16
- * October). Its controls, its sound and its full screen are its own; the comments flying over the video, off. No picture
- * behind it: Bilibili's refuse to show on another site.
+ * Bilibili's own player (lib/v3/bilibili.ts: on a computer in the mix; on a phone, the curator's test while it is tried).
+ * Its controls, its sound and its full screen are its own; the comments flying over the video, off. No picture behind it:
+ * Bilibili's refuse to show on another site.
  */
 function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoContentItem; frameHeight: string; onPlaybackIssue?: PlaybackIssueHandler }) {
-  const bvid = useMemo(() => /\/video\/(BV\w{10})/.exec(item.url)?.[1] ?? '', [item.url])
-  const embedUrl = bvid ? `https://player.bilibili.com/player.html?bvid=${bvid}&autoplay=1&danmaku=0&high_quality=1` : ''
+  // The video's two numbers, kept in the address's fragment (lib/v3/ingest/lines/bilibili.ts): with them its phone player
+  // plays the whole video, with the code alone its 17-second "cannot be played" clip (17 October). On a phone it waits for
+  // a touch on its own play button, muted or not.
+  const embedUrl = useMemo(() => {
+    const bvid = /\/video\/(BV\w{10})/.exec(item.url)?.[1] ?? ''
+    const aid = /[#&]aid=(\d+)/.exec(item.url)?.[1]
+    const cid = /[#&]cid=(\d+)/.exec(item.url)?.[1]
+    if (aid && cid) return `https://player.bilibili.com/player.html?aid=${aid}&cid=${cid}&page=1&autoplay=1&danmaku=0&high_quality=1`
+    return bvid ? `https://player.bilibili.com/player.html?bvid=${bvid}&autoplay=1&danmaku=0&high_quality=1` : ''
+  }, [item.url])
   const { markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
   if (!embedUrl) return null
   return (

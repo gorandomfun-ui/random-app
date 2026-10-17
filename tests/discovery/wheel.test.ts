@@ -189,12 +189,12 @@ test('the world card (16 October): a language at random, each as likely as anoth
 
 test("Bilibili in the world card's mix (17 October): one language among the others for a computer, never every time, never without it", async () => {
   const spoken = (lang: string, count: number) => Array.from({ length: count }, (_, index) => ({ ...video(`A ${lang} video, number ${index}, about the town`, { universe: 'travel' }), lang, languageScope: null }))
-  const bilibili = Array.from({ length: 20 }, (_, index) => ({ ...video(`哔哩哔哩 的视频 第 ${index} 个`, { universe: 'travel' }), provider: 'bilibili', url: `https://www.bilibili.com/video/BV1q3pS6tE${String(index).padStart(2, '0')}`, lang: 'zh', v3: { line: 'bilibili', desktopOnly: true } }))
+  const bilibili = Array.from({ length: 20 }, (_, index) => ({ ...video(`哔哩哔哩 的视频 第 ${index} 个`, { universe: 'travel' }), provider: 'bilibili', url: `https://www.bilibili.com/video/BV1q3pS6tE${String(index).padStart(2, '0')}#aid=${100 + index}&cid=${200 + index}`, lang: 'zh', v3: { line: 'bilibili', desktopOnly: true } }))
   const db = fakeDb([...spoken('es', 30), ...spoken('sv', 30)], [], [], bilibili)
   const from = async (onComputer: boolean, draws: number) => {
     const counts: Record<string, number> = {}
     for (let draw = 0; draw < draws; draw += 1) {
-      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), ...(onComputer ? { bilibili: true } : {}) })
+      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), ...(onComputer ? { bilibili: 'mix' as const } : {}) })
       if (filled) counts[filled.from] = (counts[filled.from] ?? 0) + 1
     }
     return counts
@@ -204,6 +204,8 @@ test("Bilibili in the world card's mix (17 October): one language among the othe
   const computer = await from(true, 400)
   assert.ok((computer['world:bilibili'] ?? 0) > 5, JSON.stringify(computer))
   assert.ok((computer['world:bilibili'] ?? 0) < 100, `one language among the others: ${JSON.stringify(computer)}`)
+  // The curator's test on a phone (17 October): every world card is Bilibili.
+  for (let draw = 0; draw < 20; draw += 1) assert.equal((await fillSlot(db, 'world', { ...context(db, newSession(draw)), bilibili: 'test' as const }))?.from, 'world:bilibili')
 })
 
 test('a card counted along the session: the buzz and the long, the third, the sixth… of each', () => {

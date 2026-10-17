@@ -37,7 +37,7 @@ const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/
 
 /** One video as Bilibili's lists give it. */
 export type BilibiliRow = {
-  bvid?: string; title?: string; desc?: string; duration?: number; pubdate?: number; tname?: string; copyright?: number; is_ogv?: boolean
+  bvid?: string; aid?: number; cid?: number; title?: string; desc?: string; duration?: number; pubdate?: number; tname?: string; copyright?: number; is_ogv?: boolean
   owner?: { mid?: number; name?: string }; stat?: { view?: number }; rights?: { pay?: number; arc_pay?: number; ugc_pay?: number }; videos?: number
 }
 
@@ -54,7 +54,9 @@ export function bilibiliDocument(row: BilibiliRow, now: Date): { doc: Document }
   const mid = row.owner?.mid
   return {
     doc: {
-      type: 'video', provider: 'bilibili', videoId: `bilibili:${bvid}`, url: `https://www.bilibili.com/video/${bvid}`,
+      // The two numbers its player needs on a phone, in the address's fragment: with them it plays there too, with the code
+      // alone its phone player plays its 17-second "cannot be played" clip (17 October); Bilibili's page ignores the fragment.
+      type: 'video', provider: 'bilibili', videoId: `bilibili:${bvid}`, url: `https://www.bilibili.com/video/${bvid}${row.aid && row.cid ? `#aid=${row.aid}&cid=${row.cid}` : ''}`,
       title, description: (row.desc ?? '').slice(0, 1000), duration: `PT${Math.floor(seconds / 60)}M${seconds % 60}S`,
       ...(mid ? { channelId: `bilibili:${mid}` } : {}), ...(row.owner?.name ? { channelTitle: row.owner.name } : {}),
       ...(typeof row.stat?.view === 'number' ? { viewCount: row.stat.view } : {}),

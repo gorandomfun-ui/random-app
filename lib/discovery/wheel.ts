@@ -198,8 +198,8 @@ export type WheelChoice = {
 }
 export type WheelResult<T> = PoolResult<T> & { wheel: WheelChoice }
 type Decoder<T> = (row: CatalogueRow) => T | null
-/** `bilibili`: Bilibili in the world card's mix, for a computer — one language among the others. */
-type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string>; ordinal?: number; bilibili?: boolean }
+/** `bilibili`: Bilibili in the world card — one language among the others, or every world card while the curator tests it on a phone. */
+type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string>; ordinal?: number; bilibili?: 'mix' | 'test' }
 type Filled<T> = { item: Candidate<T>; from: string; universe?: Universe }
 
 /** The signals the session's proportions read, written on the candidate so the page keeps them in its exposures. */
@@ -281,14 +281,17 @@ const seekPool = (db: Db, random: Rng, limit: number) => seek(db, { ...POOL_FILT
 const seekDig = (db: Db, base: DigBase, random: Rng) =>
   seek(db, { 'v3.line': 'dig', type: 'video', ...SERVABLE }, LINE_INDEX, random, SIFTED_ROWS).then((rows) => rows.filter((row) => digBase(row) === base))
 
-/** A window of Bilibili's videos: their own collection, which no other card reads (lib/v3/ingest/lines/bilibili.ts). */
+/**
+ * A window of Bilibili's videos: their own collection, which no other card reads (lib/v3/ingest/lines/bilibili.ts); only
+ * those that carry the two numbers its phone player needs (all of them since 17 October but a removed one).
+ */
 async function seekBilibili(db: Db, random: Rng, limit: number): Promise<CatalogueRow[]> {
   const store = db.collection(BILIBILI)
   const point = random()
   const read = (range: Filter<Document>, take: number) => store.find(range, { sort: { rand: 1 }, limit: take, maxTimeMS: QUERY_BUDGET_MS }).toArray()
   const rows = await read({ rand: { $gte: point } }, limit)
   if (rows.length < limit) rows.push(...(await read({ rand: { $lt: point } }, limit - rows.length)))
-  return rows as CatalogueRow[]
+  return (rows as CatalogueRow[]).filter((row) => /#aid=\d+&cid=\d+/.test(String(row.url ?? '')))
 }
 
 const seconds = (candidate: Candidate): number => candidate.seconds ?? 0
@@ -542,6 +545,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return dug ? { item: dug, from: 'dig:likes' } : null
     }
     case 'world': {
+      // Bilibili, every world card while the curator tests it in the app on a phone.
+      if (context.bilibili === 'test') {
+        const picked = choose(await seekBilibili(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[]), slot, context)
+        if (picked) return { item: picked, from: 'world:bilibili' }
+      }
       // A language at random, each as likely as another — Bilibili one of them, for a computer — then a window of its videos, the least served first.
       const units = context.bilibili ? [...WORLD_LANGUAGES, BILIBILI_UNIT] : WORLD_LANGUAGES
       for (const languages of shuffled(units, random).slice(0, WORLD_TRIES)) {
@@ -593,11 +601,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
  * joker when the card has nothing; null when the wheel has nothing at all,
  * and the older paths answer.
  */
-export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set(), options: { bilibili?: boolean } = {}): Promise<WheelResult<T> | null> {
+export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set(), options: { bilibili?: 'mix' | 'test' } = {}): Promise<WheelResult<T> | null> {
   if (ticket.type !== 'video') return null
   const slot = slotAt(state.seed, state.videos ?? 0)
   const media = await mediaChannelKeys(db, now).catch(() => new Set<string>())
-  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media, ordinal: slotOrdinal(state.seed, state.videos ?? 0, slot), ...(options.bilibili ? { bilibili: true } : {}) }
+  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media, ordinal: slotOrdinal(state.seed, state.videos ?? 0, slot), ...(options.bilibili ? { bilibili: options.bilibili } : {}) }
   let filled = await fillSlot(db, slot, context).catch(() => null)
   let fallback = false
   if (!filled && slot !== 'joker') {
