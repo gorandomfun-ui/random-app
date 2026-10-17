@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { downloadBlob } from '@/lib/comm/montageRun'
-import { BRAND_MODES, FORMATS, SHOTS, createPromo, formatOf, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind } from '@/lib/comm/promoLoop'
+import { BRAND_MODES, FORMATS, SHOTS, SUBJECTS, createPromo, formatOf, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
 const TEXT_SIZES = { S: 60, M: 90, L: 140, XL: 210 } as const
@@ -62,6 +62,8 @@ export default function PromoPage() {
   const [withVideos, setWithVideos] = useState(true)
   const [shots, setShots] = useState<ShotKind[]>(SHOTS.map((s) => s.key))
   const [brandMode, setBrandMode] = useState<BrandMode>('center')
+  const [subjects, setSubjects] = useState<Subject[]>(SUBJECTS.map((x) => x.key))
+  const [recognition, setRecognition] = useState(0.3)
   const [guide, setGuide] = useState(true)
   const [text, setText] = useState('')
   const [size, setSize] = useState<keyof typeof TEXT_SIZES>('M')
@@ -105,7 +107,7 @@ export default function PromoPage() {
 
   const textInput = useMemo<PromoText | null>(() => text.trim() ? { lines: text.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 4), size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place?.x ?? null, y: place?.y ?? null, width: place?.width ?? 0.88 } : null, [text, size, align, fontIndex, fonts, place])
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
-  const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, withStock, withVideos, fonts, textInput, iconInput])
+  const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, subjects, recognition, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, subjects, recognition, withStock, withVideos, fonts, textInput, iconInput])
 
   // The film plays live at a reduced size, over and over — or holds the chosen moment — until the export takes the canvas.
   const previewScale = Math.min(300 / fmt.w, 540 / fmt.h)
@@ -198,7 +200,9 @@ export default function PromoPage() {
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Force</span><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs">{Math.round(intensity * 100)} %</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Durée</span>{[3, 5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => { setSeconds(s); setHold(null) }}>{s === 3 ? 'Bumper 3 s' : `${s} s`}</button>)}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Moments</span>{SHOTS.map((s) => <button key={s.key} title={s.hint} className={shots.includes(s.key) ? chipOn : chip} onClick={() => setShots(shots.includes(s.key) ? shots.filter((x) => x !== s.key) : [...shots, s.key])}>{s.name}</button>)}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Sujets</span>{SUBJECTS.map((x) => <button key={x.key} title={x.hint} className={subjects.includes(x.key) ? chipOn : chip} onClick={() => setSubjects(subjects.includes(x.key) ? subjects.filter((k) => k !== x.key) : [...subjects, x.key])}>{x.name}</button>)}<span className="text-xs text-gray-500">un par cycle, parfois deux ensemble</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Marque</span>{BRAND_MODES.map((m) => <button key={m.key} title={m.hint} className={brandMode === m.key ? chipOn : chip} onClick={() => setBrandMode(m.key)}>{m.name}</button>)}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Reconnaissance</span><input type="range" min={0.15} max={0.7} step={0.05} value={recognition} onChange={(e) => setRecognition(Number(e.target.value))} className="w-48" aria-label="Reconnaissance de l’image" /><span className="text-xs">{Math.round(recognition * 100)} %</span><span className="text-xs text-gray-500">à 15 % l’image n’est que matière ; à 70 % on la devine, et ses couleurs prennent</span></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Sources</span><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withVideos} onChange={(e) => setWithVideos(e.target.checked)} />vidéos libres</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres</label><button className={chip} disabled={busy} onClick={() => void load(orientation)}>D’autres</button></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Tirage</span><button className={chip} disabled={busy} onClick={() => { setSeed(Math.floor(Math.random() * 100000)); setHold(null) }}>Autre tirage (n° {seed})</button></div>
               {assets ? <p className="mt-2 text-[11px] text-gray-500">Vidéos : {assets.videoInfo.length ? assets.videoInfo.map((v, i) => <span key={v.id}>{i ? ' · ' : ''}<a href={v.page} target="_blank" rel="noreferrer" className="underline">{v.author}</a> ({v.duration} s)</span>) : 'aucune'} — Images : {assets.stockInfo.map((p, i) => <span key={p.id}>{i ? ' · ' : ''}<a href={p.page} target="_blank" rel="noreferrer" className="underline">{p.provider}</a></span>)}</p> : null}
