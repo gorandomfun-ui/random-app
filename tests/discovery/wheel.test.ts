@@ -187,25 +187,23 @@ test('the world card (16 October): a language at random, each as likely as anoth
   assert.ok(answered > 10, `${answered}`)
 })
 
-test("Bilibili in the world card (16 October): every world card while the curator tests it on a computer, one language among the others for everyone after, never without the switch", async () => {
+test("Bilibili in the world card's mix (17 October): one language among the others for a computer, never every time, never without it", async () => {
   const spoken = (lang: string, count: number) => Array.from({ length: count }, (_, index) => ({ ...video(`A ${lang} video, number ${index}, about the town`, { universe: 'travel' }), lang, languageScope: null }))
   const bilibili = Array.from({ length: 20 }, (_, index) => ({ ...video(`哔哩哔哩 的视频 第 ${index} 个`, { universe: 'travel' }), provider: 'bilibili', url: `https://www.bilibili.com/video/BV1q3pS6tE${String(index).padStart(2, '0')}`, lang: 'zh', v3: { line: 'bilibili', desktopOnly: true } }))
   const db = fakeDb([...spoken('es', 30), ...spoken('sv', 30)], [], [], bilibili)
-  const from = async (bilibiliMode: 'test' | 'all' | undefined, draws: number) => {
+  const from = async (onComputer: boolean, draws: number) => {
     const counts: Record<string, number> = {}
     for (let draw = 0; draw < draws; draw += 1) {
-      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), ...(bilibiliMode ? { bilibili: bilibiliMode } : {}) })
+      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), ...(onComputer ? { bilibili: true } : {}) })
       if (filled) counts[filled.from] = (counts[filled.from] ?? 0) + 1
     }
     return counts
   }
-  const testing = await from('test', 30)
-  assert.equal(testing['world:bilibili'], 30, JSON.stringify(testing))
-  const none = await from(undefined, 200)
-  assert.equal(none['world:bilibili'] ?? 0, 0, JSON.stringify(none))
-  const everyone = await from('all', 400)
-  assert.ok((everyone['world:bilibili'] ?? 0) > 5, JSON.stringify(everyone))
-  assert.ok((everyone['world:bilibili'] ?? 0) < 100, `one language among the others: ${JSON.stringify(everyone)}`)
+  const phone = await from(false, 200)
+  assert.equal(phone['world:bilibili'] ?? 0, 0, JSON.stringify(phone))
+  const computer = await from(true, 400)
+  assert.ok((computer['world:bilibili'] ?? 0) > 5, JSON.stringify(computer))
+  assert.ok((computer['world:bilibili'] ?? 0) < 100, `one language among the others: ${JSON.stringify(computer)}`)
 })
 
 test('a card counted along the session: the buzz and the long, the third, the sixth… of each', () => {

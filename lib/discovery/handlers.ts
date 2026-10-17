@@ -77,10 +77,10 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       const seen = parseSeen(body.seen)
       const drawState = seen.length ? { ...state, recent: [...state.recent, ...seen.map(key => ({ key, type: 'video' as Format, stock: false, family: 'seen' }))] } : state
       // Fresh of the day first: the session's first ten videos, at random among the day's list, none this device already saw today.
-      // Bilibili in the world card, for a computer only (lib/v3/bilibili.ts): the curator's first, while he tests it.
-      const bilibili = onComputer(req.headers.get('user-agent')) ? (curatorRequestAllowed(req) ? 'test' as const : BILIBILI_FOR_EVERYONE ? 'all' as const : undefined) : undefined
+      // Bilibili in the world card's mix, for a computer only (lib/v3/bilibili.ts): its phone player plays nothing outside China.
+      const bilibili = onComputer(req.headers.get('user-agent')) && (BILIBILI_FOR_EVERYONE || curatorRequestAllowed(req))
       const wheel = wheelOn && ticket.type === 'video'
-        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals), parseSeenSubjects(body.seenSubjects), bilibili ? { bilibili } : {}).catch(() => null) : null
+        ? await selectWheel(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, language(body), Math.random, Date.now(), theme ?? themeAt(state.seed, state.visuals), parseSeenSubjects(body.seenSubjects), { bilibili }).catch(() => null) : null
       const fresh = !wheel && freshEnabled() && ticket.type === 'video'
         ? await selectFresh(db, ticket, drawState, parseFreshSeen(body.fresh), deps.decode, Date.now(), Math.random, theme).catch(() => null) : null
       // The cool pool: a cool visual ticket is one content drawn live from the source the session's bag names.

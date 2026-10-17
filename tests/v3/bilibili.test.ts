@@ -30,11 +30,11 @@ test('never a licensed or paid programme, a video in several parts, a very long 
   assert.equal(refused({ bvid: 'nope' }), 'incomplète')
 })
 
-test('a computer as its browser says it, never a phone nor an Android tablet; everyone waits for the curator\'s test', () => {
+test('a computer as its browser says it, never a phone nor an Android tablet; every computer since the owner\'s test', () => {
   assert.equal(onComputer('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'), true)
   assert.equal(onComputer('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36'), true)
   assert.equal(onComputer('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'), false)
   assert.equal(onComputer('Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36'), false)
   assert.equal(onComputer(''), false)
-  assert.equal(BILIBILI_FOR_EVERYONE, false)
+  assert.equal(BILIBILI_FOR_EVERYONE, true)
 })

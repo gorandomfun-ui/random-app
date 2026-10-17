@@ -198,8 +198,8 @@ export type WheelChoice = {
 }
 export type WheelResult<T> = PoolResult<T> & { wheel: WheelChoice }
 type Decoder<T> = (row: CatalogueRow) => T | null
-/** `bilibili`: Bilibili in the world card, for a computer — first while the curator tests it, then one language among the others. */
-type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string>; ordinal?: number; bilibili?: 'test' | 'all' }
+/** `bilibili`: Bilibili in the world card's mix, for a computer — one language among the others. */
+type Context<T> = { ticket: Intent; state: Session; decode: Decoder<T>; lang: string; random: Rng; now: number; card: Universe; freshSeen: FreshSeen | null; rules: SessionRules; media: ReadonlySet<string>; ordinal?: number; bilibili?: boolean }
 type Filled<T> = { item: Candidate<T>; from: string; universe?: Universe }
 
 /** The signals the session's proportions read, written on the candidate so the page keeps them in its exposures. */
@@ -542,13 +542,8 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
       return dug ? { item: dug, from: 'dig:likes' } : null
     }
     case 'world': {
-      // Bilibili, for a computer: every world card while the curator tests it.
-      if (context.bilibili === 'test') {
-        const picked = choose(await seekBilibili(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[]), slot, context)
-        if (picked) return { item: picked, from: 'world:bilibili' }
-      }
-      // A language at random, each as likely as another, then a window of its videos, the least served first.
-      const units = context.bilibili === 'all' ? [...WORLD_LANGUAGES, BILIBILI_UNIT] : WORLD_LANGUAGES
+      // A language at random, each as likely as another — Bilibili one of them, for a computer — then a window of its videos, the least served first.
+      const units = context.bilibili ? [...WORLD_LANGUAGES, BILIBILI_UNIT] : WORLD_LANGUAGES
       for (const languages of shuffled(units, random).slice(0, WORLD_TRIES)) {
         const lang = languages.length > 1 ? { $in: [...languages] } : languages[0]
         const rows = languages === BILIBILI_UNIT
@@ -598,11 +593,11 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
  * joker when the card has nothing; null when the wheel has nothing at all,
  * and the older paths answer.
  */
-export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set(), options: { bilibili?: 'test' | 'all' } = {}): Promise<WheelResult<T> | null> {
+export async function selectWheel<T>(db: Db, ticket: Intent, state: Session, freshSeen: FreshSeen | null, decode: Decoder<T>, lang: string, random: Rng, now: number, card: Universe, remembered: ReadonlySet<number> = new Set(), options: { bilibili?: boolean } = {}): Promise<WheelResult<T> | null> {
   if (ticket.type !== 'video') return null
   const slot = slotAt(state.seed, state.videos ?? 0)
   const media = await mediaChannelKeys(db, now).catch(() => new Set<string>())
-  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media, ordinal: slotOrdinal(state.seed, state.videos ?? 0, slot), ...(options.bilibili ? { bilibili: options.bilibili } : {}) }
+  const context: Context<T> = { ticket, state, decode, lang, random, now, card, freshSeen, rules: sessionRules(state, remembered), media, ordinal: slotOrdinal(state.seed, state.videos ?? 0, slot), ...(options.bilibili ? { bilibili: true } : {}) }
   let filled = await fillSlot(db, slot, context).catch(() => null)
   let fallback = false
   if (!filled && slot !== 'joker') {

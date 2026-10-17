@@ -5,10 +5,11 @@
 export const BILIBILI = 'bilibili_videos'
 
 /**
- * Whether every computer gets Bilibili in the world card, or only the curator's while he tests it (the owner: "il faudra
- * tester"). Switched on once he has seen it play.
+ * Whether every computer gets Bilibili in the world card, or only the curator's. On since 17 October, once the owner saw it
+ * play with its sound on his computer — in the mix, one language among the others, never every time ("elles seront juste
+ * dans le mix ?").
  */
-export const BILIBILI_FOR_EVERYONE = false
+export const BILIBILI_FOR_EVERYONE = true
 
 /** A computer, as far as the address bar's browser says: never a phone nor an Android tablet (an iPad says it is a Mac). */
 export function onComputer(userAgent: string | null | undefined): boolean {
