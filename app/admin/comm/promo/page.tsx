@@ -10,8 +10,10 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { downloadBlob } from '@/lib/comm/montageRun'
-import { BRAND_MODES, FORMATS, SHOTS, SUBJECTS, createPromo, formatOf, planShots, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
-import { audioContext, loadTrack, offsetFor, renderSoundtrack } from '@/lib/comm/promoSound'
+import { BRAND_MODES, FORMATS, SHOTS, SUBJECTS, beatOf, createPromo, formatOf, planShots, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
+import { audioContext, loadTrack, offsetFor, promoHash, renderSoundtrack, soundless } from '@/lib/comm/promoSound'
+import { SYNTHS, synthTrack, type SynthKind } from '@/lib/comm/promoSynth'
+import type { StockSoundInfo } from '@/lib/comm/stockSound'
 import { deleteTrack, listTracks, uploadTrack, type Track } from '@/lib/comm/tracks'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
@@ -46,6 +48,9 @@ function loadVideo(src: string): Promise<HTMLVideoElement | null> {
 type Stock = { id: string; provider: string; page: string; src: string }
 type StockVideo = Stock & { author: string; duration: number }
 type Assets = { logo: HTMLImageElement; logoVertical: HTMLImageElement; logoDark: HTMLImageElement; logoVerticalDark: HTMLImageElement; icons: HTMLImageElement[]; iconsByName: Record<string, HTMLImageElement>; stock: HTMLImageElement[]; stockInfo: Stock[]; videos: HTMLVideoElement[]; videoInfo: StockVideo[] }
+/** Where the film's sound comes from: any source by the seed, the curator's tracks, the sounds of stock videos, the made ones — or one track by its address. */
+type SoundSource = 'any' | 'tracks' | 'videos' | 'synth' | (string & {})
+type Chosen = { kind: 'track' | 'video' | 'synth'; key: string; label: string; url?: string; synth?: SynthKind; credit?: StockSoundInfo }
 
 export default function PromoPage() {
   const [format, setFormat] = useState<FormatKey>('tiktok')
@@ -78,14 +83,17 @@ export default function PromoPage() {
   const [hold, setHold] = useState<number | null>(null)
   /** The sound: the curator's tracks, the one chosen (or drawn by the seed), its decoded file, and the film's own glitched render of it. */
   const [tracks, setTracks] = useState<Track[]>([])
-  const [trackChoice, setTrackChoice] = useState('')
+  const [soundSource, setSoundSource] = useState<SoundSource>('any')
   const [withSound, setWithSound] = useState(true)
   const [glitch, setGlitch] = useState(0.5)
-  const [trackBuffer, setTrackBuffer] = useState<{ url: string; buffer: AudioBuffer } | null>(null)
+  const [trackBuffer, setTrackBuffer] = useState<{ key: string; buffer: AudioBuffer } | null>(null)
   const [sound, setSound] = useState<AudioBuffer | null>(null)
   const [uploading, setUploading] = useState(false)
   /** True once the browser lets sound play: after a first click on the page. */
   const [awake, setAwake] = useState(false)
+  /** The sounds of stock videos heard loud here, and whether the page is still listening to candidates. */
+  const [soundPool, setSoundPool] = useState<StockSoundInfo[]>([])
+  const [soundBusy, setSoundBusy] = useState(false)
   const preview = useRef<HTMLCanvasElement | null>(null)
   const fmt = formatOf(format)
   const fonts = useMemo(() => { if (typeof window === 'undefined') return { tomorrow: 'Tomorrow, sans-serif', inter: '"Inter Tight", sans-serif' }; const s = getComputedStyle(document.body); return { tomorrow: s.getPropertyValue('--font-tomorrow').trim() || 'Tomorrow, sans-serif', inter: s.getPropertyValue('--font-inter-tight').trim() || '"Inter Tight", sans-serif' } }, [])
@@ -98,6 +106,31 @@ export default function PromoPage() {
     const onDown = (event: PointerEvent) => { if (!(event.target instanceof Element && event.target.closest('button[aria-label="Son"]'))) wake() }
     document.addEventListener('pointerdown', onDown); return () => document.removeEventListener('pointerdown', onDown)
   }, [wake])
+
+  /**
+   * The sounds of stock videos, listened to here before being offered: the server's finds are decoded one by one
+   * until two are heard loud, each verdict told back so the server draws the loud ones first and sets the silent aside.
+   * Their decoded files are kept for the film. Runs after the page is up, never holding it.
+   */
+  const soundPoolBuffers = useRef(new Map<string, AudioBuffer>())
+  const listenSounds = useCallback(async () => {
+    setSoundBusy(true)
+    try {
+      const list = ((await (await fetch('/api/admin/comm/stocksound?n=4', { cache: 'no-store' })).json()) as { sounds?: StockSoundInfo[] }).sounds ?? []
+      const loud: StockSoundInfo[] = []
+      for (const s of list) {
+        if (loud.length >= 2) break
+        try {
+          const buffer = await loadTrack(s.src)
+          const quiet = soundless(buffer)
+          void fetch('/api/admin/comm/stocksound', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id, loud: !quiet }) }).catch(() => undefined)
+          if (!quiet) { soundPoolBuffers.current.set(s.src, buffer); loud.push(s) }
+        } catch { /* the next one */ }
+      }
+      setSoundPool(loud)
+    } catch { setSoundPool([]) }
+    setSoundBusy(false)
+  }, [])
 
   /** The site's things, a handful of stock pictures and a few stock videos. */
   const load = useCallback(async (orientation: 'portrait' | 'landscape' | 'square') => {
@@ -121,7 +154,8 @@ export default function PromoPage() {
       await document.fonts.ready
       setAssets({ logo, logoVertical, logoDark, logoVerticalDark, icons: Object.values(iconsByName), iconsByName, stock, stockInfo, videos, videoInfo })
     } catch (cause) { setError(cause instanceof Error ? `Chargement impossible : ${cause.message}` : 'Chargement impossible.') }
-  }, [])
+    void listenSounds()
+  }, [listenSounds])
   const orientation = fmt.w > fmt.h ? 'landscape' : fmt.w === fmt.h ? 'square' : 'portrait'
   useEffect(() => { void load(orientation) }, [load, orientation])
 
@@ -129,22 +163,43 @@ export default function PromoPage() {
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
   const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, subjects, recognition, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, subjects, recognition, withStock, withVideos, fonts, textInput, iconInput])
 
-  // The track: the chosen one, or one drawn by the seed; decoded once per address; then rendered glitched from the film's plan.
-  const track = useMemo(() => tracks.length ? (tracks.find((t) => t.url === trackChoice) ?? tracks[seed % tracks.length]) : null, [tracks, trackChoice, seed])
-  const trackUrl = track?.url ?? ''
+  // The sound's source for this draw: by the seed among what is at hand — the curator's tracks first, the sounds of stock videos, the made ones — or what he chose.
+  const chosen = useMemo<Chosen | null>(() => {
+    const sounds = soundPool
+    const asTrack = (t: Track): Chosen => ({ kind: 'track', key: t.url, label: `piste : ${t.name}`, url: t.url })
+    const asVideo = (v: StockSoundInfo): Chosen => ({ kind: 'video', key: v.src, label: `son d’une vidéo de ${v.author} (${v.provider})`, url: v.src, credit: v })
+    const asSynth = (k: SynthKind): Chosen => ({ kind: 'synth', key: `synth:${k}`, label: `généré : ${SYNTHS.find((s) => s.key === k)?.name ?? k}`, synth: k })
+    const pick = <T,>(list: T[], salt: number) => list[Math.floor(promoHash(seed, salt) * list.length)]
+    const made = () => asSynth(pick(SYNTHS, 11).key)
+    if (soundSource === 'synth') return made()
+    if (soundSource === 'videos') return sounds.length ? asVideo(pick(sounds, 12)) : made()
+    if (soundSource === 'tracks') return tracks.length ? asTrack(pick(tracks, 13)) : made()
+    if (soundSource !== 'any') { const t = tracks.find((x) => x.url === soundSource); return t ? asTrack(t) : null }
+    const q = promoHash(seed, 14)
+    if (tracks.length && q < (sounds.length ? 0.5 : 0.7)) return asTrack(pick(tracks, 13))
+    if (sounds.length && q < 0.8) return asVideo(pick(sounds, 12))
+    return made()
+  }, [soundPool, tracks, soundSource, seed])
+  // The source prepared once per key: a file fetched and decoded, or a bed made for this length and seed; then rendered glitched from the film's plan.
+  const prepKey = chosen ? (chosen.kind === 'synth' ? `${chosen.key}:${seconds}:${seed}` : chosen.key) : ''
+  const latest = useRef({ chosen, seconds, seed }); latest.current = { chosen, seconds, seed }
   useEffect(() => {
-    if (!trackUrl) { setTrackBuffer(null); return }
+    const { chosen: c, seconds: s, seed: sd } = latest.current
+    if (!c || !prepKey) { setTrackBuffer(null); return }
     let gone = false
-    loadTrack(trackUrl).then((buffer) => { if (!gone) setTrackBuffer({ url: trackUrl, buffer }) }).catch(() => { if (!gone) setError('La piste ne se lit pas.') })
+    const kept = c.url ? soundPoolBuffers.current.get(c.url) : undefined
+    const job = kept ? Promise.resolve(kept) : c.kind === 'synth' && c.synth ? synthTrack(c.synth, s + 1, sd, beatOf(sd)) : loadTrack(c.url ?? '')
+    job.then((buffer) => { if (!gone) setTrackBuffer({ key: prepKey, buffer }) }).catch(() => { if (!gone) { setTrackBuffer(null); setError(c.kind === 'video' ? 'Le son de cette vidéo ne se lit pas ; Autre tirage en prend un autre.' : c.kind === 'track' ? 'La piste ne se lit pas.' : 'Le son n’a pas pu être fabriqué.') } })
     return () => { gone = true }
-  }, [trackUrl])
+  }, [prepKey])
   useEffect(() => {
-    if (!input || !withSound || !trackBuffer || fmt.kind !== 'video') { setSound(null); return }
+    if (!input || !withSound || !trackBuffer || trackBuffer.key !== prepKey || fmt.kind !== 'video') { setSound(null); return }
     let gone = false
     const { shots, beat } = planShots(input, input.videos.length, input.stock.length, input.icons.length)
-    renderSoundtrack(trackBuffer.buffer, { shots, beat, seconds: input.seconds, seed, glitch, offsetSec: offsetFor(trackBuffer.buffer, input.seconds, seed) }).then((b) => { if (!gone) setSound(b) }).catch(() => { if (!gone) setSound(null) })
+    const offsetSec = chosen?.kind === 'synth' ? 0 : offsetFor(trackBuffer.buffer, input.seconds, seed)
+    renderSoundtrack(trackBuffer.buffer, { shots, beat, seconds: input.seconds, seed, glitch, offsetSec }).then((b) => { if (!gone) setSound(b) }).catch(() => { if (!gone) setSound(null) })
     return () => { gone = true }
-  }, [input, withSound, trackBuffer, glitch, seed, fmt.kind])
+  }, [input, withSound, trackBuffer, prepKey, chosen, glitch, seed, fmt.kind])
 
   // The film plays live at a reduced size, over and over — or holds the chosen moment — until the export takes the canvas; its sound restarts with each loop.
   const previewScale = Math.min(300 / fmt.w, 540 / fmt.h)
@@ -179,8 +234,8 @@ export default function PromoPage() {
     return () => { stopped = true; cancelAnimationFrame(handle); try { source?.stop() } catch { /* ended */ } }
   }, [input, busy, hold, pw, ph, sound, awake])
   /** What the Son button says: no track, muted, the track being read or prepared, waiting for a click, held, or playing. */
-  const soundState = !track || fmt.kind !== 'video' ? 'none' : !withSound ? 'muted' : trackBuffer?.url !== track.url ? 'loading' : !sound ? 'rendering' : !awake ? 'asleep' : hold !== null ? 'held' : 'playing'
-  const soundLabel = { none: fmt.kind !== 'video' ? 'Son : format d’image' : 'Son : aucune piste', muted: 'Son : coupé', loading: 'Son : lecture de la piste…', rendering: 'Son : préparation…', asleep: 'Son : clique pour l’entendre', held: 'Son : tenu', playing: 'Son : joue' }[soundState]
+  const soundState = !chosen || fmt.kind !== 'video' ? 'none' : !withSound ? 'muted' : trackBuffer?.key !== prepKey ? 'loading' : !sound ? 'rendering' : !awake ? 'asleep' : hold !== null ? 'held' : 'playing'
+  const soundLabel = { none: fmt.kind !== 'video' ? 'Son : format d’image' : 'Son : aucune source', muted: 'Son : coupé', loading: chosen?.kind === 'synth' ? 'Son : fabrication…' : chosen?.kind === 'video' ? 'Son : lecture de la vidéo…' : 'Son : lecture de la piste…', rendering: 'Son : préparation…', asleep: 'Son : clique pour l’entendre', held: 'Son : tenu', playing: 'Son : joue' }[soundState]
 
   const addTracks = useCallback(async (files: File[]) => {
     if (!files.length) return
@@ -197,7 +252,7 @@ export default function PromoPage() {
     setUploading(true)
     const ok = await deleteTrack(url)
     setUploading(false)
-    if (ok) { setTracks((list) => list.filter((x) => x.url !== url)); setTrackChoice('') } else setError('La piste n’a pas pu être retirée.')
+    if (ok) { setTracks((list) => list.filter((x) => x.url !== url)); setSoundSource('any') } else setError('La piste n’a pas pu être retirée.')
   }, [tracks])
 
   const exportFilm = useCallback(async () => {
@@ -279,14 +334,18 @@ export default function PromoPage() {
             </section>
             <section className="rounded border border-white/15 p-3">
               <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Son</h2>
-              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Pistes</span>
-                <button className={!trackChoice ? chipOn : chip} disabled={!tracks.length} onClick={() => setTrackChoice('')}>Au hasard</button>
-                {tracks.map((t) => <button key={t.url} title={`${Math.round(t.bytes / 1024 / 1024 * 10) / 10} Mo`} className={trackChoice === t.url ? chipOn : chip} onClick={() => setTrackChoice(t.url)}>{t.name}</button>)}
-                <label className={`${chip} cursor-pointer ${uploading ? 'opacity-40' : ''}`}>{uploading ? 'Envoi…' : 'Déposer des pistes'}<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple className="hidden" disabled={uploading} aria-label="Déposer des pistes" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void addTracks(files) }} /></label>
-                {trackChoice ? <button className={chip} disabled={uploading} onClick={() => void removeTrack(trackChoice)}>Retirer</button> : null}
+              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Source</span>
+                {([['any', 'Au hasard'], ['tracks', 'Mes pistes'], ['videos', 'Sons de vidéos'], ['synth', 'Généré']] as const).map(([k, name]) => <button key={k} className={soundSource === k ? chipOn : chip} disabled={(k === 'tracks' && !tracks.length) || (k === 'videos' && !soundPool.length)} onClick={() => setSoundSource(k)}>{name}</button>)}
+                <span className="text-xs text-gray-500">{soundBusy ? 'écoute des vidéos…' : `${soundPool.length} son${soundPool.length > 1 ? 's' : ''} de vidéos entendu${soundPool.length > 1 ? 's' : ''}`}</span>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><label className="flex w-16 items-center gap-2 text-xs"><input type="checkbox" checked={withSound} onChange={(e) => setWithSound(e.target.checked)} aria-label="Son" />son</label><span className="text-xs text-gray-400">Glitch</span><input type="range" min={0} max={1} step={0.05} value={glitch} onChange={(e) => setGlitch(Number(e.target.value))} className="w-48" aria-label="Glitch du son" /><span className="text-xs">{Math.round(glitch * 100)} %</span><span className="text-xs text-gray-500">{track ? `piste : ${track.name}${trackBuffer?.url === track.url ? `, départ à ${offsetFor(trackBuffer.buffer, seconds, seed).toFixed(1)} s` : ''}` : 'aucune piste'}</span></div>
-              <p className="mt-2 text-[11px] text-gray-500">{tracks.length ? 'Au hasard : Autre tirage change la piste et le départ. ' : 'Dépose tes fichiers libres de droits (mp3, m4a, wav, ogg, flac) : Pixabay Musique, la bibliothèque audio YouTube. '}Le film glitche la piste lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé pendant les rafales, son étouffé pendant les retombées, un trou à chaque carton ; dessous, la piste garde son rythme. Le bouton Son sous l’aperçu dit où il en est ; le navigateur ne laisse rien jouer avant un premier clic sur la page ; pas de son sur les formats d’image.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Pistes</span>
+                {tracks.map((t) => <button key={t.url} title={`${Math.round(t.bytes / 1024 / 1024 * 10) / 10} Mo`} className={soundSource === t.url ? chipOn : chip} onClick={() => setSoundSource(t.url)}>{t.name}</button>)}
+                <label className={`${chip} cursor-pointer ${uploading ? 'opacity-40' : ''}`}>{uploading ? 'Envoi…' : 'Déposer des pistes'}<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple className="hidden" disabled={uploading} aria-label="Déposer des pistes" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void addTracks(files) }} /></label>
+                {tracks.some((t) => t.url === soundSource) ? <button className={chip} disabled={uploading} onClick={() => void removeTrack(soundSource)}>Retirer</button> : null}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><label className="flex w-16 items-center gap-2 text-xs"><input type="checkbox" checked={withSound} onChange={(e) => setWithSound(e.target.checked)} aria-label="Son" />son</label><span className="text-xs text-gray-400">Glitch</span><input type="range" min={0} max={1} step={0.05} value={glitch} onChange={(e) => setGlitch(Number(e.target.value))} className="w-48" aria-label="Glitch du son" /><span className="text-xs">{Math.round(glitch * 100)} %</span>
+                <span className="text-xs text-gray-500">{chosen ? <>{chosen.label}{chosen.credit ? <> — <a href={chosen.credit.page} target="_blank" rel="noreferrer" className="underline">la vidéo</a></> : null}{trackBuffer?.key === prepKey && chosen.kind !== 'synth' ? `, départ à ${offsetFor(trackBuffer.buffer, seconds, seed).toFixed(1)} s` : ''}</> : 'aucune source'}</span></div>
+              <p className="mt-2 text-[11px] text-gray-500">Au hasard : tes pistes d’abord quand il y en a, puis le son pris dans une vidéo libre (Pixabay, Pexels — sans rapport avec l’image), puis un des cinq sons que le film fabrique (Pulsation, Modem, Statique, Nappe, Arpège) ; Autre tirage change la source et le départ. Dépose tes fichiers libres de droits (mp3, m4a, wav, ogg, flac) : Pixabay Musique, la bibliothèque audio YouTube. Le film glitche le son lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé pendant les rafales, son étouffé pendant les retombées, un trou à chaque carton ; dessous, le son garde son rythme. Le bouton Son sous l’aperçu dit où il en est ; le navigateur ne laisse rien jouer avant un premier clic sur la page ; pas de son sur les formats d’image.</p>
             </section>
             <section className="rounded border border-white/15 p-3">
               <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Texte</h2>

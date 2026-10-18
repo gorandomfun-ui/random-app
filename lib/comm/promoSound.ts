@@ -12,6 +12,8 @@
 import type { Shot } from './promoLoop'
 
 const hash = (...n: number[]) => { let h = 2166136261; for (const v of n) { h ^= Math.floor(v * 1000) + 0x9e3779b9; h = Math.imul(h, 16777619) } return ((h >>> 0) % 100000) / 100000 }
+/** The promo's hash, for the page's own draws by the seed. */
+export const promoHash = hash
 
 export type SoundPlan = { shots: Shot[]; beat: number; seconds: number; seed: number; glitch: number; offsetSec: number }
 
@@ -24,9 +26,16 @@ export function audioContext(): AudioContext {
 
 /** The track fetched and decoded — by an offline context, which needs no click to work. */
 export async function loadTrack(url: string): Promise<AudioBuffer> {
-  const response = await fetch(url, { cache: 'no-store' })
+  const response = await fetch(url)
   if (!response.ok) throw new Error(`piste ${response.status}`)
   return new OfflineAudioContext(1, 1, 44100).decodeAudioData(await response.arrayBuffer())
+}
+
+/** True when a decoded file holds nothing to hear: its loudest sample, read every sixteenth, stays under a whisper. */
+export function soundless(buffer: AudioBuffer): boolean {
+  let peak = 0
+  for (let c = 0; c < buffer.numberOfChannels; c += 1) { const d = buffer.getChannelData(c); for (let i = 0; i < d.length; i += 16) { const v = Math.abs(d[i]); if (v > peak) peak = v } }
+  return peak < 0.004
 }
 
 /** Where in the track the film starts: a place by the seed, leaving the film's length before the end when the track is long enough. */
@@ -102,8 +111,18 @@ export async function renderSoundtrack(buffer: AudioBuffer, plan: SoundPlan): Pr
     }
     if (shot.phase === 'card' && g > 0.05) hole(from, 0.05 + g * 0.06)
   }
-  // In without a click; out with a short fade.
-  master.gain.setValueAtTime(0, 0); master.gain.linearRampToValueAtTime(0.9, 0.03)
-  master.gain.setValueAtTime(0.9, Math.max(0.03, seconds - 0.3)); master.gain.linearRampToValueAtTime(0, seconds)
+  // At one level whatever the source — a quiet street or a loud track; in without a click; out with a short fade.
+  const level = 0.9 * levelFor(buffer, offset, seconds)
+  master.gain.setValueAtTime(0, 0); master.gain.linearRampToValueAtTime(level, 0.03)
+  master.gain.setValueAtTime(level, Math.max(0.03, seconds - 0.3)); master.gain.linearRampToValueAtTime(0, seconds)
   return off.startRendering()
+}
+
+/** The gain that brings the part of the source the film uses to a working loudness, within bounds. */
+function levelFor(buffer: AudioBuffer, offsetSec: number, seconds: number): number {
+  const d = buffer.getChannelData(0), from = Math.floor(offsetSec * buffer.sampleRate), to = Math.min(d.length, Math.floor((offsetSec + seconds) * buffer.sampleRate))
+  let sum = 0, n = 0
+  for (let i = from; i < to; i += 8) { sum += d[i] * d[i]; n += 1 }
+  const rms = n ? Math.sqrt(sum / n) : 0
+  return rms > 0.0005 ? Math.min(5, Math.max(0.4, 0.12 / rms)) : 1
 }

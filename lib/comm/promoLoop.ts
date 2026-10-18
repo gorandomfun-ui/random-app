@@ -143,6 +143,9 @@ export type Shot = {
   p: { a: number; b: number; c: number; d: number; e: number; f: number }
 }
 
+/** The film's beat in ms, by the seed: 84 to 114 to the minute. */
+export const beatOf = (seed: number) => 60000 / (84 + hash(seed, 1) * 30)
+
 /** The run of cycles: calm, hint, burst, settle; the cards between cycles; the brand clean to close. */
 export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'shots' | 'brandMode' | 'text' | 'subjects' | 'recognition'>, videos: number, pictures: number, iconCount = 0): { shots: Shot[]; beat: number } {
   const subjects: Subject[] = (input.subjects.length ? input.subjects : (['block'] as Subject[])).filter((x) => x !== 'icon' || iconCount > 0)
@@ -157,7 +160,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
   const lineCount = (input.text?.lines ?? []).filter((l) => l.trim()).length
   const cards = lineCount > 1 ? lineCount : 0
   const total = input.seconds * 1000
-  const beat = 60000 / (84 + hash(input.seed, 1) * 30)
+  const beat = beatOf(input.seed)
   const out: Shot[] = []
   const favour = new Map<ShotKind, number>(SHOTS.map((sh) => [sh.key, 0.4 + hash(input.seed, sh.key.length, 6) * 1.2]))
   let at = 0, i = 0, card = 0, video = Math.floor(hash(input.seed, 2) * Math.max(1, videos)), picture = Math.floor(hash(input.seed, 3) * Math.max(1, pictures)), last: ShotKind | null = null
