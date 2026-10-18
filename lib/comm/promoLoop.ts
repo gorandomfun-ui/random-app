@@ -20,13 +20,17 @@
  *
  * The stock pictures and videos are never shown raw: posterised into the
  * palette's tones and laid in coarse pixels — a television's abstraction —
- * everywhere, letters included. The brand is central mostly, overflows and
- * grows at moments, and is deformed by the glitches themselves. Nothing
- * changes every frame: the glitch moves by steps. Every number comes from a
- * hash, so a seed gives the same film twice.
+ * everywhere, letters included. The Fond moment is the one time the picture
+ * fills the frame whole: in its own colours by steps, tinted, veiled and
+ * torn, never clean. The brand is central mostly, overflows and grows at
+ * moments, and is deformed by the glitches themselves. Nothing changes every
+ * frame: the glitch moves by steps. Every number comes from a hash, so a
+ * seed gives the same film twice. The sound, when the curator has tracks,
+ * is rendered from the same plan (promoSound) and recorded with the film.
  */
 
 import { recorderChoice } from './montage'
+import { audioContext } from './promoSound'
 
 const CREAM = '#F8F5E6', DEEP = '#121210'
 const SITE = 'GORANDOM.FUN'
@@ -58,7 +62,7 @@ export const FORMATS: Format[] = [
 export const formatOf = (key: FormatKey) => FORMATS.find((f) => f.key === key) ?? FORMATS[0]
 
 // ----- the moments the curator may allow
-export type ShotKind = 'blocks' | 'mosh' | 'screens' | 'confetti' | 'reel' | 'sweep' | 'vomit' | 'textbig' | 'column' | 'windows' | 'split' | 'ecto'
+export type ShotKind = 'blocks' | 'mosh' | 'screens' | 'confetti' | 'reel' | 'sweep' | 'vomit' | 'textbig' | 'column' | 'windows' | 'split' | 'ecto' | 'back'
 export const SHOTS: Array<{ key: ShotKind; name: string; hint: string }> = [
   { key: 'blocks', name: 'Éclats', hint: 'la marque explose en cellules remplies de texture, des blocs épars, des barres aux côtés' },
   { key: 'mosh', name: 'Datamosh', hint: 'des bandes de texture au milieu, des barres de couleur aux côtés, les petits textes d’une caméra' },
@@ -72,6 +76,7 @@ export const SHOTS: Array<{ key: ShotKind; name: string; hint: string }> = [
   { key: 'windows', name: 'Lettres-fenêtres', hint: 'l’image en texture plein cadre, la même image décalée dans les lettres ; parfois un contour' },
   { key: 'split', name: 'Lettres éclatées', hint: 'une ligne balaie, les lettres se décalent en colonnes avec leurs doubles sombres, des blocs de collage glissent ; les lettres restent décalées' },
   { key: 'ecto', name: 'Ectoplasme', hint: 'l’image solarisée en deux couleurs vives et du noir, qui ondule plein cadre ; la marque petite en bas' },
+  { key: 'back', name: 'Fond', hint: 'l’image ou la vidéo plein cadre, dans ses couleurs mais par paliers et en gros pixels, teintée, voilée, striée, déchirée par pas ; la marque et le texte par-dessus ; jamais propre' },
 ]
 /** What the film plays with: the brand block (letters stacked, with the address), the wordmark on one line, or one of the site's icons. */
 export type Subject = 'block' | 'wordmark' | 'icon'
@@ -127,8 +132,10 @@ export type Shot = {
   /** The cycle's subject, the icon it uses when it is one, and a second subject that joins it on some cycles. */
   subject: Subject; iconIndex: number; duo: Subject | null
   bx: number; by: number; bw: number; huge: boolean
-  /** How the picture is treated this cycle: posterised in the palette, in its own colours, or solarised; and its grain. */
-  look: 'poster' | 'own' | 'solar'; grain: number
+  /** How the picture is treated this cycle: posterised in the palette, in its own colours, or solarised — plain is the Fond's ground only; and its grain. */
+  look: 'poster' | 'own' | 'solar' | 'plain'; grain: number
+  /** The cycle this shot belongs to: what must hold across its hint, burst and settle keys on it. */
+  cycle: number
   /** The big camera interface over this cycle. */
   cam: boolean
   residue: Residue[]
@@ -143,7 +150,9 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
   const rn = clamp01((input.recognition - 0.15) / 0.55)
   const k = clamp01(input.intensity)
   const allowed = (input.shots.length ? input.shots : SHOTS.map((s) => s.key)).filter((s) => s !== 'column')
-  const bursts: ShotKind[] = allowed.length ? allowed : ['blocks', 'mosh', 'confetti']
+  // The Fond needs a picture or a video to be the ground.
+  const usable = allowed.filter((b) => b !== 'back' || videos + pictures > 0)
+  const bursts: ShotKind[] = usable.length ? usable : ['blocks', 'mosh', 'confetti']
   const withColumn = !input.shots.length || input.shots.includes('column')
   const lineCount = (input.text?.lines ?? []).filter((l) => l.trim()).length
   const cards = lineCount > 1 ? lineCount : 0
@@ -167,7 +176,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     const g = clamp01((phase === 'burst' ? 0.55 + k * 0.45 : phase === 'hint' ? 0.35 + k * 0.3 : phase === 'settle' ? 0.12 + k * 0.25 : 0.08 + k * 0.15) * (0.85 + hash(s, 36) * 0.3))
     const pl = place(s)
     const treatments: Treatment[] = ['cream', 'cream', 'cream', 'second', 'stroke', 'filled']
-    out.push({ phase, kind, from: at, to: Math.min(total, at + len), seed: s, g, video, picture, card: -1, treat: treatments[Math.floor(hash(s, 13) * treatments.length)], stacked, pill: hash(s, 24) < 0.55, hud: hash(s, 25) < 0.5, scan: hash(s, 26) < 0.45, subject, iconIndex, duo, ...pl, huge: false, look: cycleLook, grain: cycleGrain, cam: cycleCam, residue: [], enter: false, exit: false, p: params(s), ...extra })
+    out.push({ phase, kind, from: at, to: Math.min(total, at + len), seed: s, g, video, picture, card: -1, treat: treatments[Math.floor(hash(s, 13) * treatments.length)], stacked, pill: hash(s, 24) < 0.55, hud: hash(s, 25) < 0.5, scan: hash(s, 26) < 0.45, subject, iconIndex, duo, ...pl, huge: false, cycle: i, look: cycleLook, grain: cycleGrain, cam: cycleCam, residue: [], enter: false, exit: false, p: params(s), ...extra })
     at += len
   }
   const bumper = input.seconds <= 3
@@ -211,7 +220,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     const huge = hash(s, 40) < 0.35 + k * 0.2
     // Hint, burst, settle; the burst longer and the settle shorter with the force; a column settle now and then.
     push('hint', kind, Math.round(120 + hash(s, 41) * 160), s + 1, { huge })
-    const stretch = kind === 'vomit' ? 2.6 : kind === 'ecto' ? 1.8 : kind === 'split' || kind === 'windows' ? 1.4 : 1
+    const stretch = kind === 'vomit' ? 2.6 : kind === 'ecto' ? 1.8 : kind === 'back' ? 1.5 : kind === 'split' || kind === 'windows' ? 1.4 : 1
     push('burst', kind, Math.round((bumper ? 700 : 420 + k * 900) * (0.75 + hash(s, 42) * 0.5) * stretch), s + 2, { huge })
     const residues: Residue[] = []
     if (kind === 'split') residues.push('split')
@@ -221,7 +230,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     if (hash(s, 44) < 0.45) residues.push('block')
     if (hash(s, 45) < 0.4 + k * 0.3) residues.push('confetti')
     if (hash(s, 46) < 0.35) residues.push('line')
-    const settleKind: ShotKind = withColumn && hash(s, 47) < 0.3 ? 'column' : kind
+    const settleKind: ShotKind = withColumn && kind !== 'back' && hash(s, 47) < 0.3 ? 'column' : kind
     push('settle', settleKind, Math.round((bumper ? 800 : 1500 + hash(s, 48) * 1500) * (1.15 - k * 0.3)), s + 3, { residue: residues, huge: false })
     // A calm between cycles, sometimes.
     if (!bumper && hash(s, 49) < 0.4 && at < total - closing - 800) push('calm', 'column', Math.round(400 + hash(s, 50) * 600), s + 4)
@@ -273,8 +282,8 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const videoOf = (shot: Shot) => { const v = input.videos[shot.video % Math.max(1, input.videos.length)]; return v && v.readyState >= 2 ? v : null }
   const pictureOf = (shot: Shot) => input.stock[shot.picture % Math.max(1, input.stock.length)] ?? null
   const sourceOf = (shot: Shot): CanvasImageSource | null => videoOf(shot) ?? pictureOf(shot)
-  const matterCanvas = make(Math.max(16, Math.round(W / 6)), Math.max(16, Math.round(H / 6))), mc = matterCanvas.getContext('2d', { willReadFrequently: true })!
-  let matterKey = ''
+  /** The matter canvases, three kept by key — the moment's look, the Fond's ground, a treatment's — so a frame needing two does not redo them. */
+  const matterSlots: Array<{ key: string; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }> = []
   /** The picture's own inks: its two dominant hues, saturated — so the picture gives its tint to the whole film. */
   const pictureInkCache = new Map<string, string[]>()
   const hsl2hex = (h: number, sat: number, l: number) => { const f = (n: number) => { const k = (n + h / 30) % 12; const a = sat * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))) }; return `#${[f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}` }
@@ -303,16 +312,22 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     const src = sourceOf(shot)
     if (!src) return null
     const isVideo = Boolean(videoOf(shot))
+    const plain = shot.look === 'plain'
     const MW = Math.max(16, Math.round(W / shot.grain)), MH = Math.max(16, Math.round(H / shot.grain))
-    const key = `${shot.video}:${shot.picture}:${isVideo ? Math.floor(at / 120) : 0}:${shot.seed % 7}:${shot.look}:${shot.grain}`
-    if (key === matterKey) return matterCanvas
-    matterKey = key
+    const key = `${shot.video}:${shot.picture}:${isVideo ? Math.floor(at / 120) : 0}:${plain ? shot.cycle : shot.seed % 7}:${shot.look}:${shot.grain}`
+    const hit = matterSlots.find((slot) => slot.key === key)
+    if (hit) return hit.canvas
+    let slot = matterSlots.length < 3 ? null : matterSlots.shift()!
+    if (!slot) { const canvas = make(MW, MH); slot = { key, canvas, ctx: canvas.getContext('2d', { willReadFrequently: true })! } }
+    slot.key = key; matterSlots.push(slot)
+    const matterCanvas = slot.canvas, mc = slot.ctx
     if (matterCanvas.width !== MW || matterCanvas.height !== MH) { matterCanvas.width = MW; matterCanvas.height = MH }
-    cover(mc, src, 0, 0, MW, MH, 1.2 + hash(shot.seed, 360) * 1.2, hash(shot.seed, 361), hash(shot.seed, 362))
+    // The Fond's ground is the picture whole; the matter elsewhere a crop far zoomed by the seed.
+    if (plain) cover(mc, src, 0, 0, MW, MH); else cover(mc, src, 0, 0, MW, MH, 1.2 + hash(shot.seed, 360) * 1.2, hash(shot.seed, 361), hash(shot.seed, 362))
     const data = mc.getImageData(0, 0, MW, MH), d = data.data
-    if (shot.look === 'own') {
-      // The picture's own colours, quantised to a few levels: the picture shows through, in coarse pixels, never clean.
-      const stepSize = Math.round(52 - rn * 36), half = Math.round(stepSize / 2)
+    if (shot.look === 'own' || plain) {
+      // The picture's own colours, quantised to a few levels: the picture shows through, in coarse pixels, never clean. Finer steps for the Fond.
+      const stepSize = plain ? Math.round(24 + (1 - rn) * 20) : Math.round(52 - rn * 36), half = Math.round(stepSize / 2)
       for (let p = 0; p < d.length; p += 4) { d[p] = Math.min(255, Math.floor(d[p] / stepSize) * stepSize + half); d[p + 1] = Math.min(255, Math.floor(d[p + 1] / stepSize) * stepSize + half); d[p + 2] = Math.min(255, Math.floor(d[p + 2] / stepSize) * stepSize + half) }
     } else if (shot.look === 'solar') {
       // Solarised: three levels — deep, one vivid ink of the picture, one of the palette — with dark edges where the levels meet.
@@ -384,6 +399,23 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     ctx.globalAlpha = 1
   }
   const scanlines = (ctx: CanvasRenderingContext2D, a: number) => { ctx.fillStyle = rgba(CREAM, a); for (let y = 0; y < H; y += 3 * px) ctx.fillRect(0, y, W, px) }
+  /** The Fond: the picture as the ground of a whole cycle — its own colours by steps, in coarse pixels, tinted with the dominant colour, veiled, striped, torn by step. Never clean. */
+  const backdrop = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, veil: number) => {
+    const s = shot.seed, step = stepOf(shot, at, 1.5)
+    // Coarser pixels, fewer colour steps and a stronger tint as the recognition is low: the picture is read, not seen.
+    const ground: Shot = { ...shot, look: 'plain', grain: Math.max(3, Math.round((3.5 + (1 - rn) * 4.5) * (0.85 + hash(shot.cycle, 510) * 0.3))) }
+    matterIn(ctx, ground, at, 0, 0, W, H)
+    ctx.fillStyle = rgba(accent, 0.12 + (1 - rn) * 0.18); ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = rgba(DEEP, veil); ctx.fillRect(0, 0, W, H)
+    const n = 1 + Math.round(shot.g * 6)
+    for (let i = 0; i < n; i += 1) {
+      if (hash(s, step, i, 502) > 0.6) continue
+      const h = Math.max(2 * px, Math.round(H * (0.004 + hash(s, step, i, 503) * 0.05))), y = Math.round(hash(s, step, i, 504) * (H - h)), dx = Math.round((hash(s, step, i, 505) - 0.5) * W * (0.03 + shot.g * 0.2))
+      ctx.drawImage(ctx.canvas, 0, y, W, h, dx, y, W, h)
+      if (hash(s, i, 506) < 0.3) { ctx.fillStyle = rgba(CREAM, 0.5); ctx.fillRect(0, y, W, px) }
+    }
+    scanlines(ctx, 0.05)
+  }
 
   // ----- small pieces: bars at the sides, confetti, the camera's tiny texts, the pill.
   const bars = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, n: number, alpha: number) => {
@@ -569,7 +601,8 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     if (w0 <= 0 || h0 <= 0) return
     if (hash(s, step, 300) < g * 0.7) { const n = 1 + Math.round(g * 5); for (let i = 0; i < n; i += 1) { const sh = Math.max(px, Math.round(h0 * (0.008 + hash(s, step, i, 301) * 0.05))), sy = y0 + Math.round(hash(s, step, i, 302) * (h0 - sh)); ctx.drawImage(ctx.canvas, x0, sy, w0, sh, x0 + Math.round((hash(s, step, i, 303) - 0.5) * w0 * (0.04 + g * 0.25)), sy, w0, sh) } }
     if (hash(s, step, 304) < g * 0.35) { const cells = cellsOf(shot, r); const a = cells[Math.floor(hash(s, step, 305) * cells.length)], b = cells[Math.floor(hash(s, step, 306) * cells.length)]; if (a && b && a !== b) { sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(ctx.canvas, a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h); sx.drawImage(ctx.canvas, b.x, b.y, b.w, b.h, a.x, a.y, a.w, a.h); ctx.drawImage(scratch, a.x, a.y, a.w, a.h, a.x, a.y, a.w, a.h); ctx.drawImage(scratch, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h) } }
-    if (g > 0.5 && hash(s, step, 307) < g * 0.4) { const off = Math.round(u * (3 + g * 5)); sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(ctx.canvas, x0, y0, w0, h0, x0, y0, w0, h0); sx.globalCompositeOperation = 'source-in'; sx.fillStyle = accent; sx.fillRect(x0, y0, w0, h0); sx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.5; ctx.drawImage(scratch, x0, y0, w0, h0, x0 - off, y0, w0, h0); sx.globalCompositeOperation = 'source-in'; sx.fillStyle = others[0] ?? CREAM; sx.fillRect(x0, y0, w0, h0); sx.globalCompositeOperation = 'source-over'; ctx.drawImage(scratch, x0, y0, w0, h0, x0 + off, y0, w0, h0); ctx.globalAlpha = 1 }
+    // The fringe: the subject's own shape in two inks, offset either side — never the frame's region, which would lay a solid block behind the letters.
+    if (g > 0.5 && hash(s, step, 307) < g * 0.4) { const off = Math.round(u * (3 + g * 5)), img = logoOf(shot); ctx.globalAlpha = 0.5; ctx.drawImage(tinted(img, accent, r.w, r.h), 0, 0, r.w, r.h, r.x - off, r.y, r.w, r.h); ctx.drawImage(tinted(img, others[0] ?? CREAM, r.w, r.h), 0, 0, r.w, r.h, r.x + off, r.y, r.w, r.h); ctx.globalAlpha = 1 }
   }
 
   // ----- the words
@@ -653,11 +686,12 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
         break
       }
       case 'hint': {
-        // The brand with the first signs: a fringe in two inks, drips falling from the letters, a dot pattern through it, or a flicker of its outline.
-        bed(ctx, shot, at, 0.7 + force * 0.3)
+        // The brand with the first signs: a fringe in two inks, drips falling from the letters, a dot pattern through it, or a flicker of its outline. For the Fond, the ground arrives in columns.
+        if (shot.kind === 'back') { backdrop(ctx, shot, at, 0.3); const cols = 8 + Math.round(p.a * 6), cw = Math.ceil(W / cols); ctx.fillStyle = DEEP; for (let c = 0; c < cols; c += 1) if (hash(s, c, 507) > local * 1.15) ctx.fillRect(c * cw, 0, cw, H); bed(ctx, shot, at, 0.3) }
+        else bed(ctx, shot, at, 0.7 + force * 0.3)
         const way = Math.floor(p.a * 4)
         drawBrand(ctx, shot, at)
-        if (way === 0) { const off = Math.round(u * (4 + local * 8)); sx.clearRect(0, 0, W, H); sx.globalCompositeOperation = 'source-over'; sx.drawImage(ctx.canvas, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h); sx.globalCompositeOperation = 'source-in'; sx.fillStyle = accent; sx.fillRect(r.x, r.y, r.w, r.h); sx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.6; ctx.drawImage(scratch, r.x, r.y, r.w, r.h, r.x - off, r.y, r.w, r.h); sx.globalCompositeOperation = 'source-in'; sx.fillStyle = others[0] ?? CREAM; sx.fillRect(r.x, r.y, r.w, r.h); sx.globalCompositeOperation = 'source-over'; ctx.drawImage(scratch, r.x, r.y, r.w, r.h, r.x + off, r.y, r.w, r.h); ctx.globalAlpha = 1; ctx.drawImage(logoOf(shot), r.x, r.y, r.w, r.h) }
+        if (way === 0) { const off = Math.round(u * (4 + local * 8)), img = logoOf(shot); ctx.globalAlpha = 0.6; ctx.drawImage(tinted(img, accent, r.w, r.h), 0, 0, r.w, r.h, r.x - off, r.y, r.w, r.h); ctx.drawImage(tinted(img, others[0] ?? CREAM, r.w, r.h), 0, 0, r.w, r.h, r.x + off, r.y, r.w, r.h); ctx.globalAlpha = 1; ctx.drawImage(img, r.x, r.y, r.w, r.h) }
         else if (way === 1) { for (let i = 0; i < 4 + Math.round(g * 8); i += 1) { const x = Math.round(r.x + hash(s, i, 110) * r.w), y0 = Math.round(r.y + hash(s, i, 111) * r.h); const len = Math.round(local * H * (0.1 + hash(s, i, 112) * 0.3)); ctx.fillStyle = hash(s, i, 113) < 0.5 ? CREAM : colourAt(hash(s, i, 114)); ctx.globalAlpha = 0.8; ctx.fillRect(x, y0, px, len); ctx.globalAlpha = 1 } }
         else if (way === 2) { ctx.fillStyle = DEEP; const d = Math.max(3, Math.round(u * 7)); for (let y = r.y; y < r.y + r.h; y += d) for (let x = r.x + ((Math.round(y / d) % 2) ? d / 2 : 0); x < r.x + r.w; x += d) ctx.fillRect(Math.round(x), y, Math.max(1, Math.round(d * 0.45)), Math.max(1, Math.round(d * 0.45))) }
         else if (hash(step, s, 115) < 0.5) { ctx.fillStyle = DEEP; ctx.fillRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4); strokeShape(ctx, logoOf(shot), darkOf(shot), CREAM, r.x, r.y, r.w, r.h) }
@@ -665,8 +699,18 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
         break
       }
       case 'burst': {
-        bed(ctx, shot, at, 0.5)
+        if (shot.kind !== 'back') bed(ctx, shot, at, 0.5)
         switch (shot.kind) {
+          case 'back': {
+            // The Fond: the picture as the ground, the Home's lines over it, the brand in its treatment over that, mistreated; a bar at a side now and then; the camera's small texts.
+            backdrop(ctx, shot, at, 0.22 + (1 - rn) * 0.16)
+            bed(ctx, shot, at, 0.3)
+            if (p.d < 0.4) bars(ctx, shot, at, 1, 0.7)
+            drawBrand(ctx, shot, at)
+            mistreat(ctx, shot, r, at, g)
+            if (shot.hud) hud(ctx, shot, at, frame)
+            break
+          }
           case 'blocks': {
             // The brand's cells thrown apart, each filled with matter; blocks of matter around; bars at the sides; the camera's texts.
             bars(ctx, shot, at, 1 + Math.round(g * 2), 0.8)
@@ -808,7 +852,7 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
           const img = logoOf(shot), lw = Math.min(r.w, Math.round(inner.w * 0.88)), lh = Math.round(lw * img.naturalHeight / Math.max(1, img.naturalWidth))
           drawBrand(ctx, { ...shot, pill: false }, at, { x: Math.round(inner.x + inner.w / 2 - lw / 2), y: Math.round(H / 2 - lh / 2), w: lw, h: lh })
         } else {
-          bed(ctx, shot, at, 0.6 + force * 0.4)
+          if (shot.kind === 'back') { backdrop(ctx, shot, at, 0.3 + local * 0.3); bed(ctx, shot, at, 0.3) } else bed(ctx, shot, at, 0.6 + force * 0.4)
           if (shot.residue.includes('bars')) bars(ctx, shot, at, 1 + Math.round(p.d * g * 3), (0.5 + g * 0.4) * (1 - local * 0.3))
           if (shot.residue.includes('block')) { const bw = Math.round(W * (0.04 + p.e * 0.06)), bh = Math.round(bw * (0.8 + p.f)); const bx = p.c < 0.5 ? Math.round(W * 0.06) : W - bw - Math.round(W * 0.06), by = Math.round(H * (0.3 + hash(s, 190) * 0.4)); matterIn(ctx, shot, at, bx, by, bw, bh, 2.5, hash(s, 191), hash(s, 192)); ctx.strokeStyle = rgba(CREAM, 0.6); ctx.lineWidth = px; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1) }
           if (shot.residue.includes('confetti')) confetti(ctx, shot, at, Math.round(4 + (1 - local) * 10), { x: 0, y: 0, w: W, h: H })
@@ -851,8 +895,8 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   return { shots, beat, frame, shotAt }
 }
 
-/** The film recorded as an MP4 (Chrome, Edge) at the format's size, drawn live into the preview as it goes. */
-export async function recordPromo(input: PromoInput, preview?: HTMLCanvasElement | null, onProgress?: (p: number) => void): Promise<{ blob: Blob; extension: 'mp4' | 'webm' }> {
+/** The film recorded as an MP4 (Chrome, Edge) at the format's size, drawn live into the preview as it goes; its sound, when there is one, started with it and heard meanwhile. */
+export async function recordPromo(input: PromoInput, preview?: HTMLCanvasElement | null, onProgress?: (p: number) => void, sound?: AudioBuffer | null): Promise<{ blob: Blob; extension: 'mp4' | 'webm' }> {
   const choice = recorderChoice((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t))
   if (!choice) throw new Error('Ce navigateur n’enregistre pas de vidéo : Chrome ou Edge sur ordinateur.')
   const format = formatOf(input.format)
@@ -861,13 +905,25 @@ export async function recordPromo(input: PromoInput, preview?: HTMLCanvasElement
   const ctx = work.getContext('2d')!
   const promo = createPromo(input, W, H)
   const stream = work.captureStream(30)
-  const recorder = new MediaRecorder(stream, { mimeType: choice.mimeType, videoBitsPerSecond: 12_000_000 })
+  let startSound: (() => void) | null = null, stopSound: (() => void) | null = null
+  if (sound) {
+    try {
+      const audio = audioContext(); await audio.resume()
+      const source = audio.createBufferSource(); source.buffer = sound
+      const sink = audio.createMediaStreamDestination()
+      source.connect(sink); source.connect(audio.destination)
+      for (const track of sink.stream.getAudioTracks()) stream.addTrack(track)
+      startSound = () => source.start(); stopSound = () => { try { source.stop() } catch { /* ended */ } }
+    } catch { /* a silent film then */ }
+  }
+  const recorder = new MediaRecorder(stream, { mimeType: choice.mimeType, videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 160_000 })
   const chunks: Blob[] = []
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
   const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve() })
   const total = input.seconds * 1000
   const previewCtx = preview?.getContext('2d') ?? null
   recorder.start(500)
+  startSound?.()
   const started = performance.now()
   let frameNo = 0
   await new Promise<void>((resolve) => {
@@ -883,6 +939,7 @@ export async function recordPromo(input: PromoInput, preview?: HTMLCanvasElement
     tick()
   })
   recorder.stop()
+  stopSound?.()
   await stopped
   const blob = new Blob(chunks, { type: choice.mimeType.split(';')[0] })
   if (!blob.size) throw new Error('Rien n’a été enregistré.')

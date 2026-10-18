@@ -96,6 +96,7 @@ const PROTECTED_ROUTES: ProtectedRoute[] = [
   { path: '/api/admin/comm/stock', module: '@/app/api/admin/comm/stock/route', methods: ['GET'] },
   { path: '/api/admin/comm/stock/x', module: '@/app/api/admin/comm/stock/[id]/route', methods: ['GET'] },
   { path: '/api/admin/comm/stockvideo', module: '@/app/api/admin/comm/stockvideo/route', methods: ['GET'] },
+  { path: '/api/admin/comm/tracks', module: '@/app/api/admin/comm/tracks/route', methods: ['GET', 'POST', 'DELETE'] },
 ]
 
 /** Each of these must be refused; the label names the bypass being tried. */

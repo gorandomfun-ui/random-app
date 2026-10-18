@@ -10,7 +10,9 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { downloadBlob } from '@/lib/comm/montageRun'
-import { BRAND_MODES, FORMATS, SHOTS, SUBJECTS, createPromo, formatOf, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
+import { BRAND_MODES, FORMATS, SHOTS, SUBJECTS, createPromo, formatOf, planShots, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
+import { audioContext, loadTrack, offsetFor, renderSoundtrack } from '@/lib/comm/promoSound'
+import { deleteTrack, listTracks, uploadTrack, type Track } from '@/lib/comm/tracks'
 
 const COLORS = [['#0FC55D', 'vert'], ['#D90845', 'rouge'], ['#E5972B', 'orange'], ['#FF978F', 'rose'], ['#3D42CC', 'bleu'], ['#AF3BF2', 'violet']] as const
 const TEXT_SIZES = { S: 60, M: 90, L: 140, XL: 210 } as const
@@ -74,10 +76,21 @@ export default function PromoPage() {
   const [iconPlace, setIconPlace] = useState({ x: 0.78, y: 0.08, size: 120 })
   /** The moment held in the preview (ms), or null while the film plays. */
   const [hold, setHold] = useState<number | null>(null)
+  /** The sound: the curator's tracks, the one chosen (or drawn by the seed), its decoded file, and the film's own glitched render of it. */
+  const [tracks, setTracks] = useState<Track[]>([])
+  const [trackChoice, setTrackChoice] = useState('')
+  const [withSound, setWithSound] = useState(true)
+  const [glitch, setGlitch] = useState(0.5)
+  const [trackBuffer, setTrackBuffer] = useState<{ url: string; buffer: AudioBuffer } | null>(null)
+  const [sound, setSound] = useState<AudioBuffer | null>(null)
+  const [uploading, setUploading] = useState(false)
   const preview = useRef<HTMLCanvasElement | null>(null)
   const fmt = formatOf(format)
   const fonts = useMemo(() => { if (typeof window === 'undefined') return { tomorrow: 'Tomorrow, sans-serif', inter: '"Inter Tight", sans-serif' }; const s = getComputedStyle(document.body); return { tomorrow: s.getPropertyValue('--font-tomorrow').trim() || 'Tomorrow, sans-serif', inter: s.getPropertyValue('--font-inter-tight').trim() || '"Inter Tight", sans-serif' } }, [])
   useEffect(() => { setSeed(Math.floor(Math.random() * 100000)) }, [])
+  useEffect(() => { void listTracks().then((r) => setTracks(r.tracks)) }, [])
+  // Chrome plays sound only after a first touch of the page: the first click wakes the audio.
+  useEffect(() => { const wake = () => { void audioContext().resume() }; document.addEventListener('pointerdown', wake); return () => document.removeEventListener('pointerdown', wake) }, [])
 
   /** The site's things, a handful of stock pictures and a few stock videos. */
   const load = useCallback(async (orientation: 'portrait' | 'landscape' | 'square') => {
@@ -109,7 +122,24 @@ export default function PromoPage() {
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
   const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, subjects, recognition, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, subjects, recognition, withStock, withVideos, fonts, textInput, iconInput])
 
-  // The film plays live at a reduced size, over and over — or holds the chosen moment — until the export takes the canvas.
+  // The track: the chosen one, or one drawn by the seed; decoded once per address; then rendered glitched from the film's plan.
+  const track = useMemo(() => tracks.length ? (tracks.find((t) => t.url === trackChoice) ?? tracks[seed % tracks.length]) : null, [tracks, trackChoice, seed])
+  const trackUrl = track?.url ?? ''
+  useEffect(() => {
+    if (!trackUrl) { setTrackBuffer(null); return }
+    let gone = false
+    loadTrack(trackUrl).then((buffer) => { if (!gone) setTrackBuffer({ url: trackUrl, buffer }) }).catch(() => { if (!gone) setError('La piste ne se lit pas.') })
+    return () => { gone = true }
+  }, [trackUrl])
+  useEffect(() => {
+    if (!input || !withSound || !trackBuffer || fmt.kind !== 'video') { setSound(null); return }
+    let gone = false
+    const { shots, beat } = planShots(input, input.videos.length, input.stock.length, input.icons.length)
+    renderSoundtrack(trackBuffer.buffer, { shots, beat, seconds: input.seconds, seed, glitch, offsetSec: offsetFor(trackBuffer.buffer, input.seconds, seed) }).then((b) => { if (!gone) setSound(b) }).catch(() => { if (!gone) setSound(null) })
+    return () => { gone = true }
+  }, [input, withSound, trackBuffer, glitch, seed, fmt.kind])
+
+  // The film plays live at a reduced size, over and over — or holds the chosen moment — until the export takes the canvas; its sound restarts with each loop.
   const previewScale = Math.min(300 / fmt.w, 540 / fmt.h)
   const pw = Math.round(fmt.w * previewScale * 2), ph = Math.round(fmt.h * previewScale * 2)
   useEffect(() => {
@@ -120,28 +150,57 @@ export default function PromoPage() {
     let stopped = false, handle = 0, frameNo = 0
     const started = performance.now()
     const debug = new URLSearchParams(window.location.search).has('debug')
+    const ac = sound && hold === null ? audioContext() : null
+    let source: AudioBufferSourceNode | null = null, loopNo = -1
+    const play = (atMs: number) => {
+      if (!ac || !sound || ac.state !== 'running') return
+      try { source?.stop() } catch { /* ended */ }
+      source = ac.createBufferSource(); source.buffer = sound
+      const gain = ac.createGain(); gain.gain.value = 0.8; source.connect(gain); gain.connect(ac.destination)
+      source.start(0, Math.min(Math.max(0, sound.duration - 0.01), atMs / 1000))
+    }
     const tick = () => {
       if (stopped) return
-      const at = hold ?? (performance.now() - started) % (input.seconds * 1000)
+      const elapsed = performance.now() - started
+      const at = hold ?? elapsed % (input.seconds * 1000)
+      if (ac) { const loop = Math.floor(elapsed / (input.seconds * 1000)); if (loop !== loopNo || (!source && ac.state === 'running')) { loopNo = loop; play(at) } }
       promo.frame(ctx, at, frameNo)
       if (debug) { const sh = promo.shotAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 26, canvas.width, 26); ctx.fillStyle = '#fff'; ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${sh.phase}:${sh.kind} g=${sh.g.toFixed(2)} ${sh.treat}${sh.huge ? ' huge' : ''} ${sh.residue.join('+')} ${(at / 1000).toFixed(2)}s`, 6, canvas.height - 13) }
       frameNo += 1; handle = requestAnimationFrame(tick)
     }
     tick()
-    return () => { stopped = true; cancelAnimationFrame(handle) }
-  }, [input, busy, hold, pw, ph])
+    return () => { stopped = true; cancelAnimationFrame(handle); try { source?.stop() } catch { /* ended */ } }
+  }, [input, busy, hold, pw, ph, sound])
+
+  const addTracks = useCallback(async (files: File[]) => {
+    if (!files.length) return
+    setUploading(true); setError('')
+    for (const file of files) {
+      const out = await uploadTrack(file)
+      if ('error' in out) setError(out.message); else setTracks((list) => [...list.filter((t) => t.url !== out.url), out].sort((a, b) => a.name.localeCompare(b.name)))
+    }
+    setUploading(false)
+  }, [])
+  const removeTrack = useCallback(async (url: string) => {
+    const t = tracks.find((x) => x.url === url)
+    if (!t || !window.confirm(`Retirer la piste « ${t.name} » ?`)) return
+    setUploading(true)
+    const ok = await deleteTrack(url)
+    setUploading(false)
+    if (ok) { setTracks((list) => list.filter((x) => x.url !== url)); setTrackChoice('') } else setError('La piste n’a pas pu être retirée.')
+  }, [tracks])
 
   const exportFilm = useCallback(async () => {
     if (!input) return
     setBusy(true); setError(''); setResult(null); setProgress(0)
     try {
-      const out = await recordPromo(input, preview.current, setProgress)
+      const out = await recordPromo(input, preview.current, setProgress, sound)
       const name = `random-promo-${format}-${seconds}s-${seed}.${out.extension}`
       setResult({ url: URL.createObjectURL(out.blob), name })
       downloadBlob(out.blob, name)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Export impossible.') }
     setBusy(false)
-  }, [input, format, seconds, seed])
+  }, [input, format, seconds, seed, sound])
   const exportStill = useCallback(async () => {
     if (!input) return
     setBusy(true); setError(''); setResult(null)
@@ -167,7 +226,7 @@ export default function PromoPage() {
             {fmt.kind === 'video' ? <button className="rounded-full border border-white bg-white px-5 py-2.5 text-sm font-bold uppercase text-black disabled:opacity-40" disabled={busy || !input} onClick={exportFilm}>{busy ? `Export ${Math.round(progress * 100)} %` : 'Exporter la vidéo'}</button> : null}
           </div>
         </div>
-        <p className="text-sm text-gray-300">Un film sur Random, à la forme des refs : la marque propre, une amorce, une rafale, puis une longue retombée où des résidus restent — barres de couleur, un bloc, des confettis — et la marque bouge à peine. En continu, le lit de la Home : des centaines de lignes fines, des déchirures et des blocs où l’image passe très zoomée, qui sautent par pas. Les images Pexels et Pixabay ne sont jamais montrées telles quelles : posterisées dans ta palette, en gros pixels. Change de format : la composition suit sa zone sûre. Chrome ou Edge sur ordinateur pour l’export vidéo.</p>
+        <p className="text-sm text-gray-300">Un film sur Random, à la forme des refs : la marque propre, une amorce, une rafale, puis une longue retombée où des résidus restent — barres de couleur, un bloc, des confettis — et la marque bouge à peine. En continu, le lit de la Home : des centaines de lignes fines, des déchirures et des blocs où l’image passe très zoomée, qui sautent par pas. Les images Pexels et Pixabay ne sont jamais montrées telles quelles : posterisées dans ta palette, en gros pixels — le moment Fond les met plein cadre, dans leurs couleurs mais par paliers, voilées, déchirées. Le son : une de tes pistes, glitchée par le film lui-même. Change de format : la composition suit sa zone sûre. Chrome ou Edge sur ordinateur pour l’export vidéo.</p>
         {error ? <p role="alert" className="text-red-300">{error}</p> : null}
         {result ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">Exporté : {result.name} est téléchargé. <a href={result.url} download={result.name} className="underline">Télécharger à nouveau</a>.</p> : null}
         <div className="grid gap-6 md:grid-cols-[auto_1fr]">
@@ -206,6 +265,17 @@ export default function PromoPage() {
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Sources</span><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withVideos} onChange={(e) => setWithVideos(e.target.checked)} />vidéos libres</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres</label><button className={chip} disabled={busy} onClick={() => void load(orientation)}>D’autres</button></div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Tirage</span><button className={chip} disabled={busy} onClick={() => { setSeed(Math.floor(Math.random() * 100000)); setHold(null) }}>Autre tirage (n° {seed})</button></div>
               {assets ? <p className="mt-2 text-[11px] text-gray-500">Vidéos : {assets.videoInfo.length ? assets.videoInfo.map((v, i) => <span key={v.id}>{i ? ' · ' : ''}<a href={v.page} target="_blank" rel="noreferrer" className="underline">{v.author}</a> ({v.duration} s)</span>) : 'aucune'} — Images : {assets.stockInfo.map((p, i) => <span key={p.id}>{i ? ' · ' : ''}<a href={p.page} target="_blank" rel="noreferrer" className="underline">{p.provider}</a></span>)}</p> : null}
+            </section>
+            <section className="rounded border border-white/15 p-3">
+              <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Son</h2>
+              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Pistes</span>
+                <button className={!trackChoice ? chipOn : chip} disabled={!tracks.length} onClick={() => setTrackChoice('')}>Au hasard</button>
+                {tracks.map((t) => <button key={t.url} title={`${Math.round(t.bytes / 1024 / 1024 * 10) / 10} Mo`} className={trackChoice === t.url ? chipOn : chip} onClick={() => setTrackChoice(t.url)}>{t.name}</button>)}
+                <label className={`${chip} cursor-pointer ${uploading ? 'opacity-40' : ''}`}>{uploading ? 'Envoi…' : 'Déposer des pistes'}<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple className="hidden" disabled={uploading} aria-label="Déposer des pistes" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void addTracks(files) }} /></label>
+                {trackChoice ? <button className={chip} disabled={uploading} onClick={() => void removeTrack(trackChoice)}>Retirer</button> : null}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><label className="flex w-16 items-center gap-2 text-xs"><input type="checkbox" checked={withSound} onChange={(e) => setWithSound(e.target.checked)} aria-label="Son" />son</label><span className="text-xs text-gray-400">Glitch</span><input type="range" min={0} max={1} step={0.05} value={glitch} onChange={(e) => setGlitch(Number(e.target.value))} className="w-48" aria-label="Glitch du son" /><span className="text-xs">{Math.round(glitch * 100)} %</span><span className="text-xs text-gray-500">{track ? `piste : ${track.name}${trackBuffer?.url === track.url ? `, départ à ${offsetFor(trackBuffer.buffer, seconds, seed).toFixed(1)} s` : ''}` : 'aucune piste'}</span></div>
+              <p className="mt-2 text-[11px] text-gray-500">{tracks.length ? 'Au hasard : Autre tirage change la piste et le départ. ' : 'Dépose tes fichiers libres de droits (mp3, m4a, wav, ogg, flac) : Pixabay Musique, la bibliothèque audio YouTube. '}Le film glitche la piste lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé pendant les rafales, son étouffé pendant les retombées, un trou à chaque carton ; dessous, la piste garde son rythme. Le son part après un premier clic sur la page ; pas de son sur les formats d’image.</p>
             </section>
             <section className="rounded border border-white/15 p-3">
               <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Texte</h2>
