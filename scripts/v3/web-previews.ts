@@ -36,6 +36,12 @@ import { toneOfPage } from '@/lib/v3/web/tone'
 
 const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
 const CHROMIUM = process.env.RANDOM_CHROMIUM || '/usr/bin/chromium'
+
+/** What a browser needs to run, and nothing of .env.ingest. */
+function browserEnvironment(): Record<string, string> {
+  const keep = ['HOME', 'PATH', 'TMPDIR', 'LANG', 'TZ']
+  return Object.fromEntries(keep.flatMap((name) => (process.env[name] ? [[name, process.env[name] as string]] : [])))
+}
 const VIEWPORT = { width: 1200, height: 750 }
 const HTML_LIMIT = 1_500_000
 /** A blank or nearly blank capture compresses to almost nothing. */
@@ -107,9 +113,14 @@ class Camera {
     if (this.browser && this.shots < SHOTS_PER_BROWSER) return this.browser
     await this.close()
     const { chromium } = await import('playwright-core')
+    // Its own sandbox on (Playwright turns it off unless asked: the browser visited thousands of unknown sites a day
+    // without it, 18 October; tested on the server under the line's own restrictions), and none of the line's settings:
+    // the base's address and the keys stay out of the browser's environment.
     this.browser = await chromium.launch({
       executablePath: CHROMIUM,
       headless: true,
+      chromiumSandbox: true,
+      env: browserEnvironment(),
       args: ['--disable-dev-shm-usage', '--disable-gpu', '--mute-audio', '--no-first-run', '--disable-extensions', '--disable-background-networking', '--disable-sync'],
     })
     this.shots = 0
