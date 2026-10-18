@@ -32,10 +32,11 @@ export RANDOM_INGEST_SERVER=1
 
 run() { echo "[$(date -u +%FT%TZ)] ${LINE}: $*"; "$@"; }
 
-# The 2 € brake (the owner, 8 and 11 October: never more than 2 € a month on Google Cloud). What the server sent this
-# month, counted on its own network card and kept across restarts in /home/random/egress/<month>: past 15 GiB (about
-# 1.50 € at Google's 0.1056 € a GiB after the first) the lines that send the most wait for the 1st of the next month;
-# past 18 GiB (about 1.80 €), every line does. A normal month sends about 15 GB (measured 11 October: ~0.5 GB a day).
+# The money brake (the owner, 8 and 11 October: never more than 2 € a month on Google Cloud; 18 October: 2 to 2.50 €).
+# What the server sent this month, counted on its own network card and kept across restarts in
+# /home/random/egress/<month>: past 20 GiB (about 2 € at Google's 0.1056 € a GiB after the first) the lines that send the
+# most wait for the 1st of the next month; past 23 GiB (about 2.32 €), every line does. A month sends about 20 GB
+# (measured 15-17 October: ~0.7 GB a day).
 EGRESS_DIR=/home/random/egress
 mkdir -p "${EGRESS_DIR}"
 egress_month_bytes() {
@@ -55,8 +56,9 @@ case "${LINE}" in
   web-previews|web-embed|web-commoncrawl|web-search|drift|youtube-drift|image-obsolete) heavy=1 ;;
   *) heavy=0 ;;
 esac
-if [ "${sent_gib}" -ge "${RANDOM_BRAKE_ALL_GIB:-18}" ] || { [ "${heavy}" = 1 ] && [ "${sent_gib}" -ge "${RANDOM_BRAKE_GIB:-15}" ]; }; then
-  echo "[$(date -u +%FT%TZ)] ${LINE}: frein des 2 € : ${sent_gib} Go envoyés ce mois-ci, en pause jusqu'au 1er du mois"
+# 15 and 18 GiB until 18 October, which would have stopped the sites and the drifts around the 26th.
+if [ "${sent_gib}" -ge "${RANDOM_BRAKE_ALL_GIB:-23}" ] || { [ "${heavy}" = 1 ] && [ "${sent_gib}" -ge "${RANDOM_BRAKE_GIB:-20}" ]; }; then
+  echo "[$(date -u +%FT%TZ)] ${LINE}: frein des 2,50 € : ${sent_gib} Go envoyés ce mois-ci, en pause jusqu'au 1er du mois"
   exit 0
 fi
 
