@@ -152,6 +152,8 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
   if (!subjects.length) subjects.push('block')
   const rn = clamp01((input.recognition - 0.15) / 0.55)
   const k = clamp01(input.intensity)
+  /** No moment allowed at all: a soft film — the brand on the bed, a hint now and then, the cards, never a burst. */
+  const soft = input.shots.length === 0
   const allowed = (input.shots.length ? input.shots : SHOTS.map((s) => s.key)).filter((s) => s !== 'column')
   // The Fond needs a picture or a video to be the ground.
   const usable = allowed.filter((b) => b !== 'back' || videos + pictures > 0)
@@ -214,8 +216,14 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     drawCycle(s)
     if (hash(s, 8) < 0.5 && videos > 1) video = (video + 1 + Math.floor(hash(s, 9) * (videos - 1))) % videos
     if (hash(s, 10) < 0.5 && pictures > 1) picture = (picture + 1 + Math.floor(hash(s, 11) * (pictures - 1))) % pictures
-    // The burst kind, by the draw's taste, never twice in a row.
-    const pool = bursts.filter((b) => b !== last)
+    if (soft) {
+      // Soft: a hint on a third of the cycles, then a calm — the subject changing, the bed moving, the words staying.
+      if (hash(s, 70) < 0.35) push('hint', 'column', Math.round(120 + hash(s, 41) * 160), s + 1)
+      push('calm', 'column', Math.round((bumper ? 600 : 900) + hash(s, 71) * 1600), s + 4)
+      i += 1; continue
+    }
+    // The burst kind, by the draw's taste, never twice in a row when there is a choice.
+    const pool = bursts.length > 1 ? bursts.filter((b) => b !== last) : bursts
     const sum = pool.reduce((a, b) => a + (favour.get(b) ?? 1), 0)
     let q = hash(s, 6) * sum
     let kind: ShotKind = pool[pool.length - 1]
