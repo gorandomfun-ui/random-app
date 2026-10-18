@@ -22,6 +22,29 @@ const FONTS = [['Tomorrow', 900, 'Tomorrow'], ['Tomorrow', 700, 'Tomorrow fin'],
 const ICONS: Array<[string, string]> = [['heart', 'Heart.svg'], ['shuffle', 'Shuffle.svg'], ['video', 'Video.svg'], ['image', 'image.svg'], ['web', 'web.svg'], ['wave', 'wave.svg'], ['quote', 'quote.svg'], ['joke', 'joke.svg'], ['fact', 'fact.svg'], ['share', 'share.svg'], ['social', 'social.svg'], ['plus', 'plus.svg'], ['info', 'info.svg'], ['comm', 'comm.svg']]
 const chip = 'rounded-full border border-white/40 px-3 py-1.5 text-sm disabled:opacity-40'
 const chipOn = 'rounded-full border border-white bg-white px-3 py-1.5 text-sm text-black'
+const small = 'rounded-full border border-white/25 px-2 py-1 text-xs text-gray-300 disabled:opacity-40'
+/** The moments on at the start: a few, not the whole list. */
+const DEFAULT_SHOTS: ShotKind[] = ['blocks', 'mosh', 'split', 'ecto', 'back']
+
+/** A labelled row of controls. */
+function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return <div className="flex flex-wrap items-center gap-2 py-1"><span className="w-20 shrink-0 text-xs text-gray-400">{label}</span>{children}{hint ? <span className="text-xs text-gray-500">{hint}</span> : null}</div>
+}
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"><h2 className="mb-1 font-mono text-[11px] uppercase tracking-widest text-gray-500">{title}</h2>{children}</section>
+}
+const PlayIcon = ({ playing }: { playing: boolean }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{playing ? <><rect x="5" y="4" width="5" height="16" rx="1" /><rect x="14" y="4" width="5" height="16" rx="1" /></> : <path d="M7 4l13 8-13 8z" />}</svg>
+)
+const RedrawIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 4v5h-5" /></svg>
+)
+const SpeakerIcon = ({ off }: { off: boolean }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" />
+    {off ? <path d="M22 9l-6 6M16 9l6 6" /> : <><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></>}
+  </svg>
+)
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => reject(new Error(url)); img.src = url })
@@ -67,7 +90,7 @@ export default function PromoPage() {
   const [assets, setAssets] = useState<Assets | null>(null)
   const [withStock, setWithStock] = useState(true)
   const [withVideos, setWithVideos] = useState(true)
-  const [shots, setShots] = useState<ShotKind[]>(SHOTS.map((s) => s.key))
+  const [shots, setShots] = useState<ShotKind[]>(DEFAULT_SHOTS)
   const [brandMode, setBrandMode] = useState<BrandMode>('center')
   const [subjects, setSubjects] = useState<Subject[]>(SUBJECTS.map((x) => x.key))
   const [recognition, setRecognition] = useState(0.3)
@@ -79,8 +102,9 @@ export default function PromoPage() {
   const [place, setPlace] = useState<{ x: number; y: number; width: number } | null>(null)
   const [iconName, setIconName] = useState('')
   const [iconPlace, setIconPlace] = useState({ x: 0.78, y: 0.08, size: 120 })
-  /** The moment held in the preview (ms), or null while the film plays. */
+  /** The moment held in the preview (ms), or null while the film plays; and the moment the preview is at, for a pause. */
   const [hold, setHold] = useState<number | null>(null)
+  const atRef = useRef(0)
   /** The sound: the curator's tracks, the one chosen (or drawn by the seed), its decoded file, and the film's own glitched render of it. */
   const [tracks, setTracks] = useState<Track[]>([])
   const [soundSource, setSoundSource] = useState<SoundSource>('any')
@@ -225,6 +249,7 @@ export default function PromoPage() {
       if (stopped) return
       const elapsed = performance.now() - started
       const at = hold ?? elapsed % (input.seconds * 1000)
+      atRef.current = at
       if (ac) { const loop = Math.floor(elapsed / (input.seconds * 1000)); if (loop !== loopNo || (!source && ac.state === 'running')) { loopNo = loop; play(at) } }
       promo.frame(ctx, at, frameNo)
       if (debug) { const sh = promo.shotAt(at); ctx.fillStyle = '#000'; ctx.fillRect(0, canvas.height - 26, canvas.width, 26); ctx.fillStyle = '#fff'; ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${sh.phase}:${sh.kind} g=${sh.g.toFixed(2)} ${sh.treat}${sh.huge ? ' huge' : ''} ${sh.residue.join('+')} ${(at / 1000).toFixed(2)}s`, 6, canvas.height - 13) }
@@ -235,7 +260,7 @@ export default function PromoPage() {
   }, [input, busy, hold, pw, ph, sound, awake])
   /** What the Son button says: no track, muted, the track being read or prepared, waiting for a click, held, or playing. */
   const soundState = !chosen || fmt.kind !== 'video' ? 'none' : !withSound ? 'muted' : trackBuffer?.key !== prepKey ? 'loading' : !sound ? 'rendering' : !awake ? 'asleep' : hold !== null ? 'held' : 'playing'
-  const soundLabel = { none: fmt.kind !== 'video' ? 'Son : format d’image' : 'Son : aucune source', muted: 'Son : coupé', loading: chosen?.kind === 'synth' ? 'Son : fabrication…' : chosen?.kind === 'video' ? 'Son : lecture de la vidéo…' : 'Son : lecture de la piste…', rendering: 'Son : préparation…', asleep: 'Son : clique pour l’entendre', held: 'Son : tenu', playing: 'Son : joue' }[soundState]
+  const soundLabel = { none: fmt.kind !== 'video' ? 'pas de son sur un format d’image' : 'aucune source de son', muted: 'son coupé', loading: chosen?.kind === 'synth' ? 'son en fabrication…' : chosen?.kind === 'video' ? 'lecture de la vidéo…' : 'lecture de la piste…', rendering: 'son en préparation…', asleep: 'clique sur le haut-parleur pour entendre', held: 'son tenu avec l’image', playing: 'son' }[soundState]
 
   const addTracks = useCallback(async (files: File[]) => {
     if (!files.length) return
@@ -280,86 +305,92 @@ export default function PromoPage() {
   }, [input, hold, format, fmt, seed])
 
   const safe = fmt.safe
+  const previewW = Math.round(fmt.w * previewScale)
+  const toggleSecondary = (i: number) => { if (second === i) { setSecond(third); setThird(-1) } else if (third === i) setThird(-1); else if (second < 0) setSecond(i); else setThird(i) }
+  const soundOff = soundState === 'muted' || soundState === 'asleep' || soundState === 'none'
   return (
-    <main className="min-h-screen bg-black px-5 py-8 text-white">
-      <div className="mx-auto max-w-5xl space-y-5">
-        <nav className="text-sm"><Link href="/admin/comm" className="underline">← La file</Link></nav>
+    <main className="min-h-screen bg-black px-5 py-6 text-white">
+      <div className="mx-auto max-w-5xl space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold">Promo</h1>
+          <div className="flex items-baseline gap-4"><h1 className="text-2xl font-bold">Promo</h1><Link href="/admin/comm" className="text-sm text-gray-400 underline">← La file</Link></div>
           <div className="flex flex-wrap items-center gap-2">
             <button className={chip} disabled={busy || !input} onClick={exportStill}>Image fixe {fmt.w}×{fmt.h}</button>
             {fmt.kind === 'video' ? <button className="rounded-full border border-white bg-white px-5 py-2.5 text-sm font-bold uppercase text-black disabled:opacity-40" disabled={busy || !input} onClick={exportFilm}>{busy ? `Export ${Math.round(progress * 100)} %` : 'Exporter la vidéo'}</button> : null}
           </div>
         </div>
-        <p className="text-sm text-gray-300">Un film sur Random, à la forme des refs : la marque propre, une amorce, une rafale, puis une longue retombée où des résidus restent — barres de couleur, un bloc, des confettis — et la marque bouge à peine. En continu, le lit de la Home : des centaines de lignes fines, des déchirures et des blocs où l’image passe très zoomée, qui sautent par pas. Les images Pexels et Pixabay ne sont jamais montrées telles quelles : posterisées dans ta palette, en gros pixels — le moment Fond les met plein cadre, dans leurs couleurs mais par paliers, voilées, déchirées. Le son : une de tes pistes, glitchée par le film lui-même. Change de format : la composition suit sa zone sûre. Chrome ou Edge sur ordinateur pour l’export vidéo.</p>
         {error ? <p role="alert" className="text-red-300">{error}</p> : null}
         {result ? <p className="rounded border border-green-400/50 p-2 text-sm text-green-300">Exporté : {result.name} est téléchargé. <a href={result.url} download={result.name} className="underline">Télécharger à nouveau</a>.</p> : null}
         <div className="grid gap-6 md:grid-cols-[auto_1fr]">
-          <div>
-            <div className="relative mx-auto" style={{ width: Math.round(fmt.w * previewScale), height: Math.round(fmt.h * previewScale) }}>
+          <div className="mx-auto" style={{ width: previewW }}>
+            <div className="relative" style={{ width: previewW, height: Math.round(fmt.h * previewScale) }}>
               <canvas ref={preview} width={pw} height={ph} className="h-full w-full rounded border border-white/20 bg-[#191916]" aria-label="Aperçu" />
-              {guide ? <div className="pointer-events-none absolute border border-dashed border-amber-200/40" style={{ left: `${safe.l * 100}%`, top: `${safe.t * 100}%`, right: `${safe.r * 100}%`, bottom: `${safe.b * 100}%`, borderRadius: fmt.round ? '50%' : 0 }} aria-label="Zone sûre" /> : null}
+              {guide ? <div className="pointer-events-none absolute border border-dashed border-amber-200/40" style={{ left: `${safe.l * 100}%`, top: `${safe.t * 100}%`, right: `${safe.r * 100}%`, bottom: `${safe.b * 100}%`, borderRadius: fmt.round ? '50%' : 0 }} aria-label="Zone sûre" title={`Zone sûre : ${fmt.note}. Un repère, jamais exporté.`} /> : null}
               {textInput && place ? <DragBox rect={{ x: place.x, y: place.y, w: place.width, h: 0.12 }} label="texte" onMove={(x, y) => setPlace((p) => ({ ...(p ?? { width: 0.88 }), x, y }))} /> : null}
               {iconInput ? <DragBox rect={{ x: iconPlace.x, y: iconPlace.y, w: iconPlace.size / fmt.w, h: iconPlace.size / fmt.h }} label="icône" onMove={(x, y) => setIconPlace((p) => ({ ...p, x, y }))} /> : null}
               {!assets ? <p className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">Chargement…</p> : null}
             </div>
-            <div className="mx-auto mt-2 flex items-center gap-2 text-xs text-gray-300" style={{ width: Math.round(fmt.w * previewScale) }}>
-              <span>Moment</span>
-              <input type="range" min={0} max={seconds * 1000} step={50} value={hold ?? 0} className="flex-1" aria-label="Moment du film" onChange={(e) => setHold(Number(e.target.value))} />
-              <span className="w-10 text-right">{((hold ?? 0) / 1000).toFixed(1)} s</span>
-              <button className={chip} onClick={() => setHold(null)} disabled={hold === null}>Lire</button>
-              <button className={soundState === 'playing' ? chipOn : chip} aria-label="Son" disabled={soundState === 'none'} onClick={() => { if (!awake) { wake(); setWithSound(true) } else setWithSound(!withSound) }}>{soundLabel}</button>
+            {/* The transport: play or hold, the moment, the sound, another draw, the guide. */}
+            <div className="mt-2 flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-2 py-1 text-xs text-gray-300">
+              <button className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-white/10" aria-label={hold === null ? 'Tenir' : 'Lire'} title={hold === null ? 'Tenir ce moment (pour l’image fixe)' : 'Lire'} onClick={() => setHold(hold === null ? Math.round(atRef.current) : null)}><PlayIcon playing={hold === null} /></button>
+              <input type="range" min={0} max={seconds * 1000} step={50} value={hold ?? 0} className="min-w-0 flex-1" aria-label="Moment du film" onChange={(e) => setHold(Number(e.target.value))} />
+              <span className="w-9 text-right tabular-nums">{((hold ?? 0) / 1000).toFixed(1)} s</span>
+              <button className={`flex h-7 w-7 items-center justify-center rounded-full ${soundState === 'playing' || soundState === 'held' ? 'bg-white text-black' : 'hover:bg-white/10'} disabled:opacity-30`} aria-label="Son" title={soundLabel} disabled={soundState === 'none'} onClick={() => { if (!awake) { wake(); setWithSound(true) } else setWithSound(!withSound) }}><SpeakerIcon off={soundOff} /></button>
+              <button className="flex h-7 items-center gap-1 rounded-full px-2 hover:bg-white/10 disabled:opacity-30" title={`Autre tirage (n° ${seed})`} aria-label="Autre tirage" disabled={busy} onClick={() => { setSeed(Math.floor(Math.random() * 100000)); setHold(null) }}><RedrawIcon /> <span className="tabular-nums">{seed}</span></button>
             </div>
-            <p className="mx-auto mt-1 text-[11px] text-gray-500" style={{ width: Math.round(fmt.w * previewScale) }}>Tire la glissière pour tenir un moment (pour l’image fixe) ; Lire relance le film ; Son lance ou coupe la piste. Le cadre jaune en pointillé est la zone sûre, celle que l’interface ne cache pas ({fmt.note}) : un repère, jamais exporté.</p>
+            <div className="mt-1 flex items-center justify-between px-2 text-[11px] text-gray-500">
+              <span>{soundState === 'playing' ? (chosen?.label ?? '') : soundLabel}</span>
+              <label className="flex items-center gap-1"><input type="checkbox" checked={guide} onChange={(e) => setGuide(e.target.checked)} />zone sûre</label>
+            </div>
           </div>
-          <div className="space-y-4 text-sm">
-            <section className="rounded border border-white/15 p-3">
-              <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Format</h2>
-              <div className="flex flex-wrap items-center gap-2">{FORMATS.map((f) => <button key={f.key} title={`${f.w}×${f.h} — ${f.note}`} className={format === f.key ? chipOn : chip} onClick={() => setFormat(f.key)}>{f.name}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={guide} onChange={(e) => setGuide(e.target.checked)} />montrer la zone sûre</label><span className="text-xs text-gray-500">{fmt.kind === 'image' ? 'format d’image : le bouton Image fixe prend le moment tenu' : 'format vidéo : Exporter la vidéo, ou Image fixe pour une couverture'}</span></div>
-            </section>
-            <section className="rounded border border-white/15 p-3">
-              <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Film</h2>
-              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Couleur 1</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} principale`} className={`h-8 w-8 rounded-full border-2 ${accent === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => setAccent(i)} />)}<span className="text-xs text-gray-500">la dominante</span></div>
-              {([['Couleur 2', second, setSecond], ['Couleur 3', third, setThird]] as const).map(([label, value, set]) => <div key={label} className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">{label}</span>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} ${label}`} disabled={i === accent} className={`h-7 w-7 rounded-full border-2 disabled:opacity-20 ${value === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => set(value === i ? -1 : i)} />)}<span className="text-xs text-gray-500">{value < 0 ? 'aucune' : 'secondaire'}</span></div>)}
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Force</span><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs">{Math.round(intensity * 100)} %</span></div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Durée</span>{[3, 5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => { setSeconds(s); setHold(null) }}>{s === 3 ? 'Bumper 3 s' : `${s} s`}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Moments</span>{SHOTS.map((s) => <button key={s.key} title={s.hint} className={shots.includes(s.key) ? chipOn : chip} onClick={() => setShots(shots.includes(s.key) ? shots.filter((x) => x !== s.key) : [...shots, s.key])}>{s.name}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Sujets</span>{SUBJECTS.map((x) => <button key={x.key} title={x.hint} className={subjects.includes(x.key) ? chipOn : chip} onClick={() => setSubjects(subjects.includes(x.key) ? subjects.filter((k) => k !== x.key) : [...subjects, x.key])}>{x.name}</button>)}<span className="text-xs text-gray-500">un par cycle, parfois deux ensemble</span></div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Marque</span>{BRAND_MODES.map((m) => <button key={m.key} title={m.hint} className={brandMode === m.key ? chipOn : chip} onClick={() => setBrandMode(m.key)}>{m.name}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Reconnaissance</span><input type="range" min={0.15} max={0.7} step={0.05} value={recognition} onChange={(e) => setRecognition(Number(e.target.value))} className="w-48" aria-label="Reconnaissance de l’image" /><span className="text-xs">{Math.round(recognition * 100)} %</span><span className="text-xs text-gray-500">à 15 % l’image n’est que matière ; à 70 % on la devine, et ses couleurs prennent</span></div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Sources</span><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withVideos} onChange={(e) => setWithVideos(e.target.checked)} />vidéos libres</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres</label><button className={chip} disabled={busy} onClick={() => void load(orientation)}>D’autres</button></div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Tirage</span><button className={chip} disabled={busy} onClick={() => { setSeed(Math.floor(Math.random() * 100000)); setHold(null) }}>Autre tirage (n° {seed})</button></div>
-              {assets ? <p className="mt-2 text-[11px] text-gray-500">Vidéos : {assets.videoInfo.length ? assets.videoInfo.map((v, i) => <span key={v.id}>{i ? ' · ' : ''}<a href={v.page} target="_blank" rel="noreferrer" className="underline">{v.author}</a> ({v.duration} s)</span>) : 'aucune'} — Images : {assets.stockInfo.map((p, i) => <span key={p.id}>{i ? ' · ' : ''}<a href={p.page} target="_blank" rel="noreferrer" className="underline">{p.provider}</a></span>)}</p> : null}
-            </section>
-            <section className="rounded border border-white/15 p-3">
-              <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Son</h2>
-              <div className="flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Source</span>
-                {([['any', 'Au hasard'], ['tracks', 'Mes pistes'], ['videos', 'Sons de vidéos'], ['synth', 'Généré']] as const).map(([k, name]) => <button key={k} className={soundSource === k ? chipOn : chip} disabled={(k === 'tracks' && !tracks.length) || (k === 'videos' && !soundPool.length)} onClick={() => setSoundSource(k)}>{name}</button>)}
-                <span className="text-xs text-gray-500">{soundBusy ? 'écoute des vidéos…' : `${soundPool.length} son${soundPool.length > 1 ? 's' : ''} de vidéos entendu${soundPool.length > 1 ? 's' : ''}`}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Pistes</span>
+          <div className="space-y-3 text-sm">
+            <Section title="Format">
+              <Row label="Vidéo">{FORMATS.filter((f) => f.kind === 'video').map((f) => <button key={f.key} title={`${f.w}×${f.h} — ${f.note}`} className={format === f.key ? chipOn : chip} onClick={() => setFormat(f.key)}>{f.name}</button>)}</Row>
+              <Row label="Image">{FORMATS.filter((f) => f.kind === 'image').map((f) => <button key={f.key} title={`${f.w}×${f.h} — ${f.note}`} className={format === f.key ? chipOn : chip} onClick={() => setFormat(f.key)}>{f.name}</button>)}</Row>
+            </Section>
+            <Section title="Film">
+              <Row label="Durée">{[3, 5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => { setSeconds(s); setHold(null) }}>{s === 3 ? 'Bumper 3 s' : `${s} s`}</button>)}</Row>
+              <Row label="Force"><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs tabular-nums">{Math.round(intensity * 100)} %</span></Row>
+              <Row label="Couleur 1" hint="la dominante">{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} principale`} title={name} className={`h-8 w-8 rounded-full border-2 ${accent === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => setAccent(i)} />)}</Row>
+              <Row label="Couleurs 2–3" hint={second < 0 && third < 0 ? 'aucune : la dominante seule' : 'jusqu’à deux secondaires'}>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} secondaire`} title={name} disabled={i === accent} className={`h-7 w-7 rounded-full border-2 disabled:opacity-20 ${second === i || third === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => toggleSecondary(i)} />)}</Row>
+            </Section>
+            <Section title="Effets">
+              <Row label="Moments">{SHOTS.map((s) => <button key={s.key} title={s.hint} className={shots.includes(s.key) ? chipOn : chip} onClick={() => setShots(shots.includes(s.key) ? shots.filter((x) => x !== s.key) : [...shots, s.key])}>{s.name}</button>)}<span className="ml-1 flex gap-1"><button className={small} onClick={() => setShots(SHOTS.map((s) => s.key))}>tous</button><button className={small} onClick={() => setShots(DEFAULT_SHOTS)}>de base</button><button className={small} onClick={() => setShots([])}>aucun</button></span></Row>
+              <Row label="Sujets" hint="un par cycle, parfois deux">{SUBJECTS.map((x) => <button key={x.key} title={x.hint} className={subjects.includes(x.key) ? chipOn : chip} onClick={() => setSubjects(subjects.includes(x.key) ? subjects.filter((k) => k !== x.key) : [...subjects, x.key])}>{x.name}</button>)}</Row>
+              <Row label="Marque">{BRAND_MODES.map((m) => <button key={m.key} title={m.hint} className={brandMode === m.key ? chipOn : chip} onClick={() => setBrandMode(m.key)}>{m.name}</button>)}</Row>
+            </Section>
+            <Section title="Image">
+              <Row label="Sources"><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withVideos} onChange={(e) => setWithVideos(e.target.checked)} />vidéos libres</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres</label><button className={small} disabled={busy} onClick={() => void load(orientation)}>d’autres</button></Row>
+              <Row label="Reconnaissance" hint="à 15 % l’image n’est que matière ; à 70 % on la devine"><input type="range" min={0.15} max={0.7} step={0.05} value={recognition} onChange={(e) => setRecognition(Number(e.target.value))} className="w-48" aria-label="Reconnaissance de l’image" /><span className="text-xs tabular-nums">{Math.round(recognition * 100)} %</span></Row>
+              {assets ? <p className="px-0 py-1 text-[11px] text-gray-500">Vidéos : {assets.videoInfo.length ? assets.videoInfo.map((v, i) => <span key={v.id}>{i ? ' · ' : ''}<a href={v.page} target="_blank" rel="noreferrer" className="underline">{v.author}</a> ({v.duration} s)</span>) : 'aucune'} — Images : {assets.stockInfo.map((p, i) => <span key={p.id}>{i ? ' · ' : ''}<a href={p.page} target="_blank" rel="noreferrer" className="underline">{p.provider}</a></span>)}</p> : null}
+            </Section>
+            <Section title="Son">
+              <Row label="Source" hint={soundBusy ? 'écoute des vidéos…' : `${soundPool.length} son${soundPool.length > 1 ? 's' : ''} de vidéos entendu${soundPool.length > 1 ? 's' : ''}`}>{([['any', 'Au hasard'], ['tracks', 'Mes pistes'], ['videos', 'Sons de vidéos'], ['synth', 'Généré']] as const).map(([k, name]) => <button key={k} className={soundSource === k ? chipOn : chip} disabled={(k === 'tracks' && !tracks.length) || (k === 'videos' && !soundPool.length)} onClick={() => setSoundSource(k)}>{name}</button>)}</Row>
+              <Row label="Pistes">
                 {tracks.map((t) => <button key={t.url} title={`${Math.round(t.bytes / 1024 / 1024 * 10) / 10} Mo`} className={soundSource === t.url ? chipOn : chip} onClick={() => setSoundSource(t.url)}>{t.name}</button>)}
                 <label className={`${chip} cursor-pointer ${uploading ? 'opacity-40' : ''}`}>{uploading ? 'Envoi…' : 'Déposer des pistes'}<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple className="hidden" disabled={uploading} aria-label="Déposer des pistes" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void addTracks(files) }} /></label>
-                {tracks.some((t) => t.url === soundSource) ? <button className={chip} disabled={uploading} onClick={() => void removeTrack(soundSource)}>Retirer</button> : null}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><label className="flex w-16 items-center gap-2 text-xs"><input type="checkbox" checked={withSound} onChange={(e) => setWithSound(e.target.checked)} aria-label="Son" />son</label><span className="text-xs text-gray-400">Glitch</span><input type="range" min={0} max={1} step={0.05} value={glitch} onChange={(e) => setGlitch(Number(e.target.value))} className="w-48" aria-label="Glitch du son" /><span className="text-xs">{Math.round(glitch * 100)} %</span>
-                <span className="text-xs text-gray-500">{chosen ? <>{chosen.label}{chosen.credit ? <> — <a href={chosen.credit.page} target="_blank" rel="noreferrer" className="underline">la vidéo</a></> : null}{trackBuffer?.key === prepKey && chosen.kind !== 'synth' ? `, départ à ${offsetFor(trackBuffer.buffer, seconds, seed).toFixed(1)} s` : ''}</> : 'aucune source'}</span></div>
-              <p className="mt-2 text-[11px] text-gray-500">Au hasard : tes pistes d’abord quand il y en a, puis le son pris dans une vidéo libre (Pixabay, Pexels — sans rapport avec l’image), puis un des cinq sons que le film fabrique (Pulsation, Modem, Statique, Nappe, Arpège) ; Autre tirage change la source et le départ. Dépose tes fichiers libres de droits (mp3, m4a, wav, ogg, flac) : Pixabay Musique, la bibliothèque audio YouTube. Le film glitche le son lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé pendant les rafales, son étouffé pendant les retombées, un trou à chaque carton ; dessous, le son garde son rythme. Le bouton Son sous l’aperçu dit où il en est ; le navigateur ne laisse rien jouer avant un premier clic sur la page ; pas de son sur les formats d’image.</p>
-            </section>
-            <section className="rounded border border-white/15 p-3">
-              <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Texte</h2>
-              <textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 300))} rows={3} placeholder={'Une ligne = un carton, dans l’ordre'} className="w-full rounded border border-white/30 bg-black p-2 text-sm" aria-label="Texte" />
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Taille</span>{(Object.keys(TEXT_SIZES) as Array<keyof typeof TEXT_SIZES>).map((k) => <button key={k} className={size === k ? chipOn : chip} onClick={() => setSize(k)}>{k}</button>)}
-                {(['left', 'center', 'right'] as const).map((a) => <button key={a} className={align === a ? chipOn : chip} onClick={() => setAlign(a)}>{a === 'left' ? 'Gauche' : a === 'center' ? 'Centré' : 'Droite'}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Police</span>{FONTS.map(([, , name], i) => <button key={name} className={fontIndex === i ? chipOn : chip} onClick={() => setFontIndex(i)}>{name}</button>)}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Place</span><button className={!place ? chipOn : chip} onClick={() => setPlace(null)}>Dans la zone sûre</button><button className={place ? chipOn : chip} onClick={() => setPlace({ x: 0.06, y: 0.6, width: 0.88 })}>À la main</button>{place ? <span className="text-xs text-gray-500">glisse le cadre « texte » sur l’aperçu</span> : null}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-16 text-xs text-gray-400">Icône</span>
+                {tracks.some((t) => t.url === soundSource) ? <button className={small} disabled={uploading} onClick={() => void removeTrack(soundSource)}>retirer</button> : null}
+              </Row>
+              <Row label="Glitch"><input type="range" min={0} max={1} step={0.05} value={glitch} onChange={(e) => setGlitch(Number(e.target.value))} className="w-48" aria-label="Glitch du son" /><span className="text-xs tabular-nums">{Math.round(glitch * 100)} %</span>
+                <span className="text-xs text-gray-500">{chosen ? <>{chosen.label}{chosen.credit ? <> — <a href={chosen.credit.page} target="_blank" rel="noreferrer" className="underline">la vidéo</a></> : null}{trackBuffer?.key === prepKey && chosen.kind !== 'synth' ? `, départ à ${offsetFor(trackBuffer.buffer, seconds, seed).toFixed(1)} s` : ''}</> : 'aucune source'}</span></Row>
+            </Section>
+            <Section title="Texte">
+              <textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 300))} rows={2} placeholder={'Une ligne reste sur tout le film ; plusieurs lignes = des cartons, dans l’ordre'} className="my-1 w-full rounded border border-white/20 bg-black p-2 text-sm" aria-label="Texte" />
+              <Row label="Taille">{(Object.keys(TEXT_SIZES) as Array<keyof typeof TEXT_SIZES>).map((k) => <button key={k} className={size === k ? chipOn : chip} onClick={() => setSize(k)}>{k}</button>)}<span className="ml-2 flex gap-2">{(['left', 'center', 'right'] as const).map((a) => <button key={a} className={align === a ? chipOn : chip} onClick={() => setAlign(a)}>{a === 'left' ? 'Gauche' : a === 'center' ? 'Centré' : 'Droite'}</button>)}</span></Row>
+              <Row label="Police">{FONTS.map(([, , name], i) => <button key={name} className={fontIndex === i ? chipOn : chip} onClick={() => setFontIndex(i)}>{name}</button>)}</Row>
+              <Row label="Place" hint={place ? 'glisse le cadre « texte » sur l’aperçu' : undefined}><button className={!place ? chipOn : chip} onClick={() => setPlace(null)}>Dans la zone sûre</button><button className={place ? chipOn : chip} onClick={() => setPlace({ x: 0.06, y: 0.6, width: 0.88 })}>À la main</button></Row>
+              <Row label="Icône" hint={iconName ? 'glisse-la sur le film' : undefined}>
                 <select value={iconName} onChange={(e) => setIconName(e.target.value)} className="rounded border border-white/30 bg-black px-2 py-1 text-sm" aria-label="Icône"><option value="">aucune</option>{ICONS.map(([name]) => <option key={name} value={name}>{name}</option>)}</select>
-                {iconName ? <><input type="range" min={48} max={400} step={8} value={iconPlace.size} onChange={(e) => setIconPlace((p) => ({ ...p, size: Number(e.target.value) }))} className="w-32" aria-label="Taille de l’icône" /><span className="text-xs text-gray-400">glisse-la sur le film</span></> : null}
+                {iconName ? <input type="range" min={48} max={400} step={8} value={iconPlace.size} onChange={(e) => setIconPlace((p) => ({ ...p, size: Number(e.target.value) }))} className="w-32" aria-label="Taille de l’icône" /> : null}
+              </Row>
+            </Section>
+            <details className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-400">
+              <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-widest text-gray-500">Comment ça marche</summary>
+              <div className="mt-2 space-y-2">
+                <p>Un film sur Random, à la forme des refs : la marque propre, une amorce, une rafale, puis une longue retombée où des résidus restent, et la marque bouge à peine. En continu, le lit de la Home : lignes fines, déchirures et blocs où l’image passe très zoomée, qui sautent par pas. Les images et vidéos libres (Pexels, Pixabay) ne sont jamais montrées telles quelles : matière posterisée en gros pixels ; le moment Fond les met plein cadre, dans leurs couleurs par paliers, voilées, déchirées — jamais propres. Le texte reste toujours lisible ; la marque passe derrière lui dans un autre traitement.</p>
+                <p>Le son : au hasard, tes pistes d’abord quand il y en a, puis le son pris dans une vidéo libre (sans rapport avec l’image), puis un des cinq sons que le film fabrique (Pulsation, Modem, Statique, Nappe, Arpège). Le film le glitche lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé, étouffement dans les retombées, un trou à chaque carton. Le navigateur ne laisse rien jouer avant un premier clic ; pas de son sur les formats d’image. Pistes : tes fichiers libres de droits (mp3, m4a, wav, ogg, flac — Pixabay Musique, bibliothèque audio YouTube).</p>
+                <p>Le cadre jaune en pointillé est la zone sûre, celle que l’interface de la plateforme ne cache pas : un repère, jamais exporté ; change de format, la composition suit. Sous l’aperçu : pause tient un moment (pour une image fixe), la flèche ronde tire un autre film, le haut-parleur lance ou coupe le son. Chrome ou Edge sur ordinateur pour l’export vidéo.</p>
               </div>
-              <p className="mt-2 text-[11px] text-gray-500">Chaque ligne devient un carton qui arrive à son tour, lettre par lettre ; une seule ligne placée à la main reste sur tout le film.</p>
-            </section>
+            </details>
           </div>
         </div>
       </div>
