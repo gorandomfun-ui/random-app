@@ -15,6 +15,12 @@ APP_DIR=/opt/random-app
 REPO=${RANDOM_REPO:-git@github.com:gorandomfun-ui/random-app.git}
 BRANCH=${RANDOM_BRANCH:-main}
 
+# One update at a time: two lines starting in the same minute fetched together, and the second died on git's lock
+# ("cannot lock ref 'refs/remotes/origin/main'", 17 October: that night's check of dead images never ran).
+mkdir -p /home/random/locks
+exec 8> /home/random/locks/deploy.lock
+flock -w 300 8
+
 if [ ! -d "${APP_DIR}/.git" ]; then
   git clone --branch "${BRANCH}" --single-branch "${REPO}" "${APP_DIR}"
   cd "${APP_DIR}"
