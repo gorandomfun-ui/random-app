@@ -9,11 +9,14 @@ import { noteBaseYouTubeQuota, permitBaseYouTube } from '@/lib/ingest/youtubeQuo
 export type AvailabilityVerdict =
   | { checked: false; reason: 'no-video-id' | 'no-api-key' | 'quota' | 'request-failed' }
   | { checked: true; available: true }
-  | { checked: true; available: false; reason: 'not-found' | 'not-embeddable' | 'not-public' }
+  | { checked: true; available: false; reason: 'not-found' | 'not-embeddable' | 'not-public' | 'age-restricted' }
+  /** Plays elsewhere, not in the reporter's country: a fact recorded, never a reason to retire it for everyone. */
+  | { checked: true; available: true; regionBlocked: string }
 
-type YouTubeVideosListResponse = {
+export type YouTubeVideosListResponse = {
   items?: Array<{
     status?: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string }
+    contentDetails?: { contentRating?: { ytRating?: string }; regionRestriction?: { allowed?: string[]; blocked?: string[] } }
   }>
 }
 
@@ -41,13 +44,18 @@ export function youtubeVideoId(input: { videoId?: unknown; url?: unknown }): str
   return null
 }
 
-export async function checkYouTubeAvailability(videoId: string): Promise<AvailabilityVerdict> {
+/**
+ * `country`: the reporter's (Vercel's x-vercel-ip-country). The same single
+ * unit reads the age restriction, which no embed plays anywhere, and the
+ * countries the video is kept from.
+ */
+export async function checkYouTubeAvailability(videoId: string, options: { country?: string | null } = {}): Promise<AvailabilityVerdict> {
   if (!/^[\w-]{11}$/.test(videoId)) return { checked: false, reason: 'no-video-id' }
 
   const apiKey = (process.env.YOUTUBE_API_KEY || '').trim()
   if (!apiKey) return { checked: false, reason: 'no-api-key' }
 
-  const params = new URLSearchParams({ key: apiKey, part: 'status', id: videoId })
+  const params = new URLSearchParams({ key: apiKey, part: 'status,contentDetails', id: videoId })
   const endpoint = `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`
 
   if (!(await permitBaseYouTube(endpoint))) {
@@ -61,16 +69,30 @@ export async function checkYouTubeAvailability(videoId: string): Promise<Availab
       return { checked: false, reason: 'request-failed' }
     }
     const payload = (await response.json()) as YouTubeVideosListResponse
-    const status = payload.items?.[0]?.status
-    if (!status) return { checked: true, available: false, reason: 'not-found' }
-    if (status.privacyStatus && status.privacyStatus !== 'public') {
-      return { checked: true, available: false, reason: 'not-public' }
-    }
-    if (status.embeddable === false) {
-      return { checked: true, available: false, reason: 'not-embeddable' }
-    }
-    return { checked: true, available: true }
+    return youtubeVerdict(payload, options.country)
   } catch {
     return { checked: false, reason: 'request-failed' }
   }
+}
+
+/** What one `videos.list` answer says of an embed: pure, so it can be read on recorded answers. */
+export function youtubeVerdict(payload: YouTubeVideosListResponse, country?: string | null): AvailabilityVerdict {
+  const status = payload.items?.[0]?.status
+  if (!status) return { checked: true, available: false, reason: 'not-found' }
+  if (status.privacyStatus && status.privacyStatus !== 'public') {
+    return { checked: true, available: false, reason: 'not-public' }
+  }
+  if (status.embeddable === false) {
+    return { checked: true, available: false, reason: 'not-embeddable' }
+  }
+  const details = payload.items?.[0]?.contentDetails
+  if (details?.contentRating?.ytRating === 'ytAgeRestricted') {
+    return { checked: true, available: false, reason: 'age-restricted' }
+  }
+  const where = typeof country === 'string' && /^[A-Z]{2}$/.test(country) ? country : null
+  const restriction = details?.regionRestriction
+  if (where && restriction && (restriction.blocked?.includes(where) || (Array.isArray(restriction.allowed) && !restriction.allowed.includes(where)))) {
+    return { checked: true, available: true, regionBlocked: where }
+  }
+  return { checked: true, available: true }
 }

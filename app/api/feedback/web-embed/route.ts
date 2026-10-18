@@ -1,4 +1,5 @@
 export const runtime = 'nodejs'
+export const maxDuration = 10
 
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -8,14 +9,17 @@ import { consumeRateLimit, registerFeedbackEffect } from '@/lib/v3/rateLimit'
 
 /**
  * Public endpoint: the page reports that a site marked embeddable did not
- * load inside Random's frame in time. The first report marks the site; two
- * distinct addresses turn `embeddable` off, and the site opens in a new tab
- * from then on. Same scale as image-error.
+ * load inside Random's frame in time. The first report marks the site; from
+ * two distinct addresses its verdict is cleared, so the night check asks it
+ * again first (scripts/v3/check-web-links.ts --fresh); six turn `embeddable`
+ * off at once. Until 18 October two addresses turned it off: two people could
+ * take any site out of the draw.
  */
 
 const REPORTS_PER_IP_PER_HOUR = 60
 const HOUR_MS = 60 * 60 * 1000
-const DISTINCT_IPS_TO_TURN_OFF = 2
+const DISTINCT_IPS_TO_TURN_OFF = 6
+const DISTINCT_IPS_TO_RECHECK = 2
 
 type Payload = { itemId?: unknown; url?: unknown; reason?: unknown }
 
@@ -56,6 +60,7 @@ export async function POST(request: Request) {
 
     const now = new Date()
     const turnOff = effect.distinctIps >= DISTINCT_IPS_TO_TURN_OFF
+    const recheck = !turnOff && effect.distinctIps >= DISTINCT_IPS_TO_RECHECK
     await items.updateOne(
       { _id: site._id },
       {
@@ -66,6 +71,7 @@ export async function POST(request: Request) {
           ...(turnOff ? { embeddable: false, embedReason: `visitors-${effect.distinctIps}-ips`, embedCheckedAt: now } : {}),
         },
         $inc: { webEmbedSuspectCount: 1 },
+        ...(recheck ? { $unset: { embedCheckedAt: '' } } : {}),
       },
     )
     return NextResponse.json({ success: true, embeddable: !turnOff })

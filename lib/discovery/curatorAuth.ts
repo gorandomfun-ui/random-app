@@ -1,7 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const CURATOR_COOKIE = 'random_curator_v2'
-export const CURATOR_TTL = 365 * 24 * 60 * 60
+/** Thirty days (a year until 18 October): a lost or copied cookie stops working within a month. */
+export const CURATOR_TTL = 30 * 24 * 60 * 60
 const DEFAULT_CURATOR_OWNER_ID = 'random-editor-owner-v2'
 const secret = () => process.env.RANDOM_CURATOR_SECRET ?? ''
 export const curatorOwnerId = () => process.env.RANDOM_EDITOR_OWNER_ID?.trim() || DEFAULT_CURATOR_OWNER_ID

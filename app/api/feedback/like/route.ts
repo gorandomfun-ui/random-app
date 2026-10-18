@@ -1,4 +1,5 @@
 export const runtime = 'nodejs'
+export const maxDuration = 10
 
 import { NextResponse } from 'next/server'
 import { ObjectId, type Collection, type Filter } from 'mongodb'
@@ -194,7 +195,9 @@ export async function DELETE(request: Request) {
       return respondError('Valid item target is required')
     }
 
-    await releaseFeedbackEffect({ req: request, scope: likeScope(objectId) })
+    // Only one's own like is taken back: without a like of this address on the item, nothing comes off its count
+    // (18 October: anyone could bring any item's likes down to zero).
+    const released = await releaseFeedbackEffect({ req: request, scope: likeScope(objectId) })
 
     const existing = await collection.findOne(
       { _id: objectId },
@@ -205,8 +208,8 @@ export async function DELETE(request: Request) {
     }
 
     const currentCount = typeof existing.likeCount === 'number' ? existing.likeCount : 0
-    if (currentCount <= 0) {
-      return NextResponse.json({ success: true, likeCount: 0 })
+    if (!released || currentCount <= 0) {
+      return NextResponse.json({ success: true, likeCount: Math.max(0, currentCount) })
     }
 
     const updated = await collection.findOneAndUpdate(

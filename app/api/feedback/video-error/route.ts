@@ -1,4 +1,5 @@
 export const runtime = 'nodejs'
+export const maxDuration = 10
 
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -12,14 +13,15 @@ import { checkDailymotionAvailability, dailymotionVideoId } from '@/lib/v3/media
  * Public endpoint: the player reports that a video failed to play.
  *
  * A single report can no longer retire a video. It only blocks it for a few
- * hours. Retirement (`obsoleteVideoStatus: 'obsolete'`) needs either three
- * distinct addresses within 24 h, or a server-side `videos.list` check saying
- * the video is gone, private or not embeddable.
+ * hours, once per address. Retirement (`obsoleteVideoStatus: 'obsolete'`)
+ * needs a server-side check saying the video is gone, private, not embeddable
+ * or age-restricted, or six distinct addresses within 24 h (three until
+ * 18 October: three addresses could retire any video).
  */
 
 const REPORTS_PER_IP_PER_HOUR = 20
 const HOUR_MS = 60 * 60 * 1000
-const DISTINCT_IPS_FOR_OBSOLETE = 3
+const DISTINCT_IPS_FOR_OBSOLETE = 6
 /** Longest block a report alone may cause. */
 const TEMPORARY_BLOCK_MS = 6 * HOUR_MS
 const SHORT_BLOCK_MS = 10 * 60 * 1000
@@ -117,9 +119,10 @@ export async function POST(request: Request) {
       obsoleteVideoRuntimeSuspectAt: now,
       obsoleteVideoRuntimeSuspectReason: reason,
       obsoleteVideoRuntimePermanentSignal: isPermanentPlayerCode(playerCode),
-      obsoleteVideoRuntimeBlockedUntil: new Date(now.getTime() + blockDurationFor(reason)),
       obsoleteVideoRuntimeDistinctReporters: effect.distinctIps,
     }
+    // An address blocks a video once: its repeated reports do not keep it out.
+    if (effect.first) setFields.obsoleteVideoRuntimeBlockedUntil = new Date(now.getTime() + blockDurationFor(reason))
     if (provider) setFields.obsoleteVideoRuntimeSuspectProvider = provider
     if (sourceUrl) setFields.obsoleteVideoRuntimeSuspectSourceUrl = sourceUrl
     if (playerCode != null) setFields.obsoleteVideoRuntimePlayerCode = playerCode
@@ -136,10 +139,12 @@ export async function POST(request: Request) {
       const isDailymotion = video.provider === 'dailymotion' || /dailymotion\.com|dai\.ly/i.test(video.url ?? '')
       const dailymotionId = isDailymotion ? dailymotionVideoId(video) : null
       const youtubeId = dailymotionId ? null : youtubeVideoId(video)
-      const verdict = dailymotionId ? await checkDailymotionAvailability(dailymotionId) : youtubeId ? await checkYouTubeAvailability(youtubeId) : null
+      const country = request.headers.get('x-vercel-ip-country')
+      const verdict = dailymotionId ? await checkDailymotionAvailability(dailymotionId) : youtubeId ? await checkYouTubeAvailability(youtubeId, { country }) : null
       if (verdict?.checked) {
         setFields.obsoleteVideoServerCheckedAt = now
         if (!verdict.available) obsoleteReason = `server-${verdict.reason}`
+        else if ('regionBlocked' in verdict) setFields.obsoleteVideoRegionBlocked = verdict.regionBlocked
       }
     }
 

@@ -57,6 +57,11 @@ export function clientIp(req: Request): string {
   return 'unknown'
 }
 
+/** A salted fingerprint of the caller's address, to tell callers apart without keeping any address. */
+export function addressKey(req: Request): string {
+  return hash(`address|${clientIp(req)}`)
+}
+
 let indexesReady: Promise<void> | null = null
 
 async function ensureIndexes(db: Db): Promise<void> {
@@ -151,12 +156,13 @@ export async function registerFeedbackEffect(options: {
   return { first: result.upsertedCount > 0, distinctIps }
 }
 
-/** Releases the marker of this IP on this scope (used when a like is undone). */
-export async function releaseFeedbackEffect(options: { req: Request; scope: string }): Promise<void> {
+/** Releases the marker of this IP on this scope (used when a like is undone); true when there was one. */
+export async function releaseFeedbackEffect(options: { req: Request; scope: string }): Promise<boolean> {
   const key = hash(`${options.scope}|${clientIp(options.req)}`)
   const db = await getDatabase()
   const collection: Collection<FeedbackEffectDocument> = db.collection(FEEDBACK_EFFECT_COLLECTION)
-  await collection.deleteOne({ _id: key })
+  const result = await collection.deleteOne({ _id: key })
+  return result.deletedCount === 1
 }
 
 /** Test seam: forces the next call to recreate the TTL indexes. */

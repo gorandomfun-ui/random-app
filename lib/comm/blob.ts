@@ -44,7 +44,8 @@ export function blobPathnameOf(url: string): string | null {
 }
 
 export async function putBlob(key: string, body: ReadableStream | ArrayBuffer | Blob, contentType: string): Promise<{ url: string; pathname: string }> {
-  const result = await put(key, body as never, { access: 'public', contentType, addRandomSuffix: false, cacheControlMaxAge: 60 })
+  // A key is never written twice (a random name, no overwrite): browsers may keep the file a year instead of asking again after a minute.
+  const result = await put(key, body as never, { access: 'public', contentType, addRandomSuffix: false, cacheControlMaxAge: 365 * 24 * 60 * 60 })
   return { url: result.url, pathname: result.pathname }
 }
 

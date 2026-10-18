@@ -107,19 +107,19 @@ test('a player code that used to retire a video on its own no longer does', { sk
   assert.ok(blockMs <= 6 * 60 * 60 * 1000 + 5_000, 'it may no longer cause a thirty-day block')
 })
 
-test('three distinct addresses within 24 h retire the video', { skip }, async () => {
-  for (const ip of ['203.0.113.211', '203.0.113.212']) {
+test('six distinct addresses within 24 h retire the video, three no longer do (18 October)', { skip }, async () => {
+  for (const ip of ['203.0.113.211', '203.0.113.212', '203.0.113.213', '203.0.113.214', '203.0.113.215']) {
     await post(report(ip))
     const stillActive = await storedVideo()
     assert.equal(stillActive.obsoleteVideoStatus, undefined, `${ip} must not be enough`)
   }
 
-  const response = await post(report('203.0.113.213'))
+  const response = await post(report('203.0.113.216'))
   assert.deepEqual(await response.json(), { success: true, obsolete: true })
 
   const video = await storedVideo()
   assert.equal(video.obsoleteVideoStatus, 'obsolete')
-  assert.equal(video.obsoleteVideoReason, 'runtime-consensus-3-ips')
+  assert.equal(video.obsoleteVideoReason, 'runtime-consensus-6-ips')
 })
 
 test('the same address reporting many times never reaches the consensus', { skip }, async () => {
@@ -129,6 +129,8 @@ test('the same address reporting many times never reaches the consensus', { skip
   const video = await storedVideo()
   assert.equal(video.obsoleteVideoStatus, undefined, 'one address cannot retire a video by insisting')
   assert.equal(video.obsoleteVideoRuntimeDistinctReporters, 1)
+  const blockMs = (video.obsoleteVideoRuntimeBlockedUntil as Date).getTime() - Date.now()
+  assert.ok(blockMs <= 6 * 60 * 60 * 1000 + 5_000, 'insisting does not extend the block either')
 })
 
 test('the 21st report from one address in an hour is refused', { skip }, async () => {

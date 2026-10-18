@@ -4,6 +4,7 @@ import { randomHandler } from '@/lib/discovery/handlers'
 import { recordDailyUsage } from '@/lib/metrics/usage'
 import { curatorRequestAllowed } from '@/lib/discovery/curatorAuth'
 export const runtime = 'nodejs'
+export const maxDuration = 10
 export const POST = randomHandler({
   enabled: () => process.env.RANDOM_POOL_V2_ENABLED !== '0', getDb: getDbSafe,
   decode: row => normalizeWaveDocument(row as WaveDocument),

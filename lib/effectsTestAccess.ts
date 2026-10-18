@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 export const EFFECTS_TEST_COOKIE = 'random_effects_test_access'
 export const EFFECTS_TEST_COOKIE_MAX_AGE = 24 * 60 * 60
@@ -25,7 +25,7 @@ function configuredToken(): string {
 }
 
 export function isEffectsTestConfigured(): boolean {
-  return configuredToken().length > 0
+  return configuredToken().length > 0 && signingKey() !== null
 }
 
 export function matchesEffectsTestPassword(candidate: unknown): boolean {
@@ -33,8 +33,21 @@ export function matchesEffectsTestPassword(candidate: unknown): boolean {
   return equalTokens(hash(candidate), configuredToken())
 }
 
+/**
+ * The cookie is a signature of the password's hash by a key only the server
+ * holds: until 18 October it was the hash itself, which the code shows, so
+ * anyone could open the test pages without the password.
+ */
+function signingKey(): string | null {
+  const key = (process.env.RANDOM_CURATOR_SECRET || '').trim()
+  return key.length >= 32 ? key : null
+}
+
 export function getEffectsTestAccessToken(): string | null {
-  return configuredToken() || null
+  const key = signingKey()
+  const token = configuredToken()
+  if (!key || !token) return null
+  return createHmac('sha256', key).update(`random-test-access:v2:${token}`).digest('hex')
 }
 
 export function hasEffectsTestAccess(cookieValue: string | undefined): boolean {

@@ -13,8 +13,10 @@ import {
   rejectSubmission,
   type SubmissionPayload,
 } from '@/lib/submissions'
+import { consumeRateLimit } from '@/lib/v3/rateLimit'
 
 export const runtime = 'nodejs'
+export const maxDuration = 20
 
 function parseMetadata(raw: FormDataEntryValue | null): Record<string, unknown> | undefined {
   if (!raw || typeof raw !== 'string') return undefined
@@ -149,8 +151,18 @@ export async function GET(request: NextRequest) {
   })
 }
 
+/** A person sends a few contents at a time; a loop does not (18 October: nothing bounded the sends). */
+const SUBMISSIONS_PER_IP_PER_HOUR = 10
+/** A 1 MB image written as text, its fields and its form: well under this. */
+const MAX_BODY_BYTES = 2 * 1024 * 1024
+
 export async function POST(request: NextRequest) {
   try {
+    if (Number(request.headers.get('content-length') ?? '0') > MAX_BODY_BYTES) {
+      return NextResponse.json({ ok: false, error: 'file-too-large' }, { status: 413 })
+    }
+    const limit = await consumeRateLimit({ req: request, route: 'submissions', limit: SUBMISSIONS_PER_IP_PER_HOUR, windowMs: 60 * 60 * 1000 })
+    if (!limit.allowed) return NextResponse.json({ ok: false, error: 'too-many' }, { status: 429 })
     const payload = await buildPayload(request)
     const result = await createSubmission(payload)
     return NextResponse.json({ ok: true, id: result.id })

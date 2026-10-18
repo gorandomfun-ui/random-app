@@ -1,4 +1,5 @@
 export const runtime = 'nodejs'
+export const maxDuration = 10
 
 import { NextResponse } from 'next/server'
 import { recordDailyUsage } from '@/lib/metrics/usage'

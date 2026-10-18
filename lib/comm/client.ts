@@ -141,7 +141,8 @@ export async function ensurePoster(media: MediaDoc, all: MediaDoc[]): Promise<Me
   if (!media.contentType.startsWith('video/') || media.kind === 'montage') return null
   if (all.some((m) => m.kind === 'poster' && m.sourceMediaId === media._id)) return null
   try {
-    const file = await (await fetch(media.blobUrl, { cache: 'no-store' })).blob()
+    // The browser's copy will do: a stored file never changes.
+    const file = await (await fetch(media.blobUrl)).blob()
     const poster = await posterOf(file)
     if (!poster) return null
     const uploaded = await uploadMedia(media.queueItemId, poster, 'poster', undefined, { sourceMediaId: media._id })

@@ -1,4 +1,5 @@
 export const runtime = 'nodejs'
+export const maxDuration = 20
 
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'

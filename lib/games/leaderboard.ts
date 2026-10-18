@@ -9,15 +9,17 @@ import { getDb } from '@/lib/db'
 
 import { worldName } from './names'
 import type { GameName } from './scores'
+import { placeEntry, type WorldEntry } from './table'
 
 export { worldName }
+export { PLACES_PER_ADDRESS, WORLD_TOP, placeEntry, type WorldEntry } from './table'
 
-export const WORLD_TOP = 200
 const COLLECTION = 'leaderboards'
 const idOf = (game: GameName) => `games-${game}`
 
-export type WorldEntry = { runId: string; name: string; score: number; level: number; won: boolean; at: number }
-type Doc = { _id: string; entries: WorldEntry[]; updatedAt?: Date }
+type Doc = { _id: string; entries: WorldEntry[]; updatedAt?: Date; version?: number }
+
+const WRITE_TRIES = 4
 
 export async function readWorld(game: GameName): Promise<WorldEntry[]> {
   const db = await getDb()
@@ -25,17 +27,34 @@ export async function readWorld(game: GameName): Promise<WorldEntry[]> {
   return doc?.entries ?? []
 }
 
-/** Puts a run's score in the table if it belongs there; returns its place (1 is the best), or 0. */
+/**
+ * Puts a run's score in the table if it belongs there; returns its place (1 is the best), or 0.
+ * The write only lands on the table it was computed from (its version): two scores sent at the
+ * same moment no longer erase each other, the second is placed again on the first's table.
+ */
 export async function submitWorld(game: GameName, entry: WorldEntry): Promise<number> {
   const db = await getDb()
   const collection = db.collection<Doc>(COLLECTION)
-  const entries = (await collection.findOne({ _id: idOf(game) }))?.entries ?? []
-  const previous = entries.find((e) => e.runId === entry.runId)
-  // a run's score only goes up
-  if (previous && previous.score >= entry.score && previous.level >= entry.level) return entries.indexOf(previous) + 1
-  const list = [...entries.filter((e) => e.runId !== entry.runId), entry].sort((a, b) => b.score - a.score || a.at - b.at).slice(0, WORLD_TOP)
-  const place = list.findIndex((e) => e.runId === entry.runId) + 1
-  if (place === 0 && !previous) return 0
-  await collection.updateOne({ _id: idOf(game) }, { $set: { entries: list, updatedAt: new Date() } }, { upsert: true })
-  return place
+  for (let attempt = 0; attempt < WRITE_TRIES; attempt += 1) {
+    const doc = await collection.findOne({ _id: idOf(game) })
+    const entries = doc?.entries ?? []
+    const previous = entries.find((e) => e.runId === entry.runId)
+    // a run's score only goes up
+    if (previous && previous.score >= entry.score && previous.level >= entry.level) return entries.indexOf(previous) + 1
+    const list = placeEntry(entries, entry)
+    const place = list.findIndex((e) => e.runId === entry.runId) + 1
+    if (place === 0 && !previous) return 0
+    const version = doc?.version ?? 0
+    if (!doc) {
+      const inserted = await collection.insertOne({ _id: idOf(game), entries: list, updatedAt: new Date(), version: 1 }).then(() => true, () => false)
+      if (inserted) return place
+      continue
+    }
+    const written = await collection.updateOne(
+      { _id: idOf(game), ...(doc.version == null ? { version: { $exists: false } } : { version }) },
+      { $set: { entries: list, updatedAt: new Date(), version: version + 1 } },
+    )
+    if (written.matchedCount === 1) return place
+  }
+  return 0
 }

@@ -6,6 +6,7 @@
 import QRCode from 'qrcode'
 
 export const runtime = 'nodejs'
+export const maxDuration = 10
 
 const OWN_HOSTS = new Set(['gorandom.fun', 'www.gorandom.fun', 'localhost'])
 

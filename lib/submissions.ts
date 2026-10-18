@@ -195,6 +195,24 @@ export class SubmissionError extends Error {
   }
 }
 
+const IMAGE_FILE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+
+/**
+ * The file as it really is: its size measured on its bytes, never the one the
+ * sender announces (a JSON body could announce 1 byte for 4 MB, 18 October),
+ * an image type, a short name.
+ */
+export function cleanImageFile(file: unknown): ImageFilePayload | null {
+  if (!file || typeof file !== 'object') return null
+  const { base64, mimeType, fileName } = file as Record<string, unknown>
+  if (typeof base64 !== 'string' || !base64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) throw new SubmissionError('invalid-file')
+  const size = Buffer.byteLength(base64, 'base64')
+  if (size > SUBMISSION_FILE_LIMIT) throw new SubmissionError('file-too-large')
+  const type = typeof mimeType === 'string' ? mimeType.toLowerCase().trim() : ''
+  if (!IMAGE_FILE_TYPES.has(type)) throw new SubmissionError('invalid-file')
+  return { base64, mimeType: type, size, ...(typeof fileName === 'string' && fileName.trim() ? { fileName: fileName.trim().slice(0, 120) } : {}) }
+}
+
 export async function createSubmission(payload: SubmissionPayload): Promise<{ id: string }> {
   const db = await getDbSafe()
   if (!db) throw new SubmissionError('storage-unavailable', 503)
@@ -211,9 +229,8 @@ export async function createSubmission(payload: SubmissionPayload): Promise<{ id
   if (payload.type === 'image') {
     const imageUrlRaw = payload.imageUrl?.trim() || undefined
     const imageUrl = imageUrlRaw ? normalizeUrl(imageUrlRaw) : undefined
-    const imageFile = payload.imageFile ?? null
+    const imageFile = cleanImageFile(payload.imageFile)
     if (!imageUrl && !imageFile) throw new SubmissionError('missing-image')
-    if (imageFile && imageFile.size > SUBMISSION_FILE_LIMIT) throw new SubmissionError('file-too-large')
     const firstName = sanitizeName(payload.firstName)
     const lastName = sanitizeName(payload.lastName)
     if (!firstName || !lastName) throw new SubmissionError('missing-contributor')
@@ -361,11 +378,25 @@ function resolveEmbedCapability(provider?: string | null, videoId?: string | nul
   return Boolean(videoId)
 }
 
+/**
+ * A duplicate lookup that never holds the request: past two seconds it gives
+ * up and the submission goes on (the owner sees every one before it enters).
+ * Only indexed questions: the image's address (`uniq_image_url`), never the
+ * source's, which had no index and read every image of the base.
+ */
+async function findQuick(collection: { findOne: (filter: Record<string, unknown>, options: Record<string, unknown>) => Promise<unknown> }, filter: Record<string, unknown>): Promise<unknown> {
+  try {
+    return await collection.findOne(filter, { projection: { _id: 1 }, maxTimeMS: 2000 })
+  } catch {
+    return null
+  }
+}
+
 async function assertNoDuplicate(db: Db, collection: ReturnType<typeof getCollection>, data: SubmissionData): Promise<void> {
   const items = db.collection('items')
   if (data.kind === 'image' && data.imageUrl) {
     const url = data.imageUrl
-    const existingItem = await items.findOne({ type: 'image', $or: [{ url }, { 'source.url': url }] })
+    const existingItem = await findQuick(items, { type: 'image', url })
     if (existingItem) throw new SubmissionError('duplicate-url', 409)
     const existingPending = await collection.findOne({ status: 'pending', type: 'image', 'data.kind': 'image', 'data.imageUrl': url })
     if (existingPending) throw new SubmissionError('duplicate-url', 409)
@@ -373,8 +404,7 @@ async function assertNoDuplicate(db: Db, collection: ReturnType<typeof getCollec
   if (data.kind === 'video') {
     const url = data.url
     const videoId = data.meta?.videoId || null
-    const orFilters = videoId ? [{ videoId }, { url }] : [{ url }]
-    const existingVideo = await items.findOne({ type: 'video', $or: orFilters })
+    const existingVideo = (videoId ? await findQuick(items, { type: 'video', videoId }) : null) ?? await findQuick(items, { type: 'video', url })
     if (existingVideo) throw new SubmissionError('duplicate-url', 409)
     const orConditions: Record<string, unknown>[] = [{ 'data.url': url }]
     if (videoId) orConditions.push({ 'data.meta.videoId': videoId })

@@ -6,14 +6,20 @@ const nextConfig = {
   },
   // The small model's runtime (native bindings) is for the ingestion server only; the site's build must never bundle it (the deploy of 2 October failed on it).
   experimental: { serverComponentsExternalPackages: ['@huggingface/transformers', 'onnxruntime-node', 'sharp'] },
-  images: {
-    domains: [
-      'i.ytimg.com',
-      'images.unsplash.com',
-      'picsum.photos',
-      'loremflickr.com',
-      'media.giphy.com'
-    ],
+  // Vercel's image optimizer is not used: only one local icon went through it, while the five hosts it allowed let anyone spend
+  // the free plan's 5,000 transformations a month (18 October).
+  images: { unoptimized: true },
+  poweredByHeader: false,
+  // The site is never shown inside another site's frame; its own pages may frame each other.
+  async headers() {
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+      ],
+    }]
   },
 }
 

@@ -418,6 +418,11 @@ export default function HomeExperience({ navigationPaths = PUBLIC_APP_PATHS }: {
     }
 
     const load = async () => {
+      // A hidden tab shows nothing: no call, the next turn comes in a minute.
+      if (document.hidden) {
+        if (!stopped) schedule(60000)
+        return
+      }
       try {
         let picked: RandomContentItem | null = null
         let pickedImage: string | null = null

@@ -1,9 +1,13 @@
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
+
 import * as cheerio from 'cheerio'
 
 import type { SubmissionType } from '@/lib/submissions'
 
-const FETCH_TIMEOUT_MS = 7000
+const FETCH_TIMEOUT_MS = 5000
 const MAX_TEXT_LENGTH = 200_000
+const MAX_REDIRECTS = 3
 
 export type LinkMetadata = {
   title?: string | null
@@ -30,21 +34,92 @@ function sanitizeUrl(url: string): string {
   }
 }
 
+/**
+ * Whether an address is on the public internet. The preview fetches what a
+ * visitor typed: never the machine itself, its network, a cloud's metadata
+ * service or any reserved range (18 October: any address was fetched).
+ */
+export function isPublicAddress(address: string): boolean {
+  const kind = isIP(address)
+  if (kind === 4) {
+    const [a, b, c] = address.split('.').map(Number)
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false
+    if (a === 100 && b >= 64 && b <= 127) return false
+    if (a === 169 && b === 254) return false
+    if (a === 172 && b >= 16 && b <= 31) return false
+    if (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)))) return false
+    if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false
+    if (a === 203 && b === 0 && c === 113) return false
+    return true
+  }
+  if (kind === 6) {
+    const lower = address.toLowerCase()
+    const mapped = lower.match(/^(?:::ffff:|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/)
+    if (mapped) return isPublicAddress(mapped[1])
+    if (lower === '::' || lower === '::1') return false
+    if (/^f[cd]/.test(lower) || /^fe[89ab]/.test(lower) || lower.startsWith('ff') || lower.startsWith('2001:db8')) return false
+    return true
+  }
+  return false
+}
+
+/** An http(s) address on the usual ports whose every IP is public, or null. */
+async function publicUrl(raw: string): Promise<URL | null> {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  if (url.port && url.port !== '80' && url.port !== '443') return null
+  if (url.username || url.password) return null
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return null
+  try {
+    const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true })
+    if (!addresses.length || !addresses.every((entry) => isPublicAddress(entry.address))) return null
+  } catch {
+    return null
+  }
+  return url
+}
+
 async function fetchHtml(url: string): Promise<string | null> {
   const { controller, clear } = abortableTimeout()
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)'
-      },
-    })
-    if (!response.ok) return null
-    const text = await response.text()
-    if (!text) return null
-    if (text.length > MAX_TEXT_LENGTH) return text.slice(0, MAX_TEXT_LENGTH)
-    return text
+    let target = await publicUrl(url)
+    for (let hop = 0; target && hop <= MAX_REDIRECTS; hop += 1) {
+      const response = await fetch(target, {
+        signal: controller.signal,
+        // Each hop is checked like the first: a public page cannot send the server to a private one.
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'RandomAppBot/1.0 (+https://gorandom.fun)'
+        },
+      })
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location')
+        await response.body?.cancel().catch(() => undefined)
+        target = location ? await publicUrl(new URL(location, target).toString()) : null
+        continue
+      }
+      if (!response.ok || !response.body) return null
+      // At most the first 200 KB are read: a page's title and its tags are at its top.
+      const reader = response.body.getReader()
+      const chunks: Uint8Array[] = []
+      let length = 0
+      while (length < MAX_TEXT_LENGTH) {
+        const { done, value } = await reader.read()
+        if (done || !value) break
+        chunks.push(value)
+        length += value.byteLength
+      }
+      await reader.cancel().catch(() => undefined)
+      const text = new TextDecoder().decode(Buffer.concat(chunks)).slice(0, MAX_TEXT_LENGTH)
+      return text || null
+    }
+    return null
   } catch {
     return null
   } finally {
