@@ -510,15 +510,14 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     const breathe = 1 + Math.sin(at / 1700 + shot.seed) * 0.012
     const cx = shot.huge ? W / 2 : shot.bx * W
     let cy = shot.huge ? H / 2 : shot.by * H
-    // The words win the place: when the brand would cross their block, it moves above or below them, the roomier side.
-    const wb = shot.huge ? null : wordsBlock()
+    // The brand keeps its place and passes behind the words, in another treatment (drawBrand); on one cycle in three it steps aside instead — just enough, the nearer side.
+    const wb = shot.huge || hash(shot.cycle, 520) >= 0.33 ? null : wordsBlock()
     if (wb) {
       const margin = H * 0.02
       const y0 = cy - h / 2, y1 = cy + h / 2
       if (y1 > wb.y - margin && y0 < wb.y + wb.h + margin) {
         const above = wb.y - margin - h / 2, below = wb.y + wb.h + margin + h / 2
-        const roomAbove = wb.y - S.y, roomBelow = S.y + S.h - (wb.y + wb.h)
-        cy = roomAbove >= roomBelow ? Math.max(h / 2 * 0.8, above) : Math.min(H - h / 2 * 0.8, below)
+        cy = cy - above <= below - cy ? Math.max(h / 2 * 0.8, above) : Math.min(H - h / 2 * 0.8, below)
       }
     }
     return { img, x: Math.round(cx - w * breathe / 2), y: Math.round(cy - h * breathe / 2), w: Math.round(w * breathe), h: Math.round(h * breathe) }
@@ -551,10 +550,14 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     sx.globalCompositeOperation = 'source-in'; matterIn(sx, shot, at, x, y, w, h, zoom, hash(shot.seed, 90), hash(shot.seed, 91)); sx.globalCompositeOperation = 'source-over'
     ctx.drawImage(scratch, 0, 0)
   }
-  /** The brand in its treatment, whole — with the entrance and the exit of a calm, and the deformations of the deformed mode. */
+  /** True when a rectangle crosses the constant words' block: what is drawn there passes behind the words. */
+  const behindWords = (r: { y: number; h: number }) => { const wb = wordsBlock(); return Boolean(wb) && r.y < wb!.y + wb!.h + H * 0.01 && r.y + r.h > wb!.y - H * 0.01 }
+  /** The brand in its treatment, whole — with the entrance and the exit of a calm, and the deformations of the deformed mode. Behind the words it is never cream like them: a colour, an outline, or filled with matter. */
   const drawBrand = (ctx: CanvasRenderingContext2D, shot: Shot, at: number, place?: { x: number; y: number; w: number; h: number }, alphaIn = 1) => {
     const r = place ?? brandRect(shot, at)
     const img = logoOf(shot), dark = darkOf(shot)
+    const behind = behindWords(r)
+    const treat: Treatment = behind && shot.treat === 'cream' ? (['second', 'stroke', 'filled'] as Treatment[])[Math.floor(hash(shot.cycle, 521) * 3)] : shot.treat
     const local = localOf(shot, at)
     let { x, y, w, h } = r
     let alpha = alphaIn, spread = 0
@@ -570,7 +573,7 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     if (spread > 0.001) {
       for (const c of cellsOf(shot, { x, y, w, h })) { const ang = hash(shot.seed, c.i, 96) * Math.PI * 2, dist = (0.1 + hash(shot.seed, c.i, 97) * 0.4) * W * spread; ctx.drawImage(img, c.sx, c.sy, c.sw, c.sh, Math.round(c.x + Math.cos(ang) * dist), Math.round(c.y + Math.sin(ang) * dist * 0.7), Math.round(c.w), Math.round(c.h)) }
     } else if (shot.residue.includes('split')) splitCells(ctx, shot, { x, y, w, h }, 1)
-    else switch (shot.treat) {
+    else switch (treat) {
       case 'second': ctx.drawImage(tinted(img, others[0] ?? accent, w, h), 0, 0, w, h, x, y, w, h); break
       case 'stroke': strokeShape(ctx, img, dark, hash(shot.seed, 98) < 0.6 ? CREAM : accent, x, y, w, h); break
       case 'filled': { const o = Math.max(1, Math.round(u * 2)); const tint = tinted(img, CREAM, w, h); for (const [dx, dy] of [[-o, 0], [o, 0], [0, -o], [0, o]]) ctx.drawImage(tint, 0, 0, w, h, x + dx, y + dy, w, h); filledShape(ctx, shot, at, img, x, y, w, h); break }
@@ -578,7 +581,9 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     }
     if (input.brandMode === 'deformed' && shot.phase === 'settle' && hash(shot.seed, 93) >= 0.33) ctx.restore()
     ctx.globalAlpha = 1
-    if (shot.pill && shot.subject === 'block' && spread < 0.2 && alpha > 0.5 && !place && !shot.huge) pillAt(ctx, r.x + r.w / 2, Math.round(r.y + r.h + H * 0.025), Math.max(S.w * 0.35, r.w * 0.7), alpha)
+    // The pill under the block, unless it or the block would cross the words.
+    const pillW = Math.max(S.w * 0.35, r.w * 0.7), pillY = Math.round(r.y + r.h + H * 0.025)
+    if (shot.pill && shot.subject === 'block' && spread < 0.2 && alpha > 0.5 && !place && !shot.huge && !behind && !behindWords({ y: pillY, h: pillW * 0.14 })) pillAt(ctx, r.x + r.w / 2, pillY, pillW, alpha)
   }
   /** The letters displaced in columns with their dark doubles offset — the shattered arrangement of the references, which stays. */
   const splitCells = (ctx: CanvasRenderingContext2D, shot: Shot, r: { x: number; y: number; w: number; h: number }, amount: number) => {

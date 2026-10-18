@@ -84,13 +84,20 @@ export default function PromoPage() {
   const [trackBuffer, setTrackBuffer] = useState<{ url: string; buffer: AudioBuffer } | null>(null)
   const [sound, setSound] = useState<AudioBuffer | null>(null)
   const [uploading, setUploading] = useState(false)
+  /** True once the browser lets sound play: after a first click on the page. */
+  const [awake, setAwake] = useState(false)
   const preview = useRef<HTMLCanvasElement | null>(null)
   const fmt = formatOf(format)
   const fonts = useMemo(() => { if (typeof window === 'undefined') return { tomorrow: 'Tomorrow, sans-serif', inter: '"Inter Tight", sans-serif' }; const s = getComputedStyle(document.body); return { tomorrow: s.getPropertyValue('--font-tomorrow').trim() || 'Tomorrow, sans-serif', inter: s.getPropertyValue('--font-inter-tight').trim() || '"Inter Tight", sans-serif' } }, [])
   useEffect(() => { setSeed(Math.floor(Math.random() * 100000)) }, [])
   useEffect(() => { void listTracks().then((r) => setTracks(r.tracks)) }, [])
   // Chrome plays sound only after a first touch of the page: the first click wakes the audio.
-  useEffect(() => { const wake = () => { void audioContext().resume() }; document.addEventListener('pointerdown', wake); return () => document.removeEventListener('pointerdown', wake) }, [])
+  const wake = useCallback(() => { void audioContext().resume().then(() => setAwake(true)).catch(() => undefined) }, [])
+  useEffect(() => {
+    // Any click wakes it — except the Son button's own, which wakes it itself and must not find it awake already and mute instead.
+    const onDown = (event: PointerEvent) => { if (!(event.target instanceof Element && event.target.closest('button[aria-label="Son"]'))) wake() }
+    document.addEventListener('pointerdown', onDown); return () => document.removeEventListener('pointerdown', onDown)
+  }, [wake])
 
   /** The site's things, a handful of stock pictures and a few stock videos. */
   const load = useCallback(async (orientation: 'portrait' | 'landscape' | 'square') => {
@@ -170,7 +177,10 @@ export default function PromoPage() {
     }
     tick()
     return () => { stopped = true; cancelAnimationFrame(handle); try { source?.stop() } catch { /* ended */ } }
-  }, [input, busy, hold, pw, ph, sound])
+  }, [input, busy, hold, pw, ph, sound, awake])
+  /** What the Son button says: no track, muted, the track being read or prepared, waiting for a click, held, or playing. */
+  const soundState = !track || fmt.kind !== 'video' ? 'none' : !withSound ? 'muted' : trackBuffer?.url !== track.url ? 'loading' : !sound ? 'rendering' : !awake ? 'asleep' : hold !== null ? 'held' : 'playing'
+  const soundLabel = { none: fmt.kind !== 'video' ? 'Son : format d’image' : 'Son : aucune piste', muted: 'Son : coupé', loading: 'Son : lecture de la piste…', rendering: 'Son : préparation…', asleep: 'Son : clique pour l’entendre', held: 'Son : tenu', playing: 'Son : joue' }[soundState]
 
   const addTracks = useCallback(async (files: File[]) => {
     if (!files.length) return
@@ -243,8 +253,9 @@ export default function PromoPage() {
               <input type="range" min={0} max={seconds * 1000} step={50} value={hold ?? 0} className="flex-1" aria-label="Moment du film" onChange={(e) => setHold(Number(e.target.value))} />
               <span className="w-10 text-right">{((hold ?? 0) / 1000).toFixed(1)} s</span>
               <button className={chip} onClick={() => setHold(null)} disabled={hold === null}>Lire</button>
+              <button className={soundState === 'playing' ? chipOn : chip} aria-label="Son" disabled={soundState === 'none'} onClick={() => { if (!awake) { wake(); setWithSound(true) } else setWithSound(!withSound) }}>{soundLabel}</button>
             </div>
-            <p className="mx-auto mt-1 text-[11px] text-gray-500" style={{ width: Math.round(fmt.w * previewScale) }}>Tire la glissière pour tenir un moment (pour l’image fixe) ; Lire relance le film. Le cadre jaune en pointillé est la zone sûre, celle que l’interface ne cache pas ({fmt.note}) : un repère, jamais exporté.</p>
+            <p className="mx-auto mt-1 text-[11px] text-gray-500" style={{ width: Math.round(fmt.w * previewScale) }}>Tire la glissière pour tenir un moment (pour l’image fixe) ; Lire relance le film ; Son lance ou coupe la piste. Le cadre jaune en pointillé est la zone sûre, celle que l’interface ne cache pas ({fmt.note}) : un repère, jamais exporté.</p>
           </div>
           <div className="space-y-4 text-sm">
             <section className="rounded border border-white/15 p-3">
@@ -275,7 +286,7 @@ export default function PromoPage() {
                 {trackChoice ? <button className={chip} disabled={uploading} onClick={() => void removeTrack(trackChoice)}>Retirer</button> : null}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2"><label className="flex w-16 items-center gap-2 text-xs"><input type="checkbox" checked={withSound} onChange={(e) => setWithSound(e.target.checked)} aria-label="Son" />son</label><span className="text-xs text-gray-400">Glitch</span><input type="range" min={0} max={1} step={0.05} value={glitch} onChange={(e) => setGlitch(Number(e.target.value))} className="w-48" aria-label="Glitch du son" /><span className="text-xs">{Math.round(glitch * 100)} %</span><span className="text-xs text-gray-500">{track ? `piste : ${track.name}${trackBuffer?.url === track.url ? `, départ à ${offsetFor(trackBuffer.buffer, seconds, seed).toFixed(1)} s` : ''}` : 'aucune piste'}</span></div>
-              <p className="mt-2 text-[11px] text-gray-500">{tracks.length ? 'Au hasard : Autre tirage change la piste et le départ. ' : 'Dépose tes fichiers libres de droits (mp3, m4a, wav, ogg, flac) : Pixabay Musique, la bibliothèque audio YouTube. '}Le film glitche la piste lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé pendant les rafales, son étouffé pendant les retombées, un trou à chaque carton ; dessous, la piste garde son rythme. Le son part après un premier clic sur la page ; pas de son sur les formats d’image.</p>
+              <p className="mt-2 text-[11px] text-gray-500">{tracks.length ? 'Au hasard : Autre tirage change la piste et le départ. ' : 'Dépose tes fichiers libres de droits (mp3, m4a, wav, ogg, flac) : Pixabay Musique, la bibliothèque audio YouTube. '}Le film glitche la piste lui-même : bégaiements aux amorces et aux rafales, trous sur les pas forts, grain écrasé pendant les rafales, son étouffé pendant les retombées, un trou à chaque carton ; dessous, la piste garde son rythme. Le bouton Son sous l’aperçu dit où il en est ; le navigateur ne laisse rien jouer avant un premier clic sur la page ; pas de son sur les formats d’image.</p>
             </section>
             <section className="rounded border border-white/15 p-3">
               <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-gray-400">Texte</h2>

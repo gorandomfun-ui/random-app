@@ -18,18 +18,22 @@ export type Track = { url: string; name: string; bytes: number }
 
 /** True for a pathname inside the tracks folder: a slug and a known extension, nothing else. */
 export const trackPathOk = (pathname: string) => /^promo\/tracks\/[a-z0-9][a-z0-9-]{0,80}\.(mp3|m4a|wav|ogg|flac)$/.test(pathname)
-/** The name shown for a track: its slug with spaces. */
-export const trackNameOf = (pathname: string) => pathname.slice(TRACKS_PREFIX.length).replace(/\.[a-z0-9]+$/, '').replace(/-/g, ' ')
+/** The name shown for a track: its slug with spaces, without the moment's token. */
+export const trackNameOf = (pathname: string) => pathname.slice(TRACKS_PREFIX.length).replace(/\.[a-z0-9]+$/, '').replace(/-[0-9a-z]{6,9}$/, '').replace(/-/g, ' ')
 /** The content type a track is stored with, from its extension. */
 export const trackTypeOf = (pathname: string) => TYPE_OF_EXT[pathname.slice(pathname.lastIndexOf('.') + 1)] ?? 'audio/mpeg'
 
-/** The Blob pathname for a file the curator drops: its name as a slug, its extension from its type or its name; null for a file that is not a track. */
-export function trackPathFor(file: { name: string; type: string }): string | null {
+/**
+ * The Blob pathname for a file the curator drops: its name as a slug, the moment as a token (so a file
+ * dropped again never reuses an address the CDN may still hold), its extension from its type or its name;
+ * null for a file that is not a track.
+ */
+export function trackPathFor(file: { name: string; type: string }, now = Date.now()): string | null {
   const type = (file.type || '').split(';')[0].trim().toLowerCase()
   const ext = EXT[type] ?? file.name.match(/\.(mp3|m4a|wav|ogg|flac)$/i)?.[1].toLowerCase() ?? ''
   if (!ext) return null
-  const slug = file.name.replace(/\.[^.]+$/, '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'piste'
-  return `${TRACKS_PREFIX}${slug}.${ext}`
+  const slug = file.name.replace(/\.[^.]+$/, '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'piste'
+  return `${TRACKS_PREFIX}${slug}-${now.toString(36)}.${ext}`
 }
 
 // ----- the browser side
@@ -41,7 +45,7 @@ export async function listTracks(): Promise<{ tracks: Track[]; blob: boolean }> 
   } catch { return { tracks: [], blob: false } }
 }
 
-/** Sends a track straight to the tracks folder; the same name replaces the earlier file. */
+/** Sends a track straight to the tracks folder, under a fresh address. */
 export async function uploadTrack(file: File, onProgress?: (fraction: number) => void): Promise<Track | { error: string; message: string }> {
   const pathname = trackPathFor(file)
   if (!pathname) return { error: 'type', message: `Format non pris en charge : ${file.name} (mp3, m4a, wav, ogg, flac).` }

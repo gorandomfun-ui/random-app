@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       body, request: req,
       onBeforeGenerateToken: async (pathname) => {
         if (!trackPathOk(pathname)) throw new Error('Chemin hors des pistes')
-        return { allowedContentTypes: TRACK_CONTENT_TYPES, maximumSizeInBytes: TRACK_MAX_BYTES, addRandomSuffix: false, allowOverwrite: true, validUntil: Date.now() + 10 * 60 * 1000 }
+        return { allowedContentTypes: TRACK_CONTENT_TYPES, maximumSizeInBytes: TRACK_MAX_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil: Date.now() + 10 * 60 * 1000 }
       },
       onUploadCompleted: async () => { /* the page lists the folder again */ },
     })

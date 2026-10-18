@@ -22,10 +22,11 @@ export function audioContext(): AudioContext {
   return shared
 }
 
+/** The track fetched and decoded — by an offline context, which needs no click to work. */
 export async function loadTrack(url: string): Promise<AudioBuffer> {
-  const response = await fetch(url)
+  const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) throw new Error(`piste ${response.status}`)
-  return audioContext().decodeAudioData(await response.arrayBuffer())
+  return new OfflineAudioContext(1, 1, 44100).decodeAudioData(await response.arrayBuffer())
 }
 
 /** Where in the track the film starts: a place by the seed, leaving the film's length before the end when the track is long enough. */
