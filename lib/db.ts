@@ -9,12 +9,15 @@ if (!uri) {
 const DEFAULT_DB = process.env.MONGODB_DB || process.env.MONGO_DB || 'randomapp'
 
 /**
- * A base that does not answer is given up after a few seconds instead of
- * holding a function until Vercel's limit: each second waited counts in the
- * free plan's allowance (96 calls ran to the limit between 18 September and
- * 18 October). Long queries are not cut: only finding the base and connecting.
+ * On the site, a base that does not answer is given up after a few seconds
+ * instead of holding a function until Vercel's limit: each second waited
+ * counts in the free plan's allowance (96 calls ran to the limit between
+ * 18 September and 18 October). Long queries are not cut: only finding the
+ * base and connecting. The ingestion server (RANDOM_INGEST_SERVER=1) keeps the
+ * driver's own waits: a night pass may wait for a busy base, nothing bills it
+ * by the second (19 October: the night check of videos gave up after 5 s).
  */
-const CLIENT_OPTIONS = { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 5000 }
+const CLIENT_OPTIONS = process.env.RANDOM_INGEST_SERVER === '1' ? {} : { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 5000 }
 
 let client: MongoClient
 let clientPromise: Promise<MongoClient>
