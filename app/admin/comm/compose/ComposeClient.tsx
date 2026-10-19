@@ -37,6 +37,26 @@ const chipOn = 'rounded-full border border-white bg-white px-3 py-1.5 text-sm te
 const primary = 'rounded-full border border-white bg-white px-5 py-2.5 text-sm font-bold uppercase text-black disabled:opacity-40'
 const secondary = 'rounded-full border border-white px-5 py-2.5 text-sm font-bold uppercase disabled:opacity-40'
 const section = 'rounded-xl border border-white/15 bg-[#191916] p-4'
+
+/**
+ * Each clip fetched once per visit of this page, then played from the browser's memory. The hidden preview loops,
+ * and a clip of 46 MB does not fit the browser's own cache: every loop and every export fetched it again from the
+ * store, and Vercel Blob counts each download (9.2 GB of the free 10 in 30 days, 19 October). A failed fetch falls
+ * back to the store's address, as before.
+ */
+const localClips = new Map<string, Promise<string>>()
+const readyClips = new Map<string, string>()
+function localClip(url: string): Promise<string> {
+  let pending = localClips.get(url)
+  if (!pending) {
+    pending = fetch(url)
+      .then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.blob() })
+      .then((blob) => { const local = URL.createObjectURL(blob); readyClips.set(url, local); return local })
+      .catch(() => { localClips.delete(url); return url })
+    localClips.set(url, pending)
+  }
+  return pending
+}
 const title = 'mb-3 font-tomorrow text-xs font-black uppercase tracking-[0.18em] text-[#F8F5E6]'
 
 type MediaChoice = { key: string; label: string; itemId: string; mediaId: string | null; media: MediaDoc | null; thumb: string | null; video: boolean; poster?: string | null; seconds?: number | null }
@@ -137,6 +157,15 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const slide: PostSlide | null = post?.slides[current] ?? null
   const slideMedia = useMemo(() => (slide?.mediaId ? allMedia.find((m) => m._id === slide.mediaId) ?? null : null), [allMedia, slide])
   const isVideo = Boolean(slideMedia?.contentType.startsWith('video/'))
+  // The clip's copy in memory: the preview waits for it instead of streaming the file again at each loop.
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isVideo || !slideMedia) { setPreviewSrc(null); return }
+    let alive = true
+    setPreviewSrc(readyClips.get(slideMedia.blobUrl) ?? null)
+    void localClip(slideMedia.blobUrl).then((src) => { if (alive) setPreviewSrc(src) })
+    return () => { alive = false }
+  }, [isVideo, slideMedia])
   const firstItem = useMemo(() => { const id = post?.slides.find((s) => s.itemId)?.itemId; return id ? queue.find((i) => i._id === id) ?? null : null }, [post, queue])
 
   const updateSlide = useCallback((patch: Partial<PostSlide>) => {
@@ -177,7 +206,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     video.addEventListener('loadedmetadata', onMeta); video.addEventListener('timeupdate', onTime)
     if (video.readyState >= 1) onMeta()
     return () => { video.removeEventListener('loadedmetadata', onMeta); video.removeEventListener('timeupdate', onTime) }
-  }, [isVideo, slide?.trim, slideMedia, sound])
+  }, [isVideo, slide?.trim, slideMedia, sound, previewSrc])
 
   // The live preview: the same drawer as the export, on a half-size canvas, following the clip as it plays.
   const animated = Boolean(slide && (slide.glitchStyle ?? 'random') !== 'random')
@@ -215,7 +244,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     })
     return () => { stopped = true; if (handle) cancelAnimationFrame(handle) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawn when the dressing changes
-  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.mediaZoom, slide?.letterAlpha, logoReady])
+  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.mediaZoom, slide?.letterAlpha, logoReady, previewSrc])
 
   const trim = slide?.trim ?? { startSec: 0, endSec: Math.min(clipDuration ?? slideMedia?.durationSec ?? maxSeconds, maxSeconds) }
   const setTrim = (startSec: number, endSec: number) => {
@@ -238,7 +267,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     for (const [index, s] of (post?.slides ?? []).entries()) {
       const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
       if (!media?.contentType.startsWith('video/')) continue
-      const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.preload = 'auto'; v.playsInline = true; v.muted = false; v.volume = 0.001; v.src = media.blobUrl
+      const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.preload = 'auto'; v.playsInline = true; v.muted = false; v.volume = 0.001; v.src = readyClips.get(media.blobUrl) ?? media.blobUrl
       v.play().then(() => v.pause()).catch(() => { /* then the recording plays it muted */ })
       map.set(index, v)
     }
@@ -250,7 +279,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     const overlays = [renderUrl({ ...s, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(s, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
     const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), mediaZoom: s.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
     if (media?.contentType.startsWith('video/')) {
-      const out = await recordMontage({ ...common, src: media.blobUrl, video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
+      const out = await recordMontage({ ...common, src: readyClips.get(media.blobUrl) ?? media.blobUrl, video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
       return { blob: out.blob, extension: out.extension, video: true }
     }
     if ((s.glitchStyle ?? 'random') !== 'random' && media?.contentType.startsWith('image/')) {
@@ -392,7 +421,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   /* eslint-disable-next-line @next/next/no-img-element -- the slide as it will leave */
                   <img src={renderUrl(settled?.[current] ?? slide, current, 'full', 0.5)} alt="Aperçu" className="absolute inset-0 h-full w-full" draggable={false} />
                 ) : null}
-                {isVideo && slideMedia ? <video ref={videoRef} src={slideMedia.blobUrl} crossOrigin="anonymous" muted={!sound} loop autoPlay playsInline className="absolute h-px w-px opacity-0" /> : null}
+                {isVideo && slideMedia && previewSrc ? <video ref={videoRef} src={previewSrc} crossOrigin="anonymous" muted={!sound} loop autoPlay playsInline className="absolute h-px w-px opacity-0" /> : null}
+                {isVideo && slideMedia && !previewSrc ? <span className="absolute inset-0 flex items-center justify-center text-xs text-white/70">Chargement de la vidéo…</span> : null}
                 {liveOn ? <canvas ref={liveRef} className="absolute inset-0 h-full w-full" aria-label="Aperçu" /> : null}
                 {isVideo ? <button type="button" className="absolute right-2 top-2 z-10 rounded-full bg-black/60 px-2 py-1 text-xs text-white" aria-label={sound ? 'Couper le son de l’aperçu' : 'Mettre le son de l’aperçu'} onClick={() => { const v = videoRef.current; const next = !sound; setSound(next); if (v) { v.muted = !next; void v.play().catch(() => setSound(false)) } }}>{sound ? '🔊 son' : '🔇 muet'}</button> : null}
                 {slide.mediaPlace ? <DragBox rect={slide.mediaPlace} label="média" onMove={(x, y) => updateSlide({ mediaPlace: { ...slide.mediaPlace!, x, y } })} /> : null}
