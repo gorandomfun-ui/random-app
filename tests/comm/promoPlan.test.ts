@@ -21,6 +21,17 @@ test('one moment allowed gives bursts of that kind only', () => {
   assert.ok(bursts.every((s) => s.kind === 'ecto'))
 })
 
+test('the close on the brand block is there by default, on a bumper too, and gone when the curator ends on the last cycle', () => {
+  const closing = (s: ReturnType<typeof planShots>['shots'][number]) => s.phase === 'calm' && s.subject === 'block' && s.pill && s.bw === 0.68
+  const on = planShots({ ...base, shots: ['blocks'] as ShotKind[] }, 2, 3, 4).shots
+  assert.ok(closing(on[on.length - 1]) && on[on.length - 1].to - on[on.length - 1].from >= 900)
+  const bumper = planShots({ ...base, seconds: 3, shots: ['blocks'] as ShotKind[] }, 2, 3, 4).shots
+  assert.ok(closing(bumper[bumper.length - 1]))
+  const off = planShots({ ...base, shots: ['blocks'] as ShotKind[], ending: false }, 2, 3, 4).shots
+  assert.ok(!closing(off[off.length - 1]))
+  assert.equal(off[off.length - 1].to, 10000)
+})
+
 test('the Fond needs a picture or a video: alone without sources it gives way to the others', () => {
   const { shots } = planShots({ ...base, shots: ['back'] as ShotKind[] }, 0, 0, 4)
   assert.ok(shots.filter((s) => s.phase === 'burst').every((s) => s.kind !== 'back'))

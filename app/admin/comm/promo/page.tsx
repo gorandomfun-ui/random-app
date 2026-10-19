@@ -96,6 +96,8 @@ export default function PromoPage() {
   const [recognition, setRecognition] = useState(0.3)
   const [guide, setGuide] = useState(true)
   const [text, setText] = useState('')
+  const [upper, setUpper] = useState(false)
+  const [ending, setEnding] = useState(true)
   const [size, setSize] = useState<keyof typeof TEXT_SIZES>('M')
   const [align, setAlign] = useState<'left' | 'center' | 'right'>('left')
   const [fontIndex, setFontIndex] = useState(0)
@@ -183,9 +185,9 @@ export default function PromoPage() {
   const orientation = fmt.w > fmt.h ? 'landscape' : fmt.w === fmt.h ? 'square' : 'portrait'
   useEffect(() => { void load(orientation) }, [load, orientation])
 
-  const textInput = useMemo<PromoText | null>(() => text.trim() ? { lines: text.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 4), size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place?.x ?? null, y: place?.y ?? null, width: place?.width ?? 0.88 } : null, [text, size, align, fontIndex, fonts, place])
+  const textInput = useMemo<PromoText | null>(() => text.trim() ? { lines: text.split('\n').map((l) => (upper ? l.toUpperCase() : l).trim()).filter(Boolean).slice(0, 4), size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place?.x ?? null, y: place?.y ?? null, width: place?.width ?? 0.88 } : null, [text, upper, size, align, fontIndex, fonts, place])
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
-  const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, subjects, recognition, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, subjects, recognition, withStock, withVideos, fonts, textInput, iconInput])
+  const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, subjects, recognition, ending, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, subjects, recognition, ending, withStock, withVideos, fonts, textInput, iconInput])
 
   // The sound's source for this draw: by the seed among what is at hand — the curator's tracks first, the sounds of stock videos, the made ones — or what he chose.
   const chosen = useMemo<Chosen | null>(() => {
@@ -349,6 +351,7 @@ export default function PromoPage() {
             </Section>
             <Section title="Film">
               <Row label="Durée">{[3, 5, 8, 10, 15].map((s) => <button key={s} className={seconds === s ? chipOn : chip} onClick={() => { setSeconds(s); setHold(null) }}>{s === 3 ? 'Bumper 3 s' : `${s} s`}</button>)}</Row>
+              <Row label="Fin" hint={ending ? 'la dernière image est le bloc net avec GORANDOM.FUN — en boucle, c’est l’image la plus vue' : 'le film s’arrête sur son dernier cycle'}><button className={ending ? chipOn : chip} aria-pressed={ending} onClick={() => setEnding(!ending)}>Finir sur la marque</button></Row>
               <Row label="Force"><input type="range" min={0.2} max={1} step={0.05} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-48" aria-label="Force" /><span className="text-xs tabular-nums">{Math.round(intensity * 100)} %</span></Row>
               <Row label="Couleur 1" hint="la dominante">{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} principale`} title={name} className={`h-8 w-8 rounded-full border-2 ${accent === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => setAccent(i)} />)}</Row>
               <Row label="Couleurs 2–3" hint={second < 0 && third < 0 ? 'aucune : la dominante seule' : 'jusqu’à deux secondaires'}>{COLORS.map(([c, name], i) => <button key={c} aria-label={`${name} secondaire`} title={name} disabled={i === accent} className={`h-7 w-7 rounded-full border-2 disabled:opacity-20 ${second === i || third === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => toggleSecondary(i)} />)}</Row>
@@ -375,7 +378,7 @@ export default function PromoPage() {
             </Section>
             <Section title="Texte">
               <textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 300))} rows={2} placeholder={'Une ligne reste sur tout le film ; plusieurs lignes = des cartons, dans l’ordre'} className="my-1 w-full rounded border border-white/20 bg-black p-2 text-sm" aria-label="Texte" />
-              <Row label="Taille">{(Object.keys(TEXT_SIZES) as Array<keyof typeof TEXT_SIZES>).map((k) => <button key={k} className={size === k ? chipOn : chip} onClick={() => setSize(k)}>{k}</button>)}<span className="ml-2 flex gap-2">{(['left', 'center', 'right'] as const).map((a) => <button key={a} className={align === a ? chipOn : chip} onClick={() => setAlign(a)}>{a === 'left' ? 'Gauche' : a === 'center' ? 'Centré' : 'Droite'}</button>)}</span></Row>
+              <Row label="Taille">{(Object.keys(TEXT_SIZES) as Array<keyof typeof TEXT_SIZES>).map((k) => <button key={k} className={size === k ? chipOn : chip} onClick={() => setSize(k)}>{k}</button>)}<span className="ml-2 flex gap-2">{(['left', 'center', 'right'] as const).map((a) => <button key={a} className={align === a ? chipOn : chip} onClick={() => setAlign(a)}>{a === 'left' ? 'Gauche' : a === 'center' ? 'Centré' : 'Droite'}</button>)}</span><button className={`ml-2 ${upper ? chipOn : chip}`} aria-pressed={upper} title="Tout en capitales" onClick={() => setUpper(!upper)}>AA</button></Row>
               <Row label="Police">{FONTS.map(([, , name], i) => <button key={name} className={fontIndex === i ? chipOn : chip} onClick={() => setFontIndex(i)}>{name}</button>)}</Row>
               <Row label="Place" hint={place ? 'glisse le cadre « texte » sur l’aperçu' : undefined}><button className={!place ? chipOn : chip} onClick={() => setPlace(null)}>Dans la zone sûre</button><button className={place ? chipOn : chip} onClick={() => setPlace({ x: 0.06, y: 0.6, width: 0.88 })}>À la main</button></Row>
               <Row label="Icône" hint={iconName ? 'glisse-la sur le film' : undefined}>

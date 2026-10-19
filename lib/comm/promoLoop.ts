@@ -108,6 +108,8 @@ export type PromoInput = {
   subjects: Subject[]
   /** How far the stock picture may be recognised, 0.15 (matter only) to 0.7 (nearly itself, in coarse pixels). */
   recognition: number
+  /** True to close on the brand block clean with the address — the last image, the one a loop shows most; false to end on the last cycle. */
+  ending: boolean
   logo: HTMLImageElement
   logoVertical: HTMLImageElement
   logoDark: HTMLImageElement
@@ -147,7 +149,7 @@ export type Shot = {
 export const beatOf = (seed: number) => 60000 / (84 + hash(seed, 1) * 30)
 
 /** The run of cycles: calm, hint, burst, settle; the cards between cycles; the brand clean to close. */
-export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'shots' | 'brandMode' | 'text' | 'subjects' | 'recognition'>, videos: number, pictures: number, iconCount = 0): { shots: Shot[]; beat: number } {
+export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'shots' | 'brandMode' | 'text' | 'subjects' | 'recognition'> & { ending?: boolean }, videos: number, pictures: number, iconCount = 0): { shots: Shot[]; beat: number } {
   const subjects: Subject[] = (input.subjects.length ? input.subjects : (['block'] as Subject[])).filter((x) => x !== 'icon' || iconCount > 0)
   if (!subjects.length) subjects.push('block')
   const rn = clamp01((input.recognition - 0.15) / 0.55)
@@ -185,7 +187,8 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     at += len
   }
   const bumper = input.seconds <= 3
-  const closing = bumper ? 0 : Math.round(900 + k * 300)
+  // The close on the brand block, when wanted: shorter on a bumper, none when the curator ends on the last cycle.
+  const closing = input.ending === false ? 0 : Math.round(bumper ? 500 : 900 + k * 300)
   // The picture's look and the camera, drawn per cycle.
   let cycleLook: Shot['look'] = 'poster', cycleGrain = 6, cycleCam = false
   const drawCycle = (s: number) => {
@@ -247,7 +250,15 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     if (!bumper && hash(s, 49) < 0.4 && at < total - closing - 800) push('calm', 'column', Math.round(400 + hash(s, 50) * 600), s + 4)
     i += 1; last = kind
   }
-  if (closing) { const s = input.seed * 23 + 9999; push('calm', 'column', total - at, s, { treat: 'cream', pill: true, subject: 'block', stacked: true, duo: null, bx: 0.5, by: 0.46, bw: 0.68, enter: hash(s, 18) < 0.4 }) }
+  if (closing) {
+    // The close keeps its whole length: a last cycle that ran over it is cut there.
+    const cut = total - closing
+    while (out.length && out[out.length - 1].from >= cut) out.pop()
+    if (out.length) out[out.length - 1].to = Math.min(out[out.length - 1].to, cut)
+    at = cut
+    const s = input.seed * 23 + 9999
+    push('calm', 'column', total - at, s, { treat: 'cream', pill: true, subject: 'block', stacked: true, duo: null, bx: 0.5, by: 0.46, bw: 0.68, enter: hash(s, 18) < 0.4 })
+  }
   return { shots: out, beat }
 }
 
