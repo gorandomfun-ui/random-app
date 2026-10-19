@@ -135,7 +135,8 @@ export default function CommQueueClient() {
                     {item.media.filter((m) => !['render', 'poster', 'still', 'thumb'].includes(m.kind)).map((media) => (
                       <li key={media._id} className="flex items-center gap-2 text-xs">
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
-                        {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
+                        {/* A clip loads only when played: its poster shows meanwhile (each visit of the queue pulled every capture whole, 19 October). */}
+                        {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls preload="none" poster={item.media.find((m) => m.kind === 'poster' && m.sourceMediaId === media._id)?.blobUrl} className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
                         <span>{KIND_WORDS[media.kind]}<br />{formatBytes(media.bytes)}{media.width && media.height ? <><br />{media.width}×{media.height}</> : null}{media.durationSec ? <><br />{Math.round(media.durationSec)} s</> : null}</span>
                         <button className={small} disabled={busy === item._id} onClick={() => { if (window.confirm('Supprimer ce média ? Il disparaît aussi du stockage.')) void removeMedia(item, media) }} aria-label="Supprimer ce média">×</button>
                       </li>
