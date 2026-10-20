@@ -25,6 +25,9 @@ const TOPS = [
   'Top 5 Best Soundproofing Felt Rolls For Recording Studios (Must Have!) - 12PCS Fluted Felt',
   'Why Everyone Is Buying Top 5 Magic Trick And Puzzle Games For Parties - Guess Who Is It Bo',
   'Ultimate Guide to the Best Handmade Traditional Kazakh Tush Kiiz Wall Hanging - Kazakh Felt Rug',
+  // The deal farm, 20 October.
+  '4L-20L Wax Melter Candle Melting Pot DIY Candle Making Pouring... -- Hot Deal 20',
+  'ROCKBROS Waterproof Motorcycle Leg Bag, Adjustable Multi Functional... -- Top Ra',
 ]
 const KEEP = [
   'Top 10 goals of the season',
@@ -39,6 +42,8 @@ const KEEP = [
   'Why everyone is buying a Tesla right now',
   'Top 5 best top scorers in Ligue 1 history',
   'The Ultimate Guide to the Best Street Food in Bangkok',
+  'Live at Wembley -- part 2',
+  'Wait for it... -- the best ending ever',
 ]
 
 test('scams are named as such', () => {

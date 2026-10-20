@@ -54,7 +54,6 @@
         <span id="wikidataCursor" style="font-size:12px; color:#666;"></span>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button type="button" class="secondary" id="ingestWikidata">Importer Wikidata Facts</button>
         <button type="button" class="secondary" id="ingestWikiquote">Importer Wikiquote</button>
         <button type="button" class="secondary" id="ingestJokeApi">Importer JokeAPI sécurisé</button>
       </div>
@@ -1024,7 +1023,8 @@
       scrapeButtons.facts.addEventListener('click', () => triggerScrape('facts'))
       scrapeButtons.jokes.addEventListener('click', () => triggerScrape('jokes'))
       scrapeButtons.all.addEventListener('click', () => triggerScrape('all'))
-      trustedTextButtons.wikidata.addEventListener('click', () => triggerTrustedText('wikidata'))
+      // The Wikidata facts were retired on 20 October (their button is gone).
+      if (trustedTextButtons.wikidata) trustedTextButtons.wikidata.addEventListener('click', () => triggerTrustedText('wikidata'))
       trustedTextButtons.wikiquote.addEventListener('click', () => triggerTrustedText('wikiquote'))
       trustedTextButtons.jokeapi.addEventListener('click', () => triggerTrustedText('jokeapi'))
 

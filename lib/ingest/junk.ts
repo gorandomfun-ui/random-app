@@ -31,6 +31,10 @@ const PRODUCT_TOP = new RegExp([
   '\\btop \\d{1,2}\\b.*\\(must have!?\\)', '\\bwhy everyone is buying top \\d{1,2}\\b', '\\btop \\d{1,2} best top \\d{1,2}\\b',
   // …and on the evening of 28 September: "Ultimate Guide to the Best Handmade Traditional Kazakh Tush Kiiz Wall Hanging - Kazakh…"
   '^ultimate guide to the best [^-]{10,} - \\S',
+  // 20 October, a deal farm on Dailymotion: the product's name cut short, then its tag — "4L-20L Wax Melter Candle
+  // Melting Pot DIY Candle Making Pouring... -- Hot Deal 20", "ROCKBROS Waterproof Motorcycle Leg Bag… -- Top Ra".
+  // Counted in the ten a day like the others (the owner: "on peut resserrer mais pas virer").
+  '\\.{3}\\s*--\\s*(?:hot deals?|top ra|best (?:sellers?|deals?|prices?)|great deals?|new arrivals?|limited offer|on sale)',
 ].join('|'), 'i')
 
 export function junkKind(title: string | null | undefined): JunkKind | null {

@@ -8,7 +8,6 @@ import { adminUnauthorizedBody, isAdminRequest } from '@/lib/auth/adminAuth'
 import type { AnyBulkWriteOperation, Db, Document } from 'mongodb'
 
 import { DEFAULT_INGEST_HEADERS, fetchJson } from '@/lib/ingest/http'
-import { createFactDocument } from '@/lib/random/facts'
 import { createJokeDocument } from '@/lib/random/jokes'
 import { createQuoteDocument } from '@/lib/random/quotes'
 
@@ -30,16 +29,7 @@ type StoredTextDoc = Document & {
   source: { name: string; url?: string }
 }
 
-type WikidataEntity = {
-  id?: string
-  labels?: Record<string, { language?: string; value?: string }>
-  claims?: Record<string, Array<{
-    rank?: string
-    mainsnak?: { datavalue?: { value?: { id?: string } } }
-  }>>
-}
 
-type WikipediaCategoryMember = { pageid?: number; title?: string }
 
 type WikiquotePage = {
   pageid?: number
@@ -65,14 +55,9 @@ type JokeApiEntry = {
 const SUPPORTED_LANGS: AppLang[] = ['en', 'fr', 'de', 'es', 'jp']
 const WIKIMEDIA_LANG: Record<AppLang, string> = { en: 'en', fr: 'fr', de: 'de', es: 'es', jp: 'ja' }
 const JOKE_API_LANGS = new Set<AppLang>(['en', 'fr', 'de', 'es'])
-const MAX_WIKIDATA_FACT_LENGTH = 140
 const ROUTE_HEADERS = {
   ...DEFAULT_INGEST_HEADERS,
   'User-Agent': 'goRANDOM.fun ingestion/1.0 (https://gorandom.fun)',
-}
-const WIKIDATA_LICENSE = {
-  name: 'CC0 1.0',
-  url: 'https://creativecommons.org/publicdomain/zero/1.0/',
 }
 const WIKIQUOTE_LICENSE = {
   name: 'CC BY-SA 4.0',
@@ -128,232 +113,6 @@ function parseOffset(value: string | null): number {
 function languageScope(lang: AppLang, hasTranslations = false): LanguageScope {
   if (hasTranslations) return 'localized'
   return lang === 'en' ? 'universal' : 'localized'
-}
-
-function wikidataSentence(lang: AppLang, kind: string, subject: string, object: string): string {
-  const templates: Record<AppLang, Record<string, string>> = {
-    en: {
-      capital: `${subject} — capital: ${object}.`,
-      currency: `${subject} — currency: ${object}.`,
-      language: `${subject} — official language: ${object}.`,
-      continent: `${subject} — continent: ${object}.`,
-      highestPoint: `${subject} — highest point: ${object}.`,
-    },
-    fr: {
-      capital: `${subject} — capitale : ${object}.`,
-      currency: `${subject} — monnaie : ${object}.`,
-      language: `${subject} — langue officielle : ${object}.`,
-      continent: `${subject} — continent : ${object}.`,
-      highestPoint: `${subject} — point culminant : ${object}.`,
-    },
-    de: {
-      capital: `${subject} — Hauptstadt: ${object}.`,
-      currency: `${subject} — Währung: ${object}.`,
-      language: `${subject} — Amtssprache: ${object}.`,
-      continent: `${subject} — Kontinent: ${object}.`,
-      highestPoint: `${subject} — höchster Punkt: ${object}.`,
-    },
-    es: {
-      capital: `${subject} — capital: ${object}.`,
-      currency: `${subject} — moneda: ${object}.`,
-      language: `${subject} — idioma oficial: ${object}.`,
-      continent: `${subject} — continente: ${object}.`,
-      highestPoint: `${subject} — punto más alto: ${object}.`,
-    },
-    jp: {
-      capital: `${subject}の首都は${object}です。`,
-      currency: `${subject}では通貨として${object}が使われています。`,
-      language: `${object}は${subject}の公用語です。`,
-      continent: `${subject}は${object}に位置しています。`,
-      highestPoint: `${subject}の最高地点は${object}です。`,
-    },
-  }
-  return templates[lang][kind] || `${subject}: ${object}.`
-}
-
-const WIKIDATA_FACT_PROPERTIES: Record<string, string> = {
-  P36: 'capital',
-  P38: 'currency',
-  P37: 'language',
-  P30: 'continent',
-  P610: 'highestPoint',
-}
-
-async function fetchUnitedNationsMembers(): Promise<WikipediaCategoryMember[]> {
-  const params = new URLSearchParams({
-    action: 'query',
-    list: 'categorymembers',
-    cmtitle: 'Category:Member states of the United Nations',
-    cmnamespace: '0',
-    cmlimit: '500',
-    format: 'json',
-    origin: '*',
-  })
-  const payload = await fetchJson<{ query?: { categorymembers?: WikipediaCategoryMember[] } }>(
-    `https://en.wikipedia.org/w/api.php?${params.toString()}`,
-    { headers: ROUTE_HEADERS, timeoutMs: 25_000 },
-  )
-  const members = Array.isArray(payload?.query?.categorymembers) ? payload.query.categorymembers : []
-  return members.filter((member) => member.pageid && member.title && member.title !== 'Member states of the United Nations')
-}
-
-function takeCircular<T>(items: T[], offset: number, count: number): T[] {
-  if (!items.length) return []
-  const start = offset % items.length
-  const out: T[] = []
-  for (let index = 0; index < Math.min(count, items.length); index++) {
-    out.push(items[(start + index) % items.length])
-  }
-  return out
-}
-
-async function fetchWikipediaWikidataIds(pageIds: number[]): Promise<string[]> {
-  if (!pageIds.length) return []
-  const params = new URLSearchParams({
-    action: 'query',
-    pageids: pageIds.join('|'),
-    prop: 'pageprops',
-    ppprop: 'wikibase_item',
-    formatversion: '2',
-    format: 'json',
-    origin: '*',
-  })
-  const payload = await fetchJson<{ query?: { pages?: Array<{ pageprops?: { wikibase_item?: string } }> } }>(
-    `https://en.wikipedia.org/w/api.php?${params.toString()}`,
-    { headers: ROUTE_HEADERS, timeoutMs: 20_000 },
-  )
-  const pages = Array.isArray(payload?.query?.pages) ? payload.query.pages : []
-  return Array.from(new Set(pages.map((page) => page.pageprops?.wikibase_item || '').filter(Boolean)))
-}
-
-async function fetchWikidataEntities(ids: string[], langs: AppLang[], props: 'labels|claims' | 'labels'): Promise<Record<string, WikidataEntity>> {
-  const entities: Record<string, WikidataEntity> = {}
-  for (let index = 0; index < ids.length; index += 50) {
-    const chunk = ids.slice(index, index + 50)
-    const params = new URLSearchParams({
-      action: 'wbgetentities',
-      ids: chunk.join('|'),
-      props,
-      languages: Array.from(new Set(langs.map((lang) => WIKIMEDIA_LANG[lang]))).join('|'),
-      languagefallback: '0',
-      format: 'json',
-      origin: '*',
-    })
-    const payload = await fetchJson<{ entities?: Record<string, WikidataEntity> }>(
-      `https://www.wikidata.org/w/api.php?${params.toString()}`,
-      { headers: ROUTE_HEADERS, timeoutMs: 25_000 },
-    )
-    Object.assign(entities, payload?.entities || {})
-  }
-  return entities
-}
-
-function preferredClaimObjectIds(entity: WikidataEntity, propertyId: string): string[] {
-  const claims = entity.claims?.[propertyId] || []
-  const preferred = claims.filter((claim) => claim.rank === 'preferred')
-  const selected = preferred.length ? preferred : claims.filter((claim) => claim.rank !== 'deprecated')
-  return Array.from(new Set(
-    selected
-      .map((claim) => claim.mainsnak?.datavalue?.value?.id || '')
-      .filter(Boolean),
-  ))
-}
-
-function localizedLabel(entity: WikidataEntity | undefined, lang: AppLang): string {
-  return normalizeText(entity?.labels?.[WIKIMEDIA_LANG[lang]]?.value)
-}
-
-async function collectWikidata(langs: AppLang[], limit: number, offset: number): Promise<StoredTextDoc[]> {
-  const lookupLangs = Array.from(new Set<AppLang>([...langs, 'en']))
-  const members = await fetchUnitedNationsMembers()
-  if (!members.length) throw new Error('Wikipedia did not return the country list used for Wikidata')
-
-  const countryCount = Math.max(4, Math.ceil(limit / 3))
-  const selectedMembers = takeCircular(members, offset, countryCount)
-  const subjectIds = await fetchWikipediaWikidataIds(
-    selectedMembers.map((member) => member.pageid).filter((id): id is number => Number.isFinite(id)),
-  )
-  const subjects = await fetchWikidataEntities(subjectIds, lookupLangs, 'labels|claims')
-  const objectIds = Array.from(new Set(
-    Object.values(subjects).flatMap((entity) =>
-      Object.keys(WIKIDATA_FACT_PROPERTIES).flatMap((propertyId) => preferredClaimObjectIds(entity, propertyId)),
-    ),
-  ))
-  const objects = await fetchWikidataEntities(objectIds, lookupLangs, 'labels')
-
-  const rows: Array<{
-    lang: AppLang
-    logicalKey: string
-    subjectId: string
-    objectId: string
-    propertyId: string
-    kind: string
-    subjectLabel: string
-    objectLabel: string
-  }> = []
-  for (const subjectId of subjectIds) {
-    const subject = subjects[subjectId]
-    if (!subject) continue
-    for (const [propertyId, kind] of Object.entries(WIKIDATA_FACT_PROPERTIES)) {
-      for (const objectId of preferredClaimObjectIds(subject, propertyId)) {
-        for (const lang of lookupLangs) {
-          const subjectLabel = localizedLabel(subject, lang)
-          const objectLabel = localizedLabel(objects[objectId], lang)
-          if (!subjectLabel || !objectLabel) continue
-          rows.push({
-            lang,
-            logicalKey: `wikidata:${subjectId}:${propertyId}:${objectId}`,
-            subjectId,
-            objectId,
-            propertyId,
-            kind,
-            subjectLabel,
-            objectLabel,
-          })
-        }
-      }
-    }
-  }
-  if (!rows.length) throw new Error('Wikidata did not return any usable facts')
-
-  const variantsByKey = new Map<string, Set<AppLang>>()
-  for (const row of rows) {
-    const variants = variantsByKey.get(row.logicalKey) || new Set<AppLang>()
-    variants.add(row.lang)
-    variantsByKey.set(row.logicalKey, variants)
-  }
-
-  const selected = new Set(langs)
-  const countByLanguage = new Map<AppLang, number>()
-  const docs: StoredTextDoc[] = []
-  for (const row of rows) {
-    if (!selected.has(row.lang) || (countByLanguage.get(row.lang) || 0) >= limit) continue
-    const hasTranslations = (variantsByKey.get(row.logicalKey)?.size || 0) > 1
-    const text = wikidataSentence(row.lang, row.kind, row.subjectLabel, row.objectLabel)
-    if (text.length > MAX_WIKIDATA_FACT_LENGTH) continue
-    const base = createFactDocument({
-      text,
-      provider: 'wikidata',
-      source: { name: 'Wikidata', url: `https://www.wikidata.org/wiki/${row.subjectId}` },
-      tags: ['knowledge', 'geography', row.kind],
-      keywords: [row.subjectLabel, row.objectLabel, row.propertyId],
-    })
-    if (!base) continue
-    const externalId = `${row.logicalKey}:${row.lang}`
-    docs.push({
-      ...base,
-      provider: 'wikidata',
-      hash: contentHash('fact', text),
-      sourceKey: externalId,
-      externalId,
-      lang: row.lang,
-      languageScope: languageScope(row.lang, hasTranslations),
-      ...(hasTranslations ? { localizationKey: row.logicalKey } : {}),
-      license: WIKIDATA_LICENSE,
-    })
-    countByLanguage.set(row.lang, (countByLanguage.get(row.lang) || 0) + 1)
-  }
-  return docs
 }
 
 function wikiTextToPlain(value: string): string {
@@ -795,19 +554,22 @@ export async function GET(request: Request) {
     const url = new URL(request.url)
 
     const source = (url.searchParams.get('source') || '').trim().toLowerCase() as TextSource
-    if (!['wikidata', 'wikiquote', 'jokeapi'].includes(source)) {
-      return NextResponse.json({ error: 'source must be wikidata, wikiquote or jokeapi' }, { status: 400 })
+    // The Wikidata facts ("Pays — capitale : Ville.") are gone (the owner, 20 October: "on les enlève complètement"):
+    // Wikipedia's "Did you know" anecdotes take their place; the source is no longer accepted.
+    if (source === 'wikidata') {
+      return NextResponse.json({ error: 'wikidata facts were retired on 20 October' }, { status: 410 })
+    }
+    if (!['wikiquote', 'jokeapi'].includes(source)) {
+      return NextResponse.json({ error: 'source must be wikiquote or jokeapi' }, { status: 400 })
     }
     const langs = parseLangs(url.searchParams.get('langs'))
     const limit = parseLimit(url.searchParams.get('limit'), source === 'wikiquote' ? 10 : 25)
     const offset = parseOffset(url.searchParams.get('offset'))
     const dryRun = url.searchParams.get('dryRun') === '1' || url.searchParams.get('dry') === '1'
 
-    const collected = source === 'wikidata'
-      ? await collectWikidata(langs, limit, offset)
-      : source === 'wikiquote'
-        ? await collectWikiquote(langs, limit)
-        : await collectJokeApi(langs, limit)
+    const collected = source === 'wikiquote'
+      ? await collectWikiquote(langs, limit)
+      : await collectJokeApi(langs, limit)
     const unique = uniqueDocuments(collected)
     const result = await storeDocuments(unique, dryRun)
     const perLanguage = Object.fromEntries(
@@ -822,7 +584,6 @@ export async function GET(request: Request) {
       unsupportedLangs: source === 'jokeapi' ? langs.filter((lang) => !JOKE_API_LANGS.has(lang)) : [],
       requestedPerLanguage: limit,
       offset,
-      nextOffset: source === 'wikidata' ? offset + Math.max(4, Math.ceil(limit / 3)) : undefined,
       scanned: collected.length,
       unique: unique.length,
       perLanguage,
