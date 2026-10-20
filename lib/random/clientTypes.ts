@@ -22,6 +22,8 @@ type Identifiable = {
 export type SourceInfo = {
   name?: string | null
   url?: string | null
+  /** A text's licence when it asks for credit (Wikipedia's anecdotes, Wikiquote): its name, address and the word for "adapted". */
+  license?: { name?: string | null; url?: string | null; note?: string | null } | null
 } | null
 
 export type ImageItem = Identifiable & {

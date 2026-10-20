@@ -34,6 +34,7 @@ export type WaveDocument = Document & {
   category?: string | null
   provider?: string | null
   source?: { name?: string | null; url?: string | null } | null
+  license?: { name?: string | null; url?: string | null; note?: string | null } | null
   pageUrl?: string | null
   ogImage?: string | null
   embeddable?: boolean | null
@@ -115,7 +116,11 @@ function strings(value: unknown): string[] {
 function source(doc: WaveDocument, fallback: string, url?: string) {
   const name = shownSourceName(trim(doc.source?.name), fallback)
   const sourceUrl = trim(doc.source?.url) || url || undefined
-  return { name, ...(sourceUrl ? { url: sourceUrl } : {}) }
+  // A licence that asks for credit travels with the source, so the line under the card can name it (CC BY-SA).
+  const license = doc.license && trim(doc.license.url) && /^CC BY-SA/i.test(trim(doc.license.name))
+    ? { name: trim(doc.license.name), url: trim(doc.license.url), ...(trim(doc.license.note) ? { note: trim(doc.license.note) } : {}) }
+    : null
+  return { name, ...(sourceUrl ? { url: sourceUrl } : {}), ...(license ? { license } : {}) }
 }
 
 function common(doc: WaveDocument) {

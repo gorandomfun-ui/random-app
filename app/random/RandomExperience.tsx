@@ -1221,6 +1221,16 @@ function SourceLine({ item, onOpenWeb }: { item: DisplayItem; onOpenWeb?: (item:
     parts.push(<span key="snippet">{snippet}</span>)
   }
 
+  // CC BY-SA asks for the licence by name, with its address, and to say the text was adapted (20 October: Wikipedia's anecdotes).
+  const license = fallbackSource?.license
+  if (license?.url) {
+    parts.push(
+      <a key="license" href={license.url} target="_blank" rel="noreferrer license" className="underline">
+        {(license.name || 'CC BY-SA').replace(/\s+4\.0$/, '')}{license.note ? `, ${license.note}` : ''}
+      </a>
+    )
+  }
+
   if (!parts.length) return null
 
   const rendered: ReactNode[] = []
