@@ -34,7 +34,8 @@ test('the close on the brand block is there by default, on a bumper too, and gon
 
 test('a set brand size holds from cycle to cycle: XL always overflows, L stays within the frame, the random one overflows at moments', () => {
   // The cycles' shots: the cards and the calms (the close has its own width) aside; the settle never carries the overflow.
-  const cycles = (size: 'l' | 'xl') => planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: size }, 2, 3, 4).shots.filter((s) => s.phase === 'hint' || s.phase === 'burst')
+  const cycles = (size: 'l' | 'xl') => { const all = planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: size }, 2, 3, 4).shots; return all.slice(0, -1).filter((s) => s.phase !== 'card') }
+  // XL: every shot of the film overflows — hints, bursts, settles and calms alike; only the close stays clean within the frame.
   assert.ok(cycles('xl').every((s) => s.huge))
   assert.ok(cycles('l').every((s) => !s.huge && s.bw >= 0.89 && s.bw <= 0.95))
   const small = planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: 's' }, 2, 3, 4).shots.filter((s) => s.phase === 'burst')

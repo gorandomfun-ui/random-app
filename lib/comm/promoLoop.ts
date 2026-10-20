@@ -196,7 +196,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     const g = clamp01((phase === 'burst' ? 0.55 + k * 0.45 : phase === 'hint' ? 0.35 + k * 0.3 : phase === 'settle' ? 0.12 + k * 0.25 : 0.08 + k * 0.15) * (0.85 + hash(s, 36) * 0.3))
     const pl = place(s)
     const treatments: Treatment[] = ['cream', 'cream', 'cream', 'second', 'stroke', 'filled']
-    out.push({ phase, kind, from: at, to: Math.min(total, at + len), seed: s, g, video, picture, card: -1, treat: treatments[Math.floor(hash(s, 13) * treatments.length)], stacked, pill: hash(s, 24) < 0.55, hud: hash(s, 25) < 0.5, scan: hash(s, 26) < 0.45, subject, iconIndex, duo, ...pl, huge: false, cycle: i, look: cycleLook, grain: cycleGrain, cam: cycleCam, residue: [], enter: false, exit: false, p: params(s), ...extra })
+    out.push({ phase, kind, from: at, to: Math.min(total, at + len), seed: s, g, video, picture, card: -1, treat: treatments[Math.floor(hash(s, 13) * treatments.length)], stacked, pill: hash(s, 24) < 0.55, hud: hash(s, 25) < 0.5, scan: hash(s, 26) < 0.45, subject, iconIndex, duo, ...pl, huge: size === 'xl', cycle: i, look: cycleLook, grain: cycleGrain, cam: cycleCam, residue: [], enter: false, exit: false, p: params(s), ...extra })
     at += len
   }
   const bumper = input.seconds <= 3
@@ -259,7 +259,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     if (hash(s, 45) < 0.4 + k * 0.3) residues.push('confetti')
     if (hash(s, 46) < 0.35) residues.push('line')
     const settleKind: ShotKind = withColumn && kind !== 'back' && hash(s, 47) < 0.3 ? 'column' : kind
-    push('settle', settleKind, Math.round((bumper ? 800 : 1500 + hash(s, 48) * 1500) * (1.15 - k * 0.3)), s + 3, { residue: residues, huge: false })
+    push('settle', settleKind, Math.round((bumper ? 800 : 1500 + hash(s, 48) * 1500) * (1.15 - k * 0.3)), s + 3, { residue: residues, huge: size === 'xl' })
     // A calm between cycles, sometimes.
     if (!bumper && hash(s, 49) < 0.4 && at < total - closing - 800) push('calm', 'column', Math.round(400 + hash(s, 50) * 600), s + 4)
     i += 1; last = kind
@@ -271,7 +271,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     if (out.length) out[out.length - 1].to = Math.min(out[out.length - 1].to, cut)
     at = cut
     const s = input.seed * 23 + 9999
-    push('calm', 'column', total - at, s, { treat: 'cream', pill: true, subject: 'block', stacked: true, duo: null, bx: 0.5, by: 0.46, bw: 0.68, enter: hash(s, 18) < 0.4 })
+    push('calm', 'column', total - at, s, { treat: 'cream', pill: true, subject: 'block', stacked: true, duo: null, bx: 0.5, by: 0.46, bw: 0.68, huge: false, enter: hash(s, 18) < 0.4 })
   }
   return { shots: out, beat }
 }
@@ -540,9 +540,13 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   }
   const brandRect = (shot: Shot, at: number) => {
     const img = logoOf(shot)
-    const base = shot.huge ? W * (1.05 + hash(shot.seed, 61) * 0.35) * (shot.subject === 'icon' ? 0.7 : 1) : W * shot.bw * (shot.subject === 'icon' ? 0.62 : shot.stacked ? 0.82 : 1)
+    // Overflowing: well past the frame at XL on every shot, a little past it on the random size's moments.
+    const over = input.brandSize === 'xl' ? 1.18 + hash(shot.seed, 61) * 0.3 : 1.05 + hash(shot.seed, 61) * 0.35
+    const base = shot.huge ? W * over * (shot.subject === 'icon' ? 0.7 : 1) : W * shot.bw * (shot.subject === 'icon' ? 0.62 : shot.stacked ? 0.82 : 1)
     let w = Math.round(base), h = Math.round(w * img.naturalHeight / Math.max(1, img.naturalWidth))
     if (!shot.huge && h > H * 0.75) { const f = H * 0.75 / h; w = Math.round(w * f); h = Math.round(h * f) }
+    // Overflowing on a wide frame, the stacked block would stand three frames tall with only the gap between its words in view: it keeps a third past the height at most.
+    if (shot.huge && h > H * 1.35) { const f = H * 1.35 / h; w = Math.round(w * f); h = Math.round(h * f) }
     const breathe = 1 + Math.sin(at / 1700 + shot.seed) * 0.012
     const cx = shot.huge ? W / 2 : shot.bx * W
     let cy = shot.huge ? H / 2 : shot.by * H
