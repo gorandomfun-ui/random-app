@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { downloadBlob } from '@/lib/comm/montageRun'
-import { BRAND_MODES, FORMATS, SHOTS, SUBJECTS, beatOf, createPromo, formatOf, planShots, recordPromo, renderStill, type BrandMode, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
+import { BRAND_MODES, BRAND_SIZES, FORMATS, SHOTS, SUBJECTS, beatOf, createPromo, formatOf, planShots, recordPromo, renderStill, type BrandMode, type BrandSize, type FormatKey, type PromoIcon, type PromoText, type ShotKind, type Subject } from '@/lib/comm/promoLoop'
 import { audioContext, loadTrack, offsetFor, promoHash, renderSoundtrack, soundless } from '@/lib/comm/promoSound'
 import { SYNTHS, synthTrack, type SynthKind } from '@/lib/comm/promoSynth'
 import type { StockSoundInfo } from '@/lib/comm/stockSound'
@@ -92,6 +92,7 @@ export default function PromoPage() {
   const [withVideos, setWithVideos] = useState(true)
   const [shots, setShots] = useState<ShotKind[]>(DEFAULT_SHOTS)
   const [brandMode, setBrandMode] = useState<BrandMode>('center')
+  const [brandSize, setBrandSize] = useState<BrandSize>('random')
   const [subjects, setSubjects] = useState<Subject[]>(SUBJECTS.map((x) => x.key))
   const [recognition, setRecognition] = useState(0.3)
   const [guide, setGuide] = useState(true)
@@ -187,7 +188,7 @@ export default function PromoPage() {
 
   const textInput = useMemo<PromoText | null>(() => text.trim() ? { lines: text.split('\n').map((l) => (upper ? l.toUpperCase() : l).trim()).filter(Boolean).slice(0, 4), size: TEXT_SIZES[size], align, font: FONTS[fontIndex][0] === 'Tomorrow' ? fonts.tomorrow : fonts.inter, weight: FONTS[fontIndex][1], x: place?.x ?? null, y: place?.y ?? null, width: place?.width ?? 0.88 } : null, [text, upper, size, align, fontIndex, fonts, place])
   const iconInput = useMemo<PromoIcon | null>(() => assets && iconName && assets.iconsByName[iconName] ? { image: assets.iconsByName[iconName], x: iconPlace.x, y: iconPlace.y, size: iconPlace.size } : null, [assets, iconName, iconPlace])
-  const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, subjects, recognition, ending, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, subjects, recognition, ending, withStock, withVideos, fonts, textInput, iconInput])
+  const input = useMemo(() => assets ? { format, seconds, intensity, seed, accent: COLORS[accent][0], palette: [second, third].filter((i) => i >= 0 && i !== accent).map((i) => COLORS[i][0]), shots, brandMode, brandSize, subjects, recognition, ending, logo: assets.logo, logoVertical: assets.logoVertical, logoDark: assets.logoDark, logoVerticalDark: assets.logoVerticalDark, icons: assets.icons, stock: withStock ? assets.stock : [], videos: withVideos ? assets.videos : [], titleFont: fonts.tomorrow, text: textInput, icon: iconInput } : null, [assets, format, seconds, intensity, seed, accent, second, third, shots, brandMode, brandSize, subjects, recognition, ending, withStock, withVideos, fonts, textInput, iconInput])
 
   // The sound's source for this draw: by the seed among what is at hand — the curator's tracks first, the sounds of stock videos, the made ones — or what he chose.
   const chosen = useMemo<Chosen | null>(() => {
@@ -360,6 +361,7 @@ export default function PromoPage() {
               <Row label="Moments" hint={shots.length ? undefined : 'aucun : un film doux — la marque sur le lit, une amorce de temps en temps, jamais de rafale'}>{SHOTS.map((s) => <button key={s.key} title={s.hint} className={shots.includes(s.key) ? chipOn : chip} onClick={() => setShots(shots.includes(s.key) ? shots.filter((x) => x !== s.key) : [...shots, s.key])}>{s.name}</button>)}<span className="ml-1 flex gap-1"><button className={small} onClick={() => setShots(SHOTS.map((s) => s.key))}>tous</button><button className={small} onClick={() => setShots(DEFAULT_SHOTS)}>de base</button><button className={small} title="un film doux, sans rafale" onClick={() => setShots([])}>aucun</button></span></Row>
               <Row label="Sujets" hint="un par cycle, parfois deux">{SUBJECTS.map((x) => <button key={x.key} title={x.hint} className={subjects.includes(x.key) ? chipOn : chip} onClick={() => setSubjects(subjects.includes(x.key) ? subjects.filter((k) => k !== x.key) : [...subjects, x.key])}>{x.name}</button>)}</Row>
               <Row label="Marque">{BRAND_MODES.map((m) => <button key={m.key} title={m.hint} className={brandMode === m.key ? chipOn : chip} onClick={() => setBrandMode(m.key)}>{m.name}</button>)}</Row>
+              <Row label="Sa taille" hint={BRAND_SIZES.find((s) => s.key === brandSize)?.hint}>{BRAND_SIZES.map((s) => <button key={s.key} title={s.hint} className={brandSize === s.key ? chipOn : chip} onClick={() => setBrandSize(s.key)}>{s.name}</button>)}</Row>
             </Section>
             <Section title="Image">
               <Row label="Sources"><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withVideos} onChange={(e) => setWithVideos(e.target.checked)} />vidéos libres</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={withStock} onChange={(e) => setWithStock(e.target.checked)} />images libres</label><button className={small} disabled={busy} onClick={() => void load(orientation)}>d’autres</button></Row>

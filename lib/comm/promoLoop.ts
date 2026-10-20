@@ -93,6 +93,17 @@ export const BRAND_MODES: Array<{ key: BrandMode; name: string; hint: string }> 
   { key: 'exploded', name: 'Éclatée', hint: 'ses cellules se dispersent plus loin et plus souvent' },
 ]
 
+/** The brand's size: drawn each cycle (and overflowing at moments), or one size kept within the frame. */
+export type BrandSize = 'random' | 's' | 'm' | 'l' | 'xl'
+export const BRAND_SIZES: Array<{ key: BrandSize; name: string; hint: string }> = [
+  { key: 'random', name: 'Aléatoire', hint: 'change d’un cycle à l’autre, déborde du cadre par moments' },
+  { key: 's', name: 'S', hint: 'quatre dixièmes de la largeur' },
+  { key: 'm', name: 'M', hint: 'six dixièmes' },
+  { key: 'l', name: 'L', hint: 'huit dixièmes' },
+  { key: 'xl', name: 'XL', hint: 'toute la largeur du cadre, sans en sortir' },
+]
+const BRAND_WIDTHS: Record<Exclude<BrandSize, 'random'>, number> = { s: 0.4, m: 0.6, l: 0.8, xl: 0.98 }
+
 export type PromoText = { lines: string[]; size: number; align: 'left' | 'center' | 'right'; font: string; weight: number; x: number | null; y: number | null; width: number }
 export type PromoIcon = { image: HTMLImageElement; x: number; y: number; size: number }
 export type PromoInput = {
@@ -104,6 +115,7 @@ export type PromoInput = {
   palette: string[]
   shots: ShotKind[]
   brandMode: BrandMode
+  brandSize: BrandSize
   /** The subjects the film may play with; one per cycle, sometimes two together. */
   subjects: Subject[]
   /** How far the stock picture may be recognised, 0.15 (matter only) to 0.7 (nearly itself, in coarse pixels). */
@@ -149,7 +161,7 @@ export type Shot = {
 export const beatOf = (seed: number) => 60000 / (84 + hash(seed, 1) * 30)
 
 /** The run of cycles: calm, hint, burst, settle; the cards between cycles; the brand clean to close. */
-export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'shots' | 'brandMode' | 'text' | 'subjects' | 'recognition'> & { ending?: boolean }, videos: number, pictures: number, iconCount = 0): { shots: Shot[]; beat: number } {
+export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'seed' | 'shots' | 'brandMode' | 'text' | 'subjects' | 'recognition'> & { ending?: boolean; brandSize?: BrandSize }, videos: number, pictures: number, iconCount = 0): { shots: Shot[]; beat: number } {
   const subjects: Subject[] = (input.subjects.length ? input.subjects : (['block'] as Subject[])).filter((x) => x !== 'icon' || iconCount > 0)
   if (!subjects.length) subjects.push('block')
   const rn = clamp01((input.recognition - 0.15) / 0.55)
@@ -172,9 +184,10 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
   let subject: Subject = subjects[Math.floor(hash(input.seed, 63) * subjects.length)], iconIndex = Math.floor(hash(input.seed, 64) * Math.max(1, iconCount)), duo: Subject | null = null
   const mode = input.brandMode
   const params = (s: number) => ({ a: hash(s, 30), b: hash(s, 31), c: hash(s, 32), d: hash(s, 33), e: hash(s, 34), f: hash(s, 35) })
+  const size = input.brandSize ?? 'random'
   const place = (s: number) => {
-    // Shares of the FRAME, not of the safe area: the brand is large and overflows the safe zone most of the time.
-    const bw = mode === 'center' ? 0.74 + hash(s, 14) * 0.2 : 0.55 + hash(s, 14) * 0.4
+    // Shares of the FRAME, not of the safe area: the brand is large and overflows the safe zone most of the time — or the size the curator set, within the frame.
+    const bw = size !== 'random' ? BRAND_WIDTHS[size] * (0.97 + hash(s, 14) * 0.06) : mode === 'center' ? 0.74 + hash(s, 14) * 0.2 : 0.55 + hash(s, 14) * 0.4
     const bx = mode === 'center' ? 0.5 : 0.35 + hash(s, 15) * 0.3
     const by = mode === 'center' ? 0.42 + hash(s, 16) * 0.1 : 0.3 + hash(s, 16) * 0.4
     return { bx, by, bw }
@@ -231,7 +244,8 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     let q = hash(s, 6) * sum
     let kind: ShotKind = pool[pool.length - 1]
     for (const b of pool) { q -= favour.get(b) ?? 1; if (q <= 0) { kind = b; break } }
-    const huge = hash(s, 40) < 0.35 + k * 0.2
+    // The overflowing brand belongs to the random size only: a set size stays within the frame.
+    const huge = size === 'random' && hash(s, 40) < 0.35 + k * 0.2
     // Hint, burst, settle; the burst longer and the settle shorter with the force; a column settle now and then.
     push('hint', kind, Math.round(120 + hash(s, 41) * 160), s + 1, { huge })
     const stretch = kind === 'vomit' ? 2.6 : kind === 'ecto' ? 1.8 : kind === 'back' ? 1.5 : kind === 'split' || kind === 'windows' ? 1.4 : 1
@@ -862,7 +876,8 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
             if (m) { ctx.imageSmoothingEnabled = false; const rowsN = 48, rh = Math.ceil(H / rowsN); for (let i = 0; i < rowsN; i += 1) { const y = i * rh; const dx = Math.round(Math.sin(i / rowsN * 6.5 + at / 800) * W * (0.02 + g * 0.04) + Math.sin(i / rowsN * 19 - at / 1100) * W * 0.012); ctx.drawImage(m, 0, Math.floor(i / rowsN * m.height), m.width, Math.max(1, Math.ceil(m.height / rowsN)), dx, y, W, rh) } ctx.imageSmoothingEnabled = true }
             else { ctx.fillStyle = accent; ctx.fillRect(0, 0, W, H) }
             for (let i = 0; i < 14; i += 1) { const y = H - Math.round(H * 0.1) + Math.round(hash(s, step, i, 440) * H * 0.1), hh = Math.max(px, Math.round(hash(s, step, i, 441) * 3 * px)); ctx.fillStyle = hash(s, i, 442) < 0.5 ? DEEP : colourAt(hash(s, i, 443)); ctx.fillRect(Math.round(hash(s, step, i, 444) * W * 0.5), y, Math.round(W * (0.2 + hash(s, i, 445) * 0.8)), hh) }
-            if (local > 0.55) { const w = Math.round(W * 0.42), h = Math.round(w * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)); ctx.fillStyle = rgba(DEEP, 0.75); ctx.fillRect(Math.round(W / 2 - w * 0.6), Math.round(H * 0.84 - h * 0.7), Math.round(w * 1.2), Math.round(h * 2.4)); drawBrand(ctx, { ...shot, subject: 'wordmark', stacked: false, treat: 'cream', pill: true, residue: [] }, at, { x: Math.round(W / 2 - w / 2), y: Math.round(H * 0.84 - h / 2), w, h }); pillAt(ctx, W / 2, Math.round(H * 0.84 + h / 2 + H * 0.015), w * 0.8) }
+            // The brand small at the foot, as an outline so it reads on the solarised ground — nothing laid behind it.
+            if (local > 0.55) { const w = Math.round(W * 0.42), h = Math.round(w * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)); drawBrand(ctx, { ...shot, subject: 'wordmark', stacked: false, treat: 'stroke', pill: true, residue: [] }, at, { x: Math.round(W / 2 - w / 2), y: Math.round(H * 0.84 - h / 2), w, h }); pillAt(ctx, W / 2, Math.round(H * 0.84 + h / 2 + H * 0.015), w * 0.8) }
             break
           }
           default: { drawBrand(ctx, shot, at); mistreat(ctx, shot, r, at, g) }

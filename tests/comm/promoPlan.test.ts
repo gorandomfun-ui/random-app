@@ -32,6 +32,16 @@ test('the close on the brand block is there by default, on a bumper too, and gon
   assert.equal(off[off.length - 1].to, 10000)
 })
 
+test('a set brand size holds from cycle to cycle and never overflows; the random one may', () => {
+  // The cycles' shots: the cards and the calms (the close has its own width) aside.
+  const xl = planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: 'xl' }, 2, 3, 4).shots.filter((s) => s.phase !== 'card' && s.phase !== 'calm')
+  assert.ok(xl.every((s) => !s.huge && s.bw >= 0.95 && s.bw <= 1.02))
+  const small = planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: 's' }, 2, 3, 4).shots.filter((s) => s.phase === 'burst')
+  assert.ok(small.every((s) => s.bw >= 0.38 && s.bw <= 0.42))
+  const huge = [1, 2, 3, 4, 5, 6].some((seed) => planShots({ ...base, seed, seconds: 15, intensity: 1, shots: ['blocks', 'mosh'] as ShotKind[] }, 2, 3, 4).shots.some((s) => s.huge))
+  assert.ok(huge)
+})
+
 test('the Fond needs a picture or a video: alone without sources it gives way to the others', () => {
   const { shots } = planShots({ ...base, shots: ['back'] as ShotKind[] }, 0, 0, 4)
   assert.ok(shots.filter((s) => s.phase === 'burst').every((s) => s.kind !== 'back'))
