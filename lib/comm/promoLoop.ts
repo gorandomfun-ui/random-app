@@ -93,16 +93,16 @@ export const BRAND_MODES: Array<{ key: BrandMode; name: string; hint: string }> 
   { key: 'exploded', name: 'Éclatée', hint: 'ses cellules se dispersent plus loin et plus souvent' },
 ]
 
-/** The brand's size: drawn each cycle (and overflowing at moments), or one size kept within the frame. */
+/** The brand's size: drawn each cycle (overflowing at moments), or one size held — XL always overflows the frame, the others stay within it. */
 export type BrandSize = 'random' | 's' | 'm' | 'l' | 'xl'
 export const BRAND_SIZES: Array<{ key: BrandSize; name: string; hint: string }> = [
   { key: 'random', name: 'Aléatoire', hint: 'change d’un cycle à l’autre, déborde du cadre par moments' },
   { key: 's', name: 'S', hint: 'quatre dixièmes de la largeur' },
   { key: 'm', name: 'M', hint: 'six dixièmes' },
-  { key: 'l', name: 'L', hint: 'huit dixièmes' },
-  { key: 'xl', name: 'XL', hint: 'toute la largeur du cadre, sans en sortir' },
+  { key: 'l', name: 'L', hint: 'presque toute la largeur, dans le cadre' },
+  { key: 'xl', name: 'XL', hint: 'plus large que le cadre : elle en sort, toujours' },
 ]
-const BRAND_WIDTHS: Record<Exclude<BrandSize, 'random'>, number> = { s: 0.4, m: 0.6, l: 0.8, xl: 0.98 }
+const BRAND_WIDTHS: Record<Exclude<BrandSize, 'random'>, number> = { s: 0.4, m: 0.6, l: 0.92, xl: 1 }
 
 export type PromoText = { lines: string[]; size: number; align: 'left' | 'center' | 'right'; font: string; weight: number; x: number | null; y: number | null; width: number }
 export type PromoIcon = { image: HTMLImageElement; x: number; y: number; size: number }
@@ -244,8 +244,8 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
     let q = hash(s, 6) * sum
     let kind: ShotKind = pool[pool.length - 1]
     for (const b of pool) { q -= favour.get(b) ?? 1; if (q <= 0) { kind = b; break } }
-    // The overflowing brand belongs to the random size only: a set size stays within the frame.
-    const huge = size === 'random' && hash(s, 40) < 0.35 + k * 0.2
+    // The overflowing brand: always at XL, at moments at the random size, never at the others.
+    const huge = size === 'xl' || (size === 'random' && hash(s, 40) < 0.35 + k * 0.2)
     // Hint, burst, settle; the burst longer and the settle shorter with the force; a column settle now and then.
     push('hint', kind, Math.round(120 + hash(s, 41) * 160), s + 1, { huge })
     const stretch = kind === 'vomit' ? 2.6 : kind === 'ecto' ? 1.8 : kind === 'back' ? 1.5 : kind === 'split' || kind === 'windows' ? 1.4 : 1

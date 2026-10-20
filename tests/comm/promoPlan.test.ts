@@ -32,10 +32,11 @@ test('the close on the brand block is there by default, on a bumper too, and gon
   assert.equal(off[off.length - 1].to, 10000)
 })
 
-test('a set brand size holds from cycle to cycle and never overflows; the random one may', () => {
-  // The cycles' shots: the cards and the calms (the close has its own width) aside.
-  const xl = planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: 'xl' }, 2, 3, 4).shots.filter((s) => s.phase !== 'card' && s.phase !== 'calm')
-  assert.ok(xl.every((s) => !s.huge && s.bw >= 0.95 && s.bw <= 1.02))
+test('a set brand size holds from cycle to cycle: XL always overflows, L stays within the frame, the random one overflows at moments', () => {
+  // The cycles' shots: the cards and the calms (the close has its own width) aside; the settle never carries the overflow.
+  const cycles = (size: 'l' | 'xl') => planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: size }, 2, 3, 4).shots.filter((s) => s.phase === 'hint' || s.phase === 'burst')
+  assert.ok(cycles('xl').every((s) => s.huge))
+  assert.ok(cycles('l').every((s) => !s.huge && s.bw >= 0.89 && s.bw <= 0.95))
   const small = planShots({ ...base, shots: ['blocks', 'mosh'] as ShotKind[], brandSize: 's' }, 2, 3, 4).shots.filter((s) => s.phase === 'burst')
   assert.ok(small.every((s) => s.bw >= 0.38 && s.bw <= 0.42))
   const huge = [1, 2, 3, 4, 5, 6].some((seed) => planShots({ ...base, seed, seconds: 15, intensity: 1, shots: ['blocks', 'mosh'] as ShotKind[] }, 2, 3, 4).shots.some((s) => s.huge))
