@@ -170,9 +170,9 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
           {item ? <p className="text-sm text-gray-300"><span className="font-bold text-white">{item.snapshot.title}</span><br />{item.snapshot.providerLabel}{item.snapshot.author ? ` · ${item.snapshot.author}` : ''}{item.snapshot.durationSec ? ` · ${formatSeconds(item.snapshot.durationSec)}` : ''}</p> : null}
           {item && !embed ? <p className="text-amber-300">Ce lecteur ne se capture pas ici. Importe un enregistrement à la place.</p> : null}
           <div className="flex flex-wrap items-end gap-4 text-sm">
-            <label>À partir de<br /><input className="mt-1 w-28 rounded border border-white/40 bg-black px-2 py-1" value={startText} onChange={(e) => setStartText(e.target.value)} placeholder="1:23" /></label>
+            <label className="font-bold">Commencer à (min:s)<br /><input className="mt-1 w-28 rounded border border-white/40 bg-black px-2 py-1 font-normal" value={startText} onChange={(e) => setStartText(e.target.value)} placeholder="1:23" aria-label="Commencer à" /></label>
             <label>Cache au départ (s)<br /><input className="mt-1 w-20 rounded border border-white/40 bg-black px-2 py-1" value={coverText} onChange={(e) => setCoverText(e.target.value)} placeholder={String(coverSeconds)} /></label>
-            <span className="text-gray-300">{maxSeconds} s au plus · Échap ou s pour arrêter</span>
+            <span className="text-gray-300">jusqu’à {formatSeconds(maxSeconds)} · Échap ou s pour arrêter</span>
           </div>
           {otherBrowser ? (
             <div className="space-y-3">

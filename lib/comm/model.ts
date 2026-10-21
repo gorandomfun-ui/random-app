@@ -23,10 +23,10 @@ export function queueMax(): number {
   return Number.isInteger(raw) && raw > 0 && raw <= 500 ? raw : 30
 }
 
-/** The longest extract the tool keeps, in seconds (NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS, default 60). */
+/** The longest extract the tool keeps, in seconds (NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS, default 180, up to 600). */
 export function clipMaxSeconds(): number {
   const raw = Number.parseInt(process.env.NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS ?? '', 10)
-  return Number.isInteger(raw) && raw > 0 && raw <= 600 ? raw : 60
+  return Number.isInteger(raw) && raw > 0 && raw <= 600 ? raw : 180
 }
 
 export type CommContentType = 'video' | 'image' | 'web' | 'quote' | 'fact' | 'joke'
