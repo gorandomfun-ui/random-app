@@ -5370,7 +5370,9 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const adHeight = isDesktopAd ? 90 : 50
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
-  const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
+  // The owner's source-look switch keeps the bar open even when no ad came (an ad that never shows closes it before the test starts).
+  const footerBarOpen = footerAdVisible || sourceTest
+  const footerPadHeight = adsAllowed && footerBarOpen ? adHeight : 0
   const controlsDisabled = transitionLocked || encourage3dPending || Boolean(encourage3dEvent) || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
   const randomAgainDisabled = !viewItem || transitionLocked || encourage3dPending || Boolean(encourage3dEvent)
   const waveEligible = useMemo(() => {
@@ -6218,12 +6220,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           style={{
             // The safe area adds to the bar rather than eating it, and nothing paints outside the white box.
             boxSizing: 'content-box',
-            height: footerAdVisible ? adHeight : 0,
-            backgroundColor: footerAdVisible ? (sourceTest ? theme.deep : '#ffffff') : 'transparent',
+            height: footerBarOpen ? adHeight : 0,
+            backgroundColor: footerBarOpen ? (sourceTest ? theme.deep : '#ffffff') : 'transparent',
             color: '#111',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
             overflow: 'hidden',
-            pointerEvents: footerAdVisible ? 'auto' : 'none',
+            pointerEvents: footerBarOpen ? 'auto' : 'none',
             zIndex: 120,
           }}
         >
