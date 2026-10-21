@@ -21,7 +21,7 @@ import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
 import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES, glitchInkVars, type Theme } from '@/lib/theme'
-import { LEGEND_LINE, LEGEND_ROW, LEGEND_ROW_GAP, LEGEND_SIZE, aloneOnSecondLine, keepSignsAttached, sizeForOneLine } from '@/lib/random/legend'
+import { LEGEND_LINE, LEGEND_ROW, LEGEND_ROW_GAP, LEGEND_SIZE, aloneOnSecondLine, joinLastWords, keepSignsAttached, sizeForOneLine } from '@/lib/random/legend'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
 import { dailymotionEmbedUrl } from '@/lib/players/dailymotionPlayer'
@@ -1204,22 +1204,24 @@ function sourceParts(item: DisplayItem): { title: string; author: string; href: 
 const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 /**
- * The size that keeps a title from leaving a single word, or a lone sign, on its second line (lib/random/legend.ts):
- * measured on a hidden copy of the title in the page's own letters, where the browser itself breaks the lines.
+ * How a title keeps from leaving a single word, or a lone sign, on its second line (lib/random/legend.ts): the size
+ * that holds it on one line, or for a long title its last two words joined so they go down together. Measured on a
+ * hidden copy of the title in the page's own letters, where the browser itself breaks the lines.
  */
-function legendSize(element: HTMLElement, text: string): number {
+function legendSize(element: HTMLElement, text: string): { size: number; join: boolean } {
+  const plain = { size: LEGEND_SIZE, join: false }
   const width = element.clientWidth
   const parent = element.parentElement
-  if (!width || !parent || typeof document.createRange !== 'function') return LEGEND_SIZE
+  if (!width || !parent || typeof document.createRange !== 'function') return plain
   const probe = document.createElement('div')
   probe.className = element.className
   probe.style.cssText = `position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;width:${width}px;font-size:${LEGEND_SIZE}px;line-height:${LEGEND_LINE}px;text-transform:uppercase;white-space:normal;`
   probe.textContent = text
   parent.appendChild(probe)
   try {
-    if (Math.round(probe.scrollHeight / LEGEND_LINE) !== 2) return LEGEND_SIZE
+    if (Math.round(probe.scrollHeight / LEGEND_LINE) !== 2) return plain
     const node = probe.firstChild
-    if (!node || node.nodeType !== Node.TEXT_NODE) return LEGEND_SIZE
+    if (!node || node.nodeType !== Node.TEXT_NODE) return plain
     const range = document.createRange()
     const topOf = (index: number) => { range.setStart(node, index); range.setEnd(node, index + 1); return range.getBoundingClientRect().top }
     const firstTop = topOf(0)
@@ -1231,11 +1233,17 @@ function legendSize(element: HTMLElement, text: string): number {
       if (topOf(middle) > firstTop + LEGEND_LINE / 2) high = middle
       else low = middle + 1
     }
-    if (!aloneOnSecondLine(text.slice(low))) return LEGEND_SIZE
+    if (!aloneOnSecondLine(text.slice(low))) return plain
     probe.style.whiteSpace = 'nowrap'
-    return sizeForOneLine(width, probe.scrollWidth) ?? LEGEND_SIZE
+    const size = sizeForOneLine(width, probe.scrollWidth)
+    if (size !== null) return { size, join: false }
+    // too long for one line: the last word takes the one before it down, when the two fit on a line together
+    const joined = joinLastWords(text)
+    if (!joined) return plain
+    probe.textContent = joined.slice(joined.lastIndexOf(' ') + 1)
+    return { size: LEGEND_SIZE, join: probe.scrollWidth <= width }
   } catch {
-    return LEGEND_SIZE
+    return plain
   } finally {
     probe.remove()
   }
@@ -1243,7 +1251,7 @@ function legendSize(element: HTMLElement, text: string): number {
 
 function LegendTitle({ text, color }: { text: string; color: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
-  const [fit, setFit] = useState<{ text: string; size: number } | null>(null)
+  const [fit, setFit] = useState<{ text: string; size: number; join: boolean } | null>(null)
   useClientLayoutEffect(() => {
     const element = ref.current
     if (!element) return
@@ -1252,8 +1260,8 @@ function LegendTitle({ text, color }: { text: string; color: string }) {
     const measure = (again: boolean) => {
       if (!live || (!again && element.clientWidth === measuredWidth)) return
       measuredWidth = element.clientWidth
-      const size = legendSize(element, text)
-      setFit((previous) => (previous && previous.text === text && previous.size === size ? previous : { text, size }))
+      const { size, join } = legendSize(element, text)
+      setFit((previous) => (previous && previous.text === text && previous.size === size && previous.join === join ? previous : { text, size, join }))
     }
     measure(true)
     // the letters may arrive after the first measure
@@ -1262,8 +1270,10 @@ function LegendTitle({ text, color }: { text: string; color: string }) {
     observer?.observe(element)
     return () => { live = false; observer?.disconnect() }
   }, [text])
-  const size = fit && fit.text === text ? fit.size : LEGEND_SIZE
+  const current = fit && fit.text === text ? fit : null
+  const size = current?.size ?? LEGEND_SIZE
   const oneLine = size < LEGEND_SIZE
+  const shown = current?.join ? joinLastWords(text) ?? text : text
   return (
     <div
       ref={ref}
@@ -1279,7 +1289,7 @@ function LegendTitle({ text, color }: { text: string; color: string }) {
           : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
       }}
     >
-      {text}
+      {shown}
     </div>
   )
 }

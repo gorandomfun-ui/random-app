@@ -2,7 +2,7 @@
  * The légende under a content (app/random/RandomExperience.tsx, SourceBlock): its title's measures, and the owner's
  * rules of 21 October for that title. A title on one line keeps no room for a second. A title never leaves a single
  * word, or a lone sign, on its second line: it shrinks a little to hold on one line instead. A long title keeps its
- * two lines.
+ * two lines, and its last word takes the one before it down.
  */
 
 /** The title: 17px letters on 22px lines, two lines at most. */
@@ -16,13 +16,25 @@ export const LEGEND_ROW_GAP = 5
 
 /** French spacing: a sign after a word stays with it, so "BLOQUÉE ?" never sends its "?" alone to the second line. */
 export function keepSignsAttached(text: string): string {
-  return text.replace(/[ \t]+([?!:;»%])/g, ' $1').replace(/«[ \t]+/g, '« ')
+  return text.replace(/[ \t]+([?!:;»%])/g, '\u00A0$1').replace(/«[ \t]+/g, '«\u00A0')
 }
 
 /** A second line that holds one word, or one sign or character: no ordinary space in it (a no-break space joins). */
 export function aloneOnSecondLine(second: string): boolean {
   const rest = second.trim()
   return rest.length > 0 && !/[ \t]/.test(rest)
+}
+
+/**
+ * A long title whose last word would go down alone (it cannot shrink to one line): its last two words are joined by a
+ * no-break space, so they go down together. Null when there are fewer than three words, where the joined pair would be
+ * the whole title.
+ */
+export function joinLastWords(text: string): string | null {
+  const trimmed = text.trimEnd()
+  const last = trimmed.lastIndexOf(' ')
+  if (last <= 0 || trimmed.slice(0, last).trim().indexOf(' ') < 0) return null
+  return `${trimmed.slice(0, last)}\u00A0${trimmed.slice(last + 1)}`
 }
 
 /**
