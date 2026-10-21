@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import ExternalMediaGate from '@/components/ExternalMediaGate'
 import ControlledVideoEmbed from '@/components/players/ControlledVideoEmbed'
@@ -21,6 +21,7 @@ import { useI18n } from '@/providers/I18nProvider'
 import { useScore } from '@/providers/ScoreProvider'
 import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES, glitchInkVars, type Theme } from '@/lib/theme'
+import { LEGEND_LINE, LEGEND_ROW, LEGEND_ROW_GAP, LEGEND_SIZE, aloneOnSecondLine, keepSignsAttached, sizeForOneLine } from '@/lib/random/legend'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
 import { dailymotionEmbedUrl } from '@/lib/players/dailymotionPlayer'
@@ -1123,27 +1124,19 @@ function randDiffIdx(max: number, not: number) {
   return i
 }
 
-function shortenText(text: string, maxWords: number) {
-  const words = text.trim().split(/\s+/)
-  const slice = words.slice(0, maxWords)
-  const snippet = slice.join(' ')
-  const cleaned = snippet.replace(/[.,!?;:–-]+$/, '')
-  return words.length > maxWords ? `${cleaned}…` : cleaned
-}
-
 const isQuizFactItem = (item: RandomContentItem): item is FactItem =>
   item.type === 'fact' && (item as FactItem).variant === 'quiz'
 const isTextFactItem = (item: RandomContentItem): item is FactItem =>
   item.type === 'fact' && (item as FactItem).variant !== 'quiz'
 
 /**
- * The source under a content, as the owner tests it on 21 October (his curation page with ?sources=1, the two looks
- * switched in place of the bottom ad): the title in capitals, then the platform's mark once — never its name in
- * words — a small bar and the author when the base truly knows them, the arrow to the source at the far right.
- * "bandeau": one line of title in the interface letters on a dark band with the theme's bar at the left;
- * "legende": up to two lines of title in Tomorrow, under a plain rule. Giphy keeps its own band above.
+ * The source under a content: the owner's légende, chosen on 21 October over a dark band after trying both on his
+ * iPhone ("le titre ressort mieux", and the glitch stays visible behind it). Under a plain rule in the theme's colour:
+ * the title in capitals, up to two lines in Tomorrow, then the platform's mark once — never its name in words — a small
+ * bar and the author when the base truly knows them, and the arrow to the source at the far right. A title on one line
+ * keeps no room for a second. With nothing to say on the second line (a GIF, an untitled picture), the arrow ends the
+ * title's line. Giphy keeps its own band above.
  */
-export type SourceLook = 'bandeau' | 'legende'
 
 /** The platforms' marks (simple-icons, CC0). YouTube's keeps its own colours: white here. */
 const PROVIDER_MARKS: Record<string, string> = {"youtube": "M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z", "dailymotion": "M21.823 7.327a11.928 11.928 0 0 0-2.606-3.814 12.126 12.126 0 0 0-3.866-2.57A12.246 12.246 0 0 0 10.617 0H1.831a.602.602 0 0 0-.609.603v3.764c0 .162.064.312.179.426l4.164 4.123a.612.612 0 0 0 .439.177h4.56c.806 0 1.56.313 2.125.88.557.559.856 1.296.843 2.075-.029 1.571-1.343 2.849-2.931 2.849h-6.74a.613.613 0 0 0-.432.176.619.619 0 0 0-.178.427v3.764c0 .162.063.312.178.427l4.139 4.099a.647.647 0 0 0 .476.21h2.572a12.276 12.276 0 0 0 4.733-.945 12.145 12.145 0 0 0 3.866-2.571 11.959 11.959 0 0 0 2.607-3.813c.633-1.479.956-3.051.956-4.67 0-1.619-.321-3.19-.956-4.669l.001-.005ZM2.441 4.118V1.982l2.945 2.755.001 2.297-2.946-2.916Zm4.975 17.813-2.945-2.917v-2.137l2.945 2.755v2.299Zm-2.004-5.832h5.19c2.248 0 4.107-1.807 4.147-4.03a4.027 4.027 0 0 0-1.192-2.937 4.203 4.203 0 0 0-2.996-1.239H6.606V5.216h3.996c1.831 0 3.553.706 4.849 1.986a6.724 6.724 0 0 1-.152 9.736 6.875 6.875 0 0 1-4.697 1.84H8.275L5.412 16.1v-.001Zm15.289.1a10.753 10.753 0 0 1-2.345 3.431 10.91 10.91 0 0 1-3.48 2.314 11.018 11.018 0 0 1-4.26.847H8.633v-2.814h1.916c2.145 0 4.161-.802 5.675-2.254a7.88 7.88 0 0 0 2.451-5.728c0-2.177-.87-4.21-2.451-5.728-1.514-1.454-3.528-2.254-5.675-2.254h-4.16L3.383 1.202h7.234c1.479 0 2.911.285 4.259.847a10.957 10.957 0 0 1 3.48 2.313 10.769 10.769 0 0 1 2.345 3.432c.571 1.33.86 2.743.86 4.202 0 1.46-.289 2.873-.86 4.203Z", "bilibili": "M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373Z", "giphy": "M2.666 0v24h18.668V8.666l-2.668 2.668v10H5.334V2.668H10L12.666 0zm10.668 0v8h8V5.334h-2.668V2.668H16V0", "wikipedia": "M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l.136.046 2.411-4.81-.482-1.067-1.658-3.264s-.318-.654-.428-.872c-.728-1.443-.712-1.518-1.447-1.617-.207-.023-.313-.05-.313-.149v-.468l.06-.045h4.292l.113.037v.451c0 .105-.076.15-.227.15l-.308.047c-.792.061-.661.381-.136 1.422l1.582 3.252 1.758-3.504c.293-.64.233-.801.111-.947-.07-.084-.305-.22-.812-.24l-.201-.021c-.052 0-.098-.015-.145-.051-.045-.031-.067-.076-.067-.129v-.427l.061-.045c1.247-.008 4.043 0 4.043 0l.059.045v.436c0 .121-.059.178-.193.178-.646.03-.782.095-1.023.439-.12.186-.375.589-.646 1.039l-2.301 4.273-.065.135 2.792 5.712.17.048 4.396-10.438c.154-.422.129-.722-.064-.895-.197-.172-.346-.273-.857-.295l-.42-.016c-.061 0-.105-.014-.152-.045-.043-.029-.072-.075-.072-.119v-.436l.059-.045h4.961l.041.045v.437c0 .119-.074.18-.209.18-.648.03-1.127.18-1.443.421-.314.255-.557.616-.736 1.067 0 0-4.043 9.258-5.426 12.339-.525 1.007-1.053.917-1.503-.031-.571-1.171-1.773-3.786-2.646-5.71l.053-.036z"}
@@ -1208,189 +1201,155 @@ function sourceParts(item: DisplayItem): { title: string; author: string; href: 
   return { title: '', author: looseSource(item)?.name || '', href: sourceUrl, giphy: null }
 }
 
-function SourceBlock({ item, look, theme }: { item: DisplayItem; look: SourceLook; theme: Theme }) {
+const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+/**
+ * The size that keeps a title from leaving a single word, or a lone sign, on its second line (lib/random/legend.ts):
+ * measured on a hidden copy of the title in the page's own letters, where the browser itself breaks the lines.
+ */
+function legendSize(element: HTMLElement, text: string): number {
+  const width = element.clientWidth
+  const parent = element.parentElement
+  if (!width || !parent || typeof document.createRange !== 'function') return LEGEND_SIZE
+  const probe = document.createElement('div')
+  probe.className = element.className
+  probe.style.cssText = `position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;width:${width}px;font-size:${LEGEND_SIZE}px;line-height:${LEGEND_LINE}px;text-transform:uppercase;white-space:normal;`
+  probe.textContent = text
+  parent.appendChild(probe)
+  try {
+    if (Math.round(probe.scrollHeight / LEGEND_LINE) !== 2) return LEGEND_SIZE
+    const node = probe.firstChild
+    if (!node || node.nodeType !== Node.TEXT_NODE) return LEGEND_SIZE
+    const range = document.createRange()
+    const topOf = (index: number) => { range.setStart(node, index); range.setEnd(node, index + 1); return range.getBoundingClientRect().top }
+    const firstTop = topOf(0)
+    // the first character the browser put on the second line
+    let low = 0
+    let high = text.length - 1
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (topOf(middle) > firstTop + LEGEND_LINE / 2) high = middle
+      else low = middle + 1
+    }
+    if (!aloneOnSecondLine(text.slice(low))) return LEGEND_SIZE
+    probe.style.whiteSpace = 'nowrap'
+    return sizeForOneLine(width, probe.scrollWidth) ?? LEGEND_SIZE
+  } catch {
+    return LEGEND_SIZE
+  } finally {
+    probe.remove()
+  }
+}
+
+function LegendTitle({ text, color }: { text: string; color: string }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [fit, setFit] = useState<{ text: string; size: number } | null>(null)
+  useClientLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    let live = true
+    let measuredWidth = -1
+    const measure = (again: boolean) => {
+      if (!live || (!again && element.clientWidth === measuredWidth)) return
+      measuredWidth = element.clientWidth
+      const size = legendSize(element, text)
+      setFit((previous) => (previous && previous.text === text && previous.size === size ? previous : { text, size }))
+    }
+    measure(true)
+    // the letters may arrive after the first measure
+    document.fonts?.ready.then(() => measure(true)).catch(() => {})
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => measure(false))
+    observer?.observe(element)
+    return () => { live = false; observer?.disconnect() }
+  }, [text])
+  const size = fit && fit.text === text ? fit.size : LEGEND_SIZE
+  const oneLine = size < LEGEND_SIZE
+  return (
+    <div
+      ref={ref}
+      data-legend-title=""
+      className="font-tomorrow font-bold"
+      style={{
+        color,
+        textTransform: 'uppercase',
+        fontSize: size,
+        lineHeight: `${LEGEND_LINE}px`,
+        ...(oneLine
+          ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+          : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
+      }}
+    >
+      {text}
+    </div>
+  )
+}
+
+function SourceArrow({ item, href, onOpenWeb, color }: { item: DisplayItem; href: string; onOpenWeb?: (item: WebContentItem) => void; color: string }) {
+  const icon = (
+    <svg viewBox="0 0 24 24" width={19} height={19} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 17 17 7M8.5 7H17v8.5" />
+    </svg>
+  )
+  const style: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: LEGEND_ROW, color, opacity: 0.9, flex: 'none' }
+  // A site opens inside Random, as the title on its card did (the owner, 15 October: "il s'est ouvert à côté").
+  if (item.type === 'web' && item.embeddable && onOpenWeb) {
+    return (
+      <button type="button" onClick={() => onOpenWeb(item)} aria-label="Open the site" style={{ ...style, background: 'none', border: 0, padding: 0, cursor: 'pointer' }}>
+        {icon}
+      </button>
+    )
+  }
+  return <a href={href} target="_blank" rel="noreferrer" aria-label="Open the source" style={style}>{icon}</a>
+}
+
+function SourceBlock({ item, theme, onOpenWeb }: { item: DisplayItem; theme: Theme; onOpenWeb?: (item: WebContentItem) => void }) {
   if (item.type === 'encourage' || item.type === 'minigame') return null
   const { title, author, href, giphy } = sourceParts(item)
   const mark = giphy ? null : markOf(item)
   const license = looseSource(item)?.license?.url ? looseSource(item)?.license ?? null : null
-  const bandeau = look === 'bandeau'
+  const heading = title ? keepSignsAttached(title) : ''
+  const row = Boolean(mark || author || license)
+  const arrow = href ? <SourceArrow item={item} href={href} onOpenWeb={onOpenWeb} color={theme.cream} /> : null
+  const arrowEndsTitle = Boolean(heading && !row && arrow)
+  if (!heading && !row && !arrow && !giphy) return null
   return (
-    <div className="w-full text-left">
+    <div className="w-full text-left" data-legend-row={row ? '1' : '0'}>
       {giphy ? <GiphyBand href={giphy} /> : null}
-      <div style={bandeau
-        ? { background: theme.deep, borderLeft: `3px solid ${theme.text}`, padding: '8px 12px', marginTop: giphy ? 2 : 0 }
-        : { borderTop: `1px solid ${theme.text}`, padding: '9px 2px 0', marginTop: giphy ? 6 : 0 }}>
-        {title ? (
-          <div
-            className={bandeau ? 'font-inter font-semibold' : 'font-tomorrow font-bold'}
-            style={{
-              color: theme.cream,
-              textTransform: 'uppercase',
-              ...(bandeau
-                ? { fontSize: 15, lineHeight: '20px', height: 20, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-                : { fontSize: 17, lineHeight: '22px', minHeight: 44, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
-            }}
-          >
-            {title}
+      <div style={{ borderTop: `1px solid ${theme.text}`, padding: '9px 2px 0', marginTop: giphy ? 6 : 0 }}>
+        {heading ? (
+          <div style={{ position: 'relative', paddingRight: arrowEndsTitle ? 30 : 0 }}>
+            <LegendTitle text={heading} color={theme.cream} />
+            {arrowEndsTitle ? <span style={{ position: 'absolute', right: 0, bottom: 0, display: 'flex' }}>{arrow}</span> : null}
           </div>
         ) : null}
-        <div className="font-inter font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 22, marginTop: title ? 5 : 0, color: theme.text, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-          {mark ? <ProviderMark mark={mark} accent={theme.text} /> : null}
-          {mark && author ? <span aria-hidden="true" style={{ opacity: 0.7 }}>│</span> : null}
-          {author ? <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{author}</span> : null}
-          {license ? (
-            <a href={license.url || undefined} target="_blank" rel="noreferrer license" className="underline" style={{ whiteSpace: 'nowrap', textTransform: 'none' }}>
-              {(license.name || 'CC BY-SA').replace(/\s+4\.0$/, '')}{license.note ? `, ${license.note}` : ''}
-            </a>
-          ) : null}
-          {href ? (
-            <a href={href} target="_blank" rel="noreferrer" aria-label="Open the source" style={{ marginLeft: 'auto', display: 'inline-flex', color: theme.cream, opacity: 0.9, flex: 'none' }}>
-              <svg viewBox="0 0 24 24" width={19} height={19} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M7 17 17 7M8.5 7H17v8.5" />
-              </svg>
-            </a>
-          ) : null}
-        </div>
+        {row || (!heading && arrow) ? (
+          <div className="font-inter font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 8, height: LEGEND_ROW, marginTop: heading ? LEGEND_ROW_GAP : 0, color: theme.text, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {mark ? <ProviderMark mark={mark} accent={theme.text} /> : null}
+            {mark && author ? <span aria-hidden="true" style={{ opacity: 0.7 }}>│</span> : null}
+            {author ? <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{author}</span> : null}
+            {license ? (
+              // CC BY-SA asks for the licence by name, with its address, and to say the text was adapted (20 October: Wikipedia's anecdotes).
+              <a href={license.url || undefined} target="_blank" rel="noreferrer license" className="underline" style={{ whiteSpace: 'nowrap', textTransform: 'none' }}>
+                {(license.name || 'CC BY-SA').replace(/\s+4\.0$/, '')}{license.note ? `, ${license.note}` : ''}
+              </a>
+            ) : null}
+            {arrow ? <span style={{ marginLeft: 'auto', display: 'flex' }}>{arrow}</span> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   )
 }
 
-/** The owner's switch between the two looks, in the bottom ad's place while he tests them. */
-function SourceLookSwitch({ look, onChange, theme }: { look: SourceLook; onChange: (look: SourceLook) => void; theme: Theme }) {
-  return (
-    <div className="flex items-center justify-center gap-3 w-full h-full font-inter font-semibold" style={{ background: theme.deep }}>
-      {(['bandeau', 'legende'] as const).map((value) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => onChange(value)}
-          aria-pressed={look === value}
-          style={{
-            height: 34, padding: '0 16px', borderRadius: 999, fontSize: 13, letterSpacing: '0.06em', textTransform: 'uppercase',
-            border: `1px solid ${look === value ? theme.text : 'rgba(248,245,230,0.4)'}`,
-            background: look === value ? theme.text : 'transparent', color: theme.cream,
-          }}
-        >
-          {value === 'bandeau' ? 'Bandeau' : 'Légende'}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function SourceLine({ item, onOpenWeb }: { item: DisplayItem; onOpenWeb?: (item: WebContentItem) => void }) {
-  if (item.type === 'encourage') return null
-  if (item.type === 'minigame') return null
-  if (item.type === 'quote' && item.author) return <span>— {item.author}</span>
-  const isQuizFact = item.type === 'fact' && (item as FactItem).variant === 'quiz'
-
-  if (item.type === 'image') {
-    const normalizedProvider = (item.provider || item.source?.name || '').toLowerCase()
-    const giphyHref = item.source?.url || item.pageUrl || item.link || item.url || null
-    if (normalizedProvider === 'giphy' && giphyHref) {
-      return (
-        <div className="w-full bg-black flex items-center justify-center" style={{ height: '2.6rem' }}>
-          <a
-            href={giphyHref}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="View on Giphy"
-            className="inline-flex items-center justify-center px-4"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={GIPHY_ATTRIBUTION_BADGE}
-              alt="Powered by GIPHY"
-              className="h-10 w-auto"
-              loading="lazy"
-              decoding="async"
-            />
-          </a>
-        </div>
-      )
-    }
-  }
-
-  const baseSource: SourceInfo = item.source ?? null
-  const fallbackSource: SourceInfo = baseSource ?? (item.provider ? { name: item.provider } : null)
-
-  const snippet = item.type === 'video' && item.text ? shortenText(item.text, 5) : null
-
-  const parts: ReactNode[] = []
-
-  if (item.type === 'web' && item.embeddable && onOpenWeb) {
-    // A site opens inside Random from its address under the card too, as from its title (the owner, 15 October, from the
-    // curation: "il s'est ouvert à côté"). The address is the site's own: the source of most is where they were found,
-    // Common Crawl's front page.
-    let host = item.host || ''
-    if (!host) {
-      try { host = new URL(item.url).host.replace(/^www\./, '') } catch { host = item.url }
-    }
-    parts.push(
-      <span key="source-link">
-        {fallbackSource?.name ? `${fallbackSource.name} · ` : ''}
-        <button
-          type="button"
-          onClick={() => onOpenWeb(item)}
-          className="underline"
-          style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
-        >
-          {host}
-        </button>
-      </span>
-    )
-  } else if (fallbackSource?.url) {
-    try {
-      const host = new URL(fallbackSource.url).host.replace(/^www\./, '')
-      parts.push(
-        <span key="source-link">
-          {fallbackSource.name ? `${fallbackSource.name} · ` : ''}
-          <a href={fallbackSource.url} target="_blank" rel="noreferrer" className="underline">
-            {host}
-          </a>
-        </span>
-      )
-    } catch {
-      parts.push(
-        <span key="source-fallback">{fallbackSource.name || fallbackSource.url}</span>
-      )
-    }
-  } else if (fallbackSource?.name) {
-    parts.push(<span key="source-name">{fallbackSource.name}</span>)
-  }
-
-  if (snippet) {
-    parts.push(<span key="snippet">{snippet}</span>)
-  }
-
-  // CC BY-SA asks for the licence by name, with its address, and to say the text was adapted (20 October: Wikipedia's anecdotes).
-  const license = fallbackSource?.license
-  if (license?.url) {
-    parts.push(
-      <a key="license" href={license.url} target="_blank" rel="noreferrer license" className="underline">
-        {(license.name || 'CC BY-SA').replace(/\s+4\.0$/, '')}{license.note ? `, ${license.note}` : ''}
-      </a>
-    )
-  }
-
-  if (!parts.length) return null
-
-  const rendered: ReactNode[] = []
-  parts.forEach((part, idx) => {
-    if (idx > 0) rendered.push(<span key={`dot-${idx}`} className="opacity-60">·</span>)
-    rendered.push(part)
-  })
-  if (isQuizFact) {
-    return (
-      <span className="inline-flex flex-wrap items-center justify-center gap-[6px] opacity-80">
-        <span>Source :</span>
-        {rendered}
-      </span>
-    )
-  }
-
-  return <span className="inline-flex flex-wrap items-center justify-center gap-[6px] opacity-80">{rendered}</span>
+/**
+ * What the légende leaves free when its title takes one line, or has no source row under it: the frame takes it, so the
+ * buttons under the légende stay where they are from one content to the next (the owner, 21 October).
+ */
+function legendSpare(box: HTMLElement | null): number {
+  const title = box?.querySelector<HTMLElement>('[data-legend-title]')
+  if (!box || !title) return 0
+  const noRow = box.querySelector<HTMLElement>('[data-legend-row]')?.dataset.legendRow === '0'
+  return Math.max(0, 2 * LEGEND_LINE - title.offsetHeight) + (noRow ? LEGEND_ROW + LEGEND_ROW_GAP : 0)
 }
 
 function ImageBlock({
@@ -2012,12 +1971,13 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
   return (
     <div className="video-embed-player w-full h-full" style={{ position: 'relative', overflow: 'hidden', height: frameHeight, background: '#000' }}>
       {picture ? (
+        // Safari asks for a picture the moment it has its address: the referrer rule comes first, or Bilibili answers 403 (21 October).
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          referrerPolicy="no-referrer"
           src={picture}
           alt=""
           aria-hidden="true"
-          referrerPolicy="no-referrer"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(6px) brightness(0.9)', transform: 'scale(1.06)' }}
         />
       ) : null}
@@ -2036,7 +1996,7 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
       {touchDevice && picture && !posterGone ? (
         <div aria-hidden="true" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '100%', aspectRatio: '16 / 9', maxHeight: '100%', pointerEvents: 'none' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={picture} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img referrerPolicy="no-referrer" src={picture} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           <span style={{ position: 'absolute', left: '50%', top: '50%', width: 64, height: 64, marginLeft: -32, marginTop: -32, borderRadius: '50%', background: 'rgba(18,18,16,0.72)', border: '2px solid #F8F5E6' }}>
             <span style={{ position: 'absolute', left: 25, top: 19, borderLeft: '20px solid #F8F5E6', borderTop: '12px solid transparent', borderBottom: '12px solid transparent' }} />
           </span>
@@ -2956,7 +2916,9 @@ function ContentRenderer({
             />
           </div>
         ) : null}
-        {href && item.embeddable && onOpenWeb ? (
+        {/* The title and the address are in the légende under the card (the owner, 21 October: "on a 2 fois le même
+            contenu"): a site with its picture shows the picture alone, and the légende's arrow opens it. */}
+        {item.ogImage ? null : href && item.embeddable && onOpenWeb ? (
           // The server found the site lets itself be framed: it opens over Random, the visitor stays.
           <button
             type="button"
@@ -3119,21 +3081,6 @@ export function RandomExperience({
   // The bar is there from the first frame: a banner that appears later reads as
   // hidden to A-ADS, and a bar that grows later let the banner escape it on an iPad.
   const [footerAdVisible, setFooterAdVisible] = useState(true)
-  // The owner's test of the source's looks (21 October): his curation page with ?sources=1, the look kept on the device.
-  const [sourceTest, setSourceTest] = useState(false)
-  const [sourceLook, setSourceLookState] = useState<SourceLook>('bandeau')
-  useEffect(() => {
-    if (!curationMode) return
-    try {
-      setSourceTest(new URLSearchParams(window.location.search).get('sources') === '1')
-      const kept = window.localStorage.getItem('random:source-look')
-      if (kept === 'bandeau' || kept === 'legende') setSourceLookState(kept)
-    } catch { /* the default look */ }
-  }, [curationMode])
-  const setSourceLook = useCallback((look: SourceLook) => {
-    setSourceLookState(look)
-    try { window.localStorage.setItem('random:source-look', look) } catch { /* kept for this visit only */ }
-  }, [])
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
@@ -3152,6 +3099,8 @@ export function RandomExperience({
   const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   // The chrome is measured, not guessed: a tablet's header and a wrapped source line pushed the button under the ad.
   const [chromeHeight, setChromeHeight] = useState<number | null>(null)
+  // What the légende leaves free when its title takes one line (legendSpare): the frame takes it, the buttons stay put.
+  const [sourceSpare, setSourceSpare] = useState(0)
   const [adBarPadding, setAdBarPadding] = useState(0)
   const headerRef = useRef<HTMLElement | null>(null)
   const categoryRowRef = useRef<HTMLDivElement | null>(null)
@@ -3352,8 +3301,9 @@ export function RandomExperience({
     const available = Math.max(220, Math.round(viewportHeight - chrome - bannerHeight - adBarPadding))
     // a game takes all the room left: the content's own cap (45% of a phone's height) would leave it too small to play
     if (arcadeShown) return `${available}px`
-    return `min(${preferred}, ${available}px)`
-  }, [adBarPadding, arcadeShown, chromeHeight, viewportHeight, viewportWidth])
+    // the chrome counts the légende at its full height (two lines of title and its source row): what it leaves free goes to the frame
+    return sourceSpare > 0 ? `calc(min(${preferred}, ${available}px) + ${sourceSpare}px)` : `min(${preferred}, ${available}px)`
+  }, [adBarPadding, arcadeShown, chromeHeight, sourceSpare, viewportHeight, viewportWidth])
 
   // Measure the chrome whenever any of its pieces changes size; the frame then takes exactly what is left.
   useEffect(() => {
@@ -3362,9 +3312,11 @@ export function RandomExperience({
       const header = headerRef.current?.offsetHeight ?? 0
       const category = categoryRowRef.current?.offsetHeight ?? 0
       const source = sourceLineRef.current?.offsetHeight ?? 0
+      const spare = legendSpare(sourceLineRef.current)
       const actions = actionRowRef.current?.offsetHeight ?? 0
       if (!header && !category && !actions) return
-      setChromeHeight(header + category + source + actions + CHROME_GAPS_PX)
+      setChromeHeight(header + category + source + spare + actions + CHROME_GAPS_PX)
+      setSourceSpare(spare)
       const bar = adBarRef.current
       if (bar) setAdBarPadding(Math.max(0, bar.offsetHeight - bar.clientHeight + (Number.parseFloat(getComputedStyle(bar).paddingBottom) || 0)))
     }
@@ -5370,9 +5322,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const adHeight = isDesktopAd ? 90 : 50
   const adWidth = isDesktopAd ? 728 : 320
   const adVariant = isDesktopAd ? 'desktop' : 'mobile'
-  // The owner's source-look switch keeps the bar open even when no ad came (an ad that never shows closes it before the test starts).
-  const footerBarOpen = footerAdVisible || sourceTest
-  const footerPadHeight = adsAllowed && footerBarOpen ? adHeight : 0
+  const footerPadHeight = adsAllowed && footerAdVisible ? adHeight : 0
   const controlsDisabled = transitionLocked || encourage3dPending || Boolean(encourage3dEvent) || !viewItem || viewItem.type === 'encourage' || viewItem.type === 'minigame'
   const randomAgainDisabled = !viewItem || transitionLocked || encourage3dPending || Boolean(encourage3dEvent)
   const waveEligible = useMemo(() => {
@@ -5901,7 +5851,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         {!arcade && viewItem && viewItem.type !== 'encourage' ? (
           <div ref={sourceLineRef} className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
-            {sourceTest ? <SourceBlock item={viewItem} look={sourceLook} theme={theme} /> : <SourceLine item={viewItem} onOpenWeb={openWebInRandom} />}
+            <SourceBlock item={viewItem} theme={theme} onOpenWeb={openWebInRandom} />
           </div>
         ) : null}
       </section>
@@ -6220,12 +6170,12 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           style={{
             // The safe area adds to the bar rather than eating it, and nothing paints outside the white box.
             boxSizing: 'content-box',
-            height: footerBarOpen ? adHeight : 0,
-            backgroundColor: footerBarOpen ? (sourceTest ? theme.deep : '#ffffff') : 'transparent',
+            height: footerAdVisible ? adHeight : 0,
+            backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
             color: '#111',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
             overflow: 'hidden',
-            pointerEvents: footerBarOpen ? 'auto' : 'none',
+            pointerEvents: footerAdVisible ? 'auto' : 'none',
             zIndex: 120,
           }}
         >
@@ -6237,15 +6187,11 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               flexShrink: 0,
             }}
           >
-            {sourceTest ? (
-              <SourceLookSwitch look={sourceLook} onChange={setSourceLook} theme={theme} />
-            ) : (
-              <AadsFooterSlot
-                variant={adVariant}
-                enabled={adsAllowed}
-                onVisibleChange={setFooterAdVisible}
-              />
-            )}
+            <AadsFooterSlot
+              variant={adVariant}
+              enabled={adsAllowed}
+              onVisibleChange={setFooterAdVisible}
+            />
           </div>
         </div>
       ) : null}
