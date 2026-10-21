@@ -1136,6 +1136,149 @@ const isQuizFactItem = (item: RandomContentItem): item is FactItem =>
 const isTextFactItem = (item: RandomContentItem): item is FactItem =>
   item.type === 'fact' && (item as FactItem).variant !== 'quiz'
 
+/**
+ * The source under a content, as the owner tests it on 21 October (his curation page with ?sources=1, the two looks
+ * switched in place of the bottom ad): the title in capitals, then the platform's mark once — never its name in
+ * words — a small bar and the author when the base truly knows them, the arrow to the source at the far right.
+ * "bandeau": one line of title in the interface letters on a dark band with the theme's bar at the left;
+ * "legende": up to two lines of title in Tomorrow, under a plain rule. Giphy keeps its own band above.
+ */
+export type SourceLook = 'bandeau' | 'legende'
+
+/** The platforms' marks (simple-icons, CC0). YouTube's keeps its own colours: white here. */
+const PROVIDER_MARKS: Record<string, string> = {"youtube": "M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z", "dailymotion": "M21.823 7.327a11.928 11.928 0 0 0-2.606-3.814 12.126 12.126 0 0 0-3.866-2.57A12.246 12.246 0 0 0 10.617 0H1.831a.602.602 0 0 0-.609.603v3.764c0 .162.064.312.179.426l4.164 4.123a.612.612 0 0 0 .439.177h4.56c.806 0 1.56.313 2.125.88.557.559.856 1.296.843 2.075-.029 1.571-1.343 2.849-2.931 2.849h-6.74a.613.613 0 0 0-.432.176.619.619 0 0 0-.178.427v3.764c0 .162.063.312.178.427l4.139 4.099a.647.647 0 0 0 .476.21h2.572a12.276 12.276 0 0 0 4.733-.945 12.145 12.145 0 0 0 3.866-2.571 11.959 11.959 0 0 0 2.607-3.813c.633-1.479.956-3.051.956-4.67 0-1.619-.321-3.19-.956-4.669l.001-.005ZM2.441 4.118V1.982l2.945 2.755.001 2.297-2.946-2.916Zm4.975 17.813-2.945-2.917v-2.137l2.945 2.755v2.299Zm-2.004-5.832h5.19c2.248 0 4.107-1.807 4.147-4.03a4.027 4.027 0 0 0-1.192-2.937 4.203 4.203 0 0 0-2.996-1.239H6.606V5.216h3.996c1.831 0 3.553.706 4.849 1.986a6.724 6.724 0 0 1-.152 9.736 6.875 6.875 0 0 1-4.697 1.84H8.275L5.412 16.1v-.001Zm15.289.1a10.753 10.753 0 0 1-2.345 3.431 10.91 10.91 0 0 1-3.48 2.314 11.018 11.018 0 0 1-4.26.847H8.633v-2.814h1.916c2.145 0 4.161-.802 5.675-2.254a7.88 7.88 0 0 0 2.451-5.728c0-2.177-.87-4.21-2.451-5.728-1.514-1.454-3.528-2.254-5.675-2.254h-4.16L3.383 1.202h7.234c1.479 0 2.911.285 4.259.847a10.957 10.957 0 0 1 3.48 2.313 10.769 10.769 0 0 1 2.345 3.432c.571 1.33.86 2.743.86 4.202 0 1.46-.289 2.873-.86 4.203Z", "bilibili": "M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373Z", "giphy": "M2.666 0v24h18.668V8.666l-2.668 2.668v10H5.334V2.668H10L12.666 0zm10.668 0v8h8V5.334h-2.668V2.668H16V0", "wikipedia": "M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l.136.046 2.411-4.81-.482-1.067-1.658-3.264s-.318-.654-.428-.872c-.728-1.443-.712-1.518-1.447-1.617-.207-.023-.313-.05-.313-.149v-.468l.06-.045h4.292l.113.037v.451c0 .105-.076.15-.227.15l-.308.047c-.792.061-.661.381-.136 1.422l1.582 3.252 1.758-3.504c.293-.64.233-.801.111-.947-.07-.084-.305-.22-.812-.24l-.201-.021c-.052 0-.098-.015-.145-.051-.045-.031-.067-.076-.067-.129v-.427l.061-.045c1.247-.008 4.043 0 4.043 0l.059.045v.436c0 .121-.059.178-.193.178-.646.03-.782.095-1.023.439-.12.186-.375.589-.646 1.039l-2.301 4.273-.065.135 2.792 5.712.17.048 4.396-10.438c.154-.422.129-.722-.064-.895-.197-.172-.346-.273-.857-.295l-.42-.016c-.061 0-.105-.014-.152-.045-.043-.029-.072-.075-.072-.119v-.436l.059-.045h4.961l.041.045v.437c0 .119-.074.18-.209.18-.648.03-1.127.18-1.443.421-.314.255-.557.616-.736 1.067 0 0-4.043 9.258-5.426 12.339-.525 1.007-1.053.917-1.503-.031-.571-1.171-1.773-3.786-2.646-5.71l.053-.036z"}
+
+/** Every content but the encouragements and games carries these; read loosely so one helper serves them all. */
+const looseSource = (item: DisplayItem): SourceInfo => (item as { source?: SourceInfo }).source ?? null
+const looseProvider = (item: DisplayItem): string => String((item as { provider?: string | null }).provider ?? '')
+
+function markOf(item: DisplayItem): string | null {
+  if (item.type === 'web') return 'web'
+  const provider = (looseProvider(item) || looseSource(item)?.name || '').toLowerCase()
+  if (provider.includes('youtube')) return 'youtube'
+  if (provider.includes('dailymotion')) return 'dailymotion'
+  if (provider.includes('bilibili')) return 'bilibili'
+  if (provider.includes('wikipedia') || provider.includes('wikipédia')) return 'wikipedia'
+  return null
+}
+
+function ProviderMark({ mark, accent }: { mark: string; accent: string }) {
+  if (mark === 'web') {
+    return (
+      <svg viewBox="0 0 24 24" width={15} height={15} aria-hidden="true" style={{ flex: 'none' }} fill="none" stroke={accent} strokeWidth={2}>
+        <circle cx="12" cy="12" r="9.5" /><path d="M2.5 12h19M12 2.5c2.8 2.6 4.2 5.8 4.2 9.5s-1.4 6.9-4.2 9.5c-2.8-2.6-4.2-5.8-4.2-9.5S9.2 5.1 12 2.5z" />
+      </svg>
+    )
+  }
+  const path = PROVIDER_MARKS[mark]
+  if (!path) return null
+  return (
+    <svg viewBox="0 0 24 24" width={15} height={15} role="img" aria-label={mark} style={{ flex: 'none' }}>
+      <path fill={mark === 'youtube' ? '#FFFFFF' : accent} d={path} />
+    </svg>
+  )
+}
+
+function GiphyBand({ href }: { href: string }) {
+  return (
+    <div className="w-full bg-black flex items-center justify-center" style={{ height: '2.6rem' }}>
+      <a href={href} target="_blank" rel="noreferrer" aria-label="View on Giphy" className="inline-flex items-center justify-center px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={GIPHY_ATTRIBUTION_BADGE} alt="Powered by GIPHY" className="h-10 w-auto" loading="lazy" decoding="async" />
+      </a>
+    </div>
+  )
+}
+
+function sourceParts(item: DisplayItem): { title: string; author: string; href: string; giphy: string | null } {
+  const sourceUrl = looseSource(item)?.url || ''
+  if (item.type === 'video') return { title: item.text || '', author: item.author || '', href: item.url, giphy: null }
+  if (item.type === 'image') {
+    const giphy = String(item.provider || item.source?.name || '').toLowerCase() === 'giphy' ? (item.source?.url || item.pageUrl || item.link || item.url || '') : null
+    const title = (item.title || '').replace(/\bGIFs?\b(?:\s+by\b.*)?$/i, '').trim()
+    return { title, author: '', href: giphy || sourceUrl || item.url, giphy }
+  }
+  if (item.type === 'web') {
+    let host = item.host || ''
+    if (!host) { try { host = new URL(item.url).host.replace(/^www\./, '') } catch { host = '' } }
+    return { title: item.text || host, author: host, href: item.url, giphy: null }
+  }
+  if (item.type === 'quote') return { title: '', author: [item.author, item.source?.name].filter(Boolean).join(' · '), href: sourceUrl, giphy: null }
+  if (item.type === 'encourage') return { title: '', author: '', href: '', giphy: null }
+  return { title: '', author: looseSource(item)?.name || '', href: sourceUrl, giphy: null }
+}
+
+function SourceBlock({ item, look, theme }: { item: DisplayItem; look: SourceLook; theme: Theme }) {
+  if (item.type === 'encourage' || item.type === 'minigame') return null
+  const { title, author, href, giphy } = sourceParts(item)
+  const mark = giphy ? null : markOf(item)
+  const license = looseSource(item)?.license?.url ? looseSource(item)?.license ?? null : null
+  const bandeau = look === 'bandeau'
+  return (
+    <div className="w-full text-left">
+      {giphy ? <GiphyBand href={giphy} /> : null}
+      <div style={bandeau
+        ? { background: theme.deep, borderLeft: `3px solid ${theme.text}`, padding: '8px 12px', marginTop: giphy ? 2 : 0 }
+        : { borderTop: `1px solid ${theme.text}`, padding: '9px 2px 0', marginTop: giphy ? 6 : 0 }}>
+        {title ? (
+          <div
+            className={bandeau ? 'font-inter font-semibold' : 'font-tomorrow font-bold'}
+            style={{
+              color: theme.cream,
+              textTransform: 'uppercase',
+              ...(bandeau
+                ? { fontSize: 15, lineHeight: '20px', height: 20, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                : { fontSize: 17, lineHeight: '22px', minHeight: 44, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
+            }}
+          >
+            {title}
+          </div>
+        ) : null}
+        <div className="font-inter font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 22, marginTop: title ? 5 : 0, color: theme.text, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {mark ? <ProviderMark mark={mark} accent={theme.text} /> : null}
+          {mark && author ? <span aria-hidden="true" style={{ opacity: 0.7 }}>│</span> : null}
+          {author ? <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{author}</span> : null}
+          {license ? (
+            <a href={license.url || undefined} target="_blank" rel="noreferrer license" className="underline" style={{ whiteSpace: 'nowrap', textTransform: 'none' }}>
+              {(license.name || 'CC BY-SA').replace(/\s+4\.0$/, '')}{license.note ? `, ${license.note}` : ''}
+            </a>
+          ) : null}
+          {href ? (
+            <a href={href} target="_blank" rel="noreferrer" aria-label="Open the source" style={{ marginLeft: 'auto', display: 'inline-flex', color: theme.cream, opacity: 0.9, flex: 'none' }}>
+              <svg viewBox="0 0 24 24" width={19} height={19} fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M7 17 17 7M8.5 7H17v8.5" />
+              </svg>
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The owner's switch between the two looks, in the bottom ad's place while he tests them. */
+function SourceLookSwitch({ look, onChange, theme }: { look: SourceLook; onChange: (look: SourceLook) => void; theme: Theme }) {
+  return (
+    <div className="flex items-center justify-center gap-3 w-full h-full font-inter font-semibold" style={{ background: theme.deep }}>
+      {(['bandeau', 'legende'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onChange(value)}
+          aria-pressed={look === value}
+          style={{
+            height: 34, padding: '0 16px', borderRadius: 999, fontSize: 13, letterSpacing: '0.06em', textTransform: 'uppercase',
+            border: `1px solid ${look === value ? theme.text : 'rgba(248,245,230,0.4)'}`,
+            background: look === value ? theme.text : 'transparent', color: theme.cream,
+          }}
+        >
+          {value === 'bandeau' ? 'Bandeau' : 'Légende'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function SourceLine({ item, onOpenWeb }: { item: DisplayItem; onOpenWeb?: (item: WebContentItem) => void }) {
   if (item.type === 'encourage') return null
   if (item.type === 'minigame') return null
@@ -1849,6 +1992,21 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
     return bvid ? `https://player.bilibili.com/player.html?bvid=${bvid}&autoplay=1&danmaku=0&high_quality=1` : ''
   }, [item.url])
   const { markLoaded, reloadNonce } = useVideoEmbedWatchdog(embedUrl, item, onPlaybackIssue)
+  // On a phone the player shows a black square until touched: the video's own picture sits over it and lets the touch
+  // through, and goes once the player takes the focus — one touch, the owner's choice of 21 October (test page, essai A).
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const [touchDevice, setTouchDevice] = useState(false)
+  const [posterGone, setPosterGone] = useState(false)
+  useEffect(() => { try { setTouchDevice(window.matchMedia('(pointer: coarse)').matches) } catch { /* no picture over the player */ } }, [])
+  useEffect(() => { setPosterGone(false) }, [embedUrl, reloadNonce])
+  useEffect(() => {
+    if (!touchDevice || posterGone) return
+    const check = () => { if (document.activeElement === iframeRef.current) setPosterGone(true) }
+    const onBlur = () => { window.setTimeout(check, 0) }
+    window.addEventListener('blur', onBlur)
+    const poll = window.setInterval(check, 250)
+    return () => { window.removeEventListener('blur', onBlur); window.clearInterval(poll) }
+  }, [touchDevice, posterGone])
   if (!embedUrl) return null
   const picture = item.thumbUrl && /^https:\/\/[\w.-]+\.hdslb\.com\//.test(item.thumbUrl) ? item.thumbUrl : null
   return (
@@ -1864,6 +2022,7 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
         />
       ) : null}
       <iframe
+        ref={iframeRef}
         key={`${embedUrl}-${reloadNonce}`}
         src={embedUrl}
         onLoad={markLoaded}
@@ -1874,6 +2033,15 @@ function BilibiliEmbed({ item, frameHeight, onPlaybackIssue }: { item: VideoCont
         // The player at the video's own shape, in the middle: the picture shows above and below it on a phone.
         style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', border: 'none', width: '100%', aspectRatio: '16 / 9', maxHeight: '100%' }}
       />
+      {touchDevice && picture && !posterGone ? (
+        <div aria-hidden="true" style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: '100%', aspectRatio: '16 / 9', maxHeight: '100%', pointerEvents: 'none' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={picture} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <span style={{ position: 'absolute', left: '50%', top: '50%', width: 64, height: 64, marginLeft: -32, marginTop: -32, borderRadius: '50%', background: 'rgba(18,18,16,0.72)', border: '2px solid #F8F5E6' }}>
+            <span style={{ position: 'absolute', left: 25, top: 19, borderLeft: '20px solid #F8F5E6', borderTop: '12px solid transparent', borderBottom: '12px solid transparent' }} />
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -2951,6 +3119,21 @@ export function RandomExperience({
   // The bar is there from the first frame: a banner that appears later reads as
   // hidden to A-ADS, and a bar that grows later let the banner escape it on an iPad.
   const [footerAdVisible, setFooterAdVisible] = useState(true)
+  // The owner's test of the source's looks (21 October): his curation page with ?sources=1, the look kept on the device.
+  const [sourceTest, setSourceTest] = useState(false)
+  const [sourceLook, setSourceLookState] = useState<SourceLook>('bandeau')
+  useEffect(() => {
+    if (!curationMode) return
+    try {
+      setSourceTest(new URLSearchParams(window.location.search).get('sources') === '1')
+      const kept = window.localStorage.getItem('random:source-look')
+      if (kept === 'bandeau' || kept === 'legende') setSourceLookState(kept)
+    } catch { /* the default look */ }
+  }, [curationMode])
+  const setSourceLook = useCallback((look: SourceLook) => {
+    setSourceLookState(look)
+    try { window.localStorage.setItem('random:source-look', look) } catch { /* kept for this visit only */ }
+  }, [])
   const [trigger, setTrigger] = useState(0)
   const [isSecond, setIsSecond] = useState(false)
   const [liked, setLiked] = useState(false)
@@ -5716,7 +5899,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         {!arcade && viewItem && viewItem.type !== 'encourage' ? (
           <div ref={sourceLineRef} className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
-            <SourceLine item={viewItem} onOpenWeb={openWebInRandom} />
+            {sourceTest ? <SourceBlock item={viewItem} look={sourceLook} theme={theme} /> : <SourceLine item={viewItem} onOpenWeb={openWebInRandom} />}
           </div>
         ) : null}
       </section>
@@ -6036,7 +6219,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
             // The safe area adds to the bar rather than eating it, and nothing paints outside the white box.
             boxSizing: 'content-box',
             height: footerAdVisible ? adHeight : 0,
-            backgroundColor: footerAdVisible ? '#ffffff' : 'transparent',
+            backgroundColor: footerAdVisible ? (sourceTest ? theme.deep : '#ffffff') : 'transparent',
             color: '#111',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
             overflow: 'hidden',
@@ -6052,11 +6235,15 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               flexShrink: 0,
             }}
           >
-            <AadsFooterSlot
-              variant={adVariant}
-              enabled={adsAllowed}
-              onVisibleChange={setFooterAdVisible}
-            />
+            {sourceTest ? (
+              <SourceLookSwitch look={sourceLook} onChange={setSourceLook} theme={theme} />
+            ) : (
+              <AadsFooterSlot
+                variant={adVariant}
+                enabled={adsAllowed}
+                onVisibleChange={setFooterAdVisible}
+              />
+            )}
           </div>
         </div>
       ) : null}

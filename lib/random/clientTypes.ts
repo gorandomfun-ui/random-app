@@ -51,6 +51,8 @@ export type VideoItem = Identifiable & {
   spokenLang?: string
   provider?: string | null
   source?: SourceInfo
+  /** Who published it, when the base knows it truly (YouTube channel, Bilibili uploader, a real Dailymotion account). */
+  author?: string | null
 } & ToneAttributes & DiscoveryMetadata
 
 export type AiMetadata = {

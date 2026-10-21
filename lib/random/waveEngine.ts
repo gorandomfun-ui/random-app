@@ -113,6 +113,19 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())) : []
 }
 
+/**
+ * Who published a video, as the line under it names them: the channel the base kept, never a platform's name
+ * nor one of the categories old Dailymotion entries kept in its place (the "Dailymotion channel field" bug).
+ */
+const NOT_AN_AUTHOR = new Set(['youtube', 'dailymotion', 'reddit', 'bilibili', 'giphy', 'vimeo', 'news', 'music', 'sport', 'sports', 'fun', 'tv',
+  'animals', 'auto', 'auto-moto', 'kids', 'people', 'lifestyle', 'travel', 'tech', 'gaming', 'videogames', 'shortfilms', 'short films', 'creation',
+  'arts', 'school', 'education', 'webcam', 'celeb', 'comedy & entertainment', 'people & family', 'lifestyle & how-to'])
+export function videoAuthor(doc: Pick<WaveDocument, 'channelTitle'>): string | undefined {
+  const name = trim(doc.channelTitle)
+  if (!name || NOT_AN_AUTHOR.has(name.toLowerCase())) return undefined
+  return name.slice(0, 80)
+}
+
 function source(doc: WaveDocument, fallback: string, url?: string) {
   const name = shownSourceName(trim(doc.source?.name), fallback)
   const sourceUrl = trim(doc.source?.url) || url || undefined
@@ -165,6 +178,7 @@ export function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
       text: trim(doc.title) || trim(doc.text) || undefined,
       provider,
       source: source(doc, provider, url),
+      author: videoAuthor(doc),
     }
   }
 
