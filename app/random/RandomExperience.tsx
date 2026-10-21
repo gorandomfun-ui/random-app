@@ -5878,11 +5878,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               <PixelWords lines={['HIGH', 'SCORE']} color={theme.text} />
             </button>
           ) : (
+            // The heart on the content's left edge and the share on its right one (the owner, 21 October: "ils rentrent
+            // trop à l'intérieur"): their touch area reaches past it, into the page's margin.
             <button
               type="button"
               aria-label={likeLabel}
               onClick={handleLike}
-              className="p-3"
+              className="p-3 -ml-3"
               disabled={controlsDisabled}
             >
               <MonoIcon
@@ -5940,7 +5942,8 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               if (controlsDisabled) return
               setShareOpen(true)
             }}
-            className="p-3"
+            // the drawing leaves 4px of its box empty on the right: 12px of padding and those 4
+            className="p-3 -mr-4"
             disabled={!arcade && controlsDisabled}
           >
             <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />

@@ -186,7 +186,7 @@ export default function ArcadePage({ game, themeIndex, startLevel, startWorld }:
               Random
             </Link>
           </div>
-          <button type="button" aria-label="Share the game" title="Share the game" onClick={() => { holdGame(); void share() }} className="p-3">
+          <button type="button" aria-label="Share the game" title="Share the game" onClick={() => { holdGame(); void share() }} className="p-3 -mr-4">
             <MonoIcon src="/icons/share.svg" color={theme.cream} size={28} />
           </button>
         </div>
