@@ -7,7 +7,7 @@ import { candidateFromRow } from '../../lib/discovery/catalog'
 import { appendExposure } from '../../lib/discovery/diversity'
 import { newSession, planDraw, type Session } from '../../lib/discovery/pool'
 import { countServed } from '../../lib/discovery/served'
-import { BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, slotOrdinal, UNIVERSE_WINDOW, WHEEL, withSignals } from '../../lib/discovery/wheel'
+import { BILIBILI_WORLD_SHARE, BONUS, bonusAt, choose, fillSlot, sessionRules, slotAt, slotOrdinal, UNIVERSE_WINDOW, WHEEL, withSignals } from '../../lib/discovery/wheel'
 
 test('the wheel: a session opens on the buzz, a round deals every card, never the same card twice in a row', () => {
   for (const seed of [1, 7, 4242, 987654321]) {
@@ -187,23 +187,29 @@ test('the world card (16 October): a language at random, each as likely as anoth
   assert.ok(answered > 10, `${answered}`)
 })
 
-test("Bilibili in the world card's mix (17 October): one language among the others for a computer, never every time, never without it", async () => {
+test("Bilibili in the world card's mix: its own turn, 7 % of world cards, one video in 200 (21 October); never every time, never without it", async () => {
   const spoken = (lang: string, count: number) => Array.from({ length: count }, (_, index) => ({ ...video(`A ${lang} video, number ${index}, about the town`, { universe: 'travel' }), lang, languageScope: null }))
   const bilibili = Array.from({ length: 20 }, (_, index) => ({ ...video(`哔哩哔哩 的视频 第 ${index} 个`, { universe: 'travel' }), provider: 'bilibili', url: `https://www.bilibili.com/video/BV1q3pS6tE${String(index).padStart(2, '0')}#aid=${100 + index}&cid=${200 + index}`, lang: 'zh', v3: { line: 'bilibili', desktopOnly: true } }))
   const db = fakeDb([...spoken('es', 30), ...spoken('sv', 30)], [], [], bilibili)
-  const from = async (onComputer: boolean, draws: number) => {
+  // mulberry32: a small seed still gives a first draw anywhere in [0, 1).
+  const seeded = (seed: number) => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }
+  const from = async (inMix: boolean, draws: number) => {
     const counts: Record<string, number> = {}
     for (let draw = 0; draw < draws; draw += 1) {
-      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), ...(onComputer ? { bilibili: true } : {}) })
+      const filled = await fillSlot(db, 'world', { ...context(db, newSession(draw)), random: seeded(draw), ...(inMix ? { bilibili: true } : {}) })
       if (filled) counts[filled.from] = (counts[filled.from] ?? 0) + 1
     }
     return counts
   }
-  const phone = await from(false, 200)
-  assert.equal(phone['world:bilibili'] ?? 0, 0, JSON.stringify(phone))
-  const computer = await from(true, 400)
-  assert.ok((computer['world:bilibili'] ?? 0) > 5, JSON.stringify(computer))
-  assert.ok((computer['world:bilibili'] ?? 0) < 100, `one language among the others: ${JSON.stringify(computer)}`)
+  // One world card in fourteen videos: 7 % of them is one video in 200.
+  assert.equal(Math.round(BILIBILI_WORLD_SHARE * 1000) / 1000, 0.07)
+  assert.equal(Math.round(WHEEL.length / BILIBILI_WORLD_SHARE), 200)
+  const without = await from(false, 200)
+  assert.equal(without['world:bilibili'] ?? 0, 0, JSON.stringify(without))
+  const draws = 2000
+  const mixed = await from(true, draws)
+  const share = (mixed['world:bilibili'] ?? 0) / draws
+  assert.ok(share > 0.05 && share < 0.09, `about 7 % of world cards: ${JSON.stringify(mixed)}`)
   // The curator's test link (?bilibili=1): every world card is Bilibili.
   for (let draw = 0; draw < 20; draw += 1) assert.equal((await fillSlot(db, 'world', { ...context(db, newSession(draw)), bilibiliTest: true }))?.from, 'world:bilibili')
 })

@@ -47,7 +47,7 @@ import { arrangement } from '../v3/cool/bag'
 import { isCleanTitle } from '../v3/cool/clean'
 import { isCoolCandidate, type LabelableRow } from '../v3/cool/registers'
 import { SERVABLE } from '../v3/cool/servable'
-import { BILIBILI } from '../v3/bilibili'
+import { BILIBILI, BILIBILI_ONE_VIDEO_IN } from '../v3/bilibili'
 import { loadLikePool } from '../v3/cool/likePool'
 import { FIELD as VEC, fromRow } from '../v3/ai/bits'
 import { LIKE_COPY, nearestLikeInScript, saysEnough } from '../v3/ai/likeness'
@@ -63,6 +63,12 @@ export const SLOTS = ['buzz', 'long', 'retro', 'taste', 'chance', 'world', 'shor
 export type Slot = (typeof SLOTS)[number]
 /** One round of the wheel: the buzz, the long and the retro twice (the owner, 1 October: fewer long reports and retro things since the thirteen cards), every other card once. */
 export const WHEEL: readonly Slot[] = ['buzz', 'buzz', 'long', 'long', 'retro', 'retro', 'taste', 'chance', 'world', 'short', 'deep', 'joker', 'weird', 'bonus']
+
+/**
+ * Bilibili's turn in the world card: the share of world cards that makes it one video in BILIBILI_ONE_VIDEO_IN, whatever
+ * the world card's place in the wheel (one card in fourteen: 7 %).
+ */
+export const BILIBILI_WORLD_SHARE = WHEEL.length / (WHEEL.filter((slot) => slot === 'world').length * BILIBILI_ONE_VIDEO_IN)
 /** The universes the bonus card names, one per round in turn. */
 export const BONUS: readonly Universe[] = ['music', 'gaming', 'humor-memes']
 
@@ -136,8 +142,6 @@ export const WORLD_LANGUAGES: ReadonlyArray<readonly string[]> = [
 ]
 /** Languages one world card tries before the old pool answers: the session's rules may refuse a whole window. */
 const WORLD_TRIES = 3
-/** Bilibili, as one of the world card's languages for a computer (lib/v3/bilibili.ts). */
-const BILIBILI_UNIT: readonly string[] = ['bilibili']
 
 /**
  * The card of the session's `index`-th video. Round after round, each shuffled
@@ -550,13 +554,15 @@ export async function fillSlot<T>(db: Db, slot: Slot, context: Context<T>): Prom
         const picked = choose(await seekBilibili(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[]), slot, context)
         if (picked) return { item: picked, from: 'world:bilibili' }
       }
-      // A language at random, each as likely as another — Bilibili one of them (lib/v3/bilibili.ts) — then a window of its videos, the least served first.
-      const units = context.bilibili ? [...WORLD_LANGUAGES, BILIBILI_UNIT] : WORLD_LANGUAGES
-      for (const languages of shuffled(units, random).slice(0, WORLD_TRIES)) {
+      // Bilibili's own turn, one world card in BILIBILI_WORLD_SHARE: one video in 200 (the owner, 21 October; lib/v3/bilibili.ts).
+      if (context.bilibili && random() < BILIBILI_WORLD_SHARE) {
+        const picked = choose(await seekBilibili(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[]), slot, context)
+        if (picked) return { item: picked, from: 'world:bilibili' }
+      }
+      // A language at random, each as likely as another, then a window of its videos, the least served first.
+      for (const languages of shuffled(WORLD_LANGUAGES, random).slice(0, WORLD_TRIES)) {
         const lang = languages.length > 1 ? { $in: [...languages] } : languages[0]
-        const rows = languages === BILIBILI_UNIT
-          ? await seekBilibili(db, random, SIFTED_ROWS).catch(() => [] as CatalogueRow[])
-          : await seek(db, { type: 'video', languageScope: null, lang, ...SERVABLE }, LANG_INDEX, random, SIFTED_ROWS)
+        const rows = await seek(db, { type: 'video', languageScope: null, lang, ...SERVABLE }, LANG_INDEX, random, SIFTED_ROWS)
         const picked = choose(rows, slot, context)
         if (picked) return { item: picked, from: `world:${languages[0]}` }
       }

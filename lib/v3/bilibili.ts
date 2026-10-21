@@ -19,6 +19,13 @@ export const BILIBILI_FOR_EVERYONE = true
  */
 export const BILIBILI_ON_PHONES = true
 
+/**
+ * How often a visitor's videos are Bilibili's, on average: one in 200 (the owner, 21 October, "une vidéo sur 200"). It was
+ * one language among the world card's 29, one video in about 400. The world card gives it its own turn
+ * (lib/discovery/wheel.ts, BILIBILI_WORLD_SHARE).
+ */
+export const BILIBILI_ONE_VIDEO_IN = 200
+
 /** Whether the world card has Bilibili among its languages for one visitor: every computer, and every phone since phones were switched on. */
 export function bilibiliInMix(computer: boolean, curator: boolean): boolean {
   if (computer) return BILIBILI_FOR_EVERYONE || curator
