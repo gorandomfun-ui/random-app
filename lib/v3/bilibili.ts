@@ -14,11 +14,12 @@ export const BILIBILI_FOR_EVERYONE = true
 /**
  * Whether every phone gets Bilibili in the world card's mix, or only the curator's (17 October: its phone player plays a
  * whole video given the video's two numbers, `aid` and `cid`, after a touch on its play button; the owner tests it in the
- * app, in the mix — "tu remets pas que Bilibili").
+ * app, in the mix — "tu remets pas que Bilibili"). On since 21 October, once its picture showed on Safari ("si on a
+ * réglé le problème de l'image sur iphone on montre bilibili").
  */
-export const BILIBILI_ON_PHONES = false
+export const BILIBILI_ON_PHONES = true
 
-/** Whether the world card has Bilibili among its languages for one visitor: every computer; a phone, the curator's until phones are switched on. */
+/** Whether the world card has Bilibili among its languages for one visitor: every computer, and every phone since phones were switched on. */
 export function bilibiliInMix(computer: boolean, curator: boolean): boolean {
   if (computer) return BILIBILI_FOR_EVERYONE || curator
   return BILIBILI_ON_PHONES || curator

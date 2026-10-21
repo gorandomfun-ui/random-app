@@ -102,7 +102,7 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       }
       if (!choice) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
       // The site's count of what it served (lib/discovery/served.ts): one write per visual, so the least served wins next time on every device.
-      if (servedCountOn() && isVisual(choice.item.type) && choice.item.id) await countServed(db, choice.item.id, Date.now()).catch(() => false)
+      if (servedCountOn() && isVisual(choice.item.type) && choice.item.id) await countServed(db, choice.item.id, Date.now(), choice.item.provider).catch(() => false)
       // What the device kept on screen since its last draw (lib/discovery/kept.ts): the slow curation's only input.
       const kept = parseKept(body.kept)
       if (servedCountOn() && kept.length) await recordKept(db, kept).catch(() => 0)

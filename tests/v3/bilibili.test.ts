@@ -39,12 +39,12 @@ test('a computer as its browser says it, never a phone nor an Android tablet; ev
   assert.equal(BILIBILI_FOR_EVERYONE, true)
 })
 
-test('who gets Bilibili among the world card\'s languages: every computer; a phone, the curator\'s until phones are switched on — never Bilibili alone', () => {
-  assert.equal(BILIBILI_ON_PHONES, false)
+test('who gets Bilibili among the world card\'s languages: every computer, and every phone since 21 October — never Bilibili alone', () => {
+  assert.equal(BILIBILI_ON_PHONES, true)
   assert.equal(bilibiliInMix(true, false), true)
   assert.equal(bilibiliInMix(true, true), true)
   assert.equal(bilibiliInMix(false, true), true)
-  assert.equal(bilibiliInMix(false, false), false)
+  assert.equal(bilibiliInMix(false, false), true)
 })
 
 test("a Bilibili picture is kept https, and only Bilibili's own", () => {

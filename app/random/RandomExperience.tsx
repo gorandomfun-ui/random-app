@@ -2919,15 +2919,29 @@ function ContentRenderer({
       >
         {item.ogImage ? (
           <div className="w-full">
-            <ImageBlock
-              src={item.ogImage}
-              alt={item.text || host || 'web'}
-              height={webImageHeight}
-            />
+            {href && item.embeddable && onOpenWeb ? (
+              // A touch on the picture opens the site inside Random, as its underlined title did (the owner, 21 October:
+              // "on doit pouvoir cliquer sur l'image et toujours avec ouverture dans random").
+              <button
+                type="button"
+                onClick={() => onOpenWeb(item)}
+                aria-label={item.text || host || href}
+                className="block w-full"
+                style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+              >
+                <ImageBlock src={item.ogImage} alt={item.text || host || 'web'} height={webImageHeight} />
+              </button>
+            ) : href ? (
+              <a href={href} target="_blank" rel="noreferrer" aria-label={item.text || host || href} className="block w-full">
+                <ImageBlock src={item.ogImage} alt={item.text || host || 'web'} height={webImageHeight} />
+              </a>
+            ) : (
+              <ImageBlock src={item.ogImage} alt={item.text || host || 'web'} height={webImageHeight} />
+            )}
           </div>
         ) : null}
         {/* The title and the address are in the légende under the card (the owner, 21 October: "on a 2 fois le même
-            contenu"): a site with its picture shows the picture alone, and the légende's arrow opens it. */}
+            contenu"): a site with its picture shows the picture alone, which opens it, as does the légende's arrow. */}
         {item.ogImage ? null : href && item.embeddable && onOpenWeb ? (
           // The server found the site lets itself be framed: it opens over Random, the visitor stays.
           <button
