@@ -11,7 +11,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 
 import { canCaptureTab, CHROME_NOTE, commItem, desktopWithoutTabCapture, uploadMedia, type QueueItemWithMedia } from '@/lib/comm/client'
-import { captureEmbedUrl, COVER_SECONDS, formatSeconds, parseStartSeconds, pickRecorderType } from '@/lib/comm/capture'
+import { captureEmbedUrl, COVER_SECONDS, formatSeconds, parseStartSeconds, parseYoutubeMessage, pickRecorderType, scoutEmbedUrl, YOUTUBE_PLAYER_ORIGIN, youtubeCommandMessage, youtubeListenMessage } from '@/lib/comm/capture'
 import { clipMaxSeconds } from '@/lib/comm/model'
 
 type Phase = 'idle' | 'asking' | 'covered' | 'recording' | 'uploading' | 'done'
@@ -37,13 +37,54 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
   const desktop = canCaptureTab()
   const otherBrowser = desktopWithoutTabCapture()
   const maxSeconds = clipMaxSeconds()
+  /** The scouting: the player with its controls, a slider under it, the spot found by eye before the capture. */
+  const [scouting, setScouting] = useState(false)
+  const [scoutTime, setScoutTime] = useState(0)
+  const [scoutSrc, setScoutSrc] = useState<{ provider: 'youtube' | 'dailymotion'; src: string } | null>(null)
+  const [liveTime, setLiveTime] = useState<number | null>(null)
+  const [duration, setDuration] = useState<number | null>(null)
+  const scoutFrame = useRef<HTMLIFrameElement | null>(null)
+  const reloadTimer = useRef<number | null>(null)
 
   useEffect(() => {
     void commItem(queueItemId).then((body) => { if (body.item) setItem(body.item); else setError('Cet élément n’est plus dans la file.') })
   }, [queueItemId])
 
-  const embed = useMemo(() => (item ? captureEmbedUrl(item.snapshot.url, item.snapshot.provider, parseStartSeconds(startText), typeof window === 'undefined' ? '' : window.location.origin) : null), [item, startText])
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
+  const embedFor = useCallback((sec: number) => (item ? captureEmbedUrl(item.snapshot.url, item.snapshot.provider, sec, origin) : null), [item, origin])
+  const embed = useMemo(() => embedFor(parseStartSeconds(startText)), [embedFor, startText])
   const coverSeconds = coverText ? Math.max(0, Math.min(15, Number(coverText) || 0)) : embed ? COVER_SECONDS[embed.provider] : 4
+  const scoutMax = duration ?? item?.snapshot.durationSec ?? 600
+
+  // The scouting player: YouTube's reports its time and seeks on command; the other reloads at the slider's second.
+  const openScout = useCallback(() => {
+    if (!item) return
+    const sec = parseStartSeconds(startText)
+    setScoutTime(sec); setLiveTime(null); setScoutSrc(scoutEmbedUrl(item.snapshot.url, item.snapshot.provider, sec, origin)); setScouting(true)
+  }, [item, origin, startText])
+  const closeScout = useCallback(() => { setScouting(false); setScoutSrc(null); setLiveTime(null); if (reloadTimer.current) window.clearTimeout(reloadTimer.current) }, [])
+  useEffect(() => {
+    if (!scouting || scoutSrc?.provider !== 'youtube') return
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== YOUTUBE_PLAYER_ORIGIN) return
+      const info = parseYoutubeMessage(event.data)
+      if (!info) return
+      if (info.currentTime != null) { setLiveTime(info.currentTime); setScoutTime(info.currentTime) }
+      if (info.duration != null) setDuration(info.duration)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [scouting, scoutSrc])
+  const onScoutLoad = useCallback(() => { if (scoutSrc?.provider === 'youtube') scoutFrame.current?.contentWindow?.postMessage(youtubeListenMessage(), YOUTUBE_PLAYER_ORIGIN) }, [scoutSrc])
+  const slideTo = useCallback((sec: number) => {
+    setScoutTime(sec)
+    if (scoutSrc?.provider === 'youtube') { scoutFrame.current?.contentWindow?.postMessage(youtubeCommandMessage('seekTo', [sec, true]), YOUTUBE_PLAYER_ORIGIN); setLiveTime(sec); return }
+    if (!item) return
+    if (reloadTimer.current) window.clearTimeout(reloadTimer.current)
+    reloadTimer.current = window.setTimeout(() => setScoutSrc(scoutEmbedUrl(item.snapshot.url, item.snapshot.provider, sec, origin)), 400)
+  }, [item, origin, scoutSrc])
+  /** The second the capture will start at: the player's own time when it tells it, else the slider's. */
+  const scoutSecond = Math.floor(liveTime ?? scoutTime)
 
   const stopTracks = useCallback(() => { streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null }, [])
 
@@ -85,8 +126,10 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
     }, 250)
   }, [finish, maxSeconds])
 
-  const start = useCallback(async () => {
-    if (!embed || !desktop) return
+  const start = useCallback(async (fromSec?: number) => {
+    const target = fromSec == null ? embed : embedFor(fromSec)
+    if (fromSec != null) { setStartText(formatSeconds(fromSec)); closeScout() }
+    if (!target || !desktop) return
     setError(''); setResult(''); setPhase('asking')
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -112,7 +155,7 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
       setPhase('idle'); setError('Capture refusée ou impossible dans ce navigateur (Chrome ou Edge sur ordinateur).')
       return
     }
-    setPlayerSrc(embed.src)
+    setPlayerSrc(target.src)
     setPhase('covered'); setCountdown(coverSeconds)
     let left = coverSeconds
     const tick = window.setInterval(() => {
@@ -120,18 +163,20 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
       if (left <= 0) { window.clearInterval(tick); beginRecording() }
     }, 1000)
     if (coverSeconds === 0) { window.clearInterval(tick); beginRecording() }
-  }, [beginRecording, coverSeconds, desktop, embed, finish])
+  }, [beginRecording, closeScout, coverSeconds, desktop, embed, embedFor, finish])
 
   // On a phone: the bare player with its cover, the phone's own recorder running.
-  const startPhone = useCallback(() => {
-    if (!embed) return
-    setError(''); setResult(''); setPlayerSrc(embed.src); setPhase('covered'); setCountdown(coverSeconds)
+  const startPhone = useCallback((fromSec?: number) => {
+    const target = fromSec == null ? embed : embedFor(fromSec)
+    if (fromSec != null) { setStartText(formatSeconds(fromSec)); closeScout() }
+    if (!target) return
+    setError(''); setResult(''); setPlayerSrc(target.src); setPhase('covered'); setCountdown(coverSeconds)
     let left = coverSeconds
     const tick = window.setInterval(() => {
       left -= 1; setCountdown(left)
       if (left <= 0) { window.clearInterval(tick); setPhase('recording'); startedAtRef.current = performance.now(); timerRef.current = window.setInterval(() => setElapsed((performance.now() - startedAtRef.current) / 1000), 250) }
     }, 1000)
-  }, [coverSeconds, embed])
+  }, [closeScout, coverSeconds, embed, embedFor])
 
   const stopPhone = useCallback(() => {
     if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null }
@@ -170,10 +215,27 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
           {item ? <p className="text-sm text-gray-300"><span className="font-bold text-white">{item.snapshot.title}</span><br />{item.snapshot.providerLabel}{item.snapshot.author ? ` · ${item.snapshot.author}` : ''}{item.snapshot.durationSec ? ` · ${formatSeconds(item.snapshot.durationSec)}` : ''}</p> : null}
           {item && !embed ? <p className="text-amber-300">Ce lecteur ne se capture pas ici. Importe un enregistrement à la place.</p> : null}
           <div className="flex flex-wrap items-end gap-4 text-sm">
-            <label className="font-bold">Commencer à (min:s)<br /><input className="mt-1 w-28 rounded border border-white/40 bg-black px-2 py-1 font-normal" value={startText} onChange={(e) => setStartText(e.target.value)} placeholder="1:23" aria-label="Commencer à" /></label>
+            <button className="rounded-full border border-white px-4 py-1.5 font-bold uppercase disabled:opacity-50" disabled={!item || !embed || scouting || phase === 'uploading'} onClick={openScout}>Repérer l’endroit</button>
+            <label>Ou commencer à (min:s)<br /><input className="mt-1 w-28 rounded border border-white/40 bg-black px-2 py-1" value={startText} onChange={(e) => setStartText(e.target.value)} placeholder="1:23" aria-label="Commencer à" /></label>
             <label>Cache au départ (s)<br /><input className="mt-1 w-20 rounded border border-white/40 bg-black px-2 py-1" value={coverText} onChange={(e) => setCoverText(e.target.value)} placeholder={String(coverSeconds)} /></label>
             <span className="text-gray-300">jusqu’à {formatSeconds(maxSeconds)} · Échap ou s pour arrêter</span>
           </div>
+          {scouting && scoutSrc ? (
+            <section className="space-y-2 rounded-lg border border-white/20 p-3" aria-label="Repérage">
+              <div className="relative w-full" style={{ aspectRatio: '16 / 9' }}>
+                <iframe ref={scoutFrame} src={scoutSrc.src} title="Repérage" className="absolute inset-0 h-full w-full" allow="autoplay; encrypted-media" style={{ border: 0 }} onLoad={onScoutLoad} />
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <input type="range" min={0} max={Math.max(1, Math.floor(scoutMax))} step={1} value={Math.min(Math.floor(scoutMax), Math.floor(scoutTime))} className="flex-1" aria-label="Endroit" onChange={(e) => slideTo(Number(e.target.value))} />
+                <span className="w-16 text-right tabular-nums">{formatSeconds(scoutSecond)}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button className="rounded-full border border-white bg-white px-5 py-2 font-bold uppercase text-black disabled:opacity-50" disabled={phase === 'asking'} onClick={() => (desktop ? void start(scoutSecond) : startPhone(scoutSecond))}>Démarrer ici</button>
+                <button className="text-sm underline" onClick={closeScout}>Fermer le repérage</button>
+                <span className="text-xs text-gray-400">{scoutSrc.provider === 'youtube' ? 'Glisse, ou avance dans le lecteur : la seconde suit.' : 'Glisse : le lecteur se recale à cette seconde.'}</span>
+              </div>
+            </section>
+          ) : null}
           {otherBrowser ? (
             <div className="space-y-3">
               <p className="text-amber-200">{CHROME_NOTE}</p>
@@ -187,7 +249,7 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
                 <li>Le lecteur passe en grand, couvert {coverSeconds} s le temps que ses boutons s’effacent, puis l’enregistrement commence.</li>
                 <li>Ne touche à rien pendant l’enregistrement. Échap ou s pour arrêter ; l’extrait part dans la file.</li>
               </ol>
-              <button className="rounded-full border border-white px-5 py-2 font-bold uppercase disabled:opacity-50" disabled={!embed || phase === 'asking' || phase === 'uploading'} onClick={start}>{phase === 'asking' ? 'Autorisation…' : 'Lancer la capture'}</button>
+              <button className="rounded-full border border-white px-5 py-2 font-bold uppercase disabled:opacity-50" disabled={!embed || phase === 'asking' || phase === 'uploading'} onClick={() => void start()}>{phase === 'asking' ? 'Autorisation…' : 'Lancer la capture'}</button>
             </>
           ) : (
             <>
@@ -197,7 +259,7 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
                 <li>Arrête l’enregistrement du téléphone, reviens ici et <b>Importer</b> le fichier.</li>
               </ol>
               <div className="flex flex-wrap gap-3">
-                <button className="rounded-full border border-white px-5 py-2 font-bold uppercase disabled:opacity-50" disabled={!embed || phase === 'uploading'} onClick={startPhone}>Lancer le lecteur</button>
+                <button className="rounded-full border border-white px-5 py-2 font-bold uppercase disabled:opacity-50" disabled={!embed || phase === 'uploading'} onClick={() => startPhone()}>Lancer le lecteur</button>
                 <button className="rounded-full border border-white px-5 py-2 font-bold uppercase disabled:opacity-50" disabled={phase === 'uploading'} onClick={() => fileInput.current?.click()}>Importer</button>
               </div>
             </>
