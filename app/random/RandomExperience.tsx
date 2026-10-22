@@ -2300,6 +2300,11 @@ function DailymotionEmbed({
   const [isMuted, setIsMuted] = useState(soundMuted || touchDevice)
   const [embedMuted, setEmbedMuted] = useState(soundMuted || touchDevice)
   const [showSoundHint, setShowSoundHint] = useState(false)
+  // The bubble is for a touch screen, where the player starts muted and its speaker takes two touches. A computer starts
+  // it with the page's sound setting and shows the player's speaker under the mouse (the owner, 22 October: "pas utile
+  // pour le desktop").
+  const [touchScreen, setTouchScreen] = useState(false)
+  useEffect(() => { try { setTouchScreen(window.matchMedia('(pointer: coarse)').matches) } catch { /* no bubble */ } }, [])
 
   useEffect(() => {
     soundMutedRef.current = soundMuted
@@ -2384,7 +2389,7 @@ function DailymotionEmbed({
   }, [url, item, onPlaybackIssue])
 
   useEffect(() => {
-    if (!iframeLoaded) {
+    if (!iframeLoaded || !touchScreen) {
       setShowSoundHint(false)
       return undefined
     }
@@ -2392,7 +2397,7 @@ function DailymotionEmbed({
     // Long enough to be read and acted on, short enough not to sit on the image.
     const timer = window.setTimeout(() => setShowSoundHint(false), 6000)
     return () => window.clearTimeout(timer)
-  }, [iframeLoaded, url])
+  }, [iframeLoaded, touchScreen, url])
 
   const requestSound = useCallback(() => {
     wakeDailymotionSound(iframeRef.current, dailymotionId)
