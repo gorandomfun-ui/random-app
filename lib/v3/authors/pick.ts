@@ -20,9 +20,24 @@ export const TAKE_PER_PASS = 8
 export const SAME_SHAPE_CAP = 2
 /** Authors visited in one pass. Two units each: the price of one search buys fifty. */
 export const AUTHORS_PER_PASS = 40
+/**
+ * Only the small authors: a channel of more than this many videos is a factory, not a person (the owner, 22 October:
+ * "une chaîne indienne avec 3000 vidéos de merde répétitives c'est nul, mais si c'est des petites vidéos d'un petit
+ * auteur c'est pas pareil").
+ */
+export const SMALL_AUTHOR_MAX = 200
+
+/** Whether a channel is small enough to follow, by the count of videos its platform gives; an unknown count is not small. */
+export const smallAuthor = (total: number | null | undefined): boolean => typeof total === 'number' && Number.isFinite(total) && total >= 0 && total <= SMALL_AUTHOR_MAX
 
 export type AuthorZone = { key: string; video: number; likeIds: string[] }
 export type AuthorVisit = { key: string; provider: 'youtube' | 'dailymotion'; id: string; room: number }
+/** What the line remembers of an author (lib/v3/ingest/lines/authors.ts): when it last went, and whether the channel was too big then. */
+export type AuthorMemory = { visitedAt: number; big: boolean }
+
+/** A channel found too big is asked again after this many days: it may have shrunk, or the count may have been missing. */
+export const BIG_RECHECK_DAYS = 30
+const DAY_MS = 24 * 60 * 60 * 1000
 
 /** The provider and the identifier inside an author key, when it is one we can read. */
 export function splitAuthorKey(key: string): { provider: 'youtube' | 'dailymotion'; id: string } | null {
@@ -38,9 +53,11 @@ export function splitAuthorKey(key: string): { provider: 'youtube' | 'dailymotio
 /**
  * The authors worth a visit tonight: liked by someone, still under the ceiling,
  * the emptiest first so the ones we barely know get their turn. `room` is what
- * the ceiling still allows for each.
+ * the ceiling still allows for each. A channel found too big lately is left
+ * alone (`memory`): it would otherwise come back every night, at the same place
+ * in the order, and take a small author's turn.
  */
-export function pickAuthors(zones: AuthorZone[], limit = AUTHORS_PER_PASS): AuthorVisit[] {
+export function pickAuthors(zones: AuthorZone[], limit = AUTHORS_PER_PASS, memory: ReadonlyMap<string, AuthorMemory> = new Map(), now = Date.now()): AuthorVisit[] {
   const visits: AuthorVisit[] = []
   for (const zone of zones) {
     if (!zone.likeIds.length) continue
@@ -48,10 +65,14 @@ export function pickAuthors(zones: AuthorZone[], limit = AUTHORS_PER_PASS): Auth
     if (room <= 0) continue
     const split = splitAuthorKey(zone.key)
     if (!split) continue
+    const known = memory.get(zone.key)
+    if (known?.big && now - known.visitedAt < BIG_RECHECK_DAYS * DAY_MS) continue
     visits.push({ key: zone.key, provider: split.provider, id: split.id, room: Math.min(room, TAKE_PER_PASS) })
   }
-  // The least known first: an author we hold two videos of teaches more than one we hold thirty-nine of.
-  visits.sort((a, b) => b.room - a.room || a.key.localeCompare(b.key))
+  // The least known first: an author we hold two videos of teaches more than one we hold thirty-nine of. Then the one
+  // visited longest ago, never visited first: the same forty would otherwise be visited every night, in the alphabet's order.
+  const last = (key: string) => memory.get(key)?.visitedAt ?? 0
+  visits.sort((a, b) => b.room - a.room || last(a.key) - last(b.key) || a.key.localeCompare(b.key))
   return visits.slice(0, Math.max(0, limit))
 }
 

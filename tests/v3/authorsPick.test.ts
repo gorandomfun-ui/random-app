@@ -2,9 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  AUTHORS_PER_PASS, HOLD_CAP, SAME_SHAPE_CAP, TAKE_PER_PASS,
-  keepFromAuthor, pickAuthors, splitAuthorKey, titleShape,
+  AUTHORS_PER_PASS, BIG_RECHECK_DAYS, HOLD_CAP, SAME_SHAPE_CAP, SMALL_AUTHOR_MAX, TAKE_PER_PASS,
+  keepFromAuthor, pickAuthors, smallAuthor, splitAuthorKey, titleShape, type AuthorMemory,
 } from '@/lib/v3/authors/pick'
+import { dailymotionAuthorVideos, youtubeAuthorVideos } from '@/lib/v3/authors/fetch'
 
 /**
  * The restraint on following an author. The owner's fear, in his words: not
@@ -72,4 +73,49 @@ test('la forme d_un titre ignore les numéros et les mots vides', () => {
 test('des titres vides ne se font pas passer pour une série', () => {
   const videos = Array.from({ length: 6 }, () => ({ title: '' }))
   assert.equal(keepFromAuthor(videos, 5).length, 5, 'ils sont jugés par les filtres habituels, pas par la forme')
+})
+
+const DAY = 24 * 60 * 60 * 1000
+
+test('seuls les petits auteurs sont suivis (22 octobre) : deux cents vidéos au plus sur la chaîne', () => {
+  assert.equal(SMALL_AUTHOR_MAX, 200)
+  assert.equal(smallAuthor(94), true, 'la petite chaîne du zoo de Saïgon')
+  assert.equal(smallAuthor(200), true)
+  assert.equal(smallAuthor(201), false)
+  assert.equal(smallAuthor(3000), false, 'une usine de trois mille vidéos')
+  assert.equal(smallAuthor(null), false, 'une taille inconnue ne passe pas')
+})
+
+test('une grande chaîne vue récemment est laissée, puis revue au bout du délai', () => {
+  const now = Date.UTC(2026, 9, 22)
+  const zones = [zone('youtube:UC' + 'd'.repeat(22), 0), zone('dailymotion:xsmall1', 0)]
+  const lately = new Map<string, AuthorMemory>([['youtube:UC' + 'd'.repeat(22), { visitedAt: now - 3 * DAY, big: true }]])
+  assert.deepEqual(pickAuthors(zones, AUTHORS_PER_PASS, lately, now).map((visit) => visit.key), ['dailymotion:xsmall1'])
+  const longAgo = new Map<string, AuthorMemory>([['youtube:UC' + 'd'.repeat(22), { visitedAt: now - (BIG_RECHECK_DAYS + 1) * DAY, big: true }]])
+  assert.equal(pickAuthors(zones, AUTHORS_PER_PASS, longAgo, now).length, 2)
+})
+
+test('à place égale, l_auteur jamais visité puis le plus anciennement visité passent devant', () => {
+  const now = Date.UTC(2026, 9, 22)
+  const zones = [zone('dailymotion:xa1', 0), zone('dailymotion:xb2', 0), zone('dailymotion:xc3', 0)]
+  const memory = new Map<string, AuthorMemory>([
+    ['dailymotion:xa1', { visitedAt: now - DAY, big: false }],
+    ['dailymotion:xb2', { visitedAt: now - 5 * DAY, big: false }],
+  ])
+  assert.deepEqual(pickAuthors(zones, AUTHORS_PER_PASS, memory, now).map((visit) => visit.key), ['dailymotion:xc3', 'dailymotion:xb2', 'dailymotion:xa1'])
+})
+
+test('la taille de la chaîne vient avec ses vidéos, et une grande chaîne YouTube ne coûte qu_une unité', async () => {
+  const asked: string[] = []
+  const answer = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  const big = async (url: string | URL | Request) => {
+    asked.push(String(url))
+    return answer({ items: [{ contentDetails: { relatedPlaylists: { uploads: 'UU' + 'e'.repeat(22) } }, statistics: { videoCount: '3000' } }] })
+  }
+  const youtube = await youtubeAuthorVideos('key', 'UC' + 'e'.repeat(22), 8, big as typeof fetch, undefined, smallAuthor)
+  assert.deepEqual(youtube, { videos: [], total: 3000 })
+  assert.equal(asked.length, 1, 'la liste de ses vidéos n_est pas lue')
+  const dailymotion = await dailymotionAuthorVideos('x2b1rhk', 8, (async () => answer({ total: 94, list: [{ id: 'x87tt66', title: 'Saigon Zoo' }] })) as typeof fetch)
+  assert.equal(dailymotion.total, 94)
+  assert.equal(dailymotion.videos.length, 1)
 })

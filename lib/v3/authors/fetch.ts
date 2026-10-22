@@ -4,6 +4,11 @@
  * Reading a channel is cheap where searching is not: at YouTube one call finds
  * the channel's own list and one more reads fifty of its videos, two units,
  * where a single search costs a hundred. Dailymotion asks nothing at all.
+ *
+ * Each answer carries the channel's size, the count of videos its platform
+ * gives (lib/v3/authors/pick.ts, smallAuthor): YouTube's in the call that finds
+ * the list, which spares the second call for a channel too big to follow;
+ * Dailymotion's in the list itself.
  */
 
 import type { RawVideo } from '@/lib/ingest/videos'
@@ -22,19 +27,31 @@ async function ask<T>(url: string, request: typeof fetch, signal?: AbortSignal):
   return (await response.json()) as T
 }
 
-type ChannelsResponse = { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> }
+type ChannelsResponse = { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } }; statistics?: { videoCount?: string } }> }
+
+/** What a channel gave: its latest videos, and how many it holds in all (null when the platform does not say). */
+export type AuthorVideos = { videos: RawVideo[]; total: number | null }
+
+const count = (value: unknown): number | null => {
+  const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN
+  return Number.isFinite(number) && number >= 0 ? number : null
+}
 type PlaylistResponse = {
   items?: Array<{ snippet?: { title?: string; description?: string; publishedAt?: string; channelId?: string; channelTitle?: string; resourceId?: { videoId?: string } } }>
 }
 
-/** The latest videos of a YouTube channel, through the list the channel keeps of its own uploads. */
-export async function youtubeAuthorVideos(apiKey: string, channelId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal): Promise<RawVideo[]> {
-  const channel = await ask<ChannelsResponse>(`${YOUTUBE}/channels?key=${apiKey}&part=contentDetails&id=${encodeURIComponent(channelId)}`, request, signal)
+/**
+ * The latest videos of a YouTube channel, through the list the channel keeps of its own uploads. `keep` says, from the
+ * channel's size, whether to read its list at all: a channel refused costs one unit, not two.
+ */
+export async function youtubeAuthorVideos(apiKey: string, channelId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal, keep: (total: number | null) => boolean = () => true): Promise<AuthorVideos> {
+  const channel = await ask<ChannelsResponse>(`${YOUTUBE}/channels?key=${apiKey}&part=contentDetails,statistics&id=${encodeURIComponent(channelId)}`, request, signal)
+  const total = count(channel?.items?.[0]?.statistics?.videoCount)
   const uploads = channel?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
-  if (!uploads) return []
+  if (!uploads || !keep(total)) return { videos: [], total }
   const params = new URLSearchParams({ key: apiKey, part: 'snippet', playlistId: uploads, maxResults: String(Math.min(50, Math.max(1, take))) })
   const playlist = await ask<PlaylistResponse>(`${YOUTUBE}/playlistItems?${params}`, request, signal)
-  return (playlist?.items ?? []).flatMap((item): RawVideo[] => {
+  const videos = (playlist?.items ?? []).flatMap((item): RawVideo[] => {
     const snippet = item?.snippet
     const videoId = snippet?.resourceId?.videoId
     if (!videoId || !/^[\w-]{11}$/.test(videoId)) return []
@@ -52,18 +69,19 @@ export async function youtubeAuthorVideos(apiKey: string, channelId: string, tak
       contextQueries: [`author:youtube:${channelId}`],
     }]
   })
+  return { videos, total }
 }
 
-type DailymotionResponse = { list?: Array<Record<string, unknown>> }
+type DailymotionResponse = { list?: Array<Record<string, unknown>>; total?: unknown }
 
-/** The latest videos of a Dailymotion account. Free, like every call to them. */
-export async function dailymotionAuthorVideos(ownerId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal): Promise<RawVideo[]> {
+/** The latest videos of a Dailymotion account, and its size (the list's `total`). Free, like every call to them. */
+export async function dailymotionAuthorVideos(ownerId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal): Promise<AuthorVideos> {
   const params = new URLSearchParams({
     limit: String(Math.min(50, Math.max(1, take))), page: '1', sort: 'recent',
     fields: 'id,title,description,url,thumbnail_url,duration,aspect_ratio,channel.id,owner.id,owner.screenname,created_time,views_total,private',
   })
   const payload = await ask<DailymotionResponse>(`https://api.dailymotion.com/user/${encodeURIComponent(ownerId)}/videos?${params}`, request, signal)
-  return (payload?.list ?? []).flatMap((row): RawVideo[] => {
+  const videos = (payload?.list ?? []).flatMap((row): RawVideo[] => {
     if (typeof row.id !== 'string' || !/^[a-z\d]+$/i.test(row.id) || row.private === true) return []
     const text = (key: string) => (typeof row[key] === 'string' ? (row[key] as string) : undefined)
     return [{
@@ -84,4 +102,5 @@ export async function dailymotionAuthorVideos(ownerId: string, take: number, req
       contextQueries: [`author:dailymotion:${ownerId}`],
     }]
   })
+  return { videos, total: count(payload?.total) }
 }
