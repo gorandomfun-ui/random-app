@@ -103,7 +103,10 @@ export const BRAND_SIZES: Array<{ key: BrandSize; name: string; hint: string }> 
 ]
 const BRAND_WIDTHS: Record<Exclude<BrandSize, 'random'>, number> = { s: 0.4, m: 0.6, l: 0.92, xl: 1 }
 
-export type PromoText = { lines: string[]; size: number; align: 'left' | 'center' | 'right'; font: string; weight: number; x: number | null; y: number | null; width: number }
+/** The curator's words: the lines stay on the whole film as one block — or, with `cards`, each line is a card in its turn and nothing stays. */
+export type PromoText = { lines: string[]; size: number; align: 'left' | 'center' | 'right'; font: string; weight: number; x: number | null; y: number | null; width: number; cards?: boolean }
+/** The number of cards the words make: one per line when the curator asked for cards and there are several lines; none otherwise. */
+export const cardsOf = (text: Pick<PromoText, 'lines' | 'cards'> | null | undefined): number => { if (!text?.cards) return 0; const n = text.lines.filter((l) => l.trim()).length; return n > 1 ? n : 0 }
 export type PromoIcon = { image: HTMLImageElement; x: number; y: number; size: number }
 export type PromoInput = {
   format: FormatKey
@@ -172,8 +175,7 @@ export function planShots(input: Pick<PromoInput, 'seconds' | 'intensity' | 'see
   const usable = allowed.filter((b) => b !== 'back' || videos + pictures > 0)
   const bursts: ShotKind[] = usable.length ? usable : ['blocks', 'mosh', 'confetti']
   const withColumn = !input.shots.length || input.shots.includes('column')
-  const lineCount = (input.text?.lines ?? []).filter((l) => l.trim()).length
-  const cards = lineCount > 1 ? lineCount : 0
+  const cards = cardsOf(input.text)
   const total = input.seconds * 1000
   const beat = beatOf(input.seed)
   const out: Shot[] = []
@@ -522,16 +524,22 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   const darkOf = (shot: Shot): HTMLImageElement | null => shot.subject === 'icon' ? null : shot.subject === 'block' ? input.logoVerticalDark : input.logoDark
   /** The subject's shape in deep: the dark letters, or the icon tinted. */
   const deepOf = (shot: Shot, w: number, h: number): CanvasImageSource => darkOf(shot) ?? tinted(logoOf(shot), DEEP, w, h, s2)
+  /** The constant words, when there are any: every line of the text in its turn, each wrapped to the width — none when the lines are cards. */
+  const wordLines = (ctx: CanvasRenderingContext2D, maxW: number): string[] => {
+    const t = input.text
+    if (!t || cardsOf(t)) return []
+    return t.lines.map((l) => l.trim()).filter(Boolean).flatMap((l) => wrap(ctx, l, maxW))
+  }
   /** The constant words' block, when there is one: the brand keeps clear of it. */
   const measure = make(8, 8).getContext('2d')!
   const wordsBlock = (): { y: number; h: number } | null => {
     const t = input.text
-    const line = t?.lines.length === 1 ? t.lines[0].trim() : ''
-    if (!t || !line) return null
+    if (!t) return null
     const size = Math.round(t.size * u)
     measure.font = `${t.weight} ${size}px ${t.font}`
     const maxW = t.x === null ? S.w : t.width * W
-    const lines = wrap(measure, line, maxW)
+    const lines = wordLines(measure, maxW)
+    if (!lines.length) return null
     const blockH = Math.round(lines.length * size * 1.1)
     const zone = Math.floor(hash(input.seed, 360) * 3)
     const top = t.y === null ? Math.round(zone === 0 ? S.y : zone === 1 ? S.y + S.h / 2 - blockH / 2 : S.y + S.h - blockH) : Math.round(t.y * H)
@@ -645,12 +653,12 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
   // ----- the words
   const drawWords = (ctx: CanvasRenderingContext2D, shot: Shot, at: number) => {
     const t = input.text
-    const line = t?.lines[0]?.trim()
-    if (!t || !line) return
+    if (!t) return
     const size = Math.round(t.size * u)
     ctx.font = `${t.weight} ${size}px ${t.font}`; ctx.textBaseline = 'top'; ctx.textAlign = t.align
     const maxW = t.x === null ? S.w : t.width * W
-    const lines = wrap(ctx, line, maxW)
+    const lines = wordLines(ctx, maxW)
+    if (!lines.length) return
     const blockH = lines.length * size * 1.1
     const preferred = Math.floor(hash(input.seed, 360) * 3)
     const topOf = (zone: number) => Math.round(zone === 0 ? S.y : zone === 1 ? S.y + S.h / 2 - blockH / 2 : S.y + S.h - blockH)
@@ -679,7 +687,7 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     lines.forEach((l, i) => { const part = l.slice(0, Math.max(0, shown - count)); count += l.length + 1; const y = top + i * Math.round(size * 1.1); ctx.strokeText(part, x, y); ctx.fillStyle = CREAM; ctx.fillText(part, x, y) })
   }
   const giantMask = (target: CanvasRenderingContext2D, at: number, shot: Shot) => {
-    const line = (input.text?.lines[0] ?? 'RANDOM').trim().toUpperCase() || 'RANDOM'
+    const line = (input.text?.lines ?? []).join(' ').trim().toUpperCase() || 'RANDOM'
     const words = line.split(/\s+/).slice(0, 4)
     target.clearRect(0, 0, W, H); target.globalCompositeOperation = 'source-over'
     target.font = `900 100px ${input.text?.font ?? font}`
@@ -926,7 +934,7 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     if (shot.scan && shot.phase !== 'card') scanlines(ctx, 0.05 + g * 0.06)
     // A thin interface's residue on a few frames of a strong moment: the frame shifted a few pixels.
     if (g > 0.6 && hash(step, s, 200) < 0.12) ctx.drawImage(ctx.canvas, Math.round((hash(step, 201) - 0.5) * W * 0.03), 0)
-    if (input.text && input.text.lines.length === 1 && shot.phase !== 'card') drawWords(ctx, shot, at)
+    if (input.text && shot.phase !== 'card') drawWords(ctx, shot, at)
     if (input.icon) ctx.drawImage(input.icon.image, Math.round(input.icon.x * W), Math.round(input.icon.y * H), Math.round(input.icon.size * u), Math.round(input.icon.size * u))
   }
 

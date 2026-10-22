@@ -1,17 +1,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { planShots, type ShotKind } from '@/lib/comm/promoLoop'
+import { cardsOf, planShots, type ShotKind } from '@/lib/comm/promoLoop'
 
 const base = { seconds: 10, intensity: 0.6, seed: 4242, brandMode: 'center' as const, subjects: ['block', 'wordmark'] as Array<'block' | 'wordmark' | 'icon'>, recognition: 0.3, text: null }
 
+const words = (lines: string[], cards?: boolean) => ({ lines, size: 90, align: 'left' as const, font: 'x', weight: 700, x: null, y: null, width: 0.88, cards })
+
 test('no moment allowed gives a soft film: calms and hints, cards, never a burst', () => {
-  const { shots } = planShots({ ...base, shots: [] as ShotKind[], text: { lines: ['UN', 'DEUX'], size: 90, align: 'left', font: 'x', weight: 700, x: null, y: null, width: 0.88 } }, 2, 3, 4)
+  const { shots } = planShots({ ...base, shots: [] as ShotKind[], text: words(['UN', 'DEUX'], true) }, 2, 3, 4)
   assert.ok(shots.length > 3)
   assert.ok(shots.every((s) => s.phase !== 'burst' && s.phase !== 'settle'), shots.map((s) => s.phase).join(','))
   assert.ok(shots.some((s) => s.phase === 'calm'))
   assert.equal(shots.filter((s) => s.phase === 'card').length, 2)
   assert.equal(shots[shots.length - 1].to, 10000)
+})
+
+test('several lines stay on the film as one block unless the curator asks for cards; one line never makes a card', () => {
+  const count = (text: ReturnType<typeof words> | null) => planShots({ ...base, shots: ['blocks'] as ShotKind[], text }, 2, 3, 4).shots.filter((s) => s.phase === 'card').length
+  assert.equal(cardsOf(words(['UN', 'DEUX', 'TROIS'])), 0)
+  assert.equal(count(words(['UN', 'DEUX', 'TROIS'])), 0)
+  assert.equal(cardsOf(words(['UN', 'DEUX', 'TROIS'], true)), 3)
+  assert.equal(count(words(['UN', 'DEUX', 'TROIS'], true)), 3)
+  assert.equal(cardsOf(words(['UN', ' '], true)), 0)
+  assert.equal(count(null), 0)
 })
 
 test('one moment allowed gives bursts of that kind only', () => {
