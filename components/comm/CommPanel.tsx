@@ -31,6 +31,17 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
   closeRef.current = onClose
   const captureRef = useRef(captureTarget)
   captureRef.current = captureTarget
+  // The ad bar's height, measured on whichever page holds the panel (the curation's bar, the Home's); the sheet keeps clear of it.
+  const [barHeight, setBarHeight] = useState(0)
+  useEffect(() => {
+    const bar = document.querySelector<HTMLElement>('.random-footer-ad, #ad-bar')
+    if (!bar) return
+    const measure = () => setBarHeight(bar.offsetHeight)
+    measure()
+    const observer = new ResizeObserver(measure); observer.observe(bar)
+    return () => observer.disconnect()
+  }, [])
+  const clear = `max(${barHeight}px, var(--ad-bar-height, 0px) + env(safe-area-inset-bottom, 0px))`
 
   // One press: into the queue, and the picture taken at once when there is one to take.
   useEffect(() => {
@@ -94,9 +105,9 @@ export default function CommPanel({ itemId, accent, onClose, onQueueChange, capt
   const button = 'rounded-full border px-4 py-2 text-sm font-bold uppercase tracking-wide disabled:opacity-50'
 
   return (
-    // The sheet stays clear of the ad bar and the phone's bottom edge, and scrolls when the screen is short.
-    <div role="dialog" aria-modal="true" aria-label="Comm" className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" style={{ paddingBottom: 'calc(var(--ad-bar-height, 0px) + env(safe-area-inset-bottom, 0px) + 12px)' }} onClick={onClose}>
-      <div className="w-full max-w-md overflow-y-auto rounded-2xl p-4 shadow-2xl" style={{ background: '#191916', color: '#F8F5E6', border: `1px solid ${accent}`, maxHeight: 'calc(100vh - var(--ad-bar-height, 0px) - env(safe-area-inset-bottom, 0px) - 24px)' }} onClick={(event) => event.stopPropagation()}>
+    // The sheet stays clear of the ad bar (measured on the page, whichever page) and the phone's bottom edge, and scrolls when the screen is short.
+    <div role="dialog" aria-modal="true" aria-label="Comm" className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" style={{ paddingBottom: `calc(${clear} + 12px)` }} onClick={onClose}>
+      <div className="w-full max-w-md overflow-y-auto rounded-2xl p-4 shadow-2xl" style={{ background: '#191916', color: '#F8F5E6', border: `1px solid ${accent}`, maxHeight: `calc(100vh - ${clear} - 24px)` }} onClick={(event) => event.stopPropagation()}>
         <header className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-tomorrow text-lg font-black uppercase" style={{ color: accent }}>Comm</h2>
           <div className="text-sm">{status ? <span>{status.count} / {status.max}</span> : null}<Link href="/admin/comm" target="_blank" className="ml-3 underline">La file</Link></div>
