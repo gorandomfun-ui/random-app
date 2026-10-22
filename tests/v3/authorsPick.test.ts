@@ -115,7 +115,13 @@ test('la taille de la chaîne vient avec ses vidéos, et une grande chaîne YouT
   const youtube = await youtubeAuthorVideos('key', 'UC' + 'e'.repeat(22), 8, big as typeof fetch, undefined, smallAuthor)
   assert.deepEqual(youtube, { videos: [], total: 3000 })
   assert.equal(asked.length, 1, 'la liste de ses vidéos n_est pas lue')
-  const dailymotion = await dailymotionAuthorVideos('x2b1rhk', 8, (async () => answer({ total: 94, list: [{ id: 'x87tt66', title: 'Saigon Zoo' }] })) as typeof fetch)
+  // Dailymotion's size comes from the account, its list sometimes leaving `total` out (22 October).
+  const account = async (url: string | URL | Request) => (String(url).includes('/videos?') ? answer({ has_more: true, list: [{ id: 'x87tt66', title: 'Saigon Zoo' }] }) : answer({ videos_total: 94 }))
+  const dailymotion = await dailymotionAuthorVideos('x2b1rhk', 8, account as typeof fetch, undefined, smallAuthor)
   assert.equal(dailymotion.total, 94)
   assert.equal(dailymotion.videos.length, 1)
+  const factoryAsked: string[] = []
+  const factory = async (url: string | URL | Request) => { factoryAsked.push(String(url)); return answer({ videos_total: 854 }) }
+  assert.deepEqual(await dailymotionAuthorVideos('x16zhas', 8, factory as typeof fetch, undefined, smallAuthor), { videos: [], total: 854 })
+  assert.equal(factoryAsked.length, 1, 'sa liste n_est pas lue')
 })

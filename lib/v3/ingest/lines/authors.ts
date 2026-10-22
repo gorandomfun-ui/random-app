@@ -67,6 +67,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
   let visited = 0
   let skippedForQuota = 0
   let bigAuthors = 0
+  let unknownSize = 0
   for (const visit of visits) {
     if (ctx.timeLeft() < DEADLINE_MARGIN_MS) break
     try {
@@ -77,13 +78,14 @@ export async function run(ctx: LineContext): Promise<LineResult> {
         if (!(await ctx.quota.reserve(YOUTUBE_AUTHOR_UNITS))) { skippedForQuota += 1; continue }
         answer = await youtubeAuthorVideos(apiKey, visit.id, TAKE_PER_PASS * 3, http, undefined, smallAuthor)
       } else {
-        answer = await dailymotionAuthorVideos(visit.id, TAKE_PER_PASS * 3, http)
+        answer = await dailymotionAuthorVideos(visit.id, TAKE_PER_PASS * 3, http, undefined, smallAuthor)
       }
       await remember(visit.key, answer)
       // A factory, not a person: left alone whatever was liked of it, until it is asked again (BIG_RECHECK_DAYS).
       if (!smallAuthor(answer.total)) {
-        bigAuthors += 1
-        ctx.log(`auteur ${visit.key} laissé : ${answer.total ?? 'nombre inconnu de'} vidéos sur sa chaîne`)
+        if (answer.total === null) unknownSize += 1
+        else bigAuthors += 1
+        ctx.log(`auteur ${visit.key} laissé : ${answer.total === null ? 'taille de sa chaîne inconnue' : `${answer.total} vidéos sur sa chaîne`}`)
         await wait(SPACING_MS)
         continue
       }
@@ -115,7 +117,7 @@ export async function run(ctx: LineContext): Promise<LineResult> {
     await wait(SPACING_MS)
   }
 
-  const note = `${visited} auteurs suivis · ${counters.inserted} entrées${bigAuthors ? ` · ${bigAuthors} grandes chaînes laissées (plus de ${SMALL_AUTHOR_MAX} vidéos)` : ''}${skippedForQuota ? ` · ${skippedForQuota} reportés faute de budget` : ''}`
+  const note = `${visited} auteurs suivis · ${counters.inserted} entrées${bigAuthors ? ` · ${bigAuthors} grandes chaînes laissées (plus de ${SMALL_AUTHOR_MAX} vidéos)` : ''}${unknownSize ? ` · ${unknownSize} de taille inconnue` : ''}${skippedForQuota ? ` · ${skippedForQuota} reportés faute de budget` : ''}`
   ctx.log(note)
   return { counters, errors, cursor: { visited, note } satisfies AuthorsCursor }
 }

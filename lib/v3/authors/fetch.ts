@@ -8,7 +8,8 @@
  * Each answer carries the channel's size, the count of videos its platform
  * gives (lib/v3/authors/pick.ts, smallAuthor): YouTube's in the call that finds
  * the list, which spares the second call for a channel too big to follow;
- * Dailymotion's in the list itself.
+ * Dailymotion's from the account, one free call before the list (its list
+ * leaves its `total` out for some accounts: 14 of 40 on 22 October).
  */
 
 import type { RawVideo } from '@/lib/ingest/videos'
@@ -72,10 +73,16 @@ export async function youtubeAuthorVideos(apiKey: string, channelId: string, tak
   return { videos, total }
 }
 
-type DailymotionResponse = { list?: Array<Record<string, unknown>>; total?: unknown }
+type DailymotionResponse = { list?: Array<Record<string, unknown>> }
 
-/** The latest videos of a Dailymotion account, and its size (the list's `total`). Free, like every call to them. */
-export async function dailymotionAuthorVideos(ownerId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal): Promise<AuthorVideos> {
+/**
+ * The latest videos of a Dailymotion account, and its size (`videos_total`, asked of the account first). `keep` says,
+ * from the size, whether to read its list at all. Free, like every call to them.
+ */
+export async function dailymotionAuthorVideos(ownerId: string, take: number, request: typeof fetch = fetch, signal?: AbortSignal, keep: (total: number | null) => boolean = () => true): Promise<AuthorVideos> {
+  const account = await ask<{ videos_total?: unknown }>(`https://api.dailymotion.com/user/${encodeURIComponent(ownerId)}?fields=videos_total`, request, signal)
+  const total = count(account?.videos_total)
+  if (!keep(total)) return { videos: [], total }
   const params = new URLSearchParams({
     limit: String(Math.min(50, Math.max(1, take))), page: '1', sort: 'recent',
     fields: 'id,title,description,url,thumbnail_url,duration,aspect_ratio,channel.id,owner.id,owner.screenname,created_time,views_total,private',
@@ -102,5 +109,5 @@ export async function dailymotionAuthorVideos(ownerId: string, take: number, req
       contextQueries: [`author:dailymotion:${ownerId}`],
     }]
   })
-  return { videos, total: count(payload?.total) }
+  return { videos, total }
 }
