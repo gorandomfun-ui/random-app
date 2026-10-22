@@ -14,6 +14,8 @@ import { queueItemById, type QueueItemWithMedia } from './queue'
 import { buildCaption, suggestHashtags } from './caption'
 
 const QUERY_MS = 2500
+/** The animations a slide may name, alone or together. */
+const GLITCH_KEYS = ['random', 'slices', 'bands', 'sweep', 'collage', 'feed', 'letters', 'ecto']
 const ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789'
 
 /** Eight characters nobody guesses, for /l/<key>. */
@@ -151,7 +153,8 @@ export async function updateDraft(db: Db, id: string, patch: DraftPatch): Promis
         mediaPlace: rectOf(slide.mediaPlace),
         margin: slide.margin === 'glitch' ? 'glitch' : slide.margin === 'none' ? 'none' : null,
         logoCorner: ['tl', 'tr', 'bl', 'br', 'none'].includes(slide.logoCorner as string) ? (slide.logoCorner as PostSlide['logoCorner']) : null,
-        glitchStyle: ['random', 'slices', 'bands', 'sweep', 'collage', 'feed', 'letters'].includes(slide.glitchStyle as string) ? (slide.glitchStyle as PostSlide['glitchStyle']) : null,
+        glitchStyle: GLITCH_KEYS.includes(slide.glitchStyle as string) ? (slide.glitchStyle as PostSlide['glitchStyle']) : null,
+        glitchStyles: Array.isArray(slide.glitchStyles) ? ((slide.glitchStyles as unknown[]).filter((k): k is string => typeof k === 'string' && GLITCH_KEYS.includes(k)).slice(0, 8) as NonNullable<PostSlide['glitchStyles']>) : null,
         animSeconds: typeof slide.animSeconds === 'number' && [3, 5, 8, 10].includes(slide.animSeconds) ? slide.animSeconds : null,
         mediaOnTop: slide.mediaOnTop === true ? true : null,
         mediaZoom: typeof slide.mediaZoom === 'number' ? Math.min(3, Math.max(1, Math.round(slide.mediaZoom * 100) / 100)) : null,

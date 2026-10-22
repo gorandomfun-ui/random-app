@@ -9,7 +9,11 @@
  *            the strips it touches shifted a little, ectoplasms drifting beside it;
  *   collage  the picture cut in rows; in some rows, blocks of the picture itself slide sideways, thinly framed;
  *   feed     the picture in a framed card under a camera's interface; now and then the feed scrolls one card;
- *   letters  a filter of giant letters — the slide's words, the wordmark or the brand block — open on the picture.
+ *   letters  a filter of giant letters — the slide's words, the wordmark or the brand block — open on the picture;
+ *   ecto     the frame solarised into three tones — deep, the accent, the picture's own ink — with dark edges,
+ *            waving by rows, a strip of noise at the foot; the force doses how far it takes the picture.
+ * Several may play at once: they run in a fixed order, each on the frame the one before left — the grounds
+ * first (feed, letters), then collage and sweep, the ectoplasm, and the cuts (random, slices, bands) last.
  * Only the slide's own picture is ever drawn: nothing from elsewhere appears without its source.
  * The force goes from nothing (the picture alone) to a lot, and the picture stays readable at the top.
  * With cleanOnTop the animation is the ground and the picture sits on it untouched, in a window of the
@@ -18,7 +22,9 @@
  * Every number comes from a hash, so a frame is the same twice.
  */
 
-export type GlitchStyle = 'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters'
+export type GlitchStyle = 'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters' | 'ecto'
+/** The order the animations run in when several are on: grounds, then the rest, the cuts last. */
+export const STYLE_ORDER: GlitchStyle[] = ['feed', 'letters', 'collage', 'sweep', 'ecto', 'random', 'slices', 'bands']
 export const GLITCH_STYLES: Array<{ key: GlitchStyle; name: string; hint: string }> = [
   { key: 'random', name: 'Random', hint: 'rafales, bandes, morceaux de l’image' },
   { key: 'slices', name: 'Tranches', hint: 'tranches horizontales jetées de côté, franges aux couleurs du thème' },
@@ -27,6 +33,7 @@ export const GLITCH_STYLES: Array<{ key: GlitchStyle; name: string; hint: string
   { key: 'collage', name: 'Collage', hint: 'l’image coupée en rangées ; dans certaines, des blocs de l’image glissent, finement encadrés' },
   { key: 'feed', name: 'Défilé', hint: 'l’image dans une carte sous l’interface d’une caméra ; de temps en temps le fil défile d’une carte' },
   { key: 'letters', name: 'Lettres', hint: 'un filtre de lettres géantes — ton texte, RANDOM ou le bloc marque — ouvert sur l’image' },
+  { key: 'ecto', name: 'Ectoplasme', hint: 'l’image solarisée en deux couleurs vives et du noir, qui ondule par rangées, une bande de bruit en bas ; la force dose jusqu’où elle y va' },
 ]
 
 export type DrawerInput = {
@@ -40,7 +47,9 @@ export type DrawerInput = {
   /** The dressing, transparent: the calm draw first, then the glitched variants. */
   overlays: HTMLImageElement[]
   intensity: number
-  style: GlitchStyle
+  /** One animation — or several, played together in STYLE_ORDER; `styles` wins when both are given. */
+  style?: GlitchStyle
+  styles?: GlitchStyle[]
   accent: string
   /** When the picture sits in a smaller rectangle, the ground behind it: the picture enlarged and darkened, or nothing. */
   ground?: boolean
@@ -130,6 +139,13 @@ export function createDrawer(input: DrawerInput) {
   const scratch2 = document.createElement('canvas'); scratch2.width = width; scratch2.height = height
   const s2 = scratch2.getContext('2d')!
   const px = Math.max(1, Math.round(width / 1080))
+  /** The ectoplasm's small canvas (a quarter of the frame, read back each frame) and the picture's own ink, found once a second. */
+  const ecto = document.createElement('canvas'); ecto.width = Math.max(16, Math.round(width / 4)); ecto.height = Math.max(16, Math.round(height / 4))
+  const ec = ecto.getContext('2d', { willReadFrequently: true })!
+  let ectoInkKey = -1, ectoInk: string | null = null
+  const hsl2hex = (h: number, sat: number, l: number) => { const f = (n: number) => { const kk = (n + h / 30) % 12; const a = sat * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(kk - 3, 9 - kk, 1)))) }; return `#${[f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}` }
+  const styles: GlitchStyle[] = STYLE_ORDER.filter((key) => (input.styles ?? [input.style ?? 'random']).includes(key))
+  const has = (key: GlitchStyle) => styles.includes(key)
 
   /** The fringes of a torn edge: a hairline of the accent above, of cream below (or the reverse). */
   const fringe = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number, q: number) => {
@@ -261,16 +277,16 @@ export function createDrawer(input: DrawerInput) {
     const k = Math.min(1, Math.max(0, input.intensity))
     const burst = variant > 0 && k > 0
     const seed = variant * 1000 + Math.floor(atMs / 90)
-    const style = input.style
 
-    // The picture itself, except for the styles that build the frame otherwise.
-    if (style !== 'feed' && style !== 'letters') {
+    // The picture itself, except when a style builds the frame otherwise.
+    if (!has('feed') && !has('letters')) {
       ctx.save(); ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.clip()
       ctx.drawImage(source, r.x, r.y, r.w, r.h)
       ctx.restore()
     }
 
-    if (style === 'random' && burst) {
+    const drawRandom = () => {
+      if (!burst) return
       const pieces = Math.round(2 + k * 6)
       for (let i = 0; i < pieces; i += 1) {
         const ph = Math.max(4, Math.round(height * (0.006 + hash(seed, i, 1) * 0.03 * k)))
@@ -280,14 +296,14 @@ export function createDrawer(input: DrawerInput) {
       }
     }
 
-    if (style === 'slices') {
+    const drawSlices = () => {
       // Calm: a few slices on the move, some fringed; burst: many, thrown far. Nothing at zero.
       throwSlices(ctx, seed, burst ? Math.round(8 + k * 26) : Math.round(k * 8), (burst ? 0.35 : 0.12) * (0.4 + k), burst ? 0.6 : 0.3, k, burst ? 0.05 : 0.03)
       if (burst && hash(seed, 9) < 0.35) { ctx.globalAlpha = 0.3; ctx.drawImage(ctx.canvas, Math.round(width * 0.012), 0); ctx.fillStyle = accent; ctx.globalCompositeOperation = 'multiply'; ctx.fillRect(0, 0, width, height); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1 }
       if (k > 0) cam(ctx, frame, atMs, false)
     }
 
-    if (style === 'bands') {
+    const drawBands = () => {
       // Lines of noise in the theme's tones, the frame's own slices shifted beneath; in a burst the frame fills with them.
       const lines = burst ? Math.round(40 + k * 180) : Math.round(k * 40)
       for (let i = 0; i < lines; i += 1) {
@@ -297,7 +313,7 @@ export function createDrawer(input: DrawerInput) {
       if (k > 0) cam(ctx, frame, atMs, false)
     }
 
-    if (style === 'sweep') {
+    const drawSweep = () => {
       // Each pass of 2.2 s has its own way: across, backwards, downwards, a part of the way, or a pause.
       const period = 2200, cycle = Math.floor(atMs / period), pos = (atMs % period) / period
       const q = hash(cycle, 80)
@@ -356,7 +372,7 @@ export function createDrawer(input: DrawerInput) {
       if (burst) throwSlices(ctx, seed, 3, 0.12, 0.4, k, 0.02)
     }
 
-    if (style === 'collage') {
+    const drawCollage = () => {
       // The frame in rows; in the rows awake, blocks of the picture itself slide sideways, thinly framed, over their own row.
       const rows = 5 + Math.round(k * 4)
       const rowH = height / rows
@@ -386,7 +402,7 @@ export function createDrawer(input: DrawerInput) {
       if (burst) throwSlices(ctx, seed, 4, 0.2, 0.3, k, 0.02)
     }
 
-    if (style === 'feed') {
+    const drawFeed = () => {
       // The picture in a framed card over its own darkened ground, under the camera's interface; now and then the feed scrolls one card.
       const g = coverRect(source)
       ctx.drawImage(source, g.x, g.y, g.w, g.h)
@@ -416,7 +432,7 @@ export function createDrawer(input: DrawerInput) {
       if (k > 0) cam(ctx, frame, atMs, true)
     }
 
-    if (style === 'letters') {
+    const drawLetters = () => {
       // The filter: the slide's words, the wordmark, or the brand block, in giant letters open on the picture; the ground is the picture, darkened as much as the letters cover it.
       const la = Math.min(1, Math.max(0, input.letterAlpha ?? 0.7))
       const g = coverRect(source)
@@ -460,6 +476,47 @@ export function createDrawer(input: DrawerInput) {
       noiseLines(ctx, seed, Math.round(k * 8), 0.8)
       if (burst) throwSlices(ctx, seed, Math.round(2 + k * 8), 0.5, 0.3, k, 0.12)
     }
+
+    const drawEcto = () => {
+      // The frame as it stands, read a quarter size and solarised: three tones — deep, the accent, the picture's own ink — with dark edges where they meet; laid back waving by rows, mixed in by the force; a strip of noise at the foot.
+      if (k <= 0) return
+      const EW = ecto.width, EH = ecto.height
+      ec.drawImage(ctx.canvas, 0, 0, EW, EH)
+      const data = ec.getImageData(0, 0, EW, EH), d = data.data
+      const inkKey = Math.floor(atMs / 1000)
+      if (inkKey !== ectoInkKey) {
+        // The picture's dominant hue, saturated: its own ink beside the accent.
+        ectoInkKey = inkKey
+        const bins = new Array<number>(12).fill(0)
+        for (let p = 0; p < d.length; p += 16) {
+          const rr = d[p] / 255, gg = d[p + 1] / 255, bb = d[p + 2] / 255, mx = Math.max(rr, gg, bb), mn = Math.min(rr, gg, bb), sat = mx ? (mx - mn) / mx : 0
+          if (sat < 0.18 || mx < 0.15) continue
+          const h = mx === rr ? ((gg - bb) / (mx - mn) + 6) % 6 : mx === gg ? (bb - rr) / (mx - mn) + 2 : (rr - gg) / (mx - mn) + 4
+          bins[Math.floor(h * 2) % 12] += sat
+        }
+        const best = bins.reduce((b, v, i) => (v > bins[b] ? i : b), 0)
+        ectoInk = bins[best] > 0 ? hsl2hex(best * 30 + 15, 0.85, 0.52) : null
+      }
+      const parse = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+      const tones = [parse(DEEP), parse(accent), parse(ectoInk ?? mix(accent, CREAM, 0.5))]
+      const levels = new Uint8Array(EW * EH)
+      for (let p = 0; p < d.length; p += 4) { const lum = (d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114) / 255; levels[p / 4] = lum < 0.3 ? 0 : lum < 0.62 ? 1 : 2 }
+      for (let i = 0; i < levels.length; i += 1) { const x = i % EW, y = Math.floor(i / EW); const edge = (x > 0 && levels[i - 1] !== levels[i]) || (y > 0 && levels[i - EW] !== levels[i]); const t = edge ? tones[0] : tones[levels[i]]; d[i * 4] = t[0]; d[i * 4 + 1] = t[1]; d[i * 4 + 2] = t[2] }
+      ec.putImageData(data, 0, 0)
+      ctx.globalAlpha = Math.min(1, k * 1.25); ctx.imageSmoothingEnabled = false
+      const rowsN = 48, rh = Math.ceil(height / rowsN)
+      for (let i = 0; i < rowsN; i += 1) {
+        const dx = Math.round(Math.sin(i / rowsN * 6.5 + atMs / 800) * width * (0.01 + k * 0.04) + Math.sin(i / rowsN * 19 - atMs / 1100) * width * 0.008 * k)
+        ctx.drawImage(ecto, 0, Math.floor(i / rowsN * EH), EW, Math.max(1, Math.ceil(EH / rowsN)), dx, i * rh, width, rh)
+      }
+      ctx.imageSmoothingEnabled = true
+      const st = Math.floor(atMs / 110)
+      for (let i = 0; i < 14; i += 1) { const y = height - Math.round(height * 0.1) + Math.round(hash(st, i, 440) * height * 0.1), hh = Math.max(px, Math.round(hash(st, i, 441) * 3 * px)); ctx.fillStyle = hash(st, i, 442) < 0.5 ? DEEP : tone(hash(st, i, 443)); ctx.fillRect(Math.round(hash(st, i, 444) * width * 0.5), y, Math.round(width * (0.2 + hash(st, i, 445) * 0.8)), hh) }
+      ctx.globalAlpha = 1
+    }
+
+    const draws: Record<GlitchStyle, () => void> = { feed: drawFeed, letters: drawLetters, collage: drawCollage, sweep: drawSweep, ecto: drawEcto, random: drawRandom, slices: drawSlices, bands: drawBands }
+    for (const key of styles) draws[key]()
 
     if (onTop) {
       // The picture itself, untouched, in its window over the animation, zoomed as wanted.

@@ -21,7 +21,8 @@ export type MontageRunInput = {
   overlayUrls: string[]
   /** 0 keeps every frame calm; up to 1 for bursts most of the time. */
   intensity: number
-  style: GlitchStyle
+  style?: GlitchStyle
+  styles?: GlitchStyle[]
   accent: string
   background: string
   /** The picture's rectangle as shares of the canvas, when the curator made it smaller; full screen otherwise. */
@@ -93,7 +94,7 @@ export async function recordMontage(input: MontageRunInput): Promise<MontageRunR
   const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve() })
   const schedule = burstSchedule((end - start) * 1000, input.intensity, overlays.length)
   // The video drawn into its rectangle, and the frame's own tearing: one drawer, the preview's too.
-  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, style: input.style, accent: input.accent, ground: Boolean(mp), text: input.text, titleFont: input.titleFont, cleanOnTop: input.mediaOnTop, zoom: input.mediaZoom, logo: input.logo, letterAlpha: input.letterAlpha })
+  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, styles: input.styles ?? [input.style ?? 'random'], accent: input.accent, ground: Boolean(mp), text: input.text, titleFont: input.titleFont, cleanOnTop: input.mediaOnTop, zoom: input.mediaZoom, logo: input.logo, letterAlpha: input.letterAlpha })
   let frame = 0
   const draw = (atMs: number) => { drawer(ctx, video, atMs, schedule, frame); frame += 1 }
   await seek(video, start)
@@ -155,7 +156,7 @@ async function recordStill(input: MontageRunInput, image: HTMLImageElement, choi
   const mp = input.mediaPlace
   const rect = mp ? cropRectIn(size, input.canvas, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, input.canvas, { top: 0, height: 1 }, 'centered')
   const area = mp ? { x: Math.round(mp.x * width), y: Math.round(mp.y * height), w: Math.round(mp.w * width), h: Math.round(mp.h * height) } : { x: 0, y: 0, w: width, h: height }
-  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, style: input.style, accent: input.accent, ground: Boolean(mp), text: input.text, titleFont: input.titleFont, cleanOnTop: input.mediaOnTop, zoom: input.mediaZoom, logo: input.logo, letterAlpha: input.letterAlpha })
+  const drawer = createDrawer({ width, height, background: input.background, rect, clip: area, overlays, intensity: input.intensity, styles: input.styles ?? [input.style ?? 'random'], accent: input.accent, ground: Boolean(mp), text: input.text, titleFont: input.titleFont, cleanOnTop: input.mediaOnTop, zoom: input.mediaZoom, logo: input.logo, letterAlpha: input.letterAlpha })
   const schedule = burstSchedule(seconds * 1000, input.intensity, overlays.length)
   const stream = work.captureStream(30)
   const recorder = new MediaRecorder(stream, { mimeType: choice.mimeType, videoBitsPerSecond: 8_000_000 })
