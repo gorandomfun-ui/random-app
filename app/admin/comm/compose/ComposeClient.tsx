@@ -61,6 +61,8 @@ const title = 'mb-3 font-tomorrow text-xs font-black uppercase tracking-[0.18em]
 
 type MediaChoice = { key: string; label: string; itemId: string; mediaId: string | null; media: MediaDoc | null; thumb: string | null; video: boolean; poster?: string | null; seconds?: number | null }
 type Tool = 'text' | 'style'
+/** The slide's animations: the list when it has one, else its single style; an empty list means the media alone. */
+const stylesOf = (s: { glitchStyle?: string | null; glitchStyles?: string[] | null }): GlitchStyle[] => (s.glitchStyles ? s.glitchStyles : [s.glitchStyle ?? 'random']) as GlitchStyle[]
 
 function logoPlaceOf(corner: PostSlide['logoCorner'], family: Family): Placement | null {
   if (!corner || corner === 'none') return null
@@ -209,7 +211,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   }, [isVideo, slide?.trim, slideMedia, sound, previewSrc])
 
   // The live preview: the same drawer as the export, on a half-size canvas, following the clip as it plays.
-  const animated = Boolean(slide && (slide.glitchStyle ?? 'random') !== 'random')
+  const animated = Boolean(slide && stylesOf(slide).some((x) => x !== 'random'))
   const liveOn = Boolean(slide?.itemId && (isVideo || animated))
   const overlayKey = slide ? renderUrl(settled?.[current] ?? slide, current, 'overlay', 0.5) : ''
   useEffect(() => {
@@ -236,7 +238,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
       const mp = slide.mediaPlace
       const rect = mp ? cropRectIn(size, { width: w, height: h }, { left: mp.x, top: mp.y, width: mp.w, height: mp.h }, 'centered') : cropRect(size, { width: w, height: h }, { top: 0, height: 1 }, 'centered')
       const clip = mp ? { x: Math.round(mp.x * w), y: Math.round(mp.y * h), w: Math.round(mp.w * w), h: Math.round(mp.h * h) } : null
-      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, style: (slide.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp), text: slide.text, titleFont, cleanOnTop: Boolean(slide.mediaOnTop), zoom: slide.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: slide.letterAlpha ?? 0.7 })
+      const drawer = createDrawer({ width: w, height: h, background: '#191916', rect, clip, overlays, intensity: slide.glitch ?? 0, styles: stylesOf(slide), accent: PALETTE_COLORS[slide.palette] ?? '#F8F5E6', ground: Boolean(mp), text: slide.text, titleFont, cleanOnTop: Boolean(slide.mediaOnTop), zoom: slide.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: slide.letterAlpha ?? 0.7 })
       const schedule = burstSchedule(60_000, slide.glitch ?? 0, overlays.length)
       const started = performance.now()
       const tick = () => { if (stopped) return; drawer(ctx, source, (performance.now() - started) % 60_000, schedule, frame); frame += 1; handle = requestAnimationFrame(tick) }
@@ -244,7 +246,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     })
     return () => { stopped = true; if (handle) cancelAnimationFrame(handle) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawn when the dressing changes
-  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.mediaZoom, slide?.letterAlpha, logoReady, previewSrc])
+  }, [overlayKey, isVideo, liveOn, slide?.glitch, slide?.glitchStyle, slide?.glitchStyles, slide?.mediaPlace, slide?.palette, slide?.text, slide?.mediaOnTop, slide?.mediaZoom, slide?.letterAlpha, logoReady, previewSrc])
 
   const trim = slide?.trim ?? { startSec: 0, endSec: Math.min(clipDuration ?? slideMedia?.durationSec ?? maxSeconds, maxSeconds) }
   const setTrim = (startSec: number, endSec: number) => {
@@ -277,12 +279,12 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const fileOf = useCallback(async (s: PostSlide, index: number, clips: Map<number, HTMLVideoElement>): Promise<{ blob: Blob; extension: string; video: boolean }> => {
     const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
     const overlays = [renderUrl({ ...s, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(s, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
-    const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, style: (s.glitchStyle ?? 'random') as GlitchStyle, accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), mediaZoom: s.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
+    const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, styles: stylesOf(s), accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), mediaZoom: s.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
     if (media?.contentType.startsWith('video/')) {
       const out = await recordMontage({ ...common, src: readyClips.get(media.blobUrl) ?? media.blobUrl, video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
       return { blob: out.blob, extension: out.extension, video: true }
     }
-    if ((s.glitchStyle ?? 'random') !== 'random' && media?.contentType.startsWith('image/')) {
+    if (stylesOf(s).some((x) => x !== 'random') && media?.contentType.startsWith('image/')) {
       // A picture with an animation leaves as a clip of a few seconds.
       const image = await new Promise<HTMLImageElement>((resolve, reject) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => reject(new Error('image')); img.src = media.blobUrl })
       const out = await recordMontage({ ...common, src: media.blobUrl, image, seconds: s.animSeconds ?? 5, trim: { startSec: 0, endSec: s.animSeconds ?? 5 } })
@@ -477,11 +479,12 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   <div className="flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Couleur</span>{PALETTE_COLORS.map((c, i) => <button key={c} aria-label={`Couleur ${i + 1}`} className={`h-7 w-7 rounded-full border-2 ${slide.palette === i ? 'border-white' : 'border-transparent'}`} style={{ background: c }} onClick={() => updateSlide({ palette: i })} />)}</div>
                   <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Logo</span>{([['tl', 'haut gauche'], ['tr', 'haut droite'], ['bl', 'bas gauche'], ['br', 'bas droite'], ['none', 'aucun']] as const).map(([k, name]) => <button key={k} className={(slide.logoCorner ?? 'tl') === k ? chipOn : chip} onClick={() => updateSlide({ logoCorner: k })}>{name}</button>)}</div>
                   <div className="mt-3 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Animation</span>
-                    {GLITCH_STYLES.map((g) => <button key={g.key} title={g.hint} className={(slide.glitchStyle ?? 'random') === g.key ? chipOn : chip} onClick={() => updateSlide({ glitchStyle: g.key, glitch: (slide.glitch ?? 0) > 0 ? slide.glitch : 0.6 })}>{g.name}</button>)}
+                    {GLITCH_STYLES.map((g) => <button key={g.key} title={g.hint} aria-pressed={stylesOf(slide).includes(g.key)} className={stylesOf(slide).includes(g.key) ? chipOn : chip} onClick={() => { const on = stylesOf(slide); const next = on.includes(g.key) ? on.filter((x) => x !== g.key) : [...on, g.key]; updateSlide({ glitchStyles: next, glitchStyle: next[0] ?? 'random', glitch: (slide.glitch ?? 0) > 0 ? slide.glitch : 0.6 }) }}>{g.name}</button>)}
+                    <span className="text-xs text-gray-500">à cumuler : chacune joue sur l’image que la précédente a laissée</span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Force</span><input type="range" min={0} max={1} step={0.05} value={slide.glitch ?? 0} onChange={(e) => updateSlide({ glitch: Number(e.target.value) })} className="w-40" aria-label="Intensité du glitch" /><span className="w-10 text-xs">{Math.round((slide.glitch ?? 0) * 100)} %</span></div>
-                  <p className="mt-1 text-xs text-gray-500">{GLITCH_STYLES.find((g) => g.key === (slide.glitchStyle ?? 'random'))?.hint}. L’aperçu montre le vrai résultat ; seul ton média est dessiné, jamais une autre image.</p>
-                  {(slide.glitchStyle ?? 'random') === 'letters' ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Filtre</span><input type="range" min={0.1} max={1} step={0.05} value={slide.letterAlpha ?? 0.7} onChange={(e) => updateSlide({ letterAlpha: Number(e.target.value) })} className="w-40" aria-label="Intensité du texte-filtre" /><span className="w-10 text-xs">{Math.round((slide.letterAlpha ?? 0.7) * 100)} %</span><span className="text-xs text-gray-500">les lettres couvrent plus ou moins l’image</span></div> : null}
+                  <p className="mt-1 text-xs text-gray-500">{stylesOf(slide).length ? GLITCH_STYLES.filter((g) => stylesOf(slide).includes(g.key)).map((g) => `${g.name} : ${g.hint}`).join(' · ') : 'aucune animation : le média seul'}. L’aperçu montre le vrai résultat ; seul ton média est dessiné, jamais une autre image.</p>
+                  {stylesOf(slide).includes('letters') ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="w-14 text-xs text-gray-400">Filtre</span><input type="range" min={0.1} max={1} step={0.05} value={slide.letterAlpha ?? 0.7} onChange={(e) => updateSlide({ letterAlpha: Number(e.target.value) })} className="w-40" aria-label="Intensité du texte-filtre" /><span className="w-10 text-xs">{Math.round((slide.letterAlpha ?? 0.7) * 100)} %</span><span className="text-xs text-gray-500">les lettres couvrent plus ou moins l’image</span></div> : null}
                   {isVideo || animated ? <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(slide.mediaOnTop)} onChange={(e) => {
                     // The ground needs room: the picture shrinks when it fills the frame.
                     // On: the picture in a window of the screen's shape, a margin around it. Off: the picture fills the frame again.

@@ -85,11 +85,10 @@ export const SUBJECTS: Array<{ key: Subject; name: string; hint: string }> = [
   { key: 'wordmark', name: 'Logo RANDOM', hint: 'le mot sur une ligne' },
   { key: 'icon', name: 'Icônes', hint: 'une icône du site, grande, traitée comme la marque' },
 ]
-export type BrandMode = 'center' | 'random' | 'deformed' | 'exploded'
+export type BrandMode = 'center' | 'random' | 'exploded'
 export const BRAND_MODES: Array<{ key: BrandMode; name: string; hint: string }> = [
   { key: 'center', name: 'Centre', hint: 'la marque au centre, comme dans les refs ; elle déborde et grossit par moments' },
   { key: 'random', name: 'Aléatoire', hint: 'sa place change d’un cycle à l’autre' },
-  { key: 'deformed', name: 'Déformée', hint: 'étirée, cisaillée, en miroir pendant les retombées' },
   { key: 'exploded', name: 'Éclatée', hint: 'ses cellules se dispersent plus loin et plus souvent' },
 ]
 
@@ -603,12 +602,6 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
     let alpha = alphaIn, spread = 0
     if (shot.enter && local < 0.3) { const t = easeOut(local / 0.3); const q = hash(shot.seed, 92); if (q < 0.4) { const f = 1.8 - 0.8 * t; const nw = Math.round(w * f), nh = Math.round(h * f); x = Math.round(x + w / 2 - nw / 2); y = Math.round(y + h / 2 - nh / 2); w = nw; h = nh } else if (q < 0.7) spread = 1 - t; else alpha *= t }
     if (shot.exit && local > 0.85) { const t = easeIn((local - 0.85) / 0.15); spread = t * 1.2 }
-    if (input.brandMode === 'deformed' && shot.phase === 'settle') {
-      const q = hash(shot.seed, 93)
-      if (q < 0.33) { const f = 1.08 + hash(shot.seed, 94) * 0.35 + Math.sin(at / 1300) * 0.04; const nw = Math.round(w * f); x = Math.round(x + w / 2 - nw / 2); w = nw }
-      else if (q < 0.66) { ctx.save(); ctx.transform(1, 0, (hash(shot.seed, 95) - 0.5) * 0.5 + Math.sin(at / 1100) * 0.06, 1, 0, 0); x -= Math.round(((hash(shot.seed, 95) - 0.5) * 0.5) * (y + h / 2)) }
-      else { ctx.save(); ctx.translate(x + w, 0); ctx.scale(-1, 1); x = 0 }
-    }
     ctx.globalAlpha = alpha
     if (spread > 0.001) {
       for (const c of cellsOf(shot, { x, y, w, h })) { const ang = hash(shot.seed, c.i, 96) * Math.PI * 2, dist = (0.1 + hash(shot.seed, c.i, 97) * 0.4) * W * spread; ctx.drawImage(img, c.sx, c.sy, c.sw, c.sh, Math.round(c.x + Math.cos(ang) * dist), Math.round(c.y + Math.sin(ang) * dist * 0.7), Math.round(c.w), Math.round(c.h)) }
@@ -619,7 +612,6 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
       case 'filled': { const o = Math.max(1, Math.round(u * 2)); const tint = tinted(img, CREAM, w, h); for (const [dx, dy] of [[-o, 0], [o, 0], [0, -o], [0, o]]) ctx.drawImage(tint, 0, 0, w, h, x + dx, y + dy, w, h); filledShape(ctx, shot, at, img, x, y, w, h); break }
       default: ctx.drawImage(img, x, y, w, h)
     }
-    if (input.brandMode === 'deformed' && shot.phase === 'settle' && hash(shot.seed, 93) >= 0.33) ctx.restore()
     ctx.globalAlpha = 1
     // The pill under the block, unless it or the block would cross the words.
     const pillW = Math.max(S.w * 0.35, r.w * 0.7), pillY = Math.round(r.y + r.h + H * 0.025)
@@ -727,7 +719,12 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
       case 'card': {
         if (p.a < 0.5) { ctx.fillStyle = hash(s, 204) < 0.6 ? accent : (others[0] ?? accent); ctx.fillRect(0, 0, W, H) } else bed(ctx, shot, at, 0.8)
         drawCard(ctx, shot, at)
-        if (p.b < 0.5) { const w = Math.round(S.w * 0.26), h = Math.round(w * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)); drawBrand(ctx, { ...shot, subject: 'wordmark', stacked: false, treat: 'cream', pill: false, residue: [] }, at, { x: S.x + S.w - w, y: S.y + S.h - h, w, h }) }
+        // A small wordmark on the card, in one of the four corners, its width by the chosen size — never the same corner every time.
+        if (p.b < 0.5) {
+          const share = input.brandSize === 's' ? 0.18 : input.brandSize === 'm' ? 0.26 : input.brandSize === 'l' ? 0.34 : input.brandSize === 'xl' ? 0.42 : 0.2 + hash(s, 205) * 0.16
+          const w = Math.round(S.w * share), h = Math.round(w * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)), corner = Math.floor(hash(s, 206) * 4)
+          drawBrand(ctx, { ...shot, subject: 'wordmark', stacked: false, treat: 'cream', pill: false, residue: [] }, at, { x: corner % 2 ? S.x + S.w - w : S.x, y: corner < 2 ? S.y : S.y + S.h - h, w, h })
+        }
         break
       }
       case 'hint': {
@@ -880,8 +877,11 @@ export function createPromo(input: PromoInput, W: number, H: number): Promo {
             if (m) { ctx.imageSmoothingEnabled = false; const rowsN = 48, rh = Math.ceil(H / rowsN); for (let i = 0; i < rowsN; i += 1) { const y = i * rh; const dx = Math.round(Math.sin(i / rowsN * 6.5 + at / 800) * W * (0.02 + g * 0.04) + Math.sin(i / rowsN * 19 - at / 1100) * W * 0.012); ctx.drawImage(m, 0, Math.floor(i / rowsN * m.height), m.width, Math.max(1, Math.ceil(m.height / rowsN)), dx, y, W, rh) } ctx.imageSmoothingEnabled = true }
             else { ctx.fillStyle = accent; ctx.fillRect(0, 0, W, H) }
             for (let i = 0; i < 14; i += 1) { const y = H - Math.round(H * 0.1) + Math.round(hash(s, step, i, 440) * H * 0.1), hh = Math.max(px, Math.round(hash(s, step, i, 441) * 3 * px)); ctx.fillStyle = hash(s, i, 442) < 0.5 ? DEEP : colourAt(hash(s, i, 443)); ctx.fillRect(Math.round(hash(s, step, i, 444) * W * 0.5), y, Math.round(W * (0.2 + hash(s, i, 445) * 0.8)), hh) }
-            // The brand small at the foot, as an outline so it reads on the solarised ground — nothing laid behind it.
-            if (local > 0.55) { const w = Math.round(W * 0.42), h = Math.round(w * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)); drawBrand(ctx, { ...shot, subject: 'wordmark', stacked: false, treat: 'stroke', pill: true, residue: [] }, at, { x: Math.round(W / 2 - w / 2), y: Math.round(H * 0.84 - h / 2), w, h }); pillAt(ctx, W / 2, Math.round(H * 0.84 + h / 2 + H * 0.015), w * 0.8) }
+            // The brand once the ground has settled: by the film's own rules — the cycle's subject, the chosen place and size, its treatment — and, on a random size, now and then the reference's small wordmark at the foot.
+            if (local > 0.55) {
+              if (input.brandSize === 'random' && hash(shot.cycle, 530) < 0.3) { const w = Math.round(W * (0.3 + hash(shot.cycle, 531) * 0.2)), h = Math.round(w * input.logo.naturalHeight / Math.max(1, input.logo.naturalWidth)), cx = Math.round(W * (0.3 + hash(shot.cycle, 532) * 0.4)); drawBrand(ctx, { ...shot, subject: 'wordmark', stacked: false, treat: shot.treat === 'filled' ? 'stroke' : shot.treat, pill: true, residue: [] }, at, { x: Math.round(cx - w / 2), y: Math.round(H * 0.84 - h / 2), w, h }); pillAt(ctx, cx, Math.round(H * 0.84 + h / 2 + H * 0.015), w * 0.8) }
+              else { drawBrand(ctx, { ...shot, treat: shot.treat === 'filled' ? 'stroke' : shot.treat }, at); mistreat(ctx, shot, r, at, g * 0.6) }
+            }
             break
           }
           default: { drawBrand(ctx, shot, at); mistreat(ctx, shot, r, at, g) }

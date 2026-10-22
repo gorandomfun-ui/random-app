@@ -120,8 +120,10 @@ export type PostSlide = {
   logoCorner?: 'tl' | 'tr' | 'bl' | 'br' | 'none' | null
   /** The part of the clip to keep, in seconds. */
   trim?: { startSec: number; endSec: number } | null
-  /** The site's glitch, or one of the six animations after the references. */
-  glitchStyle?: 'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters' | null
+  /** The site's glitch, or one of the animations after the references — the first of `glitchStyles` when several play together. */
+  glitchStyle?: 'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters' | 'ecto' | null
+  /** The animations played together, in the drawer's own order; empty or absent means `glitchStyle` alone. */
+  glitchStyles?: Array<'random' | 'slices' | 'bands' | 'sweep' | 'collage' | 'feed' | 'letters' | 'ecto'> | null
   /** For a picture given an animation: how long the clip lasts, in seconds. */
   animSeconds?: number | null
   /** The animation as the ground, the picture drawn clean over it, in a window of the screen's shape with a margin. */
