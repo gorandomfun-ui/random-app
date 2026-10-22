@@ -93,6 +93,8 @@ const esDictionary = {
     unmute: "Activar sonido",
     tapForSound: "Toca dos veces para oír",
     openExternally: "Abrir en la app",
+    authorMore: "{count} vídeos más en Random",
+    authorChannel: "Su canal en {platform}",
   },
   shuffle: {
     ...enDictionary.shuffle,

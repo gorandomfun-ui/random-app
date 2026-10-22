@@ -106,7 +106,9 @@ const deDictionary = {
     "mute": "Video stummschalten",
     "unmute": "Videoton einschalten",
     "tapForSound": "Zweimal tippen für Ton",
-    "openExternally": "In App öffnen"
+    "openExternally": "In App öffnen",
+    "authorMore": "{count} weitere Videos in Random",
+    "authorChannel": "Kanal auf {platform}"
   },
   "web": {
     "openHere": "Hier öffnen",

@@ -19,6 +19,7 @@ import { digDrawSwitchedOn, selectDig } from './digDraw'
 import { selectWheel, wheelSwitchedOn } from './wheel'
 import { bilibiliInMix, onComputer } from '../v3/bilibili'
 import { countServed, servedCountOn } from './served'
+import { authorMore } from './author'
 import { parseKept, recordKept } from './kept'
 import { spokenLanguage } from './spoken'
 import { exposureOf } from './diversity'
@@ -114,6 +115,12 @@ export function randomHandler<T>(deps: Dependencies<T>) {
       // The language the video speaks rides on it too, for the subtitles the page picks (lib/random/captions.ts).
       const spoken = publicCandidate.type === 'video' ? spokenLanguage(publicCandidate) : undefined
       if (spoken) publicCandidate.payload = { ...(publicCandidate.payload as object), spokenLang: spoken } as T
+      // And how many more of its author's videos the site holds, up to a series: the légende offers them, or the channel (lib/random/author.ts).
+      const author = publicCandidate.type === 'video' ? (publicCandidate.payload as { channelKey?: unknown; _id?: unknown }) : null
+      if (author && typeof author.channelKey === 'string') {
+        const more = await authorMore(db, author.channelKey, String(author._id ?? '')).catch(() => null)
+        if (more !== null) publicCandidate.payload = { ...(publicCandidate.payload as object), authorMore: more } as T
+      }
       return json({ version: 2, candidate: publicCandidate, branch: choice.branch, fallback: choice.fallback, selection: choice.selection, ...(theme ? { theme } : {}), ...(wheel ? { wheel: wheel.wheel } : {}), ...(dig ? { dig: dig.dig } : {}),
         ...(cool ? { cool: cool.cool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local' } : {}) })
     } catch { return json({ error: 'unavailable' }, 503) }

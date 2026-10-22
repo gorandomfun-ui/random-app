@@ -106,7 +106,9 @@ const frDictionary = {
     "mute": "Couper le son",
     "unmute": "Activer le son",
     "tapForSound": "Touchez deux fois pour le son",
-    "openExternally": "Ouvrir dans l'app"
+    "openExternally": "Ouvrir dans l'app",
+    "authorMore": "{count} autres vidéos dans Random",
+    "authorChannel": "Sa chaîne sur {platform}"
   },
   "web": {
     "openHere": "Ouvrir ici",

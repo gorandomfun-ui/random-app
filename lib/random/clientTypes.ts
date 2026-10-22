@@ -53,6 +53,10 @@ export type VideoItem = Identifiable & {
   source?: SourceInfo
   /** Who published it, when the base knows it truly (YouTube channel, Bilibili uploader, a real Dailymotion account). */
   author?: string | null
+  /** The key the site knows that author by (lib/random/author.ts): their channel's page, their other videos here. */
+  channelKey?: string
+  /** How many other videos of that author the site holds, counted up to a series (the draw's count, lib/discovery/author.ts). */
+  authorMore?: number
 } & ToneAttributes & DiscoveryMetadata
 
 export type AiMetadata = {

@@ -106,7 +106,9 @@ const jpDictionary = {
     "mute": "動画をミュート",
     "unmute": "動画のミュートを解除",
     "tapForSound": "二回タップで音声オン",
-    "openExternally": "アプリで開く"
+    "openExternally": "アプリで開く",
+    "authorMore": "Randomで他の動画を{count}本",
+    "authorChannel": "{platform}のチャンネル"
   },
   "web": {
     "openHere": "ここで開く",

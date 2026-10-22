@@ -2,6 +2,7 @@ import type { Collection, Document, Filter, ObjectId } from 'mongodb'
 
 import { getDbSafe } from './data'
 import { shownSourceName } from './sourceName'
+import { videoChannelKey } from '../discovery/author'
 import type { RandomContentItem } from './clientTypes'
 import type { ItemType, RandomSelectOptions } from './types'
 import {
@@ -179,6 +180,7 @@ export function normalizeWaveDocument(doc: WaveDocument): WaveItem | null {
       provider,
       source: source(doc, provider, url),
       author: videoAuthor(doc),
+      channelKey: videoChannelKey(doc),
     }
   }
 

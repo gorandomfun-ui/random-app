@@ -106,7 +106,9 @@ const enDictionary = {
     "mute": "Mute video",
     "unmute": "Unmute video",
     "tapForSound": "Tap twice for sound",
-    "openExternally": "Open in app"
+    "openExternally": "Open in app",
+    "authorMore": "{count} more videos in Random",
+    "authorChannel": "Their channel on {platform}"
   },
   "web": {
     "openHere": "Open here",

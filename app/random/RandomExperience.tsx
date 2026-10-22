@@ -22,6 +22,7 @@ import { useScore } from '@/providers/ScoreProvider'
 import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES, glitchInkVars, type Theme } from '@/lib/theme'
 import { LEGEND_LINE, LEGEND_ROW, LEGEND_ROW_GAP, LEGEND_SIZE, aloneOnSecondLine, joinLastWords, keepSignsAttached, sizeForOneLine } from '@/lib/random/legend'
+import { AUTHOR_SERIES_SIZE, authorChannelUrl, authorPlatform, offersAuthorSeries } from '@/lib/random/author'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
 import { dailymotionEmbedUrl } from '@/lib/players/dailymotionPlayer'
@@ -1312,7 +1313,70 @@ function SourceArrow({ item, href, onOpenWeb, color }: { item: DisplayItem; href
   return <a href={href} target="_blank" rel="noreferrer" aria-label="Open the source" style={style}>{icon}</a>
 }
 
-function SourceBlock({ item, theme, onOpenWeb }: { item: DisplayItem; theme: Theme; onOpenWeb?: (item: WebContentItem) => void }) {
+/**
+ * The author's name in the légende (lib/random/author.ts): a touch gives their videos in Random or their channel when the
+ * site holds enough of them, their channel straight away when it holds too few; plain words when no channel is known.
+ */
+function AuthorName({ item, author, onAuthor }: { item: DisplayItem; author: string; onAuthor?: (item: VideoContentItem) => void }) {
+  const text: CSSProperties = { minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+  const video = item.type === 'video' ? item : null
+  const channel = video ? authorChannelUrl(video.channelKey) : null
+  if (!video || !channel) return <span style={text}>{author}</span>
+  const link: CSSProperties = { ...text, color: 'inherit', textDecoration: 'underline', textDecorationThickness: 1, textUnderlineOffset: 3 }
+  if (onAuthor && offersAuthorSeries(video.authorMore)) {
+    return (
+      <button type="button" onClick={() => onAuthor(video)} style={{ ...link, background: 'none', border: 0, padding: 0, font: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+        {author}
+      </button>
+    )
+  }
+  return <a href={channel} target="_blank" rel="noreferrer" style={link}>{author}</a>
+}
+
+/** Where to go from an author's name: a few more of their videos here, or their channel at its platform. */
+function AuthorPanel({ item, theme, busy, empty, onRandom, onClose }: { item: VideoContentItem; theme: Theme; busy: boolean; empty: boolean; onRandom: () => void; onClose: () => void }) {
+  const { t } = useI18n()
+  const channel = authorChannelUrl(item.channelKey)
+  const platform = authorPlatform(item.channelKey) ?? ''
+  const count = Math.min(item.authorMore ?? 0, AUTHOR_SERIES_SIZE)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }} role="dialog" aria-modal="true" aria-label={item.author ?? platform}>
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative w-[min(360px,92vw)] rounded-3xl px-6 pt-4 pb-6 flex flex-col gap-3 shadow-2xl" style={{ backgroundColor: theme.text, color: theme.cream }}>
+        <div className="flex items-center gap-3">
+          <span className="font-tomorrow font-bold uppercase" style={{ flex: 1, minWidth: 0, fontSize: 17, lineHeight: '22px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.author}</span>
+          <button type="button" aria-label="Close" onClick={onClose} className="text-2xl leading-none" style={{ color: theme.cream }}>×</button>
+        </div>
+        {empty ? null : (
+          <button
+            type="button"
+            onClick={onRandom}
+            disabled={busy}
+            aria-busy={busy}
+            className="w-full px-5 py-3 rounded-[28px] uppercase font-tomorrow font-bold"
+            style={{ backgroundColor: theme.cream, color: theme.text, opacity: busy ? 0.7 : 1 }}
+          >
+            {t('video.authorMore', '{count} more videos in Random').replace('{count}', String(count))}
+          </button>
+        )}
+        {channel ? (
+          <a
+            href={channel}
+            target="_blank"
+            rel="noreferrer"
+            onClick={onClose}
+            className="w-full px-5 py-3 rounded-[28px] uppercase font-tomorrow font-bold text-center"
+            style={{ border: `2px solid ${theme.cream}`, color: theme.cream }}
+          >
+            {t('video.authorChannel', 'Their channel on {platform}').replace('{platform}', platform)}
+          </a>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function SourceBlock({ item, theme, onOpenWeb, onAuthor }: { item: DisplayItem; theme: Theme; onOpenWeb?: (item: WebContentItem) => void; onAuthor?: (item: VideoContentItem) => void }) {
   if (item.type === 'encourage' || item.type === 'minigame') return null
   const { title, author, href, giphy } = sourceParts(item)
   const mark = giphy ? null : markOf(item)
@@ -1336,7 +1400,7 @@ function SourceBlock({ item, theme, onOpenWeb }: { item: DisplayItem; theme: The
           <div className="font-inter font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 8, height: LEGEND_ROW, marginTop: heading ? LEGEND_ROW_GAP : 0, color: theme.text, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {mark ? <ProviderMark mark={mark} accent={theme.text} /> : null}
             {mark && author ? <span aria-hidden="true" style={{ opacity: 0.7 }}>│</span> : null}
-            {author ? <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{author}</span> : null}
+            {author ? <AuthorName item={item} author={author} onAuthor={onAuthor} /> : null}
             {license ? (
               // CC BY-SA asks for the licence by name, with its address, and to say the text was adapted (20 October: Wikipedia's anecdotes).
               <a href={license.url || undefined} target="_blank" rel="noreferrer license" className="underline" style={{ whiteSpace: 'nowrap', textTransform: 'none' }}>
@@ -3155,6 +3219,12 @@ export function RandomExperience({
   const [heartGlitch, setHeartGlitch] = useState(false)
   const [waveMode, setWaveMode] = useState(false)
   const [waveRemaining, setWaveRemaining] = useState(0)
+  // An author's series (the légende's "5 autres vidéos dans Random", lib/random/author.ts): the panel asking where to go,
+  // the videos still to come, and the count ENCORE shows as for a Wave (the one on screen included).
+  const [authorPanel, setAuthorPanel] = useState<{ item: VideoContentItem; busy: boolean; empty: boolean } | null>(null)
+  const [authorRemaining, setAuthorRemaining] = useState(0)
+  const authorRemainingRef = useRef(0)
+  const authorQueueRef = useRef<VideoContentItem[]>([])
   const [waveAvailability, setWaveAvailability] = useState<WaveAvailabilityState>({ key: null, status: 'idle' })
   const waveModeRef = useRef(false)
   const waveRemainingRef = useRef(0)
@@ -5521,6 +5591,13 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
   const handleRandomAgainRef = useRef<(() => void) | null>(null)
   handleRandomAgainRef.current = handleRandomAgain
 
+  /** An author's series over: the next ENCORE draws again (lib/random/author.ts). */
+  const endAuthorSeries = useCallback(() => {
+    authorQueueRef.current = []
+    authorRemainingRef.current = 0
+    setAuthorRemaining(0)
+  }, [])
+
   const handleWave = useCallback(async () => {
     if (fullscreenWebRef.current) return
     if (transitionLockedRef.current) return
@@ -5528,6 +5605,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
     if (!current || current.type === 'encourage' || current.type === 'minigame') return
 
     const enteringWave = !waveModeRef.current
+    if (enteringWave && authorRemainingRef.current) endAuthorSeries()
     transitionLockedRef.current = true
     setTransitionLocked(true)
 
@@ -5573,18 +5651,86 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
       transitionLockedRef.current = false
       setTransitionLocked(false)
     }
-  }, [ensureWaveTrail, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
+  }, [endAuthorSeries, ensureWaveTrail, takePreparedWaveCandidate, triggerPageGlitch, triggerWaveTransition, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle, commitWaveDisplay, waveDiscoveryMode])
+
+  /** One video of an author's series on screen, the way a draw shows its content (loadNext), outside the draw's queue. */
+  const showAuthorVideo = useCallback(async (next: VideoContentItem) => {
+    transitionLockedRef.current = true
+    setTransitionLocked(true)
+    try {
+      await waitForContentMedia(next)
+      triggerPageGlitch('normal', effectiveProgressionIntensity)
+      await waitForTransitionReveal()
+      const key = getContentKey(next)
+      if (key) registerRecentKey(key)
+      markShown(next._id ?? null)
+      setIsSecond((prev) => !prev)
+      setTrigger((value) => value + 1)
+      currentItemRef.current = next
+      setCurrentItem(next)
+      resetWindowScrollPosition()
+      setLiked(isLiked(next))
+      updateTheme()
+      playRandom(progressionIntensity)
+      await waitForNextPaint()
+      await waitForTransitionSettle('random')
+      lastInteractionAtRef.current = Date.now()
+      persistRandomSession()
+    } finally {
+      transitionLockedRef.current = false
+      setTransitionLocked(false)
+    }
+  }, [effectiveProgressionIntensity, getContentKey, persistRandomSession, progressionIntensity, registerRecentKey, triggerPageGlitch, updateTheme, waitForContentMedia, waitForNextPaint, waitForTransitionReveal, waitForTransitionSettle])
+
+  const openAuthor = useCallback((item: VideoContentItem) => setAuthorPanel({ item, busy: false, empty: false }), [])
+  const closeAuthor = useCallback(() => setAuthorPanel(null), [])
+
+  /** "5 autres vidéos dans Random": the series asked of the site, the first shown at once, ENCORE bringing the others. */
+  const startAuthorSeries = useCallback(async (item: VideoContentItem) => {
+    if (!item.channelKey || transitionLockedRef.current) return
+    setAuthorPanel((panel) => (panel ? { ...panel, busy: true } : panel))
+    let videos: VideoContentItem[] = []
+    try {
+      const exclude = typeof item._id === 'string' ? item._id : ''
+      const response = await fetch(`/api/discovery/author?key=${encodeURIComponent(item.channelKey)}&exclude=${encodeURIComponent(exclude)}`)
+      const body = response.ok ? await response.json().catch(() => null) as { items?: unknown } | null : null
+      videos = (Array.isArray(body?.items) ? body.items as VideoContentItem[] : []).filter((video) => video?.type === 'video' && !isMediaBlockedThisSession(video))
+    } catch {
+      videos = []
+    }
+    // Nothing of theirs left to show here: the panel keeps their channel only.
+    if (!videos.length || transitionLockedRef.current) {
+      setAuthorPanel((panel) => (panel ? { ...panel, busy: false, empty: !videos.length } : panel))
+      return
+    }
+    setAuthorPanel(null)
+    const [first, ...rest] = videos
+    authorQueueRef.current = rest
+    authorRemainingRef.current = videos.length
+    setAuthorRemaining(videos.length)
+    await showAuthorVideo(first)
+  }, [showAuthorVideo])
 
   const handlePrimaryAction = useCallback(() => {
     // Safari only lets the sound engine come back during a touch, and the draw's
     // own sound comes long after, once the content has loaded.
     wakeSound()
+    // An author's series first: ENCORE brings the next of their videos, then the randoms again.
+    if (!waveModeRef.current && authorQueueRef.current.length) {
+      if (transitionLockedRef.current) return
+      const next = authorQueueRef.current.shift()!
+      authorRemainingRef.current = Math.max(1, authorRemainingRef.current - 1)
+      setAuthorRemaining(authorRemainingRef.current)
+      void showAuthorVideo(next)
+      return
+    }
+    if (authorRemainingRef.current) endAuthorSeries()
     if (!waveModeRef.current || waveRemainingRef.current <= 1) {
       handleRandomAgain()
       return
     }
     handleWave()
-  }, [handleRandomAgain, handleWave])
+  }, [endAuthorSeries, handleRandomAgain, handleWave, showAuthorVideo])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -5880,7 +6026,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
 
         {!arcade && viewItem && viewItem.type !== 'encourage' ? (
           <div ref={sourceLineRef} className="random-source-line w-full text-center text-sm md:text-base font-inter" style={{ color: theme.text }}>
-            <SourceBlock item={viewItem} theme={theme} onOpenWeb={openWebInRandom} />
+            <SourceBlock item={viewItem} theme={theme} onOpenWeb={openWebInRandom} onAuthor={savedMode || waveMode || arcade ? undefined : openAuthor} />
           </div>
         ) : null}
       </section>
@@ -5945,7 +6091,7 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
               }}
             >
               <AnimatedButtonLabel
-                text={waveMode ? `${randomAgainLabel} : ${waveRemaining}` : randomAgainLabel}
+                text={waveMode ? `${randomAgainLabel} : ${waveRemaining}` : authorRemaining ? `${randomAgainLabel} : ${authorRemaining}` : randomAgainLabel}
                 color={theme.cream}
                 trigger={trigger}
                 toSecond={isSecond}
@@ -5993,6 +6139,17 @@ const spawnMiniGameIfDue = useCallback((): MiniGameItem | null => {
           menuTargetRef={menuButtonRef}
           onAward={handleEncourage3DAward}
           onComplete={handleEncourage3DComplete}
+        />
+      ) : null}
+
+      {authorPanel ? (
+        <AuthorPanel
+          item={authorPanel.item}
+          theme={theme}
+          busy={authorPanel.busy}
+          empty={authorPanel.empty}
+          onRandom={() => { void startAuthorSeries(authorPanel.item) }}
+          onClose={closeAuthor}
         />
       ) : null}
 
