@@ -137,12 +137,15 @@ export async function takeCandidates(db: Db, size: number, exclude: string[] = [
 
 /** A failed visit is tried again three days later, twice at most: a small host is sometimes just down. */
 export const RETRY_DAYS = 3
+/** A site left unvisited (Common Crawl past its half of a pass) waits this long, its attempts untouched. */
+export const DEFER_HOURS = 6
 export const MAX_ATTEMPTS = 2
 
 /** The outcome of each visit, written in one go: the database is small, one write per site would crowd it. */
 export async function settleCandidates(db: Db, visits: Array<{ candidate: Candidate; status: CandidateStatus; outcome: string }>, now = new Date()): Promise<void> {
   if (!visits.length) return
   await db.collection<Candidate>(CANDIDATES).bulkWrite(visits.map(({ candidate, status, outcome }) => {
+    if (status === 'new') return { updateOne: { filter: { _id: candidate._id }, update: { $set: { nextAt: new Date(now.getTime() + DEFER_HOURS * 3_600_000), outcome } } } }
     const attempts = candidate.attempts + 1
     const retry = (status === 'dead' || status === 'failed') && attempts < MAX_ATTEMPTS
     return {

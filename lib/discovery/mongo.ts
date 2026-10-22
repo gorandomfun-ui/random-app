@@ -14,6 +14,8 @@ import type { Universe } from '../v3/types'
 
 const FAMILIES = ['music', 'sport', 'craft', 'food', 'art', 'advertising', 'cinema', 'science', 'gaming', 'technology', 'travel', 'everyday', 'unknown']
 const TYPES: Format[] = ['video', 'image', 'web', 'quote', 'joke', 'fact']
+/** The share of site draws taken among the fun sites (lib/v3/web/kinds.ts). */
+export const WEB_FUN_SHARE = 1 / 3
 type Decoder<T> = (row: CatalogueRow) => T | null
 /**
  * What every draw of the live random starts from: never a suppressed content, never an obsolete or blocked video, and
@@ -67,6 +69,12 @@ export async function loadPoolCandidates<T>(db: Db, ticket: Intent, lang: string
       !(ticket.mode === 'cool' && candidate.routineEditorial))
   if (ticket.type !== 'video' && ticket.type !== 'image') {
     const match = { $and: [base(ticket.type, lang, now), ...(ticket.type === 'fact' && factVariant ? [factVariant === 'quiz' ? { variant: 'quiz' } : { variant: { $ne: 'quiz' } }] : [])] }
+    // A site: one draw in three among the fun ones — hand-made sites, curiosity lists, Show HN, brands, curious names
+    // (lib/v3/web/kinds.ts; the owner, 22 October: "un site sur 3… et les autres plus au hasard") — the others among all.
+    if (ticket.type === 'web' && random() < WEB_FUN_SHARE) {
+      const fun = decodePoolRows(await ringSample(db, { $and: [match, { webFun: true }] }, 24, random()).catch(() => [] as CatalogueRow[]))
+      if (fun.length) return fun
+    }
     return decodePoolRows(await ringSample(db, match, 24, random()))
   }
   const common: Filter<Document> = { $and: [base(ticket.type, lang, now),

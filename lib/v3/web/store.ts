@@ -32,6 +32,8 @@ export type WebInsertRow = {
   embedTone?: 'light' | 'dark' | null
   embedToneEvidence?: string | null
   embedCheckedAt?: Date
+  /** One of the fun sites, a third of the draws (lib/v3/web/kinds.ts, funSite). */
+  webFun?: boolean
 }
 
 /** `insertedIndexes`: the rows that were new to the catalogue, by position. */

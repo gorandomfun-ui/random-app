@@ -1250,7 +1250,7 @@ function legendSize(element: HTMLElement, text: string): { size: number; join: b
   }
 }
 
-function LegendTitle({ text, color }: { text: string; color: string }) {
+function LegendTitle({ text, color, underline = false }: { text: string; color: string; underline?: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [fit, setFit] = useState<{ text: string; size: number; join: boolean } | null>(null)
   useClientLayoutEffect(() => {
@@ -1285,6 +1285,7 @@ function LegendTitle({ text, color }: { text: string; color: string }) {
         textTransform: 'uppercase',
         fontSize: size,
         lineHeight: `${LEGEND_LINE}px`,
+        ...(underline ? { textDecoration: 'underline', textDecorationThickness: 1, textUnderlineOffset: 3 } : {}),
         ...(oneLine
           ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
           : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
@@ -1385,6 +1386,9 @@ function SourceBlock({ item, theme, onOpenWeb, onAuthor }: { item: DisplayItem; 
   const row = Boolean(mark || author || license)
   const arrow = href ? <SourceArrow item={item} href={href} onOpenWeb={onOpenWeb} color={theme.cream} /> : null
   const arrowEndsTitle = Boolean(heading && !row && arrow)
+  // A site's title opens it inside Random, as its picture and the arrow do (the owner, 22 October: "souligner le titre
+  // du site pour comprendre que c'est un lien… et en faire un lien pour ouvrir le site").
+  const opensSite = item.type === 'web' && item.embeddable && onOpenWeb ? () => onOpenWeb(item) : null
   if (!heading && !row && !arrow && !giphy) return null
   return (
     <div className="w-full text-left" data-legend-row={row ? '1' : '0'}>
@@ -1392,7 +1396,13 @@ function SourceBlock({ item, theme, onOpenWeb, onAuthor }: { item: DisplayItem; 
       <div style={{ borderTop: `1px solid ${theme.text}`, padding: '9px 2px 0', marginTop: giphy ? 6 : 0 }}>
         {heading ? (
           <div style={{ position: 'relative', paddingRight: arrowEndsTitle ? 30 : 0 }}>
-            <LegendTitle text={heading} color={theme.cream} />
+            {opensSite ? (
+              <button type="button" onClick={opensSite} style={{ display: 'block', width: '100%', background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                <LegendTitle text={heading} color={theme.cream} underline />
+              </button>
+            ) : (
+              <LegendTitle text={heading} color={theme.cream} />
+            )}
             {arrowEndsTitle ? <span style={{ position: 'absolute', right: 0, bottom: 0, display: 'flex' }}>{arrow}</span> : null}
           </div>
         ) : null}

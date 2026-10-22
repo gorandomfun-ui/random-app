@@ -7,6 +7,10 @@
  *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts --country=cm    a country
  *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts --dry           reads, queues nothing
  *
+ * Since 22 October it rests while three thousand of its sites still wait for their visit (they get at most half of what
+ * a pass takes in, scripts/v3/web-previews.ts), and it brings the brands of the night's countries from Wikidata
+ * (lib/v3/web/brands.ts), the owner's "marques de jambon en Croatie".
+ *
  * The crawl's block index (105 MB) is fetched once per crawl into
  * RANDOM_CC_CACHE (the server's /home/random/cache/cc) and read as a stream;
  * then one range request per block, a pause between them. Twenty minutes at
@@ -22,7 +26,8 @@ import { pipeline } from 'node:stream/promises'
 import { MongoClient } from 'mongodb'
 
 import { closeRun, journalHost, openRun, type RunCounters } from '@/lib/v3/ingest/journal'
-import { enqueueSites, type CandidateInput } from '@/lib/v3/web/candidates'
+import { CANDIDATES, enqueueSites, type CandidateInput } from '@/lib/v3/web/candidates'
+import { brandSites } from '@/lib/v3/web/brands'
 import { blocksFor, clusterUrl, countriesFrom, fetchBlock, latestCrawl, rootPagesIn, type Block, type RootPage } from '@/lib/v3/web/commoncrawl'
 import { WORLD_COUNTRIES } from '@/lib/v3/web/worldQueries'
 
@@ -32,6 +37,10 @@ const MAX_SITES = Number(process.env.RANDOM_CC_MAX ?? 1500)
 const MAX_COUNTRIES = Number(process.env.RANDOM_CC_COUNTRIES ?? 6)
 const MAX_MINUTES = Number(process.env.RANDOM_CC_MINUTES ?? 20)
 const CACHE = process.env.RANDOM_CC_CACHE ?? './.cache/cc'
+/** Common Crawl's sites waiting for a visit past which a night brings no more of them. */
+const BACKLOG_MAX = Number(process.env.RANDOM_CC_BACKLOG ?? 3000)
+/** Brands a night brings at most, from the countries it went through. */
+const MAX_BRANDS = Number(process.env.RANDOM_BRANDS_MAX ?? 600)
 const PAUSE_MS = 250
 const dry = process.argv.includes('--dry')
 const countryArg = process.argv.find((arg) => arg.startsWith('--country='))?.slice(10)
@@ -82,10 +91,14 @@ async function main(): Promise<void> {
   let crawl = '', blocks = 0, read = 0, hitDeadline = false
   const visited: string[] = []
   const rows: CandidateInput[] = []
+  let backlog = 0
   try {
-    crawl = await latestCrawl()
-    const file = await clusterFile(crawl)
-    for (const country of countries) {
+    backlog = await db.collection(CANDIDATES).countDocuments({ source: 'commoncrawl', status: 'new' }, { maxTimeMS: 20_000 }).catch(() => 0)
+    const resting = backlog >= BACKLOG_MAX
+    if (resting) console.log(`[commoncrawl] ${backlog} de ses sites attendent déjà leur visite : pas de nouveaux cette nuit`)
+    crawl = resting ? '' : await latestCrawl()
+    const file = resting ? '' : await clusterFile(crawl)
+    for (const country of resting ? [] : countries) {
       if (rows.length >= MAX_SITES || hitDeadline) break
       const seen = new Map<string, RootPage>()
       // A big country has thousands of blocks and a run reads a hundred: in a random order, so each visit of the country reads other hosts than the last.
@@ -111,13 +124,28 @@ async function main(): Promise<void> {
       console.log(`[commoncrawl] ${crawl} · .${country} · ${own.length} blocs · ${pages.length} pages d'accueil vivantes`)
     }
     const queued = dry ? { queued: 0, known: 0 } : await enqueueSites(db, rows)
-    counters.inserted = queued.queued
-    counters.duplicates = queued.known
-    counters.byProvider = { commoncrawl: queued.queued }
-    const note = `${visited.map((country) => `.${country}`).join(' ')} · ${crawl} · ${read}/${blocks} blocs lus · ${rows.length} pages d'accueil vivantes · ${queued.queued} mises en attente`
-    const status = errors.length && !read ? 'failed' : hitDeadline || errors.length ? 'partial' : 'ok'
+    // The brands of the night's countries, or of the day's when Common Crawl rests (lib/v3/web/brands.ts).
+    const brands: CandidateInput[] = []
+    const brandCountries: string[] = []
+    for (const country of (visited.length ? visited : countries)) {
+      if (brands.length >= MAX_BRANDS || Date.now() > deadline) break
+      try {
+        brands.push(...(await brandSites(country)).slice(0, MAX_BRANDS - brands.length))
+        brandCountries.push(country)
+      } catch (error) {
+        errors.push(`marques .${country} : ${error instanceof Error ? error.message : 'unreadable'}`)
+      }
+      await wait(2000)
+    }
+    const brandsQueued = dry ? { queued: 0, known: 0 } : await enqueueSites(db, brands)
+    console.log(`[marques] ${brandCountries.map((country) => `.${country}`).join(' ')} · ${brands.length} sites de marques · ${brandsQueued.queued} mis en attente`)
+    counters.inserted = queued.queued + brandsQueued.queued
+    counters.duplicates = queued.known + brandsQueued.known
+    counters.byProvider = { commoncrawl: queued.queued, 'wikidata-brand': brandsQueued.queued }
+    const note = `${resting ? `Common Crawl au repos (${backlog} en attente)` : `${visited.map((country) => `.${country}`).join(' ')} · ${crawl} · ${read}/${blocks} blocs lus · ${rows.length} pages d'accueil vivantes · ${queued.queued} mises en attente`} · marques ${brandCountries.map((country) => `.${country}`).join(' ')} : ${brandsQueued.queued} mises en attente`
+    const status = errors.length && !read && !brands.length ? 'failed' : hitDeadline || errors.length ? 'partial' : 'ok'
     if (runId) await closeRun(db, runId, { finishedAt: new Date(), status, counters, errors, note })
-    console.log(JSON.stringify({ commoncrawl: dry ? 'dry' : 'ok', countries: visited, crawl, blocks, read, scanned: counters.scanned, frontPages: rows.length, queued: queued.queued, known: queued.known, errors, hitDeadline, durationMs: Date.now() - startedAt.getTime() }))
+    console.log(JSON.stringify({ commoncrawl: dry ? 'dry' : 'ok', countries: visited, crawl, blocks, read, scanned: counters.scanned, frontPages: rows.length, queued: queued.queued, known: queued.known, backlog, brands: brands.length, brandsQueued: brandsQueued.queued, errors, hitDeadline, durationMs: Date.now() - startedAt.getTime() }))
   } catch (error) {
     const message = error instanceof Error ? error.message : 'commoncrawl failed'
     if (runId) await closeRun(db, runId, { finishedAt: new Date(), status: 'failed', counters, errors: [...errors, message] }).catch(() => undefined)

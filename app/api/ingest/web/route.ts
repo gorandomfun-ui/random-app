@@ -425,7 +425,8 @@ async function runGoogleCSE(queries: Array<string | WorldQuery>, per: number, pa
  * its preview — Neocities' own screenshot when it is good (12 October; the owner: "plus de Neocities, de Show HN et de
  * listes choisies"). The lists change little: the first run brings them, the next ones only what was added.
  */
-const NEOCITIES_PAGES = 3
+/** Nine pages of a hundred since 22 October, three times as many: the hand-made sites are most of the fun third (lib/v3/web/kinds.ts). */
+const NEOCITIES_PAGES = 9
 
 async function pageText(url: string): Promise<string | null> {
   const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RandomAppBot/1.0; +https://gorandom.fun)' }, signal: AbortSignal.timeout(12_000), cache: 'no-store' }).catch(() => null)

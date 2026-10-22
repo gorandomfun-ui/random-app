@@ -31,6 +31,7 @@ import { checkEmbeddable, embedVerdict, type EmbedVerdict } from '@/lib/v3/web/e
 import { notASiteReason, pageImages, readPage } from '@/lib/v3/web/pageSignals'
 import { probePreview } from '@/lib/v3/web/previewImage'
 import { boringWebReason, frontPageOf, institutionReason } from '@/lib/v3/web/quality'
+import { funSite, medicalReason } from '@/lib/v3/web/kinds'
 import { upsertWebRows, type WebInsertRow } from '@/lib/v3/web/store'
 import { toneOfPage } from '@/lib/v3/web/tone'
 
@@ -208,6 +209,19 @@ class InstitutionShare {
 }
 
 /**
+ * Common Crawl takes at most half of what a pass takes in, and a few more (the owner, 22 October: it was 86 % of the
+ * entries, and the fun sites are to be a third of the draws). Past it, its sites are not visited: they wait for a later
+ * pass, when the other sources have brought theirs.
+ */
+const COMMONCRAWL_FLOOR = 5
+class SourceShare {
+  private commoncrawl = 0
+  private others = 0
+  room(source: string): boolean { return source !== 'commoncrawl' || this.commoncrawl < this.others + COMMONCRAWL_FLOOR }
+  count(source: string): void { if (source === 'commoncrawl') this.commoncrawl += 1; else this.others += 1 }
+}
+
+/**
  * Whether the site opens inside Random, read from the answer the visit just received — the same verdict the night
  * check gives (lib/v3/web/embed.ts), a day sooner and without asking again. A site left on plain http is asked once
  * for its https twin. Since 12 October only these are drawn (the owner: "s'ouvrent toujours à côté").
@@ -240,6 +254,9 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
   const title = candidate.title || reading.title || new URL(finalUrl).hostname.replace(/^www\./, '')
   const dull = boringWebReason(finalUrl, title, front ? null : candidate.source)
   if (dull) return { status: 'dull', outcome: dull }
+  // Hospitals, clinics, doctors, dentists, pharmacies are not shown; cosmetic surgery is (the owner, 22 October).
+  const medical = medicalReason({ title, host: new URL(finalUrl).hostname })
+  if (medical) return { status: 'dull', outcome: `médical : ${medical}` }
   // Common Crawl's universities, town halls and administrations: in, while they stay under their share.
   const institution = candidate.source === 'commoncrawl' ? institutionReason(finalUrl, title) : null
   if (institution && !share.room()) return { status: 'dull', outcome: `institution: ${institution}, au-delà de sa part` }
@@ -302,6 +319,8 @@ async function visit(db: Db, candidate: Candidate, camera: Camera | null, upload
       embedTone: tone.tone,
       embedToneEvidence: tone.evidence,
       embedCheckedAt: new Date(),
+      // One of the fun sites, a third of the draws (lib/v3/web/kinds.ts; lib/discovery/mongo.ts).
+      webFun: funSite({ provider: candidate.source, title, host }),
     },
   }
 }
@@ -349,6 +368,7 @@ async function main(): Promise<void> {
   }
   const camera = upload || (dryRun && process.argv.includes('--captures')) ? new Camera() : null
   const institutions = new InstitutionShare()
+  const sources = new SourceShare()
   const queue: Candidate[] = []
   const held: string[] = []
   const pending: Array<{ candidate: Candidate; result: Visit }> = []
@@ -409,11 +429,16 @@ async function main(): Promise<void> {
       if (!candidate) return
       counters.scanned += 1
       let result: Visit
-      try {
-        result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun, institutions))
-      } catch (error) {
-        result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
+      if (!sources.room(candidate.source)) {
+        result = { status: 'new', outcome: 'Common Crawl : au-delà de sa moitié, pour un prochain passage' }
+      } else {
+        try {
+          result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun, institutions))
+        } catch (error) {
+          result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
+        }
       }
+      if (result.row) sources.count(candidate.source)
       if (!result.row) {
         if (result.status === 'done') counters.duplicates += 1
         else counters.rejected[result.status] = (counters.rejected[result.status] ?? 0) + 1
