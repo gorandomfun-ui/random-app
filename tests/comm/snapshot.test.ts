@@ -82,9 +82,9 @@ test('les sujets v3 sont copiés avec leur libellé', () => {
 test('les plafonds viennent de l_environnement, avec des défauts sûrs', () => {
   const saved = { q: process.env.NEXT_PUBLIC_COMM_QUEUE_MAX, c: process.env.NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS }
   delete process.env.NEXT_PUBLIC_COMM_QUEUE_MAX; delete process.env.NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS
-  assert.equal(queueMax(), 30); assert.equal(clipMaxSeconds(), 60)
+  assert.equal(queueMax(), 30); assert.equal(clipMaxSeconds(), 180)
   process.env.NEXT_PUBLIC_COMM_QUEUE_MAX = '12'; process.env.NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS = '0'
-  assert.equal(queueMax(), 12); assert.equal(clipMaxSeconds(), 60)
+  assert.equal(queueMax(), 12); assert.equal(clipMaxSeconds(), 180)
   if (saved.q != null) process.env.NEXT_PUBLIC_COMM_QUEUE_MAX = saved.q; else delete process.env.NEXT_PUBLIC_COMM_QUEUE_MAX
   if (saved.c != null) process.env.NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS = saved.c; else delete process.env.NEXT_PUBLIC_COMM_CLIP_MAX_SECONDS
 })

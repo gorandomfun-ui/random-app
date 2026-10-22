@@ -10,8 +10,8 @@ import { randomBytes } from 'node:crypto'
 import { del, put } from '@vercel/blob'
 
 export const BLOB_PREFIX = 'comm/'
-/** The largest file the tool accepts, in bytes: a minute of screen capture stays well under. */
-export const MEDIA_MAX_BYTES = 200 * 1024 * 1024
+/** The largest file the tool accepts, in bytes: three minutes of screen capture at today's quality (about 1 MB a second) stay under. */
+export const MEDIA_MAX_BYTES = 320 * 1024 * 1024
 export const MEDIA_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm']
 
 export function blobConfigured(): boolean {

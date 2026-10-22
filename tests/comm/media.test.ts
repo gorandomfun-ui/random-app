@@ -15,7 +15,7 @@ test('une clé Blob vit dans le dossier de son élément, avec un nom que person
   assert.ok(!keyBelongsTo(`comm/${ITEM}/sub/x.png`, ITEM), 'pas de sous-dossier')
   assert.ok(!keyBelongsTo('comm/../x.png', ITEM))
   assert.equal(extensionOf('image/jpeg'), 'jpg'); assert.equal(extensionOf('video/quicktime'), 'mov'); assert.equal(extensionOf('text/html'), '')
-  assert.equal(MEDIA_MAX_BYTES, 200 * 1024 * 1024)
+  assert.equal(MEDIA_MAX_BYTES, 320 * 1024 * 1024)
 })
 
 test('une adresse Blob donne son chemin ; une autre adresse non', () => {
