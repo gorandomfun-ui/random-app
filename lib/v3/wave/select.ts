@@ -38,6 +38,9 @@ export type WaveCandidate = {
   languageScope?: string | null
   /** Videos: seconds. Two republications of one recording have the same length. */
   duration?: number
+  /** Videos: the AI's fingerprint (lib/v3/ai/bits.ts), and how alike it is to the anchor's (lib/v3/wave/find.ts). */
+  vec?: Uint8Array
+  likeness?: number
 }
 
 export type WaveAnchor = {
@@ -50,6 +53,8 @@ export type WaveAnchor = {
   duration?: number
   digLevel?: number
   digPass?: string
+  /** A video's AI fingerprint, which the candidates' likeness is measured against. */
+  vec?: Uint8Array
 }
 
 /**
@@ -180,10 +185,14 @@ export function accepts(
   const allowed = MAY_FILL_THREE.includes(candidate.type) ? perType : COMFORTABLE_PER_TYPE
   if (sameKind >= allowed) return false
 
-  // A text only carries a Wave on a precise link — a named subject or the
-  // word pair. On a single word or a universe it is a wall of text about
-  // something else.
-  if (TEXT_TYPES.includes(candidate.type) && candidate.level >= 3) return false
+  // Only a video carries a Wave on a loose link — one word, a subject the
+  // title does not name, the universe — because the AI reads videos and keeps
+  // the far ones out (lib/v3/wave/find.ts). A text, a picture or a site needs
+  // a precise link, a named subject or the word pair: on one word a text is a
+  // wall of text about something else, and the pictures and sites were what
+  // made no sense (24 October: "a green button with a hand" for a bushcraft
+  // belt, a site about pull requests for a strongman's car pull).
+  if (candidate.type !== 'video' && candidate.level >= 3) return false
 
   const title = normalisedTitle(candidate.title)
   if (title && chosen.some((item) => normalisedTitle(item.title) === title)) return false

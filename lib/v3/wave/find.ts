@@ -17,6 +17,7 @@ import type { Db, Document, Filter, ObjectId } from 'mongodb'
 
 import { accepts, buildWave, WAVE_SIZE } from './select'
 import type { WaveAnchor, WaveCandidate, WaveLevel } from './select'
+import { alike, fromRow } from '../ai/bits'
 import { containsAlias, normalize } from '../tagging/normalize'
 import { SUBJECTS_COLLECTION } from '../subjects/build'
 import type { ItemTags, ItemType, SubjectRef } from '../types'
@@ -27,6 +28,18 @@ import type { ItemTags, ItemType, SubjectRef } from '../types'
  * every row it does not have to read is time it does not spend.
  */
 const POOL_PER_FORMAT = 12
+
+/**
+ * Below this likeness of their fingerprints (lib/v3/ai/bits.ts: 0.5 for strangers, 1 for the same), a video is too far
+ * from the anchor to answer it. Measured on 24 October around a Christopher Columbus video: his real videos stood at
+ * 0.57 to 0.74; a bar fire in Burgos, a frigate named after him and a pineapple video that only mentioned him in their
+ * descriptions, at 0.46 to 0.55. The owner had been sent from a Columbus video to "un truc d'objet en bois chelou".
+ */
+export const FAR_LIKENESS = 0.55
+/** A likeness for what has no fingerprint (images, texts, a video not printed yet): neither close nor far. */
+const UNKNOWN_LIKENESS = 0.6
+/** Videos read in the anchor's universe when nothing nearer filled the Wave, for the AI to keep the closest. */
+const UNIVERSE_VIDEO_ROWS = 60
 
 /** Spares handed to the interface, for a content it cannot show or saw a moment ago. */
 const SPARES = 7
@@ -60,6 +73,40 @@ const NOISE_WORDS = new Set([
   'footage', 'clip', 'stock', 'free', 'hd', '4k', 'jpg', 'png', 'mp4', 'www', 'http', 'https', 'com',
   'youtube', 'dailymotion', 'giphy', 'tenor', 'pexels', 'pixabay',
 ])
+
+/**
+ * Words too common to carry a Wave alone, in the site's languages, written as normalize() leaves them (24 October:
+ * "Awesome Armenia" was answered on "awesome" with a site turning photos into art; "5th semester" with a Cinco de Mayo
+ * GIF). They still count in the word pair, which they narrow; the one-word steps pass over them, and over numbers.
+ */
+const COMMON_WORDS = new Set([
+  'awesome', 'amazing', 'best', 'top', 'new', 'old', 'big', 'great', 'good', 'bad', 'funny', 'cool', 'epic', 'crazy',
+  'official', 'full', 'part', 'episode', 'live', 'music', 'song', 'songs', 'movie', 'movies', 'film', 'films', 'trailer',
+  'short', 'shorts', 'highlights', 'day', 'days', 'night', 'time', 'life', 'world', 'people', 'man', 'woman', 'girl',
+  'boy', 'kids', 'baby', 'love', 'happy', 'real', 'true', 'first', 'last', 'final', 'ever', 'very', 'most', 'more',
+  'how', 'what', 'why', 'when', 'who', 'make', 'made', 'watch', 'just', 'all', 'every', 'story', 'stories', 'things',
+  'facts', 'tips', 'way', 'version', 'special', 'show', 'news', 'today', 'year', 'years', 'home', 'family', 'friends',
+  'vlog', 'challenge', 'reaction', 'review', 'tutorial', 'remix', 'cover', 'original', 'moments', 'compilation',
+  'incroyable', 'meilleur', 'meilleure', 'meilleurs', 'nouveau', 'nouvelle', 'drole', 'histoire', 'histoires', 'jour',
+  'nuit', 'vie', 'monde', 'amour', 'partie', 'officiel', 'officielle', 'complet', 'chanson', 'musique', 'bande',
+  'annonce', 'gens', 'homme', 'femme', 'fille', 'enfant', 'enfants', 'bebe', 'famille', 'maison', 'annee', 'semaine',
+  'comment', 'pourquoi', 'quand', 'vrai', 'vraie', 'premier', 'premiere', 'dernier', 'derniere', 'grand', 'grande',
+  'petit', 'petite', 'super', 'trop', 'tres', 'plus', 'tout', 'tous', 'chose', 'choses', 'astuces', 'emission', 'direct',
+  'increible', 'mejor', 'mejores', 'nuevo', 'nueva', 'historia', 'dia', 'noche', 'vida', 'mundo', 'amor', 'parte',
+  'capitulo', 'oficial', 'completo', 'pelicula', 'cancion', 'musica', 'gente', 'hombre', 'mujer', 'familia', 'casa',
+  'como', 'porque', 'cuando', 'verdad', 'primero', 'primera', 'ultimo', 'gran', 'grande', 'muy', 'mas', 'todo', 'cosas',
+  'beste', 'neu', 'neue', 'lustig', 'geschichte', 'tag', 'leben', 'welt', 'liebe', 'teil', 'folge', 'offiziell', 'ganze',
+  'lied', 'musik', 'leute', 'mann', 'frau', 'kinder', 'familie', 'haus', 'jahr', 'heute', 'warum', 'erste', 'letzte',
+  'migliore', 'nuovo', 'nuova', 'storia', 'giorno', 'vita', 'amore', 'ufficiale', 'canzone', 'oggi', 'perche',
+  'melhor', 'novo', 'nova', 'hoje', 'verdade', 'primeiro', 'muito', 'tudo',
+])
+const NUMBER_OR_RANK = /^\d+(?:st|nd|rd|th|e|er|eme|o|a|°)?$/
+
+/** Whether a telling word can carry a Wave alone: not a common word, not a number or a rank. */
+export const tellsAlone = (word: string): boolean => {
+  const plain = normalize(word)
+  return plain.length >= 3 && !COMMON_WORDS.has(plain) && !NUMBER_OR_RANK.test(plain)
+}
 
 export type ItemRow = Document & {
   _id: ObjectId
@@ -107,11 +154,13 @@ export function durationSeconds(value: unknown): number | undefined {
 function toCandidate(row: ItemRow, level: WaveLevel): WaveCandidate | null {
   if (!row.v3 && !WORD_LEVELS.includes(level)) return null
   const duration = durationSeconds(row.duration)
+  const vec = fromRow(row.vec)
   return {
     id: String(row._id),
     type: row.type,
     title: row.title,
     level,
+    ...(vec ? { vec } : {}),
     ...(typeof row.lang === 'string' ? { lang: row.lang } : {}),
     ...(typeof row.languageScope === 'string' ? { languageScope: row.languageScope } : {}),
     ...(duration !== undefined ? { duration } : {}),
@@ -171,6 +220,8 @@ async function fetchStep(
   level: WaveLevel,
   anchorId: ObjectId,
   hint: string,
+  /** Videos to read, when the AI is to keep the closest of more of them. */
+  videoRows = POOL_PER_FORMAT,
 ): Promise<WaveCandidate[]> {
   const perGroup = await Promise.all(FORMAT_GROUPS.map(async (types) => {
     try {
@@ -188,12 +239,12 @@ async function fetchStep(
             projection: {
               type: 1, title: 1, v3: 1, rand: 1,
               creatorId: 1, channelId: 1, channelTitle: 1, provider: 1,
-              lang: 1, languageScope: 1, duration: 1,
+              lang: 1, languageScope: 1, duration: 1, vec: 1,
             },
             // The window is real only when the rows come in rand order: the
             // old word index had no rand and answered with the oldest rows.
             sort: { rand: 1 },
-            limit: POOL_PER_FORMAT,
+            limit: types.includes('video') ? videoRows : POOL_PER_FORMAT,
             hint,
             maxTimeMS: QUERY_BUDGET_MS,
           },
@@ -268,7 +319,7 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
       {
         projection: {
           type: 1, title: 1, v3: 1, keywords: 1, tags: 1,
-          creatorId: 1, channelId: 1, channelTitle: 1, provider: 1, duration: 1,
+          creatorId: 1, channelId: 1, channelTitle: 1, provider: 1, duration: 1, vec: 1,
         },
       },
     )) as ItemRow | null
@@ -279,12 +330,14 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
   if (!row.v3 && !words.length) return null
 
   const duration = durationSeconds(row.duration)
+  const vec = fromRow(row.vec)
   return {
     row,
     anchor: {
       id: String(row._id),
       type: row.type,
       title: row.title,
+      ...(vec ? { vec } : {}),
       v3: {
         subjects: row.v3?.subjects ?? [],
         universe: row.v3?.universe ?? 'other',
@@ -305,51 +358,86 @@ export async function loadAnchor(db: Db, itemId: ObjectId): Promise<{ anchor: Wa
 }
 
 /**
- * Which of the anchor's subjects its title actually names.
+ * Which of the anchor's subjects its title actually names, with the names each goes by.
  *
  * A subject caught in the description is a detail, not the subject: a video
  * of a Vietnamese fire-eater was labelled "19 June" from "filmed June 19" in
  * its description, and answered with three contents about that date. Only a
  * subject the title names leads the Wave; the others come last.
  *
- * On failure nothing is trusted: the words take over, and the Wave still
- * exists.
+ * The id spells a name ("entity:south-park"); the dictionary adds the label
+ * and the aliases, in other languages and scripts. On failure the ids' own
+ * spelling still names them, and the Wave still exists.
  */
-async function subjectsNamedInTitle(db: Db, subjects: SubjectRef[], title: string | null | undefined): Promise<Set<string>> {
-  const named = new Set<string>()
-  // What the dig searched for is the subject, whether or not the title spells it: the #willsmith steak is about Will Smith.
-  for (const subject of subjects) if (subject.evidence === 'search-verified') named.add(subject.id)
-  if (!subjects.length || !title?.trim()) return named
-
-  // The id spells the name — "entity:south-park" — so most titles settle it
-  // without a query. The dictionary is asked only for the subjects left over,
-  // whose title may name them in another script or by another alias.
-  const unsettled = subjects.filter((subject) => {
-    if (named.has(subject.id)) return false
-    const name = subject.id.slice(subject.id.indexOf(':') + 1).replace(/-/g, ' ')
-    if (containsAlias(title, name)) { named.add(subject.id); return false }
-    return true
-  })
-  if (!unsettled.length) return named
-
+export async function namedSubjects(db: Db, subjects: SubjectRef[], title: string | null | undefined): Promise<Map<string, string[]>> {
+  const named = new Map<string, string[]>()
+  if (!subjects.length) return named
+  const names = new Map(subjects.map((subject) => [subject.id, [subject.id.slice(subject.id.indexOf(':') + 1).replace(/-/g, ' ')]]))
   try {
     const rows = await db
       .collection(SUBJECTS_COLLECTION)
       .find(
-        { _id: { $in: unsettled.map((subject) => subject.id) } as never },
+        { _id: { $in: subjects.map((subject) => subject.id) } as never },
         { projection: { label: 1, aliases: 1 }, maxTimeMS: QUERY_BUDGET_MS },
       )
       .toArray()
     for (const row of rows) {
-      const names = [row.label, ...((row.aliases as string[] | undefined) ?? [])].filter(
-        (name): name is string => typeof name === 'string' && name.length > 0,
-      )
-      if (names.some((name) => containsAlias(title, name))) named.add(String(row._id))
+      const own = names.get(String(row._id))
+      if (!own) continue
+      for (const name of [row.label, ...((row.aliases as string[] | undefined) ?? [])]) {
+        if (typeof name === 'string' && name.length > 0 && !own.includes(name)) own.push(name)
+      }
     }
   } catch {
-    /* nothing named: the words lead */
+    /* the ids' own spelling still names them */
+  }
+  for (const subject of subjects) {
+    const own = names.get(subject.id) ?? []
+    // What the dig searched for is the subject, whether or not the title spells it: the #willsmith steak is about Will Smith.
+    if (subject.evidence === 'search-verified' || (title?.trim() && own.some((name) => containsAlias(title, name)))) named.set(subject.id, own)
   }
   return named
+}
+
+/**
+ * Whether a content carries one of the subjects the anchor's title names as its own subject too: its title names it as
+ * well, or the dig found it by searching that subject. A content that only mentions it — a pineapple video telling in
+ * its description that Columbus brought the fruit to Europe — is not about it (24 October, the owner: from a Columbus
+ * video to "un truc d'objet en bois chelou, aucun lien compréhensible").
+ */
+export function sharesNamedSubject(candidate: Pick<WaveCandidate, 'title' | 'v3'>, named: Map<string, string[]>): boolean {
+  return candidate.v3.subjects.some((subject) => {
+    const names = named.get(subject.id)
+    if (!names) return false
+    return subject.evidence === 'search-verified' || names.some((name) => containsAlias(candidate.title ?? '', name))
+  })
+}
+
+/**
+ * The AI's word on a pool (24 October): how alike each video's fingerprint is to the anchor's, the closest first within
+ * a step. Without the anchor's fingerprint (an image, a text, a video not printed yet) the pool is left as it is.
+ */
+export function byCloseness(anchor: Pick<WaveAnchor, 'vec'>, pool: WaveCandidate[]): WaveCandidate[] {
+  const own = anchor.vec
+  if (!own) return pool
+  return pool
+    .map((candidate) => (candidate.vec ? { ...candidate, likeness: alike(own, candidate.vec) } : candidate))
+    .sort((left, right) => (right.likeness ?? UNKNOWN_LIKENESS) - (left.likeness ?? UNKNOWN_LIKENESS))
+}
+
+const isFar = (candidate: WaveCandidate): boolean => candidate.likeness !== undefined && candidate.likeness < FAR_LIKENESS
+
+/**
+ * The Wave from the contents close enough to the anchor, and its spares. The far ones come only when the close ones
+ * cannot fill the three, last of all: the owner wants the three ("une Wave plus courte… non non non").
+ */
+export function buildClosest(anchor: WaveAnchor, pool: WaveCandidate[], excludeKeys: string[], lang?: string): { wave: { items: WaveCandidate[]; level: WaveLevel }; spares: WaveCandidate[] } {
+  const close = pool.filter((candidate) => !isFar(candidate))
+  let wave = buildWave(anchor, close, excludeKeys, lang)
+  if (wave.items.length < WAVE_SIZE && close.length < pool.length) {
+    wave = buildWave(anchor, [...close, ...pool.filter(isFar).map((candidate) => ({ ...candidate, level: 5 as WaveLevel }))], excludeKeys, lang)
+  }
+  return { wave, spares: pickSpares(anchor, wave.items, close, lang) }
 }
 
 /** Spares the interface may substitute for one of the three without breaking the rules. */
@@ -394,36 +482,39 @@ export async function composeWave(
   const { lang } = options
   const subjectIds = anchor.v3.subjects.map((subject) => subject.id)
   const words = anchor.words ?? []
+  const alone = words.filter(tellsAlone)
   const none = Promise.resolve([] as WaveCandidate[])
 
   const [named, subjectPool, pairPool, firstWordPool] = await Promise.all([
-    subjectsNamedInTitle(db, anchor.v3.subjects, anchor.title),
+    namedSubjects(db, anchor.v3.subjects, anchor.title),
     subjectIds.length ? fetchStep(db, { 'v3.subjects.id': { $in: subjectIds } }, 4, anchorId, SUBJECT_INDEX) : none,
     words.length >= 2 ? fetchStep(db, { keywords: { $all: words.slice(0, 2) } }, 2, anchorId, KEYWORD_INDEX) : none,
     // The single word is asked at once only when there is no subject to lean
     // on; with a subject, it is rarely needed and would be one more query.
-    words.length >= 1 && !subjectIds.length ? fetchStep(db, { keywords: words[0] }, 3, anchorId, KEYWORD_INDEX) : none,
+    alone.length >= 1 && !subjectIds.length ? fetchStep(db, { keywords: alone[0] }, 3, anchorId, KEYWORD_INDEX) : none,
   ])
 
-  // A content sharing a subject the title names is the closest link there is;
-  // one sharing a subject the title does not name comes after the words.
+  // A content whose own subject is one the anchor's title names is the closest
+  // link there is; one that only carries it comes after the words.
   for (const candidate of subjectPool) {
-    if (candidate.v3.subjects.some((subject) => named.has(subject.id))) candidate.level = 1
+    if (sharesNamedSubject(candidate, named)) candidate.level = 1
   }
 
-  let pool = [...subjectPool, ...pairPool, ...firstWordPool]
-  let wave = buildWave(anchor, pool, excludeKeys, lang)
-  let spares = pickSpares(anchor, wave.items, pool, lang)
+  let pool = byCloseness(anchor, [...subjectPool, ...pairPool, ...firstWordPool])
+  let { wave, spares } = buildClosest(anchor, pool, excludeKeys, lang)
 
-  if (wave.items.length < WAVE_SIZE || spares.length < SPARES_WANTED) {
+  // Short, or filled only from the far: the next words, and the anchor's universe, where the AI keeps the closest
+  // videos of a larger handful rather than any.
+  if (wave.items.length < WAVE_SIZE || spares.length < SPARES_WANTED || wave.items.some(isFar)) {
     const from = subjectIds.length ? 0 : 1
     const more = await Promise.all([
-      ...words.slice(from, WORDS_KEPT).map((word) => fetchStep(db, { keywords: word }, 3, anchorId, KEYWORD_INDEX)),
-      fetchStep(db, { 'v3.universe': anchor.v3.universe }, 5, anchorId, UNIVERSE_INDEX),
+      ...alone.slice(from, WORDS_KEPT).map((word) => fetchStep(db, { keywords: word }, 3, anchorId, KEYWORD_INDEX)),
+      fetchStep(db, { 'v3.universe': anchor.v3.universe }, 5, anchorId, UNIVERSE_INDEX, anchor.vec ? UNIVERSE_VIDEO_ROWS : POOL_PER_FORMAT),
     ])
-    pool = [...pool, ...more.flat()]
-    wave = buildWave(anchor, pool, excludeKeys, lang)
-    spares = pickSpares(anchor, wave.items, pool, lang)
+    let universeVideos = 0
+    pool = byCloseness(anchor, [...pool, ...more.flat()])
+      .filter((candidate) => candidate.level !== 5 || candidate.type !== 'video' || (universeVideos += 1) <= POOL_PER_FORMAT)
+    ;({ wave, spares } = buildClosest(anchor, pool, excludeKeys, lang))
   }
 
   return { items: wave.items, spares, level: wave.level }

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { buildWave, accepts, textFits, type WaveAnchor, type WaveCandidate } from '@/lib/v3/wave/select'
-import { durationSeconds } from '@/lib/v3/wave/find'
+import { buildClosest, byCloseness, durationSeconds, FAR_LIKENESS, sharesNamedSubject, tellsAlone } from '@/lib/v3/wave/find'
 import type { Angle, Era, ItemType, Popularity, Universe } from '@/lib/v3/types'
 
 function anchor(overrides: Partial<WaveAnchor['v3']> = {}, extra: Partial<Pick<WaveAnchor, 'title' | 'type' | 'duration'>> = {}): WaveAnchor {
@@ -26,7 +26,7 @@ function candidate(
   type: ItemType,
   angle: Angle,
   options: {
-    level?: 1 | 2 | 3
+    level?: 1 | 2 | 3 | 4 | 5
     channelKey?: string
     popularity?: Popularity
     title?: string
@@ -169,6 +169,15 @@ test('les textes n_apparaissent pas au niveau 3', () => {
   assert.equal(proche.items.length, 1, 'la même citation passe quand le sujet correspond')
 })
 
+test('on a loose link only a video, which the AI checks: a picture or a site needs the named subject or the word pair (24 October)', () => {
+  for (const level of [3, 4, 5] as const) {
+    assert.equal(buildWave(anchor(), [candidate('image', 'photo-image', { level })]).items.length, 0, `a picture at level ${level}`)
+    assert.equal(buildWave(anchor(), [candidate('web' as ItemType, 'website', { level })]).items.length, 0, `a site at level ${level}`)
+    assert.equal(buildWave(anchor(), [candidate('video', 'parody-sketch', { level })]).items.length, 1, `a video at level ${level}`)
+  }
+  assert.equal(buildWave(anchor(), [candidate('image', 'photo-image', { level: 2 })]).items.length, 1, 'a picture on the word pair')
+})
+
 test('les quasi-doublons ne se répètent pas dans une même Wave', () => {
   const { items } = buildWave(anchor(), [
     candidate('video', 'episode-extract', { nearFamily: 'aaaa' }),
@@ -192,7 +201,7 @@ test('les niveaux sont descendus dans l_ordre, et le niveau rendu est le plus l�
   const { items, level } = buildWave(anchor(), [
     candidate('video', 'episode-extract', { level: 1 }),
     candidate('image', 'photo-image', { level: 2 }),
-    candidate('web' as ItemType, 'website', { level: 3, universe: 'animation' }),
+    candidate('video', 'parody-sketch', { level: 3, universe: 'animation' }),
   ])
   assert.equal(items.length, 3)
   assert.equal(items[0]?.level, 1, 'le lien le plus proche est servi en premier')
@@ -295,4 +304,56 @@ test('the ladder at the click: from a clip at the top, the Wave prefers another 
   assert.equal(wave.items.length, 3)
   assert.deepEqual(wave.items.map((item) => item.title).sort(), [gif.title, fan.title, blooper.title].sort(), 'the other levels and the image; the same level waits')
   assert.ok(!wave.items.some((item) => item.title === sameLevel.title))
+})
+
+test("a content joins the closest step only if its own title names the anchor's subject, or the dig found it by it (24 October, Columbus)", () => {
+  const named = new Map([['entity:christopher-columbus', ['christopher columbus', 'Christopher Columbus', 'Cristóbal Colón', 'Christophe Colomb']]])
+  const carrying = (title: string, evidence: 'alias' | 'ai' | 'search-verified' = 'alias') => ({
+    title,
+    v3: { ...candidate('video', 'documentary').v3, subjects: [{ id: 'entity:christopher-columbus', role: 'secondary' as const, evidence }] },
+  })
+  assert.equal(sharesNamedSubject(carrying("Faits intéressants à connaître sur l'ananas"), named), false, 'Columbus only in its description')
+  assert.equal(sharesNamedSubject(carrying('Los Bomberos intervienen en un incendio en un bar en Burgos'), named), false)
+  assert.equal(sharesNamedSubject(carrying("Christophe Colomb, l'énigme (2007) - Bande annonce"), named), true)
+  assert.equal(sharesNamedSubject(carrying('Cristóbal Colón: El Legado de un Gran Descubridor'), named), true, 'by another of his names')
+  assert.equal(sharesNamedSubject(carrying('Bugs Bunny cartoon', 'search-verified'), named), true, 'the dig found it by searching him')
+  assert.equal(sharesNamedSubject(carrying('Christophe Colomb', 'alias'), new Map()), false, "a subject the anchor's title does not name")
+})
+
+/** A fingerprint `differ` bits away from the all-zero one: likeness 1 − differ/384. */
+function print(differ: number): Uint8Array {
+  const bits = new Uint8Array(48)
+  for (let index = 0; index < differ; index += 1) bits[index >> 3] |= 1 << (index & 7)
+  return bits
+}
+
+test('the AI keeps the far videos out of the Wave while close ones fill it, and the closest come first', () => {
+  const start: WaveAnchor = { ...anchor(), type: 'video', title: 'Christopher Columbus cartoon', vec: print(0) }
+  const far = { ...candidate('video', 'mainstream-report', { channelKey: 'a', title: 'Incendio en un bar en Burgos' }), vec: print(184) }
+  const close = { ...candidate('video', 'interview', { channelKey: 'b', title: 'Voyages of Christopher Columbus' }), vec: print(40) }
+  const closer = { ...candidate('video', 'official-clip', { channelKey: 'c', title: 'Christopher Columbus: what really happened' }), vec: print(20) }
+  const image = candidate('image', 'meme-gif', { channelKey: 'd', title: 'Christopher Columbus Dog GIF' })
+  const pool = byCloseness(start, [far, close, image, closer])
+  assert.deepEqual(pool.map((item) => item.title), [closer.title, close.title, image.title, far.title], 'closest first; no fingerprint sits in the middle')
+  assert.ok(pool[3].likeness !== undefined && pool[3].likeness < FAR_LIKENESS)
+  const { wave } = buildClosest(start, pool, [])
+  assert.equal(wave.items.length, 3)
+  assert.ok(!wave.items.some((item) => item.title === far.title), 'the bar fire stays out')
+})
+
+test('the Wave keeps its three: a far video comes last of all when nothing closer can fill it ("plus courte… non non non")', () => {
+  const start: WaveAnchor = { ...anchor(), type: 'video', title: 'Christopher Columbus cartoon', vec: print(0) }
+  const far = { ...candidate('video', 'mainstream-report', { channelKey: 'a', title: 'Incendio en un bar en Burgos' }), vec: print(184) }
+  const close = { ...candidate('video', 'interview', { channelKey: 'b', title: 'Voyages of Christopher Columbus' }), vec: print(40) }
+  const image = candidate('image', 'meme-gif', { channelKey: 'd', title: 'Christopher Columbus Dog GIF' })
+  const { wave } = buildClosest(start, byCloseness(start, [far, close, image]), [])
+  assert.equal(wave.items.length, 3)
+  assert.equal(wave.items[2].title, far.title)
+  assert.equal(wave.level, 5, 'the level says how loose the Wave became')
+  assert.deepEqual(byCloseness({}, [far, close]).map((item) => item.title), [far.title, close.title], 'no fingerprint of its own: the pool as it was')
+})
+
+test('a word too common to carry a Wave alone is passed over by the one-word steps: "awesome", "5th", "histoire", 2014', () => {
+  for (const word of ['awesome', 'Awesome', '5th', '2014', 'histoire', 'Histoire', 'meilleur', 'incroyable', 'love']) assert.equal(tellsAlone(word), false, word)
+  for (const word of ['armenia', 'semester', 'gellone', 'bagel', 'Selçuk', 'colomb']) assert.equal(tellsAlone(word), true, word)
 })
