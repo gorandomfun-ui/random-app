@@ -174,6 +174,13 @@ case "${LINE}" in
     # (public/erase-obsolete-videos.html). No model, little memory; it ends before the 06:35 look-alikes (35 minutes).
     RANDOM_OBSOLETE_MINUTES="${RANDOM_OBSOLETE_MINUTES:-35}" run node --import tsx scripts/v3/obsolete-direct.ts
     ;;
+  dm-bait)
+    # Piracy bait on Dailymotion (24 October: account x1cfbdd, thirty-eight stills of 302 s with a fake player): the
+    # accounts whose undescribed videos entered in the last day, then a bounded number of the base's, each asked once,
+    # two a second at most; a bait account is listed for the door, its rows saved under /home/random/backups/dm-bait,
+    # then deleted. No model, no YouTube unit, little memory; it ends before the 03:42 previews (25 minutes).
+    RANDOM_DM_BAIT_MINUTES="${RANDOM_DM_BAIT_MINUTES:-25}" RANDOM_BACKUP_DIR="${RANDOM_BACKUP_DIR:-/home/random/backups}" run node --import tsx scripts/v3/dm-bait-direct.ts --base
+    ;;
   drift)
     # Dailymotion's related videos and small uploaders, from the likes and the weird themes: the owner's way of browsing, no YouTube unit.
     run node --import tsx scripts/v3/drift-direct.ts

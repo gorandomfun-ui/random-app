@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM piracy bait on Dailymotion (03:16 Paris, twenty-five minutes between the end of the 02:35 look-alikes at 03:15 and the 03:42 previews, beside the night's light site check only: the accounts whose undescribed videos entered in the last day, then a bounded number of the base's, each asked once; a bait account listed for the door, its rows saved on the disk, then deleted)
+
+[Timer]
+OnCalendar=*-*-* 03:16:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

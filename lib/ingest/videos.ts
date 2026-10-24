@@ -1056,7 +1056,8 @@ export async function finalizeVideoIngest(
   if (screened.refused) {
     warnings.push({ label: 'videos:mini-series', message: `${screened.refused} mini-series refused` });
   }
-  // Ads posing as videos: scams refused, product tops let in up to ten a day.
+  // Ads posing as videos: scams refused, product tops let in up to ten a day; AI channels and the Dailymotion accounts
+  // listed as piracy bait (lib/v3/bait) refused with them.
   const junk = await screenJunk(await getDb(), screened.videos, { dryRun, line }).catch((error) => {
     console.warn('[ingest:videos] filtre pubs indisponible', error instanceof Error ? error.message : error);
     return { videos: screened.videos, refused: 0 };

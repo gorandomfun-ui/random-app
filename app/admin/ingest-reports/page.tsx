@@ -57,6 +57,7 @@ const LINE_LABEL: Record<string, string> = {
   lookalike: 'Les sosies de tes likes (IA, Dailymotion et YouTube)',
   obsolete: 'Vérification de nuit des vidéos mortes',
   'image-obsolete': 'Vérification de nuit des images et GIF morts',
+  'dm-bait': 'Comptes appâts Dailymotion (vérification de nuit)',
   languages: 'Les langues du monde (Dailymotion)',
   bilibili: 'Bilibili, pour ordinateur (carte Monde)',
   'youtube-drift': 'La dérive YouTube (chaînes)',
@@ -115,6 +116,7 @@ type MiniSeriesReport = {
 const MINI_SERIES_REASON: Record<string, string> = {
   label: 'étiquette', studio: 'studio', cjk: 'titre chinois', trope: 'cliché', 'ai-story': 'histoire IA', narrative: 'titre-récit',
   shape: 'verticale longue', scam: 'arnaque', 'product-top': 'top produits', 'ai-channel': 'chaîne IA', 'ai-marked': 'marquée IA',
+  'bait-account': 'compte appât',
 }
 const UNIVERSE_LABEL: Record<string, string> = {
   music: 'Musique', sport: 'Sport', gaming: 'Gaming', 'humor-memes': 'Humour', 'events-parties': 'Fête', food: 'Food', travel: 'Découverte', craft: 'Astuces / artisanat',

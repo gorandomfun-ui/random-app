@@ -59,8 +59,8 @@ export const LINE_LABELS: Record<string, string> = {
  * put on the waiting list; those that enter are counted by the visits (web-previews).
  */
 const MEASURING_LINES = new Set<string>(['like-pool', 'web-commoncrawl'])
-/** Lines that check rather than insert (the night's check of dead videos): judged by their last run, never "muette". */
-export const CHECK_LINES = new Set<string>(['obsolete', 'image-obsolete'])
+/** Lines that check rather than insert (the night's check of dead videos, of piracy bait): judged by their last run, never "muette". */
+export const CHECK_LINES = new Set<string>(['obsolete', 'image-obsolete', 'dm-bait'])
 
 export function shownStatus(run: Pick<JournalRun, 'status' | 'startedAt'>, now: number): ShownStatus {
   if (run.status !== 'running') return run.status

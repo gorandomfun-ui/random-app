@@ -17,8 +17,9 @@ systemctl daemon-reload
 # the sites' visits and framing checks (no Google search in them — the owner wants sites found without CSE), the status;
 # the lines added since by hand (the look-alikes, the YouTube drift, the night checks of videos and images); and the like
 # pool's count, which spends no YouTube unit and was stopped on 2 October by mistake (the likes made since stayed out of it);
-# the languages of the world from Dailymotion and Bilibili for a computer (16 October).
-for timer in random-line@fresh random-line@dig random-line@drift random-line@vec random-line@web-previews random-line@web-embed random-line@web-search random-line@web-commoncrawl random-line@lookalike random-line@youtube-drift random-line@obsolete random-line@image-obsolete random-line@like-pool random-line@languages random-line@bilibili random-status; do
+# the languages of the world from Dailymotion and Bilibili for a computer (16 October); the night's check for piracy bait
+# on Dailymotion (24 October), which spends no YouTube unit.
+for timer in random-line@fresh random-line@dig random-line@drift random-line@vec random-line@web-previews random-line@web-embed random-line@web-search random-line@web-commoncrawl random-line@lookalike random-line@youtube-drift random-line@obsolete random-line@image-obsolete random-line@like-pool random-line@languages random-line@bilibili random-line@dm-bait random-status; do
   systemctl enable --now "${timer}.timer"
 done
 systemctl list-timers 'random-*' --no-pager

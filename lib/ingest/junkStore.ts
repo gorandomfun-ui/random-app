@@ -9,6 +9,7 @@ import type { Db, Document } from 'mongodb'
 
 import { junkKind, PRODUCT_TOP_DAILY } from './junk'
 import { recordRefusals, type Refusal } from './miniSeriesStore'
+import { baitAccounts } from '../v3/bait/store'
 import { isAiMarked } from '../v3/cool/themes'
 import { channelKey } from '../v3/tagging/classify'
 
@@ -53,11 +54,14 @@ export async function screenJunk<T extends Screenable>(db: Db, videos: T[], opti
   const admitted: T[] = []
   const refusals: Refusal[] = []
   const factories = await loadAiChannels(db, now.getTime())
+  const bait = await baitAccounts(db, now.getTime())
   for (const video of videos) {
-    // Made by AI, as it says of itself or as its channel is known for (the owner: "pas de trucs IA").
     const key = channelKey({ provider: video.provider, channelId: video.channelId })
+    // A Dailymotion account whose uploads are piracy bait, not videos (lib/v3/bait/rule.ts), listed by the night's check.
+    const baitAccount = key && bait.has(key) ? 'bait-account' : null
+    // Made by AI, as it says of itself or as its channel is known for (the owner: "pas de trucs IA").
     const ai = (key && factories.has(key)) ? 'ai-channel' : isAiMarked(`${video.title ?? ''} ${video.channelTitle ?? ''} ${(video.description ?? '').slice(0, 1500)}`) ? 'ai-marked' : null
-    const kind = ai ?? junkKind(video.title)
+    const kind = baitAccount ?? ai ?? junkKind(video.title)
     if (!kind) { admitted.push(video); continue }
     if (kind === 'product-top' && (options.dryRun || (await takeProductTopPlace(db, now)))) { admitted.push(video); continue }
     const channel = (video.channelTitle ?? video.channelId ?? '').trim()
