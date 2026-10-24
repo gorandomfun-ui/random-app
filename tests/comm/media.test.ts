@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blobKeyFor, blobPathnameOf, extensionOf, keyBelongsTo, MEDIA_MAX_BYTES } from '@/lib/comm/blob'
+import { blobKeyFor, blobPathnameOf, extensionOf, keyBelongsTo, legacyBlobUrl, readableMedia, readUrl, MEDIA_MAX_BYTES } from '@/lib/comm/blob'
 import { imageSizeOf } from '@/lib/comm/imageSize'
 import { captureEmbedUrl, formatSeconds, parseStartSeconds, pickRecorderType } from '@/lib/comm/capture'
 
@@ -18,11 +18,24 @@ test('une clé Blob vit dans le dossier de son élément, avec un nom que person
   assert.equal(MEDIA_MAX_BYTES, 320 * 1024 * 1024)
 })
 
-test('une adresse Blob donne son chemin ; une autre adresse non', () => {
+test('une adresse du bucket, signée ou non, donne sa clé ; une adresse de l’ancien Blob aussi ; une autre adresse non', () => {
+  process.env.COMM_GCS_BUCKET = 'comm-test-bucket'
+  assert.equal(blobPathnameOf(`https://storage.googleapis.com/comm-test-bucket/comm/${ITEM}/aa.png`), `comm/${ITEM}/aa.png`)
+  assert.equal(blobPathnameOf(`https://storage.googleapis.com/comm-test-bucket/comm/${ITEM}/aa.png?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Signature=abc`), `comm/${ITEM}/aa.png`)
+  assert.equal(blobPathnameOf(`https://comm-test-bucket.storage.googleapis.com/comm/${ITEM}/aa.png`), `comm/${ITEM}/aa.png`)
+  assert.equal(blobPathnameOf(`https://storage.googleapis.com/other-bucket/comm/${ITEM}/aa.png`), null)
   assert.equal(blobPathnameOf(`https://abc123.public.blob.vercel-storage.com/comm/${ITEM}/aa.png`), `comm/${ITEM}/aa.png`)
+  assert.ok(legacyBlobUrl(`https://abc123.public.blob.vercel-storage.com/comm/${ITEM}/aa.png`))
+  assert.ok(!legacyBlobUrl(`https://storage.googleapis.com/comm-test-bucket/comm/${ITEM}/aa.png`))
   assert.equal(blobPathnameOf('https://example.com/comm/x.png'), null)
   assert.equal(blobPathnameOf('http://abc.public.blob.vercel-storage.com/x'), null)
   assert.equal(blobPathnameOf('nope'), null)
+  // An address of the old store reads as it is; a picture keeps its address, a clip keeps its own (asked for when opened).
+  const legacy = `https://abc123.public.blob.vercel-storage.com/comm/${ITEM}/aa.png`
+  assert.equal(readUrl(legacy, 3600), legacy)
+  assert.equal(readableMedia({ blobUrl: legacy, contentType: 'image/png' }).blobUrl, legacy)
+  const clip = `https://storage.googleapis.com/comm-test-bucket/comm/${ITEM}/bb.mp4`
+  assert.equal(readableMedia({ blobUrl: clip, contentType: 'video/mp4' }).blobUrl, clip)
 })
 
 test('les dimensions se lisent dans l_en-tête d_un PNG, d_un GIF, d_un JPEG', () => {

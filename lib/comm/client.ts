@@ -1,7 +1,9 @@
 /**
  * The browser side of the queue: the calls to the tool's routes, the direct
- * upload to Blob (a short token from the server, the file never crossing a
- * function), and what the browser can measure of a file before sending it.
+ * upload to the store (a signed address from the server, the file never
+ * crossing a function), the clip's address asked when it is opened (each
+ * opening counts toward the month's free band), and what the browser can
+ * measure of a file before sending it.
  */
 
 import type { MediaDoc, MediaKind, QueueItem } from './model'
@@ -99,13 +101,6 @@ export function probeMedia(file: Blob): Promise<MediaProbe> {
 
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' }
 
-function randomName(contentType: string): string {
-  const bytes = new Uint8Array(12); crypto.getRandomValues(bytes)
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-  const ext = EXT[contentType] ?? ''
-  return ext ? `${hex}.${ext}` : hex
-}
-
 export type UploadResult = { media?: MediaDoc; error?: string; message?: string }
 
 /** One frame of a clip, a little after its start, as a JPEG; null when the browser cannot draw it. */
@@ -136,13 +131,47 @@ export function posterOf(file: Blob): Promise<Blob | null> {
   })
 }
 
+const clipUrls = new Map<string, { url: string; until: number }>()
+
+/**
+ * A clip's readable address, asked of the tool when the browser opens the
+ * clip — its bytes count toward the month's free band — and kept for the
+ * visit. At the month's cap the error says when the clips open again.
+ */
+export async function clipUrl(media: Pick<MediaDoc, '_id'>): Promise<string> {
+  const kept = clipUrls.get(media._id)
+  if (kept && kept.until > Date.now()) return kept.url
+  const body = await fetch(`/api/admin/comm/media/${encodeURIComponent(media._id)}/url`, { cache: 'no-store' })
+    .then((r) => read<{ url?: string; error?: string; message?: string }>(r))
+    .catch(() => ({ status: 0 } as { url?: string; error?: string; message?: string; status: number }))
+  if (!body.url) throw new Error(body.message ?? (body.error === 'quota' ? 'Plafond du mois atteint.' : 'Clip indisponible.'))
+  clipUrls.set(media._id, { url: body.url, until: Date.now() + 90 * 60 * 1000 })
+  return body.url
+}
+
+/** Sends a file to a signed address, with the type the signature binds, reporting progress; a refusal says what the store answered. */
+export function putSigned(url: string, file: Blob, contentType: string, onProgress?: (fraction: number) => void): Promise<{ ok: true } | { ok: false; message: string }> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', contentType)
+    // A key is never written twice: browsers may keep the file a year.
+    xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total) }
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300 ? { ok: true } : { ok: false, message: `le stockage a répondu ${xhr.status}` })
+    xhr.onerror = () => resolve({ ok: false, message: 'réseau' })
+    xhr.onabort = () => resolve({ ok: false, message: 'interrompu' })
+    xhr.send(file)
+  })
+}
+
 /** A clip without its poster gets one, so the engine can draw its slide; fetched from the store when needed. */
 export async function ensurePoster(media: MediaDoc, all: MediaDoc[]): Promise<MediaDoc | null> {
   if (!media.contentType.startsWith('video/') || media.kind === 'montage') return null
   if (all.some((m) => m.kind === 'poster' && m.sourceMediaId === media._id)) return null
   try {
     // The browser's copy will do: a stored file never changes.
-    const file = await (await fetch(media.blobUrl)).blob()
+    const file = await (await fetch(await clipUrl(media))).blob()
     const poster = await posterOf(file)
     if (!poster) return null
     const uploaded = await uploadMedia(media.queueItemId, poster, 'poster', undefined, { sourceMediaId: media._id })
@@ -150,31 +179,24 @@ export async function ensurePoster(media: MediaDoc, all: MediaDoc[]): Promise<Me
   } catch { return null }
 }
 
-/** Sends a file straight to the item's Blob folder, then records it with what the browser measured. */
+/** Sends a file straight to the item's folder in the store (a signed address, minted for it), then records it with what the browser measured. */
 export type UploadExtra = { trim?: { startSec: number; endSec: number }; crop?: { mode: 'framed' | 'centered'; x: number; y: number; w: number; h: number }; sourceMediaId?: string; templateKey?: string; durationSec?: number }
 
 export async function uploadMedia(queueItemId: string, file: Blob, kind: MediaKind, onProgress?: (fraction: number) => void, extra: UploadExtra = {}): Promise<UploadResult> {
   const contentType = (file.type || 'application/octet-stream').split(';')[0].trim().toLowerCase()
   if (!EXT[contentType]) return { error: 'type', message: `Format non pris en charge : ${contentType || 'inconnu'}.` }
   const probe = await probeMedia(file)
-  let blobUrl = ''
-  try {
-    const { upload } = await import('@vercel/blob/client')
-    const result = await upload(`comm/${queueItemId}/${randomName(contentType)}`, file, {
-      access: 'public', handleUploadUrl: '/api/admin/comm/upload', clientPayload: queueItemId, contentType,
-      multipart: file.size > 50 * 1024 * 1024,
-      onUploadProgress: onProgress ? ({ percentage }) => onProgress(percentage / 100) : undefined,
-    })
-    blobUrl = result.url
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return { error: 'upload', message: /no-blob|Blob n’est pas configuré|BLOB_READ_WRITE_TOKEN/i.test(message) ? 'Le stockage Blob n’est pas configuré sur le projet.' : `Envoi impossible : ${message}` }
-  }
+  const minted = await fetch('/api/admin/comm/upload', { method: 'POST', headers, body: JSON.stringify({ queueItemId, contentType, bytes: file.size }) })
+    .then((r) => read<{ url?: string; key?: string; error?: string; message?: string }>(r))
+    .catch(() => ({ status: 0 } as { url?: string; key?: string; error?: string; message?: string; status: number }))
+  if (!minted.url || !minted.key) return { error: minted.error ?? 'upload', message: minted.message ?? (minted.error === 'no-blob' ? 'Le stockage n’est pas configuré sur le projet.' : 'Envoi impossible.') }
+  const sent = await putSigned(minted.url, file, contentType, onProgress)
+  if (!sent.ok) return { error: 'upload', message: `Envoi impossible : ${sent.message}` }
   // A file the browser just recorded may not tell its length yet: the montage knows it.
   const measured = { ...probe, ...(probe.durationSec == null && extra.durationSec ? { durationSec: extra.durationSec } : {}) }
-  const registered = await fetch('/api/admin/comm/media', { method: 'POST', headers, body: JSON.stringify({ queueItemId, kind, blobUrl, contentType, bytes: file.size, ...measured, trim: extra.trim, crop: extra.crop, sourceMediaId: extra.sourceMediaId, templateKey: extra.templateKey }) })
-    .then((r) => read<{ media?: MediaDoc; error?: string }>(r))
-  if (!registered.media) return { error: registered.error ?? 'register', message: 'Le fichier est envoyé mais n’a pas pu être enregistré.' }
+  const registered = await fetch('/api/admin/comm/media', { method: 'POST', headers, body: JSON.stringify({ queueItemId, kind, key: minted.key, contentType, bytes: file.size, ...measured, trim: extra.trim, crop: extra.crop, sourceMediaId: extra.sourceMediaId, templateKey: extra.templateKey }) })
+    .then((r) => read<{ media?: MediaDoc; error?: string; message?: string }>(r))
+  if (!registered.media) return { error: registered.error ?? 'register', message: registered.message ?? 'Le fichier est envoyé mais n’a pas pu être enregistré.' }
   // A clip brought in gets its poster right away: the slide can then be drawn with it.
   if ((kind === 'capture' || kind === 'import') && contentType.startsWith('video/')) {
     try {

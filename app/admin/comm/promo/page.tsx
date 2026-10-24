@@ -271,7 +271,8 @@ export default function PromoPage() {
     setUploading(true); setError('')
     for (const file of files) {
       const out = await uploadTrack(file)
-      if ('error' in out) setError(out.message); else setTracks((list) => [...list.filter((t) => t.url !== out.url), out].sort((a, b) => a.name.localeCompare(b.name)))
+      // The folder listed again: the track's readable address comes from there.
+      if ('error' in out) setError(out.message); else setTracks((await listTracks()).tracks)
     }
     setUploading(false)
   }, [])

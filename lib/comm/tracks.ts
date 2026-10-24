@@ -1,7 +1,7 @@
 /**
  * The promo's sound tracks: the curator's own royalty-free files (Pixabay
- * Music, YouTube's audio library…), kept in Blob under promo/tracks/, one
- * file one track, sent there straight from the browser with a short token.
+ * Music, YouTube's audio library…), kept in the store under promo/tracks/,
+ * one file one track, sent there straight from the browser on a signed PUT.
  * The promo draws one per film and glitches it itself, in time with the
  * picture. Both sides of the tool read these rules: the route that signs the
  * token and lists the folder, and the page that drops the files.
@@ -24,8 +24,8 @@ export const trackNameOf = (pathname: string) => pathname.slice(TRACKS_PREFIX.le
 export const trackTypeOf = (pathname: string) => TYPE_OF_EXT[pathname.slice(pathname.lastIndexOf('.') + 1)] ?? 'audio/mpeg'
 
 /**
- * The Blob pathname for a file the curator drops: its name as a slug, the moment as a token (so a file
- * dropped again never reuses an address the CDN may still hold), its extension from its type or its name;
+ * The store's key for a file the curator drops: its name as a slug, the moment as a token (so a file
+ * dropped again never reuses an address a cache may still hold), its extension from its type or its name;
  * null for a file that is not a track.
  */
 export function trackPathFor(file: { name: string; type: string }, now = Date.now()): string | null {
@@ -45,18 +45,16 @@ export async function listTracks(): Promise<{ tracks: Track[]; blob: boolean }> 
   } catch { return { tracks: [], blob: false } }
 }
 
-/** Sends a track straight to the tracks folder, under a fresh address. */
+/** Sends a track straight to the tracks folder, under a fresh address; the page lists the folder again for its readable address. */
 export async function uploadTrack(file: File, onProgress?: (fraction: number) => void): Promise<Track | { error: string; message: string }> {
-  const pathname = trackPathFor(file)
-  if (!pathname) return { error: 'type', message: `Format non pris en charge : ${file.name} (mp3, m4a, wav, ogg, flac).` }
-  try {
-    const { upload } = await import('@vercel/blob/client')
-    const result = await upload(pathname, file, { access: 'public', handleUploadUrl: '/api/admin/comm/tracks', contentType: trackTypeOf(pathname), onUploadProgress: onProgress ? ({ percentage }) => onProgress(percentage / 100) : undefined })
-    return { url: result.url, name: trackNameOf(pathname), bytes: file.size }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return { error: 'upload', message: /no-blob|Blob n’est pas configuré|BLOB_READ_WRITE_TOKEN/i.test(message) ? 'Le stockage Blob n’est pas configuré sur le projet.' : `Envoi impossible : ${message}` }
-  }
+  if (!trackPathFor(file)) return { error: 'type', message: `Format non pris en charge : ${file.name} (mp3, m4a, wav, ogg, flac).` }
+  const minted = await fetch('/api/admin/comm/tracks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: file.name, type: file.type, bytes: file.size }) })
+    .then((r) => r.json().then((body) => ({ ...(body as { url?: string; key?: string; contentType?: string; name?: string; error?: string; message?: string }), status: r.status }))).catch(() => ({ status: 0 } as { url?: string; key?: string; contentType?: string; name?: string; error?: string; message?: string; status: number }))
+  if (!minted.url || !minted.key || !minted.contentType) return { error: minted.error ?? 'upload', message: minted.message ?? (minted.error === 'no-blob' ? 'Le stockage n’est pas configuré sur le projet.' : 'Envoi impossible.') }
+  const { putSigned } = await import('./client')
+  const sent = await putSigned(minted.url, file, minted.contentType, onProgress)
+  if (!sent.ok) return { error: 'upload', message: `Envoi impossible : ${sent.message}` }
+  return { url: minted.url.split('?')[0], name: minted.name ?? trackNameOf(minted.key), bytes: file.size }
 }
 
 export async function deleteTrack(url: string): Promise<boolean> {

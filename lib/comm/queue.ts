@@ -7,7 +7,7 @@ import { ObjectId, type Db } from 'mongodb'
 
 import { COMM_MEDIA, COMM_QUEUE, queueMax, type MediaDoc, type MediaKind, type QueueItem } from './model'
 import { snapshotFromRow, subjectRefsOf, withLabels } from './snapshot'
-import { blobConfigured, blobKeyFor, deleteBlobs, extensionOf, putBlob, MEDIA_CONTENT_TYPES, MEDIA_MAX_BYTES } from './blob'
+import { blobConfigured, blobKeyFor, deleteBlobs, extensionOf, putBlob, readableMedia, MEDIA_CONTENT_TYPES, MEDIA_MAX_BYTES } from './blob'
 import { imageSizeOf } from './imageSize'
 import { lookupAuthor } from './authorLookup'
 
@@ -26,8 +26,9 @@ function itemOf(row: Record<string, unknown>): QueueItem {
   return { ...(row as unknown as QueueItem), _id: String(row._id) }
 }
 
+/** A media row as the browser gets it: a picture with its day's readable address, a clip with its own (asked for when opened). */
 function mediaOf(row: Record<string, unknown>): MediaDoc {
-  return { ...(row as unknown as MediaDoc), _id: String(row._id) }
+  return readableMedia({ ...(row as unknown as MediaDoc), _id: String(row._id) })
 }
 
 export async function listQueue(db: Db): Promise<QueueItemWithMedia[]> {
@@ -148,7 +149,7 @@ export type ImportResult = { ok: true; media: MediaDoc } | { ok: false; reason: 
 
 /**
  * The content's own file, fetched by the server from the snapshot's address
- * (never from a client-sent URL) and streamed into Blob: the image in full
+ * (never from a client-sent URL) and put in the store: the image in full
  * size, the GIF as served (Giphy's mp4 when it has one), or the thumbnail.
  */
 export async function importSourceMedia(db: Db, queueItemId: string, what: ImportWhat): Promise<ImportResult> {
@@ -176,10 +177,10 @@ export async function importSourceMedia(db: Db, queueItemId: string, what: Impor
   const size = contentType.startsWith('image/') ? imageSizeOf(bytes) : null
   const animated = contentType === 'image/gif' || contentType.startsWith('video/')
   const kind: MediaKind = what === 'thumb' ? 'thumb' : what === 'gif' ? 'gif' : 'image'
-  const media = await registerMedia(db, {
+  const media = readableMedia(await registerMedia(db, {
     queueItemId, kind, blobUrl: stored.url, blobKey: stored.pathname, contentType, bytes: bytes.byteLength,
     width: size?.width ?? null, height: size?.height ?? null, durationSec: null, animated,
-  })
+  }))
   return { ok: true, media }
 }
 
