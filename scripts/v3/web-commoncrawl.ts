@@ -7,9 +7,10 @@
  *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts --country=cm    a country
  *   node --env-file=.env.local --import tsx scripts/v3/web-commoncrawl.ts --dry           reads, queues nothing
  *
- * Since 22 October it rests while three thousand of its sites still wait for their visit (they get at most half of what
- * a pass takes in, scripts/v3/web-previews.ts), and it brings the brands of the night's countries from Wikidata
- * (lib/v3/web/brands.ts), the owner's "marques de jambon en Croatie".
+ * It rests while three thousand of its sites still wait for their visit. Since 22 October it also brings brands from
+ * Wikidata (lib/v3/web/brands.ts), the owner's "marques de jambon en Croatie": since 24 October on their own turn around
+ * the world, eight countries a night, and Common Crawl's sites are visited without a share again (the half it was held
+ * to cut the entries from about 800 a day to about 350).
  *
  * The crawl's block index (105 MB) is fetched once per crawl into
  * RANDOM_CC_CACHE (the server's /home/random/cache/cc) and read as a stream;
@@ -27,7 +28,7 @@ import { MongoClient } from 'mongodb'
 
 import { closeRun, journalHost, openRun, type RunCounters } from '@/lib/v3/ingest/journal'
 import { CANDIDATES, enqueueSites, type CandidateInput } from '@/lib/v3/web/candidates'
-import { brandSites } from '@/lib/v3/web/brands'
+import { brandCountriesOf, brandSites } from '@/lib/v3/web/brands'
 import { blocksFor, clusterUrl, countriesFrom, fetchBlock, latestCrawl, rootPagesIn, type Block, type RootPage } from '@/lib/v3/web/commoncrawl'
 import { WORLD_COUNTRIES } from '@/lib/v3/web/worldQueries'
 
@@ -39,8 +40,12 @@ const MAX_MINUTES = Number(process.env.RANDOM_CC_MINUTES ?? 20)
 const CACHE = process.env.RANDOM_CC_CACHE ?? './.cache/cc'
 /** Common Crawl's sites waiting for a visit past which a night brings no more of them. */
 const BACKLOG_MAX = Number(process.env.RANDOM_CC_BACKLOG ?? 3000)
-/** Brands a night brings at most, from the countries it went through. */
+/** Brands a night brings at most; at most a quarter from one country, so a night mixes several. */
 const MAX_BRANDS = Number(process.env.RANDOM_BRANDS_MAX ?? 600)
+const BRANDS_PER_COUNTRY = 150
+/** Countries the brands go through a night, on their own turn around the world, and their own minutes after Common Crawl's. */
+const BRAND_COUNTRIES = 8
+const BRAND_MINUTES = 10
 const PAUSE_MS = 250
 const dry = process.argv.includes('--dry')
 const countryArg = process.argv.find((arg) => arg.startsWith('--country='))?.slice(10)
@@ -124,13 +129,15 @@ async function main(): Promise<void> {
       console.log(`[commoncrawl] ${crawl} · .${country} · ${own.length} blocs · ${pages.length} pages d'accueil vivantes`)
     }
     const queued = dry ? { queued: 0, known: 0 } : await enqueueSites(db, rows)
-    // The brands of the night's countries, or of the day's when Common Crawl rests (lib/v3/web/brands.ts).
+    // The brands, on their own turn around the world (lib/v3/web/brands.ts): the night's Common Crawl countries were
+    // often small ones with none (24 October).
     const brands: CandidateInput[] = []
     const brandCountries: string[] = []
-    for (const country of (visited.length ? visited : countries)) {
-      if (brands.length >= MAX_BRANDS || Date.now() > deadline) break
+    const brandDeadline = Date.now() + BRAND_MINUTES * 60_000
+    for (const country of countryArg ? countries : brandCountriesOf(WORLD_COUNTRIES, BRAND_COUNTRIES, startedAt)) {
+      if (brands.length >= MAX_BRANDS || Date.now() > brandDeadline) break
       try {
-        brands.push(...(await brandSites(country)).slice(0, MAX_BRANDS - brands.length))
+        brands.push(...(await brandSites(country)).slice(0, Math.min(BRANDS_PER_COUNTRY, MAX_BRANDS - brands.length)))
         brandCountries.push(country)
       } catch (error) {
         errors.push(`marques .${country} : ${error instanceof Error ? error.message : 'unreadable'}`)

@@ -137,7 +137,7 @@ export async function takeCandidates(db: Db, size: number, exclude: string[] = [
 
 /** A failed visit is tried again three days later, twice at most: a small host is sometimes just down. */
 export const RETRY_DAYS = 3
-/** A site left unvisited (Common Crawl past its half of a pass) waits this long, its attempts untouched. */
+/** A site left unvisited by a pass waits this long, its attempts untouched. */
 export const DEFER_HOURS = 6
 export const MAX_ATTEMPTS = 2
 

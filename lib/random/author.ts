@@ -15,6 +15,8 @@ export const AUTHOR_SERIES_SIZE = 5
 const YOUTUBE_CHANNEL = /^UC[\w-]{20,}$/
 const DAILYMOTION_ACCOUNT = /^x[a-z0-9]+$/i
 const BILIBILI_UPLOADER = /^\d+$/
+/** An account's own page, as Dailymotion's API gives it: its name, never its id. */
+const DAILYMOTION_PAGE = /^https:\/\/www\.dailymotion\.com\/[\w.-]+$/
 
 function split(channelKey: string | null | undefined): { provider: string; id: string } | null {
   const at = channelKey ? channelKey.indexOf(':') : -1
@@ -22,19 +24,39 @@ function split(channelKey: string | null | undefined): { provider: string; id: s
   return { provider: channelKey.slice(0, at), id: channelKey.slice(at + 1) }
 }
 
-/** Whether a channel key is one the légende can send to a channel page. */
+/** Whether a channel key names a real author the légende can send somewhere: a YouTube channel, a Dailymotion account, a Bilibili uploader. */
 export function knownChannelKey(channelKey: string | null | undefined): boolean {
-  return authorChannelUrl(channelKey) !== null
+  const key = split(channelKey)
+  if (!key) return false
+  if (key.provider === 'youtube') return YOUTUBE_CHANNEL.test(key.id)
+  if (key.provider === 'dailymotion') return DAILYMOTION_ACCOUNT.test(key.id)
+  if (key.provider === 'bilibili') return BILIBILI_UPLOADER.test(key.id)
+  return false
 }
 
-/** An author's channel page at its platform; a Dailymotion account's id opens its page there. */
-export function authorChannelUrl(channelKey: string | null | undefined): string | null {
+/**
+ * Dailymotion account pages by video, as Dailymotion's API names them (`owner.url`) when the page asks about a video it
+ * shows. An account's id opens "Not Found" there (`dailymotion.com/x1cfbdd`, 24 October: seven accounts of seven); only
+ * its name opens its page (`dailymotion.com/c1115830`).
+ */
+const dailymotionOwners = new Map<string, string>()
+
+/** Keeps the account page Dailymotion gave for one of its videos. */
+export function rememberDailymotionOwner(videoId: string, url: unknown): void {
+  if (videoId && typeof url === 'string' && DAILYMOTION_PAGE.test(url)) dailymotionOwners.set(videoId, url)
+}
+
+/**
+ * An author's channel page at its platform. A Dailymotion author needs the video it was met with: their page once
+ * Dailymotion has named it, and until then the video's own page there, which names its author and links to them.
+ */
+export function authorChannelUrl(channelKey: string | null | undefined, dailymotionVideoId?: string | null): string | null {
   const key = split(channelKey)
-  if (!key) return null
-  if (key.provider === 'youtube' && YOUTUBE_CHANNEL.test(key.id)) return `https://www.youtube.com/channel/${key.id}`
-  if (key.provider === 'dailymotion' && DAILYMOTION_ACCOUNT.test(key.id)) return `https://www.dailymotion.com/${key.id}`
-  if (key.provider === 'bilibili' && BILIBILI_UPLOADER.test(key.id)) return `https://space.bilibili.com/${key.id}`
-  return null
+  if (!key || !knownChannelKey(channelKey)) return null
+  if (key.provider === 'youtube') return `https://www.youtube.com/channel/${key.id}`
+  if (key.provider === 'bilibili') return `https://space.bilibili.com/${key.id}`
+  if (!dailymotionVideoId) return null
+  return dailymotionOwners.get(dailymotionVideoId) ?? `https://www.dailymotion.com/video/${dailymotionVideoId}`
 }
 
 /** The platform's name, as the channel button says it. */

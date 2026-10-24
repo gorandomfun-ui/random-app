@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { AUTHOR_SERIES_MIN, AUTHOR_SERIES_SIZE, authorChannelUrl, authorPlatform, knownChannelKey, offersAuthorSeries } from '../../lib/random/author'
+import { AUTHOR_SERIES_MIN, AUTHOR_SERIES_SIZE, authorChannelUrl, authorPlatform, knownChannelKey, offersAuthorSeries, rememberDailymotionOwner } from '../../lib/random/author'
 
 test("an author's channel page at its platform, from the site's channel key", () => {
   assert.equal(authorChannelUrl('youtube:UCX6OQ3DkcsbYNE6H8uQQuVA'), 'https://www.youtube.com/channel/UCX6OQ3DkcsbYNE6H8uQQuVA')
-  // The owner's zoo video, 22 October: the account's id opens "Vidéos de 2 Girls 1 Adventure".
-  assert.equal(authorChannelUrl('dailymotion:x2b1rhk'), 'https://www.dailymotion.com/x2b1rhk')
   assert.equal(authorChannelUrl('bilibili:123456'), 'https://space.bilibili.com/123456')
   assert.equal(authorPlatform('dailymotion:x2b1rhk'), 'Dailymotion')
   assert.equal(authorPlatform('youtube:UCX6OQ3DkcsbYNE6H8uQQuVA'), 'YouTube')
+})
+
+test("a Dailymotion author's page by their name, which Dailymotion gives with the video; the video's own page until then", () => {
+  // 24 October: dailymotion.com/x1cfbdd answered "Not Found", seven accounts of seven; dailymotion.com/c1115830 opens the channel.
+  assert.equal(knownChannelKey('dailymotion:x1cfbdd'), true)
+  assert.equal(authorChannelUrl('dailymotion:x1cfbdd'), null, 'never the account id alone')
+  assert.equal(authorChannelUrl('dailymotion:x1cfbdd', 'x17dqg9'), 'https://www.dailymotion.com/video/x17dqg9')
+  rememberDailymotionOwner('x17dqg9', 'https://www.dailymotion.com/c1115830')
+  assert.equal(authorChannelUrl('dailymotion:x1cfbdd', 'x17dqg9'), 'https://www.dailymotion.com/c1115830')
+  rememberDailymotionOwner('x8zzzzz', 'https://elsewhere.example/c1115830')
+  rememberDailymotionOwner('x8zzzzz', 'https://www.dailymotion.com/user/c1115830/videos')
+  assert.equal(authorChannelUrl('dailymotion:x1cfbdd', 'x8zzzzz'), 'https://www.dailymotion.com/video/x8zzzzz', "only an account's own page at Dailymotion is kept")
 })
 
 test('no channel for a key the site cannot read: a Dailymotion category, an unknown platform, nothing', () => {

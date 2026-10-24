@@ -24,6 +24,17 @@ const MADE = /\b(?:foods?|drinks?|beverages?|beers?|brew\w*|wines?|spirits|lique
 export const isoCountry = (code: string): string => (code.toLowerCase() === 'uk' ? 'GB' : code.toUpperCase())
 
 /**
+ * The countries a night asks for brands: their own turn around the world, `count` further each day, never the night's
+ * Common Crawl countries (24 October: Angola and Mozambique brought none; France has 770, the United States 1,490).
+ */
+export function brandCountriesOf(countries: readonly string[], count: number, now = new Date()): string[] {
+  if (!countries.length || count < 1) return []
+  const day = Math.floor(now.getTime() / 86_400_000)
+  const start = (((day * count) % countries.length) + countries.length) % countries.length
+  return Array.from({ length: Math.min(count, countries.length) }, (_, index) => countries[(start + index) % countries.length])
+}
+
+/**
  * The question asked of Wikidata for one country (its item, `Q142` for France): its brands and firms with an official
  * website, with kind and description. The kinds come first and the order is kept as written: starting from the
  * country, Wikidata went through all its items and gave up past its minute for France, the United States and Japan.

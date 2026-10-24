@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import type { Db, Document } from 'mongodb'
 
-import { brandCandidates, isoCountry } from '../../lib/v3/web/brands'
+import { brandCandidates, brandCountriesOf, isoCountry } from '../../lib/v3/web/brands'
 import { DEFER_HOURS, settleCandidates, type Candidate } from '../../lib/v3/web/candidates'
 import { funSite, medicalReason } from '../../lib/v3/web/kinds'
 
@@ -23,6 +23,22 @@ test('what stays: cosmetic surgery, vets, and the clinics that are not places of
   assert.equal(medicalReason({ title: 'Glazier Clinics | Football Coaching Clinics & Online Coach Education', host: 'glazierclinics.com' }), null)
   assert.equal(medicalReason({ title: 'AtmSitecore', host: 'la-clinique-toiture.fr' }), null)
   assert.equal(medicalReason({ title: 'Plombier à Douala', host: 'plombier-douala.cm' }), null)
+})
+
+test('illness goes too, read in the name and inside a glued address (the owner, 24 October, a cancer charity: "pas très drôle")', () => {
+  assert.equal(medicalReason({ title: 'My Site', host: 'cancerpatientservices.ca' }), 'cancer')
+  assert.ok(medicalReason({ title: 'Association Laurette Fugain – contre la leucémie', host: 'laurettefugain.org' }))
+  assert.ok(medicalReason({ title: 'Hospice of the Valley', host: 'hov.org' }))
+  assert.ok(medicalReason({ title: "Parkinson's UK", host: 'parkinsons.org.uk' }))
+  assert.ok(medicalReason({ title: 'Startseite', host: 'alzheimer-forschung.de' }))
+})
+
+test('what the illness words leave: the Cancer of the horoscopes, a Krebs, a Parkinson, the Hospices de Beaune', () => {
+  assert.equal(medicalReason({ title: 'Cancer : votre horoscope du jour', host: 'astro-cancer.fr' }), null)
+  assert.equal(medicalReason({ title: 'Krebs Engineering', host: 'krebs-eng.com' }), null)
+  assert.equal(medicalReason({ title: 'Parkinson Lighting', host: 'parkinsonlighting.com' }), null)
+  assert.equal(medicalReason({ title: 'Hospices de Beaune – vente des vins', host: 'hospices-de-beaune.com' }), null)
+  assert.equal(medicalReason({ title: 'Patient Zero – a zombie game', host: 'patientzero.example' }), null)
 })
 
 test('the fun third: hand-made sites, lists, Show HN, brands, and curious or funny names wherever they come from', () => {
@@ -53,7 +69,20 @@ test("Wikidata's brands: the makers by their kind, the firms by what they make, 
   assert.equal(isoCountry('hr'), 'HR')
 })
 
-test("a Common Crawl site past its half of a pass waits six hours, its attempts untouched", async () => {
+test('the brands go round the world on their own turn, a few countries further each night', () => {
+  const world = ['cm', 'sn', 'fr', 'us', 'jp', 'hr', 'de']
+  const monday = new Date('2026-10-26T03:10:00Z')
+  const tuesday = new Date('2026-10-27T03:10:00Z')
+  const first = brandCountriesOf(world, 3, monday)
+  const next = brandCountriesOf(world, 3, tuesday)
+  assert.equal(first.length, 3)
+  assert.equal(new Set(first).size, 3)
+  assert.equal(world.indexOf(next[0]), (world.indexOf(first[0]) + 3) % world.length, 'the next night starts where this one ended')
+  assert.deepEqual(brandCountriesOf(world, 10, monday).length, world.length, 'never more countries than there are')
+  assert.deepEqual(brandCountriesOf([], 3, monday), [])
+})
+
+test("a site left unvisited by a pass waits six hours, its attempts untouched", async () => {
   const writes: Document[] = []
   const db = { collection: () => ({ bulkWrite: async (operations: Document[]) => { writes.push(...operations); return {} } }) } as unknown as Db
   const now = new Date('2026-10-22T20:00:00Z')

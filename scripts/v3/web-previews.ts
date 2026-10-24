@@ -209,19 +209,6 @@ class InstitutionShare {
 }
 
 /**
- * Common Crawl takes at most half of what a pass takes in, and a few more (the owner, 22 October: it was 86 % of the
- * entries, and the fun sites are to be a third of the draws). Past it, its sites are not visited: they wait for a later
- * pass, when the other sources have brought theirs.
- */
-const COMMONCRAWL_FLOOR = 5
-class SourceShare {
-  private commoncrawl = 0
-  private others = 0
-  room(source: string): boolean { return source !== 'commoncrawl' || this.commoncrawl < this.others + COMMONCRAWL_FLOOR }
-  count(source: string): void { if (source === 'commoncrawl') this.commoncrawl += 1; else this.others += 1 }
-}
-
-/**
  * Whether the site opens inside Random, read from the answer the visit just received — the same verdict the night
  * check gives (lib/v3/web/embed.ts), a day sooner and without asking again. A site left on plain http is asked once
  * for its https twin. Since 12 October only these are drawn (the owner: "s'ouvrent toujours à côté").
@@ -368,7 +355,6 @@ async function main(): Promise<void> {
   }
   const camera = upload || (dryRun && process.argv.includes('--captures')) ? new Camera() : null
   const institutions = new InstitutionShare()
-  const sources = new SourceShare()
   const queue: Candidate[] = []
   const held: string[] = []
   const pending: Array<{ candidate: Candidate; result: Visit }> = []
@@ -429,16 +415,11 @@ async function main(): Promise<void> {
       if (!candidate) return
       counters.scanned += 1
       let result: Visit
-      if (!sources.room(candidate.source)) {
-        result = { status: 'new', outcome: 'Common Crawl : au-delà de sa moitié, pour un prochain passage' }
-      } else {
-        try {
-          result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun, institutions))
-        } catch (error) {
-          result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
-        }
+      try {
+        result = await withinSiteLimit(visit(db, candidate, camera, upload, dryRun, institutions))
+      } catch (error) {
+        result = { status: 'failed', outcome: error instanceof Error ? error.message.slice(0, 120) : 'error' }
       }
-      if (result.row) sources.count(candidate.source)
       if (!result.row) {
         if (result.status === 'done') counters.duplicates += 1
         else counters.rejected[result.status] = (counters.rejected[result.status] ?? 0) + 1

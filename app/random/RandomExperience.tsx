@@ -22,7 +22,7 @@ import { useScore } from '@/providers/ScoreProvider'
 import { MINIGAMES_ENABLED, XP_UI_ENABLED } from '@/lib/features'
 import { THEMES, glitchInkVars, type Theme } from '@/lib/theme'
 import { LEGEND_LINE, LEGEND_ROW, LEGEND_ROW_GAP, LEGEND_SIZE, aloneOnSecondLine, joinLastWords, keepSignsAttached, sizeForOneLine } from '@/lib/random/legend'
-import { AUTHOR_SERIES_SIZE, authorChannelUrl, authorPlatform, offersAuthorSeries } from '@/lib/random/author'
+import { AUTHOR_SERIES_SIZE, authorChannelUrl, authorPlatform, offersAuthorSeries, rememberDailymotionOwner } from '@/lib/random/author'
 import { fetchRandom, fetchWave, type RandomTypes } from '@/lib/api'
 import { DiscoveryController, makeRandomLoader } from '@/lib/discovery/controller'
 import { dailymotionEmbedUrl } from '@/lib/players/dailymotionPlayer'
@@ -1321,7 +1321,7 @@ function SourceArrow({ item, href, onOpenWeb, color }: { item: DisplayItem; href
 function AuthorName({ item, author, onAuthor }: { item: DisplayItem; author: string; onAuthor?: (item: VideoContentItem) => void }) {
   const text: CSSProperties = { minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
   const video = item.type === 'video' ? item : null
-  const channel = video ? authorChannelUrl(video.channelKey) : null
+  const channel = video ? channelOfVideo(video) : null
   if (!video || !channel) return <span style={text}>{author}</span>
   const link: CSSProperties = { ...text, color: 'inherit', textDecoration: 'underline', textDecorationThickness: 1, textUnderlineOffset: 3 }
   if (onAuthor && offersAuthorSeries(video.authorMore)) {
@@ -1331,13 +1331,35 @@ function AuthorName({ item, author, onAuthor }: { item: DisplayItem; author: str
       </button>
     )
   }
-  return <a href={channel} target="_blank" rel="noreferrer" style={link}>{author}</a>
+  // Dailymotion names the account a moment after the video shows: the address is settled at the touch.
+  return <a href={channel} onClick={(event) => { event.currentTarget.href = channelOfVideo(video) ?? channel }} target="_blank" rel="noreferrer" style={link}>{author}</a>
+}
+
+/**
+ * A site's address under its title, underlined: it opens the site inside Random, as the title, the picture and the arrow
+ * do (the owner, 24 October: "le lien des sites soit aussi le texte en dessous et souligné"). A site that refuses to open
+ * inside another page keeps its new tab.
+ */
+function SiteAddress({ item, host, onOpen }: { item: WebContentItem; host: string; onOpen: (() => void) | null }) {
+  const link: CSSProperties = { minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'inherit', textDecoration: 'underline', textDecorationThickness: 1, textUnderlineOffset: 3 }
+  if (!onOpen) return <a href={item.url} target="_blank" rel="noreferrer" style={link}>{host}</a>
+  return (
+    <button type="button" onClick={onOpen} style={{ ...link, background: 'none', border: 0, padding: 0, font: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+      {host}
+    </button>
+  )
+}
+
+/** The author's channel for a video; a Dailymotion author is reached through the video they were met with (lib/random/author.ts). */
+function channelOfVideo(video: VideoContentItem): string | null {
+  const dailymotionId = video.channelKey?.startsWith('dailymotion:') ? extractDailymotionVideoId(video.url) : null
+  return authorChannelUrl(video.channelKey, dailymotionId)
 }
 
 /** Where to go from an author's name: a few more of their videos here, or their channel at its platform. */
 function AuthorPanel({ item, theme, busy, empty, onRandom, onClose }: { item: VideoContentItem; theme: Theme; busy: boolean; empty: boolean; onRandom: () => void; onClose: () => void }) {
   const { t } = useI18n()
-  const channel = authorChannelUrl(item.channelKey)
+  const channel = channelOfVideo(item)
   const platform = authorPlatform(item.channelKey) ?? ''
   const count = Math.min(item.authorMore ?? 0, AUTHOR_SERIES_SIZE)
   return (
@@ -1365,7 +1387,7 @@ function AuthorPanel({ item, theme, busy, empty, onRandom, onClose }: { item: Vi
             href={channel}
             target="_blank"
             rel="noreferrer"
-            onClick={onClose}
+            onClick={(event) => { event.currentTarget.href = channelOfVideo(item) ?? channel; onClose() }}
             className="w-full px-5 py-3 rounded-[28px] uppercase font-tomorrow font-bold text-center"
             style={{ border: `2px solid ${theme.cream}`, color: theme.cream }}
           >
@@ -1410,7 +1432,7 @@ function SourceBlock({ item, theme, onOpenWeb, onAuthor }: { item: DisplayItem; 
           <div className="font-inter font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 8, height: LEGEND_ROW, marginTop: heading ? LEGEND_ROW_GAP : 0, color: theme.text, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {mark ? <ProviderMark mark={mark} accent={theme.text} /> : null}
             {mark && author ? <span aria-hidden="true" style={{ opacity: 0.7 }}>│</span> : null}
-            {author ? <AuthorName item={item} author={author} onAuthor={onAuthor} /> : null}
+            {author ? (item.type === 'web' ? <SiteAddress item={item} host={author} onOpen={opensSite} /> : <AuthorName item={item} author={author} onAuthor={onAuthor} />) : null}
             {license ? (
               // CC BY-SA asks for the licence by name, with its address, and to say the text was adapted (20 October: Wikipedia's anecdotes).
               <a href={license.url || undefined} target="_blank" rel="noreferrer license" className="underline" style={{ whiteSpace: 'nowrap', textTransform: 'none' }}>
@@ -2439,6 +2461,7 @@ function DailymotionEmbed({
 
   // The player keeps quiet about a deleted video and shows "no longer available" inside the frame; Dailymotion's public
   // API says it plainly (404, private, unpublished, not embeddable) and lets the browser ask. One call per video shown.
+  // The same answer names the uploader's page, which the légende's author link needs (lib/random/author.ts).
   useEffect(() => {
     const videoId = extractDailymotionVideoId(url) || ''
     if (!videoId) return undefined
@@ -2446,8 +2469,9 @@ function DailymotionEmbed({
     const timer = window.setTimeout(() => controller.abort(), 6000)
     void (async () => {
       try {
-        const response = await fetch(`https://api.dailymotion.com/video/${encodeURIComponent(videoId)}?fields=id,status,private,published,allow_embed`, { signal: controller.signal, cache: 'no-store' })
+        const response = await fetch(`https://api.dailymotion.com/video/${encodeURIComponent(videoId)}?fields=id,status,private,published,allow_embed,owner.url`, { signal: controller.signal, cache: 'no-store' })
         const body = response.ok ? await response.json().catch(() => null) : null
+        rememberDailymotionOwner(videoId, (body as Record<string, unknown> | null)?.['owner.url'])
         const verdict = dailymotionVerdict(response.status, body)
         if (verdict.checked && !verdict.available && !playerIssueReportedRef.current) {
           playerIssueReportedRef.current = true
