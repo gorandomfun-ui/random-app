@@ -33,8 +33,8 @@ const MEDICAL = /\b(?:hospitals?|h[ôo]pita(?:l|ux)|hospitais|hospitales|ospedal
 const ILLNESS = /\b(?:cancers?|c[áâ]ncer|cancro|krebs(?:hilfe|gesellschaft|beratung|zentrum|forschung|kranke\w*|patient\w*)|leuk(?:a)?emi\w*|leuc[ée]mi\w*|leucemia|leuk[äa]mie|tum(?:or|our|eur|ore)s?|chemotherap\w*|chimioth[ée]rap\w*|quimioterapi\w*|palliati\w*|paliativ\w*|hospice|dialys\w*|di[áa]lisis|alzheimer\w*|parkinson'?s|maladie de parkinson|scl[ée]rose en plaques|multiple sclerosis|mucoviscidose|cystic fibrosis|hiv|vih)\b/i
 /** The same, read inside an address, whose words come glued together ("cancerpatientservices.ca"): the longest stems only. */
 const ILLNESS_GLUED = /cancer|oncolog|onkolog|leuk(?:a)?emi|leucemi|chemotherap|chimiotherap|palliativ|dialys|alzheimer/i
-/** The sign of the Cancer is not the illness: horoscopes stay. */
-const STARS = /horoscop|horoskop|hor[óo]scopo|oroscopo|zodia|zod[íi]aco|astrolog/i
+/** The sign of the Cancer is not the illness, and an old hospice that became a museum is a museum: they stay. */
+const NOT_ILLNESS = /horoscop|horoskop|hor[óo]scopo|oroscopo|zodia|zod[íi]aco|astrolog|mus[ée]e|museum|museo/i
 
 /** Why a site is a place of care or about an illness, or null; cosmetic surgery is never one. Read from its name and its address. */
 export function medicalReason(site: { title?: unknown; host?: unknown; url?: unknown }): string | null {
@@ -43,7 +43,7 @@ export function medicalReason(site: { title?: unknown; host?: unknown; url?: unk
   if (!name || (COSMETIC.test(name) && !DENTAL.test(name)) || ANIMALS.test(name) || NOT_CARE.test(name)) return null
   const found = MEDICAL.exec(name)
   if (found) return found[0].toLowerCase()
-  if (STARS.test(name)) return null
+  if (NOT_ILLNESS.test(name)) return null
   const illness = ILLNESS.exec(name) ?? ILLNESS_GLUED.exec(host.split('.').slice(0, -1).join('.'))
   return illness ? illness[0].toLowerCase() : null
 }

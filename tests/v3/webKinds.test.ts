@@ -38,6 +38,7 @@ test('what the illness words leave: the Cancer of the horoscopes, a Krebs, a Par
   assert.equal(medicalReason({ title: 'Krebs Engineering', host: 'krebs-eng.com' }), null)
   assert.equal(medicalReason({ title: 'Parkinson Lighting', host: 'parkinsonlighting.com' }), null)
   assert.equal(medicalReason({ title: 'Hospices de Beaune – vente des vins', host: 'hospices-de-beaune.com' }), null)
+  assert.equal(medicalReason({ title: "Podcast SONIARE | Le musée de l'hospice comtesse - Ville de Lille", host: 'mhc.lille.fr' }), null, 'the one wrong catch of the 24 October list')
   assert.equal(medicalReason({ title: 'Patient Zero – a zombie game', host: 'patientzero.example' }), null)
 })
 
