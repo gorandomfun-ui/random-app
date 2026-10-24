@@ -112,7 +112,8 @@ export default function CaptureClient({ queueItemId }: { queueItemId: string }) 
     const stream = streamRef.current
     if (!stream) return
     const type = pickRecorderType((candidate) => MediaRecorder.isTypeSupported(candidate))
-    const recorder = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8_000_000 } : undefined)
+    // 5 Mbit/s at the screen's full size: a third lighter than before (24 October), with no visible loss on the soft old videos the tool captures.
+    const recorder = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 5_000_000 } : undefined)
     chunksRef.current = []
     recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data) }
     recorderRef.current = recorder

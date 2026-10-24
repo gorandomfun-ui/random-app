@@ -7,8 +7,10 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { InstagramState } from '@/lib/comm/configStore'
 
-type Config = { blob: boolean; instagram: InstagramState; destinations: Array<{ key: string; name: string; direct: boolean; note: string }> }
+type Storage = { month: string; egressBytes: number; egressCap: number; storedBytes: number; storageCap: number; resetAt: string }
+type Config = { blob: boolean; bucket: string | null; storage: Storage | null; instagram: InstagramState; destinations: Array<{ key: string; name: string; direct: boolean; note: string }> }
 const small = 'rounded border border-white/40 px-2 py-1 text-xs disabled:opacity-40'
+const gb = (bytes: number) => `${(bytes / 1e9).toFixed(bytes >= 1e9 ? 1 : 2).replace('.', ',')} Go`
 
 export default function ConfigPage() {
   const [config, setConfig] = useState<Config | null>(null)
@@ -40,7 +42,14 @@ export default function ConfigPage() {
           <>
             <section className="space-y-1">
               <h2 className="font-bold">Stockage des médias</h2>
-              <p>{dot(config.blob)}Vercel Blob : {config.blob ? 'configuré' : 'manquant — crée le store dans le tableau de bord Vercel, le jeton s’ajoute seul'}</p>
+              <p>{dot(config.blob)}Google Cloud Storage{config.bucket ? ` (${config.bucket})` : ''} : {config.blob ? 'configuré' : 'manquant — COMM_GCS_BUCKET et COMM_GCS_KEY dans Vercel'}</p>
+              {config.storage ? (
+                <>
+                  <p>{dot(config.storage.storedBytes < config.storage.storageCap * 0.9, config.storage.storedBytes >= config.storage.storageCap * 0.7)}Stocké : {gb(config.storage.storedBytes)} sur {gb(config.storage.storageCap)} — au plafond, la capture refuse d’envoyer tant que la file n’est pas allégée.</p>
+                  <p>{dot(config.storage.egressBytes < config.storage.egressCap * 0.9, config.storage.egressBytes >= config.storage.egressCap * 0.7)}Téléchargé ce mois : {gb(config.storage.egressBytes)} sur {gb(config.storage.egressCap)} — au plafond, les clips ne s’ouvrent plus avant le {new Date(config.storage.resetAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}.</p>
+                  <p className="text-gray-300">Ces deux plafonds tiennent Comm dans la part gratuite de Google : rien à payer tant qu’ils sont verts.</p>
+                </>
+              ) : null}
             </section>
             <section className="space-y-2">
               <h2 className="font-bold">Instagram</h2>

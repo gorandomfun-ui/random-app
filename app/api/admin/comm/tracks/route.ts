@@ -1,54 +1,54 @@
-import { del, list } from '@vercel/blob'
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
-
 import { bodyOf } from '@/lib/discovery/handlers'
-import { commAllowed, json } from '@/lib/comm/auth'
-import { blobConfigured, blobPathnameOf } from '@/lib/comm/blob'
-import { TRACK_CONTENT_TYPES, TRACK_MAX_BYTES, TRACKS_PREFIX, trackNameOf, trackPathOk } from '@/lib/comm/tracks'
+import { commAllowed, commDb, json } from '@/lib/comm/auth'
+import { blobConfigured, PICTURE_URL_SEC, readUrl } from '@/lib/comm/blob'
+import { deleteObject, listObjects, objectKeyOf, objectUrl, signUrl } from '@/lib/comm/gcs'
+import { TRACK_MAX_BYTES, TRACKS_PREFIX, trackNameOf, trackPathFor, trackPathOk, trackTypeOf } from '@/lib/comm/tracks'
+import { storageAllowed, storageFullMessage, storedBytes } from '@/lib/comm/usage'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const PUT_SEC = 15 * 60
+
 /**
- * The promo's tracks in Blob: the folder listed, a short token for the
- * browser to send a file into it and nowhere else, a file removed by its
- * address. The upload-completed call comes from Vercel without the cookie;
- * the SDK checks its signature, and the page lists the folder again anyway.
+ * The promo's tracks in the store: the folder listed with addresses that hold
+ * all day, a signed PUT for the browser to send a file into it and nowhere
+ * else, a file removed by its address.
  */
 export async function GET(req: Request) {
   if (!commAllowed(req)) return json({ error: 'Unauthorized' }, 401)
   if (!blobConfigured()) return json({ blob: false, tracks: [] })
   try {
-    const { blobs } = await list({ prefix: TRACKS_PREFIX, limit: 200 })
-    const tracks = blobs.filter((b) => b.size > 0 && trackPathOk(b.pathname)).sort((a, b) => a.pathname.localeCompare(b.pathname)).map((b) => ({ url: b.url, name: trackNameOf(b.pathname), bytes: b.size }))
+    const objects = await listObjects(TRACKS_PREFIX)
+    const tracks = objects.filter((o) => o.size > 0 && trackPathOk(o.key)).sort((a, b) => a.key.localeCompare(b.key)).map((o) => ({ url: readUrl(objectUrl(o.key), PICTURE_URL_SEC, true), name: trackNameOf(o.key), bytes: o.size }))
     return json({ blob: true, tracks })
   } catch { return json({ error: 'unavailable' }, 503) }
 }
 
+/** `{ name, type, bytes }` → a signed PUT address for that track, bound to its type. */
 export async function POST(req: Request) {
-  let body: HandleUploadBody
-  try { body = (await req.json()) as HandleUploadBody } catch { return json({ error: 'Invalid request' }, 400) }
-  if (body.type !== 'blob.upload-completed' && !commAllowed(req, true)) return json({ error: 'Unauthorized' }, 401)
-  if (!blobConfigured()) return json({ error: 'no-blob', message: 'Le stockage Blob n’est pas configuré sur le projet.' }, 503)
+  if (!commAllowed(req, true)) return json({ error: 'Unauthorized' }, 401)
+  if (!blobConfigured()) return json({ error: 'no-blob', message: 'Le stockage n’est pas configuré sur le projet.' }, 503)
+  const body = await bodyOf(req)
+  const name = typeof body?.name === 'string' ? body.name.slice(0, 200) : ''
+  const type = typeof body?.type === 'string' ? body.type : ''
+  const bytes = typeof body?.bytes === 'number' && Number.isFinite(body.bytes) ? Math.round(body.bytes) : -1
+  const key = name ? trackPathFor({ name, type }) : null
+  if (!key || !trackPathOk(key) || bytes <= 0) return json({ error: 'Invalid request' }, 400)
+  if (bytes > TRACK_MAX_BYTES) return json({ error: 'size', message: `Piste trop lourde (${Math.round(TRACK_MAX_BYTES / 1048576)} Mo au plus).` }, 413)
   try {
-    const result = await handleUpload({
-      body, request: req,
-      onBeforeGenerateToken: async (pathname) => {
-        if (!trackPathOk(pathname)) throw new Error('Chemin hors des pistes')
-        return { allowedContentTypes: TRACK_CONTENT_TYPES, maximumSizeInBytes: TRACK_MAX_BYTES, addRandomSuffix: false, allowOverwrite: false, validUntil: Date.now() + 10 * 60 * 1000 }
-      },
-      onUploadCompleted: async () => { /* the page lists the folder again */ },
-    })
-    return json(result)
-  } catch (error) { return json({ error: error instanceof Error ? error.message : 'upload' }, 400) }
+    if (!storageAllowed(await storedBytes(await commDb()), bytes)) return json({ error: 'full', message: storageFullMessage() }, 507)
+    const contentType = trackTypeOf(key)
+    return json({ url: signUrl({ method: 'PUT', key, expiresSec: PUT_SEC, contentType }), key, contentType, name: trackNameOf(key) })
+  } catch { return json({ error: 'unavailable' }, 503) }
 }
 
 export async function DELETE(req: Request) {
   if (!commAllowed(req, true)) return json({ error: 'Unauthorized' }, 401)
   const body = await bodyOf(req)
   const url = typeof body?.url === 'string' ? body.url : ''
-  const pathname = blobPathnameOf(url)
-  if (!pathname || !trackPathOk(pathname)) return json({ error: 'Invalid request' }, 400)
+  const key = objectKeyOf(url)
+  if (!key || !trackPathOk(key)) return json({ error: 'Invalid request' }, 400)
   if (!blobConfigured()) return json({ error: 'no-blob' }, 503)
-  try { await del(url); return json({ removed: true }) } catch { return json({ error: 'unavailable' }, 503) }
+  try { await deleteObject(key); return json({ removed: true }) } catch { return json({ error: 'unavailable' }, 503) }
 }

@@ -82,6 +82,7 @@ const PROTECTED_ROUTES: ProtectedRoute[] = [
   { path: '/api/admin/comm/queue/x', module: '@/app/api/admin/comm/queue/[id]/route', methods: ['GET', 'DELETE'] },
   { path: '/api/admin/comm/media', module: '@/app/api/admin/comm/media/route', methods: ['POST'] },
   { path: '/api/admin/comm/media/x', module: '@/app/api/admin/comm/media/[id]/route', methods: ['DELETE'] },
+  { path: '/api/admin/comm/media/x/url', module: '@/app/api/admin/comm/media/[id]/url/route', methods: ['GET'] },
   { path: '/api/admin/comm/media/import', module: '@/app/api/admin/comm/media/import/route', methods: ['POST'] },
   { path: '/api/admin/comm/upload', module: '@/app/api/admin/comm/upload/route', methods: ['POST'] },
   { path: '/api/admin/comm/render', module: '@/app/api/admin/comm/render/route', methods: ['GET'] },

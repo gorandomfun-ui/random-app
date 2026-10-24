@@ -16,7 +16,7 @@ import { buildCaption, MUSIC_NOTE, suggestHashtags, type Phrase } from '@/lib/co
 import type { MediaDoc, Placement, PostDoc, PostSlide } from '@/lib/comm/model'
 import { clipMaxSeconds } from '@/lib/comm/model'
 import { FAMILY_SIZES, type Family } from '@/lib/comm/templates'
-import { commImportSource, commList, uploadMedia, type QueueItemWithMedia } from '@/lib/comm/client'
+import { clipUrl, commImportSource, commList, uploadMedia, type QueueItemWithMedia } from '@/lib/comm/client'
 import { downloadBlob, recordMontage, renderJpeg } from '@/lib/comm/montageRun'
 import { burstSchedule, createDrawer, GLITCH_STYLES, type GlitchStyle } from '@/lib/comm/montageDraw'
 import { cropRect, cropRectIn } from '@/lib/comm/montage'
@@ -41,19 +41,22 @@ const section = 'rounded-xl border border-white/15 bg-[#191916] p-4'
 /**
  * Each clip fetched once per visit of this page, then played from the browser's memory. The hidden preview loops,
  * and a clip of 46 MB does not fit the browser's own cache: every loop and every export fetched it again from the
- * store, and Vercel Blob counts each download (9.2 GB of the free 10 in 30 days, 19 October). A failed fetch falls
- * back to the store's address, as before.
+ * store, and the store counts each download (Vercel Blob ran out of its free 10 GB on 19 October). The clip's
+ * address is asked of the tool first — that opening is what counts toward the month — and a failed fetch falls
+ * back to that address. At the month's cap the tool refuses, and the message says when the clips open again.
  */
 const localClips = new Map<string, Promise<string>>()
 const readyClips = new Map<string, string>()
-function localClip(url: string): Promise<string> {
-  let pending = localClips.get(url)
+function localClip(media: Pick<MediaDoc, '_id'>): Promise<string> {
+  let pending = localClips.get(media._id)
   if (!pending) {
-    pending = fetch(url)
-      .then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.blob() })
-      .then((blob) => { const local = URL.createObjectURL(blob); readyClips.set(url, local); return local })
-      .catch(() => { localClips.delete(url); return url })
-    localClips.set(url, pending)
+    pending = clipUrl(media)
+      .then((url) => fetch(url)
+        .then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.blob() })
+        .then((blob) => { const local = URL.createObjectURL(blob); readyClips.set(media._id, local); return local })
+        .catch(() => url))
+      .catch((error: Error) => { localClips.delete(media._id); throw error })
+    localClips.set(media._id, pending)
   }
   return pending
 }
@@ -152,7 +155,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   const allMedia = useMemo(() => queue.flatMap((i) => i.media), [queue])
   const choices: MediaChoice[] = useMemo(() => queue.flatMap((item) => [
     ...item.media.filter((m) => ['capture', 'import', 'gif', 'image', 'screenshot', 'montage'].includes(m.kind)).filter((m) => (spec?.media === 'video' ? m.contentType.startsWith('video/') : spec?.media === 'image' ? m.contentType.startsWith('image/') : true))
-      .map((m) => ({ key: m._id, label: item.snapshot.title, itemId: item._id, mediaId: m._id, media: m, thumb: m.blobUrl, video: m.contentType.startsWith('video/'), poster: item.media.find((q) => q.kind === 'poster' && q.sourceMediaId === m._id)?.blobUrl ?? null, seconds: m.durationSec ?? null })),
+      .map((m) => ({ key: m._id, label: item.snapshot.title, itemId: item._id, mediaId: m._id, media: m, thumb: m.contentType.startsWith('video/') ? null : m.blobUrl, video: m.contentType.startsWith('video/'), poster: item.media.find((q) => q.kind === 'poster' && q.sourceMediaId === m._id)?.blobUrl ?? null, seconds: m.durationSec ?? null })),
     ...(item.snapshot.thumb && spec?.media !== 'video' && !item.media.some((m) => ['image', 'gif', 'screenshot'].includes(m.kind)) ? [{ key: `thumb:${item._id}`, label: `${item.snapshot.title} (miniature)`, itemId: item._id, mediaId: null, media: null, thumb: item.snapshot.thumb, video: false }] : []),
   ]), [queue, spec])
 
@@ -164,8 +167,8 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
   useEffect(() => {
     if (!isVideo || !slideMedia) { setPreviewSrc(null); return }
     let alive = true
-    setPreviewSrc(readyClips.get(slideMedia.blobUrl) ?? null)
-    void localClip(slideMedia.blobUrl).then((src) => { if (alive) setPreviewSrc(src) })
+    setPreviewSrc(readyClips.get(slideMedia._id) ?? null)
+    void localClip(slideMedia).then((src) => { if (alive) setPreviewSrc(src) }).catch((error: Error) => { if (alive) setError(error.message) })
     return () => { alive = false }
   }, [isVideo, slideMedia])
   const firstItem = useMemo(() => { const id = post?.slides.find((s) => s.itemId)?.itemId; return id ? queue.find((i) => i._id === id) ?? null : null }, [post, queue])
@@ -269,7 +272,10 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     for (const [index, s] of (post?.slides ?? []).entries()) {
       const media = s.mediaId ? allMedia.find((m) => m._id === s.mediaId) ?? null : null
       if (!media?.contentType.startsWith('video/')) continue
-      const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.preload = 'auto'; v.playsInline = true; v.muted = false; v.volume = 0.001; v.src = readyClips.get(media.blobUrl) ?? media.blobUrl
+      // A clip not yet in memory has no readable address here (it is asked for during the export): the recording then plays it muted.
+      const src = readyClips.get(media._id)
+      if (!src) continue
+      const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.preload = 'auto'; v.playsInline = true; v.muted = false; v.volume = 0.001; v.src = src
       v.play().then(() => v.pause()).catch(() => { /* then the recording plays it muted */ })
       map.set(index, v)
     }
@@ -281,7 +287,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
     const overlays = [renderUrl({ ...s, glitch: 0 }, index, 'overlay'), ...[1, 2, 3, 4].map((k) => renderUrl(s, index, 'overlay', undefined, `${post?._id}-${index}-g${k}`))].map((u) => `${window.location.origin}${u}`)
     const common = { canvas, overlayUrls: overlays, intensity: s.glitch ?? 0, styles: stylesOf(s), accent: PALETTE_COLORS[s.palette] ?? '#F8F5E6', mediaPlace: s.mediaPlace ?? null, background: '#191916', text: s.text, titleFont, mediaOnTop: Boolean(s.mediaOnTop), mediaZoom: s.mediaZoom ?? 1, logo: logoRef.current, letterAlpha: s.letterAlpha ?? 0.7, onProgress: (sec: number, total: number) => setProgress(total ? sec / total : null) }
     if (media?.contentType.startsWith('video/')) {
-      const out = await recordMontage({ ...common, src: readyClips.get(media.blobUrl) ?? media.blobUrl, video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
+      const out = await recordMontage({ ...common, src: await localClip(media), video: clips.get(index) ?? null, trim: s.trim ?? { startSec: 0, endSec: Math.min(media.durationSec ?? maxSeconds, maxSeconds) } })
       return { blob: out.blob, extension: out.extension, video: true }
     }
     if (stylesOf(s).some((x) => x !== 'random') && media?.contentType.startsWith('image/')) {
@@ -405,7 +411,7 @@ export default function ComposeClient({ itemIds, postId }: { itemIds: string[]; 
                   setQueue((q) => q.map((i) => (i._id === c.itemId ? { ...i, media: [...i.media, media] } : i)))
                   updateSlide({ itemId: c.itemId, mediaId: media._id, trim: null })
                 }}>
-                  {c.video && c.media && !c.poster ? <video src={c.media.blobUrl} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : (c.poster ?? c.thumb) ? (
+                  {(c.poster ?? c.thumb) ? (
                     /* eslint-disable-next-line @next/next/no-img-element -- a clip's poster or a thumbnail of the queue */
                     <img src={c.poster ?? c.thumb ?? ''} alt="" className="h-full w-full object-cover" />
                   ) : null}

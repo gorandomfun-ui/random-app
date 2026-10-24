@@ -10,7 +10,8 @@ import { ObjectId, type Db } from 'mongodb'
 
 import { COMM_MEDIA, COMM_POSTS, type PostDoc } from './model'
 import { formatSpec } from './destinations'
-import { blobPathnameOf, deleteBlobs, keyBelongsTo } from './blob'
+import { blobPathnameOf, deleteBlobs, keyBelongsTo, PUBLISH_URL_SEC, readUrl } from './blob'
+import { countEgress, egressAllowed, egressFullMessage, monthEgress } from './usage'
 import { postById } from './posts'
 import { igComment, igConfig, igContainerStatus, igCreateCarousel, igCreateContainer, igPermalink, igPublish, IgError, type IgFetch, type IgFormat } from './instagram'
 
@@ -49,6 +50,11 @@ export async function startInstagram(db: Db, fetchImpl: IgFetch, postId: string,
   if (format === 'reel' && assets.some((a) => a.kind !== 'video')) return { ok: false, status: 400, reason: 'Un reel est une vidéo.' }
   if ((format === 'post' || format === 'carousel') && assets.some((a) => a.kind !== 'image')) return { ok: false, status: 400, reason: 'Un post ou un carrousel prend des images.' }
   if (format === 'story' && assets.length !== 1) return { ok: false, status: 400, reason: 'Une story se publie une slide à la fois par l’API : publie-les une par une.' }
+  // Instagram fetches the files itself: their bytes count toward the month's cap, and past it the publication waits for next month.
+  const keys = assets.map((a) => blobPathnameOf(a.url)).filter((k): k is string => Boolean(k))
+  const weights = await db.collection(COMM_MEDIA).find({ blobKey: { $in: keys } }, { projection: { bytes: 1 }, maxTimeMS: QUERY_MS }).toArray()
+  const outBytes = weights.reduce((sum, row) => sum + (typeof row.bytes === 'number' ? row.bytes : 0), 0)
+  if (!egressAllowed(await monthEgress(db), outBytes)) return { ok: false, status: 429, reason: egressFullMessage() }
   // The lock: one publication of this draft at a time; a dead one may be taken over after a while.
   const now = new Date()
   const locked = await db.collection(COMM_POSTS).findOneAndUpdate(
@@ -60,7 +66,8 @@ export async function startInstagram(db: Db, fetchImpl: IgFetch, postId: string,
   try {
     const containers: string[] = []
     const ordered = [...assets].sort((a, b) => a.slideIndex - b.slideIndex)
-    for (const asset of ordered) containers.push(await igCreateContainer(fetchImpl, config, { kind: asset.kind, url: asset.url, format, caption: post.caption, child: format === 'carousel' }))
+    for (const asset of ordered) containers.push(await igCreateContainer(fetchImpl, config, { kind: asset.kind, url: readUrl(asset.url, PUBLISH_URL_SEC), format, caption: post.caption, child: format === 'carousel' }))
+    await countEgress(db, outBytes)
     const carousel = format === 'carousel' ? await igCreateCarousel(fetchImpl, config, containers, post.caption) : null
     await db.collection(COMM_POSTS).updateOne({ _id: new ObjectId(postId) }, { $set: { 'publishing.containers': containers, 'publishing.carousel': carousel, updatedAt: new Date() } })
     return { ok: true, containers, carousel }

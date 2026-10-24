@@ -9,7 +9,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 
-import { canCaptureTab, CHROME_NOTE, commImportSource, commList, commRemove, commRemoveMedia, desktopWithoutTabCapture, formatBytes, LICENSE_COLORS, LICENSE_WORDS, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
+import { canCaptureTab, CHROME_NOTE, clipUrl, commImportSource, commList, commRemove, commRemoveMedia, desktopWithoutTabCapture, formatBytes, LICENSE_COLORS, LICENSE_WORDS, uploadMedia, type QueueItemWithMedia, type QueueStatus } from '@/lib/comm/client'
 import type { MediaDoc } from '@/lib/comm/model'
 
 const TYPE_WORDS: Record<string, string> = { video: 'Vidéo', image: 'Image', web: 'Site', quote: 'Citation', fact: 'Fait', joke: 'Blague' }
@@ -136,7 +136,7 @@ export default function CommQueueClient() {
                       <li key={media._id} className="flex items-center gap-2 text-xs">
                         {/* A clip loads only when played: its poster shows meanwhile (each visit of the queue pulled every capture whole, 19 October). */}
                         {/* eslint-disable-next-line @next/next/no-img-element -- a plain picture, no optimisation cost */}
-                        {media.contentType.startsWith('video/') ? <video src={media.blobUrl} muted playsInline controls preload="none" poster={item.media.find((m) => m.kind === 'poster' && m.sourceMediaId === media._id)?.blobUrl} className="h-16 w-16 rounded object-cover" /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
+                        {media.contentType.startsWith('video/') ? <ClipInList media={media} poster={item.media.find((m) => m.kind === 'poster' && m.sourceMediaId === media._id)?.blobUrl} /> : <img src={media.blobUrl} alt="" className="h-16 w-16 rounded object-cover" />}
                         <span>{KIND_WORDS[media.kind]}<br />{formatBytes(media.bytes)}{media.width && media.height ? <><br />{media.width}×{media.height}</> : null}{media.durationSec ? <><br />{Math.round(media.durationSec)} s</> : null}</span>
                         <button className={small} disabled={busy === item._id} onClick={() => { if (window.confirm('Supprimer ce média ? Il disparaît aussi du stockage.')) void removeMedia(item, media) }} aria-label="Supprimer ce média">×</button>
                       </li>
@@ -159,5 +159,19 @@ export default function CommQueueClient() {
         <input ref={fileInput} type="file" accept="video/*,image/*" multiple hidden onChange={onFiles} />
       </div>
     </main>
+  )
+}
+
+/** A clip in the list: its poster until it is played; the address is asked when the curator presses play, since each opening counts toward the month. */
+function ClipInList({ media, poster }: { media: MediaDoc; poster: string | undefined }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  if (src) return <video src={src} muted playsInline controls autoPlay preload="auto" className="h-16 w-16 rounded object-cover" />
+  return (
+    <button type="button" className="relative h-16 w-16 flex-none overflow-hidden rounded bg-white/10" title={note || 'Lire l’extrait'} aria-label="Lire l’extrait" onClick={() => { setNote(''); void clipUrl(media).then(setSrc).catch((error: Error) => setNote(error.message)) }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- the clip's poster */}
+      {poster ? <img src={poster} alt="" className="h-full w-full object-cover" /> : null}
+      <span className="absolute inset-0 flex items-center justify-center text-lg" style={{ color: note ? '#E5972B' : '#fff' }}>{note ? '!' : '▶'}</span>
+    </button>
   )
 }
