@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { renderAttacksOver, renderAttacksPlay, renderAttacksTitle, renderAttacksWinner } from '@/lib/games/attacks'
+import { FIGHTER_PLAY, FIGHTER_SCREEN, renderFighterOver, renderFighterPlay, renderFighterTitle, renderFighterWinner } from '@/lib/games/fighter'
 import { renderRacingOver, renderRacingPlay, renderRacingTitle, renderRacingWinner } from '@/lib/games/racing'
 import { GAME_NAMES, shotSpecs, type Game, type Layout, type ShotSpec } from '@/lib/games/screens'
 import { TEXT_COLORS } from '@/lib/theme'
@@ -43,6 +44,13 @@ const LABELS: Record<string, string> = {
   'racing-game-over': 'Game over',
   'racing-winner': 'Winner',
   'attacks-winner': 'Winner',
+  'fighter-titre': 'Titre — le dojo au coucher du soleil',
+  'fighter-jeu-1': 'Niveau 1 — devant le dojo, en plein jour',
+  'fighter-jeu-4': 'Niveau 4 — devant le dojo, le soir tombe, un mini-burger',
+  'fighter-jeu-7': 'Niveau 7 — dans la salle, sur les tatamis',
+  'fighter-jeu-13': 'Niveau 13 — la cuisine, la nuit',
+  'fighter-game-over': 'Game over',
+  'fighter-winner': 'Winner',
 }
 
 /** A picture to show: its size and how to draw it at a moment. */
@@ -103,6 +111,16 @@ export default function MockGallery() {
       { name: 'attacks-winner', width: layout === 'landscape' ? 768 : 432, height: layout === 'landscape' ? 432 : 768, draw: (frame: number) => renderAttacksWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
   })), [accent])
+  // RANDOM FIGHTER, the fifth game, a first proposal: its title, a moment of play in each place, its two ends
+  const fighter = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
+    layout,
+    shots: [
+      { name: 'fighter-titre', ...FIGHTER_SCREEN[layout], draw: (frame: number) => renderFighterTitle(layout, accent, { frame, blink: frame % 2 === 0 }) },
+      ...[1, 4, 7, 13].map((level) => ({ name: `fighter-jeu-${level}`, width: FIGHTER_PLAY[layout].width, height: FIGHTER_PLAY[layout].height, draw: (frame: number) => renderFighterPlay(layout, accent, { frame, level }) })),
+      { name: 'fighter-game-over', ...FIGHTER_SCREEN[layout], draw: (frame: number) => renderFighterOver(layout, accent, { score: 3420, best: 5100, frame, blink: frame % 2 === 0 }) },
+      { name: 'fighter-winner', ...FIGHTER_SCREEN[layout], draw: (frame: number) => renderFighterWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
+    ] as Shot[],
+  })), [accent])
   // RANDOM RACING, the fourth game: its title with the car chosen, moments of play, its two ends
   const racing = useMemo(() => (['landscape', 'portrait'] as Layout[]).map((layout) => ({
     layout,
@@ -124,6 +142,20 @@ export default function MockGallery() {
           <button key={color} onClick={() => setAccent(color)} aria-label={color} style={{ width: 32, height: 32, borderRadius: 999, background: color, border: color === accent ? '3px solid #F8F5E6' : '3px solid transparent' }} />
         ))}
       </div>
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Fighter — première proposition</h2>
+        <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
+          Un jeu de combat vu de côté, dans l&apos;esprit des vieux jeux PC : le combattant en kimono contre les burgers — burgers ninjas qui lancent des étoiles de sésame, burgers samouraïs au sabre, mini-burgers qui roulent. Trois lieux sur seize niveaux : devant le dojo (1 à 5), dans la salle (6 à 11), dans la cuisine la nuit (12 à 16). Le titre, un moment de jeu dans chaque lieu, le game over et le winner, en paysage puis en portrait. Rien n&apos;est jouable : à regarder, à corriger.
+        </p>
+        {fighter.map(({ layout, shots }) => (
+          <div key={layout} style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6, marginBottom: 8 }}>{layout === 'landscape' ? 'Paysage' : 'Portrait'}</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+              {shots.map((shot) => <Screen key={`${shot.name}-${layout}-${accent}`} spec={shot} room={layout === 'landscape' ? room : Math.min(room, 700)} />)}
+            </div>
+          </div>
+        ))}
+      </section>
       <section style={{ marginBottom: 40 }}>
         <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Racing</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
