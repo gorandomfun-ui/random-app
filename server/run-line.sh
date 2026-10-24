@@ -195,6 +195,12 @@ case "${LINE}" in
     # collection no card reads but the world card, for a computer. Free, no YouTube unit, no model; a few MB a run.
     RANDOM_BILIBILI_MINUTES="${RANDOM_BILIBILI_MINUTES:-10}" run node --import tsx scripts/v3/bilibili-direct.ts
     ;;
+  anecdotes)
+    # Wikipedia's "Did you know" anecdotes, once a week (24 October): the current and the previous month in French, English
+    # and German, only those not stored yet, in one grouped write. Six pages a second apart, about a megabyte read; free,
+    # no YouTube unit, no model.
+    RANDOM_ANECDOTES_MINUTES="${RANDOM_ANECDOTES_MINUTES:-10}" run node --import tsx scripts/v3/anecdotes-direct.ts
+    ;;
   music-live)
     # Concerts from everywhere and recent clips off the charts; a small YouTube allowance, paid by the old pass running twice a day.
     run node --import tsx scripts/v3/music-live-direct.ts

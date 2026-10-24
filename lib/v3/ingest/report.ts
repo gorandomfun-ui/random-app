@@ -52,6 +52,7 @@ export const LINE_LABELS: Record<string, string> = {
   'music-live': 'Musique live',
   drift: 'La dérive (Dailymotion)',
   fresh: 'Frais du jour',
+  anecdotes: 'Anecdotes Wikipédia',
 }
 
 /**
@@ -61,6 +62,8 @@ export const LINE_LABELS: Record<string, string> = {
 const MEASURING_LINES = new Set<string>(['like-pool', 'web-commoncrawl'])
 /** Lines that check rather than insert (the night's check of dead videos, of piracy bait): judged by their last run, never "muette". */
 export const CHECK_LINES = new Set<string>(['obsolete', 'image-obsolete', 'dm-bait'])
+/** Lines that run once a week (Wikipedia's anecdotes, on Mondays): stopped or silent only past a week and the usual margin. */
+export const WEEKLY_LINES = new Set<string>(['anecdotes'])
 
 export function shownStatus(run: Pick<JournalRun, 'status' | 'startedAt'>, now: number): ShownStatus {
   if (run.status !== 'running') return run.status
@@ -172,10 +175,10 @@ export function assessHealth(runs: JournalRun[], now: number, staleHours = STALE
       if (!seen || at > seen) lastInsert.set(run.line, at)
     }
   }
-  const staleMs = staleHours * 3_600_000
   const rank: Record<LineHealth['state'], number> = { arrêtée: 0, muette: 1, 'en cours': 2, active: 3 }
   return [...lastRun.entries()]
     .map(([line, run]): LineHealth => {
+      const staleMs = (WEEKLY_LINES.has(line) ? 7 * 24 + staleHours : staleHours) * 3_600_000
       const insertAt = lastInsert.get(line) ?? null
       const sinceRun = now - run.startedAt.getTime()
       const sinceInsert = insertAt ? now - insertAt.getTime() : null

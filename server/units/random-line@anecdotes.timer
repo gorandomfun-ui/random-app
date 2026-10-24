@@ -1,0 +1,10 @@
+[Unit]
+Description=RANDOM Wikipedia's "Did you know" anecdotes, once a week (Mondays 12:03 Paris: the current and the previous month in French, English and German, the new ones only; after the 11:30 dig, while no small model holds the machine — the next look-alikes are at 12:35 — and between two runs of the previews; a Monday missed is caught up by the next one, which reads the month before too)
+
+[Timer]
+OnCalendar=Mon *-*-* 12:03:00 Europe/Paris
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
