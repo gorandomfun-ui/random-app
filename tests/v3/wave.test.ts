@@ -243,6 +243,16 @@ test('un texte n_entre dans la Wave que si le visiteur peut le lire ; l_anglais 
   assert.ok(!wave.items.includes(japonais), 'buildWave transmet la langue')
 })
 
+test("an anecdote comes in the reader's own language only, as the draw serves them; English still passes for quotes (24 October)", () => {
+  const english = candidate('fact', 'text-fact', { lang: 'en', languageScope: 'localized' })
+  const french = candidate('fact', 'text-fact', { lang: 'fr', languageScope: 'localized' })
+  assert.equal(accepts(anchor(), [], english, new Set(), undefined, 'fr'), false, 'an English anecdote for a French visitor')
+  assert.equal(accepts(anchor(), [], english, new Set(), undefined, 'en'), true)
+  assert.equal(accepts(anchor(), [], french, new Set(), undefined, 'fr'), true)
+  assert.equal(accepts(anchor(), [], candidate('quote', 'text-quote', { lang: 'en', languageScope: 'localized' }), new Set(), undefined, 'de'), true, 'an English quote still passes')
+  assert.equal(textFits({ type: 'fact', lang: 'ja', languageScope: 'localized' }, 'jp'), true)
+})
+
 // ---------------------------------------------------------------------------
 // Phase 1 : la même vidéo republiée par un autre compte
 // ---------------------------------------------------------------------------

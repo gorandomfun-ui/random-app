@@ -58,17 +58,20 @@ export type WaveAnchor = {
 }
 
 /**
- * A text only fits a reader who can read it. English is never blocked: it is
- * the catalogue's majority language and understood everywhere. A text with no
- * known language is treated as English; a text the catalogue marks universal
- * has no language to speak of.
+ * A text only fits a reader who can read it. English passes for a quote or a
+ * joke: it is the catalogue's majority language and understood everywhere. An
+ * anecdote comes only in the reader's own language, as the draw serves them
+ * (the owner, 24 October: with some 93,000 English anecdotes coming in, nine in
+ * ten of a French visitor's would have been English). A text with no known
+ * language is treated as English; a text the catalogue marks universal has no
+ * language to speak of.
  */
-export function textFits(candidate: Pick<WaveCandidate, 'lang' | 'languageScope'>, lang?: string): boolean {
+export function textFits(candidate: Pick<WaveCandidate, 'lang' | 'languageScope'> & { type?: ItemType }, lang?: string): boolean {
   if (candidate.languageScope !== 'localized') return true
   const written = (candidate.lang ?? 'en').toLowerCase()
-  if (written === 'en') return true
   const reader = (lang ?? 'en').toLowerCase()
-  return written === reader || (reader === 'jp' && written === 'ja')
+  if (written === reader || (reader === 'jp' && written === 'ja')) return true
+  return written === 'en' && candidate.type !== 'fact'
 }
 
 /** Two eras are different when both are known and disagree; "unknown" says nothing. */
