@@ -1,6 +1,6 @@
 import { bodyOf } from '@/lib/discovery/handlers'
 import { commAllowed, commDb, json } from '@/lib/comm/auth'
-import { keyBelongsTo, legacyBlobUrl, MEDIA_CONTENT_TYPES, MEDIA_MAX_BYTES, readableMedia } from '@/lib/comm/blob'
+import { blobConfigured, keyBelongsTo, legacyBlobUrl, MEDIA_CONTENT_TYPES, MEDIA_MAX_BYTES, readableMedia } from '@/lib/comm/blob'
 import { objectKeyOf, objectMeta, objectUrl } from '@/lib/comm/gcs'
 import { queueItemById, registerMedia } from '@/lib/comm/queue'
 import type { MediaKind } from '@/lib/comm/model'
@@ -23,6 +23,8 @@ export async function POST(req: Request) {
   const bytes = num(body?.bytes)
   const pathname = typeof body?.key === 'string' ? body.key : typeof body?.blobUrl === 'string' && !legacyBlobUrl(body.blobUrl) ? objectKeyOf(body.blobUrl) : null
   if (!kind || !pathname || !keyBelongsTo(pathname, queueItemId) || !MEDIA_CONTENT_TYPES.includes(contentType) || bytes == null || bytes > MEDIA_MAX_BYTES) return json({ error: 'Invalid request' }, 400)
+  // Without a store, no file can have been sent: said plainly, like the import route does.
+  if (!blobConfigured()) return json({ error: 'no-blob', message: 'Le stockage n’est pas configuré sur le projet.' }, 503)
   try {
     const db = await commDb()
     if (!(await queueItemById(db, queueItemId))) return json({ error: 'not-found' }, 404)
