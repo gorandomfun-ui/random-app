@@ -15,7 +15,8 @@ export const metadata: Metadata = {
  * `?univers=montagne` (`cote`, `desert`, `ville`) keeps every level in one
  * world, to try it without waiting for it to come up.
  */
-export default function RacingTestPage({ searchParams }: { searchParams: { niveau?: string; univers?: string } }) {
+export default async function RacingTestPage(props: { searchParams: Promise<{ niveau?: string; univers?: string }> }) {
+  const searchParams = await props.searchParams
   const level = Math.round(Number(searchParams.niveau))
   const world = ({ cote: 'coast', montagne: 'mountain', desert: 'desert', ville: 'city' } as const)[searchParams.univers as 'cote']
   return <GameTestGate game="racing" startLevel={level >= 1 && level <= 16 ? level : undefined} startWorld={world} />

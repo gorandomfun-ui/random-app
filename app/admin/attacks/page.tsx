@@ -10,7 +10,8 @@ export const metadata: Metadata = {
 }
 
 /** RANDOM ATTACKS, to be tried on its own before it goes into Random; `?niveau=8` starts a game at level 8, to try a boss without playing up to it. */
-export default function AttacksTestPage({ searchParams }: { searchParams: { niveau?: string } }) {
+export default async function AttacksTestPage(props: { searchParams: Promise<{ niveau?: string }> }) {
+  const searchParams = await props.searchParams
   const level = Math.round(Number(searchParams.niveau))
   return <GameTestGate game="attacks" startLevel={level >= 1 && level <= 16 ? level : undefined} />
 }

@@ -9,8 +9,8 @@ import type { GameName } from '@/lib/games/scores'
 import { getRandomTheme } from '@/lib/theme'
 
 /** A game's test page: behind the effects test password, then the game in its Random page, in one of the site's colours; `startLevel` to begin further on. */
-export default function GameTestGate({ game, startLevel, startWorld }: { game: GameName; startLevel?: number; startWorld?: RacingWorld }) {
-  if (!hasEffectsTestAccess(cookies().get(GAMES_TEST_COOKIE)?.value)) {
+export default async function GameTestGate({ game, startLevel, startWorld }: { game: GameName; startLevel?: number; startWorld?: RacingWorld }) {
+  if (!hasEffectsTestAccess((await cookies()).get(GAMES_TEST_COOKIE)?.value)) {
     return <EffectsTestLogin configured={isEffectsTestConfigured()} title="Games test" endpoint="/api/games-test/access" />
   }
   return <ArcadePage game={game} themeIndex={getRandomTheme().index} startLevel={startLevel} startWorld={startWorld} />

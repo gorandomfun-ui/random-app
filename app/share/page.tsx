@@ -3,7 +3,8 @@ import LogoAnimated from '@/components/LogoAnimated'
 
 export const metadata = { title: 'Random · Share', description: 'Random share card' }
 
-export default function SharePage({ searchParams }: { searchParams: Record<string, string> }) {
+export default async function SharePage(props: { searchParams: Promise<Record<string, string>> }) {
+  const searchParams = await props.searchParams
   const title = decodeURIComponent(searchParams.title || 'Random')
   const url = decodeURIComponent(searchParams.url || 'https://gorandom.fun')
   const img = searchParams.img ? decodeURIComponent(searchParams.img) : null

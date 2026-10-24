@@ -48,14 +48,14 @@ const detectRegion = (country?: string | null): Region => {
   return 'other'
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   const cookieLangRaw = cookieStore.get('lang')?.value
-  const headerList = headers()
+  const headerList = await headers()
   const acceptLang = headerList.get('accept-language') || ''
   const primaryRequested = acceptLang.split(',')[0]?.trim()
   const autoLang = mapLocale(primaryRequested)

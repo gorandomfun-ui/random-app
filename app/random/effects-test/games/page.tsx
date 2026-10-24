@@ -13,8 +13,8 @@ export const metadata: Metadata = {
 }
 
 /** The games' still screens, behind the same door as the effects test page. */
-export default function GamesMockPage() {
-  const cookieStore = cookies()
+export default async function GamesMockPage() {
+  const cookieStore = await cookies()
   if (!hasEffectsTestAccess(cookieStore.get(EFFECTS_TEST_COOKIE)?.value)) {
     return <EffectsTestLogin configured={isEffectsTestConfigured()} />
   }

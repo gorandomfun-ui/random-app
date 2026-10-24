@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic'
 
 type SearchParams = Record<string, string | string[] | undefined>
 type PageProps = {
-  params: { id: string }
-  searchParams?: SearchParams
+  params: Promise<{ id: string }>
+  searchParams?: Promise<SearchParams>
 }
 
 function firstParam(value: string | string[] | undefined): string | undefined {
@@ -27,11 +27,11 @@ function resolveThemeIndex(raw: string | string[] | undefined, id: string): numb
   return fallback % THEMES.length
 }
 
-function getSiteOrigin() {
+async function getSiteOrigin() {
   const configured = process.env.NEXT_PUBLIC_BASE_URL?.trim()
   if (configured && /^https?:\/\//i.test(configured)) return configured.replace(/\/$/, '')
 
-  const headerList = headers()
+  const headerList = await headers()
   const host = headerList.get('x-forwarded-host') || headerList.get('host')
   const forwardedProto = headerList.get('x-forwarded-proto')
   const protocol = forwardedProto === 'http' || forwardedProto === 'https'
@@ -40,11 +40,11 @@ function getSiteOrigin() {
   return host ? `${protocol}://${host}` : 'https://gorandom.fun'
 }
 
-function getShareUrls(id: string, searchParams?: SearchParams) {
+async function getShareUrls(id: string, searchParams?: SearchParams) {
   const themeIndex = resolveThemeIndex(searchParams?.theme, id)
   const locale = normalizeShareLocale(firstParam(searchParams?.lang))
   const query = new URLSearchParams({ theme: String(themeIndex), lang: locale })
-  const origin = getSiteOrigin()
+  const origin = await getSiteOrigin()
   return {
     themeIndex,
     locale,
@@ -53,11 +53,12 @@ function getShareUrls(id: string, searchParams?: SearchParams) {
   }
 }
 
-export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams])
   const content = await getSharedContent(params.id)
   if (!content) return { title: 'Random', description: 'This Random content is no longer available.' }
 
-  const { pageUrl, cardUrl, locale } = getShareUrls(content.id, searchParams)
+  const { pageUrl, cardUrl, locale } = await getShareUrls(content.id, searchParams)
   const title = `${content.title} · Random`
   const description = `${SHARE_PRESENTATION[locale].foundOn} — ${content.description}`
 
@@ -82,10 +83,11 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   }
 }
 
-export default async function SharedRandomPage({ params, searchParams }: PageProps) {
+export default async function SharedRandomPage(props: PageProps) {
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams])
   const content = await getSharedContent(params.id)
   if (!content) notFound()
 
-  const { themeIndex, locale } = getShareUrls(content.id, searchParams)
+  const { themeIndex, locale } = await getShareUrls(content.id, searchParams)
   return <SharedRandomExperience content={content} theme={THEMES[themeIndex]} themeIndex={themeIndex} locale={locale} />
 }

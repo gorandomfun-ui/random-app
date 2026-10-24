@@ -8,9 +8,9 @@ export const dynamic = 'force-dynamic'
  * One stock video with sound, fetched by the server from the platform's own address and streamed to
  * the browser, which decodes its audio. Only a find of the catalogue, only its known hosts.
  */
-export async function GET(req: Request, context?: { params: { id: string } }) {
+export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   if (!commAllowed(req)) return json({ error: 'Unauthorized' }, 401)
-  const key = decodeURIComponent(context?.params.id ?? '')
+  const key = decodeURIComponent((await context.params).id ?? '')
   if (!/^(pixabay|pexels):\d{1,12}$/.test(key)) return json({ error: 'not-found' }, 404)
   try {
     const row = await soundByKey(await commDb(), key)

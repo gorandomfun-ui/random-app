@@ -5,7 +5,8 @@ import { APP_SHARE, appCardUrl, appShareUrl } from '@/lib/share/app'
 import { normalizeShareLocale } from '@/lib/share/presentation'
 
 /** What a shared link to the home unfurls into, in the language the sharer was in (`?lang=`). */
-export function generateMetadata({ searchParams }: { searchParams?: Record<string, string | string[] | undefined> }): Metadata {
+export async function generateMetadata(props: { searchParams?: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+  const searchParams = await props.searchParams
   const raw = searchParams?.lang
   const locale = normalizeShareLocale(typeof raw === 'string' ? raw : null)
   const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://gorandom.fun'

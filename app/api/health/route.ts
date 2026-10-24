@@ -1,5 +1,8 @@
 export const runtime = 'nodejs'
 export const maxDuration = 10
+// Built once, as Next 14 did with every GET handler that reads nothing of the request; Next 15 would ask the database at
+// every call.
+export const dynamic = 'force-static'
 
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'

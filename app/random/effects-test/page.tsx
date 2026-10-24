@@ -12,8 +12,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-export default function EffectsTestPage() {
-  const cookieStore = cookies()
+export default async function EffectsTestPage() {
+  const cookieStore = await cookies()
   const hasAccess = hasEffectsTestAccess(cookieStore.get(EFFECTS_TEST_COOKIE)?.value)
 
   if (!hasAccess) {

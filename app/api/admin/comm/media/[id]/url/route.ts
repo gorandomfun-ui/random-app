@@ -14,9 +14,9 @@ export const dynamic = 'force-dynamic'
  * no, with the day it opens again. A file still in the old store is handed
  * as it is, uncounted.
  */
-export async function GET(req: Request, context?: { params: { id: string } }) {
+export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   if (!commAllowed(req)) return json({ error: 'Unauthorized' }, 401)
-  const id = context?.params.id ?? ''
+  const id = (await context.params).id ?? ''
   if (!ObjectId.isValid(id)) return json({ error: 'Invalid request' }, 400)
   try {
     const db = await commDb()

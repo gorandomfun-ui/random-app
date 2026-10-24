@@ -5,8 +5,8 @@ import CuratorLogin from './Login'
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Random — Curation privée', robots: { index: false, follow: false } }
 
-export default function CurationLayout({ children }: { children: React.ReactNode }) {
-  if (!validCuratorToken(cookies().get(CURATOR_COOKIE)?.value)) {
+export default async function CurationLayout({ children }: { children: React.ReactNode }) {
+  if (!validCuratorToken((await cookies()).get(CURATOR_COOKIE)?.value)) {
     return <CuratorLogin configured={curatorConfigured()} />
   }
   return children

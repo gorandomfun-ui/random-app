@@ -11,9 +11,9 @@ export const dynamic = 'force-dynamic'
  * browser from here, so a canvas can read it. Only an item of the catalogue, only a permissive
  * platform, only its known hosts: never a free address.
  */
-export async function GET(req: Request, context?: { params: { id: string } }) {
+export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   if (!commAllowed(req)) return json({ error: 'Unauthorized' }, 401)
-  const id = context?.params.id ?? ''
+  const id = (await context.params).id ?? ''
   if (!ObjectId.isValid(id)) return json({ error: 'not-found' }, 404)
   try {
     const row = await (await getDb()).collection('items').findOne({ _id: new ObjectId(id), type: 'image' }, { projection: { url: 1, provider: 1 }, maxTimeMS: 2000 })

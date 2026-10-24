@@ -4,7 +4,7 @@ import { removeMedia } from '@/lib/comm/queue'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function DELETE(req: Request, context?: { params: { id: string } }) {
+export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
   if (!commAllowed(req, true)) return json({ error: 'Unauthorized' }, 401)
-  try { return json({ removed: await removeMedia(await commDb(), (context?.params.id ?? '')) }) } catch { return json({ error: 'unavailable' }, 503) }
+  try { return json({ removed: await removeMedia(await commDb(), ((await context.params).id ?? '')) }) } catch { return json({ error: 'unavailable' }, 503) }
 }

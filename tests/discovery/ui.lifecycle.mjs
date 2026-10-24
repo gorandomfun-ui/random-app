@@ -20,7 +20,7 @@ await build({entryPoints:[`${root}/app/random/RandomExperience.tsx`],outfile:out
   // Keep the dynamic module's lifecycle: a null overlay never calls onComplete,
   // leaving Random correctly locked while the simulated animation never ends.
   if(path==='next/dynamic')return{contents:`import React from 'react';export default loader=>function Dynamic(p){const [Component,setComponent]=React.useState(null);React.useEffect(()=>{let active=true;loader().then(m=>{if(active)setComponent(()=>m.default)});return()=>{active=false}},[]);return Component?React.createElement(Component,p):null}`}
-  if(path.includes('/utils/sound'))return{contents:`export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},setMuted=()=>{}`}
+  if(path.includes('/utils/sound'))return{contents:`export const playAgain=()=>{},playRandom=()=>{},playWaveEnter=()=>{},playWaveStep=()=>{},setMuted=()=>{},prepareSound=()=>{},wakeSound=()=>{},soundStatus=()=>({state:'running',muted:false,asked:0,played:0,resumes:0,born:'',last:'',files:null})`}
   if(path.includes('RandomContentRenderer'))return{contents:`import React from 'react'; export const FactQuizCard=()=>React.createElement('div',null,'Quiz')`}
   return{contents:`import React from 'react'; export default function Stub(p){return React.createElement('span',{className:p.className},p.children||p.label||p.text||null)}`}
  })
