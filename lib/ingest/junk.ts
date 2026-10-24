@@ -10,7 +10,17 @@
  * Pure: the daily allowance is counted by the store.
  */
 
-export type JunkKind = 'scam' | 'product-top'
+export type JunkKind = 'scam' | 'product-top' | 'minors'
+
+/**
+ * Titles that sexualise minors, refused whatever the account (24 October: a piracy bait titled after a 14-year-old
+ * "gravure idol", 人気中学生グラドル…(14)): the Japanese junior-idol trade's words, a schoolchild next to a pin-up word,
+ * and the English words of the same trade. No age alone: "(14)" is as often an episode.
+ */
+const MINORS = new RegExp([
+  'ジュニアアイドル', '着エロ', '(?:中学生|小学生).{0,8}(?:グラドル|グラビア|水着|イメージビデオ)', '(?:グラドル|グラビア|水着|イメージビデオ).{0,12}(?:中学生|小学生)',
+  '\\bjunior idols?\\b', '\\bjailbait\\b', '\\b(?:pre-?teens?|underage)\\b.{0,20}\\b(?:models?|bikinis?|sexy|hot)\\b',
+].join('|'), 'i')
 
 /** Accounts for sale, support numbers, contact lines: nothing to watch. */
 const SCAM = new RegExp([
@@ -40,6 +50,7 @@ const PRODUCT_TOP = new RegExp([
 export function junkKind(title: string | null | undefined): JunkKind | null {
   const text = (title ?? '').trim()
   if (!text) return null
+  if (MINORS.test(text)) return 'minors'
   if (SCAM.test(text)) return 'scam'
   if (PRODUCT_TOP.test(text)) return 'product-top'
   return null

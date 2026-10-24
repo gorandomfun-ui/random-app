@@ -36,7 +36,7 @@ export type Refusal = {
   expiresAt: Date
   day: string
   reason: 'mini-series' | 'junk'
-  detail: MiniSeriesReason | 'scam' | 'product-top' | 'ai-channel' | 'ai-marked' | 'bait-account'
+  detail: MiniSeriesReason | 'scam' | 'product-top' | 'minors' | 'ai-channel' | 'ai-marked' | 'bait-account'
   title: string
   provider: string
   videoId: string

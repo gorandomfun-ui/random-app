@@ -116,7 +116,7 @@ type MiniSeriesReport = {
 const MINI_SERIES_REASON: Record<string, string> = {
   label: 'étiquette', studio: 'studio', cjk: 'titre chinois', trope: 'cliché', 'ai-story': 'histoire IA', narrative: 'titre-récit',
   shape: 'verticale longue', scam: 'arnaque', 'product-top': 'top produits', 'ai-channel': 'chaîne IA', 'ai-marked': 'marquée IA',
-  'bait-account': 'compte appât',
+  'bait-account': 'compte appât', minors: 'mineurs sexualisés',
 }
 const UNIVERSE_LABEL: Record<string, string> = {
   music: 'Musique', sport: 'Sport', gaming: 'Gaming', 'humor-memes': 'Humour', 'events-parties': 'Fête', food: 'Food', travel: 'Découverte', craft: 'Astuces / artisanat',

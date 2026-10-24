@@ -57,3 +57,13 @@ test('the product-top farm is named as such', () => {
 test('ordinary tops, hashtag shorts, sketches and songs pass', () => {
   assert.deepEqual(KEEP.filter((title) => junkKind(title) !== null).map((title) => `${title} → ${junkKind(title)}`), [])
 })
+
+test('titles that sexualise minors are refused, whatever the account (24 October); an age or a model alone is not', () => {
+  assert.equal(junkKind('”グラビアの裏女王”人気中学生グラドル・佐々木みゆうc(14)、'), 'minors')
+  assert.equal(junkKind('ジュニアアイドル イメージビデオ'), 'minors')
+  assert.equal(junkKind('Junior idol photo shoot'), 'minors')
+  assert.equal(junkKind('preteen bikini model'), 'minors')
+  assert.equal(junkKind('中学生 合唱コンクール 2013'), null, 'a school choir')
+  assert.equal(junkKind('Tesla Model S (15) review'), null)
+  assert.equal(junkKind('グラビアアイドル 写真集 メイキング'), null, 'an adult pin-up is not this rule')
+})
