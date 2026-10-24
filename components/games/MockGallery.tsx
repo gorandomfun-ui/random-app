@@ -44,11 +44,11 @@ const LABELS: Record<string, string> = {
   'racing-game-over': 'Game over',
   'racing-winner': 'Winner',
   'attacks-winner': 'Winner',
-  'fighter-titre': 'Titre — le dojo au coucher du soleil',
-  'fighter-jeu-1': 'Niveau 1 — devant le dojo, en plein jour',
-  'fighter-jeu-4': 'Niveau 4 — devant le dojo, le soir tombe, un mini-burger',
-  'fighter-jeu-7': 'Niveau 7 — dans la salle, sur les tatamis',
-  'fighter-jeu-13': 'Niveau 13 — la cuisine, la nuit',
+  'fighter-titre': 'Titre — le coup de pied sauté devant le temple, la nuit',
+  'fighter-jeu-1': 'Niveau 1 — au crépuscule, le torii et le lac',
+  'fighter-jeu-5': 'Niveau 5 — le coup de pied sauté, un burger ninja',
+  'fighter-jeu-9': 'Niveau 9 — devant le temple, la nuit',
+  'fighter-jeu-13': 'Niveau 13 — le samouraï accroupi frappe',
   'fighter-game-over': 'Game over',
   'fighter-winner': 'Winner',
 }
@@ -116,7 +116,7 @@ export default function MockGallery() {
     layout,
     shots: [
       { name: 'fighter-titre', ...FIGHTER_SCREEN[layout], draw: (frame: number) => renderFighterTitle(layout, accent, { frame, blink: frame % 2 === 0 }) },
-      ...[1, 4, 7, 13].map((level) => ({ name: `fighter-jeu-${level}`, width: FIGHTER_PLAY[layout].width, height: FIGHTER_PLAY[layout].height, draw: (frame: number) => renderFighterPlay(layout, accent, { frame, level }) })),
+      ...[1, 5, 9, 13].map((level) => ({ name: `fighter-jeu-${level}`, width: FIGHTER_PLAY[layout].width, height: FIGHTER_PLAY[layout].height, draw: (frame: number) => renderFighterPlay(layout, accent, { frame, level }) })),
       { name: 'fighter-game-over', ...FIGHTER_SCREEN[layout], draw: (frame: number) => renderFighterOver(layout, accent, { score: 3420, best: 5100, frame, blink: frame % 2 === 0 }) },
       { name: 'fighter-winner', ...FIGHTER_SCREEN[layout], draw: (frame: number) => renderFighterWinner(layout, accent, { score: 48210, best: 48210, frame, blink: frame % 2 === 0 }) },
     ] as Shot[],
@@ -143,9 +143,9 @@ export default function MockGallery() {
         ))}
       </div>
       <section style={{ marginBottom: 40 }}>
-        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Fighter — première proposition</h2>
+        <h2 style={{ fontFamily: 'var(--font-tomorrow), sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, color: accent }}>Random Fighter — d&apos;après tes deux images</h2>
         <p style={{ fontSize: 14, opacity: 0.8, marginBottom: 12, maxWidth: 720 }}>
-          Un jeu de combat vu de côté, dans l&apos;esprit des vieux jeux PC : le combattant en kimono contre les burgers — burgers ninjas qui lancent des étoiles de sésame, burgers samouraïs au sabre, mini-burgers qui roulent. Trois lieux sur seize niveaux : devant le dojo (1 à 5), dans la salle (6 à 11), dans la cuisine la nuit (12 à 16). Le titre, un moment de jeu dans chaque lieu, le game over et le winner, en paysage puis en portrait. Rien n&apos;est jouable : à regarder, à corriger.
+          Décalqué de tes deux images : le titre reprend la scène du coup de pied sauté devant le temple, avec RANDOM et FIGHTER comme sur l&apos;image du ninja en garde (dans la couleur choisie). En jeu, le ninja, le burger samouraï et les burgers ninjas sont découpés dans tes images, sur leurs deux décors : le torii et le lac au crépuscule (niveaux 1 à 8), le temple la nuit (9 à 16). Les poses changent d&apos;une image à l&apos;autre ; les vrais mouvements viendront ensuite. Rien n&apos;est jouable.
         </p>
         {fighter.map(({ layout, shots }) => (
           <div key={layout} style={{ marginBottom: 24 }}>
