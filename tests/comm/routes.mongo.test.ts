@@ -14,7 +14,10 @@ const testDb = `${productionDb}_test`
 if (uri) { process.env.MONGODB_DB = testDb; process.env.MONGO_DB = testDb }
 process.env.RANDOM_CURATOR_SECRET = 'test-only-secret-012345678901234567890'
 process.env.NEXT_PUBLIC_COMM_QUEUE_MAX = '2'
+// No store in these tests: the routes must say so, never reach for one.
 delete process.env.BLOB_READ_WRITE_TOKEN
+delete process.env.COMM_GCS_KEY
+delete process.env.COMM_GCS_BUCKET
 
 const skip = uri ? false : 'MONGODB_URI is not set'
 const ORIGIN = 'https://comm.test'
@@ -100,18 +103,24 @@ test('au plafond, un clic n_ajoute rien et répond 409', { skip }, async () => {
   assert.equal((await queue.POST(request('/api/admin/comm/queue', { method: 'POST', body: { itemId: 'ffffffffffffffffffffffff' } }))).status, 409, 'plein avant même de chercher')
 })
 
-test('un média ne s_enregistre que dans le dossier Blob de son élément ; sans Blob, l_import le dit', { skip }, async () => {
+test('un média ne s_enregistre que dans le dossier de son élément, jamais sans stockage ; sans stockage, l_import le dit', { skip }, async () => {
   const row = await db.collection('comm_queue').findOne({ contentId: ids[1] })
   const id = String(row!._id)
-  const good = { queueItemId: id, kind: 'image', blobUrl: `https://store.public.blob.vercel-storage.com/comm/${id}/aabbccddeeff001122334455.jpg`, contentType: 'image/jpeg', bytes: 1234, width: 10, height: 20 }
-  const ok = await (await media.POST(request('/api/admin/comm/media', { method: 'POST', body: good }))).json()
-  assert.ok(ok.media?._id); assert.equal(ok.media.animated, false); assert.equal(ok.media.blobKey, `comm/${id}/aabbccddeeff001122334455.jpg`)
-  assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: { ...good, blobUrl: `https://store.public.blob.vercel-storage.com/comm/ffffffffffffffffffffffff/x.jpg` } }))).status, 400, 'un autre dossier')
-  assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: { ...good, blobUrl: 'https://example.com/x.jpg' } }))).status, 400, 'hors Blob')
+  const good = { queueItemId: id, kind: 'image', key: `comm/${id}/aabbccddeeff001122334455.jpg`, contentType: 'image/jpeg', bytes: 1234, width: 10, height: 20 }
+  assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: { ...good, key: `comm/ffffffffffffffffffffffff/x.jpg` } }))).status, 400, 'un autre dossier')
+  assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: { ...good, key: undefined, blobUrl: 'https://example.com/x.jpg' } }))).status, 400, 'hors du stockage')
+  assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: { ...good, key: undefined, blobUrl: `https://store.public.blob.vercel-storage.com/comm/${id}/x.jpg` } }))).status, 400, 'l_ancien Blob n_accueille plus rien')
   assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: { ...good, contentType: 'text/html' } }))).status, 400, 'pas un média')
   assert.equal((await media.POST(request('/api/admin/comm/media', { method: 'POST', body: good, auth: false }))).status, 401)
+  // A sound request, but no store to have received the file: said plainly.
+  const refused = await media.POST(request('/api/admin/comm/media', { method: 'POST', body: good }))
+  assert.equal(refused.status, 503); assert.equal((await refused.json()).error, 'no-blob')
   const imported = await imports.POST(request('/api/admin/comm/media/import', { method: 'POST', body: { queueItemId: id, what: 'image' } }))
   assert.equal(imported.status, 503); assert.equal((await imported.json()).error, 'no-blob')
+  // A record written as the store would have confirmed it: the listing shows it, and the item's removal (next test) takes it along.
+  const { registerMedia } = await import('@/lib/comm/queue')
+  const saved = await registerMedia(db, { queueItemId: id, kind: 'image', blobUrl: `https://storage.googleapis.com/comm-test/comm/${id}/aabb.jpg`, blobKey: `comm/${id}/aabb.jpg`, contentType: 'image/jpeg', bytes: 1234, width: 10, height: 20, durationSec: null, animated: false })
+  assert.ok(saved._id); assert.equal(saved.animated, false)
   const listed = await (await queue.GET(request('/api/admin/comm/queue'))).json()
   assert.equal(listed.items.find((item: { _id: string }) => item._id === id).media.length, 1)
 })
